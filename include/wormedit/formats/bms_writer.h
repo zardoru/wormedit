@@ -77,7 +77,9 @@ struct bms_write_result_t {
 // statements. Other branch content remains source-backed. The paired BMS API also
 // supports exact-provenance replacement of inactive raw branch statements and
 // insertion after a source-verified statement in an inactive leaf; direct control-
-// structure editing remains outside this bounded writer contract.
+// structure editing remains outside this bounded writer contract. It also supports
+// exact-provenance deletion of one raw statement directly inside an inactive leaf,
+// updating the retained source bytes and all later source identities atomically.
 [[nodiscard]] auto write_bms(const song_document_t& song, bms_write_options_t options = {})
     -> bms_write_result_t;
 

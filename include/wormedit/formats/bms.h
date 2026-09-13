@@ -139,6 +139,29 @@ struct bms_branch_statement_insert_t {
                                                         bms_branch_statement_insert_t insertion)
     -> bms_branch_statement_edit_result_t;
 
+struct bms_branch_statement_delete_t {
+    std::optional<chart_id_t> chart;
+    // Delete this raw statement only when it is a direct child of this exact leaf.
+    branch_id_t leaf_branch;
+    std::size_t expected_leaf_source_order{};
+    bms_source_span_t expected_leaf_source_span;
+    std::string expected_leaf_original_text;
+    branch_id_t statement;
+    std::size_t expected_source_order{};
+    bms_source_span_t expected_source_span;
+    std::string expected_original_text;
+    std::size_t max_statement_bytes{1024U * 1024U};
+};
+
+// Atomically deletes one exact-provenance raw statement directly inside an
+// inactive IF/ELSEIF/ELSE/CASE/DEFAULT leaf. The complete retained control
+// structure remains in place, and source spans/orders plus semantic provenance
+// are shifted with the removed source line. Until provenance carries a source-
+// file identity, deletion is limited to one-chart BMS source documents.
+[[nodiscard]] auto delete_bms_inactive_branch_statement(const song_document_t& song,
+                                                        bms_branch_statement_delete_t deletion)
+    -> bms_branch_statement_edit_result_t;
+
 // ASCII and UTF-8 are always available. Legacy encodings depend on the conversion
 // backend provided by the build and host; unsupported requests fail explicitly.
 [[nodiscard]] auto is_bms_text_encoding_supported(text_encoding_t encoding) -> bool;

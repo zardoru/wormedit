@@ -37,6 +37,7 @@ if(WORMEDIT_BUILD_APP AND NOT WORMEDIT_UI_BACKEND STREQUAL "nuklear")
 endif()
 
 add_library(wormedit_core
+    src/core/autosave_loop.cpp
     src/core/chart_compare.cpp
     src/core/command.cpp
     src/core/document.cpp

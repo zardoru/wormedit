@@ -3,10 +3,11 @@
 Status: reviewed planning contract; atomic primary/recovery publication, the
 headless five-minute autosave coordinator, bounded startup scanning,
 recovery-action/quarantine execution, the generation-checked recovery banner,
-and SDL-based per-user recovery-directory discovery are implemented. The
-application does not yet schedule periodic autosaves, so it currently writes
-no automatic five-minute backups. Command journaling and crash-marker backends
-remain planned.
+SDL-based per-user recovery-directory discovery, and the periodic application
+autosave loop are implemented. The loop checks dirty revisions against the
+monotonic five-minute coordinator, captures one immutable document snapshot,
+and submits bounded serialization/publication to a one-worker, one-task
+scheduler. Command journaling and crash-marker backends remain planned.
 
 ## Recovery artifacts
 
@@ -27,12 +28,18 @@ Each backup envelope contains:
 
 ## Five-minute autosave contract
 
-The headless coordinator can snapshot an immutable dirty document revision when
-the application calls it, using a monotonic clock and revision/project identity
-checks. The five-minute cadence, background execution, and publication rules
-below are the intended application behavior, but no application loop currently
-calls the coordinator periodically. A long-running export or waveform job
-should not reset the cadence once that loop is added.
+The application loop checks the coordinator using a monotonic clock and
+document dirty state. Saved native projects use an adjacent
+`<project-filename>.bak`; untitled and import-only sessions use
+`project-<stable-project-id>.wormedit.bak` in SDL's per-user recovery directory.
+At most one immutable snapshot is queued at a time. The document copy happens
+on the caller thread; bounded serialization, validation, and publication run on
+the scheduler worker. A failed publication leaves the previous backup intact,
+reports its diagnostic in the application status, and retries after 30 seconds.
+A long-running export or waveform job does not reset the cadence. Recovery into
+the live session is held until an autosave worker finishes, then starts a new
+autosave cadence using the recovered artifact's session sequence and explicit
+save baseline.
 
 Write `<name>.bak.tmp` in the same directory, serialize completely, flush it, read/validate its envelope and payload, flush the containing directory where supported, and atomically replace `<name>.bak`. If serialization, space, permission, flush, checksum, or validation fails, retain the previous known-good `.bak` and show a non-modal diagnostic. Stale temporary files are recognized and validated separately at startup; they never outrank a valid completed backup merely by timestamp.
 

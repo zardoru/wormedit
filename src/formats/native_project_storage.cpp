@@ -2260,6 +2260,15 @@ void native_project_autosave_coordinator_t::mark_explicit_save(
     last_explicit_save_ = saved_version;
 }
 
+auto native_project_autosave_coordinator_t::is_due(const song_document_t& song,
+                                                   clock_t::time_point now) const noexcept -> bool {
+    const auto version = to_version(song);
+    return interval_valid_ &&
+           !(last_explicit_save_.has_value() && *last_explicit_save_ == version) &&
+           !(last_autosaved_.has_value() && *last_autosaved_ == version) &&
+           now >= last_successful_autosave_at_ && now - last_successful_autosave_at_ >= interval_;
+}
+
 auto native_project_autosave_coordinator_t::maybe_autosave(
     const song_document_t& song, clock_t::time_point now,
     const std::filesystem::path& caller_supplied_backup_path,
@@ -2275,9 +2284,7 @@ auto native_project_autosave_coordinator_t::maybe_autosave(
         return result;
     }
     const auto version = to_version(song);
-    if ((last_explicit_save_.has_value() && *last_explicit_save_ == version) ||
-        (last_autosaved_.has_value() && *last_autosaved_ == version) ||
-        now < last_successful_autosave_at_ || now - last_successful_autosave_at_ < interval_) {
+    if (!is_due(song, now)) {
         return result;
     }
     if (session_sequence_ == std::numeric_limits<std::uint64_t>::max()) {

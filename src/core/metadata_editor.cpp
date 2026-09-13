@@ -1,6 +1,8 @@
 #include <wormedit/core/metadata_editor.h>
 
 #include <algorithm>
+#include <charconv>
+#include <cstdint>
 #include <ranges>
 #include <string_view>
 #include <type_traits>
@@ -177,6 +179,61 @@ auto validate_field(std::string_view name, std::string_view value,
 }
 
 } // namespace
+
+auto parse_metadata_rating(std::string_view numerator, std::string_view denominator)
+    -> std::optional<signed_rational_t> {
+    if (numerator.empty() || denominator.empty() ||
+        numerator.size() > metadata_rating_component_max_bytes ||
+        denominator.size() > metadata_rating_component_max_bytes) {
+        return std::nullopt;
+    }
+
+    const auto numerator_digits =
+        numerator.front() == '+' || numerator.front() == '-' ? numerator.substr(1) : numerator;
+    if (numerator_digits.empty() || numerator_digits.size() > 20)
+        return std::nullopt;
+    auto numerator_text = numerator;
+    if (numerator_text.front() == '+')
+        numerator_text.remove_prefix(1);
+
+    std::int64_t parsed_numerator{};
+    const auto numerator_result = std::from_chars(
+        numerator_text.data(), numerator_text.data() + numerator_text.size(), parsed_numerator, 10);
+    if (numerator_result.ec != std::errc{} ||
+        numerator_result.ptr != numerator_text.data() + numerator_text.size()) {
+        return std::nullopt;
+    }
+
+    auto denominator_text = denominator;
+    if (denominator_text.front() == '+')
+        denominator_text.remove_prefix(1);
+    if (denominator_text.empty() || denominator_text.size() > 20)
+        return std::nullopt;
+
+    std::uint64_t parsed_denominator{};
+    const auto denominator_result =
+        std::from_chars(denominator_text.data(), denominator_text.data() + denominator_text.size(),
+                        parsed_denominator, 10);
+    if (denominator_result.ec != std::errc{} ||
+        denominator_result.ptr != denominator_text.data() + denominator_text.size() ||
+        parsed_denominator == 0) {
+        return std::nullopt;
+    }
+    return signed_rational_t{parsed_numerator, parsed_denominator};
+}
+
+auto make_chart_rating_metadata_edit(chart_id_t chart, bool unset, std::string_view numerator,
+                                     std::string_view denominator)
+    -> std::optional<chart_rating_edit_t> {
+    if (!chart)
+        return std::nullopt;
+    if (unset)
+        return chart_rating_edit_t{chart, std::nullopt};
+    const auto rating = parse_metadata_rating(numerator, denominator);
+    if (!rating)
+        return std::nullopt;
+    return chart_rating_edit_t{chart, rating};
+}
 
 auto apply_metadata_edit(document_history_t& history, std::uint64_t expected_revision,
                          const metadata_edit_action_t& action, metadata_edit_limits_t limits)

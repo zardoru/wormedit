@@ -5,6 +5,7 @@
 #include "ui/frontend.h"
 #include "wormedit/config.h"
 
+#include <wormedit/core/autosave_loop.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/metadata_editor.h>
@@ -18,11 +19,14 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 #include <iterator>
 #include <optional>
+#include <random>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -34,7 +38,24 @@ constexpr std::array<const char*, WORM_UI_WORKSPACE_TAB_COUNT> tab_labels{
     "Setup", "Metadata", "Timing", "Compose", "Storyboard", "Audio / Slices", "Compare / Validate",
 };
 
-auto initial_document() -> wormedit::song_document_t {
+auto new_session_project_id() -> wormedit::song_id_t {
+    try {
+        std::random_device source;
+        const auto value =
+            (static_cast<std::uint64_t>(source()) << 32U) | static_cast<std::uint64_t>(source());
+        if (value != 0)
+            return wormedit::song_id_t{value};
+    } catch (...) {
+    }
+    const auto wall =
+        static_cast<std::uint64_t>(std::chrono::system_clock::now().time_since_epoch().count());
+    const auto monotonic =
+        static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+    const auto value = wall ^ (monotonic + 0x9e3779b97f4a7c15ULL + (wall << 6U) + (wall >> 2U));
+    return wormedit::song_id_t{value == 0 ? 1 : value};
+}
+
+auto initial_document(wormedit::song_id_t project_id) -> wormedit::song_document_t {
     auto profile = wormedit::make_bms_7k_profile();
     wormedit::chart_document_t chart{
         .id = wormedit::chart_id_t{2},
@@ -50,7 +71,7 @@ auto initial_document() -> wormedit::song_document_t {
                   .beats_per_minute = {120, 1}}},
     };
     return {
-        .id = wormedit::song_id_t{1},
+        .id = project_id,
         .revision = 1,
         .metadata = {.title = "Untitled Project", .artist = "Unknown Artist"},
         .charts = {std::move(chart)},
@@ -456,11 +477,26 @@ auto first_recovery_diagnostic(
     return {};
 }
 
+auto autosave_status_text(const wormedit::native_project_autosave_result_t& result) -> std::string {
+    using status_t = wormedit::native_project_autosave_status_t;
+    if (result.status == status_t::published)
+        return "Autosaved revision " + std::to_string(result.revision) + ".";
+    if (result.status != status_t::failed)
+        return {};
+    if (result.diagnostics.empty())
+        return "Autosave failed; the previous recovery backup was retained.";
+    const auto& diagnostic = result.diagnostics.front();
+    auto message = "Autosave failed: " + diagnostic.message;
+    if (!diagnostic.path.empty())
+        message += " (" + diagnostic.path.generic_string() + ")";
+    return message;
+}
+
 auto dispatch_recovery_ui_action(
     const WormUiWorkspaceAction& action, wormedit::native_project_recovery_controller_t& controller,
     wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
-    std::optional<wormedit::native_project_document_version_t> scanned_primary_version)
-    -> std::string {
+    std::optional<wormedit::native_project_document_version_t> scanned_primary_version,
+    wormedit::native_project_autosave_loop_t& autosave_loop) -> std::string {
     using namespace wormedit;
     const native_project_recovery_action_target_t target{
         .scan_generation = action.recovery_scan_generation,
@@ -545,6 +581,23 @@ auto dispatch_recovery_ui_action(
                 return "Recovered data validated, but the workspace could not be rebound; "
                        "the current workspace was kept.";
             }
+            const auto& recovery_view = controller.view();
+            std::optional<native_project_document_version_t> recovered_save_baseline;
+            auto recovered_sequence = std::uint64_t{};
+            if (action.recovery_row_index < recovery_view.rows.size()) {
+                const auto& row = recovery_view.rows[action.recovery_row_index];
+                if (row.last_explicit_save_revision) {
+                    recovered_save_baseline = native_project_document_version_t{
+                        .project_id = result.document->id,
+                        .revision = *row.last_explicit_save_revision};
+                }
+                if (row.recovery_session_sequence)
+                    recovered_sequence = *row.recovery_session_sequence;
+            }
+            if (!autosave_loop.reset_session(native_project_autosave_loop_t::clock_t::now(),
+                                             recovered_save_baseline, recovered_sequence)) {
+                return "Wait for the current autosave to finish before recovering a session.";
+            }
             history = std::move(replacement_history);
             workspace = std::move(*replacement_binding.workspace);
         }
@@ -607,20 +660,31 @@ auto dispatch_metadata_ui_action(const WormUiWorkspaceAction& action,
                                                                       action.metadata_artist,
                                                                       std::move(tags)}));
     }
-    case WORM_UI_METADATA_EDIT_CHART:
+    case WORM_UI_METADATA_EDIT_CHART: {
         if (action.metadata_chart_id == 0 || !action.metadata_chart_name ||
-            !action.metadata_chart_author) {
+            !action.metadata_chart_author ||
+            (action.metadata_has_chart_rating &&
+             (!action.metadata_chart_rating_numerator_text ||
+              !action.metadata_chart_rating_denominator_text))) {
             return "Chart metadata edit payload is incomplete.";
+        }
+        const auto rating = make_chart_rating_metadata_edit(
+            chart_id_t{action.metadata_chart_id}, !action.metadata_has_chart_rating,
+            action.metadata_chart_rating_numerator_text
+                ? action.metadata_chart_rating_numerator_text
+                : "",
+            action.metadata_chart_rating_denominator_text
+                ? action.metadata_chart_rating_denominator_text
+                : "");
+        if (!rating) {
+            return "Rating must use a signed 64-bit numerator and positive 64-bit denominator.";
         }
         return publish(apply_metadata_edit(
             history, action.metadata_document_revision,
             set_chart_metadata_action_t{chart_id_t{action.metadata_chart_id},
                                         action.metadata_chart_name, action.metadata_chart_author,
-                                        action.metadata_has_chart_rating
-                                            ? std::optional<signed_rational_t>{signed_rational_t{
-                                                  action.metadata_chart_rating_numerator,
-                                                  action.metadata_chart_rating_denominator}}
-                                            : std::nullopt}));
+                                        rating->rating}));
+    }
     case WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD:
     case WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD:
     case WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD: {
@@ -679,8 +743,8 @@ int main(int argc, char** argv) {
     if (platform_recovery) {
         startup_request.recovery_directories.push_back(platform_recovery.path);
     }
-    auto startup =
-        wormedit::prepare_native_project_startup(initial_document(), std::move(startup_request));
+    auto startup = wormedit::prepare_native_project_startup(
+        initial_document(new_session_project_id()), std::move(startup_request));
 
     WormAudioSystem audio{};
     if (!worm_audio_init(&audio)) {
@@ -716,6 +780,12 @@ int main(int argc, char** argv) {
         return 1;
     }
     auto workspace = std::move(*binding.workspace);
+    const auto initial_autosave_sequence = wormedit::native_project_recovery_session_sequence(
+        startup.recovery_scan, history.document.id);
+    wormedit::task_scheduler_t autosave_scheduler(1, 1);
+    wormedit::native_project_autosave_loop_t autosave_loop(
+        wormedit::native_project_autosave_loop_t::clock_t::now(), autosave_scheduler,
+        startup.primary_version, initial_autosave_sequence);
     std::string status;
     if (startup.loaded_primary) {
         status = "Opened native project: " + requested_primary_path.generic_string();
@@ -746,6 +816,17 @@ int main(int argc, char** argv) {
             worm_ui_frontend_handle_event(&event);
         }
         worm_ui_frontend_end_input();
+
+        const auto autosave_target = wormedit::make_native_project_autosave_target(
+            history.document.id, startup.loaded_primary, requested_primary_path,
+            platform_recovery.path);
+        if (const auto autosave_result = autosave_loop.tick(
+                history.document, wormedit::is_document_dirty(history),
+                wormedit::native_project_autosave_loop_t::clock_t::now(), autosave_target)) {
+            const auto autosave_text = autosave_status_text(*autosave_result);
+            if (!autosave_text.empty())
+                status = autosave_text;
+        }
 
         const auto model = wormedit::make_workspace_view(workspace, history.document);
         if (!model) {
@@ -803,8 +884,13 @@ int main(int argc, char** argv) {
                 status = dispatch_metadata_ui_action(action, history, workspace);
             } else if (action.kind >= WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT &&
                        action.kind <= WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE) {
-                status = dispatch_recovery_ui_action(action, recovery_controller, history,
-                                                     workspace, scanned_primary_version);
+                if (autosave_loop.busy()) {
+                    status = "Wait for the current autosave to finish before recovering a session.";
+                } else {
+                    status =
+                        dispatch_recovery_ui_action(action, recovery_controller, history, workspace,
+                                                    scanned_primary_version, autosave_loop);
+                }
             }
         }
 

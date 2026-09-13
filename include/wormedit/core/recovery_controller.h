@@ -65,6 +65,7 @@ struct native_project_recovery_banner_row_t {
     std::optional<native_project_document_version_t> version;
     std::optional<std::chrono::system_clock::time_point> recovery_write_time;
     std::optional<std::uint64_t> recovery_session_sequence;
+    std::optional<std::uint64_t> last_explicit_save_revision;
     std::vector<native_project_recovery_action_t> available_actions;
     std::optional<native_project_recovery_action_t> recommended_action;
     native_project_recovery_quarantine_t quarantine{native_project_recovery_quarantine_t::retain};

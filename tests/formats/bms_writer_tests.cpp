@@ -787,6 +787,363 @@ TEST_CASE("BMS statements can be inserted into a provenance-checked inactive lea
         exhausted_result, wormedit::bms_branch_statement_edit_diagnostic_code_t::resource_limit));
 }
 
+TEST_CASE("BMS raw statements can be deleted from inactive leaves with full-tree preservation",
+          "[unit][format][bms][writer][branch][direct-delete]") {
+    constexpr std::string_view source =
+        "#PLAYER 1\n#TITLE Leaf deletion\n#BPM 120\n#WAV01 click.wav\n"
+        "#RANDOM 3\n#IF 1\n#00011:0100\n#ELSEIF 2\n#00011:0200\n"
+        "#ELSE\n#00011:0300\n#ENDIF\n#ENDRANDOM\n"
+        "#SWITCH 2\n#CASE 1\n#00011:0400\n#SKIP\n#DEF\n#00011:0500\n#ENDSW\n";
+    struct deletion_case_t {
+        std::string_view leaf_line;
+        std::string_view statement_line;
+        std::int64_t random_value;
+        std::int64_t switch_value;
+    };
+    constexpr std::array deletion_cases{
+        deletion_case_t{"#IF 1", "#00011:0100", 2, 1},
+        deletion_case_t{"#ELSEIF 2", "#00011:0200", 1, 1},
+        deletion_case_t{"#ELSE", "#00011:0300", 1, 1},
+        deletion_case_t{"#CASE 1", "#00011:0400", 1, 2},
+        deletion_case_t{"#DEF", "#00011:0500", 1, 1},
+    };
+    const auto tree_signature = [](const wormedit::bms_control_node_t& root) {
+        std::string signature;
+        const auto visit = [&](const auto& self, const wormedit::bms_control_node_t& node) -> void {
+            signature += std::to_string(static_cast<int>(node.kind));
+            signature += ':';
+            signature += node.original_text;
+            signature += ':';
+            if (node.close_text.has_value()) {
+                signature += *node.close_text;
+            }
+            signature += '[';
+            for (const auto& child : node.children) {
+                self(self, child);
+            }
+            signature += ']';
+        };
+        visit(visit, root);
+        return signature;
+    };
+    const auto tree_has_id = [](const wormedit::bms_control_node_t& root,
+                                wormedit::branch_id_t id) {
+        bool found{};
+        const auto visit = [&](const auto& self, const wormedit::bms_control_node_t& node) -> void {
+            found = found || node.id == id;
+            for (const auto& child : node.children) {
+                self(self, child);
+            }
+        };
+        visit(visit, root);
+        return found;
+    };
+
+    for (const auto& deletion_case : deletion_cases) {
+        INFO(deletion_case.leaf_line);
+        wormedit::bms_parse_options_t parse_options;
+        parse_options.lane_profile_id = "bme-7k-outside-scratch";
+        parse_options.branch_choices = {
+            {.control_source_order = line_order(source, "#RANDOM 3"),
+             .selected_value = deletion_case.random_value},
+            {.control_source_order = line_order(source, "#SWITCH 2"),
+             .selected_value = deletion_case.switch_value},
+        };
+        const auto imported = parse(source, parse_options);
+        REQUIRE(imported.song.has_value());
+        REQUIRE_FALSE(imported.has_errors());
+        const auto& chart = imported.song->charts.front();
+        REQUIRE(chart.bms_control_tree.has_value());
+        const auto leaf_lookup =
+            deletion_case.leaf_line == "#ELSE" ? "#ELSE\n" : deletion_case.leaf_line;
+        const auto* leaf =
+            control_node_at(*chart.bms_control_tree, line_order(source, leaf_lookup));
+        const auto* statement = control_statement_at(
+            *chart.bms_control_tree, line_order(source, deletion_case.statement_line));
+        REQUIRE(leaf != nullptr);
+        REQUIRE(statement != nullptr);
+
+        const wormedit::bms_branch_statement_delete_t deletion{
+            .leaf_branch = leaf->id,
+            .expected_leaf_source_order = leaf->source_order,
+            .expected_leaf_source_span = leaf->source_span,
+            .expected_leaf_original_text = leaf->original_text,
+            .statement = statement->id,
+            .expected_source_order = statement->source_order,
+            .expected_source_span = statement->source_span,
+            .expected_original_text = statement->original_text,
+        };
+        const auto deleted =
+            wormedit::delete_bms_inactive_branch_statement(*imported.song, deletion);
+        INFO((deleted.diagnostics.empty() ? std::string{} : deleted.diagnostics.back().message));
+        REQUIRE(deleted.song.has_value());
+        CHECK_FALSE(deleted.has_errors());
+        REQUIRE(deleted.song->charts.front().bms_control_tree.has_value());
+        CHECK_FALSE(tree_has_id(*deleted.song->charts.front().bms_control_tree, statement->id));
+
+        const auto target_size =
+            statement->source_span.byte_end - statement->source_span.byte_begin;
+        const auto* original_switch =
+            control_node_at(*chart.bms_control_tree, line_order(source, "#SWITCH 2"));
+        REQUIRE(original_switch != nullptr);
+        REQUIRE(original_switch->close_source_span.has_value());
+        REQUIRE(original_switch->close_source_order.has_value());
+        const auto find_by_id =
+            [&](const auto& self,
+                const wormedit::bms_control_node_t& node) -> const wormedit::bms_control_node_t* {
+            if (node.id == original_switch->id) {
+                return &node;
+            }
+            for (const auto& child : node.children) {
+                if (const auto* found = self(self, child); found != nullptr) {
+                    return found;
+                }
+            }
+            return nullptr;
+        };
+        const auto* shifted_switch =
+            find_by_id(find_by_id, *deleted.song->charts.front().bms_control_tree);
+        REQUIRE(shifted_switch != nullptr);
+        REQUIRE(shifted_switch->close_source_span.has_value());
+        REQUIRE(shifted_switch->close_source_order.has_value());
+        CHECK(shifted_switch->close_source_span->byte_begin + target_size ==
+              original_switch->close_source_span->byte_begin);
+        CHECK(shifted_switch->close_source_span->byte_end + target_size ==
+              original_switch->close_source_span->byte_end);
+        CHECK(*shifted_switch->close_source_order == *original_switch->close_source_order - 1);
+
+        for (const auto& original_note : chart.measures.front().notes) {
+            const auto& edited_notes = deleted.song->charts.front().measures.front().notes;
+            const auto edited_note =
+                std::ranges::find(edited_notes, original_note.id, &wormedit::note_t::id);
+            REQUIRE(edited_note != edited_notes.end());
+            CHECK(edited_note->provenance.source_order ==
+                  (original_note.provenance.source_order > statement->source_order
+                       ? original_note.provenance.source_order - 1
+                       : original_note.provenance.source_order));
+        }
+
+        const auto bms_group = std::ranges::find_if(
+            deleted.song->charts.front().metadata.format_groups,
+            [](const auto& group) { return group.family == wormedit::format_family_t::bms; });
+        REQUIRE(bms_group != deleted.song->charts.front().metadata.format_groups.end());
+        REQUIRE(bms_group->encoding.original_bytes != nullptr);
+        CHECK_FALSE(bms_group->encoding.unchanged_since_import);
+        const auto& updated_bytes = *bms_group->encoding.original_bytes;
+        const std::string updated_source(reinterpret_cast<const char*>(updated_bytes.data()),
+                                         updated_bytes.size());
+        auto expected_source = std::string(source);
+        expected_source.erase(statement->source_span.byte_begin, target_size);
+        CHECK(updated_source == expected_source);
+
+        const auto written =
+            wormedit::write_bms(*deleted.song, {.lane_profile_id = parse_options.lane_profile_id});
+        INFO((written.diagnostics.empty() ? std::string{} : written.diagnostics.back().message));
+        REQUIRE(written.bytes.has_value());
+        CHECK_FALSE(written.has_errors());
+        CHECK(written.bytes->find(deletion_case.statement_line) == std::string::npos);
+        CHECK(occurrences(*written.bytes, "#RANDOM 3") == 1);
+        CHECK(occurrences(*written.bytes, "#IF 1") == 1);
+        CHECK(occurrences(*written.bytes, "#ELSEIF 2") == 1);
+        CHECK(occurrences(*written.bytes, "#ELSE\n") == 1);
+        CHECK(occurrences(*written.bytes, "#ENDIF") == 1);
+        CHECK(occurrences(*written.bytes, "#ENDRANDOM") == 1);
+        CHECK(occurrences(*written.bytes, "#SWITCH 2") == 1);
+        CHECK(occurrences(*written.bytes, "#CASE 1") == 1);
+        CHECK(occurrences(*written.bytes, "#SKIP") == 1);
+        CHECK(occurrences(*written.bytes, "#DEF") == 1);
+        CHECK(occurrences(*written.bytes, "#ENDSW") == 1);
+        const auto tree_reimport = parse(*written.bytes);
+        REQUIRE(tree_reimport.song.has_value());
+        REQUIRE(tree_reimport.song->charts.front().bms_control_tree.has_value());
+        CHECK(tree_signature(*deleted.song->charts.front().bms_control_tree) ==
+              tree_signature(*tree_reimport.song->charts.front().bms_control_tree));
+
+        for (std::int64_t random_value = 1; random_value <= 3; ++random_value) {
+            for (std::int64_t switch_value = 1; switch_value <= 2; ++switch_value) {
+                auto reimport_options = parse_options;
+                reimport_options.branch_choices = {
+                    {.control_source_order = line_order(*written.bytes, "#RANDOM 3"),
+                     .selected_value = random_value},
+                    {.control_source_order = line_order(*written.bytes, "#SWITCH 2"),
+                     .selected_value = switch_value},
+                };
+                const auto reimported = parse(*written.bytes, reimport_options);
+                REQUIRE(reimported.song.has_value());
+                REQUIRE_FALSE(reimported.has_errors());
+                const auto conditional_deleted = deletion_case.leaf_line == "#IF 1" ||
+                                                 deletion_case.leaf_line == "#ELSEIF 2" ||
+                                                 deletion_case.leaf_line == "#ELSE";
+                const auto selected_deleted =
+                    conditional_deleted
+                        ? ((deletion_case.leaf_line == "#IF 1" && random_value == 1) ||
+                           (deletion_case.leaf_line == "#ELSEIF 2" && random_value == 2) ||
+                           (deletion_case.leaf_line == "#ELSE" && random_value == 3))
+                        : ((deletion_case.leaf_line == "#CASE 1" && switch_value == 1) ||
+                           (deletion_case.leaf_line == "#DEF" && switch_value == 2));
+                CHECK(reimported.song->charts.front().measures.front().notes.size() ==
+                      (selected_deleted ? 1U : 2U));
+            }
+        }
+    }
+}
+
+TEST_CASE("BMS inactive branch deletion rejects stale active ambiguous and invalid targets",
+          "[unit][format][bms][writer][branch][direct-delete]") {
+    constexpr std::string_view source =
+        "#PLAYER 1\n#TITLE Delete rejection\n#BPM 120\n#WAV01 one.wav\n"
+        "#RANDOM 2\n#IF 1\n#00011:0100\n#ELSE\n#00011:0200\n"
+        "#ENDIF\n#ENDRANDOM\n";
+    wormedit::bms_parse_options_t parse_options;
+    parse_options.lane_profile_id = "bme-7k-outside-scratch";
+    parse_options.branch_choices = {
+        {.control_source_order = line_order(source, "#RANDOM 2"), .selected_value = 1}};
+    const auto imported = parse(source, parse_options);
+    REQUIRE(imported.song.has_value());
+    REQUIRE(imported.song->charts.front().bms_control_tree.has_value());
+    const auto& tree = *imported.song->charts.front().bms_control_tree;
+    const auto* active_leaf = control_node_at(tree, line_order(source, "#IF 1"));
+    const auto* inactive_leaf = control_node_at(tree, line_order(source, "#ELSE"));
+    const auto* active = control_statement_at(tree, line_order(source, "#00011:0100"));
+    const auto* inactive = control_statement_at(tree, line_order(source, "#00011:0200"));
+    const auto* structural = control_node_at(tree, line_order(source, "#ELSE"));
+    const auto* random = control_node_at(tree, line_order(source, "#RANDOM 2"));
+    REQUIRE(active_leaf != nullptr);
+    REQUIRE(inactive_leaf != nullptr);
+    REQUIRE(active != nullptr);
+    REQUIRE(inactive != nullptr);
+    REQUIRE(structural != nullptr);
+    REQUIRE(random != nullptr);
+
+    const auto request_for = [](const wormedit::bms_control_node_t& leaf,
+                                const wormedit::bms_control_node_t& statement) {
+        return wormedit::bms_branch_statement_delete_t{
+            .leaf_branch = leaf.id,
+            .expected_leaf_source_order = leaf.source_order,
+            .expected_leaf_source_span = leaf.source_span,
+            .expected_leaf_original_text = leaf.original_text,
+            .statement = statement.id,
+            .expected_source_order = statement.source_order,
+            .expected_source_span = statement.source_span,
+            .expected_original_text = statement.original_text,
+        };
+    };
+    const auto expect_error = [](const wormedit::bms_branch_statement_edit_result_t& result,
+                                 wormedit::bms_branch_statement_edit_diagnostic_code_t code) {
+        CHECK_FALSE(result.song.has_value());
+        CHECK(branch_edit_has_error(result, code));
+    };
+
+    const auto active_result = wormedit::delete_bms_inactive_branch_statement(
+        *imported.song, request_for(*active_leaf, *active));
+    expect_error(active_result,
+                 wormedit::bms_branch_statement_edit_diagnostic_code_t::active_statement);
+
+    auto stale = request_for(*inactive_leaf, *inactive);
+    ++stale.expected_source_span.byte_begin;
+    const auto stale_result = wormedit::delete_bms_inactive_branch_statement(*imported.song, stale);
+    expect_error(stale_result,
+                 wormedit::bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch);
+
+    const auto structural_result = wormedit::delete_bms_inactive_branch_statement(
+        *imported.song, request_for(*inactive_leaf, *structural));
+    expect_error(
+        structural_result,
+        wormedit::bms_branch_statement_edit_diagnostic_code_t::target_not_branch_statement);
+
+    auto capped = request_for(*inactive_leaf, *inactive);
+    capped.max_statement_bytes = 1;
+    const auto capped_result =
+        wormedit::delete_bms_inactive_branch_statement(*imported.song, capped);
+    expect_error(capped_result,
+                 wormedit::bms_branch_statement_edit_diagnostic_code_t::resource_limit);
+
+    auto invalid_selection = *imported.song;
+    invalid_selection.charts.front().active_branch_selection.push_back(
+        invalid_selection.charts.front().active_branch_selection.front());
+    const auto invalid_selection_result = wormedit::delete_bms_inactive_branch_statement(
+        invalid_selection, request_for(*inactive_leaf, *inactive));
+    expect_error(invalid_selection_result,
+                 wormedit::bms_branch_statement_edit_diagnostic_code_t::invalid_branch_selection);
+
+    auto ambiguous = *imported.song;
+    wormedit::bms_control_node_t* mutable_leaf{};
+    const auto find_mutable_leaf = [&](const auto& self,
+                                       wormedit::bms_control_node_t& node) -> void {
+        if (node.id == inactive_leaf->id) {
+            mutable_leaf = &node;
+            return;
+        }
+        for (auto& child : node.children) {
+            self(self, child);
+            if (mutable_leaf != nullptr) {
+                return;
+            }
+        }
+    };
+    find_mutable_leaf(find_mutable_leaf, *ambiguous.charts.front().bms_control_tree);
+    REQUIRE(mutable_leaf != nullptr);
+    mutable_leaf->children.push_back(mutable_leaf->children.front());
+    const auto ambiguous_result = wormedit::delete_bms_inactive_branch_statement(
+        ambiguous, request_for(*inactive_leaf, *inactive));
+    expect_error(ambiguous_result,
+                 wormedit::bms_branch_statement_edit_diagnostic_code_t::ambiguous_target);
+
+    auto invalid_span = *imported.song;
+    wormedit::bms_control_node_t* mutable_target{};
+    const auto find_mutable_target = [&](const auto& self,
+                                         wormedit::bms_control_node_t& node) -> void {
+        if (node.id == inactive->id) {
+            mutable_target = &node;
+            return;
+        }
+        for (auto& child : node.children) {
+            self(self, child);
+            if (mutable_target != nullptr) {
+                return;
+            }
+        }
+    };
+    find_mutable_target(find_mutable_target, *invalid_span.charts.front().bms_control_tree);
+    REQUIRE(mutable_target != nullptr);
+    mutable_target->source_span = {std::numeric_limits<std::size_t>::max() - 2,
+                                   std::numeric_limits<std::size_t>::max() - 1};
+    auto invalid_request = request_for(*inactive_leaf, *inactive);
+    invalid_request.expected_source_span = mutable_target->source_span;
+    const auto invalid_span_result =
+        wormedit::delete_bms_inactive_branch_statement(invalid_span, invalid_request);
+    expect_error(invalid_span_result,
+                 wormedit::bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch);
+
+    auto overlapping_span = *imported.song;
+    auto* mutable_random = const_cast<wormedit::bms_control_node_t*>(
+        control_node_at(*overlapping_span.charts.front().bms_control_tree, random->source_order));
+    REQUIRE(mutable_random != nullptr);
+    mutable_random->close_source_span = inactive->source_span;
+    const auto overlapping_result = wormedit::delete_bms_inactive_branch_statement(
+        overlapping_span, request_for(*inactive_leaf, *inactive));
+    expect_error(overlapping_result,
+                 wormedit::bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch);
+
+    auto conflicting_projection = *imported.song;
+    REQUIRE_FALSE(conflicting_projection.charts.front().measures.front().notes.empty());
+    conflicting_projection.charts.front().measures.front().notes.front().provenance.source_order =
+        inactive->source_order;
+    const auto conflicting_result = wormedit::delete_bms_inactive_branch_statement(
+        conflicting_projection, request_for(*inactive_leaf, *inactive));
+    expect_error(conflicting_result,
+                 wormedit::bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch);
+
+    auto multiple_charts = *imported.song;
+    auto second_chart = multiple_charts.charts.front();
+    second_chart.id = wormedit::chart_id_t{9'999};
+    multiple_charts.charts.push_back(std::move(second_chart));
+    const auto multiple_result = wormedit::delete_bms_inactive_branch_statement(
+        multiple_charts, request_for(*inactive_leaf, *inactive));
+    expect_error(multiple_result,
+                 wormedit::bms_branch_statement_edit_diagnostic_code_t::unsupported_song_shape);
+}
+
 TEST_CASE("BMS direct branch editing rejects stale active and structural targets",
           "[unit][format][bms][writer][branch][direct-edit]") {
     constexpr std::string_view source =

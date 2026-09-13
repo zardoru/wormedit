@@ -10,12 +10,16 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <optional>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #define WORMEDIT_MAX_VERTEX_MEMORY (512 * 1024)
@@ -35,6 +39,8 @@ static std::array<char, WORM_UI_METADATA_TITLE_BYTES + 1> g_metadata_title{};
 static std::array<char, WORM_UI_METADATA_TITLE_BYTES + 1> g_metadata_artist{};
 static std::array<char, WORM_UI_METADATA_CHART_TEXT_BYTES + 1> g_metadata_chart_name{};
 static std::array<char, WORM_UI_METADATA_CHART_TEXT_BYTES + 1> g_metadata_chart_author{};
+static std::array<char, 64> g_metadata_chart_rating_numerator{};
+static std::array<char, 64> g_metadata_chart_rating_denominator{};
 static std::vector<std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1>> g_metadata_search_tags;
 static std::vector<const char*> g_metadata_search_tag_pointers;
 static std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1> g_metadata_new_search_tag{};
@@ -102,6 +108,22 @@ static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
                            metadata->chart_name, metadata->chart_name_bytes) &&
         copy_metadata_text(g_metadata_chart_author.data(), g_metadata_chart_author.size(),
                            metadata->chart_author, metadata->chart_author_bytes);
+    g_metadata_chart_rating_numerator.fill('\0');
+    g_metadata_chart_rating_denominator.fill('\0');
+    if (metadata->has_chart) {
+        const auto numerator = metadata->has_chart_rating
+                                   ? std::to_string(metadata->chart_rating_numerator)
+                                   : std::string{};
+        const auto denominator = metadata->has_chart_rating
+                                     ? std::to_string(metadata->chart_rating_denominator)
+                                     : std::string{"1"};
+        (void)copy_metadata_text(g_metadata_chart_rating_numerator.data(),
+                                 g_metadata_chart_rating_numerator.size(), numerator.c_str(),
+                                 numerator.size());
+        (void)copy_metadata_text(g_metadata_chart_rating_denominator.data(),
+                                 g_metadata_chart_rating_denominator.size(), denominator.c_str(),
+                                 denominator.size());
+    }
     g_metadata_tag_buffers_valid =
         metadata->search_tags_editable &&
         metadata->search_tag_count <= WORM_UI_METADATA_SEARCH_TAG_CAPACITY &&
@@ -163,11 +185,72 @@ static int metadata_song_changed(const WormUiMetadataView* metadata) {
     return 0;
 }
 
+struct metadata_rating_value_t {
+    bool has_rating{};
+    int64_t numerator{};
+    uint64_t denominator{1};
+};
+
+static auto metadata_chart_rating_value(const WormUiMetadataView* metadata)
+    -> std::optional<metadata_rating_value_t> {
+    if (!metadata)
+        return std::nullopt;
+    const std::string_view numerator{g_metadata_chart_rating_numerator.data()};
+    const std::string_view denominator{g_metadata_chart_rating_denominator.data()};
+    if (numerator.empty() && !metadata->has_chart_rating && denominator == "1") {
+        return metadata_rating_value_t{};
+    }
+    if (numerator.empty() || denominator.empty() || numerator.size() > 21 ||
+        denominator.size() > 21) {
+        return std::nullopt;
+    }
+
+    const auto numerator_digits =
+        numerator.front() == '+' || numerator.front() == '-' ? numerator.substr(1) : numerator;
+    if (numerator_digits.empty() || numerator_digits.size() > 20)
+        return std::nullopt;
+    auto numerator_text = numerator;
+    if (numerator_text.front() == '+')
+        numerator_text.remove_prefix(1);
+    int64_t parsed_numerator{};
+    const auto numerator_result = std::from_chars(
+        numerator_text.data(), numerator_text.data() + numerator_text.size(), parsed_numerator, 10);
+    if (numerator_result.ec != std::errc{} ||
+        numerator_result.ptr != numerator_text.data() + numerator_text.size()) {
+        return std::nullopt;
+    }
+
+    auto denominator_text = denominator;
+    if (denominator_text.front() == '+')
+        denominator_text.remove_prefix(1);
+    if (denominator_text.empty() || denominator_text.size() > 20)
+        return std::nullopt;
+    uint64_t parsed_denominator{};
+    const auto denominator_result =
+        std::from_chars(denominator_text.data(), denominator_text.data() + denominator_text.size(),
+                        parsed_denominator, 10);
+    if (denominator_result.ec != std::errc{} ||
+        denominator_result.ptr != denominator_text.data() + denominator_text.size() ||
+        parsed_denominator == 0) {
+        return std::nullopt;
+    }
+    return metadata_rating_value_t{true, parsed_numerator, parsed_denominator};
+}
+
 static int metadata_chart_changed(const WormUiMetadataView* metadata) {
-    return metadata && metadata->has_chart && g_metadata_chart_buffers_valid &&
-           metadata->chart_name && metadata->chart_author &&
-           (strcmp(g_metadata_chart_name.data(), metadata->chart_name) != 0 ||
-            strcmp(g_metadata_chart_author.data(), metadata->chart_author) != 0);
+    if (!metadata || !metadata->has_chart || !g_metadata_chart_buffers_valid ||
+        !metadata->chart_name || !metadata->chart_author) {
+        return 0;
+    }
+    const bool text_changed = strcmp(g_metadata_chart_name.data(), metadata->chart_name) != 0 ||
+                              strcmp(g_metadata_chart_author.data(), metadata->chart_author) != 0;
+    const auto rating = metadata_chart_rating_value(metadata);
+    const bool rating_changed =
+        rating &&
+        (rating->has_rating != metadata->has_chart_rating ||
+         (rating->has_rating && (rating->numerator != metadata->chart_rating_numerator ||
+                                 rating->denominator != metadata->chart_rating_denominator)));
+    return text_changed || rating_changed;
 }
 
 static void metadata_input_row(const char* label, char* buffer, size_t capacity, int enabled) {
@@ -207,19 +290,25 @@ static void set_metadata_song_action(WormUiWorkspaceAction* action,
 }
 
 static void set_metadata_chart_action(WormUiWorkspaceAction* action,
-                                      const WormUiMetadataView* metadata) {
+                                      const WormUiMetadataView* metadata, int unset_rating) {
     if (!action || !metadata || action->metadata_edit != WORM_UI_METADATA_EDIT_NONE ||
         !metadata->has_chart || !g_metadata_chart_buffers_valid) {
         return;
     }
+    const auto rating = unset_rating ? std::optional<metadata_rating_value_t>{}
+                                     : metadata_chart_rating_value(metadata);
+    if (!unset_rating && !rating)
+        return;
     action->metadata_edit = WORM_UI_METADATA_EDIT_CHART;
     action->metadata_document_revision = metadata->document_revision;
     action->metadata_chart_id = metadata->chart_id;
     action->metadata_chart_name = g_metadata_chart_name.data();
     action->metadata_chart_author = g_metadata_chart_author.data();
-    action->metadata_has_chart_rating = metadata->has_chart_rating;
-    action->metadata_chart_rating_numerator = metadata->chart_rating_numerator;
-    action->metadata_chart_rating_denominator = metadata->chart_rating_denominator;
+    action->metadata_has_chart_rating = !unset_rating && rating->has_rating;
+    if (action->metadata_has_chart_rating) {
+        action->metadata_chart_rating_numerator_text = g_metadata_chart_rating_numerator.data();
+        action->metadata_chart_rating_denominator_text = g_metadata_chart_rating_denominator.data();
+    }
 }
 
 static const char* metadata_format_family_name(uint8_t family) {
@@ -409,18 +498,59 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
                            metadata->chart_fields_editable && g_metadata_chart_buffers_valid);
         metadata_input_row("Mapper", g_metadata_chart_author.data(), g_metadata_chart_author.size(),
                            metadata->chart_fields_editable && g_metadata_chart_buffers_valid);
+        nk_layout_row_dynamic(g_context, 24, 1);
+        nk_label(g_context, "Exact signed rational rating (stored without reduction)",
+                 NK_TEXT_LEFT);
+        const int rating_fields_editable =
+            metadata->chart_fields_editable && g_metadata_chart_buffers_valid;
+        metadata_input_row("Numerator", g_metadata_chart_rating_numerator.data(),
+                           g_metadata_chart_rating_numerator.size(), rating_fields_editable);
+        metadata_input_row("Denominator", g_metadata_chart_rating_denominator.data(),
+                           g_metadata_chart_rating_denominator.size(), rating_fields_editable);
+        const auto parsed_rating = metadata_chart_rating_value(metadata);
+        const bool rating_input_started =
+            g_metadata_chart_rating_numerator[0] != '\0' ||
+            strcmp(g_metadata_chart_rating_denominator.data(), "1") != 0;
+        if (!parsed_rating && (metadata->has_chart_rating || rating_input_started)) {
+            nk_layout_row_dynamic(g_context, 20, 1);
+            nk_label(g_context,
+                     "Use a signed 64-bit numerator and positive 64-bit denominator; values are "
+                     "not truncated or reduced.",
+                     NK_TEXT_LEFT);
+        }
         const int chart_changed = metadata_chart_changed(metadata);
-        nk_layout_row_dynamic(g_context, 26, 1);
-        if (!chart_changed || !metadata->chart_fields_editable) {
+        const int can_apply_chart = chart_changed && parsed_rating.has_value() &&
+                                    metadata->chart_fields_editable &&
+                                    g_metadata_chart_buffers_valid && action &&
+                                    action->metadata_edit == WORM_UI_METADATA_EDIT_NONE;
+        const int can_unset_rating = metadata->has_chart_rating &&
+                                     metadata->chart_fields_editable &&
+                                     g_metadata_chart_buffers_valid && action &&
+                                     action->metadata_edit == WORM_UI_METADATA_EDIT_NONE;
+        nk_layout_row_begin(g_context, NK_DYNAMIC, 26, 2);
+        nk_layout_row_push(g_context, 0.5f);
+        if (!can_apply_chart) {
             nk_widget_disable_begin(g_context);
         }
-        if (nk_button_label(g_context, "Apply difficulty metadata") && chart_changed &&
-            metadata->chart_fields_editable) {
-            set_metadata_chart_action(action, metadata);
-        }
-        if (!chart_changed || !metadata->chart_fields_editable) {
+        const int apply_chart = nk_button_label(g_context, "Apply difficulty metadata");
+        if (!can_apply_chart) {
             nk_widget_disable_end(g_context);
         }
+        if (apply_chart && can_apply_chart) {
+            set_metadata_chart_action(action, metadata, 0);
+        }
+        nk_layout_row_push(g_context, 0.5f);
+        if (!can_unset_rating) {
+            nk_widget_disable_begin(g_context);
+        }
+        const int unset_rating = nk_button_label(g_context, "Unset rating");
+        if (!can_unset_rating) {
+            nk_widget_disable_end(g_context);
+        }
+        if (unset_rating && can_unset_rating) {
+            set_metadata_chart_action(action, metadata, 1);
+        }
+        nk_layout_row_end(g_context);
     }
 
     nk_layout_row_dynamic(g_context, 24, 1);

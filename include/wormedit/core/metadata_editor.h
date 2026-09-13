@@ -36,6 +36,26 @@ struct set_chart_metadata_action_t {
     std::optional<signed_rational_t> rating;
 };
 
+struct chart_rating_edit_t {
+    chart_id_t chart;
+    std::optional<signed_rational_t> rating;
+};
+
+inline constexpr std::size_t metadata_rating_component_max_bytes = 21;
+
+// Parses exact base-10 components without reducing or otherwise changing the
+// signed rational. Numerators are signed 64-bit values; denominators are
+// positive 64-bit values.
+[[nodiscard]] auto parse_metadata_rating(std::string_view numerator, std::string_view denominator)
+    -> std::optional<signed_rational_t>;
+
+// Builds a rating-only edit. `unset` is the explicit clear operation; when
+// false, both numeric components must parse without truncation or overflow.
+[[nodiscard]] auto make_chart_rating_metadata_edit(chart_id_t chart, bool unset,
+                                                   std::string_view numerator,
+                                                   std::string_view denominator)
+    -> std::optional<chart_rating_edit_t>;
+
 // A null chart selects song-scoped metadata; otherwise the field belongs to
 // that difficulty. Indexes address exact occurrences, preserving duplicates.
 struct format_metadata_target_t {

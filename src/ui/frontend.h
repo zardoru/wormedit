@@ -169,8 +169,8 @@ typedef struct WormUiWorkspaceAction {
     uint64_t metadata_document_revision;
     uint64_t metadata_chart_id;
     bool metadata_has_chart_rating;
-    int64_t metadata_chart_rating_numerator;
-    uint64_t metadata_chart_rating_denominator;
+    const char* metadata_chart_rating_numerator_text;
+    const char* metadata_chart_rating_denominator_text;
     const char* metadata_title;
     const char* metadata_artist;
     const char* metadata_chart_name;

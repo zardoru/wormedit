@@ -217,6 +217,8 @@ auto native_project_recovery_controller_t::replace_scan(native_project_recovery_
         if (candidate.recovery_metadata.has_value()) {
             row.recovery_write_time = candidate.recovery_metadata->utc_write_time;
             row.recovery_session_sequence = candidate.recovery_metadata->session_sequence;
+            row.last_explicit_save_revision =
+                candidate.recovery_metadata->last_explicit_save_revision;
         }
         view_.rows.push_back(std::move(row));
         if (scan.preferred_recovery_candidate == candidate_index) {

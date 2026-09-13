@@ -60,6 +60,58 @@ TEST_CASE("normalized song and difficulty metadata edits are atomic and undoable
     CHECK(history.document.metadata.title == "Old title");
 }
 
+TEST_CASE("rating text parser preserves exact signed rational values within integer bounds",
+          "[unit][core][metadata-editor][rating]") {
+    CHECK(parse_metadata_rating("-6", "8") == signed_rational_t{-6, 8});
+    CHECK(parse_metadata_rating("+7", "+3") == signed_rational_t{7, 3});
+    CHECK(parse_metadata_rating("+7", "+18446744073709551615") == signed_rational_t{7, UINT64_MAX});
+    CHECK(parse_metadata_rating("-0", "0002") == signed_rational_t{0, 2});
+    CHECK(parse_metadata_rating("-9223372036854775808", "18446744073709551615") ==
+          signed_rational_t{INT64_MIN, UINT64_MAX});
+
+    CHECK_FALSE(parse_metadata_rating("", "1"));
+    CHECK_FALSE(parse_metadata_rating("+", "1"));
+    CHECK_FALSE(parse_metadata_rating("1", "0"));
+    CHECK_FALSE(parse_metadata_rating("1", "-2"));
+    CHECK_FALSE(parse_metadata_rating("9223372036854775808", "1"));
+    CHECK_FALSE(parse_metadata_rating("-9223372036854775809", "1"));
+    CHECK_FALSE(parse_metadata_rating("1", "18446744073709551616"));
+    CHECK_FALSE(parse_metadata_rating("1x", "2"));
+    CHECK_FALSE(parse_metadata_rating("1", "2 "));
+    CHECK_FALSE(parse_metadata_rating("000000000000000000000", "1"));
+}
+
+TEST_CASE("rating action helper supports exact set and explicit unset through revision checks",
+          "[unit][core][metadata-editor][rating]") {
+    const auto set = make_chart_rating_metadata_edit(chart_id_t{2}, false, "-9", "12");
+    REQUIRE(set);
+    CHECK(set->chart == chart_id_t{2});
+    CHECK(set->rating == signed_rational_t{-9, 12});
+    CHECK_FALSE(make_chart_rating_metadata_edit(chart_id_t{2}, false, "1", "0"));
+    CHECK_FALSE(make_chart_rating_metadata_edit(chart_id_t{}, true, "", ""));
+
+    auto history = make_document_history(metadata_song());
+    const set_chart_metadata_action_t apply_set{set->chart, "Staged name", "Staged mapper",
+                                                set->rating};
+    const auto stale = apply_metadata_edit(history, 3, apply_set);
+    CHECK_FALSE(stale.applied);
+    CHECK(has_error(stale));
+    CHECK_FALSE(history.document.charts.front().metadata.rating);
+
+    REQUIRE(apply_metadata_edit(history, 4, apply_set));
+    CHECK(history.document.charts.front().metadata.name == "Staged name");
+    CHECK(history.document.charts.front().metadata.author == "Staged mapper");
+    CHECK(history.document.charts.front().metadata.rating == signed_rational_t{-9, 12});
+    const auto unset = make_chart_rating_metadata_edit(chart_id_t{2}, true, "ignored", "0");
+    REQUIRE(unset);
+    const set_chart_metadata_action_t apply_unset{unset->chart, "Still staged", "Still mapper",
+                                                  unset->rating};
+    REQUIRE(apply_metadata_edit(history, 5, apply_unset));
+    CHECK(history.document.charts.front().metadata.name == "Still staged");
+    CHECK(history.document.charts.front().metadata.author == "Still mapper");
+    CHECK_FALSE(history.document.charts.front().metadata.rating);
+}
+
 TEST_CASE("format metadata keeps duplicate occurrences and source identities aligned",
           "[unit][core][metadata-editor]") {
     auto history = make_document_history(metadata_song());

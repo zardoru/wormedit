@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cerrno>
 #include <cstdint>
 #include <limits>
 #include <map>
@@ -15,6 +16,10 @@
 #include <tuple>
 #include <utility>
 
+#if defined(WORMEDIT_HAS_ICONV)
+#include <iconv.h>
+#endif
+
 namespace wormedit {
 namespace {
 
@@ -22,6 +27,12 @@ struct write_failure_t {
     bms_write_diagnostic_code_t code;
     std::string message;
     std::string path;
+};
+
+struct text_encode_result_t {
+    std::optional<std::string> bytes;
+    std::size_t error_offset{};
+    bool unsupported{};
 };
 
 [[noreturn]] auto fail(bms_write_diagnostic_code_t code, std::string message, std::string path)
@@ -33,6 +44,124 @@ auto warn(std::vector<bms_write_diagnostic_t>& diagnostics, bms_write_diagnostic
           std::string message, std::string path) -> void {
     diagnostics.push_back(
         {diagnostic_severity_t::warning, code, std::move(message), std::move(path)});
+}
+
+auto encoding_name(text_encoding_t encoding) -> std::string_view {
+    switch (encoding) {
+    case text_encoding_t::unknown:
+        return "unknown";
+    case text_encoding_t::ascii:
+        return "ASCII";
+    case text_encoding_t::utf8:
+        return "UTF-8";
+    case text_encoding_t::cp932:
+        return "CP932";
+    case text_encoding_t::euc_kr:
+        return "EUC-KR";
+    case text_encoding_t::cp949:
+        return "CP949";
+    case text_encoding_t::windows_1252:
+        return "Windows-1252";
+    }
+    return "unknown";
+}
+
+auto iconv_name(text_encoding_t encoding) -> std::optional<std::string_view> {
+    switch (encoding) {
+    case text_encoding_t::cp932:
+        return "CP932";
+    case text_encoding_t::euc_kr:
+        return "EUC-KR";
+    case text_encoding_t::cp949:
+        return "CP949";
+    case text_encoding_t::windows_1252:
+        return "WINDOWS-1252";
+    case text_encoding_t::unknown:
+    case text_encoding_t::ascii:
+    case text_encoding_t::utf8:
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+auto encode_normalized_bms(std::string_view utf8_with_bom, text_encoding_t encoding)
+    -> text_encode_result_t {
+    constexpr std::string_view utf8_bom = "\xef\xbb\xbf";
+    if (!utf8_with_bom.starts_with(utf8_bom)) {
+        return {.error_offset = 0};
+    }
+    if (encoding == text_encoding_t::utf8) {
+        return {.bytes = std::string(utf8_with_bom)};
+    }
+    const auto utf8 = utf8_with_bom.substr(utf8_bom.size());
+    if (encoding == text_encoding_t::ascii) {
+        for (std::size_t index = 0; index < utf8.size(); ++index) {
+            if (static_cast<unsigned char>(utf8[index]) > 0x7fU) {
+                return {.error_offset = index};
+            }
+        }
+        return {.bytes = std::string(utf8)};
+    }
+
+    const auto destination_name = iconv_name(encoding);
+    if (!destination_name.has_value()) {
+        return {.unsupported = true};
+    }
+#if defined(WORMEDIT_HAS_ICONV)
+    const auto converter = iconv_open(std::string(*destination_name).c_str(), "UTF-8");
+    if (converter == reinterpret_cast<iconv_t>(-1)) {
+        return {.unsupported = true};
+    }
+    const auto initial_capacity = utf8.size() > (std::numeric_limits<std::size_t>::max() - 32U) / 2U
+                                      ? std::numeric_limits<std::size_t>::max()
+                                      : std::max<std::size_t>(utf8.size() * 2U + 32U, 32U);
+    if (initial_capacity == std::numeric_limits<std::size_t>::max()) {
+        iconv_close(converter);
+        return {.error_offset = utf8.size()};
+    }
+    std::string output(initial_capacity, '\0');
+    auto* source = const_cast<char*>(utf8.data());
+    auto source_remaining = utf8.size();
+    std::size_t written{};
+    while (true) {
+        auto* destination = output.data() + written;
+        auto destination_remaining = output.size() - written;
+        errno = 0;
+        const auto status =
+            iconv(converter, &source, &source_remaining, &destination, &destination_remaining);
+        written = output.size() - destination_remaining;
+        if (status != static_cast<std::size_t>(-1)) {
+            break;
+        }
+        if (errno != E2BIG || output.size() > std::numeric_limits<std::size_t>::max() / 2U) {
+            const auto error_offset = utf8.size() - source_remaining;
+            iconv_close(converter);
+            return {.error_offset = error_offset};
+        }
+        output.resize(output.size() * 2U);
+    }
+    while (true) {
+        auto* destination = output.data() + written;
+        auto destination_remaining = output.size() - written;
+        errno = 0;
+        const auto status =
+            iconv(converter, nullptr, nullptr, &destination, &destination_remaining);
+        written = output.size() - destination_remaining;
+        if (status != static_cast<std::size_t>(-1)) {
+            break;
+        }
+        if (errno != E2BIG || output.size() > std::numeric_limits<std::size_t>::max() / 2U) {
+            iconv_close(converter);
+            return {.error_offset = utf8.size()};
+        }
+        output.resize(output.size() * 2U);
+    }
+    iconv_close(converter);
+    output.resize(written);
+    return {.bytes = std::move(output)};
+#else
+    return {.unsupported = true};
+#endif
 }
 
 auto base36_digit(char value) -> bool {
@@ -551,8 +680,8 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     }
     if (branch_tree.has_branches) {
         warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
-             "branch bodies remain source-backed; direct edits to branch-projected objects are "
-             "not applied by this writer slice",
+             "branch events, resources, ratios, and timing remain source-backed; direct edits to "
+             "those branch-projected objects are not applied by this writer slice",
              "$.charts[].bms_control_tree");
     }
     if (branch_tree.has_unmodeled_root_statement) {
@@ -1448,7 +1577,8 @@ auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_
                  "$.charts");
         }
 
-        if (options.preserve_unchanged_source && song.charts.size() == 1 &&
+        if (!options.output_encoding.has_value() && options.preserve_unchanged_source &&
+            song.charts.size() == 1 &&
             options.branch_policy == bms_branch_policy_t::preserve_tree) {
             if (const auto source = retained_source_bytes(song, *chart); source) {
                 result.bytes =
@@ -1456,7 +1586,26 @@ auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_
                 return result;
             }
         }
-        result.bytes = normalized_write(song, *chart, options, result.diagnostics);
+        auto normalized = normalized_write(song, *chart, options, result.diagnostics);
+        if (!options.output_encoding.has_value()) {
+            result.bytes = std::move(normalized);
+            return result;
+        }
+        auto encoded = encode_normalized_bms(normalized, *options.output_encoding);
+        if (encoded.unsupported) {
+            fail(bms_write_diagnostic_code_t::unsupported_encoding,
+                 "requested " + std::string(encoding_name(*options.output_encoding)) +
+                     " output encoding is unavailable",
+                 "$.output_encoding");
+        }
+        if (!encoded.bytes.has_value()) {
+            fail(bms_write_diagnostic_code_t::unrepresentable_text,
+                 "normalized BMS text cannot be represented as " +
+                     std::string(encoding_name(*options.output_encoding)) + " near UTF-8 byte " +
+                     std::to_string(encoded.error_offset),
+                 "$.output_encoding");
+        }
+        result.bytes = std::move(*encoded.bytes);
     } catch (const write_failure_t& failure) {
         result.diagnostics.push_back(
             {diagnostic_severity_t::error, failure.code, failure.message, failure.path});

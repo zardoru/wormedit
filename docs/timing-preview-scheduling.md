@@ -68,9 +68,18 @@ late renderer update cannot move a newer session. Video and storyboard entries
 remain ordered events for their later specialized renderers rather than persistent
 BMS layer state.
 
-Current bounds are deliberate: the index requires a positive BPM at row zero.
-Count-in before frame zero, scroll/speed evaluation, richer profile-specific
-boundary rules, concrete image/video/storyboard rendering, and SDL device
-integration remain subsequent timing-engine slices. The timing source fingerprint
-continues to reject stale preview schedules after timing or measure edits; callers
-still use document generation guards when publishing asynchronous work.
+`scroll_speed_index_t` compiles signed instantaneous scroll multipliers and
+nonnegative linear speed transitions into bounded row segments. Beat-duration
+transitions advance through warped musical rows and pause at stops; second-duration
+transitions advance through pauses and freeze inside warps. Exact cumulative
+quarter-note-beat displacement is preintegrated at timing, event, and transition
+boundaries, so a renderer can binary-seek a fractional row and recover both the
+effective multiplier and visual position without replaying earlier events. Source
+fingerprints cover both the timing index and authored scroll/speed tracks.
+
+Current bounds are deliberate: the timing index requires a positive BPM at row
+zero. Count-in before frame zero, richer profile-specific boundary rules, concrete
+image/video/storyboard rendering, and SDL device integration remain subsequent
+timing-engine slices. The timing source fingerprint continues to reject stale
+preview schedules after timing or measure edits; callers still use document
+generation guards when publishing asynchronous work.

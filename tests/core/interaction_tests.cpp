@@ -387,6 +387,213 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
     CHECK(state.selected_notes.empty());
 }
 
+TEST_CASE("Space range selection previews inclusive cross-measure heads, tails, and bodies",
+          "[unit][core][interaction][selection][space]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout.lanes.push_back(
+        {.id = lane_id_t{3}, .name = "Key 2", .display_order = 2});
+    chart.measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102},
+         .position = {measure_id_t{1}, 480},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{2}, 240}},
+        {.id = object_id_t{103},
+         .position = {measure_id_t{1}, 720},
+         .lane = lane_id_t{2},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{2}, 0}},
+        {.id = object_id_t{105},
+         .position = {measure_id_t{1}, 120},
+         .lane = lane_id_t{3},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{2}, 400}},
+    };
+    chart.measures.back().notes = {
+        {.id = object_id_t{104}, .position = {measure_id_t{2}, 240}, .lane = lane_id_t{2}},
+    };
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{4ULL};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                         {measure_id_t{1}, 480}, snaps, 4, 300.0);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+    REQUIRE(
+        dispatch_editor_action(history, state, select_editor_notes_action_t{{object_id_t{101}}}));
+
+    const auto armed = dispatch_editor_action(
+        history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
+    REQUIRE(armed);
+    REQUIRE(armed.view->pending_space_range_selection.has_value());
+    CHECK(armed.view->pending_space_range_selection->anchor ==
+          local_position_t{measure_id_t{1}, 480});
+    CHECK(*armed.view->pending_space_range_selection->notes ==
+          std::vector<object_id_t>{object_id_t{102}, object_id_t{105}});
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+    CHECK(history.document.revision == 1);
+
+    const auto extended = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    REQUIRE(extended);
+    REQUIRE(extended.view->pending_space_range_selection.has_value());
+    CHECK(extended.view->cursor == local_position_t{measure_id_t{1}, 720});
+    CHECK(extended.view->pending_space_range_selection->first_row == 480);
+    CHECK(extended.view->pending_space_range_selection->last_row == 720);
+    CHECK(*extended.view->pending_space_range_selection->notes ==
+          std::vector<object_id_t>{object_id_t{102}, object_id_t{103}, object_id_t{105}});
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+
+    const auto committed = dispatch_editor_action(
+        history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
+    REQUIRE(committed);
+    CHECK(committed.view->selected_notes ==
+          std::vector<object_id_t>{object_id_t{102}, object_id_t{103}, object_id_t{105}});
+    CHECK_FALSE(committed.view->pending_space_range_selection.has_value());
+    CHECK_FALSE(committed.document_changed);
+    CHECK(history.document.revision == 1);
+
+    // Start later in the chart and move backward. The inclusive reversed range
+    // touches both short hold tails, the long hold body, and a tap head.
+    REQUIRE(dispatch_editor_action(history, state,
+                                   move_edit_cursor_action_t{interaction_direction_t::forward}));
+    REQUIRE(dispatch_editor_action(history, state,
+                                   move_edit_cursor_action_t{interaction_direction_t::forward}));
+    CHECK(state.cursor == local_position_t{measure_id_t{2}, 240});
+    const auto reverse_armed = dispatch_editor_action(
+        history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
+    REQUIRE(reverse_armed);
+    CHECK(*reverse_armed.view->pending_space_range_selection->notes ==
+          std::vector<object_id_t>{object_id_t{102}, object_id_t{104}, object_id_t{105}});
+    const auto reversed = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
+    REQUIRE(reversed);
+    CHECK(reversed.view->cursor == local_position_t{measure_id_t{2}, 0});
+    CHECK(reversed.view->pending_space_range_selection->first_row == 960);
+    CHECK(reversed.view->pending_space_range_selection->last_row == 1200);
+    CHECK(*reversed.view->pending_space_range_selection->notes ==
+          std::vector<object_id_t>{object_id_t{102}, object_id_t{103}, object_id_t{104},
+                                   object_id_t{105}});
+    const auto reverse_committed = dispatch_editor_action(
+        history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
+    REQUIRE(reverse_committed);
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{102}, object_id_t{103},
+                                                           object_id_t{104}, object_id_t{105}});
+}
+
+TEST_CASE("Space range selection supports add and toggle and cancels safely",
+          "[unit][core][interaction][selection][space][cancel]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
+    };
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{4ULL, 8ULL};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                         {measure_id_t{1}, 240}, snaps, 4, 192.0);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+    REQUIRE(
+        dispatch_editor_action(history, state, select_editor_notes_action_t{{object_id_t{101}}}));
+
+    REQUIRE(dispatch_editor_action(
+        history, state, space_range_selection_action_t{editor_area_selection_mode_t::add}));
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+    const auto finer_snap = dispatch_editor_action(
+        history, state, cycle_edit_snap_action_t{interaction_direction_t::forward});
+    REQUIRE(finer_snap);
+    CHECK(finer_snap.view->active_snap_denominator == 8);
+    CHECK(finer_snap.view->pending_space_range_selection->anchor ==
+          local_position_t{measure_id_t{1}, 240});
+    CHECK(finer_snap.view->pending_space_range_selection->first_row == 240);
+    CHECK(finer_snap.view->pending_space_range_selection->last_row == 240);
+    const auto first_step = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    REQUIRE(first_step);
+    CHECK(first_step.view->cursor == local_position_t{measure_id_t{1}, 360});
+    CHECK(*first_step.view->pending_space_range_selection->notes ==
+          std::vector<object_id_t>{object_id_t{101}});
+    const auto second_step = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    REQUIRE(second_step);
+    CHECK(second_step.view->cursor == local_position_t{measure_id_t{1}, 480});
+    CHECK(*second_step.view->pending_space_range_selection->notes ==
+          std::vector<object_id_t>{object_id_t{101}, object_id_t{102}});
+    const auto added = dispatch_editor_action(
+        history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
+    REQUIRE(added);
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}, object_id_t{102}});
+
+    REQUIRE(dispatch_editor_action(
+        history, state, space_range_selection_action_t{editor_area_selection_mode_t::toggle}));
+    REQUIRE(dispatch_editor_action(history, state,
+                                   move_edit_cursor_action_t{interaction_direction_t::backward}));
+    REQUIRE(dispatch_editor_action(history, state,
+                                   move_edit_cursor_action_t{interaction_direction_t::backward}));
+    const auto toggled = dispatch_editor_action(
+        history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
+    REQUIRE(toggled);
+    CHECK(state.selected_notes.empty());
+
+    REQUIRE(
+        dispatch_editor_action(history, state, select_editor_notes_action_t{{object_id_t{101}}}));
+    REQUIRE(dispatch_editor_action(
+        history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace}));
+    const auto cancelled = dispatch_editor_action(
+        history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost});
+    REQUIRE(cancelled);
+    CHECK_FALSE(state.pending_space_range_selection.has_value());
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+
+    REQUIRE(dispatch_editor_action(
+        history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace}));
+    auto external_edit = history.document;
+    external_edit.charts.front().lane_layouts.front().layout.display_name = "Changed layout";
+    REQUIRE(commit_document_command(history, std::move(external_edit), "Change lane layout"));
+    const auto stale = dispatch_editor_action(
+        history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
+    CHECK_FALSE(stale);
+    CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+    CHECK(state.pending_space_range_selection.has_value());
+    REQUIRE(dispatch_editor_action(
+        history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::escape}));
+    CHECK_FALSE(state.pending_space_range_selection.has_value());
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+}
+
+TEST_CASE("Space range selection uses span indexes for a sparse 50k-note chart",
+          "[unit][core][interaction][selection][space][stress]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.divisions_per_standard_measure = 100'000;
+    chart.measures.front().notes.reserve(50'000);
+    for (std::uint64_t note = 0; note < 50'000; ++note) {
+        chart.measures.front().notes.push_back({
+            .id = object_id_t{1'000 + note},
+            .position = {measure_id_t{1}, note * 2},
+            .lane = lane_id_t{1},
+        });
+    }
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{4ULL};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                         {measure_id_t{1}, 24'000}, snaps, 4, 1200.0);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+    const auto selected = dispatch_editor_action(
+        history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
+    REQUIRE(selected);
+    REQUIRE(selected.view->pending_space_range_selection.has_value());
+    CHECK(*selected.view->pending_space_range_selection->notes ==
+          std::vector<object_id_t>{object_id_t{13'000}});
+    CHECK(state.selected_notes.empty());
+}
+
 TEST_CASE("area selection maps through zoom and scroll and intersects cross-measure hold bodies",
           "[unit][core][interaction][selection][area][mapping]") {
     auto song = make_song();

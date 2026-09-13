@@ -19,6 +19,8 @@ enum class timing_error_code_t {
     invalid_bpm,
     invalid_pause,
     invalid_warp,
+    invalid_scroll,
+    invalid_speed,
     arithmetic_overflow,
     position_out_of_range,
     negative_sample_frame,
@@ -145,6 +147,115 @@ struct sample_frame_result_t {
 [[nodiscard]] auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
                                        timing_inverse_options_t options = {})
     -> timing_position_query_result_t;
+
+// Scroll events set an instantaneous signed multiplier. Zero stops chart
+// motion and negative values reverse it. Speed events set a nonnegative
+// multiplier, optionally interpolated linearly over beats or elapsed chart
+// seconds. Beat transitions advance through warped musical rows and pause
+// during stops; second transitions advance during stops and pause inside
+// warps. Event-side queries include events at their row, while before_delays
+// queries see the state arriving at that row.
+struct scroll_curve_segment_t {
+    std::uint64_t begin_row{};
+    std::uint64_t end_row{};
+    signed_rational_t multiplier{1, 1};
+    object_id_t source_event;
+    std::size_t source_order{};
+};
+
+struct speed_curve_segment_t {
+    std::uint64_t begin_row{};
+    std::uint64_t end_row{};
+    signed_rational_t begin_seconds;
+    signed_rational_t initial_multiplier{1, 1};
+    signed_rational_t target_multiplier{1, 1};
+    rational_t transition_duration{};
+    bool transition_is_seconds{};
+    object_id_t source_event;
+    std::size_t source_order{};
+};
+
+struct scroll_displacement_segment_t {
+    signed_rational_t begin_row;
+    signed_rational_t end_row;
+    signed_rational_t cumulative_begin_beats;
+    signed_rational_t scroll_multiplier{1, 1};
+    signed_rational_t speed_begin_multiplier{1, 1};
+    bool warped{};
+};
+
+struct scroll_speed_index_t {
+    std::uint64_t divisions_per_standard_measure{};
+    std::uint64_t total_rows{};
+    std::uint64_t timing_source_fingerprint{};
+    std::uint64_t source_fingerprint{};
+    // Segments are ordered by start row, source order, source insertion order,
+    // then stable object ID. Multiple events at one row intentionally create
+    // zero-width segments; binary search selects the last one for event-side
+    // evaluation and skips all of them for before_delays evaluation.
+    std::vector<scroll_curve_segment_t> scroll_segments;
+    std::vector<speed_curve_segment_t> speed_segments;
+    // Integral of scroll * speed over quarter-beat distance from row zero.
+    // Stops add no distance and warp spans are skipped. It is precompiled at
+    // timing/event/transition boundaries, so arbitrary chart-play seeks need
+    // one binary search and one exact local integral.
+    std::vector<scroll_displacement_segment_t> displacement_segments;
+    signed_rational_t total_displacement_beats{};
+};
+
+struct scroll_speed_build_options_t {
+    std::size_t maximum_events{200'000};
+    std::size_t maximum_timing_boundaries{100'000};
+    std::size_t maximum_segments{200'001};
+};
+
+struct scroll_speed_build_result_t {
+    std::optional<scroll_speed_index_t> index;
+    std::vector<timing_diagnostic_t> diagnostics;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return index.has_value();
+    }
+};
+
+struct scroll_speed_state_t {
+    signed_rational_t scroll_multiplier{1, 1};
+    signed_rational_t speed_multiplier{1, 1};
+    signed_rational_t effective_multiplier{1, 1};
+    signed_rational_t displacement_beats{};
+    // Convenience value for renderers. It is derived only after exact checked
+    // evaluation and is guaranteed finite on success.
+    double render_multiplier{1.0};
+    double render_displacement_beats{};
+};
+
+struct scroll_speed_query_result_t {
+    std::optional<scroll_speed_state_t> state;
+    std::optional<timing_diagnostic_t> error;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return state.has_value();
+    }
+};
+
+[[nodiscard]] auto build_scroll_speed_index(const chart_document_t& chart,
+                                            const timing_index_t& timing,
+                                            scroll_speed_build_options_t options = {})
+    -> scroll_speed_build_result_t;
+
+// Recompute the stored source hash once when a chart revision is published or
+// a cached evaluator is reused; this is O(scroll + speed events), so it should
+// not be called in a per-frame render loop.
+[[nodiscard]] auto scroll_speed_index_matches(const scroll_speed_index_t& index,
+                                              const chart_document_t& chart,
+                                              const timing_index_t& timing) -> bool;
+
+// The absolute row may be fractional, which lets playback and rendering query
+// the same compiled curves between authored grid positions.
+[[nodiscard]] auto scroll_speed_at(const scroll_speed_index_t& index, const timing_index_t& timing,
+                                   signed_rational_t absolute_row,
+                                   timing_boundary_side_t side = timing_boundary_side_t::event)
+    -> scroll_speed_query_result_t;
 
 [[nodiscard]] auto
 sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,

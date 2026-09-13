@@ -176,6 +176,58 @@ auto position_at_row_y_pixels(const chart_document_t& chart, const measure_index
     return row ? position_at(index, *row) : std::nullopt;
 }
 
+auto notes_in_row_range(const chart_document_t& chart, const editor_hit_test_index_t& index,
+                        std::uint64_t first_row, std::uint64_t last_row)
+    -> std::variant<std::vector<object_id_t>, diagnostic_list_t> {
+    if (index.chart != chart.id || index.measures.total_rows == 0 || first_row > last_row ||
+        last_row >= index.measures.total_rows ||
+        index.measure_buckets.size() != index.measures.entries.size() ||
+        index.note_span_tree_leaf_base == 0 ||
+        index.note_span_tree_leaf_base < index.note_spans.size() ||
+        index.note_span_tree_leaf_base > std::numeric_limits<std::size_t>::max() / 2 ||
+        index.note_span_tree_max_end.size() != index.note_span_tree_leaf_base * 2) {
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
+                                       "Space range selection index or row interval is invalid")};
+    }
+
+    const auto after_candidates = std::ranges::upper_bound(index.note_spans, last_row, {},
+                                                           &editor_note_span_entry_t::begin_row);
+    const auto candidate_count =
+        static_cast<std::size_t>(std::distance(index.note_spans.begin(), after_candidates));
+    std::vector<object_id_t> selected;
+    const auto visit = [&](auto&& self, std::size_t node, std::size_t first,
+                           std::size_t last) -> void {
+        if (first >= candidate_count || index.note_span_tree_max_end[node] < first_row) {
+            return;
+        }
+        if (last - first == 1) {
+            if (first >= index.note_spans.size()) {
+                return;
+            }
+            const auto& span = index.note_spans[first];
+            if (span.begin_row > last_row || span.end_row < first_row) {
+                return;
+            }
+            const auto head_position = position_at(index.measures, span.begin_row);
+            if (head_position.has_value() &&
+                find_active_lane(chart, index.measures, *head_position, span.lane) != nullptr) {
+                // A hold is selected when any part of its inclusive musical span
+                // intersects the range: head, tail, or the body between them.
+                selected.push_back(span.note);
+            }
+            return;
+        }
+        const auto middle = first + (last - first) / 2;
+        self(self, node * 2, first, middle);
+        self(self, node * 2 + 1, middle, last);
+    };
+    if (candidate_count != 0) {
+        visit(visit, 1, 0, index.note_span_tree_leaf_base);
+    }
+    std::ranges::sort(selected, {}, &object_id_t::value);
+    return selected;
+}
+
 auto make_view(const document_history_t& history, const editor_interaction_state_t& state)
     -> std::variant<editor_interaction_view_model_t, diagnostic_list_t> {
     const auto* chart = find_chart(history.document, state.chart);
@@ -214,6 +266,39 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         state.viewport_scroll_pixels < 0.0 || state.viewport_scroll_pixels > *maximum_scroll) {
         return diagnostic_list_t{
             error(diagnostic_code_t::invalid_resolution, "editor viewport geometry is invalid")};
+    }
+
+    std::optional<space_range_selection_preview_t> space_range_preview;
+    if (state.pending_space_range_selection.has_value()) {
+        const auto& pending = *state.pending_space_range_selection;
+        if (pending.document_revision != history.document.revision ||
+            pending.hit_index == nullptr ||
+            pending.hit_index->document_revision != history.document.revision ||
+            pending.hit_index->chart != chart->id) {
+            return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
+                                           "Space range selection is stale after a document edit")};
+        }
+        const auto anchor_row = absolute_row(index, pending.anchor);
+        if (!anchor_row.has_value()) {
+            return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
+                                           "Space range anchor lies outside chart geometry")};
+        }
+        const auto first_row = std::min(*anchor_row, *absolute);
+        const auto last_row = std::max(*anchor_row, *absolute);
+        auto queried = notes_in_row_range(*chart, *pending.hit_index, first_row, last_row);
+        if (std::holds_alternative<diagnostic_list_t>(queried)) {
+            return std::get<diagnostic_list_t>(std::move(queried));
+        }
+        space_range_preview = space_range_selection_preview_t{
+            .document_revision = pending.document_revision,
+            .anchor = pending.anchor,
+            .cursor = state.cursor,
+            .first_row = first_row,
+            .last_row = last_row,
+            .mode = pending.mode,
+            .notes = std::make_shared<const std::vector<object_id_t>>(
+                std::move(std::get<std::vector<object_id_t>>(queried))),
+        };
     }
 
     const auto step = chart->divisions_per_standard_measure / state.active_snap_denominator;
@@ -255,6 +340,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
                       .notes = state.pending_editor_area_selection->notes,
                   }}
                 : std::nullopt,
+        .pending_space_range_selection = std::move(space_range_preview),
         .selected_notes = state.selected_notes,
         .can_move_backward = *absolute >= step,
         .can_move_forward = step < index.total_rows - *absolute,
@@ -1306,6 +1392,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         state.pending_note_duration_gesture.reset();
         state.pending_note_paint_gesture.reset();
         state.pending_editor_area_selection.reset();
+        state.pending_space_range_selection.reset();
         const auto recovered_view = make_view(history, state);
         return {
             .accepted = true,
@@ -1342,6 +1429,12 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                ? std::get<diagnostic_list_t>(recovered_view)
                                : diagnostic_list_t{},
         };
+    }
+    if (state.pending_space_range_selection.has_value() &&
+        state.pending_space_range_selection->document_revision != history.document.revision) {
+        return diagnostic_result(history, state,
+                                 {error(diagnostic_code_t::invalid_hold,
+                                        "Space range selection is stale after a document edit")});
     }
     if (state.pending_hold.has_value() && state.pending_hold->gesture_source.has_value()) {
         const auto source = *state.pending_hold->gesture_source;
@@ -1382,6 +1475,17 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
             history, state,
             {error(diagnostic_code_t::invalid_hold,
                    "finish or cancel the active area selection gesture first")});
+    }
+    if (state.pending_space_range_selection.has_value() &&
+        !std::holds_alternative<space_range_selection_action_t>(action) &&
+        !std::holds_alternative<move_edit_cursor_action_t>(action) &&
+        !std::holds_alternative<cycle_edit_snap_action_t>(action) &&
+        !std::holds_alternative<adjust_editor_zoom_action_t>(action) &&
+        !std::holds_alternative<scroll_editor_view_action_t>(action)) {
+        return diagnostic_result(
+            history, state,
+            {error(diagnostic_code_t::invalid_hold,
+                   "finish or cancel the active Space range selection first")});
     }
     const auto initial_view = make_view(history, state);
     if (std::holds_alternative<diagnostic_list_t>(initial_view)) {
@@ -2601,6 +2705,76 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                              typed_action.pointer_captured);
             } else if constexpr (std::is_same_v<action_t, cancel_editor_area_selection_action_t>) {
                 return {};
+            } else if constexpr (std::is_same_v<action_t, space_range_selection_action_t>) {
+                if (!state.pending_space_range_selection.has_value()) {
+                    if (typed_action.mode != editor_area_selection_mode_t::replace &&
+                        typed_action.mode != editor_area_selection_mode_t::add &&
+                        typed_action.mode != editor_area_selection_mode_t::toggle) {
+                        return diagnostic_result(history, state,
+                                                 {error(diagnostic_code_t::invalid_id,
+                                                        "unknown Space range selection mode")});
+                    }
+                    auto built = build_editor_hit_test_index(*chart, history.document.revision);
+                    if (std::holds_alternative<diagnostic_list_t>(built)) {
+                        return diagnostic_result(history, state,
+                                                 std::get<diagnostic_list_t>(std::move(built)));
+                    }
+                    state.pending_space_range_selection = pending_space_range_selection_t{
+                        .document_revision = history.document.revision,
+                        .hit_index = std::make_shared<editor_hit_test_index_t>(
+                            std::move(std::get<editor_hit_test_index_t>(built))),
+                        .anchor = state.cursor,
+                        .mode = typed_action.mode,
+                    };
+                    const auto next_view = make_view(history, state);
+                    return {
+                        .accepted =
+                            std::holds_alternative<editor_interaction_view_model_t>(next_view),
+                        .view = std::holds_alternative<editor_interaction_view_model_t>(next_view)
+                                    ? std::optional{std::get<editor_interaction_view_model_t>(
+                                          next_view)}
+                                    : std::nullopt,
+                        .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
+                                           ? std::get<diagnostic_list_t>(next_view)
+                                           : diagnostic_list_t{},
+                    };
+                }
+                const auto pending = *state.pending_space_range_selection;
+                if (pending.hit_index == nullptr ||
+                    pending.document_revision != history.document.revision ||
+                    pending.hit_index->document_revision != history.document.revision) {
+                    return diagnostic_result(
+                        history, state,
+                        {error(diagnostic_code_t::invalid_hold,
+                               "Space range selection is stale after a document edit")});
+                }
+                const auto& current_view = std::get<editor_interaction_view_model_t>(initial_view);
+                if (!current_view.pending_space_range_selection.has_value() ||
+                    current_view.pending_space_range_selection->notes == nullptr) {
+                    return diagnostic_result(
+                        history, state,
+                        {error(diagnostic_code_t::invalid_hold,
+                               "Space range preview is unavailable for commit")});
+                }
+                auto combined = combine_area_selection(
+                    *current_view.pending_space_range_selection->notes, pending.mode);
+                if (std::holds_alternative<diagnostic_list_t>(combined)) {
+                    return diagnostic_result(history, state,
+                                             std::get<diagnostic_list_t>(std::move(combined)));
+                }
+                state.selected_notes = std::move(std::get<std::vector<object_id_t>>(combined));
+                state.pending_space_range_selection.reset();
+                const auto next_view = make_view(history, state);
+                return {
+                    .accepted = std::holds_alternative<editor_interaction_view_model_t>(next_view),
+                    .view =
+                        std::holds_alternative<editor_interaction_view_model_t>(next_view)
+                            ? std::optional{std::get<editor_interaction_view_model_t>(next_view)}
+                            : std::nullopt,
+                    .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
+                                       ? std::get<diagnostic_list_t>(next_view)
+                                       : diagnostic_list_t{},
+                };
             } else if constexpr (std::is_same_v<action_t, cancel_editor_gesture_action_t>) {
                 return {};
             } else if constexpr (std::is_same_v<action_t, select_editor_notes_action_t>) {

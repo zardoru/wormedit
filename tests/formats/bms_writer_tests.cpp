@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <span>
 #include <string>
 #include <string_view>
@@ -82,6 +83,96 @@ TEST_CASE("BMS writer preserves unchanged source bytes exactly", "[unit][format]
     REQUIRE(written.bytes.has_value());
     CHECK(*written.bytes == source);
     CHECK_FALSE(written.has_errors());
+
+    wormedit::bms_write_options_t normalized_options;
+    normalized_options.lane_profile_id = "bme-7k-outside-scratch";
+    normalized_options.output_encoding = wormedit::text_encoding_t::ascii;
+    const auto normalized = wormedit::write_bms(*imported.song, normalized_options);
+    REQUIRE(normalized.bytes.has_value());
+    CHECK_FALSE(normalized.has_errors());
+    CHECK(*normalized.bytes != source);
+    CHECK(normalized.bytes->find('\r') == std::string::npos);
+}
+
+TEST_CASE("BMS writer selects normalized UTF-8 or ASCII output explicitly",
+          "[unit][format][bms][writer][encoding]") {
+    auto imported = simple_chart();
+    REQUIRE(imported.song.has_value());
+
+    wormedit::bms_write_options_t options;
+    options.lane_profile_id = "bme-7k-outside-scratch";
+    options.output_encoding = wormedit::text_encoding_t::ascii;
+    const auto ascii = wormedit::write_bms(*imported.song, options);
+    REQUIRE(ascii.bytes.has_value());
+    CHECK_FALSE(ascii.has_errors());
+    CHECK_FALSE(ascii.bytes->starts_with("\xef\xbb\xbf"));
+    const auto reparsed_ascii = parse(*ascii.bytes, {.lane_profile_id = options.lane_profile_id});
+    REQUIRE(reparsed_ascii.song.has_value());
+    CHECK(reparsed_ascii.encoding.detected == wormedit::text_encoding_t::ascii);
+    CHECK(reparsed_ascii.song->metadata.title == "Original title");
+
+    auto unicode_song = *imported.song;
+    unicode_song.metadata.title = "Snow / 雪";
+    options.output_encoding = wormedit::text_encoding_t::utf8;
+    const auto utf8 = wormedit::write_bms(unicode_song, options);
+    REQUIRE(utf8.bytes.has_value());
+    CHECK_FALSE(utf8.has_errors());
+    CHECK(utf8.bytes->starts_with("\xef\xbb\xbf"));
+    const auto reparsed_utf8 = parse(*utf8.bytes, {.lane_profile_id = options.lane_profile_id});
+    REQUIRE(reparsed_utf8.song.has_value());
+    CHECK(reparsed_utf8.encoding.detected == wormedit::text_encoding_t::utf8);
+    CHECK(reparsed_utf8.song->metadata.title == "Snow / 雪");
+
+    options.output_encoding = wormedit::text_encoding_t::ascii;
+    const auto unrepresentable = wormedit::write_bms(unicode_song, options);
+    CHECK_FALSE(unrepresentable.bytes.has_value());
+    CHECK(has_error(unrepresentable, wormedit::bms_write_diagnostic_code_t::unrepresentable_text));
+
+    options.output_encoding = wormedit::text_encoding_t::unknown;
+    const auto unknown = wormedit::write_bms(*imported.song, options);
+    CHECK_FALSE(unknown.bytes.has_value());
+    CHECK(has_error(unknown, wormedit::bms_write_diagnostic_code_t::unsupported_encoding));
+}
+
+TEST_CASE("BMS writer round-trips each available selected legacy output encoding",
+          "[unit][format][bms][writer][encoding]") {
+    auto imported = simple_chart();
+    REQUIRE(imported.song.has_value());
+    struct legacy_case_t {
+        wormedit::text_encoding_t encoding;
+        std::string_view title;
+    };
+    constexpr std::array cases{
+        legacy_case_t{wormedit::text_encoding_t::cp932, "日本語譜面"},
+        legacy_case_t{wormedit::text_encoding_t::euc_kr, "한국어"},
+        legacy_case_t{wormedit::text_encoding_t::cp949, "뷁"},
+        legacy_case_t{wormedit::text_encoding_t::windows_1252, "Café – résumé"},
+    };
+    for (const auto& test : cases) {
+        CAPTURE(static_cast<int>(test.encoding));
+        auto song = *imported.song;
+        song.metadata.title = test.title;
+        wormedit::bms_write_options_t options;
+        options.lane_profile_id = "bme-7k-outside-scratch";
+        options.output_encoding = test.encoding;
+        const auto written = wormedit::write_bms(song, options);
+        if (!wormedit::is_bms_text_encoding_supported(test.encoding)) {
+            CHECK_FALSE(written.bytes.has_value());
+            CHECK(has_error(written, wormedit::bms_write_diagnostic_code_t::unsupported_encoding));
+            continue;
+        }
+        REQUIRE(written.bytes.has_value());
+        CHECK_FALSE(written.has_errors());
+        CHECK_FALSE(written.bytes->starts_with("\xef\xbb\xbf"));
+
+        wormedit::bms_parse_options_t parse_options;
+        parse_options.encoding_override = test.encoding;
+        parse_options.lane_profile_id = options.lane_profile_id;
+        const auto reparsed = parse(*written.bytes, std::move(parse_options));
+        REQUIRE(reparsed.song.has_value());
+        CHECK_FALSE(reparsed.has_errors());
+        CHECK(reparsed.song->metadata.title == test.title);
+    }
 }
 
 TEST_CASE("BMS writer emits ordered metadata, exact measures, resources, and taps",
@@ -622,6 +713,7 @@ TEST_CASE("BMS writer edits projected metadata in place across branch choices",
     wormedit::bms_write_options_t write_options;
     write_options.lane_profile_id = "bme-7k-outside-scratch";
     write_options.preserve_unchanged_source = false;
+    write_options.output_encoding = wormedit::text_encoding_t::ascii;
     const auto first_written = wormedit::write_bms(*first.song, write_options);
     REQUIRE(first_written.bytes.has_value());
     CHECK_FALSE(first_written.has_errors());

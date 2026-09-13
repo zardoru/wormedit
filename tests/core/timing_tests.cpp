@@ -399,3 +399,252 @@ TEST_CASE("fifty-thousand-note preview compilation stays within the interaction 
     }
     CHECK(milliseconds < 500);
 }
+
+TEST_CASE("scroll and speed evaluation is exact, composable, and seekable",
+          "[unit][core][timing][scroll-speed]") {
+    auto chart = base_chart();
+    chart.beat_zero_audio_offset_seconds = {};
+    chart.scrolls = {
+        {.id = object_id_t{30},
+         .position = {measure_id_t{1}, 240},
+         .multiplier = {-2, 1},
+         .provenance = {.source_order = 20}},
+        {.id = object_id_t{31},
+         .position = {measure_id_t{1}, 240},
+         .multiplier = {0, 1},
+         .provenance = {.source_order = 10}},
+    };
+    chart.speeds = {
+        {.id = object_id_t{32},
+         .position = {measure_id_t{1}, 0},
+         .multiplier = {3, 1},
+         .transition_beats = {2, 1}},
+        {.id = object_id_t{33},
+         .position = {measure_id_t{1}, 480},
+         .multiplier = {0, 1},
+         .transition_beats = {2, 1}},
+    };
+
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+    const auto built = build_scroll_speed_index(chart, *timing.index);
+    REQUIRE(built);
+    CHECK(scroll_speed_index_matches(*built.index, chart, *timing.index));
+
+    const auto midpoint = scroll_speed_at(*built.index, *timing.index, {120, 1});
+    REQUIRE(midpoint);
+    CHECK(midpoint.state->speed_multiplier == signed_rational_t{3, 2});
+    CHECK(midpoint.state->displacement_beats == signed_rational_t{5, 8});
+
+    const auto row_240_before = scroll_speed_at(*built.index, *timing.index, {240, 1},
+                                                timing_boundary_side_t::before_delays);
+    const auto row_240 = scroll_speed_at(*built.index, *timing.index, {240, 1});
+    REQUIRE(row_240_before);
+    REQUIRE(row_240);
+    CHECK(row_240_before.state->scroll_multiplier == signed_rational_t{1, 1});
+    CHECK(row_240.state->scroll_multiplier == signed_rational_t{-2, 1});
+    CHECK(row_240.state->speed_multiplier == signed_rational_t{2, 1});
+    CHECK(row_240.state->effective_multiplier == signed_rational_t{-4, 1});
+    CHECK(row_240.state->displacement_beats == signed_rational_t{3, 2});
+
+    const auto row_720 = scroll_speed_at(*built.index, *timing.index, {720, 1});
+    REQUIRE(row_720);
+    CHECK(row_720.state->speed_multiplier == signed_rational_t{3, 2});
+    CHECK(row_720.state->effective_multiplier == signed_rational_t{-3, 1});
+
+    // Seeking backwards and jumping past several compiled starts uses the
+    // same binary-searchable evaluator and cumulative displacement prefix.
+    const auto late = scroll_speed_at(*built.index, *timing.index, {960, 1});
+    const auto early_again = scroll_speed_at(*built.index, *timing.index, {120, 1});
+    REQUIRE(late);
+    REQUIRE(early_again);
+    CHECK(late.state->speed_multiplier == signed_rational_t{0, 1});
+    CHECK(late.state->displacement_beats == built.index->total_displacement_beats);
+    CHECK(early_again.state->displacement_beats == midpoint.state->displacement_beats);
+}
+
+TEST_CASE("same-row speed source order retargets from the value reached at that instant",
+          "[unit][core][timing][scroll-speed][ordering]") {
+    auto chart = base_chart();
+    chart.beat_zero_audio_offset_seconds = {};
+    chart.speeds = {
+        {.id = object_id_t{40},
+         .position = {measure_id_t{1}, 0},
+         .multiplier = {3, 1},
+         .transition_beats = {2, 1}},
+        // The second source statement is stored first on purpose.
+        {.id = object_id_t{42},
+         .position = {measure_id_t{1}, 240},
+         .multiplier = {5, 1},
+         .transition_beats = {1, 1},
+         .provenance = {.source_order = 2}},
+        {.id = object_id_t{41},
+         .position = {measure_id_t{1}, 240},
+         .multiplier = {4, 1},
+         .transition_beats = {1, 1},
+         .provenance = {.source_order = 1}},
+    };
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+    const auto built = build_scroll_speed_index(chart, *timing.index);
+    REQUIRE(built);
+
+    const auto at_retarget = scroll_speed_at(*built.index, *timing.index, {240, 1});
+    const auto one_beat_later = scroll_speed_at(*built.index, *timing.index, {480, 1});
+    REQUIRE(at_retarget);
+    REQUIRE(one_beat_later);
+    CHECK(at_retarget.state->speed_multiplier == signed_rational_t{2, 1});
+    CHECK(one_beat_later.state->speed_multiplier == signed_rational_t{5, 1});
+}
+
+TEST_CASE("beat and second speed transitions use distinct stop and warp clocks",
+          "[unit][core][timing][scroll-speed][discontinuity]") {
+    auto stopped = base_chart();
+    stopped.beat_zero_audio_offset_seconds = {};
+    stopped.pauses.push_back({.id = object_id_t{50},
+                              .position = {measure_id_t{1}, 240},
+                              .kind = pause_kind_t::stop,
+                              .duration = {2, 1},
+                              .source_unit = pause_unit_t::seconds});
+    stopped.speeds.push_back({.id = object_id_t{51},
+                              .position = {measure_id_t{1}, 0},
+                              .multiplier = {3, 1},
+                              .transition_beats = {1, 1},
+                              .transition_is_seconds = true});
+    auto stopped_timing = build_timing_index(stopped);
+    REQUIRE(stopped_timing);
+    const auto stopped_speed = build_scroll_speed_index(stopped, *stopped_timing.index);
+    REQUIRE(stopped_speed);
+    const auto arrival = scroll_speed_at(*stopped_speed.index, *stopped_timing.index, {240, 1},
+                                         timing_boundary_side_t::before_delays);
+    const auto departure = scroll_speed_at(*stopped_speed.index, *stopped_timing.index, {240, 1},
+                                           timing_boundary_side_t::after_stops);
+    REQUIRE(arrival);
+    REQUIRE(departure);
+    CHECK(arrival.state->speed_multiplier == signed_rational_t{2, 1});
+    CHECK(departure.state->speed_multiplier == signed_rational_t{3, 1});
+    CHECK(arrival.state->displacement_beats == departure.state->displacement_beats);
+
+    auto beat_stopped = base_chart();
+    beat_stopped.beat_zero_audio_offset_seconds = {};
+    beat_stopped.pauses = stopped.pauses;
+    beat_stopped.speeds.push_back({.id = object_id_t{52},
+                                   .position = {measure_id_t{1}, 0},
+                                   .multiplier = {3, 1},
+                                   .transition_beats = {2, 1}});
+    const auto beat_timing = build_timing_index(beat_stopped);
+    REQUIRE(beat_timing);
+    const auto beat_speed = build_scroll_speed_index(beat_stopped, *beat_timing.index);
+    REQUIRE(beat_speed);
+    const auto beat_arrival = scroll_speed_at(*beat_speed.index, *beat_timing.index, {240, 1},
+                                              timing_boundary_side_t::before_delays);
+    const auto beat_departure = scroll_speed_at(*beat_speed.index, *beat_timing.index, {240, 1},
+                                                timing_boundary_side_t::after_stops);
+    REQUIRE(beat_arrival);
+    REQUIRE(beat_departure);
+    CHECK(beat_arrival.state->speed_multiplier == signed_rational_t{2, 1});
+    CHECK(beat_departure.state->speed_multiplier == signed_rational_t{2, 1});
+
+    auto warped = base_chart();
+    warped.beat_zero_audio_offset_seconds = {};
+    warped.warps.push_back(
+        {.id = object_id_t{60}, .span = {{measure_id_t{1}, 240}, {measure_id_t{1}, 720}}});
+    warped.speeds.push_back({.id = object_id_t{61},
+                             .position = {measure_id_t{1}, 0},
+                             .multiplier = {3, 1},
+                             .transition_beats = {2, 1}});
+    const auto warped_timing = build_timing_index(warped);
+    REQUIRE(warped_timing);
+    const auto warped_speed = build_scroll_speed_index(warped, *warped_timing.index);
+    REQUIRE(warped_speed);
+    const auto warp_exit = scroll_speed_at(*warped_speed.index, *warped_timing.index, {720, 1});
+    REQUIRE(warp_exit);
+    CHECK(warp_exit.state->speed_multiplier == signed_rational_t{3, 1});
+    CHECK(warp_exit.state->displacement_beats == signed_rational_t{3, 2});
+
+    auto seconds_warp = base_chart();
+    seconds_warp.beat_zero_audio_offset_seconds = {};
+    seconds_warp.warps = warped.warps;
+    seconds_warp.speeds.push_back({.id = object_id_t{63},
+                                   .position = {measure_id_t{1}, 0},
+                                   .multiplier = {3, 1},
+                                   .transition_beats = {2, 1},
+                                   .transition_is_seconds = true});
+    const auto seconds_warp_timing = build_timing_index(seconds_warp);
+    REQUIRE(seconds_warp_timing);
+    const auto seconds_warp_speed =
+        build_scroll_speed_index(seconds_warp, *seconds_warp_timing.index);
+    REQUIRE(seconds_warp_speed);
+    const auto seconds_warp_exit =
+        scroll_speed_at(*seconds_warp_speed.index, *seconds_warp_timing.index, {720, 1});
+    REQUIRE(seconds_warp_exit);
+    CHECK(seconds_warp_exit.state->speed_multiplier == signed_rational_t{3, 2});
+
+    auto skipped_event = warped;
+    skipped_event.scrolls.push_back(
+        {.id = object_id_t{62}, .position = {measure_id_t{1}, 240}, .multiplier = {-4, 1}});
+    const auto skipped_index = build_scroll_speed_index(skipped_event, *warped_timing.index);
+    REQUIRE(skipped_index);
+    REQUIRE(skipped_index.diagnostics.size() == 1);
+    CHECK(skipped_index.diagnostics[0].severity == diagnostic_severity_t::warning);
+    const auto after_warp = scroll_speed_at(*skipped_index.index, *warped_timing.index, {720, 1});
+    REQUIRE(after_warp);
+    CHECK(after_warp.state->scroll_multiplier == signed_rational_t{1, 1});
+}
+
+TEST_CASE("scroll and speed compilation rejects stale malformed and over-cap inputs",
+          "[unit][core][timing][scroll-speed][bounds]") {
+    auto chart = base_chart();
+    chart.beat_zero_audio_offset_seconds = {};
+    chart.scrolls.push_back(
+        {.id = object_id_t{70}, .position = {measure_id_t{1}, 0}, .multiplier = {-1, 0}});
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+    const auto malformed_scroll = build_scroll_speed_index(chart, *timing.index);
+    REQUIRE_FALSE(malformed_scroll);
+    CHECK(malformed_scroll.diagnostics.back().code == timing_error_code_t::invalid_scroll);
+
+    chart.scrolls[0].multiplier = {-1, 1};
+    const auto cap = build_scroll_speed_index(chart, *timing.index,
+                                              {.maximum_events = 10, .maximum_segments = 1});
+    REQUIRE_FALSE(cap);
+    CHECK(cap.diagnostics.back().code == timing_error_code_t::capacity_exceeded);
+    const auto boundary_cap = build_scroll_speed_index(
+        chart, *timing.index,
+        {.maximum_events = 10, .maximum_timing_boundaries = 1, .maximum_segments = 10});
+    REQUIRE_FALSE(boundary_cap);
+    CHECK(boundary_cap.diagnostics.back().code == timing_error_code_t::capacity_exceeded);
+
+    const auto built = build_scroll_speed_index(chart, *timing.index);
+    REQUIRE(built);
+    auto changed = chart;
+    changed.scrolls[0].multiplier = {2, 1};
+    CHECK_FALSE(scroll_speed_index_matches(*built.index, changed, *timing.index));
+    const auto negative_row = scroll_speed_at(*built.index, *timing.index, {-1, 1});
+    const auto invalid_row = scroll_speed_at(*built.index, *timing.index, {0, 0});
+    REQUIRE_FALSE(negative_row);
+    REQUIRE_FALSE(invalid_row);
+
+    auto invalid_speed_chart = base_chart();
+    invalid_speed_chart.speeds.push_back(
+        {.id = object_id_t{71}, .position = {measure_id_t{1}, 0}, .multiplier = {-1, 1}});
+    const auto invalid_speed_timing = build_timing_index(invalid_speed_chart);
+    REQUIRE(invalid_speed_timing);
+    const auto invalid_speed =
+        build_scroll_speed_index(invalid_speed_chart, *invalid_speed_timing.index);
+    REQUIRE_FALSE(invalid_speed);
+    CHECK(invalid_speed.diagnostics.back().code == timing_error_code_t::invalid_speed);
+
+    auto overflow_chart = base_chart();
+    overflow_chart.scrolls.push_back({.id = object_id_t{72},
+                                      .position = {measure_id_t{2}, 719},
+                                      .multiplier = {std::numeric_limits<std::int64_t>::max(), 1}});
+    overflow_chart.speeds.push_back({.id = object_id_t{73},
+                                     .position = {measure_id_t{2}, 719},
+                                     .multiplier = {std::numeric_limits<std::int64_t>::max(), 1}});
+    const auto overflow_timing = build_timing_index(overflow_chart);
+    REQUIRE(overflow_timing);
+    const auto overflow_index = build_scroll_speed_index(overflow_chart, *overflow_timing.index);
+    REQUIRE_FALSE(overflow_index);
+    CHECK(overflow_index.diagnostics.back().code == timing_error_code_t::arithmetic_overflow);
+}

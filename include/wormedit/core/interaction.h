@@ -108,6 +108,12 @@ enum class editor_area_selection_mode_t {
     toggle,
 };
 
+// The mode is captured on the first Space press and applied atomically when
+// Space is pressed again.
+struct space_range_selection_action_t {
+    editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
+};
+
 struct begin_editor_area_selection_action_t {
     double x_pixels{};
     double y_pixels{};
@@ -214,9 +220,10 @@ using editor_ui_action_t = std::variant<
     begin_note_paint_gesture_action_t, update_note_paint_gesture_action_t,
     end_note_paint_gesture_action_t, begin_editor_area_selection_action_t,
     update_editor_area_selection_action_t, commit_editor_area_selection_action_t,
-    cancel_editor_area_selection_action_t, cancel_editor_gesture_action_t,
-    select_editor_notes_action_t, delete_editor_notes_action_t, resize_note_durations_action_t,
-    select_editor_lane_action_t, adjust_editor_zoom_action_t, scroll_editor_view_action_t>;
+    cancel_editor_area_selection_action_t, space_range_selection_action_t,
+    cancel_editor_gesture_action_t, select_editor_notes_action_t, delete_editor_notes_action_t,
+    resize_note_durations_action_t, select_editor_lane_action_t, adjust_editor_zoom_action_t,
+    scroll_editor_view_action_t>;
 
 struct pending_hold_t {
     local_position_t position;
@@ -261,6 +268,23 @@ struct note_paint_gesture_preview_t {
 
 struct editor_hit_test_index_t;
 
+struct pending_space_range_selection_t {
+    std::uint64_t document_revision{};
+    std::shared_ptr<const editor_hit_test_index_t> hit_index;
+    local_position_t anchor;
+    editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
+};
+
+struct space_range_selection_preview_t {
+    std::uint64_t document_revision{};
+    local_position_t anchor;
+    local_position_t cursor;
+    std::uint64_t first_row{};
+    std::uint64_t last_row{};
+    editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
+    std::shared_ptr<const std::vector<object_id_t>> notes;
+};
+
 struct editor_area_selection_preview_t {
     std::uint64_t document_revision{};
     double left_pixels{};
@@ -297,6 +321,7 @@ struct editor_interaction_state_t {
     std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
     std::optional<pending_note_paint_gesture_t> pending_note_paint_gesture;
     std::optional<pending_editor_area_selection_t> pending_editor_area_selection;
+    std::optional<pending_space_range_selection_t> pending_space_range_selection;
     std::vector<object_id_t> selected_notes;
 };
 
@@ -315,6 +340,7 @@ struct editor_interaction_view_model_t {
     std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
     std::optional<note_paint_gesture_preview_t> pending_note_paint_gesture;
     std::optional<editor_area_selection_preview_t> pending_editor_area_selection;
+    std::optional<space_range_selection_preview_t> pending_space_range_selection;
     std::vector<object_id_t> selected_notes;
     bool can_move_backward{};
     bool can_move_forward{};

@@ -1,6 +1,8 @@
 # Autosave and crash-recovery design
 
-Status: reviewed planning contract.
+Status: reviewed planning contract; atomic primary/recovery publication and the
+headless five-minute coordinator are implemented. Startup recovery comparison,
+quarantine, command journaling, and crash-marker backends remain planned.
 
 ## Recovery artifacts
 

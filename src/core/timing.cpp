@@ -1,6 +1,7 @@
 #include <wormedit/core/timing.h>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <map>
 #include <numeric>
@@ -16,6 +17,12 @@ namespace {
 constexpr auto maximum_i64_magnitude =
     static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
 constexpr auto minimum_i64_magnitude = maximum_i64_magnitude + 1;
+
+auto error(timing_error_code_t code, std::string message,
+           std::optional<object_id_t> object = std::nullopt) -> timing_diagnostic_t;
+auto timing_fingerprint(const chart_document_t& chart) -> std::uint64_t;
+void fingerprint_mix(std::uint64_t& fingerprint, std::uint64_t value);
+void fingerprint_position(std::uint64_t& fingerprint, local_position_t position);
 
 auto magnitude(std::int64_t value) noexcept -> std::uint64_t {
     if (value >= 0) {
@@ -192,6 +199,227 @@ auto positive_fraction(std::vector<std::uint64_t> numerators,
     return normalized({static_cast<std::int64_t>(numerator), denominator});
 }
 
+auto signed_from_magnitude(std::uint64_t value, bool negative) -> std::optional<signed_rational_t> {
+    const auto limit = negative ? minimum_i64_magnitude : maximum_i64_magnitude;
+    if (value > limit) {
+        return std::nullopt;
+    }
+    if (negative && value == minimum_i64_magnitude) {
+        return signed_rational_t{std::numeric_limits<std::int64_t>::min(), 1};
+    }
+    const auto signed_value = static_cast<std::int64_t>(value);
+    return signed_rational_t{negative ? -signed_value : signed_value, 1};
+}
+
+auto multiply_exact(signed_rational_t left, signed_rational_t right)
+    -> std::optional<signed_rational_t> {
+    const auto left_normal = normalized(left);
+    const auto right_normal = normalized(right);
+    if (!left_normal || !right_normal) {
+        return std::nullopt;
+    }
+    if (left_normal->numerator == 0 || right_normal->numerator == 0) {
+        return signed_rational_t{};
+    }
+
+    auto left_numerator = magnitude(left_normal->numerator);
+    auto right_numerator = magnitude(right_normal->numerator);
+    auto left_denominator = left_normal->denominator;
+    auto right_denominator = right_normal->denominator;
+    auto divisor = std::gcd(left_numerator, right_denominator);
+    left_numerator /= divisor;
+    right_denominator /= divisor;
+    divisor = std::gcd(right_numerator, left_denominator);
+    right_numerator /= divisor;
+    left_denominator /= divisor;
+
+    const auto numerator = checked_multiply(left_numerator, right_numerator);
+    const auto denominator = checked_multiply(left_denominator, right_denominator);
+    const bool negative = (left_normal->numerator < 0) != (right_normal->numerator < 0);
+    if (!numerator || !denominator ||
+        *numerator > (negative ? minimum_i64_magnitude : maximum_i64_magnitude)) {
+        return std::nullopt;
+    }
+    auto result = signed_from_magnitude(*numerator, negative);
+    if (!result) {
+        return std::nullopt;
+    }
+    result->denominator = *denominator;
+    return normalized(*result);
+}
+
+auto rational_progress(signed_rational_t elapsed, rational_t duration)
+    -> std::optional<signed_rational_t> {
+    const auto value = normalized(elapsed);
+    if (!value || value->numerator < 0 || duration.denominator == 0) {
+        return std::nullopt;
+    }
+    if (duration.numerator == 0) {
+        return signed_rational_t{1, 1};
+    }
+    const auto comparison = compare_positive_fractions(
+        magnitude(value->numerator), value->denominator, duration.numerator, duration.denominator);
+    if (comparison >= 0) {
+        return signed_rational_t{1, 1};
+    }
+    return positive_fraction({magnitude(value->numerator), duration.denominator},
+                             {value->denominator, duration.numerator});
+}
+
+auto interpolate_exact(signed_rational_t begin, signed_rational_t end, signed_rational_t progress)
+    -> std::optional<signed_rational_t> {
+    const auto difference = subtract_exact(end, begin);
+    const auto scaled = difference ? multiply_exact(*difference, progress) : std::nullopt;
+    return scaled ? add_exact(begin, *scaled) : std::nullopt;
+}
+
+auto compare_row_to_integer(signed_rational_t row, std::uint64_t integer) -> std::optional<int> {
+    const auto value = normalized(row);
+    if (!value) {
+        return std::nullopt;
+    }
+    if (value->numerator < 0) {
+        return -1;
+    }
+    return compare_positive_fractions(magnitude(value->numerator), value->denominator, integer, 1);
+}
+
+auto timing_seconds_at_row(const timing_index_t& timing, signed_rational_t absolute_row,
+                           timing_boundary_side_t side) -> timing_query_result_t {
+    const auto row = normalized(absolute_row);
+    if (!row) {
+        return {.error = error(timing_error_code_t::invalid_document,
+                               "scroll/speed query requires a valid rational row")};
+    }
+    if (row->numerator < 0 || timing.rows.empty() || timing.divisions_per_standard_measure == 0 ||
+        timing.segments.size() + 1 != timing.rows.size() || timing.rows.front().absolute_row != 0 ||
+        timing.rows.back().absolute_row != timing.total_rows) {
+        return {.error = error(timing_error_code_t::position_out_of_range,
+                               "scroll/speed query lies outside a complete timing index")};
+    }
+    const auto final_comparison = compare_row_to_integer(*row, timing.total_rows);
+    if (!final_comparison || *final_comparison > 0) {
+        return {.error = error(timing_error_code_t::position_out_of_range,
+                               "scroll/speed query lies outside chart geometry")};
+    }
+
+    const auto boundary =
+        std::lower_bound(timing.rows.begin(), timing.rows.end(), *row,
+                         [](const timing_row_state_t& candidate, signed_rational_t query) {
+                             const auto comparison =
+                                 compare_row_to_integer(query, candidate.absolute_row);
+                             return comparison && *comparison > 0;
+                         });
+    if (boundary != timing.rows.end()) {
+        const auto comparison = compare_row_to_integer(*row, boundary->absolute_row);
+        if (comparison && *comparison == 0) {
+            const auto seconds =
+                side == timing_boundary_side_t::before_delays ? boundary->before_delays_seconds
+                : side == timing_boundary_side_t::after_stops ? boundary->after_stops_seconds
+                                                              : boundary->event_seconds;
+            return {.seconds = seconds, .inside_warp = boundary->inside_warp};
+        }
+    }
+
+    const auto after_segment =
+        std::upper_bound(timing.segments.begin(), timing.segments.end(), *row,
+                         [](signed_rational_t query, const timing_segment_t& segment) {
+                             const auto comparison =
+                                 compare_row_to_integer(query, segment.begin_row);
+                             return comparison && *comparison < 0;
+                         });
+    if (after_segment == timing.segments.begin()) {
+        return {.error = error(timing_error_code_t::position_out_of_range,
+                               "scroll/speed query has no containing timing segment")};
+    }
+    const auto& segment = *std::prev(after_segment);
+    const auto end_comparison = compare_row_to_integer(*row, segment.end_row);
+    if (!end_comparison || *end_comparison >= 0 || segment.begin_row > maximum_i64_magnitude) {
+        return {.error = error(timing_error_code_t::position_out_of_range,
+                               "scroll/speed query has no containing timing segment")};
+    }
+    if (segment.warped) {
+        return {.seconds = segment.begin_seconds, .inside_warp = true};
+    }
+    const auto offset = subtract_exact(*row, {static_cast<std::int64_t>(segment.begin_row), 1});
+    const auto width = segment.end_row - segment.begin_row;
+    if (!offset || offset->numerator < 0 || width == 0) {
+        return {.error = error(timing_error_code_t::arithmetic_overflow,
+                               "scroll/speed row interpolation exceeds exact bounds")};
+    }
+    const auto progress =
+        positive_fraction({magnitude(offset->numerator)}, {offset->denominator, width});
+    const auto duration = subtract_exact(segment.end_seconds, segment.begin_seconds);
+    const auto delta = duration && progress ? multiply_exact(*duration, *progress) : std::nullopt;
+    const auto seconds = delta ? add_exact(segment.begin_seconds, *delta) : std::nullopt;
+    if (!seconds) {
+        return {.error = error(timing_error_code_t::arithmetic_overflow,
+                               "scroll/speed time interpolation exceeds exact bounds")};
+    }
+    return {.seconds = *seconds};
+}
+
+auto speed_segment_value(const speed_curve_segment_t& segment, signed_rational_t row,
+                         signed_rational_t seconds, std::uint64_t divisions)
+    -> std::optional<signed_rational_t> {
+    if (segment.transition_duration.denominator == 0) {
+        return std::nullopt;
+    }
+    if (segment.transition_duration.numerator == 0) {
+        return normalized(segment.target_multiplier);
+    }
+    signed_rational_t elapsed;
+    if (segment.transition_is_seconds) {
+        const auto difference = subtract_exact(seconds, segment.begin_seconds);
+        if (!difference || difference->numerator < 0) {
+            return std::nullopt;
+        }
+        elapsed = *difference;
+    } else {
+        if (segment.begin_row > maximum_i64_magnitude || divisions == 0) {
+            return std::nullopt;
+        }
+        const auto row_delta =
+            subtract_exact(row, {static_cast<std::int64_t>(segment.begin_row), 1});
+        if (!row_delta || row_delta->numerator < 0) {
+            return std::nullopt;
+        }
+        const auto beats = positive_fraction({magnitude(row_delta->numerator), 4},
+                                             {row_delta->denominator, divisions});
+        if (!beats) {
+            return std::nullopt;
+        }
+        elapsed = *beats;
+    }
+    const auto progress = rational_progress(elapsed, segment.transition_duration);
+    return progress
+               ? interpolate_exact(segment.initial_multiplier, segment.target_multiplier, *progress)
+               : std::nullopt;
+}
+
+auto scroll_speed_fingerprint(const chart_document_t& chart) -> std::uint64_t {
+    auto fingerprint = timing_fingerprint(chart);
+    for (const auto& event : chart.scrolls) {
+        fingerprint_mix(fingerprint, event.id.value);
+        fingerprint_position(fingerprint, event.position);
+        fingerprint_mix(fingerprint, magnitude(event.multiplier.numerator));
+        fingerprint_mix(fingerprint, event.multiplier.numerator < 0);
+        fingerprint_mix(fingerprint, event.multiplier.denominator);
+        fingerprint_mix(fingerprint, event.provenance.source_order);
+    }
+    for (const auto& event : chart.speeds) {
+        fingerprint_mix(fingerprint, event.id.value);
+        fingerprint_position(fingerprint, event.position);
+        fingerprint_mix(fingerprint, event.multiplier.numerator);
+        fingerprint_mix(fingerprint, event.multiplier.denominator);
+        fingerprint_mix(fingerprint, event.transition_beats.numerator);
+        fingerprint_mix(fingerprint, event.transition_beats.denominator);
+        fingerprint_mix(fingerprint, event.transition_is_seconds);
+        fingerprint_mix(fingerprint, event.provenance.source_order);
+    }
+    return fingerprint;
+}
+
 auto row_duration(std::uint64_t rows, std::uint64_t resolution, signed_rational_t bpm)
     -> std::optional<signed_rational_t> {
     if (bpm.numerator <= 0 || bpm.denominator == 0 || resolution == 0) {
@@ -226,8 +454,8 @@ auto pause_duration(const pause_event_t& pause, signed_rational_t bpm)
     return std::nullopt;
 }
 
-auto error(timing_error_code_t code, std::string message,
-           std::optional<object_id_t> object = std::nullopt) -> timing_diagnostic_t {
+auto error(timing_error_code_t code, std::string message, std::optional<object_id_t> object)
+    -> timing_diagnostic_t {
     return {.severity = diagnostic_severity_t::error,
             .code = code,
             .message = std::move(message),
@@ -857,6 +1085,527 @@ auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
         }
     }
     return {.frame = frame};
+}
+
+auto build_scroll_speed_index(const chart_document_t& chart, const timing_index_t& timing,
+                              scroll_speed_build_options_t options) -> scroll_speed_build_result_t {
+    scroll_speed_build_result_t result;
+    const auto built_measures = build_measure_index(chart);
+    if (!std::holds_alternative<measure_index_t>(built_measures)) {
+        result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
+                                           "scroll/speed chart measure geometry is invalid"));
+        return result;
+    }
+    const auto& measures = std::get<measure_index_t>(built_measures);
+    if (timing.divisions_per_standard_measure != chart.divisions_per_standard_measure ||
+        timing.total_rows != measures.total_rows || timing.rows.empty() ||
+        timing.total_rows > maximum_i64_magnitude ||
+        timing.source_fingerprint != timing_fingerprint(chart)) {
+        result.diagnostics.push_back(
+            error(timing_error_code_t::invalid_document,
+                  "scroll/speed compilation requires a current timing index"));
+        return result;
+    }
+    if (options.maximum_segments == 0) {
+        result.diagnostics.push_back(
+            error(timing_error_code_t::capacity_exceeded, "scroll/speed segment capacity is zero"));
+        return result;
+    }
+    if (timing.rows.size() > options.maximum_timing_boundaries) {
+        result.diagnostics.push_back(
+            error(timing_error_code_t::capacity_exceeded,
+                  "timing boundary count exceeds the scroll/speed evaluator cap"));
+        return result;
+    }
+    if (chart.scrolls.size() > options.maximum_events ||
+        chart.speeds.size() > options.maximum_events - chart.scrolls.size()) {
+        result.diagnostics.push_back(error(timing_error_code_t::capacity_exceeded,
+                                           "scroll/speed event count exceeds the configured cap"));
+        return result;
+    }
+    if (chart.scrolls.size() >= options.maximum_segments ||
+        chart.speeds.size() > options.maximum_segments - 1 - chart.scrolls.size()) {
+        result.diagnostics.push_back(
+            error(timing_error_code_t::capacity_exceeded,
+                  "scroll/speed segment count exceeds the configured cap"));
+        return result;
+    }
+
+    enum class source_kind_t : std::uint8_t { scroll, speed };
+    struct positioned_event_t {
+        std::uint64_t row{};
+        std::size_t insertion_order{};
+        object_id_t id;
+        std::size_t source_order{};
+        source_kind_t kind{source_kind_t::scroll};
+        const scroll_event_t* scroll{};
+        const speed_event_t* speed{};
+    };
+    std::vector<positioned_event_t> events;
+    events.reserve(chart.scrolls.size() + chart.speeds.size());
+    for (std::size_t order = 0; order < chart.scrolls.size(); ++order) {
+        const auto& event = chart.scrolls[order];
+        const auto row = absolute_row(measures, event.position);
+        if (!row) {
+            result.diagnostics.push_back(error(timing_error_code_t::position_out_of_range,
+                                               "scroll event position is outside chart geometry",
+                                               event.id));
+            continue;
+        }
+        if (!normalized(event.multiplier)) {
+            result.diagnostics.push_back(error(timing_error_code_t::invalid_scroll,
+                                               "scroll multiplier must be a valid signed rational",
+                                               event.id));
+            continue;
+        }
+        const auto position_timing = timing_at(timing, *row);
+        if (!position_timing) {
+            auto diagnostic = *position_timing.error;
+            diagnostic.object = event.id;
+            result.diagnostics.push_back(std::move(diagnostic));
+            continue;
+        }
+        if (position_timing.inside_warp) {
+            result.diagnostics.push_back(warning(
+                timing_error_code_t::invalid_warp,
+                "scroll event inside a half-open warp is suppressed by the scroll/speed evaluator",
+                event.id));
+            continue;
+        }
+        events.push_back({.row = *row,
+                          .insertion_order = order,
+                          .id = event.id,
+                          .source_order = event.provenance.source_order,
+                          .kind = source_kind_t::scroll,
+                          .scroll = &event});
+    }
+    for (std::size_t order = 0; order < chart.speeds.size(); ++order) {
+        const auto& event = chart.speeds[order];
+        const auto row = absolute_row(measures, event.position);
+        if (!row) {
+            result.diagnostics.push_back(error(timing_error_code_t::position_out_of_range,
+                                               "speed event position is outside chart geometry",
+                                               event.id));
+            continue;
+        }
+        if (event.multiplier.numerator < 0 || event.multiplier.denominator == 0 ||
+            event.transition_beats.denominator == 0) {
+            result.diagnostics.push_back(
+                error(timing_error_code_t::invalid_speed,
+                      "speed multiplier and duration must be bounded valid rationals", event.id));
+            continue;
+        }
+        const auto position_timing = timing_at(timing, *row);
+        if (!position_timing) {
+            auto diagnostic = *position_timing.error;
+            diagnostic.object = event.id;
+            result.diagnostics.push_back(std::move(diagnostic));
+            continue;
+        }
+        if (position_timing.inside_warp) {
+            result.diagnostics.push_back(warning(
+                timing_error_code_t::invalid_warp,
+                "speed event inside a half-open warp is suppressed by the scroll/speed evaluator",
+                event.id));
+            continue;
+        }
+        if (*row > maximum_i64_magnitude) {
+            result.diagnostics.push_back(error(timing_error_code_t::arithmetic_overflow,
+                                               "speed event row exceeds exact query bounds",
+                                               event.id));
+            continue;
+        }
+        events.push_back({.row = *row,
+                          .insertion_order = order,
+                          .id = event.id,
+                          .source_order = event.provenance.source_order,
+                          .kind = source_kind_t::speed,
+                          .speed = &event});
+    }
+    if (has_errors(result.diagnostics)) {
+        return result;
+    }
+    std::ranges::stable_sort(events, [](const auto& left, const auto& right) {
+        return std::tuple{left.row, left.source_order, left.insertion_order, left.id.value,
+                          static_cast<std::uint8_t>(left.kind)} <
+               std::tuple{right.row, right.source_order, right.insertion_order, right.id.value,
+                          static_cast<std::uint8_t>(right.kind)};
+    });
+
+    scroll_speed_index_t index{
+        .divisions_per_standard_measure = chart.divisions_per_standard_measure,
+        .total_rows = measures.total_rows,
+        .timing_source_fingerprint = timing.source_fingerprint,
+        .source_fingerprint = scroll_speed_fingerprint(chart),
+    };
+    index.scroll_segments.reserve(chart.scrolls.size() + 1);
+    index.speed_segments.reserve(chart.speeds.size());
+    index.scroll_segments.push_back(
+        {.begin_row = 0, .end_row = measures.total_rows, .multiplier = {1, 1}});
+    for (const auto& positioned : events) {
+        if (positioned.kind == source_kind_t::scroll) {
+            index.scroll_segments.push_back(
+                {.begin_row = positioned.row,
+                 .end_row = measures.total_rows,
+                 .multiplier = *normalized(positioned.scroll->multiplier),
+                 .source_event = positioned.id,
+                 .source_order = positioned.source_order});
+            continue;
+        }
+
+        const auto query_time = timing_at(timing, positioned.row, timing_boundary_side_t::event);
+        if (!query_time) {
+            auto diagnostic = *query_time.error;
+            diagnostic.object = positioned.id;
+            result.diagnostics.push_back(std::move(diagnostic));
+            return result;
+        }
+        auto initial_multiplier = signed_rational_t{1, 1};
+        if (!index.speed_segments.empty()) {
+            const auto current = speed_segment_value(
+                index.speed_segments.back(), {static_cast<std::int64_t>(positioned.row), 1},
+                *query_time.seconds, chart.divisions_per_standard_measure);
+            if (!current) {
+                result.diagnostics.push_back(
+                    error(timing_error_code_t::arithmetic_overflow,
+                          "speed transition retargeting exceeds exact bounds", positioned.id));
+                return result;
+            }
+            initial_multiplier = *current;
+        }
+        const auto& source = *positioned.speed;
+        const auto target = normalized({static_cast<std::int64_t>(source.multiplier.numerator),
+                                        source.multiplier.denominator});
+        if (!target) {
+            result.diagnostics.push_back(error(timing_error_code_t::invalid_speed,
+                                               "speed multiplier cannot be normalized",
+                                               positioned.id));
+            return result;
+        }
+        index.speed_segments.push_back({.begin_row = positioned.row,
+                                        .end_row = measures.total_rows,
+                                        .begin_seconds = *query_time.seconds,
+                                        .initial_multiplier = initial_multiplier,
+                                        .target_multiplier = *target,
+                                        .transition_duration = source.transition_beats,
+                                        .transition_is_seconds = source.transition_is_seconds,
+                                        .source_event = positioned.id,
+                                        .source_order = positioned.source_order});
+    }
+    for (auto segment = std::size_t{}; segment < index.scroll_segments.size(); ++segment) {
+        if (segment + 1 < index.scroll_segments.size()) {
+            index.scroll_segments[segment].end_row = index.scroll_segments[segment + 1].begin_row;
+        }
+    }
+    for (auto segment = std::size_t{}; segment < index.speed_segments.size(); ++segment) {
+        if (segment + 1 < index.speed_segments.size()) {
+            index.speed_segments[segment].end_row = index.speed_segments[segment + 1].begin_row;
+        }
+    }
+
+    std::vector<signed_rational_t> displacement_boundaries;
+    displacement_boundaries.push_back({0, 1});
+    displacement_boundaries.push_back({static_cast<std::int64_t>(measures.total_rows), 1});
+    for (const auto& row : timing.rows) {
+        displacement_boundaries.push_back({static_cast<std::int64_t>(row.absolute_row), 1});
+    }
+    for (const auto& segment : index.scroll_segments) {
+        displacement_boundaries.push_back({static_cast<std::int64_t>(segment.begin_row), 1});
+    }
+    for (const auto& segment : index.speed_segments) {
+        displacement_boundaries.push_back({static_cast<std::int64_t>(segment.begin_row), 1});
+        if (segment.transition_duration.numerator == 0) {
+            continue;
+        }
+        if (!segment.transition_is_seconds) {
+            const auto transition_rows = positive_fraction(
+                {segment.transition_duration.numerator, chart.divisions_per_standard_measure},
+                {segment.transition_duration.denominator, 4});
+            const auto end_row =
+                transition_rows
+                    ? add_exact({static_cast<std::int64_t>(segment.begin_row), 1}, *transition_rows)
+                    : std::nullopt;
+            if (end_row) {
+                const auto in_chart = compare_row_to_integer(*end_row, measures.total_rows);
+                if (in_chart && *in_chart < 0) {
+                    displacement_boundaries.push_back(*end_row);
+                }
+            }
+            continue;
+        }
+
+        auto duration_numerator = segment.transition_duration.numerator;
+        auto duration_denominator = segment.transition_duration.denominator;
+        const auto duration_divisor = std::gcd(duration_numerator, duration_denominator);
+        duration_numerator /= duration_divisor;
+        duration_denominator /= duration_divisor;
+        if (duration_numerator <= maximum_i64_magnitude) {
+            const auto completion_time =
+                add_exact(segment.begin_seconds,
+                          {static_cast<std::int64_t>(duration_numerator), duration_denominator});
+            if (completion_time) {
+                const auto completion_position = musical_position_at(timing, *completion_time);
+                if (completion_position && completion_position.absolute_row) {
+                    const auto in_chart = compare_row_to_integer(*completion_position.absolute_row,
+                                                                 measures.total_rows);
+                    const auto after_start =
+                        compare_exact(*completion_position.absolute_row,
+                                      {static_cast<std::int64_t>(segment.begin_row), 1});
+                    if (in_chart && *in_chart < 0 && after_start && *after_start > 0) {
+                        displacement_boundaries.push_back(*completion_position.absolute_row);
+                    }
+                }
+            }
+        }
+    }
+    std::ranges::sort(displacement_boundaries, [](signed_rational_t left, signed_rational_t right) {
+        const auto comparison = compare_exact(left, right);
+        return comparison && *comparison < 0;
+    });
+    displacement_boundaries.erase(
+        std::unique(displacement_boundaries.begin(), displacement_boundaries.end(),
+                    [](signed_rational_t left, signed_rational_t right) {
+                        const auto comparison = compare_exact(left, right);
+                        return comparison && *comparison == 0;
+                    }),
+        displacement_boundaries.end());
+    if (displacement_boundaries.size() < 2 ||
+        displacement_boundaries.size() - 1 > options.maximum_segments) {
+        result.diagnostics.push_back(
+            error(timing_error_code_t::capacity_exceeded,
+                  "scroll displacement segment count exceeds the configured cap"));
+        return result;
+    }
+
+    const auto components_at = [&](signed_rational_t row, timing_boundary_side_t side)
+        -> std::optional<std::pair<signed_rational_t, signed_rational_t>> {
+        const auto query_time = timing_seconds_at_row(timing, row, side);
+        if (!query_time) {
+            result.diagnostics.push_back(*query_time.error);
+            return std::nullopt;
+        }
+        const auto before_event_side = side == timing_boundary_side_t::before_delays;
+        const auto find_segment = [&](const auto& segments) {
+            return std::upper_bound(
+                segments.begin(), segments.end(), row,
+                [&](signed_rational_t query, const auto& segment) {
+                    const auto comparison = compare_row_to_integer(query, segment.begin_row);
+                    return comparison &&
+                           (*comparison < 0 || (*comparison == 0 && before_event_side));
+                });
+        };
+        auto scroll = signed_rational_t{1, 1};
+        const auto scroll_after = find_segment(index.scroll_segments);
+        if (scroll_after != index.scroll_segments.begin()) {
+            scroll = std::prev(scroll_after)->multiplier;
+        }
+        auto speed = signed_rational_t{1, 1};
+        const auto speed_after = find_segment(index.speed_segments);
+        if (speed_after != index.speed_segments.begin()) {
+            const auto& segment = *std::prev(speed_after);
+            const auto value = speed_segment_value(segment, row, *query_time.seconds,
+                                                   index.divisions_per_standard_measure);
+            if (!value) {
+                result.diagnostics.push_back(
+                    error(timing_error_code_t::arithmetic_overflow,
+                          "scroll displacement speed evaluation exceeds exact bounds",
+                          segment.source_event));
+                return std::nullopt;
+            }
+            speed = *value;
+        }
+        return std::pair{scroll, speed};
+    };
+
+    auto cumulative_displacement = signed_rational_t{};
+    index.displacement_segments.reserve(displacement_boundaries.size() - 1);
+    for (auto boundary = std::size_t{}; boundary + 1 < displacement_boundaries.size(); ++boundary) {
+        const auto begin_row = displacement_boundaries[boundary];
+        const auto end_row = displacement_boundaries[boundary + 1];
+        const auto begin_components = components_at(begin_row, timing_boundary_side_t::after_stops);
+        const auto end_components = components_at(end_row, timing_boundary_side_t::before_delays);
+        if (!begin_components || !end_components) {
+            return result;
+        }
+        const auto row_width = subtract_exact(end_row, begin_row);
+        const auto midpoint_delta = row_width ? multiply_exact(*row_width, {1, 2}) : std::nullopt;
+        const auto midpoint = midpoint_delta ? add_exact(begin_row, *midpoint_delta) : std::nullopt;
+        const auto midpoint_time =
+            midpoint ? timing_seconds_at_row(timing, *midpoint, timing_boundary_side_t::event)
+                     : timing_query_result_t{};
+        if (!midpoint_time) {
+            if (midpoint_time.error) {
+                result.diagnostics.push_back(*midpoint_time.error);
+            } else {
+                result.diagnostics.push_back(
+                    error(timing_error_code_t::arithmetic_overflow,
+                          "scroll displacement midpoint exceeds exact bounds"));
+            }
+            return result;
+        }
+        const bool warped = midpoint_time.inside_warp;
+        index.displacement_segments.push_back({.begin_row = begin_row,
+                                               .end_row = end_row,
+                                               .cumulative_begin_beats = cumulative_displacement,
+                                               .scroll_multiplier = begin_components->first,
+                                               .speed_begin_multiplier = begin_components->second,
+                                               .warped = warped});
+        if (warped) {
+            continue;
+        }
+
+        const auto beat_width =
+            positive_fraction({magnitude(row_width->numerator), 4},
+                              {row_width->denominator, chart.divisions_per_standard_measure});
+        const auto speed_sum = add_exact(begin_components->second, end_components->second);
+        const auto average_speed = speed_sum ? multiply_exact(*speed_sum, {1, 2}) : std::nullopt;
+        const auto average_effective =
+            average_speed ? multiply_exact(begin_components->first, *average_speed) : std::nullopt;
+        const auto displacement = average_effective && beat_width
+                                      ? multiply_exact(*average_effective, *beat_width)
+                                      : std::nullopt;
+        const auto next_cumulative =
+            displacement ? add_exact(cumulative_displacement, *displacement) : std::nullopt;
+        if (!next_cumulative) {
+            result.diagnostics.push_back(
+                error(timing_error_code_t::arithmetic_overflow,
+                      "scroll displacement exceeds exact arithmetic bounds"));
+            return result;
+        }
+        cumulative_displacement = *next_cumulative;
+    }
+    index.total_displacement_beats = cumulative_displacement;
+    result.index = std::move(index);
+    return result;
+}
+
+auto scroll_speed_index_matches(const scroll_speed_index_t& index, const chart_document_t& chart,
+                                const timing_index_t& timing) -> bool {
+    return index.divisions_per_standard_measure == chart.divisions_per_standard_measure &&
+           timing.divisions_per_standard_measure == chart.divisions_per_standard_measure &&
+           index.divisions_per_standard_measure == timing.divisions_per_standard_measure &&
+           index.total_rows == timing.total_rows &&
+           index.timing_source_fingerprint == timing.source_fingerprint &&
+           timing.source_fingerprint == timing_fingerprint(chart) &&
+           index.source_fingerprint == scroll_speed_fingerprint(chart);
+}
+
+auto scroll_speed_at(const scroll_speed_index_t& index, const timing_index_t& timing,
+                     signed_rational_t absolute_row, timing_boundary_side_t side)
+    -> scroll_speed_query_result_t {
+    if (index.divisions_per_standard_measure != timing.divisions_per_standard_measure ||
+        index.total_rows != timing.total_rows ||
+        index.timing_source_fingerprint != timing.source_fingerprint) {
+        return {.error = error(timing_error_code_t::invalid_document,
+                               "scroll/speed index does not match the timing index")};
+    }
+    const auto row = normalized(absolute_row);
+    if (!row) {
+        return {.error = error(timing_error_code_t::invalid_document,
+                               "scroll/speed query requires a valid rational row")};
+    }
+    const auto query_time = timing_seconds_at_row(timing, *row, side);
+    if (!query_time) {
+        return {.error = *query_time.error};
+    }
+    const auto before_event_side = side == timing_boundary_side_t::before_delays;
+    const auto find_segment = [&](const auto& segments) {
+        return std::upper_bound(
+            segments.begin(), segments.end(), *row,
+            [&](signed_rational_t query, const auto& segment) {
+                const auto comparison = compare_row_to_integer(query, segment.begin_row);
+                return comparison && (*comparison < 0 || (*comparison == 0 && before_event_side));
+            });
+    };
+
+    auto scroll_multiplier = signed_rational_t{1, 1};
+    const auto scroll_after = find_segment(index.scroll_segments);
+    if (scroll_after != index.scroll_segments.begin()) {
+        scroll_multiplier = std::prev(scroll_after)->multiplier;
+    }
+    auto speed_multiplier = signed_rational_t{1, 1};
+    const auto speed_after = find_segment(index.speed_segments);
+    if (speed_after != index.speed_segments.begin()) {
+        const auto& segment = *std::prev(speed_after);
+        const auto value = speed_segment_value(segment, *row, *query_time.seconds,
+                                               index.divisions_per_standard_measure);
+        if (!value) {
+            return {.error = error(timing_error_code_t::arithmetic_overflow,
+                                   "speed curve evaluation exceeds exact arithmetic bounds",
+                                   segment.source_event)};
+        }
+        speed_multiplier = *value;
+    }
+    const auto effective = multiply_exact(scroll_multiplier, speed_multiplier);
+    if (!effective) {
+        return {.error = error(timing_error_code_t::arithmetic_overflow,
+                               "effective scroll multiplier exceeds exact arithmetic bounds")};
+    }
+    auto displacement = index.total_displacement_beats;
+    const auto at_chart_end = compare_row_to_integer(*row, index.total_rows);
+    if (!at_chart_end) {
+        return {.error = error(timing_error_code_t::invalid_document,
+                               "scroll/speed query row cannot be compared exactly")};
+    }
+    if (*at_chart_end < 0) {
+        const auto after_displacement_segment = std::upper_bound(
+            index.displacement_segments.begin(), index.displacement_segments.end(), *row,
+            [](signed_rational_t query, const scroll_displacement_segment_t& segment) {
+                const auto comparison = compare_exact(query, segment.begin_row);
+                return comparison && *comparison < 0;
+            });
+        if (after_displacement_segment == index.displacement_segments.begin()) {
+            return {.error = error(timing_error_code_t::invalid_document,
+                                   "scroll displacement index has no containing segment")};
+        }
+        const auto& segment = *std::prev(after_displacement_segment);
+        const auto begin_comparison = compare_exact(*row, segment.begin_row);
+        const auto end_comparison = compare_exact(*row, segment.end_row);
+        if (!begin_comparison || !end_comparison || *begin_comparison < 0 || *end_comparison > 0) {
+            return {.error = error(timing_error_code_t::invalid_document,
+                                   "scroll displacement segment does not contain the query row")};
+        }
+        displacement = segment.cumulative_begin_beats;
+        if (!segment.warped && *begin_comparison > 0) {
+            const auto row_distance = subtract_exact(*row, segment.begin_row);
+            const auto beat_distance =
+                row_distance && row_distance->numerator >= 0
+                    ? positive_fraction(
+                          {magnitude(row_distance->numerator), 4},
+                          {row_distance->denominator, index.divisions_per_standard_measure})
+                    : std::nullopt;
+            const auto speed_sum = add_exact(segment.speed_begin_multiplier, speed_multiplier);
+            const auto average_speed =
+                speed_sum ? multiply_exact(*speed_sum, {1, 2}) : std::nullopt;
+            const auto average_effective =
+                average_speed ? multiply_exact(segment.scroll_multiplier, *average_speed)
+                              : std::nullopt;
+            const auto partial = average_effective && beat_distance
+                                     ? multiply_exact(*average_effective, *beat_distance)
+                                     : std::nullopt;
+            const auto accumulated = partial ? add_exact(displacement, *partial) : std::nullopt;
+            if (!accumulated) {
+                return {.error =
+                            error(timing_error_code_t::arithmetic_overflow,
+                                  "scroll displacement query exceeds exact arithmetic bounds")};
+            }
+            displacement = *accumulated;
+        }
+    }
+    const auto render_multiplier =
+        static_cast<double>(effective->numerator) / static_cast<double>(effective->denominator);
+    const auto render_displacement =
+        static_cast<double>(displacement.numerator) / static_cast<double>(displacement.denominator);
+    if (!std::isfinite(render_multiplier) || !std::isfinite(render_displacement)) {
+        return {.error = error(timing_error_code_t::arithmetic_overflow,
+                               "scroll multiplier or displacement is not finite for rendering")};
+    }
+    return {.state = scroll_speed_state_t{.scroll_multiplier = scroll_multiplier,
+                                          .speed_multiplier = speed_multiplier,
+                                          .effective_multiplier = *effective,
+                                          .displacement_beats = displacement,
+                                          .render_multiplier = render_multiplier,
+                                          .render_displacement_beats = render_displacement}};
 }
 
 auto build_preview_schedule(const chart_document_t& chart, const timing_index_t& timing,

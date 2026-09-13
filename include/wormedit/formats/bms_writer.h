@@ -22,6 +22,8 @@ enum class bms_write_diagnostic_code_t {
     lossy_transform,
     unsupported_branch_policy,
     branch_provenance,
+    unsupported_encoding,
+    unrepresentable_text,
 };
 
 struct bms_write_diagnostic_t {
@@ -46,6 +48,10 @@ struct bms_write_options_t {
     // Full-tree preservation is the safe default. Active-projection flattening
     // is a separate, explicitly lossy operation and requires resolved choices.
     bms_branch_policy_t branch_policy{bms_branch_policy_t::preserve_tree};
+    // Omit to retain exact unchanged source bytes when possible and otherwise
+    // emit UTF-8 with BOM. Supplying an encoding forces normalized output in
+    // that encoding; unknown is rejected and legacy codecs require iconv.
+    std::optional<text_encoding_t> output_encoding;
     // BMS channel payloads are bounded by both this slot count and the parser's line limit.
     std::size_t max_slots_per_line{500'000};
 };
@@ -57,11 +63,12 @@ struct bms_write_result_t {
     [[nodiscard]] auto has_errors() const -> bool;
 };
 
-// Writes unchanged imported BMS bytes exactly, or emits deterministic UTF-8
-// BMS for metadata, resources, measure lengths, initial BPM, taps, holds,
-// repeated BGM source lanes, and representable BGA events. Unsupported semantic
-// features fail with typed diagnostics. Provenanced branch metadata edits replace
-// only their retained source statement; other branch content remains source-backed.
+// Writes unchanged imported BMS bytes exactly, or emits deterministic normalized
+// BMS in the requested encoding for metadata, resources, measure lengths, initial
+// BPM, taps, holds, repeated BGM source lanes, and representable BGA events.
+// Unsupported semantic features fail with typed diagnostics. Provenanced branch
+// metadata edits replace only their retained source statement; other branch content
+// remains source-backed.
 [[nodiscard]] auto write_bms(const song_document_t& song, bms_write_options_t options = {})
     -> bms_write_result_t;
 

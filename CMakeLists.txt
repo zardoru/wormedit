@@ -42,6 +42,7 @@ add_library(wormedit_core
     src/formats/bmson.cpp
     src/formats/bmson_writer.cpp
     src/formats/native_project.cpp
+    src/formats/native_project_storage.cpp
 )
 add_library(wormedit::core ALIAS wormedit_core)
 target_include_directories(wormedit_core PUBLIC "${CMAKE_SOURCE_DIR}/include")

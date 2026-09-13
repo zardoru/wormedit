@@ -20,6 +20,7 @@ add_executable(wormedit_core_tests
     formats/bmson_tests.cpp
     formats/bmson_writer_tests.cpp
     formats/native_project_tests.cpp
+    formats/native_project_storage_tests.cpp
 )
 target_compile_definitions(wormedit_core_tests
     PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"

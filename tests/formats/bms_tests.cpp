@@ -463,6 +463,7 @@ TEST_CASE("BMS unresolved channel references retain unbound source slots",
     auto result = parse("#BPM 120\n#00001:01\n#00003:7Z\n#00008:02\n#00009:03\n");
     REQUIRE(result.song.has_value());
     const auto& chart = result.song->charts.front();
+    CHECK(result.song->resources.empty());
     REQUIRE(chart.measures.front().bgm_events.size() == 1);
     CHECK_FALSE(chart.measures.front().bgm_events.front().sound.has_value());
     CHECK(std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
@@ -473,6 +474,70 @@ TEST_CASE("BMS unresolved channel references retain unbound source slots",
     }));
     CHECK(chart.bpms.size() == 1);
     CHECK(chart.pauses.empty());
+}
+
+TEST_CASE("BMS BGA channels materialize with typed events and relinkable missing BMPs",
+          "[unit][format][bms][events][resource]") {
+    auto result = parse("#BMP01 background.png\n"
+                        "#BMP02 poor.png\n"
+                        "#BMP03 layer-one.png\n"
+                        "#BMP04 layer-two.png\n"
+                        "#00004:0100\n"
+                        "#00006:0200\n"
+                        "#00007:0300\n"
+                        "#0000A:0400\n"
+                        "#00107:7F00\n"
+                        "#0020A:7F00\n");
+    REQUIRE(result.song.has_value());
+    auto& song = *result.song;
+    auto& chart = song.charts.front();
+    REQUIRE(chart.bga_events.size() == 6);
+    CHECK(chart.bga_events[0].kind == wormedit::visual_event_kind_t::background);
+    CHECK(chart.bga_events[1].kind == wormedit::visual_event_kind_t::poor);
+    CHECK(chart.bga_events[2].kind == wormedit::visual_event_kind_t::layer);
+    CHECK(chart.bga_events[3].kind == wormedit::visual_event_kind_t::layer);
+    CHECK(chart.bga_events[4].kind == wormedit::visual_event_kind_t::layer);
+    CHECK(chart.bga_events[5].kind == wormedit::visual_event_kind_t::layer);
+    CHECK(chart.bga_events[0].resource == song.resources[0].id);
+    CHECK(chart.bga_events[1].resource == song.resources[1].id);
+    CHECK(chart.bga_events[2].resource == song.resources[2].id);
+    CHECK(chart.bga_events[3].resource == song.resources[3].id);
+    CHECK(chart.bga_events[4].resource == chart.bga_events[5].resource);
+    CHECK(chart.bga_events[0].provenance.source_field.starts_with("04 slot 0"));
+    CHECK(chart.bga_events[3].provenance.source_field.starts_with("0A slot 0"));
+    CHECK(chart.bga_events[4].position.measure == chart.measures[1].id);
+    CHECK(chart.bga_events[5].position.measure == chart.measures[2].id);
+
+    REQUIRE(song.resources.size() == 5);
+    const auto& missing = song.resources.back();
+    CHECK(missing.name == "Missing BMS BMP 7F");
+    CHECK(missing.missing);
+    CHECK(missing.roles == std::vector{wormedit::resource_role_t::bga});
+    REQUIRE(missing.target_identities.size() == 1);
+    CHECK(missing.target_identities.front().identifier == "7F");
+    CHECK(missing.target_identities.front().namespace_name == "BMP");
+    const auto asset =
+        std::ranges::find(song.visual_assets, missing.asset, &wormedit::visual_asset_t::id);
+    REQUIRE(asset != song.visual_assets.end());
+    CHECK(asset->kind == wormedit::asset_kind_t::image);
+    CHECK(asset->source_path.empty());
+    CHECK(wormedit::validate_document(song).empty());
+
+    REQUIRE(chart.bms_control_tree.has_value());
+    const auto& tree = *chart.bms_control_tree;
+    const auto raw = find_kind(tree, wormedit::bms_control_kind_t::raw_statement);
+    for (const auto* expected : {"#00004:0100", "#00006:0200", "#00007:0300", "#0000A:0400",
+                                 "#00107:7F00", "#0020A:7F00"}) {
+        CHECK(std::ranges::any_of(raw, [expected](const auto* statement) {
+            return statement->original_text == expected &&
+                   statement->source_span.byte_end > statement->source_span.byte_begin;
+        }));
+    }
+    CHECK(std::ranges::count_if(result.diagnostics, [](const auto& diagnostic) {
+              return diagnostic.code ==
+                         wormedit::bms_parse_diagnostic_code_t::unresolved_reference &&
+                     diagnostic.message.find("BMP7F") != std::string::npos;
+          }) == 1);
 }
 
 TEST_CASE("BMS reader grows measures through the largest channel index", "[unit][format][bms]") {

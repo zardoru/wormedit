@@ -1575,7 +1575,8 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
     for (auto& channel_line : channel_lines) {
         const auto channel = std::string_view(channel_line.channel);
         const auto is_builtin_channel = channel == "01" || channel == "03" || channel == "08" ||
-                                        channel == "09";
+                                        channel == "09" || channel == "04" || channel == "06" ||
+                                        channel == "07" || channel == "0A";
         if (is_builtin_channel) {
             channel_line.materialize = true;
         } else if (is_playable_channel(channel)) {
@@ -1666,6 +1667,44 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         return std::nullopt;
     };
 
+    // Unlike sound references, a BGA event cannot be represented without a resource ID.
+    // Keep undefined WAV references unbound, but create a missing BMP catalog entry so the
+    // visual event remains editable and can be relinked later. The raw channel statement is
+    // still retained in the BMS control tree in either case.
+    auto bga_resource_for_object = [&](const bms_control_node_t& node,
+                                       std::string_view object_id) -> resource_id_t {
+        const auto key = std::string("BMP") + std::string(object_id);
+        if (const auto found = resource_ids.find(key); found != resource_ids.end()) {
+            return found->second;
+        }
+
+        const auto asset_id = new_id<asset_id_t>(ids);
+        const auto resource_id = new_id<resource_id_t>(ids);
+        const auto normalized_id = upper_ascii(object_id);
+        const auto missing_name = "Missing BMS BMP " + normalized_id;
+        song.visual_assets.push_back({
+            .id = asset_id,
+            .kind = asset_kind_t::image,
+            .source_path = {},
+        });
+        song.resources.push_back({
+            .id = resource_id,
+            .name = missing_name,
+            .asset = asset_id,
+            .roles = {resource_role_t::bga},
+            .target_identities = {{format_family_t::bms, normalized_id, "BMP"}},
+            .missing = true,
+            .provenance = source_provenance(key + " (missing declaration)", node.original_text,
+                                            node.source_order),
+        });
+        resource_ids.emplace(key, resource_id);
+        line_diagnostic(node, diagnostic_severity_t::warning,
+                        bms_parse_diagnostic_code_t::unresolved_reference,
+                        "BGA channel references undeclared " + key +
+                            "; a missing visual resource placeholder was created");
+        return resource_id;
+    };
+
     if (initial_bpm.has_value()) {
         chart.bpms.push_back({
             .id = new_id<object_id_t>(ids),
@@ -1728,6 +1767,27 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                     .provenance = source_provenance(
                         "01 slot " + std::to_string(slot) + " object " + object_id,
                         node.original_text, node.source_order),
+                });
+                continue;
+            }
+
+            if (channel == "04" || channel == "06" || channel == "07" || channel == "0A") {
+                if (object_id == "00") {
+                    continue;
+                }
+                const auto kind = channel == "06" ? visual_event_kind_t::poor
+                                  : channel == "07" || channel == "0A"
+                                      ? visual_event_kind_t::layer
+                                      : visual_event_kind_t::background;
+                chart.bga_events.push_back({
+                    .id = new_id<object_id_t>(ids),
+                    .position = *position,
+                    .resource = bga_resource_for_object(node, object_id),
+                    .kind = kind,
+                    .provenance =
+                        source_provenance(std::string(channel) + " slot " + std::to_string(slot) +
+                                              " object " + object_id,
+                                          node.original_text, node.source_order),
                 });
                 continue;
             }

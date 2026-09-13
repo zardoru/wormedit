@@ -289,7 +289,9 @@ struct preview_visual_event_t {
 struct preview_metronome_event_t {
     std::uint64_t sample_frame{};
     measure_id_t measure;
-    std::uint32_t pulse{};
+    // Chart pulses are nonnegative and local to their measure. Count-in pulses
+    // are negative ordinals relative to the first measure's downbeat.
+    std::int64_t pulse{};
     metronome_accent_t accent{metronome_accent_t::regular};
 };
 
@@ -309,6 +311,10 @@ struct preview_schedule_options_t {
     std::size_t maximum_bga_events{100'000};
     std::size_t maximum_metronome_events{100'000};
     bool include_metronome{true};
+    // Number of first-measure metronome pulses to schedule before row zero.
+    // They use the row-zero BPM and meter, and are included only when their
+    // exact audio time maps to a nonnegative sample frame.
+    std::uint32_t count_in_pulses{};
 };
 
 struct preview_schedule_result_t {

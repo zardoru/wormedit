@@ -1668,6 +1668,12 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
                   "preview input count exceeds a configured queue construction cap"));
         return result;
     }
+    if (options.include_metronome && options.count_in_pulses > options.maximum_metronome_events) {
+        result.diagnostics.push_back(
+            error(timing_error_code_t::capacity_exceeded,
+                  "count-in exceeds the metronome queue construction cap"));
+        return result;
+    }
     schedule.playable.reserve(playable_candidates);
     schedule.bgm.reserve(bgm_candidates);
     schedule.bga.reserve(std::min(chart.bga_events.size(), options.maximum_bga_events));
@@ -1754,8 +1760,8 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
     }
 
     if (options.include_metronome) {
-        for (std::size_t measure_index = 0; measure_index < chart.measures.size();
-             ++measure_index) {
+        const auto pulse_count_for =
+            [&](std::size_t measure_index) -> std::optional<std::uint64_t> {
             const auto& measure = chart.measures[measure_index];
             const auto& entry = measures.entries[measure_index];
             auto pulses = std::uint64_t{4};
@@ -1768,14 +1774,108 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
                              : std::max<std::uint64_t>(1, entry.row_capacity / quarter_rows);
             }
             if (pulses == 0 || entry.row_capacity % pulses != 0) {
+                return std::nullopt;
+            }
+            return pulses;
+        };
+        const auto accent_for = [](std::uint64_t pulse, bool compound) {
+            return pulse == 0                   ? metronome_accent_t::measure
+                   : compound && pulse % 3 == 0 ? metronome_accent_t::group
+                                                : metronome_accent_t::regular;
+        };
+
+        if (options.count_in_pulses != 0) {
+            const auto pulses = pulse_count_for(0);
+            if (pulses) {
+                const auto& first_measure = chart.measures.front();
+                const auto step = measures.entries.front().row_capacity / *pulses;
+                const auto row_zero = timing_at(timing, 0, timing_boundary_side_t::event);
+                const auto initial_bpm = timing.rows.empty()
+                                             ? std::optional<signed_rational_t>{}
+                                             : normalized(timing.rows.front().effective_bpm);
+                if (!row_zero || !initial_bpm || initial_bpm->numerator <= 0) {
+                    result.diagnostics.push_back(row_zero.error.value_or(
+                        error(timing_error_code_t::invalid_document,
+                              "count-in requires a valid positive BPM at row zero")));
+                    return result;
+                }
+                // One metronome pulse spans `step` chart rows. Extrapolate that
+                // exact duration backward from row zero's event-side time.
+                const auto pulse_seconds =
+                    positive_fraction({step, 240, initial_bpm->denominator},
+                                      {chart.divisions_per_standard_measure,
+                                       static_cast<std::uint64_t>(initial_bpm->numerator)});
+                if (!pulse_seconds) {
+                    result.diagnostics.push_back(
+                        error(timing_error_code_t::arithmetic_overflow,
+                              "count-in pulse duration exceeds exact timing range"));
+                    return result;
+                }
+                const bool compound =
+                    first_measure.definition.meter && *pulses > 3 && *pulses % 3 == 0;
+                bool reported_negative_count_in_time{};
+                for (auto remaining = options.count_in_pulses; remaining > 0; --remaining) {
+                    const auto elapsed =
+                        multiply_exact(*pulse_seconds, {static_cast<std::int64_t>(remaining), 1});
+                    const auto seconds =
+                        elapsed ? subtract_exact(*row_zero.seconds, *elapsed) : std::nullopt;
+                    if (!seconds) {
+                        result.diagnostics.push_back(
+                            error(timing_error_code_t::arithmetic_overflow,
+                                  "count-in time exceeds exact timing range"));
+                        return result;
+                    }
+                    const auto frame =
+                        sample_frame_at(*seconds, options.sample_rate, options.rounding);
+                    if (!frame) {
+                        auto diagnostic = *frame.error;
+                        if (diagnostic.code == timing_error_code_t::negative_sample_frame) {
+                            if (!reported_negative_count_in_time) {
+                                diagnostic.severity = diagnostic_severity_t::warning;
+                                diagnostic.message =
+                                    "one or more count-in pulses precede audio frame zero and "
+                                    "were omitted";
+                                result.diagnostics.push_back(std::move(diagnostic));
+                                reported_negative_count_in_time = true;
+                            }
+                            continue;
+                        }
+                        result.diagnostics.push_back(std::move(diagnostic));
+                        continue;
+                    }
+                    if (schedule.metronome.size() >= options.maximum_metronome_events) {
+                        result.diagnostics.push_back(
+                            error(timing_error_code_t::capacity_exceeded,
+                                  "metronome preview queue exceeds its configured cap"));
+                        return result;
+                    }
+                    const auto signed_pulse = -static_cast<std::int64_t>(remaining);
+                    const auto remainder = magnitude(signed_pulse) % *pulses;
+                    const auto pulse_in_measure = remainder == 0 ? 0 : *pulses - remainder;
+                    schedule.metronome.push_back({
+                        .sample_frame = *frame.frame,
+                        .measure = first_measure.id,
+                        .pulse = signed_pulse,
+                        .accent = accent_for(pulse_in_measure, compound),
+                    });
+                }
+            }
+        }
+
+        for (std::size_t measure_index = 0; measure_index < chart.measures.size();
+             ++measure_index) {
+            const auto& measure = chart.measures[measure_index];
+            const auto& entry = measures.entries[measure_index];
+            const auto pulses = pulse_count_for(measure_index);
+            if (!pulses) {
                 result.diagnostics.push_back(
                     error(timing_error_code_t::invalid_document,
                           "measure meter cannot produce exact metronome pulse rows"));
                 continue;
             }
-            const auto step = entry.row_capacity / pulses;
-            const bool compound = measure.definition.meter && pulses > 3 && pulses % 3 == 0;
-            for (std::uint64_t pulse = 0; pulse < pulses; ++pulse) {
+            const auto step = entry.row_capacity / *pulses;
+            const bool compound = measure.definition.meter && *pulses > 3 && *pulses % 3 == 0;
+            for (std::uint64_t pulse = 0; pulse < *pulses; ++pulse) {
                 const auto row = entry.absolute_begin_row + pulse * step;
                 const auto query = timing_at(timing, row, timing_boundary_side_t::event);
                 if (!query) {
@@ -1801,13 +1901,17 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
                               "metronome preview queue exceeds its configured cap"));
                     return result;
                 }
+                if (pulse > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+                    result.diagnostics.push_back(
+                        error(timing_error_code_t::arithmetic_overflow,
+                              "metronome pulse index exceeds its signed representation"));
+                    return result;
+                }
                 schedule.metronome.push_back({
                     .sample_frame = *frame.frame,
                     .measure = measure.id,
-                    .pulse = static_cast<std::uint32_t>(pulse),
-                    .accent = pulse == 0                   ? metronome_accent_t::measure
-                              : compound && pulse % 3 == 0 ? metronome_accent_t::group
-                                                           : metronome_accent_t::regular,
+                    .pulse = static_cast<std::int64_t>(pulse),
+                    .accent = accent_for(pulse, compound),
                 });
             }
         }
@@ -1838,6 +1942,7 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
                std::tie(right.sample_frame, right.draw_order, right.source_order,
                         right.object.value);
     });
+    std::ranges::stable_sort(schedule.metronome, {}, &preview_metronome_event_t::sample_frame);
     result.schedule = std::move(schedule);
     return result;
 }

@@ -483,6 +483,229 @@ TEST_CASE("Space range selection previews inclusive cross-measure heads, tails, 
                                                            object_id_t{104}, object_id_t{105}});
 }
 
+TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects by typed identity",
+          "[unit][core][interaction][selection][tracks]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.bgm_source_lanes.push_back({.id = object_id_t{301}, .name = "BGM"});
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{201},
+                                                 .position = {measure_id_t{1}, 240},
+                                                 .source_lane = object_id_t{301}});
+    chart.bpms.push_back({.id = object_id_t{202},
+                          .position = {measure_id_t{1}, 240},
+                          .beats_per_minute = signed_rational_t{120, 1}});
+    chart.pauses.push_back({.id = object_id_t{203},
+                            .position = {measure_id_t{1}, 240},
+                            .kind = pause_kind_t::stop,
+                            .duration = signed_rational_t{1, 2}});
+    chart.pauses.push_back({.id = object_id_t{212},
+                            .position = {measure_id_t{1}, 241},
+                            .kind = pause_kind_t::delay,
+                            .duration = signed_rational_t{1, 4}});
+    chart.warps.push_back(
+        {.id = object_id_t{204}, .span = {{measure_id_t{1}, 480}, {measure_id_t{1}, 720}}});
+    chart.scrolls.push_back({.id = object_id_t{205},
+                             .position = {measure_id_t{1}, 240},
+                             .multiplier = signed_rational_t{2, 1}});
+    chart.speeds.push_back({.id = object_id_t{206},
+                            .position = {measure_id_t{1}, 240},
+                            .multiplier = signed_rational_t{3, 2}});
+    chart.kiai.push_back({.id = object_id_t{207}, .position = {measure_id_t{1}, 240}});
+    chart.timing_anchors.push_back({.id = object_id_t{208}, .position = {measure_id_t{1}, 240}});
+    chart.bookmarks.push_back({.id = object_id_t{210},
+                               .label = "Beat marker",
+                               .anchor = marker_anchor_t::beat,
+                               .position = local_position_t{measure_id_t{1}, 240}});
+    chart.sections.push_back(
+        {.id = object_id_t{211},
+         .label = "Section",
+         .anchor = marker_anchor_t::beat,
+         .beat_span = position_span_t{{measure_id_t{1}, 240}, {measure_id_t{1}, 300}}});
+    chart.bookmarks.push_back({.id = object_id_t{213},
+                               .label = "Audio marker",
+                               .anchor = marker_anchor_t::audio_time,
+                               .audio_milliseconds = 1'200});
+    chart.sections.push_back(
+        {.id = object_id_t{214},
+         .label = "Audio section",
+         .anchor = marker_anchor_t::audio_time,
+         .audio_millisecond_span = std::pair<std::int64_t, std::int64_t>{1'000, 2'000}});
+    song.visual_assets.push_back({.id = asset_id_t{302},
+                                  .kind = asset_kind_t::image,
+                                  .source_path = "background.png",
+                                  .width = 1,
+                                  .height = 1});
+    song.resources.push_back({.id = resource_id_t{303},
+                              .name = "background",
+                              .asset = asset_id_t{302},
+                              .roles = {resource_role_t::bga}});
+    chart.bga_events.push_back({.id = object_id_t{209},
+                                .position = {measure_id_t{1}, 240},
+                                .resource = resource_id_t{303}});
+    REQUIRE(validate_document(song).empty());
+
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{4ULL};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                         {measure_id_t{1}, 240}, snaps, 4, 300.0);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+    const editor_selection_scope_t scope{.notes = false, .bgm = true, .timing = true, .bga = true};
+    const auto indexed =
+        build_editor_hit_test_index(history.document.charts.front(), history.document.revision);
+    REQUIRE(std::holds_alternative<editor_hit_test_index_t>(indexed));
+    const auto& chart_ref = history.document.charts.front();
+    const auto row_query = editor_objects_in_row_range(
+        chart_ref, std::get<editor_hit_test_index_t>(indexed), 240, 240, scope);
+    REQUIRE(std::holds_alternative<std::vector<editor_selection_object_t>>(row_query));
+    const auto& row_objects = std::get<std::vector<editor_selection_object_t>>(row_query);
+    CHECK(row_objects.size() == 10);
+    CHECK(std::ranges::find(row_objects,
+                            editor_selection_object_t{editor_selection_object_kind_t::bgm_event,
+                                                      object_id_t{201}}) != row_objects.end());
+    CHECK(std::ranges::find(row_objects,
+                            editor_selection_object_t{editor_selection_object_kind_t::bga_event,
+                                                      object_id_t{209}}) != row_objects.end());
+    CHECK(editor_selection_object_t{editor_selection_object_kind_t::note, object_id_t{55}} !=
+          editor_selection_object_t{editor_selection_object_kind_t::bga_event, object_id_t{55}});
+
+    const auto fractional_area = [&](double first_y, double last_y) {
+        return editor_objects_in_area_selection(
+            chart_ref, std::get<editor_hit_test_index_t>(indexed), *setup.view,
+            editor_area_selection_request_t{.start_x_pixels = 120.0,
+                                            .start_y_pixels = first_y,
+                                            .end_x_pixels = 180.0,
+                                            .end_y_pixels = last_y,
+                                            .field_left_pixels = 100.0,
+                                            .field_width_pixels = 200.0,
+                                            .scope = scope});
+    };
+    const auto just_after_row_240 = fractional_area(48.05, 48.10); // rows 240.25–240.5
+    REQUIRE(std::holds_alternative<std::vector<editor_selection_object_t>>(just_after_row_240));
+    const auto& fractional_objects =
+        std::get<std::vector<editor_selection_object_t>>(just_after_row_240);
+    CHECK(std::ranges::none_of(fractional_objects, [](const auto& object) {
+        return object.id == object_id_t{201} || object.id == object_id_t{202} ||
+               object.id == object_id_t{203} || object.id == object_id_t{205} ||
+               object.id == object_id_t{206} || object.id == object_id_t{207} ||
+               object.id == object_id_t{208} || object.id == object_id_t{209} ||
+               object.id == object_id_t{210};
+    }));
+    CHECK(std::ranges::any_of(fractional_objects, [](const auto& object) {
+        return object.kind == editor_selection_object_kind_t::section &&
+               object.id == object_id_t{211};
+    }));
+    const auto across_row_241 = fractional_area(48.19, 48.21); // rows 240.95–241.05
+    REQUIRE(std::holds_alternative<std::vector<editor_selection_object_t>>(across_row_241));
+    CHECK(std::ranges::any_of(
+        std::get<std::vector<editor_selection_object_t>>(across_row_241), [](const auto& object) {
+            return object.kind == editor_selection_object_kind_t::delay_event &&
+                   object.id == object_id_t{212};
+        }));
+    CHECK(std::ranges::none_of(
+        std::get<editor_hit_test_index_t>(indexed).available_objects, [](const auto& object) {
+            return object.id == object_id_t{213} || object.id == object_id_t{214};
+        }));
+
+    const auto area_begin = dispatch_editor_action(
+        history, state,
+        begin_editor_area_selection_action_t{120.0, 47.0, 100.0, 200.0,
+                                             editor_area_selection_mode_t::replace, true, scope});
+    REQUIRE(area_begin);
+    REQUIRE(area_begin.view->pending_editor_area_selection.has_value());
+    REQUIRE(area_begin.view->pending_editor_area_selection->objects != nullptr);
+    const auto area_commit = dispatch_editor_action(
+        history, state, commit_editor_area_selection_action_t{180.0, 49.0, true});
+    REQUIRE(area_commit);
+    CHECK(state.selected_notes.empty());
+    CHECK(state.selected_objects.size() == 11);
+    CHECK_FALSE(area_commit.view->pending_editor_area_selection.has_value());
+
+    const editor_selection_scope_t bgm_only{.notes = false, .bgm = true};
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_editor_area_selection_action_t{
+            120.0, 47.0, 100.0, 200.0, editor_area_selection_mode_t::toggle, true, bgm_only}));
+    REQUIRE(dispatch_editor_action(history, state,
+                                   commit_editor_area_selection_action_t{180.0, 49.0, true}));
+    CHECK(state.selected_objects.size() == 10);
+    CHECK(std::ranges::none_of(state.selected_objects, [](const auto& object) {
+        return object.kind == editor_selection_object_kind_t::bgm_event;
+    }));
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_editor_area_selection_action_t{120.0, 47.0, 100.0, 200.0,
+                                             editor_area_selection_mode_t::add, true, bgm_only}));
+    REQUIRE(dispatch_editor_action(history, state,
+                                   commit_editor_area_selection_action_t{180.0, 49.0, true}));
+    CHECK(state.selected_objects.size() == 11);
+
+    const auto before_cancel = state.selected_objects;
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_editor_area_selection_action_t{120.0, 120.0, 100.0, 200.0,
+                                             editor_area_selection_mode_t::toggle, true, scope}));
+    REQUIRE(dispatch_editor_action(history, state, cancel_editor_area_selection_action_t{}));
+    CHECK(state.selected_objects == before_cancel);
+
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        space_range_selection_action_t{editor_area_selection_mode_t::replace, scope}));
+    const auto moved = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    REQUIRE(moved);
+    REQUIRE(moved.view->pending_space_range_selection.has_value());
+    const auto preview = moved.view->pending_space_range_selection->objects;
+    REQUIRE(preview != nullptr);
+    CHECK(std::ranges::any_of(*preview, [](const auto& object) {
+        return object.kind == editor_selection_object_kind_t::warp_event &&
+               object.id == object_id_t{204};
+    }));
+    const auto committed = dispatch_editor_action(
+        history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
+    REQUIRE(committed);
+    CHECK(std::ranges::any_of(state.selected_objects, [](const auto& object) {
+        return object.kind == editor_selection_object_kind_t::bgm_event &&
+               object.id == object_id_t{201};
+    }));
+    CHECK_FALSE(committed.view->pending_space_range_selection.has_value());
+}
+
+TEST_CASE("selection index handles a sparse 50k BGM track and rejects malformed row queries",
+          "[unit][core][interaction][selection][tracks][stress]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.divisions_per_standard_measure = 100'000;
+    chart.measures.front().bgm_events.reserve(50'000);
+    for (std::uint64_t event = 0; event < 50'000; ++event) {
+        chart.measures.front().bgm_events.push_back({.id = object_id_t{10'000 + event},
+                                                     .position = {measure_id_t{1}, event * 2},
+                                                     .source_lane = object_id_t{900}});
+    }
+    const auto built = build_editor_hit_test_index(chart, 1);
+    REQUIRE(std::holds_alternative<editor_hit_test_index_t>(built));
+    const auto& index = std::get<editor_hit_test_index_t>(built);
+    const auto result = editor_objects_in_row_range(
+        chart, index, 98'000, 98'000, editor_selection_scope_t{.notes = false, .bgm = true});
+    REQUIRE(std::holds_alternative<std::vector<editor_selection_object_t>>(result));
+    CHECK(std::get<std::vector<editor_selection_object_t>>(result) ==
+          std::vector<editor_selection_object_t>{
+              {editor_selection_object_kind_t::bgm_event, object_id_t{59'000}}});
+    CHECK(std::holds_alternative<diagnostic_list_t>(editor_objects_in_row_range(
+        chart, index, 200'001, 200'001, editor_selection_scope_t{.notes = false, .bgm = true})));
+
+    auto malformed = make_song().charts.front();
+    malformed.measures.front().bgm_events = {
+        {.id = object_id_t{700}, .position = {measure_id_t{1}, 0}, .source_lane = object_id_t{900}},
+        {.id = object_id_t{700},
+         .position = {measure_id_t{1}, 240},
+         .source_lane = object_id_t{900}},
+    };
+    const auto rejected = build_editor_hit_test_index(malformed, 1);
+    REQUIRE(std::holds_alternative<diagnostic_list_t>(rejected));
+    CHECK(has_code(std::get<diagnostic_list_t>(rejected), diagnostic_code_t::duplicate_id));
+}
+
 TEST_CASE("Space range selection supports add and toggle and cancels safely",
           "[unit][core][interaction][selection][space][cancel]") {
     auto song = make_song();

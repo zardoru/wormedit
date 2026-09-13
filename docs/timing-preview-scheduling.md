@@ -46,6 +46,12 @@ they never erase or allocate on the realtime path. A timing-source fingerprint
 rejects accidental reuse after a timing or measure edit, while application-level
 generation guards remain responsible for document/session publication.
 
+An optional bounded pre-zero count-in extrapolates the first measure's exact pulse
+spacing and accent/group pattern backward from the row-zero event side using the
+row-zero BPM. Count-in pulses have negative ordinal values so consumers can
+distinguish them from chart pulses. Pulses before audio frame zero are omitted and
+produce at most one diagnostic regardless of the requested count.
+
 `preview_transport_bridge_t` consumes the playable, BGM, and metronome heads from a
 control thread. It merges them by frame, resolves bounded resource/accent bindings,
 and fills pre-reserved transport voice slots only through the configured capacity.
@@ -78,8 +84,8 @@ effective multiplier and visual position without replaying earlier events. Sourc
 fingerprints cover both the timing index and authored scroll/speed tracks.
 
 Current bounds are deliberate: the timing index requires a positive BPM at row
-zero. Count-in before frame zero, richer profile-specific boundary rules, concrete
-image/video/storyboard rendering, and SDL device integration remain subsequent
-timing-engine slices. The timing source fingerprint continues to reject stale
-preview schedules after timing or measure edits; callers still use document
-generation guards when publishing asynchronous work.
+zero. Richer profile-specific boundary rules, concrete image/video/storyboard
+rendering, and SDL device integration remain subsequent timing-engine slices. The
+timing source fingerprint continues to reject stale preview schedules after timing
+or measure edits; callers still use document generation guards when publishing
+asynchronous work.

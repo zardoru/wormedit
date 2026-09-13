@@ -781,6 +781,63 @@ TEST_CASE("BMS writer edits projected metadata in place across branch choices",
     CHECK(root_projection.song->metadata.title == "Root title");
 }
 
+TEST_CASE("BMS writer patches one branch resource path without changing sibling branches",
+          "[unit][format][bms][writer][branch][resource]") {
+    constexpr std::string_view source =
+        "#PLAYER 1\n#TITLE Branch resources\n#BPM 120\n#RANDOM 2\n#IF 1\n"
+        "#WAV01  first.wav\n#00011:01\n#ELSE\n#WAV01 second.wav\n#00011:01\n"
+        "#ENDIF\n#ENDRANDOM\n";
+    wormedit::bms_parse_options_t parse_options;
+    parse_options.lane_profile_id = "bme-7k-outside-scratch";
+    parse_options.branch_choices = {
+        {.control_source_order = line_order(source, "#RANDOM 2"), .selected_value = 1}};
+    auto imported = parse(source, parse_options);
+    REQUIRE(imported.song.has_value());
+    const auto first_resource_order = line_order(source, "#WAV01  first.wav");
+    const auto resource = std::ranges::find_if(imported.song->resources, [&](const auto& entry) {
+        return entry.provenance.source_order == first_resource_order;
+    });
+    REQUIRE(resource != imported.song->resources.end());
+
+    wormedit::bms_write_options_t write_options;
+    write_options.lane_profile_id = parse_options.lane_profile_id;
+    write_options.preserve_unchanged_source = false;
+    const auto unchanged = wormedit::write_bms(*imported.song, write_options);
+    REQUIRE(unchanged.bytes.has_value());
+    CHECK(occurrences(*unchanged.bytes, "#WAV01  first.wav") == 1);
+
+    resource->name = "edited-first.wav";
+    const auto written = wormedit::write_bms(*imported.song, write_options);
+    REQUIRE(written.bytes.has_value());
+    CHECK_FALSE(written.has_errors());
+    CHECK(occurrences(*written.bytes, "#WAV01 edited-first.wav") == 1);
+    CHECK(occurrences(*written.bytes, "#WAV01 second.wav") == 1);
+    CHECK(occurrences(*written.bytes, "#RANDOM 2") == 1);
+    CHECK(occurrences(*written.bytes, "#IF 1") == 1);
+    CHECK(occurrences(*written.bytes, "#ELSE") == 1);
+    CHECK(occurrences(*written.bytes, "#ENDIF") == 1);
+    CHECK(occurrences(*written.bytes, "#ENDRANDOM") == 1);
+
+    const auto random_order = line_order(*written.bytes, "#RANDOM 2");
+    parse_options.branch_choices = {{.control_source_order = random_order, .selected_value = 1}};
+    const auto first = parse(*written.bytes, parse_options);
+    REQUIRE(first.song.has_value());
+    REQUIRE(first.song->resources.size() == 1);
+    CHECK(first.song->resources.front().name == "edited-first.wav");
+
+    parse_options.branch_choices.front().selected_value = 2;
+    const auto second = parse(*written.bytes, parse_options);
+    REQUIRE(second.song.has_value());
+    REQUIRE(second.song->resources.size() == 1);
+    CHECK(second.song->resources.front().name == "second.wav");
+
+    auto ambiguous = *imported.song;
+    ambiguous.resources.front().provenance.source_order = line_order(source, "#WAV01 second.wav");
+    const auto rejected = wormedit::write_bms(ambiguous, write_options);
+    CHECK_FALSE(rejected.bytes.has_value());
+    CHECK(has_error(rejected, wormedit::bms_write_diagnostic_code_t::branch_provenance));
+}
+
 TEST_CASE("BMS writer preserves mixed root and branch timing statements",
           "[unit][format][bms][writer]") {
     constexpr std::string_view source =

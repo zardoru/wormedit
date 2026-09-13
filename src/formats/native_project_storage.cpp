@@ -591,6 +591,96 @@ auto parse_recovery_impl(std::string_view bytes, native_project_limits_t limits,
     }
 }
 
+constexpr std::size_t absolute_maximum_scan_candidates = 64;
+constexpr std::size_t absolute_maximum_scan_directory_entries = 1024;
+constexpr std::size_t absolute_maximum_scan_file_bytes = 256U * 1024U * 1024U;
+constexpr std::size_t absolute_maximum_scan_total_bytes = 512U * 1024U * 1024U;
+constexpr std::size_t absolute_maximum_scan_diagnostics = 64;
+
+void add_scan_diagnostic(std::vector<native_project_storage_diagnostic_t>& diagnostics,
+                         std::size_t maximum_diagnostics,
+                         native_project_storage_diagnostic_code_t code, std::string message,
+                         const std::filesystem::path& path = {},
+                         diagnostic_severity_t severity = diagnostic_severity_t::warning) {
+    if (diagnostics.size() >= maximum_diagnostics) {
+        return;
+    }
+    diagnostics.push_back({.severity = severity,
+                           .code = code,
+                           .message = bounded_message(std::move(message)),
+                           .path = path});
+}
+
+auto recovery_kind(native_project_recovery_candidate_kind_t kind) -> bool {
+    return kind != native_project_recovery_candidate_kind_t::primary;
+}
+
+auto temporary_prefix(const std::filesystem::path& destination) -> std::string {
+    return path_to_utf8(destination.filename()) + ".wormedit-tmp-";
+}
+
+auto compare_versions(native_project_document_version_t left,
+                      native_project_document_version_t right)
+    -> native_project_recovery_comparison_t {
+    if (left.project_id != right.project_id) {
+        return native_project_recovery_comparison_t::different_project;
+    }
+    if (left.revision < right.revision) {
+        return native_project_recovery_comparison_t::older_revision;
+    }
+    if (left.revision > right.revision) {
+        return native_project_recovery_comparison_t::newer_revision;
+    }
+    return native_project_recovery_comparison_t::equal_revision;
+}
+
+auto temporary_source_rank(native_project_recovery_candidate_kind_t kind) -> unsigned {
+    switch (kind) {
+    case native_project_recovery_candidate_kind_t::adjacent_backup:
+        return 0;
+    case native_project_recovery_candidate_kind_t::caller_supplied_entry:
+        return 1;
+    case native_project_recovery_candidate_kind_t::stale_primary_temporary:
+    case native_project_recovery_candidate_kind_t::stale_recovery_temporary:
+        return 2;
+    case native_project_recovery_candidate_kind_t::primary:
+        return 3;
+    }
+    return 3;
+}
+
+auto recovery_candidate_precedes(const native_project_recovery_candidate_t& left,
+                                 const native_project_recovery_candidate_t& right) -> bool {
+    if (!left.version.has_value() || !right.version.has_value() ||
+        left.version->project_id != right.version->project_id) {
+        return false;
+    }
+    if (left.version->revision != right.version->revision) {
+        return left.version->revision > right.version->revision;
+    }
+    const auto left_rank = temporary_source_rank(left.kind);
+    const auto right_rank = temporary_source_rank(right.kind);
+    if (left_rank != right_rank) {
+        return left_rank < right_rank;
+    }
+    const auto left_sequence = left.recovery_metadata.has_value()
+                                   ? left.recovery_metadata->session_sequence
+                                   : std::uint64_t{};
+    const auto right_sequence = right.recovery_metadata.has_value()
+                                    ? right.recovery_metadata->session_sequence
+                                    : std::uint64_t{};
+    if (left_sequence != right_sequence) {
+        return left_sequence > right_sequence;
+    }
+    const auto left_time = left.recovery_metadata.has_value()
+                               ? left.recovery_metadata->utc_write_time
+                               : std::chrono::system_clock::time_point{};
+    const auto right_time = right.recovery_metadata.has_value()
+                                ? right.recovery_metadata->utc_write_time
+                                : std::chrono::system_clock::time_point{};
+    return left_time > right_time;
+}
+
 #ifdef _WIN32
 using native_file_t = HANDLE;
 const native_file_t invalid_file = INVALID_HANDLE_VALUE;
@@ -1009,6 +1099,376 @@ auto parse_native_project_recovery_snapshot(std::string_view bytes, native_proje
     const auto parsed = parse_recovery_impl(bytes, limits, result.diagnostics);
     if (parsed.has_value()) {
         result.snapshot = parsed->snapshot;
+    }
+    return result;
+}
+
+auto scan_native_project_recovery_candidates(const native_project_recovery_scan_request_t& request,
+                                             native_project_recovery_scan_options_t options)
+    -> native_project_recovery_scan_result_t {
+    native_project_recovery_scan_result_t result;
+    const auto maximum_candidates =
+        std::min(options.maximum_candidates, absolute_maximum_scan_candidates);
+    const auto maximum_file_bytes =
+        std::min(options.maximum_candidate_file_bytes, absolute_maximum_scan_file_bytes);
+    const auto maximum_total_bytes =
+        std::min(options.maximum_total_bytes, absolute_maximum_scan_total_bytes);
+    const auto maximum_diagnostics =
+        std::min(options.maximum_diagnostics, absolute_maximum_scan_diagnostics);
+
+    struct candidate_spec_t {
+        std::filesystem::path path;
+        native_project_recovery_candidate_kind_t kind;
+    };
+    std::vector<candidate_spec_t> specs;
+    specs.reserve(std::min(maximum_candidates, std::size_t{16}));
+    bool candidate_limit_reported{};
+    auto add_spec = [&](const std::filesystem::path& path,
+                        native_project_recovery_candidate_kind_t kind) -> bool {
+        if (path.empty()) {
+            return true;
+        }
+        const auto normalized = path.lexically_normal();
+        if (std::ranges::any_of(specs, [&](const auto& spec) {
+                return spec.path.lexically_normal() == normalized;
+            })) {
+            return true;
+        }
+        if (specs.size() >= maximum_candidates) {
+            if (!candidate_limit_reported) {
+                add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
+                                    native_project_storage_diagnostic_code_t::resource_limit,
+                                    "recovery scan stopped at its candidate limit", path);
+                candidate_limit_reported = true;
+            }
+            return false;
+        }
+        specs.push_back({.path = path, .kind = kind});
+        return true;
+    };
+
+    if (!request.primary_path.empty()) {
+        (void)add_spec(request.primary_path, native_project_recovery_candidate_kind_t::primary);
+        (void)add_spec(native_project_adjacent_backup_path(request.primary_path),
+                       native_project_recovery_candidate_kind_t::adjacent_backup);
+    }
+    bool inputs_within_limit = true;
+    const auto maximum_caller_entries =
+        std::min(request.caller_supplied_entries.size(), maximum_candidates);
+    if (request.caller_supplied_entries.size() > maximum_caller_entries) {
+        inputs_within_limit = false;
+        add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
+                            native_project_storage_diagnostic_code_t::resource_limit,
+                            "recovery scan stopped at its caller-entry limit");
+    }
+    for (std::size_t index = 0; index < maximum_caller_entries; ++index) {
+        const auto& path = request.caller_supplied_entries[index];
+        if (!add_spec(path, native_project_recovery_candidate_kind_t::caller_supplied_entry)) {
+            inputs_within_limit = false;
+            break;
+        }
+    }
+
+    auto discover_temporaries = [&](const std::filesystem::path& destination,
+                                    native_project_recovery_candidate_kind_t kind) {
+        if (destination.empty() || specs.size() >= maximum_candidates) {
+            return;
+        }
+        const auto directory =
+            destination.has_parent_path() ? destination.parent_path() : std::filesystem::path{"."};
+        std::error_code error;
+        std::filesystem::directory_iterator iterator{directory, error};
+        if (error) {
+            add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
+                                native_project_storage_diagnostic_code_t::read_failure,
+                                "could not inspect recovery directory: " + error.message(),
+                                directory);
+            return;
+        }
+        const auto prefix = temporary_prefix(destination);
+        const auto maximum_directory_entries =
+            std::min(std::max<std::size_t>(maximum_candidates * 16, 64),
+                     absolute_maximum_scan_directory_entries);
+        std::size_t directory_entries_examined{};
+        for (const std::filesystem::directory_iterator end; iterator != end;
+             iterator.increment(error)) {
+            if (error) {
+                add_scan_diagnostic(
+                    result.diagnostics, maximum_diagnostics,
+                    native_project_storage_diagnostic_code_t::read_failure,
+                    "could not continue recovery directory scan: " + error.message(), directory);
+                break;
+            }
+            if (++directory_entries_examined > maximum_directory_entries) {
+                add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
+                                    native_project_storage_diagnostic_code_t::resource_limit,
+                                    "recovery directory scan reached its entry limit", directory);
+                break;
+            }
+            const auto filename = path_to_utf8(iterator->path().filename());
+            if (!filename.starts_with(prefix)) {
+                continue;
+            }
+            std::error_code type_error;
+            if (!iterator->is_regular_file(type_error) || type_error) {
+                continue;
+            }
+            if (!add_spec(iterator->path(), kind)) {
+                break;
+            }
+        }
+    };
+
+    if (request.discover_stale_temporaries && inputs_within_limit) {
+        if (!request.primary_path.empty()) {
+            discover_temporaries(request.primary_path,
+                                 native_project_recovery_candidate_kind_t::stale_primary_temporary);
+            const auto backup_path = native_project_adjacent_backup_path(request.primary_path);
+            if (specs.size() >= maximum_candidates) {
+                add_scan_diagnostic(
+                    result.diagnostics, maximum_diagnostics,
+                    native_project_storage_diagnostic_code_t::resource_limit,
+                    "recovery scan skipped temporary discovery at its candidate limit",
+                    backup_path);
+            } else {
+                discover_temporaries(
+                    backup_path,
+                    native_project_recovery_candidate_kind_t::stale_recovery_temporary);
+            }
+        }
+        for (std::size_t index = 0; index < maximum_caller_entries; ++index) {
+            const auto& path = request.caller_supplied_entries[index];
+            if (specs.size() >= maximum_candidates) {
+                break;
+            }
+            discover_temporaries(
+                path, native_project_recovery_candidate_kind_t::stale_recovery_temporary);
+        }
+    }
+
+    std::size_t total_bytes_read{};
+    result.candidates.reserve(specs.size());
+    for (const auto& spec : specs) {
+        native_project_recovery_candidate_t candidate{.path = spec.path, .kind = spec.kind};
+        std::error_code error;
+        const auto exists = std::filesystem::exists(spec.path, error);
+        if (error) {
+            candidate.status = native_project_recovery_candidate_status_t::unreadable;
+            add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
+                                native_project_storage_diagnostic_code_t::read_failure,
+                                "could not inspect recovery candidate: " + error.message(),
+                                spec.path, diagnostic_severity_t::error);
+            result.candidates.push_back(std::move(candidate));
+            continue;
+        }
+        if (!exists) {
+            candidate.status = native_project_recovery_candidate_status_t::missing;
+            result.candidates.push_back(std::move(candidate));
+            continue;
+        }
+
+        const auto file_size = std::filesystem::file_size(spec.path, error);
+        if (error) {
+            candidate.status = native_project_recovery_candidate_status_t::unreadable;
+            add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
+                                native_project_storage_diagnostic_code_t::read_failure,
+                                "could not determine recovery candidate size: " + error.message(),
+                                spec.path, diagnostic_severity_t::error);
+            result.candidates.push_back(std::move(candidate));
+            continue;
+        }
+        if (file_size > maximum_file_bytes || file_size > maximum_total_bytes - total_bytes_read) {
+            candidate.status = native_project_recovery_candidate_status_t::resource_limited;
+            add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
+                                native_project_storage_diagnostic_code_t::resource_limit,
+                                "recovery candidate exceeds the scan byte budget", spec.path,
+                                diagnostic_severity_t::error);
+            result.candidates.push_back(std::move(candidate));
+            continue;
+        }
+
+        const auto byte_count = static_cast<std::size_t>(file_size);
+        std::ifstream stream(spec.path, std::ios::binary);
+        if (!stream) {
+            candidate.status = native_project_recovery_candidate_status_t::unreadable;
+            add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
+                                native_project_storage_diagnostic_code_t::read_failure,
+                                "could not open recovery candidate", spec.path,
+                                diagnostic_severity_t::error);
+            result.candidates.push_back(std::move(candidate));
+            continue;
+        }
+        std::string bytes(byte_count, '\0');
+        if (byte_count != 0) {
+            stream.read(bytes.data(), static_cast<std::streamsize>(byte_count));
+        }
+        if (!stream || static_cast<std::size_t>(stream.gcount()) != byte_count) {
+            candidate.status = native_project_recovery_candidate_status_t::unreadable;
+            add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
+                                native_project_storage_diagnostic_code_t::read_failure,
+                                "could not read the complete recovery candidate", spec.path,
+                                diagnostic_severity_t::error);
+            result.candidates.push_back(std::move(candidate));
+            continue;
+        }
+        total_bytes_read += byte_count;
+
+        std::vector<native_project_storage_diagnostic_t> parse_diagnostics;
+        if (spec.kind == native_project_recovery_candidate_kind_t::primary ||
+            spec.kind == native_project_recovery_candidate_kind_t::stale_primary_temporary) {
+            const auto parsed = parse_native_project(bytes, options.codec_limits);
+            if (parsed.song.has_value() && !parsed.has_errors()) {
+                candidate.document = *parsed.song;
+                candidate.version = native_project_document_version_t{
+                    .project_id = parsed.song->id, .revision = parsed.song->revision};
+                candidate.status = native_project_recovery_candidate_status_t::valid;
+            } else {
+                candidate.status =
+                    std::ranges::any_of(parsed.diagnostics,
+                                        [](const auto& item) {
+                                            return item.code ==
+                                                   native_project_diagnostic_code_t::resource_limit;
+                                        })
+                        ? native_project_recovery_candidate_status_t::resource_limited
+                        : native_project_recovery_candidate_status_t::invalid;
+                for (const auto& item : parsed.diagnostics) {
+                    if (parse_diagnostics.size() >= maximum_diagnostics) {
+                        break;
+                    }
+                    auto converted = as_error(item);
+                    converted.path = spec.path;
+                    parse_diagnostics.push_back(std::move(converted));
+                }
+            }
+        } else {
+            const auto parsed =
+                parse_recovery_impl(bytes, options.codec_limits, parse_diagnostics, spec.path);
+            if (parsed.has_value()) {
+                candidate.status = native_project_recovery_candidate_status_t::valid;
+                candidate.document = parsed->snapshot.song;
+                candidate.version =
+                    native_project_document_version_t{.project_id = parsed->snapshot.song.id,
+                                                      .revision = parsed->snapshot.song.revision};
+                candidate.recovery_metadata = parsed->snapshot.metadata;
+            } else {
+                candidate.status =
+                    std::ranges::any_of(
+                        parse_diagnostics,
+                        [](const auto& item) {
+                            return item.code ==
+                                   native_project_storage_diagnostic_code_t::resource_limit;
+                        })
+                        ? native_project_recovery_candidate_status_t::resource_limited
+                        : native_project_recovery_candidate_status_t::invalid;
+            }
+        }
+        for (auto& item : parse_diagnostics) {
+            add_scan_diagnostic(result.diagnostics, maximum_diagnostics, item.code,
+                                std::move(item.message), spec.path, item.severity);
+        }
+        if (recovery_kind(candidate.kind) &&
+            candidate.status == native_project_recovery_candidate_status_t::invalid) {
+            candidate.quarantine =
+                native_project_recovery_quarantine_t::recommend_quarantine_corrupt;
+        }
+        result.candidates.push_back(std::move(candidate));
+    }
+
+    std::optional<native_project_document_version_t> primary_version;
+    for (const auto& candidate : result.candidates) {
+        if (candidate.kind == native_project_recovery_candidate_kind_t::primary &&
+            candidate.status == native_project_recovery_candidate_status_t::valid) {
+            primary_version = candidate.version;
+            break;
+        }
+    }
+    for (auto& candidate : result.candidates) {
+        if (candidate.kind == native_project_recovery_candidate_kind_t::primary ||
+            candidate.status != native_project_recovery_candidate_status_t::valid) {
+            continue;
+        }
+        candidate.available_actions = {native_project_recovery_action_t::inspect_read_only,
+                                       native_project_recovery_action_t::recover_into_session,
+                                       native_project_recovery_action_t::save_as_new_project,
+                                       native_project_recovery_action_t::discard};
+        if (!primary_version.has_value()) {
+            candidate.comparison = native_project_recovery_comparison_t::no_valid_primary;
+            candidate.recommended_action = native_project_recovery_action_t::recover_into_session;
+        } else {
+            candidate.comparison = compare_versions(*candidate.version, *primary_version);
+            switch (candidate.comparison) {
+            case native_project_recovery_comparison_t::newer_revision:
+                candidate.recommended_action = native_project_recovery_action_t::inspect_read_only;
+                break;
+            case native_project_recovery_comparison_t::older_revision:
+            case native_project_recovery_comparison_t::equal_revision:
+                candidate.recommended_action = native_project_recovery_action_t::discard;
+                break;
+            case native_project_recovery_comparison_t::different_project:
+                candidate.recommended_action = native_project_recovery_action_t::inspect_read_only;
+                break;
+            case native_project_recovery_comparison_t::not_comparable:
+            case native_project_recovery_comparison_t::no_valid_primary:
+                break;
+            }
+        }
+    }
+
+    for (auto& temporary : result.candidates) {
+        if ((temporary.kind != native_project_recovery_candidate_kind_t::stale_primary_temporary &&
+             temporary.kind !=
+                 native_project_recovery_candidate_kind_t::stale_recovery_temporary) ||
+            temporary.status != native_project_recovery_candidate_status_t::valid ||
+            !temporary.version.has_value()) {
+            continue;
+        }
+        const auto superseded = std::ranges::any_of(result.candidates, [&](const auto& completed) {
+            return (completed.kind == native_project_recovery_candidate_kind_t::primary ||
+                    completed.kind == native_project_recovery_candidate_kind_t::adjacent_backup ||
+                    completed.kind ==
+                        native_project_recovery_candidate_kind_t::caller_supplied_entry) &&
+                   completed.status == native_project_recovery_candidate_status_t::valid &&
+                   completed.version.has_value() &&
+                   completed.version->project_id == temporary.version->project_id &&
+                   completed.version->revision >= temporary.version->revision;
+        });
+        if (superseded) {
+            temporary.quarantine =
+                native_project_recovery_quarantine_t::recommend_quarantine_superseded_temporary;
+        }
+    }
+
+    std::vector<std::size_t> eligible_recoveries;
+    for (std::size_t index = 0; index < result.candidates.size(); ++index) {
+        const auto& candidate = result.candidates[index];
+        if (candidate.kind == native_project_recovery_candidate_kind_t::primary ||
+            candidate.status != native_project_recovery_candidate_status_t::valid ||
+            !candidate.version.has_value()) {
+            continue;
+        }
+        if (primary_version.has_value()) {
+            if (candidate.comparison == native_project_recovery_comparison_t::newer_revision) {
+                eligible_recoveries.push_back(index);
+            }
+        } else {
+            eligible_recoveries.push_back(index);
+        }
+    }
+    if (!eligible_recoveries.empty()) {
+        const auto project_id = result.candidates[eligible_recoveries.front()].version->project_id;
+        const auto one_project = std::ranges::all_of(eligible_recoveries, [&](const auto index) {
+            return result.candidates[index].version->project_id == project_id;
+        });
+        if (one_project) {
+            auto best = eligible_recoveries.front();
+            for (const auto index : eligible_recoveries) {
+                if (recovery_candidate_precedes(result.candidates[index],
+                                                result.candidates[best])) {
+                    best = index;
+                }
+            }
+            result.preferred_recovery_candidate = best;
+        }
     }
     return result;
 }

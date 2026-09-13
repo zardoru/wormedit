@@ -6,6 +6,7 @@
 #include <chrono>
 #include <limits>
 #include <span>
+#include <string>
 #include <vector>
 
 using namespace wormedit;
@@ -303,6 +304,146 @@ TEST_CASE("preview schedule keeps separate sorted queues and stable simultaneous
     REQUIRE(schedule.metronome.size() == 7);
     CHECK(schedule.metronome[0].accent == metronome_accent_t::measure);
     CHECK(schedule.metronome[4].accent == metronome_accent_t::measure);
+}
+
+TEST_CASE("metronome count-in extrapolates exact signed times from row zero",
+          "[unit][core][timing][preview][count-in]") {
+    auto chart = base_chart();
+    chart.beat_zero_audio_offset_seconds = {2, 1};
+    chart.pauses.push_back({.id = object_id_t{20},
+                            .position = {measure_id_t{1}, 0},
+                            .kind = pause_kind_t::delay,
+                            .duration = {500, 1},
+                            .source_unit = pause_unit_t::milliseconds});
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+
+    const auto built =
+        build_preview_schedule(chart, *timing.index, {.sample_rate = 48'000, .count_in_pulses = 4});
+    REQUIRE(built);
+    const auto& clicks = built.schedule->metronome;
+    REQUIRE(clicks.size() == 11);
+    CHECK(clicks[0].sample_frame == 24'000);
+    CHECK(clicks[0].pulse == -4);
+    CHECK(clicks[0].accent == metronome_accent_t::measure);
+    CHECK(clicks[1].sample_frame == 48'000);
+    CHECK(clicks[1].pulse == -3);
+    CHECK(clicks[1].accent == metronome_accent_t::regular);
+    CHECK(clicks[3].sample_frame == 96'000);
+    CHECK(clicks[3].pulse == -1);
+    CHECK(clicks[4].sample_frame == 120'000);
+    CHECK(clicks[4].pulse == 0);
+    CHECK(clicks[4].accent == metronome_accent_t::measure);
+}
+
+TEST_CASE("count-in accents retain compound meter grouping across negative pulses",
+          "[unit][core][timing][preview][count-in][meter]") {
+    auto chart = base_chart();
+    chart.measures[0].definition = {{3, 4}, meter_t{6, 8}};
+    chart.beat_zero_audio_offset_seconds = {3, 1};
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+
+    const auto built =
+        build_preview_schedule(chart, *timing.index, {.sample_rate = 48'000, .count_in_pulses = 6});
+    REQUIRE(built);
+    const auto& clicks = built.schedule->metronome;
+    REQUIRE(clicks.size() >= 7);
+    CHECK(clicks[0].sample_frame == 72'000);
+    CHECK(clicks[0].pulse == -6);
+    CHECK(clicks[0].accent == metronome_accent_t::measure);
+    CHECK(clicks[3].pulse == -3);
+    CHECK(clicks[3].accent == metronome_accent_t::group);
+    CHECK(clicks[6].pulse == 0);
+    CHECK(clicks[6].accent == metronome_accent_t::measure);
+}
+
+TEST_CASE("count-in follows row-zero event time while chart clicks honor pauses and warps",
+          "[unit][core][timing][preview][count-in][discontinuity]") {
+    auto chart = base_chart();
+    chart.beat_zero_audio_offset_seconds = {2, 1};
+    chart.pauses = {
+        {.id = object_id_t{20},
+         .position = {measure_id_t{1}, 0},
+         .kind = pause_kind_t::delay,
+         .duration = {500, 1},
+         .source_unit = pause_unit_t::milliseconds},
+        {.id = object_id_t{21},
+         .position = {measure_id_t{1}, 240},
+         .kind = pause_kind_t::delay,
+         .duration = {250, 1},
+         .source_unit = pause_unit_t::milliseconds},
+        {.id = object_id_t{22},
+         .position = {measure_id_t{1}, 240},
+         .kind = pause_kind_t::stop,
+         .duration = {1, 1},
+         .source_unit = pause_unit_t::seconds},
+    };
+    chart.warps.push_back(
+        {.id = object_id_t{23}, .span = {{measure_id_t{1}, 480}, {measure_id_t{1}, 720}}});
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+
+    const auto built =
+        build_preview_schedule(chart, *timing.index, {.sample_rate = 48'000, .count_in_pulses = 4});
+    REQUIRE(built);
+    const auto& clicks = built.schedule->metronome;
+    const auto row_zero = std::ranges::find_if(clicks, [](const auto& click) {
+        return click.measure == measure_id_t{1} && click.pulse == 0;
+    });
+    const auto after_delay = std::ranges::find_if(clicks, [](const auto& click) {
+        return click.measure == measure_id_t{1} && click.pulse == 1;
+    });
+    const auto warp_exit = std::ranges::find_if(clicks, [](const auto& click) {
+        return click.measure == measure_id_t{1} && click.pulse == 3;
+    });
+    REQUIRE(row_zero != clicks.end());
+    REQUIRE(after_delay != clicks.end());
+    REQUIRE(warp_exit != clicks.end());
+    CHECK(row_zero->sample_frame == 120'000);    // Offset 2s plus the row-zero delay.
+    CHECK(after_delay->sample_frame == 156'000); // Event side includes delay, before stop.
+    CHECK(warp_exit->sample_frame == 228'000);   // Stop elapses; the warp interior stays silent.
+    CHECK(std::ranges::none_of(clicks, [](const auto& click) {
+        return click.measure == measure_id_t{1} && click.pulse == 2;
+    }));
+}
+
+TEST_CASE("negative count-in times are diagnosed without wrapping into large frames",
+          "[unit][core][timing][preview][count-in][offset]") {
+    auto chart = base_chart();
+    chart.beat_zero_audio_offset_seconds = {-1, 1};
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+
+    const auto built = build_preview_schedule(chart, *timing.index,
+                                              {.sample_rate = 48'000, .count_in_pulses = 128});
+    REQUIRE(built);
+    CHECK(std::ranges::none_of(built.schedule->metronome,
+                               [](const auto& click) { return click.pulse < 0; }));
+    CHECK(std::ranges::all_of(built.schedule->metronome,
+                              [](const auto& click) { return click.sample_frame < 1'000'000; }));
+    CHECK(std::ranges::any_of(built.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == timing_error_code_t::negative_sample_frame &&
+               diagnostic.severity == diagnostic_severity_t::warning;
+    }));
+    CHECK(std::ranges::count_if(built.diagnostics, [](const auto& diagnostic) {
+              return diagnostic.message.find("count-in pulses") != std::string::npos;
+          }) == 1);
+}
+
+TEST_CASE("count-in construction obeys the metronome queue cap atomically",
+          "[unit][core][timing][preview][count-in][bounds]") {
+    auto chart = base_chart();
+    chart.beat_zero_audio_offset_seconds = {2, 1};
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+
+    const auto built = build_preview_schedule(
+        chart, *timing.index,
+        {.sample_rate = 48'000, .maximum_metronome_events = 10, .count_in_pulses = 4});
+    REQUIRE_FALSE(built);
+    CHECK_FALSE(built.schedule.has_value());
+    CHECK(built.diagnostics.back().code == timing_error_code_t::capacity_exceeded);
 }
 
 TEST_CASE("preview queue seek is binary-searchable and advancement is allocation free",

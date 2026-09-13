@@ -92,6 +92,82 @@ struct native_project_recovery_parse_result_t {
     [[nodiscard]] auto has_errors() const -> bool;
 };
 
+enum class native_project_recovery_candidate_kind_t {
+    primary,
+    adjacent_backup,
+    caller_supplied_entry,
+    stale_primary_temporary,
+    stale_recovery_temporary,
+};
+
+enum class native_project_recovery_candidate_status_t {
+    missing,
+    valid,
+    invalid,
+    unreadable,
+    resource_limited,
+};
+
+enum class native_project_recovery_comparison_t {
+    not_comparable,
+    no_valid_primary,
+    different_project,
+    older_revision,
+    equal_revision,
+    newer_revision,
+};
+
+enum class native_project_recovery_action_t {
+    inspect_read_only,
+    recover_into_session,
+    save_as_new_project,
+    discard,
+};
+
+enum class native_project_recovery_quarantine_t {
+    retain,
+    recommend_quarantine_corrupt,
+    recommend_quarantine_superseded_temporary,
+};
+
+struct native_project_recovery_candidate_t {
+    std::filesystem::path path;
+    native_project_recovery_candidate_kind_t kind{
+        native_project_recovery_candidate_kind_t::caller_supplied_entry};
+    native_project_recovery_candidate_status_t status{
+        native_project_recovery_candidate_status_t::missing};
+    native_project_recovery_comparison_t comparison{
+        native_project_recovery_comparison_t::not_comparable};
+    std::optional<native_project_document_version_t> version;
+    std::optional<native_project_recovery_metadata_t> recovery_metadata;
+    std::optional<song_document_t> document;
+    std::vector<native_project_recovery_action_t> available_actions;
+    std::optional<native_project_recovery_action_t> recommended_action;
+    native_project_recovery_quarantine_t quarantine{native_project_recovery_quarantine_t::retain};
+};
+
+struct native_project_recovery_scan_request_t {
+    // An empty path scans only the caller-supplied entries.
+    std::filesystem::path primary_path;
+    std::vector<std::filesystem::path> caller_supplied_entries;
+    bool discover_stale_temporaries{true};
+};
+
+struct native_project_recovery_scan_options_t {
+    native_project_limits_t codec_limits{};
+    std::size_t maximum_candidates{32};
+    std::size_t maximum_candidate_file_bytes{224U * 1024U * 1024U};
+    std::size_t maximum_total_bytes{256U * 1024U * 1024U};
+    std::size_t maximum_diagnostics{32};
+};
+
+struct native_project_recovery_scan_result_t {
+    std::vector<native_project_recovery_candidate_t> candidates;
+    std::vector<native_project_storage_diagnostic_t> diagnostics;
+    // Set only when the scan can choose a best recovery without crossing project IDs.
+    std::optional<std::size_t> preferred_recovery_candidate;
+};
+
 // Uses the documented adjacent name `<project-filename>.bak`.
 [[nodiscard]] auto native_project_adjacent_backup_path(const std::filesystem::path& primary)
     -> std::filesystem::path;
@@ -119,6 +195,15 @@ struct native_project_recovery_parse_result_t {
 [[nodiscard]] auto parse_native_project_recovery_snapshot(std::string_view bytes,
                                                           native_project_limits_t limits = {})
     -> native_project_recovery_parse_result_t;
+
+// Validate each supplied artifact independently. The scanner recognizes the
+// adjacent `.bak`, caller-owned untitled recovery entries, and same-directory
+// `.wormedit-tmp-*` generations from interrupted primary or recovery writes. It
+// reports quarantine recommendations but never moves or deletes files.
+[[nodiscard]] auto
+scan_native_project_recovery_candidates(const native_project_recovery_scan_request_t& request,
+                                        native_project_recovery_scan_options_t options = {})
+    -> native_project_recovery_scan_result_t;
 
 enum class native_project_autosave_status_t {
     not_due,

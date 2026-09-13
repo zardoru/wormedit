@@ -411,6 +411,8 @@ struct branch_tree_analysis_t {
     std::set<std::pair<std::string, std::string>> branch_resource_ids;
     std::map<std::size_t, std::pair<std::string, std::string>> metadata_fields;
     std::map<std::size_t, std::pair<std::string, std::string>> branch_metadata_fields;
+    std::map<std::size_t, std::pair<std::string, std::string>> branch_resource_fields;
+    std::map<std::size_t, std::string> branch_resource_source_lines;
     std::vector<source_measure_line_t> root_measure_ratio_lines;
     std::vector<std::pair<std::size_t, std::string>> root_timing_lines;
     std::vector<std::pair<std::size_t, std::string>> preserved_lines;
@@ -514,6 +516,10 @@ auto analyze_branch_tree(const bms_control_node_t& root) -> branch_tree_analysis
                     if ((token.starts_with("WAV") || token.starts_with("BMP")) &&
                         token.size() == 5 && base36_digit(token[3]) && base36_digit(token[4])) {
                         result.branch_resource_ids.emplace(token.substr(0, 3), token.substr(3, 2));
+                        result.branch_resource_fields.emplace(node.source_order,
+                                                              std::pair{token, node.raw_value});
+                        result.branch_resource_source_lines.emplace(node.source_order,
+                                                                    node.original_text);
                     }
                     result.preserved_lines.emplace_back(node.source_order, node.original_text);
                 } else {
@@ -680,8 +686,8 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     }
     if (branch_tree.has_branches) {
         warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
-             "branch events, resources, ratios, and timing remain source-backed; direct edits to "
-             "those branch-projected objects are not applied by this writer slice",
+             "branch events, ratios, and timing remain source-backed; direct edits to those "
+             "branch-projected objects are not applied by this writer slice",
              "$.charts[].bms_control_tree");
     }
     if (branch_tree.has_unmodeled_root_statement) {
@@ -828,6 +834,7 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     std::map<std::string, std::size_t> next_ids{{"WAV", 1}, {"BMP", 1}};
     std::map<std::string, std::set<std::string>> assigned_ids;
     std::set<std::uint64_t> branch_resource_ids;
+    std::map<std::size_t, std::string> branch_resource_edits;
     struct resource_declaration_t {
         std::string name_space;
         const resource_entry_t* resource{};
@@ -856,13 +863,26 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
         const bool branch_scoped = is_branch_provenance(resource.provenance);
         auto identifier = bms_identity(resource, name_space);
         if (branch_scoped) {
-            if (!identifier.has_value() ||
+            const auto retained =
+                branch_tree.branch_resource_fields.find(resource.provenance.source_order);
+            const auto retained_line =
+                branch_tree.branch_resource_source_lines.find(resource.provenance.source_order);
+            const auto expected_token =
+                identifier.has_value() ? name_space + *identifier : std::string{};
+            if (!identifier.has_value() || retained == branch_tree.branch_resource_fields.end() ||
+                retained_line == branch_tree.branch_resource_source_lines.end() ||
+                retained->second.first != expected_token ||
+                ascii_upper(resource.provenance.source_field) != expected_token ||
+                resource.provenance.source_spelling != retained_line->second ||
                 !branch_tree.branch_resource_ids.contains({name_space, *identifier}) ||
                 assigned_ids[name_space].contains(*identifier)) {
                 fail(bms_write_diagnostic_code_t::branch_provenance,
-                     "branch resource IDs must remain stable because their raw branch statements "
-                     "are preserved verbatim",
+                     "branch resources must retain one matching source statement, namespace, and "
+                     "identifier",
                      "$.resources[].target_identities");
+            }
+            if (resource.name != trim_ascii_whitespace(retained->second.second)) {
+                branch_resource_edits.emplace(resource.provenance.source_order, resource.name);
             }
         } else if (!identifier.has_value() || assigned_ids[name_space].contains(*identifier) ||
                    branch_tree.branch_resource_ids.contains({name_space, *identifier})) {
@@ -1483,28 +1503,57 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     std::vector<std::string> preserved_tree_lines;
     preserved_tree_lines.reserve(branch_tree.preserved_lines.size());
     std::set<std::size_t> emitted_branch_metadata_edits;
+    std::set<std::size_t> emitted_branch_resource_edits;
     for (const auto& [source_order, line] : branch_tree.preserved_lines) {
         if (has_line_break_or_nul(line) || !valid_utf8(line)) {
             fail(bms_write_diagnostic_code_t::branch_provenance,
                  "retained BMS control-tree statements must be valid UTF-8 single lines",
                  "$.charts[].bms_control_tree");
         }
-        const auto edit = branch_metadata_edits.find(source_order);
-        if (edit == branch_metadata_edits.end()) {
+        const auto metadata_edit = branch_metadata_edits.find(source_order);
+        const auto resource_edit = branch_resource_edits.find(source_order);
+        if (metadata_edit == branch_metadata_edits.end() &&
+            resource_edit == branch_resource_edits.end()) {
             preserved_tree_lines.push_back(line);
             continue;
         }
-        const auto source_field = branch_tree.branch_metadata_fields.find(source_order);
-        if (source_field == branch_tree.branch_metadata_fields.end()) {
+        if (metadata_edit != branch_metadata_edits.end() &&
+            resource_edit != branch_resource_edits.end()) {
             fail(bms_write_diagnostic_code_t::branch_provenance,
-                 "edited branch metadata has no retained source identity",
+                 "one retained branch statement is ambiguously claimed by multiple edits",
+                 "$.charts[].bms_control_tree");
+        }
+        if (metadata_edit != branch_metadata_edits.end()) {
+            const auto source_field = branch_tree.branch_metadata_fields.find(source_order);
+            if (source_field == branch_tree.branch_metadata_fields.end()) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "edited branch metadata has no retained source identity",
+                     "$.charts[].bms_control_tree");
+            }
+            const auto replaced =
+                replace_retained_header_value(line, source_field->second.first,
+                                              source_field->second.second, metadata_edit->second);
+            if (!replaced.has_value() ||
+                !emitted_branch_metadata_edits.insert(source_order).second) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "edited branch metadata does not identify one unambiguous retained source "
+                     "statement",
+                     "$.charts[].bms_control_tree");
+            }
+            preserved_tree_lines.push_back(*replaced);
+            continue;
+        }
+        const auto source_field = branch_tree.branch_resource_fields.find(source_order);
+        if (source_field == branch_tree.branch_resource_fields.end()) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "edited branch resource has no retained source identity",
                  "$.charts[].bms_control_tree");
         }
         const auto replaced = replace_retained_header_value(
-            line, source_field->second.first, source_field->second.second, edit->second);
-        if (!replaced.has_value() || !emitted_branch_metadata_edits.insert(source_order).second) {
+            line, source_field->second.first, source_field->second.second, resource_edit->second);
+        if (!replaced.has_value() || !emitted_branch_resource_edits.insert(source_order).second) {
             fail(bms_write_diagnostic_code_t::branch_provenance,
-                 "edited branch metadata does not identify one unambiguous retained source "
+                 "edited branch resource does not identify one unambiguous retained source "
                  "statement",
                  "$.charts[].bms_control_tree");
         }
@@ -1513,6 +1562,11 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     if (emitted_branch_metadata_edits.size() != branch_metadata_edits.size()) {
         fail(bms_write_diagnostic_code_t::branch_provenance,
              "one or more edited branch metadata statements are absent from the retained tree",
+             "$.charts[].bms_control_tree");
+    }
+    if (emitted_branch_resource_edits.size() != branch_resource_edits.size()) {
+        fail(bms_write_diagnostic_code_t::branch_provenance,
+             "one or more edited branch resource statements are absent from the retained tree",
              "$.charts[].bms_control_tree");
     }
     if (branch_tree.has_branches && !preserved_tree_lines.empty()) {

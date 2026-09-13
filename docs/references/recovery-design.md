@@ -1,8 +1,9 @@
 # Autosave and crash-recovery design
 
-Status: reviewed planning contract; atomic primary/recovery publication and the
-headless five-minute coordinator are implemented. Startup recovery comparison,
-quarantine, command journaling, and crash-marker backends remain planned.
+Status: reviewed planning contract; atomic primary/recovery publication, the
+headless five-minute coordinator, and the bounded read-only startup candidate
+scanner are implemented. Recovery UI/action application, quarantine execution,
+command journaling, and crash-marker backends remain planned.
 
 ## Recovery artifacts
 
@@ -32,6 +33,8 @@ An explicit successful project save records its revision and is flushed/validate
 ## Reopening and recovery
 
 Opening a project and application startup both search for a matching `.bak`, untitled recovery entries, a crash marker, and any command journal. Validate each candidate independently before comparing it with the primary file. Use project ID and revision first and timestamps only as supporting evidence, since clocks can move.
+
+The implemented scanner covers the primary, adjacent `.bak`, caller-supplied recovery entries, and interrupted same-directory primary/recovery temporary files. It validates raw native projects separately from checksummed recovery envelopes, applies bounded candidate/file/total-byte/diagnostic limits, ranks only within one project identity, and reports actions plus quarantine recommendations without moving, deleting, or overwriting an artifact.
 
 If a valid backup is newer than the explicit save, show a recovery banner before editing with actions to inspect it read-only, recover it into the session, save it as a new project, or discard it. Never overwrite the primary project merely because a backup exists. Show the saved and backup revisions/times plus a document-level change summary when both can be decoded. If the primary is missing or corrupt and the backup is valid, recommend recovery while retaining the corrupt original for inspection.
 

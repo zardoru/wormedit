@@ -2,6 +2,7 @@
 
 #include <wormedit/core/command.h>
 
+#include <compare>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -108,10 +109,48 @@ enum class editor_area_selection_mode_t {
     toggle,
 };
 
+// Track scope is deliberately explicit: the traditional lane-field gesture
+// remains note-only unless the frontend opts into chart-event tracks.
+struct editor_selection_scope_t {
+    bool notes{true};
+    bool bgm{};
+    bool timing{};
+    bool bga{};
+
+    auto operator==(const editor_selection_scope_t&) const -> bool = default;
+};
+
+enum class editor_selection_object_kind_t {
+    note,
+    bgm_event,
+    bpm_event,
+    stop_event,
+    delay_event,
+    warp_event,
+    scroll_event,
+    speed_event,
+    kiai_event,
+    timing_anchor,
+    bga_event,
+    bookmark,
+    section,
+};
+
+// IDs are only unique within a chart object family; retaining the family in
+// selection state prevents collisions between (for example) note 17 and BGA 17.
+struct editor_selection_object_t {
+    editor_selection_object_kind_t kind{editor_selection_object_kind_t::note};
+    object_id_t id;
+
+    auto operator==(const editor_selection_object_t&) const -> bool = default;
+    auto operator<=>(const editor_selection_object_t&) const = default;
+};
+
 // The mode is captured on the first Space press and applied atomically when
 // Space is pressed again.
 struct space_range_selection_action_t {
     editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
+    editor_selection_scope_t scope{};
 };
 
 struct begin_editor_area_selection_action_t {
@@ -121,6 +160,7 @@ struct begin_editor_area_selection_action_t {
     double field_width_pixels{};
     editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
     bool pointer_captured{true};
+    editor_selection_scope_t scope{};
 };
 
 struct update_editor_area_selection_action_t {
@@ -273,6 +313,7 @@ struct pending_space_range_selection_t {
     std::shared_ptr<const editor_hit_test_index_t> hit_index;
     local_position_t anchor;
     editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
+    editor_selection_scope_t scope{};
 };
 
 struct space_range_selection_preview_t {
@@ -283,6 +324,7 @@ struct space_range_selection_preview_t {
     std::uint64_t last_row{};
     editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
     std::shared_ptr<const std::vector<object_id_t>> notes;
+    std::shared_ptr<const std::vector<editor_selection_object_t>> objects;
 };
 
 struct editor_area_selection_preview_t {
@@ -292,6 +334,7 @@ struct editor_area_selection_preview_t {
     double right_pixels{};
     double bottom_pixels{};
     std::shared_ptr<const std::vector<object_id_t>> notes;
+    std::shared_ptr<const std::vector<editor_selection_object_t>> objects;
 };
 
 struct pending_editor_area_selection_t {
@@ -305,6 +348,8 @@ struct pending_editor_area_selection_t {
     double field_width_pixels{};
     editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
     std::shared_ptr<const std::vector<object_id_t>> notes;
+    editor_selection_scope_t scope{};
+    std::shared_ptr<const std::vector<editor_selection_object_t>> objects;
 };
 
 struct editor_interaction_state_t {
@@ -323,6 +368,7 @@ struct editor_interaction_state_t {
     std::optional<pending_editor_area_selection_t> pending_editor_area_selection;
     std::optional<pending_space_range_selection_t> pending_space_range_selection;
     std::vector<object_id_t> selected_notes;
+    std::vector<editor_selection_object_t> selected_objects;
 };
 
 struct editor_interaction_view_model_t {
@@ -342,6 +388,7 @@ struct editor_interaction_view_model_t {
     std::optional<editor_area_selection_preview_t> pending_editor_area_selection;
     std::optional<space_range_selection_preview_t> pending_space_range_selection;
     std::vector<object_id_t> selected_notes;
+    std::vector<editor_selection_object_t> selected_objects;
     bool can_move_backward{};
     bool can_move_forward{};
 };
@@ -420,6 +467,13 @@ struct editor_note_span_entry_t {
     std::uint64_t end_row{};
 };
 
+struct editor_selection_span_entry_t {
+    editor_selection_object_t object;
+    std::uint64_t begin_row{};
+    std::uint64_t end_row{};
+    std::optional<lane_id_t> lane;
+};
+
 // Build once per document revision and reuse while querying pointer motion.
 // Each measure bucket contains note heads and hold tails owned by that measure.
 struct editor_hit_test_index_t {
@@ -430,6 +484,10 @@ struct editor_hit_test_index_t {
     std::vector<editor_note_span_entry_t> note_spans;
     std::size_t note_span_tree_leaf_base{1};
     std::vector<std::uint64_t> note_span_tree_max_end;
+    std::vector<editor_selection_span_entry_t> selection_spans;
+    std::size_t selection_span_tree_leaf_base{1};
+    std::vector<std::uint64_t> selection_span_tree_max_end;
+    std::vector<editor_selection_object_t> available_objects;
 };
 
 struct editor_hit_test_request_t {
@@ -447,6 +505,7 @@ struct editor_area_selection_request_t {
     double end_y_pixels{};
     double field_left_pixels{};
     double field_width_pixels{};
+    editor_selection_scope_t scope{};
 };
 
 [[nodiscard]] auto build_editor_hit_test_index(const chart_document_t& chart,
@@ -465,6 +524,22 @@ struct editor_area_selection_request_t {
                                                   const editor_interaction_view_model_t& view,
                                                   const editor_area_selection_request_t& request)
     -> std::variant<std::vector<object_id_t>, diagnostic_list_t>;
+// Non-note chart tracks are queried against the exact continuous chart-row
+// interval under the screen rectangle and are gated by request.scope. Beat-
+// anchored bookmarks/sections participate; audio-time markers are excluded
+// until the controller has a timing index to project them into chart rows. The
+// screen rectangle supplies only the vertical interval; lane-column geometry
+// applies to notes through editor_notes_in_area_selection.
+[[nodiscard]] auto editor_objects_in_row_range(const chart_document_t& chart,
+                                               const editor_hit_test_index_t& index,
+                                               std::uint64_t first_row, std::uint64_t last_row,
+                                               editor_selection_scope_t scope)
+    -> std::variant<std::vector<editor_selection_object_t>, diagnostic_list_t>;
+[[nodiscard]] auto editor_objects_in_area_selection(const chart_document_t& chart,
+                                                    const editor_hit_test_index_t& index,
+                                                    const editor_interaction_view_model_t& view,
+                                                    const editor_area_selection_request_t& request)
+    -> std::variant<std::vector<editor_selection_object_t>, diagnostic_list_t>;
 
 // Dispatches one typed frontend action. Document edits are published through
 // commit_document_command so validation, undo, and redo share one boundary.

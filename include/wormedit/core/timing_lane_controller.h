@@ -3,14 +3,15 @@
 #include <wormedit/core/command.h>
 
 #include <cstdint>
+#include <optional>
 #include <variant>
 
 namespace wormedit {
 
-// The caller starts this controller only after the platform's double-click
-// recognizer has confirmed a second click on the same empty timing-lane row.
-// Positions are retained verbatim: the view/controller that owns the active
-// snap supplies the already-snapped local position.
+// The caller starts this controller after the platform's double-click
+// recognizer confirms either an empty timing-lane row or one stable existing
+// marker. Insert positions are retained verbatim from the active snap;
+// existing positions and values are loaded exactly from the document.
 enum class timing_lane_kind_t {
     bpm,
     scroll,
@@ -81,6 +82,7 @@ struct timing_lane_pseudonote_preview_t {
     timing_lane_kind_t kind{timing_lane_kind_t::bpm};
     local_position_t position;
     timing_lane_value_t value{timing_bpm_value_t{}};
+    std::optional<object_id_t> existing_event;
     timing_lane_initial_value_source_t initial_value_source{
         timing_lane_initial_value_source_t::explicit_default};
     std::uint64_t document_revision{};
@@ -100,6 +102,16 @@ begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart
                              timing_lane_initial_value_source_t initial_value_source,
                              bool timing_locked) -> timing_lane_pseudonote_preview_t;
 
+// Opens an existing typed timing event for property editing. The event's exact
+// position and value are loaded from the document; the target ID is retained
+// so confirmation updates that event in place rather than inserting another.
+// A known object of another kind, an ambiguous ID, a missing event, or a lock
+// rejects the preview without changing history.
+[[nodiscard]] auto begin_existing_timing_lane_pseudonote(const document_history_t& history,
+                                                         chart_id_t chart, timing_lane_kind_t kind,
+                                                         object_id_t event, bool timing_locked)
+    -> timing_lane_pseudonote_preview_t;
+
 // Updates only the transient preview. Invalid typed values remain visible in
 // the preview with diagnostics and cannot be confirmed. A lock or revision
 // change cancels the preview immediately.
@@ -109,7 +121,8 @@ begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart
     -> bool;
 
 // Confirmation makes exactly one call to the existing revision-checked timing
-// command API. No playable note is ever created by this controller.
+// command API, using an update command for an existing event. No playable note
+// is ever created by this controller.
 [[nodiscard]] auto confirm_timing_lane_pseudonote(document_history_t& history,
                                                   timing_lane_pseudonote_preview_t& preview,
                                                   bool timing_locked) -> document_command_result_t;

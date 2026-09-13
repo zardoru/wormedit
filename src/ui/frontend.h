@@ -274,7 +274,11 @@ typedef struct WormUiComposeView {
 
 typedef struct WormUiTimingSpeedView {
     uint64_t object_id;
+    uint64_t source_order;
+    uint64_t storage_order;
     double marker_y_pixels;
+    double marker_left_fraction;
+    double marker_right_fraction;
     double affected_begin_y_pixels;
     double affected_end_y_pixels;
     double multiplier;
@@ -294,9 +298,20 @@ typedef enum WormUiTimingLaneKind {
 
 typedef struct WormUiTimingMarkerView {
     uint64_t object_id;
+    uint64_t source_order;
+    uint64_t storage_order;
     double marker_y_pixels;
+    double marker_left_fraction;
+    double marker_right_fraction;
     WormUiTimingLaneKind lane;
 } WormUiTimingMarkerView;
+
+typedef enum WormUiTimingPauseUnit {
+    WORM_UI_TIMING_PAUSE_SECONDS = 0,
+    WORM_UI_TIMING_PAUSE_MILLISECONDS,
+    WORM_UI_TIMING_PAUSE_BMS_STOP_TICKS,
+    WORM_UI_TIMING_PAUSE_BEATS,
+} WormUiTimingPauseUnit;
 
 // Renderer-neutral scalar projection of the timing pane. SPEEDS spans are
 // evaluated by the timing core before crossing this private C boundary.
@@ -324,11 +339,13 @@ typedef struct WormUiTimingView {
     size_t marker_count;
     bool stage_active;
     bool stage_valid;
+    uint64_t stage_existing_object_id;
     WormUiTimingLaneKind stage_lane;
     double stage_marker_y_pixels;
     double stage_value;
     double stage_secondary_value;
     bool stage_transition_is_seconds;
+    WormUiTimingPauseUnit stage_pause_unit;
     char stage_primary_numerator_text[64];
     char stage_primary_denominator_text[64];
     char stage_secondary_numerator_text[64];
@@ -476,11 +493,13 @@ typedef struct WormUiWorkspaceAction {
     WormUiTimingStageAction timing_stage_action;
     uint64_t timing_chart_id;
     uint64_t timing_document_revision;
+    uint64_t timing_object_id;
     WormUiTimingLaneKind timing_lane;
     double timing_target_y_fraction;
     double timing_value;
     double timing_secondary_value;
     bool timing_transition_is_seconds;
+    WormUiTimingPauseUnit timing_pause_unit;
     char timing_primary_numerator_text[64];
     char timing_primary_denominator_text[64];
     char timing_secondary_numerator_text[64];

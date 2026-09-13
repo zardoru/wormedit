@@ -44,6 +44,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <variant>
@@ -146,6 +147,8 @@ struct application_command_state_t {
 
 struct timing_speed_cache_entry_t {
     std::uint64_t object_id{};
+    std::uint64_t source_order{};
+    std::uint64_t storage_order{};
     long double marker_row{};
     long double affected_begin_row{};
     long double affected_end_row{};
@@ -687,6 +690,37 @@ auto timing_lane_kind_to_ui(wormedit::timing_lane_kind_t lane) -> WormUiTimingLa
     return WORM_UI_TIMING_LANE_BPM;
 }
 
+auto timing_pause_unit_from_ui(WormUiTimingPauseUnit unit)
+    -> std::optional<wormedit::pause_unit_t> {
+    using unit_t = wormedit::pause_unit_t;
+    switch (unit) {
+    case WORM_UI_TIMING_PAUSE_SECONDS:
+        return unit_t::seconds;
+    case WORM_UI_TIMING_PAUSE_MILLISECONDS:
+        return unit_t::milliseconds;
+    case WORM_UI_TIMING_PAUSE_BMS_STOP_TICKS:
+        return unit_t::bms_stop_ticks;
+    case WORM_UI_TIMING_PAUSE_BEATS:
+        return unit_t::beats;
+    }
+    return std::nullopt;
+}
+
+auto timing_pause_unit_to_ui(wormedit::pause_unit_t unit) -> WormUiTimingPauseUnit {
+    using unit_t = wormedit::pause_unit_t;
+    switch (unit) {
+    case unit_t::seconds:
+        return WORM_UI_TIMING_PAUSE_SECONDS;
+    case unit_t::milliseconds:
+        return WORM_UI_TIMING_PAUSE_MILLISECONDS;
+    case unit_t::bms_stop_ticks:
+        return WORM_UI_TIMING_PAUSE_BMS_STOP_TICKS;
+    case unit_t::beats:
+        return WORM_UI_TIMING_PAUSE_BEATS;
+    }
+    return WORM_UI_TIMING_PAUSE_SECONDS;
+}
+
 auto begin_timing_stage(const WormUiWorkspaceAction& action,
                         const wormedit::document_history_t& history,
                         const wormedit::workspace_controller_t& workspace, bool timing_locked)
@@ -695,13 +729,20 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
     timing_lane_pseudonote_preview_t rejected{};
     if (workspace.active_tab != workspace_tab_t::timing || !workspace.selected_chart ||
         action.timing_chart_id == 0 || workspace.selected_chart->value != action.timing_chart_id ||
-        history.document.revision != action.timing_document_revision ||
-        !std::isfinite(action.timing_target_y_fraction) || action.timing_target_y_fraction < 0.0 ||
-        action.timing_target_y_fraction >= 1.0) {
+        history.document.revision != action.timing_document_revision) {
         return rejected;
     }
     const auto requested_kind = timing_lane_kind_from_ui(action.timing_lane);
     if (!requested_kind) {
+        return rejected;
+    }
+    if (action.timing_object_id != 0) {
+        return begin_existing_timing_lane_pseudonote(
+            history, chart_id_t{action.timing_chart_id}, *requested_kind,
+            object_id_t{action.timing_object_id}, timing_locked);
+    }
+    if (!std::isfinite(action.timing_target_y_fraction) || action.timing_target_y_fraction < 0.0 ||
+        action.timing_target_y_fraction >= 1.0) {
         return rejected;
     }
     const auto found = std::ranges::find(history.document.charts,
@@ -821,24 +862,27 @@ auto timing_stage_value(const wormedit::timing_lane_pseudonote_preview_t& previe
         parse_timing_unsigned(action.timing_secondary_denominator_text);
     switch (preview.kind) {
     case timing_lane_kind_t::bpm: {
-        if (!primary_numerator || !primary_denominator ||
-            !timing_ratio_in_bounds(*primary_numerator, *primary_denominator, 1.0L, 1000.0L))
+        if (!primary_numerator || !primary_denominator || *primary_numerator <= 0 ||
+            (!preview.existing_event &&
+             !timing_ratio_in_bounds(*primary_numerator, *primary_denominator, 1.0L, 1000.0L)))
             return std::nullopt;
         return timing_lane_value_t{timing_bpm_value_t{{*primary_numerator, *primary_denominator}}};
     }
     case timing_lane_kind_t::scroll: {
         if (!primary_numerator || !primary_denominator ||
-            !timing_ratio_in_bounds(*primary_numerator, *primary_denominator, -1000.0L, 1000.0L))
+            (!preview.existing_event &&
+             !timing_ratio_in_bounds(*primary_numerator, *primary_denominator, -1000.0L, 1000.0L)))
             return std::nullopt;
         return timing_lane_value_t{
             timing_scroll_value_t{{*primary_numerator, *primary_denominator}}};
     }
     case timing_lane_kind_t::speed: {
         if (!primary_numerator || !primary_denominator || !secondary_numerator ||
-            *secondary_numerator < 0 || !secondary_denominator ||
-            !timing_ratio_in_bounds(*primary_numerator, *primary_denominator, 0.0L, 1000.0L) ||
-            !timing_unsigned_ratio_in_bounds(static_cast<std::uint64_t>(*secondary_numerator),
-                                             *secondary_denominator, 10000.0L)) {
+            *secondary_numerator < 0 || !secondary_denominator || *primary_numerator < 0 ||
+            (!preview.existing_event &&
+             (!timing_ratio_in_bounds(*primary_numerator, *primary_denominator, 0.0L, 1000.0L) ||
+              !timing_unsigned_ratio_in_bounds(static_cast<std::uint64_t>(*secondary_numerator),
+                                               *secondary_denominator, 10000.0L)))) {
             return std::nullopt;
         }
         return timing_lane_value_t{timing_speed_value_t{
@@ -848,25 +892,44 @@ auto timing_stage_value(const wormedit::timing_lane_pseudonote_preview_t& previe
     }
     case timing_lane_kind_t::stop:
     case timing_lane_kind_t::delay: {
-        if (!primary_numerator || !primary_denominator || *primary_numerator < 0 ||
-            !timing_unsigned_ratio_in_bounds(static_cast<std::uint64_t>(*primary_numerator),
-                                             *primary_denominator, 86400.0L)) {
+        const auto source_unit = timing_pause_unit_from_ui(action.timing_pause_unit);
+        const auto maximum_duration = [&]() -> long double {
+            if (!source_unit) {
+                return 0.0L;
+            }
+            switch (*source_unit) {
+            case pause_unit_t::seconds:
+                return 86'400.0L;
+            case pause_unit_t::milliseconds:
+                return 86'400'000.0L;
+            case pause_unit_t::bms_stop_ticks:
+            case pause_unit_t::beats:
+                return 1'000'000.0L;
+            }
+            return 0.0L;
+        }();
+        if (!primary_numerator || !primary_denominator || *primary_numerator < 0 || !source_unit ||
+            (!preview.existing_event &&
+             !timing_unsigned_ratio_in_bounds(static_cast<std::uint64_t>(*primary_numerator),
+                                              *primary_denominator, maximum_duration))) {
             return std::nullopt;
         }
-        return timing_lane_value_t{timing_pause_value_t{{*primary_numerator, *primary_denominator},
-                                                        pause_unit_t::seconds}};
+        return timing_lane_value_t{
+            timing_pause_value_t{{*primary_numerator, *primary_denominator}, *source_unit}};
     }
     case timing_lane_kind_t::warp: {
         if (!secondary_numerator || *secondary_numerator < 1 || !secondary_denominator ||
-            *secondary_denominator != 1 || *secondary_numerator > 1000000) {
+            *secondary_denominator != 1 ||
+            (!preview.existing_event && *secondary_numerator > 1'000'000)) {
             return std::nullopt;
         }
         const auto units = static_cast<std::uint64_t>(*secondary_numerator);
         const auto measures = build_measure_index(chart);
         const auto* index = std::get_if<measure_index_t>(&measures);
         const auto start = index ? absolute_row(*index, preview.position) : std::nullopt;
-        const auto step = timing_stage_grid_step(chart);
-        if (!index || !start ||
+        const auto step =
+            preview.existing_event.has_value() ? std::uint64_t{1} : timing_stage_grid_step(chart);
+        if (!index || !start || step == 0 ||
             units > (std::numeric_limits<std::uint64_t>::max() - *start) / step) {
             return std::nullopt;
         }
@@ -938,11 +1001,24 @@ void populate_timing_view(flattened_workspace_t& flattened,
                 }
                 cache.truncated = spans.truncated;
                 cache.speeds.reserve(spans.spans.size());
+                std::unordered_map<std::uint64_t, std::pair<std::uint64_t, std::uint64_t>>
+                    speed_orders;
+                speed_orders.reserve(chart.speeds.size());
+                for (std::size_t storage_order = 0; storage_order < chart.speeds.size();
+                     ++storage_order) {
+                    const auto& event = chart.speeds[storage_order];
+                    speed_orders.emplace(
+                        event.id.value,
+                        std::pair{static_cast<std::uint64_t>(event.provenance.source_order),
+                                  static_cast<std::uint64_t>(storage_order)});
+                }
                 for (std::size_t index = 0; index < spans.spans.size(); ++index) {
                     const auto& speed = scroll_speed.index->speed_segments[index];
                     const auto& span = spans.spans[index];
                     cache.speeds.push_back({
                         .object_id = speed.source_event.value,
+                        .source_order = speed_orders[speed.source_event.value].first,
+                        .storage_order = speed_orders[speed.source_event.value].second,
                         .marker_row = static_cast<long double>(speed.begin_row),
                         .affected_begin_row = rational_as_long_double(span.begin_row),
                         .affected_end_row = rational_as_long_double(span.end_row),
@@ -977,6 +1053,8 @@ void populate_timing_view(flattened_workspace_t& flattened,
     for (const auto& speed : cache.speeds) {
         flattened.timing_speed_storage.push_back({
             .object_id = speed.object_id,
+            .source_order = speed.source_order,
+            .storage_order = speed.storage_order,
             .marker_y_pixels = row_to_pixels(speed.marker_row),
             .affected_begin_y_pixels = row_to_pixels(speed.affected_begin_row),
             .affected_end_y_pixels = row_to_pixels(speed.affected_end_row),
@@ -985,6 +1063,32 @@ void populate_timing_view(flattened_workspace_t& flattened,
             .transition_is_seconds = speed.transition_is_seconds,
             .transition_clipped = speed.transition_clipped,
         });
+    }
+    std::ranges::sort(flattened.timing_speed_storage, [](const auto& left, const auto& right) {
+        if (left.marker_y_pixels != right.marker_y_pixels) {
+            return left.marker_y_pixels < right.marker_y_pixels;
+        }
+        if (left.source_order != right.source_order) {
+            return left.source_order < right.source_order;
+        }
+        return left.storage_order != right.storage_order ? left.storage_order < right.storage_order
+                                                         : left.object_id < right.object_id;
+    });
+    for (std::size_t first = 0; first < flattened.timing_speed_storage.size();) {
+        auto after = first + 1;
+        while (after < flattened.timing_speed_storage.size() &&
+               flattened.timing_speed_storage[after].marker_y_pixels ==
+                   flattened.timing_speed_storage[first].marker_y_pixels) {
+            ++after;
+        }
+        const auto count = static_cast<double>(after - first);
+        for (auto index = first; index < after; ++index) {
+            flattened.timing_speed_storage[index].marker_left_fraction =
+                static_cast<double>(index - first) / count;
+            flattened.timing_speed_storage[index].marker_right_fraction =
+                static_cast<double>(index - first + 1) / count;
+        }
+        first = after;
     }
     flattened.timing_marker_storage.clear();
     const auto measure_result = wormedit::build_measure_index(chart);
@@ -998,6 +1102,7 @@ void populate_timing_view(flattened_workspace_t& flattened,
     flattened.timing_marker_storage.reserve(marker_reserve);
     if (measures) {
         const auto append_marker = [&](wormedit::local_position_t position, std::uint64_t id,
+                                       std::size_t source_order, std::size_t storage_order,
                                        WormUiTimingLaneKind lane) {
             if (flattened.timing_marker_storage.size() >= WORM_UI_TIMING_MARKER_CAPACITY) {
                 view.truncated = true;
@@ -1009,20 +1114,62 @@ void populate_timing_view(flattened_workspace_t& flattened,
             }
             flattened.timing_marker_storage.push_back({
                 .object_id = id,
+                .source_order = source_order,
+                .storage_order = storage_order,
                 .marker_y_pixels = row_to_pixels(static_cast<long double>(*row)),
                 .lane = lane,
             });
         };
-        for (const auto& event : chart.bpms)
-            append_marker(event.position, event.id.value, WORM_UI_TIMING_LANE_BPM);
-        for (const auto& event : chart.scrolls)
-            append_marker(event.position, event.id.value, WORM_UI_TIMING_LANE_SCROLL);
-        for (const auto& event : chart.pauses)
-            append_marker(event.position, event.id.value,
-                          event.kind == wormedit::pause_kind_t::stop ? WORM_UI_TIMING_LANE_STOP
-                                                                     : WORM_UI_TIMING_LANE_DELAY);
-        for (const auto& event : chart.warps)
-            append_marker(event.span.begin, event.id.value, WORM_UI_TIMING_LANE_WARP);
+        for (std::size_t index = 0; index < chart.bpms.size(); ++index)
+            append_marker(chart.bpms[index].position, chart.bpms[index].id.value,
+                          chart.bpms[index].provenance.source_order, index,
+                          WORM_UI_TIMING_LANE_BPM);
+        for (std::size_t index = 0; index < chart.scrolls.size(); ++index)
+            append_marker(chart.scrolls[index].position, chart.scrolls[index].id.value,
+                          chart.scrolls[index].provenance.source_order, index,
+                          WORM_UI_TIMING_LANE_SCROLL);
+        for (std::size_t index = 0; index < chart.pauses.size(); ++index)
+            append_marker(chart.pauses[index].position, chart.pauses[index].id.value,
+                          chart.pauses[index].provenance.source_order, index,
+                          chart.pauses[index].kind == wormedit::pause_kind_t::stop
+                              ? WORM_UI_TIMING_LANE_STOP
+                              : WORM_UI_TIMING_LANE_DELAY);
+        for (std::size_t index = 0; index < chart.warps.size(); ++index)
+            append_marker(chart.warps[index].span.begin, chart.warps[index].id.value,
+                          chart.warps[index].provenance.source_order, index,
+                          WORM_UI_TIMING_LANE_WARP);
+        std::ranges::sort(flattened.timing_marker_storage, [](const auto& left, const auto& right) {
+            if (left.lane != right.lane) {
+                return left.lane < right.lane;
+            }
+            if (left.marker_y_pixels != right.marker_y_pixels) {
+                return left.marker_y_pixels < right.marker_y_pixels;
+            }
+            if (left.source_order != right.source_order) {
+                return left.source_order < right.source_order;
+            }
+            return left.storage_order != right.storage_order
+                       ? left.storage_order < right.storage_order
+                       : left.object_id < right.object_id;
+        });
+        for (std::size_t first = 0; first < flattened.timing_marker_storage.size();) {
+            auto after = first + 1;
+            while (after < flattened.timing_marker_storage.size() &&
+                   flattened.timing_marker_storage[after].lane ==
+                       flattened.timing_marker_storage[first].lane &&
+                   flattened.timing_marker_storage[after].marker_y_pixels ==
+                       flattened.timing_marker_storage[first].marker_y_pixels) {
+                ++after;
+            }
+            const auto count = static_cast<double>(after - first);
+            for (auto index = first; index < after; ++index) {
+                flattened.timing_marker_storage[index].marker_left_fraction =
+                    static_cast<double>(index - first) / count;
+                flattened.timing_marker_storage[index].marker_right_fraction =
+                    static_cast<double>(index - first + 1) / count;
+            }
+            first = after;
+        }
     }
     view.scene_available = true;
     view.truncated = view.truncated || cache.truncated;
@@ -1034,12 +1181,15 @@ void populate_timing_view(flattened_workspace_t& flattened,
         stage->chart == chart.id && stage->document_revision == history.document.revision) {
         view.stage_active = true;
         view.stage_valid = stage->valid;
+        view.stage_existing_object_id =
+            stage->existing_event.has_value() ? stage->existing_event->value : 0;
         view.stage_lane = timing_lane_kind_to_ui(stage->kind);
         const auto stage_row =
             measures ? wormedit::absolute_row(*measures, stage->position) : std::nullopt;
         view.stage_marker_y_pixels =
             stage_row ? row_to_pixels(static_cast<long double>(*stage_row)) : 0.0;
         view.stage_transition_is_seconds = false;
+        view.stage_pause_unit = WORM_UI_TIMING_PAUSE_SECONDS;
         std::visit(
             [&](const auto& value) {
                 using value_t = std::decay_t<decltype(value)>;
@@ -1078,12 +1228,15 @@ void populate_timing_view(flattened_workspace_t& flattened,
                                   value.transition_beats.denominator);
                 } else if constexpr (std::is_same_v<value_t, wormedit::timing_pause_value_t>) {
                     view.stage_value = static_cast<double>(rational_as_long_double(value.duration));
+                    view.stage_pause_unit = timing_pause_unit_to_ui(value.source_unit);
                     set_primary(value.duration.numerator, value.duration.denominator);
                 } else if constexpr (std::is_same_v<value_t, wormedit::timing_warp_value_t>) {
                     const auto end_row =
                         measures ? wormedit::absolute_row(*measures, value.end) : std::nullopt;
                     const auto start_row = stage_row;
-                    const auto step = timing_stage_grid_step(chart);
+                    const auto step = stage->existing_event.has_value()
+                                          ? std::uint64_t{1}
+                                          : timing_stage_grid_step(chart);
                     const auto length_steps =
                         end_row && start_row && *end_row > *start_row
                             ? static_cast<long double>(*end_row - *start_row) /
@@ -2978,7 +3131,9 @@ int main(int argc, char** argv) {
                             action, history, workspace, application_command_state.timing_locked);
                         if (candidate.status == status_t::editing) {
                             timing_stage = std::move(candidate);
-                            status = "Timing event staged; confirm to insert it.";
+                            status = timing_stage->existing_event.has_value()
+                                         ? "Timing event loaded; apply to update it."
+                                         : "Timing event staged; confirm to insert it.";
                         } else if (!candidate.diagnostics.empty()) {
                             status = candidate.diagnostics.front().message;
                         } else {
@@ -2997,6 +3152,9 @@ int main(int argc, char** argv) {
                         workspace.selected_chart &&
                         workspace.selected_chart->value == action.timing_chart_id &&
                         timing_stage->chart.value == action.timing_chart_id &&
+                        (timing_stage->existing_event.has_value()
+                             ? timing_stage->existing_event->value
+                             : std::uint64_t{}) == action.timing_object_id &&
                         timing_stage->document_revision == action.timing_document_revision &&
                         history.document.revision == action.timing_document_revision;
                     if (!stage_matches) {
@@ -3028,10 +3186,15 @@ int main(int argc, char** argv) {
                                 const auto result = wormedit::confirm_timing_lane_pseudonote(
                                     history, *timing_stage,
                                     application_command_state.timing_locked);
-                                status = result ? "Timing event inserted."
-                                                : (result.diagnostics.empty()
-                                                       ? "Timing event insertion was rejected."
-                                                       : result.diagnostics.front().message);
+                                const auto edited_existing =
+                                    timing_stage->existing_event.has_value();
+                                status = result ? (edited_existing ? "Timing event updated."
+                                                                   : "Timing event inserted.")
+                                         : result.diagnostics.empty() && edited_existing
+                                             ? "Timing event was unchanged."
+                                         : result.diagnostics.empty()
+                                             ? "Timing event insertion was rejected."
+                                             : result.diagnostics.front().message;
                                 timing_stage.reset();
                             } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CONFIRM) {
                                 status = timing_stage->diagnostics.empty()

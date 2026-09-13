@@ -89,6 +89,7 @@ static size_t g_timing_double_click_count{};
 static bool g_timing_stage_buffers_active{};
 static uint64_t g_timing_stage_buffers_chart{};
 static uint64_t g_timing_stage_buffers_revision{};
+static uint64_t g_timing_stage_buffers_object{};
 static WormUiTimingLaneKind g_timing_stage_buffers_lane{WORM_UI_TIMING_LANE_BPM};
 static double g_timing_stage_buffers_y{};
 static std::array<char, 64> g_timing_primary_numerator{};
@@ -1323,8 +1324,10 @@ static int timing_view_valid(const WormUiTimingView* view) {
     }
     for (size_t index = 0; index < view->speed_count; ++index) {
         const auto& speed = view->speeds[index];
-        if (!std::isfinite(speed.marker_y_pixels) ||
-            !std::isfinite(speed.affected_begin_y_pixels) ||
+        if (!std::isfinite(speed.marker_y_pixels) || !std::isfinite(speed.marker_left_fraction) ||
+            !std::isfinite(speed.marker_right_fraction) || speed.marker_left_fraction < 0.0 ||
+            speed.marker_right_fraction <= speed.marker_left_fraction ||
+            speed.marker_right_fraction > 1.0 || !std::isfinite(speed.affected_begin_y_pixels) ||
             !std::isfinite(speed.affected_end_y_pixels) || !std::isfinite(speed.multiplier) ||
             !std::isfinite(speed.transition_duration) || speed.marker_y_pixels < 0.0 ||
             speed.marker_y_pixels > view->viewport_height_pixels ||
@@ -1339,7 +1342,11 @@ static int timing_view_valid(const WormUiTimingView* view) {
         const auto& marker = view->markers[index];
         if (!std::isfinite(marker.marker_y_pixels) || marker.marker_y_pixels < 0.0 ||
             marker.marker_y_pixels > view->viewport_height_pixels ||
-            marker.lane < WORM_UI_TIMING_LANE_BPM || marker.lane > WORM_UI_TIMING_LANE_WARP) {
+            !std::isfinite(marker.marker_left_fraction) ||
+            !std::isfinite(marker.marker_right_fraction) || marker.marker_left_fraction < 0.0 ||
+            marker.marker_right_fraction <= marker.marker_left_fraction ||
+            marker.marker_right_fraction > 1.0 || marker.lane < WORM_UI_TIMING_LANE_BPM ||
+            marker.lane > WORM_UI_TIMING_LANE_WARP) {
             return 0;
         }
     }
@@ -1347,7 +1354,9 @@ static int timing_view_valid(const WormUiTimingView* view) {
         (!std::isfinite(view->stage_marker_y_pixels) || view->stage_marker_y_pixels < 0.0 ||
          view->stage_marker_y_pixels > view->viewport_height_pixels ||
          view->stage_lane < WORM_UI_TIMING_LANE_BPM ||
-         view->stage_lane > WORM_UI_TIMING_LANE_WARP || !std::isfinite(view->stage_value) ||
+         view->stage_lane > WORM_UI_TIMING_LANE_WARP ||
+         view->stage_pause_unit < WORM_UI_TIMING_PAUSE_SECONDS ||
+         view->stage_pause_unit > WORM_UI_TIMING_PAUSE_BEATS || !std::isfinite(view->stage_value) ||
          !std::isfinite(view->stage_secondary_value))) {
         return 0;
     }
@@ -1363,9 +1372,11 @@ static void set_timing_action(WormUiWorkspaceAction* action, const WormUiTimingV
     action->timing_stage_action = kind;
     action->timing_chart_id = view->chart_id;
     action->timing_document_revision = view->document_revision;
+    action->timing_object_id = view->stage_existing_object_id;
     action->timing_value = primary;
     action->timing_secondary_value = secondary;
     action->timing_transition_is_seconds = transition_is_seconds;
+    action->timing_pause_unit = view->stage_pause_unit;
 }
 
 static void copy_timing_text(char* destination, size_t capacity, const char* source) {
@@ -1402,6 +1413,7 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
         g_timing_stage_buffers_active = false;
     } else if (!g_timing_stage_buffers_active || g_timing_stage_buffers_chart != view->chart_id ||
                g_timing_stage_buffers_revision != view->document_revision ||
+               g_timing_stage_buffers_object != view->stage_existing_object_id ||
                g_timing_stage_buffers_lane != view->stage_lane ||
                g_timing_stage_buffers_y != view->stage_marker_y_pixels) {
         copy_timing_text(g_timing_primary_numerator.data(), g_timing_primary_numerator.size(),
@@ -1416,6 +1428,7 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
         g_timing_stage_buffers_active = true;
         g_timing_stage_buffers_chart = view->chart_id;
         g_timing_stage_buffers_revision = view->document_revision;
+        g_timing_stage_buffers_object = view->stage_existing_object_id;
         g_timing_stage_buffers_lane = view->stage_lane;
         g_timing_stage_buffers_y = view->stage_marker_y_pixels;
     }
@@ -1427,8 +1440,8 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
     nk_layout_row_dynamic(g_context, 18, 1);
     nk_labelf(g_context, NK_TEXT_LEFT,
               "%zu bookmarks/sections · %zu anchors · Hover a SPEEDS marker for its exact span; "
-              "Existing markers are view-only. Double-click an empty row to stage an event "
-              "(current fixed timing grid).",
+              "Double-click a marker to edit its exact value, or an empty row to insert on the "
+              "current fixed timing grid. Coincident markers split left-to-right by source order.",
               view->bookmark_count + view->section_count, view->anchor_count);
 
     const auto group_bounds = nk_window_get_content_region(g_context);
@@ -1494,13 +1507,26 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
     size_t hovered = view->speed_count;
     auto nearest_distance = std::numeric_limits<float>::max();
     const auto& speed_lane = lanes[2];
+    const auto marker_horizontal_bounds = [](const struct nk_rect& lane, double left_fraction,
+                                             double right_fraction) {
+        const auto inner_left = lane.x + 4.0f;
+        const auto inner_width = std::max(0.0f, lane.w - 8.0f);
+        const auto left = inner_left + inner_width * static_cast<float>(left_fraction);
+        const auto right = inner_left + inner_width * static_cast<float>(right_fraction);
+        return std::pair{left, right};
+    };
     if (pointer_inside && g_context->input.mouse.pos.x >= speed_lane.x &&
         g_context->input.mouse.pos.x <= speed_lane.x + speed_lane.w) {
         for (size_t index = 0; index < view->speed_count; ++index) {
+            const auto [marker_left, marker_right] =
+                marker_horizontal_bounds(speed_lane, view->speeds[index].marker_left_fraction,
+                                         view->speeds[index].marker_right_fraction);
+            if (g_context->input.mouse.pos.x < marker_left ||
+                g_context->input.mouse.pos.x > marker_right) {
+                continue;
+            }
             const auto distance =
                 std::abs(pointer_y - screen_y(view->speeds[index].marker_y_pixels));
-            // Same-row SPEEDS events are resolved by source order; prefer the
-            // last drawn marker, which is the event-side winner.
             if (distance <= 7.0f && distance <= nearest_distance) {
                 hovered = index;
                 nearest_distance = distance;
@@ -1530,19 +1556,24 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
                 continue;
             }
             const auto y = screen_y(marker.marker_y_pixels);
-            nk_fill_rect(canvas,
-                         nk_rect(lanes[lane_index].x + 4.0f, y - 2.0f,
-                                 std::max(0.0f, lanes[lane_index].w - 8.0f), 4.0f),
-                         0.0f, lane_colors[lane_index]);
+            const auto [marker_left, marker_right] = marker_horizontal_bounds(
+                lanes[lane_index], marker.marker_left_fraction, marker.marker_right_fraction);
+            nk_fill_rect(
+                canvas,
+                nk_rect(marker_left, y - 2.0f, std::max(0.0f, marker_right - marker_left), 4.0f),
+                0.0f, lane_colors[lane_index]);
             break;
         }
     }
     for (size_t index = 0; index < view->speed_count; ++index) {
         const auto y = screen_y(view->speeds[index].marker_y_pixels);
         const auto color = index == hovered ? nk_rgb(191, 232, 248) : nk_rgb(113, 184, 218);
+        const auto [marker_left, marker_right] =
+            marker_horizontal_bounds(speed_lane, view->speeds[index].marker_left_fraction,
+                                     view->speeds[index].marker_right_fraction);
         nk_fill_rect(
             canvas,
-            nk_rect(speed_lane.x + 4.0f, y - 2.0f, std::max(0.0f, speed_lane.w - 8.0f), 4.0f), 0.0f,
+            nk_rect(marker_left, y - 2.0f, std::max(0.0f, marker_right - marker_left), 4.0f), 0.0f,
             color);
     }
     if (view->stage_active) {
@@ -1592,31 +1623,48 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
                 if (pointer.x < lanes[index].x || pointer.x >= lanes[index].x + lanes[index].w) {
                     continue;
                 }
-                bool existing_marker_hit = false;
+                uint64_t existing_object_id = 0;
+                auto existing_distance = std::numeric_limits<float>::max();
                 for (size_t marker = 0; marker < view->marker_count; ++marker) {
-                    if (view->markers[marker].lane == lane_kinds[index] &&
-                        std::abs(pointer.y - screen_y(view->markers[marker].marker_y_pixels)) <=
-                            7.0f) {
-                        existing_marker_hit = true;
-                        break;
+                    if (view->markers[marker].lane != lane_kinds[index]) {
+                        continue;
+                    }
+                    const auto [marker_left, marker_right] = marker_horizontal_bounds(
+                        lanes[index], view->markers[marker].marker_left_fraction,
+                        view->markers[marker].marker_right_fraction);
+                    if (pointer.x < marker_left || pointer.x > marker_right) {
+                        continue;
+                    }
+                    const auto distance =
+                        std::abs(pointer.y - screen_y(view->markers[marker].marker_y_pixels));
+                    if (distance <= 7.0f && distance <= existing_distance) {
+                        existing_object_id = view->markers[marker].object_id;
+                        existing_distance = distance;
                     }
                 }
                 if (lane_kinds[index] == WORM_UI_TIMING_LANE_SPEED) {
                     for (size_t marker = 0; marker < view->speed_count; ++marker) {
-                        if (std::abs(pointer.y - screen_y(view->speeds[marker].marker_y_pixels)) <=
-                            7.0f) {
-                            existing_marker_hit = true;
-                            break;
+                        const auto [marker_left, marker_right] = marker_horizontal_bounds(
+                            lanes[index], view->speeds[marker].marker_left_fraction,
+                            view->speeds[marker].marker_right_fraction);
+                        if (pointer.x < marker_left || pointer.x > marker_right) {
+                            continue;
+                        }
+                        const auto distance =
+                            std::abs(pointer.y - screen_y(view->speeds[marker].marker_y_pixels));
+                        if (distance <= 7.0f && distance <= existing_distance) {
+                            existing_object_id = view->speeds[marker].object_id;
+                            existing_distance = distance;
                         }
                     }
                 }
-                if (existing_marker_hit) {
-                    break;
-                }
                 set_timing_action(action, view, WORM_UI_TIMING_STAGE_BEGIN);
                 action->timing_lane = lane_kinds[index];
-                action->timing_target_y_fraction =
-                    static_cast<double>(pointer.y - viewport.y) / static_cast<double>(viewport.h);
+                action->timing_object_id = existing_object_id;
+                if (existing_object_id == 0) {
+                    action->timing_target_y_fraction = static_cast<double>(pointer.y - viewport.y) /
+                                                       static_cast<double>(viewport.h);
+                }
                 break;
             }
             if (action->timing_stage_action != WORM_UI_TIMING_STAGE_NONE) {
@@ -1629,6 +1677,21 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
         nk_bool seconds = view->stage_transition_is_seconds ? 1 : 0;
         bool changed = false;
         const char* primary_label = "Value";
+        const char* pause_unit_label = "seconds";
+        switch (view->stage_pause_unit) {
+        case WORM_UI_TIMING_PAUSE_SECONDS:
+            pause_unit_label = "seconds";
+            break;
+        case WORM_UI_TIMING_PAUSE_MILLISECONDS:
+            pause_unit_label = "milliseconds";
+            break;
+        case WORM_UI_TIMING_PAUSE_BMS_STOP_TICKS:
+            pause_unit_label = "BMS STOP ticks";
+            break;
+        case WORM_UI_TIMING_PAUSE_BEATS:
+            pause_unit_label = "beats";
+            break;
+        }
         if (view->stage_lane == WORM_UI_TIMING_LANE_BPM) {
             primary_label = "BPM";
         } else if (view->stage_lane == WORM_UI_TIMING_LANE_SCROLL) {
@@ -1637,11 +1700,17 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
             primary_label = "SPEEDS multiplier";
         } else if (view->stage_lane == WORM_UI_TIMING_LANE_STOP ||
                    view->stage_lane == WORM_UI_TIMING_LANE_DELAY) {
-            primary_label = "Duration (seconds)";
+            primary_label = "Duration";
         }
         nk_layout_row_dynamic(g_context, 22, 1);
-        nk_label(g_context, "Staged timing event — nothing is written until Confirm.",
-                 NK_TEXT_LEFT);
+        if (view->stage_existing_object_id != 0) {
+            nk_labelf(g_context, NK_TEXT_LEFT,
+                      "Editing timing event #%llu — its position stays fixed until Apply.",
+                      static_cast<unsigned long long>(view->stage_existing_object_id));
+        } else {
+            nk_label(g_context, "Staged timing event — nothing is written until Confirm.",
+                     NK_TEXT_LEFT);
+        }
         nk_layout_row_dynamic(g_context, 20, 1);
         nk_label(g_context, "Exact rational value: numerator / denominator", NK_TEXT_LEFT);
         nk_layout_row_begin(g_context, NK_DYNAMIC, 28, 4);
@@ -1678,18 +1747,25 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
         } else if (view->stage_lane == WORM_UI_TIMING_LANE_WARP) {
             nk_layout_row_begin(g_context, NK_DYNAMIC, 28, 3);
             nk_layout_row_push(g_context, 0.38f);
-            nk_label(g_context, "Length in current grid steps", NK_TEXT_LEFT);
+            nk_label(g_context,
+                     view->stage_existing_object_id != 0 ? "Length in exact chart rows"
+                                                         : "Length in current grid steps",
+                     NK_TEXT_LEFT);
             nk_layout_row_push(g_context, 0.34f);
             changed |= nk_edit_string_zero_terminated(
                            g_context, NK_EDIT_FIELD, g_timing_secondary_numerator.data(),
                            g_timing_secondary_numerator.size(), nk_filter_decimal) != 0;
             nk_layout_row_push(g_context, 0.28f);
-            nk_label(g_context, "steps (denominator 1)", NK_TEXT_LEFT);
+            nk_label(g_context,
+                     view->stage_existing_object_id != 0 ? "rows (denominator 1)"
+                                                         : "steps (denominator 1)",
+                     NK_TEXT_LEFT);
             nk_layout_row_end(g_context);
         } else if (view->stage_lane == WORM_UI_TIMING_LANE_STOP ||
                    view->stage_lane == WORM_UI_TIMING_LANE_DELAY) {
             nk_layout_row_dynamic(g_context, 18, 1);
-            nk_label(g_context, "Pause duration is entered in seconds.", NK_TEXT_LEFT);
+            nk_labelf(g_context, NK_TEXT_LEFT, "Pause duration uses its authored unit: %s.",
+                      pause_unit_label);
         }
         if (view->stage_status_text && view->stage_status_text[0]) {
             nk_layout_row_dynamic(g_context, 20, 1);
@@ -1697,7 +1773,9 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
         }
         nk_layout_row_begin(g_context, NK_DYNAMIC, 28, 2);
         nk_layout_row_push(g_context, 0.50f);
-        const auto confirm_clicked = nk_button_label(g_context, "Confirm timing event");
+        const auto confirm_clicked = nk_button_label(g_context, view->stage_existing_object_id != 0
+                                                                    ? "Apply timing edit"
+                                                                    : "Confirm timing event");
         nk_layout_row_push(g_context, 0.50f);
         const auto cancel_clicked = nk_button_label(g_context, "Cancel");
         nk_layout_row_end(g_context);

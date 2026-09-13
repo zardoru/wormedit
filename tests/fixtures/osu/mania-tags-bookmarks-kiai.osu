@@ -1,0 +1,57 @@
+osu file format v14
+
+[General]
+AudioFilename: fixture.mp3
+AudioLeadIn: 0
+PreviewTime: 12500
+Countdown: 0
+SampleSet: Normal
+StackLeniency: 0.7
+Mode: 3
+
+[Editor]
+Bookmarks: 1000,2500,5000
+DistanceSpacing: 1.2
+BeatDivisor: 4
+GridSize: 4
+TimelineZoom: 1
+
+[Metadata]
+Title:Fixture: tags, kiai, resources
+TitleUnicode:Fixture: tags, kiai, resources
+Artist:Wormedit fixture authors
+ArtistUnicode:Wormedit fixture authors
+Creator:Wormedit
+Version:4K fixture
+Source:hand-authored
+Tags:fixture semantic-roundtrip tags-with-hyphen
+BeatmapID:0
+BeatmapSetID:-1
+
+[Difficulty]
+HPDrainRate:5
+CircleSize:4
+OverallDifficulty:7
+ApproachRate:9
+SliderMultiplier:1.4
+SliderTickRate:1
+
+[Events]
+0,0,"background.jpg",0,0
+Video,1000,"background-video.mp4",0,0
+Sprite,Foreground,Centre,"fixture-storyboard.png",256,192
+//Background and storyboard paths are resource references, not bundled media.
+
+[TimingPoints]
+0,500,4,2,1,70,1,0
+1000,500,4,3,2,65,1,1
+1500,-50,4,3,2,65,0,9
+3000,500,4,2,1,70,1,0
+3500,-100,4,2,1,70,0,8
+4000,400,3,2,1,70,1,0
+
+[HitObjects]
+64,192,1500,1,0,0:0:0:0:
+192,192,2500,128,0,4000:0:0:0:
+320,192,3500,1,2,0:0:0:50:custom-hit.wav
+448,192,4500,1,0,0:0:0:0:

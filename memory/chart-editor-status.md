@@ -4,13 +4,19 @@ Last updated: 2026-09-13
 
 ## Current milestone
 
-The planning review is complete enough to begin implementation. Stage 0 is establishing the build/test/dependency environment and BMSON conformance fixtures.
+The planning review is complete enough to begin implementation. Stage 0 is establishing the build/test/dependency environment, fixture inventory, and loss-aware document foundation.
 
-The Catch2 v3/CMake/CTest harness and pinned optional Lua 5.4.8 target are established. The next implementation objective is to add representative format/audio fixtures and the first loss-aware document aggregates before replacing the current chart model.
+The Catch2 v3/CMake/CTest harness and pinned optional Lua 5.4.8 target are established. Twenty-eight text fixtures now cover BMS/BME/BML/PMS, SM/SSC, osu!mania, and BMSON positive and negative semantics, including the BMSON specification's published `vox.wav` slicing sequence transcribed to JSON and all zero/null/omitted default-resolution spellings. [`tests/fixtures/README.md`](../tests/fixtures/README.md) is their capability inventory, and [`docs/fixtures/libotoworm-capability-audit.md`](../docs/fixtures/libotoworm-capability-audit.md) records precisely what the current library bridge exposes and discards. Binary encoded-BMS, clipboard, and real audio fixtures remain outstanding before Stage 0 reaches its exit condition.
+
+The first replacement document slice is implemented in `include/wormedit/core/document.h` and `src/core/document.cpp`. It defines strong stable IDs, exact measure-local positions, ordered measure chunks, explicit notes/holds and BGM source lanes, typed timing/pause/warp/scroll/speed/kiai data, lane layouts and physical-key input profiles, semantic layers, resource/audio/visual/slice provenance, BMS control-tree storage, MIDI/generator/storyboard extension records, conversion requests/reports, and graph validation diagnostics. Exact measure-prefix indexing and atomic exact-only global redivision are implemented and tested; inexact positions reject without mutating the source chart.
+
+Initial data-defined profiles cover BME 7K, BME 14K with selectable inside/outside scratches and the required interleaved physical-key mapping, plus BMSON-only generic 24K/48K piano banks. Their BMS lanes carry visible, invisible, long-note, and mine channels. The remaining command-memo BMS/PMS/special profiles and confidence-based detection are not implemented yet.
 
 Stage-zero CMake now includes generic headless cross-toolchain presets for Linux targets and Windows/MinGW targets from Linux. Compiler paths, target triples, sysroots, resource compiler, and optional emulator/Wine paths are caller supplied; full application cross-presets wait for target-side SDL3 GPU/audio/package discovery.
 
-The first headless core slice implements exact textual BMS measure-length parsing, exact row-capacity/meter validation, and the default editor-to-BMSON grid mapping. CTest discovers six core cases and two Lua runtime cases, including invalid syntax, zero/negative values, overflow, incompatible meter/grid geometry, invalid BMSON grids, and malformed Lua. All eight pass on the macOS development host; the legacy desktop scaffold also configures and builds with the new core linked.
+The headless core also implements exact textual BMS measure-length parsing, exact row-capacity/meter validation, and the default editor-to-BMSON grid mapping. CTest discovers 19 core/fixture/profile cases and two Lua runtime cases. All 21 pass on the macOS development host; the legacy desktop scaffold configures and builds with the new core linked. The checked-in fixture inventory is verified by a Catch2 case, although semantic readers/writers do not exist yet.
+
+The BMSON 1.0 normative rule for `info.resolution` is now explicit: zero, null, or omission selects the default 240 pulses per quarter note and retains source provenance. Wrong JSON types and invalid pulse values remain negative cases. This corrects the earlier reference-note wording that treated zero as invalid.
 
 ## Settled decisions
 
@@ -129,12 +135,12 @@ The first headless core slice implements exact textual BMS measure-length parsin
 
 ## Resume here
 
-1. Create redistributable positive and negative fixtures for each chart family, including timing edge cases, native/legacy StepMania warps, used/unused/missing BMS WAV/BMP and osu! sample/BGA resources, BMS repeated BGM lines/`00` slots, BMS STOP/delay handling, custom/unknown BMS channels, random/IF/ELSE/switch trees, text encodings, BMSON slicing rules, osu! tags/bookmarks/kiai effects, and matched SM/SSC features.
+1. Add byte-authored UTF-8/BOM, CP932/Shift-JIS, EUC-KR/CP949, Windows-1252, ambiguous ASCII, and invalid-sequence BMS fixtures with explicit expected decoded text and unchanged-save bytes.
 2. Create short and long MP3/Ogg fixtures plus BMS/BMSON keysound sets, and define bounded-memory decode/seek/waveform, full-autoplay scheduling, polyphony, and hard-stop assertions.
-3. Capture BMSE/iBMSC clipboard samples and add positive/negative clipboard fixtures.
-4. Record what `libotoworm` currently preserves or discards for every fixture, then assign required behavior to wormedit-owned codecs and timing components.
-5. Draft the replacement C++ aggregates and free-function APIs for chart-wide resolution, exact snap state, quantization requests/diffs, measure chunks, exact positions, canonical warps/provenance, timing anchors, lane/input/channel profiles, BGM source lanes, BGA events, shared resource entries, audio/visual assets, tags, bookmarks/sections, kiai state, sound channels, encoding provenance, conversion requests/reports, MIDI assets, generator recipes, storyboard documents, and stable IDs.
-6. Specify the physical-key identifiers and collision behavior for the initial serialized lane-input profiles, then add positive and negative controller fixtures for every default mapping.
+3. Capture BMSE/iBMSC clipboard samples and add positive/negative clipboard fixtures with tool/version provenance.
+4. Expand lane profiles to the command memo's BMS 5K/10K, remaining BME/PMS layouts, and named special variants; add confidence-based detection and lossless custom fallback fixtures.
+5. Implement the first wormedit-owned byte parser into the replacement document, starting with exact/provenance-preserving BMS command ingestion and control-tree construction or BMSON 1.0 JSON ingestion. Do not extend the `libotoworm` bridge.
+6. Add exact snap-state filtering, quantization diff/apply, bounded IEEE-754 rationalization, and broader document-graph validation for branch trees and target resource identities.
 7. Keep [`docs/chart-editor-plan.md`](../docs/chart-editor-plan.md) and this status file current when decisions change.
 
 ## Current code constraints

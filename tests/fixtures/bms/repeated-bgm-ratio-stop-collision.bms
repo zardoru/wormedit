@@ -1,0 +1,19 @@
+#PLAYER 1
+#TITLE Fixture: layers, ratio, timing collision
+#ARTIST Wormedit fixture authors
+#BPM 120
+#BPM01 180
+#STOP01 48
+#WAV01 bgm-a.wav
+#WAV02 bgm-b.wav
+#WAV03 key.wav
+#WAV04 bgm-c.wav
+#00002:0.75
+#00001:0100000200
+#00001:0000030000
+#00011:0000000003
+#00003:78
+#00008:01
+#00009:01
+#00102:1.25
+#00101:0400

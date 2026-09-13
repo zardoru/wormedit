@@ -1,0 +1,61 @@
+{
+  "version": "1.0.0",
+  "info": {
+    "title": "Fixture: BMSON slices and mixed sounds",
+    "artist": "Wormedit fixture authors",
+    "genre": "fixture",
+    "chart_name": "4K slicing",
+    "level": 5,
+    "init_bpm": 120.0,
+    "judge_rank": 100,
+    "total": 100.0,
+    "back_image": "background.png",
+    "eyecatch_image": "",
+    "title_image": "",
+    "banner_image": "",
+    "preview_music": "preview.ogg",
+    "resolution": 240,
+    "mode_hint": "beat-7k"
+  },
+  "lines": [
+    { "y": 0 },
+    { "y": 960 },
+    { "y": 1680 }
+  ],
+  "bpm_events": [
+    { "y": 0, "bpm": 120.0 },
+    { "y": 960, "bpm": 150.0 }
+  ],
+  "stop_events": [
+    { "y": 720, "duration": 120 }
+  ],
+  "sound_channels": [
+    {
+      "name": "long-voice.ogg",
+      "notes": [
+        { "x": 1, "y": 0, "c": false },
+        { "x": 1, "y": 240, "c": true },
+        { "x": 1, "y": 480, "l": 240, "c": true },
+        { "x": 1, "y": 960, "c": false }
+      ]
+    },
+    {
+      "name": "snare.wav",
+      "notes": [
+        { "x": 0, "y": 240, "c": false },
+        { "x": 3, "y": 240, "c": false },
+        { "x": 5, "y": 960, "l": 480, "c": false }
+      ]
+    }
+  ],
+  "bga": {
+    "bga_header": [
+      { "id": 0, "name": "background.png" }
+    ],
+    "bga_events": [
+      { "y": 0, "id": 0 }
+    ],
+    "layer_events": [],
+    "poor_events": []
+  }
+}

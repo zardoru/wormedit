@@ -1,0 +1,36 @@
+#PLAYER 1
+#TITLE Fixture: retained BMS program tree
+#ARTIST Wormedit fixture authors
+#BPM 120
+#WAV01 common.wav
+#WAV02 random-a.wav
+#WAV03 random-b.wav
+#WAV04 if-a.wav
+#WAV05 if-b.wav
+#WAV06 switch-a.wav
+#WAV07 switch-b.wav
+#WAV08 nested.wav
+#00011:01
+#RANDOM 2
+#IF 1
+#00011:02
+#ELSEIF 2
+#00011:03
+#ELSE
+#00011:0400
+#ENDIF
+#ENDRANDOM
+#SWITCH 1
+#CASE 1
+#00011:06
+#RANDOM 2
+#IF 2
+#00011:08
+#ENDIF
+#ENDRANDOM
+#CASE 2
+#00011:07
+#SKIP
+#DEF
+#00011:0500
+#ENDSW

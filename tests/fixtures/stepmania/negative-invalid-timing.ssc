@@ -1,0 +1,12 @@
+#TITLE:Negative fixture: non-finite BPM;
+#BPMS:0.000=nan;
+#NOTEDATA:;
+#STEPSTYPE:dance-single;
+#DESCRIPTION:Invalid;
+#DIFFICULTY:Edit;
+#METER:1;
+#RADARVALUES:0,0,0,0,0;
+#BPMS:0.000=nan;
+#NOTES:
+0000
+;

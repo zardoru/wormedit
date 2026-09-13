@@ -1,0 +1,32 @@
+{
+  "version": "1.0.0",
+  "info": {
+    "title": "Negative fixture: overflow pulse position",
+    "artist": "Wormedit fixture authors",
+    "genre": "fixture",
+    "chart_name": "overflow pulse",
+    "level": 1,
+    "init_bpm": 120.0,
+    "judge_rank": 100,
+    "total": 100.0,
+    "back_image": "",
+    "eyecatch_image": "",
+    "title_image": "",
+    "banner_image": "",
+    "preview_music": "",
+    "resolution": 240,
+    "mode_hint": "beat-5k"
+  },
+  "sound_channels": [
+    {
+      "name": "tone.wav",
+      "notes": [{ "x": 1, "y": 4294967296, "c": false }]
+    }
+  ],
+  "bga": {
+    "bga_header": [],
+    "bga_events": [],
+    "layer_events": [],
+    "poor_events": []
+  }
+}

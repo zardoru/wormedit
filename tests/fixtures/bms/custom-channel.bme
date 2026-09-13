@@ -1,0 +1,10 @@
+#PLAYER 7
+#TITLE Fixture: custom BME channel map
+#ARTIST Wormedit fixture authors
+#BPM 150
+#WAV01 key.wav
+#WAV02 custom.wav
+#WAV03 invisible.wav
+#00011:01
+#0001A:0002
+#00031:0003

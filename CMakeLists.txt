@@ -22,6 +22,8 @@ option(WORMEDIT_BUILD_APP "Build the existing SDL/OpenGL application scaffold" O
 option(WORMEDIT_ENABLE_LUA "Build the pinned Lua runtime adapter" OFF)
 
 add_library(wormedit_core
+    src/core/document.cpp
+    src/core/lane_profiles.cpp
     src/core/measure.cpp
 )
 add_library(wormedit::core ALIAS wormedit_core)

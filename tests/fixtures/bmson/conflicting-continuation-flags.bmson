@@ -1,0 +1,36 @@
+{
+  "version": "1.0.0",
+  "info": {
+    "title": "Fixture: conflicting continuation flags",
+    "artist": "Wormedit fixture authors",
+    "genre": "fixture",
+    "chart_name": "duplicate pulse",
+    "level": 2,
+    "init_bpm": 120.0,
+    "judge_rank": 100,
+    "total": 100.0,
+    "back_image": "",
+    "eyecatch_image": "",
+    "title_image": "",
+    "banner_image": "",
+    "preview_music": "",
+    "resolution": 240,
+    "mode_hint": "beat-5k"
+  },
+  "sound_channels": [
+    {
+      "name": "shared.wav",
+      "notes": [
+        { "x": 1, "y": 240, "c": true },
+        { "x": 2, "y": 240, "c": false },
+        { "x": 3, "y": 480, "c": true }
+      ]
+    }
+  ],
+  "bga": {
+    "bga_header": [],
+    "bga_events": [],
+    "layer_events": [],
+    "poor_events": []
+  }
+}

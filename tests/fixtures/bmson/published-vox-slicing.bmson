@@ -1,0 +1,43 @@
+{
+  "version": "1.0.0",
+  "info": {
+    "title": "BMSON 1.0 published vox slicing example",
+    "artist": "BMSON specification fixture",
+    "genre": "fixture",
+    "chart_name": "slicing",
+    "level": 0,
+    "init_bpm": 120.0,
+    "judge_rank": 100,
+    "total": 100,
+    "resolution": 240,
+    "mode_hint": "beat-7k"
+  },
+  "lines": [
+    { "y": 960 },
+    { "y": 1920 }
+  ],
+  "bpm_events": [],
+  "stop_events": [],
+  "sound_channels": [
+    {
+      "name": "vox.wav",
+      "notes": [
+        { "x": 1, "y": 240, "l": 0, "c": false },
+        { "x": 3, "y": 360, "l": 0, "c": true },
+        { "x": 7, "y": 360, "l": 0, "c": true },
+        { "x": 2, "y": 720, "l": 0, "c": false },
+        { "x": 3, "y": 720, "l": 0, "c": false },
+        { "x": 4, "y": 840, "l": 0, "c": true },
+        { "x": 6, "y": 840, "l": 0, "c": true },
+        { "x": 3, "y": 1200, "l": 0, "c": true },
+        { "x": 0, "y": 1680, "l": 0, "c": true }
+      ]
+    }
+  ],
+  "bga": {
+    "bga_header": [],
+    "bga_events": [],
+    "layer_events": [],
+    "poor_events": []
+  }
+}

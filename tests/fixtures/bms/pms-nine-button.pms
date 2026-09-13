@@ -1,0 +1,10 @@
+#PLAYER 3
+#TITLE Fixture: standard nine-button PMS map
+#ARTIST Wormedit fixture authors
+#BPM 128
+#WAV01 button-1.wav
+#WAV02 button-6.wav
+#WAV03 button-9.wav
+#00011:01
+#00022:0002
+#00025:0003

@@ -1,0 +1,29 @@
+#TITLE:Fixture: legacy negative STOP warp encoding;
+#MUSIC:fixture.ogg;
+#OFFSET:0.000;
+#BPMS:0.000=120.000;
+#STOPS:4.000=-2.000;
+#NOTES:
+     dance-single:
+     Legacy negative STOP:
+     Challenge:
+     10:
+     0.500,0.500,0.500,0.500,0.500:
+1000
+0000
+0100
+0000
+0000
+0010
+0000
+0000
+,
+0000
+0001
+0000
+0000
+0000
+0000
+0000
+0000
+;

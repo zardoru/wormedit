@@ -1,7 +1,13 @@
 include(Catch)
 
 add_executable(wormedit_core_tests
+    core/document_tests.cpp
+    core/fixture_inventory_tests.cpp
+    core/lane_profile_tests.cpp
     core/measure_tests.cpp
+)
+target_compile_definitions(wormedit_core_tests
+    PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
 )
 target_link_libraries(wormedit_core_tests
     PRIVATE

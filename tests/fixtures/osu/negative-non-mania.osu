@@ -1,0 +1,20 @@
+osu file format v14
+
+[General]
+AudioFilename: fixture.mp3
+Mode: 0
+
+[Metadata]
+Title:Negative fixture: standard mode
+Artist:Wormedit fixture authors
+Creator:Wormedit
+Version:Not mania
+
+[Difficulty]
+CircleSize:4
+
+[TimingPoints]
+0,500,4,2,1,70,1,0
+
+[HitObjects]
+256,192,1000,1,0,0:0:0:0:

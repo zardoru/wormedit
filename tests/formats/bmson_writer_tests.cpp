@@ -365,3 +365,23 @@ TEST_CASE("BMSON writer rejects unequal layered hold lengths and rooted backslas
     CHECK_FALSE(rooted.json.has_value());
     CHECK(has_write_error(rooted, wormedit::bmson_write_diagnostic_code_t::unresolved_resource));
 }
+
+TEST_CASE("BMSON export bakes recipes before reporting unsupported regular scroll events",
+          "[unit][format][bmson][writer][sv-recipe]") {
+    const auto imported = fixture("slicing-and-mixed-sounds.bmson");
+    REQUIRE(imported.song.has_value());
+    auto song = *imported.song;
+    auto& chart = song.charts.front();
+    REQUIRE(chart.measures.size() >= 2);
+    chart.sv_recipes.push_back({
+        .id = wormedit::recipe_id_t{900003},
+        .name = "export guard",
+        .range = {{chart.measures[0].id, 0}, {chart.measures[1].id, 0}},
+        .output = wormedit::sv_recipe_output_t::sv,
+        .curve = wormedit::sv_recipe_curve_t::constant,
+        .parameters = {.value_from = {2, 1}},
+    });
+    const auto written = wormedit::write_bmson(song);
+    CHECK_FALSE(written.json.has_value());
+    CHECK(has_write_error(written, wormedit::bmson_write_diagnostic_code_t::unsupported_feature));
+}

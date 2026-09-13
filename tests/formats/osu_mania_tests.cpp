@@ -1395,3 +1395,30 @@ CircleSize:1
         return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::metadata_limit;
     }));
 }
+
+TEST_CASE("osu!mania export bakes parametric SV recipes into inherited timing points",
+          "[unit][format][osu-mania][sv-recipe]") {
+    const auto parsed = parse_inline(rewiring_source);
+    REQUIRE(parsed.song.has_value());
+    auto song = *parsed.song;
+    auto& chart = song.charts.front();
+    REQUIRE(chart.measures.size() >= 2);
+    chart.scrolls.clear();
+    chart.sv_recipes.push_back({
+        .id = wormedit::recipe_id_t{900002},
+        .name = "export guard",
+        .range = {{chart.measures[0].id, 0}, {chart.measures[1].id, 0}},
+        .output = wormedit::sv_recipe_output_t::sv,
+        .curve = wormedit::sv_recipe_curve_t::constant,
+        .parameters = {.value_from = {2, 1}},
+    });
+    const auto written = write_inline(song);
+    REQUIRE(written.text.has_value());
+    const auto reparsed = parse_inline(*written.text);
+    REQUIRE(reparsed.song.has_value());
+    CHECK(std::ranges::any_of(reparsed.song->charts.front().scrolls, [](const auto& event) {
+        return event.multiplier == wormedit::signed_rational_t{2, 1};
+    }));
+    CHECK(chart.scrolls.empty());
+    CHECK(chart.sv_recipes.size() == 1);
+}

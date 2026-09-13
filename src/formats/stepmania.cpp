@@ -1,6 +1,7 @@
 #include <wormedit/formats/stepmania.h>
 
 #include <wormedit/core/measure.h>
+#include <wormedit/core/sv_recipe.h>
 
 #include <algorithm>
 #include <array>
@@ -1712,6 +1713,23 @@ auto write_stepmania(const song_document_t& song, stepmania_write_options_t opti
         report(stepmania_write_diagnostic_code_t::output_limit,
                "StepMania writer limits must be positive", "NOTES");
         return result;
+    }
+    std::vector<chart_document_t> baked_charts;
+    baked_charts.reserve(charts.size());
+    for (const auto* chart : charts) {
+        auto baked = bake_sv_recipes_for_export(*chart);
+        if (!baked) {
+            report(stepmania_write_diagnostic_code_t::unrepresentable_position,
+                   "SV recipe export bake failed: " + baked.diagnostics.front().message,
+                   "SCROLLS/SPEEDS");
+            return result;
+        }
+        baked_charts.push_back(std::move(*baked.chart));
+    }
+    charts.clear();
+    charts.reserve(baked_charts.size());
+    for (const auto& chart : baked_charts) {
+        charts.push_back(&chart);
     }
     std::string output;
     const auto emit = [&](std::string_view key, std::string_view value) {

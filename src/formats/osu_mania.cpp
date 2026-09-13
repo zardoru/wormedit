@@ -1,6 +1,7 @@
 #include <wormedit/formats/osu_mania.h>
 
 #include <wormedit/core/rational.h>
+#include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/timing.h>
 
 #include <algorithm>
@@ -1617,6 +1618,13 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
             fail(osu_mania_write_diagnostic_code_t::invalid_document,
                  "document failed core validation: " + invalid->message, "chart");
         }
+        auto baked_chart = bake_sv_recipes_for_export(*chart);
+        if (!baked_chart) {
+            fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
+                 "SV recipe export bake failed: " + baked_chart.diagnostics.front().message,
+                 "scrolls");
+        }
+        chart = &*baked_chart.chart;
         const storyboard_document_model_t* embedded_storyboard{};
         for (const auto& storyboard : song.storyboards) {
             if (!storyboard.retained_source_lines.empty())

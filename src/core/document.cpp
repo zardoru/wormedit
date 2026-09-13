@@ -1,4 +1,5 @@
 #include <wormedit/core/document.h>
+#include <wormedit/core/sv_recipe.h>
 
 #include <algorithm>
 #include <cctype>
@@ -668,6 +669,17 @@ auto validate_chart(const chart_document_t& chart,
     check_unique_ids(
         diagnostics, chart.semantic_layers, [](const auto& layer) { return layer.id; },
         "semantic layer");
+    check_unique_ids(diagnostics, chart.sv_recipes, [](const auto& recipe) { return recipe.id; },
+                     "SV recipe");
+    if (chart.sv_recipes.size() > maximum_sv_recipes_per_chart) {
+        add_diagnostic(diagnostics, diagnostic_code_t::invalid_resolution,
+                       "chart exceeds the maximum number of SV recipes");
+    }
+    for (const auto& recipe : chart.sv_recipes) {
+        const auto recipe_diagnostics = validate_sv_recipe(chart, recipe);
+        diagnostics.insert(diagnostics.end(), recipe_diagnostics.begin(),
+                           recipe_diagnostics.end());
+    }
     check_unique_ids(
         diagnostics, chart.bgm_source_lanes, [](const auto& lane) { return lane.id; },
         "BGM source lane");
@@ -1169,6 +1181,21 @@ auto validate_document(const song_document_t& song) -> diagnostic_list_t {
     }
     for (const auto& chart : song.charts) {
         validate_chart(chart, resource_ids, audio_asset_ids, diagnostics);
+    }
+    std::unordered_set<std::uint64_t> recipe_ids;
+    for (const auto& recipe : song.generator_recipes) {
+        if (recipe.id && !recipe_ids.insert(recipe.id.value).second) {
+            add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
+                           "generator and SV recipe IDs must be unique across the song");
+        }
+    }
+    for (const auto& chart : song.charts) {
+        for (const auto& recipe : chart.sv_recipes) {
+            if (recipe.id && !recipe_ids.insert(recipe.id.value).second) {
+                add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
+                               "generator and SV recipe IDs must be unique across the song");
+            }
+        }
     }
     for (const auto& recipe : song.generator_recipes) {
         for (const auto asset : recipe.input_assets) {

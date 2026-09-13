@@ -110,6 +110,15 @@ auto rich_bmson_song() -> wormedit::song_document_t {
         .retained_source_lines = {"Sprite,Background,Centre,background.png"},
         .model = parsed_storyboard.document,
     });
+    const auto first_measure = chart.measures.front().id;
+    chart.sv_recipes.push_back({
+        .id = wormedit::recipe_id_t{10000},
+        .name = "chorus scroll",
+        .range = {{first_measure, 0}, {first_measure, 1}},
+        .output = wormedit::sv_recipe_output_t::scrolls,
+        .curve = wormedit::sv_recipe_curve_t::linear,
+        .parameters = {.value_from = {3, 4}, .value_to = {2, 1}},
+    });
     song.output_groups.push_back({
         .name = "BMSON release",
         .family = wormedit::format_family_t::bmson,
@@ -147,6 +156,9 @@ TEST_CASE("native project deterministically round-trips rich editor state",
     CHECK(parsed.song->output_groups.front().relative_output_path.generic_string() ==
           "exports/chart.bmson");
     CHECK(parsed.song->charts.front().bookmarks.back().audio_milliseconds == 1250);
+    REQUIRE(parsed.song->charts.front().sv_recipes.size() == 1);
+    CHECK(parsed.song->charts.front().sv_recipes.front().id == wormedit::recipe_id_t{10000});
+    CHECK(parsed.song->charts.front().sv_recipes.front().enabled);
     REQUIRE(parsed.song->charts.front().sections.back().beat_span.has_value());
     REQUIRE(song.charts.front().sections.back().beat_span.has_value());
     CHECK(parsed.song->charts.front().sections.back().beat_span->begin ==
@@ -174,6 +186,45 @@ TEST_CASE("native project deterministically round-trips rich editor state",
     const auto rewritten = wormedit::write_native_project(*parsed.song);
     REQUIRE(rewritten.bytes.has_value());
     CHECK(*rewritten.bytes == *written.bytes);
+}
+
+TEST_CASE("native projects persist SV recipes but accept older documents without them",
+          "[unit][format][native-project][sv-recipe]") {
+    auto song = rich_bmson_song();
+    REQUIRE(wormedit::validate_document(song).empty());
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.bytes.has_value());
+    auto serialized = nlohmann::json::parse(*written.bytes);
+    const auto& recipe_json = serialized["document"]["charts"][0]["sv_recipes"][0];
+    CHECK(recipe_json.contains("range"));
+    CHECK(recipe_json.contains("sampling"));
+    CHECK_FALSE(recipe_json.contains("sampled_points"));
+    CHECK_FALSE(recipe_json.contains("points"));
+
+    auto legacy = serialized;
+    legacy["document"]["charts"][0].erase("sv_recipes");
+    const auto parsed_legacy = wormedit::parse_native_project(legacy.dump());
+    REQUIRE(parsed_legacy.song.has_value());
+    CHECK(parsed_legacy.song->charts.front().sv_recipes.empty());
+    const auto migrated = wormedit::write_native_project(*parsed_legacy.song);
+    REQUIRE(migrated.bytes.has_value());
+    const auto migrated_json = nlohmann::json::parse(*migrated.bytes);
+    CHECK(migrated_json["document"]["charts"][0]["sv_recipes"].empty());
+
+    auto invalid_enum = serialized;
+    invalid_enum["document"]["charts"][0]["sv_recipes"][0]["output"] = 255;
+    const auto rejected = wormedit::parse_native_project(invalid_enum.dump());
+    CHECK_FALSE(rejected.song.has_value());
+    CHECK(has_code(rejected.diagnostics,
+                   wormedit::native_project_diagnostic_code_t::invalid_document));
+
+    auto oversized_count = serialized;
+    oversized_count["document"]["charts"][0]["sv_recipes"][0]["sampling"]["fixed_point_count"] =
+        std::uint64_t{1} << 40U;
+    const auto rejected_count = wormedit::parse_native_project(oversized_count.dump());
+    CHECK_FALSE(rejected_count.song.has_value());
+    CHECK(has_code(rejected_count.diagnostics,
+                   wormedit::native_project_diagnostic_code_t::malformed_json));
 }
 
 TEST_CASE("native project reads legacy storyboards without a structured model",

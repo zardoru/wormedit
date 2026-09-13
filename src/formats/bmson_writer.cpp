@@ -1,5 +1,7 @@
 #include <wormedit/formats/bmson.h>
 
+#include <wormedit/core/sv_recipe.h>
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -762,6 +764,13 @@ auto write_impl(const song_document_t& song, bmson_write_options_t options,
         fail(bmson_write_diagnostic_code_t::invalid_document,
              "document failed core validation: " + validation.front().message, "$");
     }
+    auto baked_chart = bake_sv_recipes_for_export(*chart);
+    if (!baked_chart) {
+        fail(bmson_write_diagnostic_code_t::unrepresentable_number,
+             "SV recipe export bake failed: " + baked_chart.diagnostics.front().message,
+             "$.scroll_events");
+    }
+    chart = &*baked_chart.chart;
     if (!chart->beat_zero_audio_offset_seconds.denominator ||
         chart->beat_zero_audio_offset_seconds.numerator != 0) {
         fail(bmson_write_diagnostic_code_t::unsupported_feature,

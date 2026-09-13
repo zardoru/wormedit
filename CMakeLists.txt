@@ -42,6 +42,7 @@ add_library(wormedit_core
     src/core/bpm_editor.cpp
     src/core/chart_compare.cpp
     src/core/command.cpp
+    src/core/command_registry.cpp
     src/core/document.cpp
     src/core/editor_scene.cpp
     src/core/bms_profile_detection.cpp
@@ -62,10 +63,12 @@ add_library(wormedit_core
     src/core/scroll_speed_editor.cpp
     src/core/semantic_layer_editor.cpp
     src/core/storyboard.cpp
+    src/core/sv_recipe.cpp
     src/core/startup_session.cpp
     src/core/task_graph.cpp
     src/core/timing.cpp
     src/core/timing_anchor_editor.cpp
+    src/core/timing_lane_controller.cpp
     src/core/viewport_input.cpp
     src/core/workspace.cpp
     src/formats/bms.cpp

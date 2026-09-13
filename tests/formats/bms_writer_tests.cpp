@@ -2160,3 +2160,23 @@ TEST_CASE("BMS writer validates only the selected chart", "[unit][format][bms][w
     REQUIRE(written.bytes.has_value());
     CHECK_FALSE(written.has_errors());
 }
+
+TEST_CASE("BMS export bakes recipes before reporting unsupported regular scroll events",
+          "[unit][format][bms][writer][sv-recipe]") {
+    const auto imported = simple_chart();
+    REQUIRE(imported.song.has_value());
+    auto song = *imported.song;
+    auto& chart = song.charts.front();
+    REQUIRE(chart.measures.size() >= 2);
+    chart.sv_recipes.push_back({
+        .id = wormedit::recipe_id_t{900004},
+        .name = "export guard",
+        .range = {{chart.measures[0].id, 0}, {chart.measures[1].id, 0}},
+        .output = wormedit::sv_recipe_output_t::sv,
+        .curve = wormedit::sv_recipe_curve_t::constant,
+        .parameters = {.value_from = {2, 1}},
+    });
+    const auto written = wormedit::write_bms(song);
+    CHECK_FALSE(written.bytes.has_value());
+    CHECK(has_error(written, wormedit::bms_write_diagnostic_code_t::unsupported_feature));
+}

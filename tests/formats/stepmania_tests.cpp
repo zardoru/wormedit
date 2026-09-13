@@ -505,3 +505,27 @@ TEST_CASE("StepMania target implementation profiles choose exact warp encodings"
     CHECK(at(repeated_reimported.song->charts.front().warps[1].span.begin, 4, 0));
     CHECK(at(repeated_reimported.song->charts.front().warps[1].span.end, 5, 0));
 }
+
+TEST_CASE("StepMania export bakes parametric SV recipes into SCROLLS",
+          "[unit][format][stepmania][sv-recipe]") {
+    const auto parsed = fixture("matched-timing.ssc", wormedit::stepmania_profile_t::ssc);
+    REQUIRE(parsed.song.has_value());
+    auto song = *parsed.song;
+    auto& chart = song.charts.front();
+    REQUIRE(chart.measures.size() >= 2);
+    chart.scrolls.clear();
+    chart.sv_recipes.push_back({
+        .id = wormedit::recipe_id_t{900001},
+        .name = "export guard",
+        .range = {{chart.measures[0].id, 0}, {chart.measures[1].id, 0}},
+        .output = wormedit::sv_recipe_output_t::scrolls,
+        .curve = wormedit::sv_recipe_curve_t::constant,
+        .parameters = {.value_from = {2, 1}},
+    });
+    const auto written =
+        wormedit::write_stepmania(song, {.profile = wormedit::stepmania_profile_t::ssc});
+    REQUIRE(written.text.has_value());
+    CHECK(written.text->find("#SCROLLS:0=2,4=1;") != std::string::npos);
+    CHECK(chart.scrolls.empty());
+    CHECK(chart.sv_recipes.size() == 1);
+}

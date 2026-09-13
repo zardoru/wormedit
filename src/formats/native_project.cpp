@@ -178,6 +178,12 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(warp_event_t, id, span, source_encoding, prov
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(scroll_event_t, id, position, multiplier, provenance)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(speed_event_t, id, position, multiplier, transition_beats,
                                    transition_is_seconds, provenance)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_parameters_t, value_from, value_to, shape, bump_start,
+                                   bump_length, bump_x, bump_y)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_sampling_t, mode, fixed_point_count, fixed_step_rows,
+                                   tolerance, max_points)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sv_recipe_t, id, name, range, output, curve, parameters,
+                                   sampling, transition_duration, transition_is_seconds, enabled)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(kiai_event_t, id, position, enabled, retained_effect_bits,
                                    provenance)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(timing_anchor_t, id, position, source_sample_frame, locked)
@@ -445,6 +451,7 @@ void to_json(json& value, const chart_document_t& chart) {
                  {"warps", chart.warps},
                  {"scrolls", chart.scrolls},
                  {"speeds", chart.speeds},
+                 {"sv_recipes", chart.sv_recipes},
                  {"kiai", chart.kiai},
                  {"timing_anchors", chart.timing_anchors},
                  {"bookmarks", chart.bookmarks},
@@ -474,6 +481,12 @@ void from_json(const json& value, chart_document_t& chart) {
     value.at("warps").get_to(chart.warps);
     value.at("scrolls").get_to(chart.scrolls);
     value.at("speeds").get_to(chart.speeds);
+    if (value.contains("sv_recipes")) {
+        value.at("sv_recipes").get_to(chart.sv_recipes);
+    } else {
+        // Earlier version-1 projects predate durable parametric SV recipes.
+        chart.sv_recipes.clear();
+    }
     value.at("kiai").get_to(chart.kiai);
     value.at("timing_anchors").get_to(chart.timing_anchors);
     value.at("bookmarks").get_to(chart.bookmarks);
@@ -652,6 +665,13 @@ auto valid_enum_domains(const song_document_t& song, std::size_t maximum_depth) 
         }
         for (const auto& speed : chart.speeds) {
             if (!valid_provenance(speed.provenance)) {
+                return false;
+            }
+        }
+        for (const auto& recipe : chart.sv_recipes) {
+            if (!enum_at_most(recipe.output, sv_recipe_output_t::speeds) ||
+                !enum_at_most(recipe.curve, sv_recipe_curve_t::bump) ||
+                !enum_at_most(recipe.sampling.mode, sv_recipe_sampling_mode_t::adaptive)) {
                 return false;
             }
         }
@@ -853,7 +873,8 @@ auto strict_numeric_shape(const json& value, std::string_view key = {}, bool sig
         }
         if ((key == "sample_rate" || key == "channels" || key == "width" || key == "height" ||
              key == "display_order" || key == "split_after_column" || key == "focused_stage" ||
-             key == "stage_count" || key == "retained_effect_bits" || key == "schema_version") &&
+             key == "stage_count" || key == "retained_effect_bits" || key == "schema_version" ||
+             key == "fixed_point_count" || key == "max_points") &&
             !at_most(std::numeric_limits<std::uint32_t>::max())) {
             return false;
         }
@@ -876,6 +897,8 @@ enum class schema_shape_context_t {
     ordinary,
     storyboards,
     storyboard_entry,
+    charts,
+    chart_entry,
 };
 
 auto same_schema_shape(const json& input, const json& canonical,
@@ -888,12 +911,17 @@ auto same_schema_shape(const json& input, const json& canonical,
                                           input.size() + 1 == canonical.size() &&
                                           !input.contains("model") && canonical.contains("model") &&
                                           canonical.at("model").is_null();
-        if (input.size() != canonical.size() && !legacy_model_missing) {
+        const auto legacy_recipes_missing =
+            context == schema_shape_context_t::chart_entry &&
+            input.size() + 1 == canonical.size() && !input.contains("sv_recipes") &&
+            canonical.contains("sv_recipes") && canonical.at("sv_recipes").empty();
+        if (input.size() != canonical.size() && !legacy_model_missing && !legacy_recipes_missing) {
             return false;
         }
         for (const auto& [key, value] : input.items()) {
             const auto expected = canonical.find(key);
             const auto child_context = key == "storyboards" ? schema_shape_context_t::storyboards
+                                       : key == "charts"    ? schema_shape_context_t::charts
                                                             : schema_shape_context_t::ordinary;
             if (expected == canonical.end() ||
                 !same_schema_shape(value, *expected, child_context)) {
@@ -908,6 +936,8 @@ auto same_schema_shape(const json& input, const json& canonical,
         }
         const auto child_context = context == schema_shape_context_t::storyboards
                                        ? schema_shape_context_t::storyboard_entry
+                                   : context == schema_shape_context_t::charts
+                                       ? schema_shape_context_t::chart_entry
                                        : schema_shape_context_t::ordinary;
         for (std::size_t index = 0; index < input.size(); ++index) {
             if (!same_schema_shape(input[index], canonical[index], child_context)) {

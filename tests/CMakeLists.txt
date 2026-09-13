@@ -8,6 +8,7 @@ add_executable(wormedit_core_tests
     core/bga_preview_tests.cpp
     core/chart_compare_tests.cpp
     core/command_tests.cpp
+    core/command_registry_tests.cpp
     core/document_tests.cpp
     core/editor_scene_tests.cpp
     core/bms_profile_detection_tests.cpp
@@ -28,10 +29,12 @@ add_executable(wormedit_core_tests
     core/scroll_speed_editor_tests.cpp
     core/semantic_layer_editor_tests.cpp
     core/storyboard_tests.cpp
+    core/sv_recipe_tests.cpp
     core/startup_session_tests.cpp
     core/task_graph_tests.cpp
     core/timing_tests.cpp
     core/timing_anchor_editor_tests.cpp
+    core/timing_lane_controller_tests.cpp
     core/viewport_input_tests.cpp
     core/workspace_tests.cpp
     formats/bms_tests.cpp

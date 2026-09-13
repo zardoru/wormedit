@@ -128,6 +128,8 @@ struct local_position_t {
 struct position_span_t {
     local_position_t begin;
     local_position_t end;
+
+    auto operator==(const position_span_t&) const -> bool = default;
 };
 
 enum class lane_role_t {
@@ -389,6 +391,70 @@ struct speed_event_t {
     source_provenance_t provenance;
 };
 
+// Parametric SV recipes are authored chart data. Sampled control points are
+// deliberately not part of the document model: they are derived preview/export
+// data and must never be persisted as ordinary scroll/speed events.
+enum class sv_recipe_output_t {
+    sv,
+    scrolls,
+    speeds,
+};
+
+enum class sv_recipe_curve_t {
+    constant,
+    linear,
+    exponential,
+    bump,
+};
+
+enum class sv_recipe_sampling_mode_t {
+    fixed,
+    adaptive,
+};
+
+struct sv_recipe_parameters_t {
+    // constant uses value_from; linear/exponential use value_from/value_to;
+    // exponential also uses shape. Bump uses bump_start/bump_length and
+    // bump_x/bump_y, all in normalized [0, 1] interval coordinates as relevant.
+    signed_rational_t value_from{1, 1};
+    signed_rational_t value_to{1, 1};
+    signed_rational_t shape{};
+    signed_rational_t bump_start{};
+    signed_rational_t bump_length{1, 2};
+    signed_rational_t bump_x{2, 1};
+    signed_rational_t bump_y{1, 1};
+
+    auto operator==(const sv_recipe_parameters_t&) const -> bool = default;
+};
+
+struct sv_recipe_sampling_t {
+    sv_recipe_sampling_mode_t mode{sv_recipe_sampling_mode_t::fixed};
+    // Exactly one of fixed_point_count and fixed_step_rows is set in fixed
+    // mode. Adaptive mode uses tolerance and max_points.
+    std::optional<std::uint32_t> fixed_point_count{2};
+    std::optional<std::uint64_t> fixed_step_rows;
+    signed_rational_t tolerance{1, 1000};
+    std::uint32_t max_points{256};
+
+    auto operator==(const sv_recipe_sampling_t&) const -> bool = default;
+};
+
+struct sv_recipe_t {
+    recipe_id_t id;
+    std::string name;
+    position_span_t range;
+    sv_recipe_output_t output{sv_recipe_output_t::sv};
+    sv_recipe_curve_t curve{sv_recipe_curve_t::linear};
+    sv_recipe_parameters_t parameters;
+    sv_recipe_sampling_t sampling;
+    // StepMania SPEEDS transition behavior. It is ignored for SV/SCROLLS.
+    std::optional<rational_t> transition_duration;
+    std::optional<bool> transition_is_seconds;
+    bool enabled{true};
+
+    auto operator==(const sv_recipe_t&) const -> bool = default;
+};
+
 struct kiai_event_t {
     object_id_t id;
     local_position_t position;
@@ -603,6 +669,8 @@ struct chart_document_t {
     std::vector<warp_event_t> warps;
     std::vector<scroll_event_t> scrolls;
     std::vector<speed_event_t> speeds;
+    // Vector order is the stable composition order for enabled recipes.
+    std::vector<sv_recipe_t> sv_recipes;
     std::vector<kiai_event_t> kiai;
     std::vector<timing_anchor_t> timing_anchors;
     std::vector<bookmark_t> bookmarks;

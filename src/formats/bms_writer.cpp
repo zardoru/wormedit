@@ -1,6 +1,7 @@
 #include <wormedit/formats/bms_writer.h>
 
 #include <wormedit/core/bms_profile_detection.h>
+#include <wormedit/core/sv_recipe.h>
 
 #include <algorithm>
 #include <array>
@@ -3092,9 +3093,18 @@ auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_
                  "select one chart explicitly when the song does not contain exactly one chart",
                  "$.charts");
         }
+        const auto had_active_recipes = std::ranges::any_of(
+            chart->sv_recipes, [](const auto& recipe) { return recipe.enabled; });
+        auto baked_chart = bake_sv_recipes_for_export(*chart);
+        if (!baked_chart) {
+            fail(bms_write_diagnostic_code_t::unrepresentable_number,
+                 "SV recipe export bake failed: " + baked_chart.diagnostics.front().message,
+                 "$.charts[].sv_recipes");
+        }
+        chart = &*baked_chart.chart;
 
         if (!options.output_encoding.has_value() && options.preserve_unchanged_source &&
-            song.charts.size() == 1 &&
+            song.charts.size() == 1 && !had_active_recipes &&
             options.branch_policy == bms_branch_policy_t::preserve_tree) {
             if (const auto source = retained_source_bytes(song, *chart); source) {
                 result.bytes =

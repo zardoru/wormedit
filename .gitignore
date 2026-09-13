@@ -1,0 +1,12 @@
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+Makefile
+build.ninja
+cmake_install.cmake
+.cache/
+.idea/
+.DS_Store
+CMakeUserPresets.json
+compile_commands.json

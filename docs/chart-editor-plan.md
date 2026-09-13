@@ -1,0 +1,938 @@
+# Chart editor plan
+
+Status: reviewed implementation plan. This document records product requirements, model decisions, implementation stages, and questions that still need answers. It should change as the editor design becomes more concrete.
+
+Ongoing milestone state and resumption notes live in [`memory/chart-editor-status.md`](../memory/chart-editor-status.md). Update that handoff after meaningful implementation or planning changes.
+
+## Goals
+
+The editor should open, edit, preview, validate, and save charts in these format families:
+
+- BMS: `.bms`, `.bme`, `.bml`, and `.pms`
+- StepMania: `.sm` and `.ssc`
+- osu!mania: mania-mode `.osu`
+- BMSON: `.bmson`
+
+Its first-class editing surface should include:
+
+- note lanes, including holds and format-specific special lanes such as scratch and BGM/autoplay;
+- dedicated BPM and scroll-velocity lanes;
+- waveform previews for variable-length MP3 and Ogg music/keysound sources decoded as streams;
+- optional labels attached to notes;
+- user-defined semantic note layers whose colors identify musical sources or charting intent;
+- non-destructive slicing of long audio sources, sufficient to author and round-trip BMSON sound channels.
+
+Later authoring goals include an osu!-style storyboard (`.osb`) editor, the matrix-capable [OSBX Lua DSL](osbx-draft-spec.md), Lua-powered chart/storyboard generation, and storyboard video export. These are deferred until the core chart, timing, audio, and format round trips are stable.
+
+Quaver chart support is a late-stage interoperability goal. Keep its variable-key layouts, timing/scroll model, metadata, samples, and file organization in the adapter capability design, but do not displace the initial BMS, StepMania, osu!mania, and BMSON milestones. It becomes advertised support only when both its reader and writer meet the same semantic round-trip and negative-test gates.
+
+Import alone is not considered format support. Every advertised BMS/BME/BML/PMS, SM, SSC, osu!mania, and BMSON profile must have both a reader and writer, an explicit semantic round-trip policy, validation rules, and a clear diagnostic for information that cannot be represented on export. A read-only adapter may exist only as an experimental capability and is not listed as supported.
+
+## Current state
+
+`src/common/Chart.h` contains a small normalized chart model. `src/common/chart.cpp` currently imports through `libotoworm`, converts charts to seconds, and copies notes, BPM, warps, stops, and interpolated speed multipliers. BMSON loading is routed through `libotoworm`, but its slice data, sound list, BGM events, measure lengths, source metadata, and most format-specific information are discarded during conversion. This dependency is temporary scaffold code. Wormedit will own its format codecs, timing model, and conversion pipeline; `libotoworm` is source and behavior reference only and should leave the application link once the replacement fixture coverage is in place.
+
+The UI and audio layers are still scaffolds. `src/editor/field.cpp` is empty, and `src/sys/audio.cpp` only initializes SDL audio and validates that an import path is non-empty. There is no save path yet.
+
+Before editor features are built, the internal document model needs to become loss-aware and suitable for editing. Extending the existing `ChartSegment` maps in place would make clean round trips difficult.
+
+## Architecture and implementation style
+
+Use a layered, data-oriented C++20 architecture. The code should feel like enhanced C: plain data structures, explicit ownership, small functions, and visible control flow, with modern C++ used for safety and expressive algorithms. Object orientation is available when it fits the data or boundary, but it is not the default organizing principle.
+
+The initial dependency direction is:
+
+```text
+platform backends (SDL3 GPU/audio, decoders, filesystem, process/FFmpeg)
+                         |
+format codecs -------- core document/timing/audio data
+       |                 |
+conversion policies   commands + pure transformations
+               \        /
+             application controllers
+                      |
+     replaceable UI frontend adapter
+```
+
+Dependencies point toward core data and pure policy code. Views translate input into controller requests and render returned state; they do not parse formats, solve timing, run conversion, or own document mutations. Format codecs do not depend on UI or platform playback. Audio decoding, waveform analysis, transport, and rendering remain separate concerns even when a tab presents them together.
+
+Treat Nuklear as the initial replaceable frontend. Application and tab controllers expose plain backend-neutral `*_view_model_t` values and accept typed `ui_action_t` requests; no document, timing, command, audio, format, or public controller header contains Nuklear types. An ImGui or Clay-based frontend may compose widgets differently while consuming the same semantic state/actions. Keep high-volume chart, BGM, timing, waveform, comparison, and storyboard surfaces on shared draw/hit-test data rendered through `render_backend_t`, so changing the panel toolkit does not rewrite or slow the chart renderer. See the [UI frontend boundary](references/ui-backend-boundary.md).
+
+Project code uses `snake_case` for namespaces, functions, methods, variables, files, and project-defined type names. Project-defined types use a descriptive `<type>_t` suffix, such as `song_document_t`, `warp_event_t`, and `conversion_request_t`. Prefer scoped `enum class` declarations, also named with `_t`, so values do not leak into enclosing scopes. Third-party and standard-library names keep their native spelling.
+
+Prefer:
+
+- aggregates and narrow value types for IDs, exact positions, durations, lanes, and format provenance;
+- methods on structs when an invariant or operation belongs naturally to that one data abstraction, without turning every record into a getter/setter shell;
+- `std::optional` for honest absence, `std::variant` for closed tagged alternatives, and a project `result_t<T, error_t>` for expected failure while the project remains on C++20;
+- monadic `transform`/`and_then`/`or_else` style over `result_t` and optional values when it makes success and failure flow easier to follow, with exhaustive visitors for closed variants and scoped enums;
+- RAII containers and handles, `std::span`/`std::string_view` for non-owning parameters, and `std::unique_ptr` only where ownership must be indirect;
+- namespace-scoped free functions for transformations that combine subsystems, including parsing, validation, conversion, timing evaluation, and document commands;
+- C++ ranges and algorithms when they make data flow clearer, with named intermediate values when a long lazy pipeline would obscure lifetime, ordering, or failure behavior;
+- explicit immutable input/mutable output parameters or returned values for transformations, so tests can exercise each layer without a window, audio device, or global singleton.
+
+Avoid broad manager classes, inheritance-based event trees, service locators, and exceptions crossing C-library or process boundaries. Translate SDL, decoder, Lua, iconv, and FFmpeg failures into typed diagnostics at their adapters. Runtime polymorphism is appropriate for genuinely open backends such as audio decoders or video encoders; closed format and timing choices should usually be scoped enums plus tables, callables, or `std::variant` visitors.
+
+The requested strategy pattern follows this rule. A `conversion_request_t` owns small policy values such as target profile, warp encoding, branch projection, quantization, and loss handling. The conversion pipeline dispatches through explicit strategy tables or free functions. It should not require one class hierarchy per setting; an interface object or virtual backend is used only when implementations must be selected dynamically across a stable runtime boundary.
+
+Representative style:
+
+```cpp
+enum class warp_encoding_t { native, negative_bpm, negative_stop };
+
+struct conversion_request_t {
+    format_profile_t target;
+    warp_encoding_t warp_encoding;
+    std::optional<difficulty_id_t> difficulty;
+};
+
+auto convert(const song_document_t& song, const conversion_request_t& request)
+    -> result_t<conversion_output_t, diagnostic_list_t>;
+
+return decode_song(input)
+    .and_then(normalize_timing)
+    .and_then([&](auto&& song) { return convert(song, request); })
+    .and_then(publish_atomically);
+```
+
+This is a style example rather than a fixed API. Pipelines may use struct methods, free functions, ranges, or named imperative steps according to which form keeps ownership, sequencing, and failure behavior clearest.
+
+## External dependencies and CMake policy
+
+Use maintained cross-platform libraries for established container/codec/parser/runtime work. Wormedit should own the semantic adapters and safety policies around them, but it should not reimplement Lua, Standard MIDI File parsing, Ogg/Vorbis decoding, FLAC decoding, or video encoding.
+
+Prefer the C++ standard library whenever it satisfies the requirement. Boost is permissible for a focused component that supplies missing portability, a mature algorithm, or a material correctness benefit, but record why that component is needed and link it only to the owning layer. Keep Boost types behind wormedit-owned APIs instead of making Boost the default vocabulary of the core document. Re-evaluate each use as the selected C++ standard gains an adequate facility.
+
+Every dependency is exposed through a narrow imported/alias CMake target and linked only to the layer that needs it. Prefer a caller-supplied package or source directory, then a pinned `FetchContent` fallback. Never track an unpinned `main`/`master` for a release build. Disable dependency examples, tools, and tests unless wormedit needs them, record license/version data for packaging, and make offline builds possible from a populated dependency cache.
+
+Initial dependency direction:
+
+- **Lua:** adapt raindrop's [`FindLua.cmake`](../../raindrop/cmake/Modules/FindLua.cmake), which currently builds pinned Lua 5.4.8 `onelua.c` as `Lua::Lua`. Keep the resulting module/target in wormedit so installed and standalone builds do not depend on a sibling raindrop checkout or build directory.
+- **MIDI files:** select a dedicated Standard MIDI File library rather than writing a byte parser. [Craig Sapp's `midifile`](https://github.com/craigsapp/midifile) is the leading small-library candidate; stage 0 must test exact ticks, tempo/meter/meta events, running status, malformed bounds, read/write needs, license, CMake consumption, and Windows/macOS/Linux behavior before pinning it. Real-time MIDI device I/O is a separate later dependency and must not drive this choice.
+- **Ogg/Vorbis:** add pinned libogg/libvorbis targets, normalized for example as `Ogg::ogg`, `Vorbis::vorbis`, and `Vorbis::vorbisfile`, or use another selected decoder only if it satisfies the same cross-platform seek/sample-frame fixtures. Raindrop's [`FindOggVorbis.cmake`](../../raindrop/cmake/Modules/FindOggVorbis.cmake) is reference integration.
+- **WAV/FLAC:** evaluate libsndfile versus focused WAV/libFLAC backends for keysound decode, seek, package size, and licensing. FLAC decode is required for BMS fallback even if full-song FLAC authoring remains deferred.
+- **MP3:** retain a replaceable decoder target and choose it through the streamed-audio spike; it must provide bounded-memory seek behavior on all three desktop targets.
+- **Catch2:** use the pinned test-only Catch2 v3 target and CTest discovery described below.
+- **FFmpeg:** keep video encode/mux behind its own optional target/process adapter so chart-only builds do not acquire the dependency.
+- **UI frontend:** begin with pinned Nuklear behind a private frontend target. Select exactly one configured frontend and keep room for ImGui or a Clay-based frontend; core/headless targets never resolve a UI library.
+
+`libotoworm` is deliberately absent from this dependency list. Its parsers, conversions, and edge-case comments may inform fixtures and expected compatibility, but wormedit code does not call into it after the replacement stage. Do not copy its transient seconds-based model into the new core.
+
+### SDL3 GPU rendering
+
+Use SDL3's GPU API as the primary rendering backend and remove the production OpenGL dependency once the replacement is functional. The current `SDL_GLContext`, OpenGL CMake package, and `nuklear_sdl_gl3_sdl3.h` are scaffold constraints, not the intended renderer.
+
+Create a small `render_backend_t` boundary that owns the SDL GPU device, window/swapchain claim, command buffers, transfer buffers, pipelines, samplers, textures, and deferred destruction. Implement a Nuklear adapter that converts its vertex/index/clip command stream into SDL GPU uploads and draw passes. Chart/waveform/storyboard renderers produce backend-neutral draw data and never call SDL GPU functions directly.
+
+Ship or generate the shader variants SDL GPU needs through a reproducible build step; evaluate SDL_shadercross for development/build-time compilation while packaging precompiled supported formats where practical. Device and shader creation return typed diagnostics. Startup should select SDL GPU's available platform backend automatically, report the chosen driver, and fail clearly or enter a deliberately implemented SDL software fallback when no supported GPU path exists. Do not silently return to the old OpenGL backend.
+
+Keep renderer tests split between backend-neutral draw-list/snapshot tests and small SDL GPU smoke tests for device creation, texture upload, clipping, high-DPI scaling, resize/swapchain recovery, and one captured frame on supported CI runners. GPU absence should be an explicit skipped capability in headless jobs, not a false product-test pass.
+
+The current scaffold's direct `nk_*` calls in `main.cpp` and public `nk_context*` lifecycle are temporary. Before building substantial panels, move them behind `src/ui/nuklear` and make the executable depend only on frontend lifecycle/input/action APIs. CMake should eventually expose a checked `WORMEDIT_UI_BACKEND=nuklear|imgui|clay` selection whose chosen adapter alone links that third-party library.
+
+## Proposed document model
+
+Use one editor-owned `song_document_t`, independent of the loader's transient runtime structures. Importers and exporters adapt between file formats and this model.
+
+```text
+song_document_t
+  shared song metadata, ordered search tags, and source paths
+  format-scoped metadata groups with source/export provenance
+  navigation bookmarks and labeled song sections
+  audio assets
+    source file
+    decoded stream information
+    waveform cache
+  visual assets
+    image/video/storyboard source and preview metadata
+  resource catalog
+    sample, BGM, and BGA roles
+    BMS WAV/BMP definitions and osu! sample/event provenance
+  MIDI assets
+    source file and timing division
+    parsed tracks, notes, controllers, and metadata
+  generator recipes
+    Lua source/reference, API version, parameters, seed, and input asset IDs
+  input profiles
+    physical lane-key bindings, stage focus rules, and user overrides
+  ordered charts/difficulties (one or many)
+    stable difficulty ID, name, mode, author, rating, and output groups
+    format profile and source-format metadata
+    original bytes and detected/selected text encoding where applicable
+    optional lossless BMS control-flow tree and active branch-selection environment
+    global divisions per standard measure
+    signed beat-zero/audio offset with unit and source provenance
+    lane-layout segments and source/export channel maps
+    semantic note-layer palette
+    ordered measures
+      exact length and displayed time signature
+      local notes and autoplay/BGM events
+    chart-level timing, scroll, warp, kiai, bookmark, and layout tracks
+    audio clips/slices
+    optional storyboard documents and assets
+    unsupported source data retained for round trip where practical
+```
+
+### Measure-based storage and positions
+
+Use an ordered sequence of measures as the primary editable container. Each measure is a self-contained chunk, similar to a segment in a piece table: inserting, deleting, resizing, or redividing one measure should not require rewriting one large chart-wide event buffer. Measure-local lane objects use a local division index or rational offset. Chart-level tracks address those same exact positions without being owned by a measure. A derived measure index and prefix-duration table provide fast conversion to global beat and time coordinates.
+
+Measure ownership is limited to measure-local chart objects: playable notes, holds, autoplay/BGM events, and other lane objects whose authoring row is naturally local to one measure. BPM changes, stops, delays, warps, SV/scroll/speed changes, kiai state, bookmarks/sections, and layout changes live in separate chart-level ordered tracks. Their positions still use exact `(measure ID, local row)` anchors, so moving or resizing measures updates one shared position index without nesting cross-measure timing semantics inside a measure declaration. Holds may reference an end position in a later measure.
+
+Each chart has one editable global division count, expressed as the maximum divisions in a standard 4/4 measure. The default is **960**, or `192 * 5`; 192 remains a supported lower-resolution choice. A measure derives its local capacity from that global count and its exact length ratio. Store events sparsely by local division so a high global count does not allocate large dense arrays. The visible editing snap may be a coarser exact divisor of the global grid.
+
+Changing the global division count when existing events or measure lengths cannot be represented exactly must present explicit choices: cancel, raise to the smallest compatible global count, or quantize with a preview of every moved event. It must never silently move events. Holds and transitions crossing a measure boundary retain stable endpoint positions across a global redivision.
+
+Store measure length as an exact positive rational value in BMS `#xxx02` units relative to a standard 4/4 measure: `1` is four quarter-note beats, `0.75` is three, `1.25` is five, and so on. Decimal entry is a presentation and interchange form, not the internal numeric type. Store an optional musical meter separately as its unreduced, explicitly authored numerator and denominator. A length ratio of `3/4` may therefore pair with `meter = 3/4` or `meter = 6/8`; these are equal in duration but imply different beat grouping, and an explicit `6/8` must remain displayed as `6/8` rather than being reduced to `3/4`.
+
+The editor shows both values together: the BMS ratio/decimal and the musical meter/grouping. Entering a decimal or selecting a BMS-ratio input derives the exact length and offers equivalent common meters without choosing one silently. Entering a fraction in musical-meter mode derives the BMS ratio from `numerator / denominator` and retains that exact signature spelling. If a slash-form entry is ambiguous in a general field, ask whether it is a BMS ratio or a musical meter; either choice has the same duration but different persistence and beat-grouping meaning. When both an exact length and meter are supplied, require `length_ratio == meter_numerator / meter_denominator`; reject a mismatch rather than changing either value.
+
+Parse textual decimal measure lengths exactly by splitting sign, integer, and fractional digits into an overflow-checked integer ratio and reducing by `gcd`; accept an explicit fraction form as well. Never pass persisted decimal text through binary floating point. APIs that receive only a Lua `number` or imported floating value use a deterministic bounded rationalization routine over the exact IEEE-754 value, with a configured maximum denominator, checked intermediate arithmetic, a fixed iteration cap, and termination on denominator limit or lack of progress. They return the candidate plus approximation error for preview, or reject it. No conversion loop depends on floating equality or compiler rounding eventually reaching zero. After conversion, promote the chart resolution or reject/preview quantization when `global_divisions * length` is not integral.
+
+Store musical event positions exactly rather than as `double`. A position can be represented by `(measure ID, division index)` interpreted against the chart's global division count and the measure's length ratio, then reduced to a rational offset for comparison and conversion. Preserve source resolution/provenance separately when it affects stable export.
+
+BMSON is the only initial interchange target with a global integer pulse resolution, but its unit is pulses per quarter note rather than divisions per standard measure. On BMSON import, choose editor divisions `D = 4 * source_resolution` by default, so BMSON's common `resolution = 240` becomes the editor default `D = 960` and each source pulse initially maps to one editor row. On export, every absolute editor position `r / D` of a standard measure maps to BMSON pulse `y = 4 * R * r / D`, where `R` is the emitted BMSON resolution. Choose a positive integer `R` that makes every emitted note, hold length, BPM, stop duration, BGA event, and bar line integral; prefer `R = D / 4` when `D` is divisible by four and retain a larger imported resolution when requested for stable round trips. Otherwise promote `R` exactly or reject/preview quantization. Never truncate a pulse.
+
+BMSON has no native measure or time-signature object. Export the prefix positions of the editor's ordered measures as BMSON `lines` bar-line pulses; exact measure-length ratios therefore survive as bar spacing, while the optional display meter remains native-project metadata. Import derives measure chunks from `lines`, using generated 4/4 bar lines only when `lines` is absent as specified. A present empty `lines` array is distinct and means no bar lines; it must not be replaced silently. BMS, SM/SSC, and osu!mania adapters use the same editor grid but serialize through their own native time representations.
+
+Also support absolute-time anchors for naturally time-based data such as osu!mania hit objects. A timing service maps between musical position, chart time, and audio time while accounting for BPM changes, stops/delays, and warps. Derived seconds should be cached, not treated as the canonical value for every format.
+
+Each event records its positioning domain. Editing commands decide whether an item remains fixed to the beat grid or fixed to audio time when timing is changed. The UI should expose this distinction where an operation could move notes relative to the music.
+
+### Events
+
+Initial core event types:
+
+- `note_t`: stable ID, position, lane ID, optional end position, head/tail sound reference, scoped `note_kind_t` (tap, hold, invisible, mine, and retained target-specific kinds), optional label, and optional semantic layer ID.
+- `bpm_event_t`: position and positive BPM value.
+- `scroll_event_t`: position, multiplier, and optional interpolation/transition data. The model must distinguish an instantaneous scroll multiplier from a StepMania `SPEEDS` transition.
+- `scroll_impulse_event_t`: position and signed integrated scroll displacement for parametric impulse generation; target adapters must represent, approximate with an explicit finite pulse, or reject it.
+- `stop_event_t`, `delay_event_t`, and `warp_event_t`: separate types even when a target format collapses or lacks them.
+- `kiai_state_event_t`: position, enabled state, source timing-point identity/order, and retained osu! timing-effect bits.
+- `autoplay_sound_event_t`: position and clip reference for BMS/BMSON BGM sounds.
+- `bgm_lane_t`: stable display/source-lane identity, source ordering, horizontal presentation state, and sparse autoplay slots.
+- `bga_event_t`: position, visual resource ID, target role/layer, and source channel/event provenance.
+- `resource_entry_t`: stable project resource ID, audio/visual asset reference, display name, usage roles, target definitions/identifiers, and retained source ordering.
+- `measure_t`: stable ID, exact length ratio, optional time-signature interpretation, and sparse local event collections.
+- `lane_layout_segment_t`: starting measure/position plus ordered playable column definitions, semantic stage groups, and optional gutters between stages.
+- `channel_map_t`: stable mapping among semantic lane IDs, raw BMS object channels, editor input bindings, and optional MIDI channel/note destinations.
+- `timing_anchor_t`: musical position, pinned audio sample frame, lock state, and an optional link to the BPM event(s) produced by the timing solver.
+- `audio_offset_t`: a chart/difficulty-scoped signed exact duration locating musical beat zero in the audio timeline, with source field, spelling, unit, and sign-convention provenance.
+- `navigation_marker_t`: stable ID, point or range, label such as `Verse` or `Chorus`, color/category, and an explicit musical-position or audio-time anchor.
+- `bms_program_node_t`: ordered root/common, random, conditional, switch, case/default, branch-content, and retained-raw nodes with stable source identity.
+
+Events need stable IDs so selection, undo/redo, labels, slice references, and validation results do not depend on mutable timestamps or container order.
+
+### Beat-zero and audio offsets
+
+Use one canonical sign convention in the core: `beat_zero_audio_time` is the signed audio time in seconds at which chart beat zero occurs. A positive `2.34` means beat zero occurs 2.34 seconds after the audio begins, matching the StepMania 3.9 description of `#OFFSET`. Store the value as an exact rational duration with retained source decimal spelling; the timing service applies it before BPM, stops, and warps and exposes conversion to sample frames with an explicit rounding policy.
+
+SM and SSC readers and writers preserve their native `#OFFSET:<seconds>;` field at the correct song/chart scope for the selected profile. BMS-family readers accept wormedit's `#OFFSET <seconds>` extension and writers always emit it when an offset is present, as requested, even for target profiles whose players are known to ignore it. Compatibility validation labels that player behavior without deleting the command. Preserve duplicate/conflicting source directives as provenance and require an explicit winner before normalized export.
+
+osu!mania and BMSON have no equivalent global beat-zero field with the same semantics. Their adapters still read and write the formats fully: they retain their native absolute timing origins, and conversion of a nonzero canonical offset requires an explicit exact shift of every affected timed object when legal. If negative target time/pulse constraints, bookmarks/events, or source-round-trip promises prevent that shift, the writer rejects or offers an explicit rendered/leading-time transformation; it never silently zeros the offset or emits an invented standard field. Native projects always retain the canonical value.
+
+### Stops, delays, and timing discontinuities
+
+Stops and delays are required internal event types even when an export target cannot represent them. Preserve their distinct semantics, source units, source ordering, and same-position ordering relative to BPM changes, warps, scroll events, notes, and BGM sounds. Beat-to-time and time-to-beat conversion must define both sides of every discontinuity so seeking, hit times, waveform alignment, comparison, and preview remain deterministic.
+
+BMS STOP values need their original definition/index and 1/192-whole-note unit representation as well as a derived duration. That unit is independent of `#xxx02` measure length. SM/SSC stops and delays remain separate because their event ordering and note timing behavior differ. Unsupported target exports produce a targeted error or an explicit user-approved transformation; they never discard a pause silently.
+
+Stage 0 must use `libotoworm` behavior as one reference for stop/delay fixtures while specifying wormedit's independent result. Wormedit's parser and timing layer must preserve event type, source unit, ordering, and discontinuity boundaries directly; it does not rely on the library's transient representation.
+
+### Warps and legacy negative BPM
+
+`warp_event_t` is a native timing event with an exact musical start and exact skipped beat length/end. Timing evaluation maps both edges of the discontinuity and defines the visibility, seeking, and judgement treatment of notes and other events within the skipped interval. Keep a derived audio-time representation in the timing index where useful, but do not make seconds the editable source of truth.
+
+StepMania 3.9-style negative BPM is an interchange encoding, not a negative value retained in the ordinary BPM lane. Import consecutive legacy negative-BPM regions as canonical `warp_event_t` values and convert their remaining positive timing sections to normal `bpm_event_t` values. Retain source entries, ordering, dialect/profile, and a provenance link on the generated warp so an unchanged chart can be exported stably or diagnosed precisely. Apply the same canonicalization, with distinct provenance, to negative stops used as legacy warps.
+
+Warp import and export are selected by an explicit target-profile policy:
+
+- a native-warp strategy reads or writes `WARPS` where the selected SM/SSC implementation supports it;
+- a legacy strategy reads or synthesizes the negative-BPM/negative-stop representation expected by a selected 3.9-era profile;
+- an unsupported strategy rejects the conversion with the affected interval and available alternatives.
+
+The export strategy must consider timing changes, stops/delays inside a warp, same-position ordering, overlapping/adjacent warps, and notes inside the skipped range. After encoding, re-import through the selected profile and compare the semantic timing map. If the chosen representation cannot reproduce the warp exactly, conversion fails or presents a named approximation under the request's loss policy; it never silently drops or shortens the warp. See the [warp and converter source audit](references/stepmania-warps-and-conversion.md).
+
+### Audio assets and slices
+
+Separate source audio from playable clips:
+
+```text
+audio_asset_t = path + stream metadata + content identity
+audio_clip_t  = asset ID + start frame + optional end frame
+note/BGM      = clip ID (or a layered list of clip IDs)
+```
+
+Use source sample frames as slice boundaries. Show seconds and musical positions in the UI, but avoid storing floating-point seconds as the only boundary representation. An open-ended clip represents "to the end of the source." Slicing is non-destructive: moving a boundary changes the clip reference and never rewrites the source file.
+
+A single note may need multiple simultaneous clips because BMSON can fuse entries from multiple sound channels at the same lane and pulse. Import must preserve BMSON's continuation flag semantics and the relationship between a sound channel and the slices derived from it. Export should reconstruct sound channels without requiring a destructive render.
+
+For BMSON 1.0, slices are derived from the ordered note pulses and each note's continuation flag; the format does not store free-form slice handles, fades, gain, or pan. Model BMSON source channels explicitly as an audio asset plus ordered sound events `(position, lane, length, continue)`, and derive preview clips by running the specification's slicing algorithm. The editor may display the resulting sample-frame boundaries, but BMSON export must be driven only by representable sound-channel data. A later explicit "optimize sound channels" operation may rewrite channel/event structure while preserving its audible result.
+
+Add a razor-style authoring mode to the sound-channel waveform. The waveform is laid out against the chart timing map, and each click proposes a sound event at the exact musical row under the pointer, snapped to the active divisor by default. Authors can place several markers, drag or delete them, switch each marker between **continue/slice** and **restart**, audition the region beginning at any marker, and assign the resulting event to a playable lane or BGM. The proposed marker set remains non-destructive and commits as one undoable command. Optional sample-frame readouts are derived from the timing/slicing evaluator; arbitrary source-frame cuts that cannot be represented by BMSON `y` plus `c` stay project-only or require an explicit rendered-asset conversion.
+
+This adopts the interaction documented and implemented by BmsONE: ordinary clicks create slicing/continuation notes, Shift-click creates a restart-from-beginning note, clicks are lowered to its active grid when snapping is enabled, and the BGM lane visualizes the played waveform. Wormedit extends that interaction with an explicit multi-marker transaction and region preview similar to a razor-edit workflow. BMSON compilation groups events by resolved source sound channel, sorts them by absolute pulse with stable same-pulse order, and emits only `x`, `y`, `l`, and `c`. Slice points are the distinct pulses across that whole channel. At one pulse, any restart (`c = false`) wins; if one derived slice is assigned to both BGM and playable notes at that pulse, discard the BGM assignment; multiple references to that same slice have polyphony one. Distinct slices, including slices from separate sound channels that reference the same file, may overlap. These are BMSON 1.0 rules rather than editor policy. See the [BmsONE slicing audit and BMSON mapping](references/bmsone-slicing.md).
+
+For BMS keysounds, preserve the authored `#WAVxx` filename token separately from the resolved audio path. Resolution first tries the exact referenced path. If it is absent, search the same directory and stem using the deterministic fallback order `.wav`, `.ogg`, `.flac`, skipping the already tried extension. Extension matching is ASCII case-insensitive, while the chosen on-disk spelling is retained. A target profile may override the order, but every import records the candidates and selected result.
+
+Fallback applies to a missing exact file. A present but corrupt or undecodable exact file is diagnosed rather than silently replaced. If case-folded names or several fallback candidates make resolution ambiguous, show all candidates and require an explicit choice; do not depend on host filesystem ordering. The resource entry retains both authored and resolved identities so preview can play the fallback without rewriting the BMS token, and an explicit normalize/package operation can update output references later. See the [BMS audio fallback audit](references/bms-audio-fallback.md).
+
+### Sample, BGM, and BGA resource lists
+
+Provide searchable **Samples**, **BGM**, and **BGA** lists as filtered views over one project resource catalog. A resource may appear in more than one audio view: for example, one BMS `#WAVxx` definition can be assigned to a playable note and also placed on a `#xxx01` BGM lane. The lists do not duplicate the underlying asset or invent separate target identifiers.
+
+The Samples list supports two target-oriented presentations:
+
+- a BMS sample-list view that shows retained `#WAVxx` identifiers, filename, decoded duration, usage count, missing/invalid state, and optional user label;
+- an osu!-style sample view that shows normal/addition sample-set metadata, custom hit-sample filename, volume/index provenance where applicable, decoded duration, usage count, and missing/invalid state.
+
+The BGM list shows audio resources available for autoplay placement, including unused definitions and BMSON source channels/clips. The BGA list shows images, animations, and videos available for timed visual events, including retained BMS `#BMPxx` definitions and osu! background/video/storyboard event assets. BMS BGA channel role/layer and osu! event kind remain properties of the placed `bga_event_t`, rather than being guessed from the file extension.
+
+Authors can import one or several files into a list, retain unreferenced source definitions on chart import, rename editor labels without renaming files, filter by used/unused/missing/type, and reveal every event that references a resource. Clicking audio auditions the exact clip; hovering/selecting visual resources shows a thumbnail or short preview. Decode and thumbnail work remains derived cache data and never changes source resources.
+
+Placement is explicit and undoable. With a sample armed, clicking a playable cell or using a lane-entry command creates a note with that sound; assigning to an existing selection changes its sound reference. Placing a BGM resource creates an `autoplay_sound_event_t` in the chosen ordered BGM lane. Placing a BGA resource creates a `bga_event_t` at the cursor with an explicitly selected role/layer. The UI distinguishes create, assign, and replace actions so choosing a resource cannot silently overwrite notes or events.
+
+Deleting a catalog entry that is still referenced is rejected until the author replaces references, removes the events, or deliberately keeps a missing-resource placeholder. Import validates path safety and supported media without dropping unknown definitions. Exporters preserve existing valid BMS IDs and source order where possible, allocate new target IDs deterministically, and diagnose identifier exhaustion, duplicate/conflicting definitions, unsupported visual/audio types, and osu!/BMS metadata that cannot cross formats.
+
+Lua-authored note/BGM data may carry one of three direct typed sample references: an osu!-style sample descriptor, a BMS WAV index in a named or current source chart, or a declared/project-relative audio file. The materialized event retains that `sample_reference_t` alternative rather than forcing the script to pre-allocate a generic resource ID. Before serialization, a pure writer-allocation pass resolves these references into the shared resource catalog, reuses compatible existing resources, honors unconflicted explicit source slots, and assigns remaining target slots or names deterministically. The proposed allocation and every conflict appear in conversion preview; details and provisional Lua syntax live in the [OSBX DSL draft](osbx-draft-spec.md#audio-sample-references-and-writer-allocation).
+
+### Note labels
+
+Treat a note label as an optional UTF-8 editor annotation attached to the note's stable ID. Labels should be searchable and optionally drawn over or beside notes without affecting hit behavior.
+
+No target format should silently receive invented syntax for labels. Labels can live in the native format only where a documented representation exists; otherwise store them in the native project document and warn when exporting a standalone chart. The exact label use case and desired portability remain open questions.
+
+### Semantic note layers
+
+Provide a user-editable layer palette for categorizing notes by musical source or charting intent. Each layer has a stable ID, name, color, optional description, visibility state, and lock state. For example, an author can define a yellow `Vocals` layer and paint vocal-following notes yellow, or use separate layers for strings, percussion, melody, and effects.
+
+At minimum, each note has one optional primary semantic layer whose color controls its editor tint. Preserve note-kind, snap/quantization, hold, selection, and warning cues through shape, outline, or overlays so applying a layer color does not hide gameplay meaning. Provide paint, selection-assign, erase-layer, show/hide, solo, lock, rename, recolor, and select-by-layer operations. A paint drag should be one undoable command.
+
+Semantic layers are editor/project metadata. Persist the palette and note assignments in the native project document and do not reinterpret them as native note types or add undocumented fields to exported charts. Lua pattern generators may inspect and assign layer IDs through the later versioned API.
+
+## Editor layout
+
+Use an osu!-style tabbed song workspace. Tabs are focused views over the same `song_document_t`, selected difficulty, transport clock, edit cursor, assets, and command history:
+
+- **Setup** for project files/assets, format/dialect profiles, difficulty management, and output grouping;
+- **Metadata** for shared song fields, per-difficulty fields, and clearly labeled target-format groups;
+- **Timing** for waveform synchronization, BPM, stops, delays, warps, SV/scroll/speed, kiai, meter, and anchors;
+- **Compose** for playable notes, BGM lanes, labels, semantic layers, selection, and lane layouts;
+- **Compose** also docks the sample, BGM, and BGA resource lists for drag/place/assign workflows;
+- **Storyboard** for OSB/OSBX canvas, hierarchy, keyframes, and storyboard preview;
+- **Audio/Slices** for source assets, waveform inspection, BMSON continuation-derived slices, and audition;
+- **Compare/Validate** for synchronized side-by-side difficulties, yellow differing rows, conversion preview, and diagnostics.
+
+The difficulty selector is independent of the active tab, so changing from Compose to Storyboard does not accidentally change the chart being previewed. Switching tabs retains playback position, loop, zoom where coordinates are compatible, and selection relevant to that view. A storyboard may be a separate included OSBX/OSB document while still sharing song assets and transport with chart editing.
+
+Provide a modeless **Timing Settings** panel reachable from both Timing and Compose. It controls metronome enable/volume/accent/subdivision/count-in, note/BGM/BGA visibility during timing work, independent visibility for every timing lane including BPM, and timing lock state. Hiding BPM or another lane changes rendering and hit testing only; the hidden events remain effective in timing and preview. **Show/hide notes** likewise never mutates chart data. **Lock timing** prevents creation, deletion, drag, paste, quantization, or generator replacement of BPM, scroll/SV/speed, stop, delay, warp, kiai, offset, meter, and timing-anchor data until unlocked. Commands validate the lock in the controller/model layer so hidden lanes, keyboard shortcuts, Lua results, and clipboard paste cannot bypass it.
+
+Each tab has a separate controller and focus/shortcut context. Text entry, modal dialogs, and Lua editors consume keys before chart lane bindings; hidden tabs cannot react to input. Mutations still enter one document-level command history so a timing edit observed from several tabs is one atomic undo step. Dirty/save state belongs to the document or explicitly separate included file, not to ephemeral tab widgets.
+
+The main chart view should share one vertical coordinate system among all event lanes. Keep a fixed timing rail on the left, in the style of iBMSC, while playable notes and horizontally scrollable BGM channels occupy the main pane:
+
+```text
+transport / song position / snap controls
+waveform overview and detailed waveform
+left timing rail
+  measure/meter lane
+  BPM lane       value markers and segment readout
+  scroll/SV lane step markers and effective-value curve
+  speed lane     transition value/duration/mode
+  stop lane      duration markers
+  delay lane     duration markers
+  warp lane      interval markers
+  kiai/anchor/section lanes
+main pane
+  note field     variable format/mode-specific playable columns
+  BGM lanes      autoplay clips, stacked when simultaneous/overlapping
+  BGA lane       timed background/layer/video events
+resource lists samples, BGM audio, and BGA visuals available for placement
+selection details / validation
+```
+
+Each timing lane supports selecting, inserting, dragging, deleting, and numeric/property editing for its event type. At every cursor position, show authored BPM/scroll/speed values and the resulting effective scroll rate. The left rail remains visible while the BGM pane scrolls horizontally, shares vertical zoom/scroll with the note field and waveform, honors independent lane show/hide toggles, and clearly marks locked events.
+
+The note field derives its column layout from layout segments rather than from a global maximum channel count. A chart may use any supported number of columns, and the layout may change at a measure boundary or other explicitly supported position. Each segment defines ordered semantic lane IDs, roles, and presentation. The renderer must handle transitions without reinterpreting notes in surrounding measures. Importers map source columns to stable semantic lane IDs; exporters map them back and validate formats that require one fixed key count for the entire chart.
+
+Support StepMania-style directional arrows as a note presentation for 4K, 5K, and 6K modes, alongside square/bar note styles. A mode profile maps semantic lanes to arrow artwork and orientation; column count alone must not guess the mapping when multiple layouts use the same count. Holds use the corresponding arrow head plus a readable body and tail. Imported format/mode metadata selects a profile when unambiguous, and the user can choose or customize the profile otherwise. Note presentation is separate from lane identity so changing the skin does not remap chart data.
+
+The note field has two switchable viewing modes:
+
+- **Skin mode** renders the target game/mode skin, including directional arrows, scratches, hold bodies, mines, and other supported note kinds.
+- **Note-snap mode** renders a neutral note glyph colored by the note's quantization class using a StepMania-editor-style palette, including red for wholes, blue for halves, yellow for quarters, and defined colors for finer straight and tuplet divisions.
+
+Snap color derives from the note's exact rational position within the musical grid, not from a rounded screen coordinate. The palette and classification table must be explicit and testable, especially for tuplets and positions representable only on a 960-division grid. In note-snap mode, semantic note-layer color moves to an outline, stripe, or badge so both quantization and authored musical-source meaning remain visible. The view toggle changes presentation only and must not rewrite notes or layers.
+
+For double-style charts, let the user switch between a continuous field and a split-stage presentation. A split-stage layout assigns columns to semantic stage groups and draws a configurable gutter/divider between them while retaining one shared timing axis. Built-in profiles should cover BMS double-play layouts such as 10K and 14K, including player-side scratch placement, and osu!mania layouts split at a user-selected boundary. Stage grouping is an editor presentation/property of the lane profile and must not change note timing or source column identity.
+
+Ship fixture-backed BMS-family lane profiles from the command memo rather than deriving a layout from the largest channel used. The initial set includes BMS 5-key/10-key, BME 7-key/14-key, standard PMS 9-button and 5-button, BME-style PMS 9-button/18-button, and named foot-pedal/free-zone, double-scratch/FPP, octave, and Project2DX variants. Each profile declares ordered semantic lanes, raw visible channels, corresponding invisible/LN/mine channels where defined, scratch/free-zone/pedal roles, player stage, display order, default input binding, and target compatibility. Historical MGQ data may be retained through a custom BMS map but is not a Keyboardmania editor profile.
+
+In particular, BMS keys use `11-15`/`21-25` with scratches `16`/`26`; BME adds keys 6–7 at `18-19`/`28-29`; standard PMS 9-button uses `11-15,22-25`, while BME-style PMS uses `11-15,18,19,16,17`. Preserve `17`/`27` as free-zone or foot-pedal roles according to the selected profile. The broader visible `11-1Z`/`21-2Z`, invisible `31-3Z`/`41-4Z`, LN `51-5Z`/`61-6Z`, and mine `D1-D9`/`E1-E9` families are retained as raw channel identities; a corresponding semantic lane is assigned only when the dialect/profile defines one. See the [command-memo lane-map audit](references/bms-command-memo.md#playable-channel-maps).
+
+Invisible notes, long notes, and mines are first-class editable note kinds. Invisible notes keep lane/sample/timing identity, render with a distinct editor-only treatment, can be selected and auditioned, and do not become ordinary playable taps unless an explicit transform requests it. Holds retain separate head/tail positions and source notation such as BMS LN channels or `#LNOBJ`. Mines retain target-specific damage/parameter provenance where available. Skin and snap-color views must overlay these kinds without hiding their semantic layer color, selection, hover, or validation state.
+
+Profile detection returns evidence and confidence from filename extension, `#PLAYER`, used channel families, and explicit project settings. Ambiguous combinations open with preserved raw channels and a proposed mapping for user review. Selecting or changing a profile produces a preview of unmapped, duplicated, reserved, or role-changing channels and is one undoable operation. Custom channel maps remain first-class, so unusual charts and future layouts do not require corrupting data to fit a built-in profile.
+
+Selection, keyboard input, copy/paste, lane remapping, and hold drawing must work across the split. Timing, BPM, SV, waveform, and BGM tracks span the entire chart rather than being duplicated per stage. When a source format has an unambiguous double-play mode, import selects its split profile automatically; otherwise the user can choose the partition without rewriting chart data.
+
+Provide a dedicated BGM lane area in the style of BMS and BMSON editors. This is a first-class BMS editing surface for autoplay keysounds, including the events represented by repeated BMS `#xxx01` lines; BMSON `x: 0`/`null` events use the same surface. Autoplay events stay separate from playable columns and can coexist at the same position. The area must support selection, move/copy/delete, sound assignment, and clear display of the source or derived slice name.
+
+For BMS, preserve each repeated `#xxx01` statement as a distinct ordered BGM lane for that measure. Preserve every line's subdivision and its `00` empty slots; do not compact or merge them into a single time-keyed stream. When placing an event into an occupied BGM cell, the editor advances to the next BGM lane and emits the needed `00` cells to retain its row. Export should keep stable source-lane assignments where possible and allocate new repeated lines deterministically.
+
+The BGM pane shares vertical/time scrolling and zoom with the note field so rows stay aligned, but it has its own horizontal scroll position and visible-lane range. Authors can inspect a large BGM stack without moving playable columns off screen. Collapsed or offscreen BGM lanes remain present and exportable.
+
+Clicking a BGM event previews its assigned clip immediately, independent of chart transport. Preview playback must honor slice start/end frames and audition all layers when the event references a mixed BMSON sound. The preview interaction should also work while the waveform/slice editor is open and should stop or replace the previous click-preview predictably.
+
+### Selection
+
+Mouse area selection is a first-class editing gesture. Pressing on empty chart space and dragging creates a visible selection rectangle in chart coordinates; dragging works in all four directions and remains correct through zoom, vertical scroll, split-stage gutters, and the BGM pane's independent horizontal scroll. Notes, hold heads/tails/bodies, timing markers, BGM events, and BGA events are hit-tested through controller geometry rather than renderer pixels. The active pane supplies the default event/lane scope, with an explicit all-visible-tracks mode for cross-track work.
+
+During the drag, show the prospective selection without mutating the committed selection. Edge proximity auto-scrolls the relevant vertical and horizontal view while the anchor remains fixed in chart coordinates. Pointer capture keeps the gesture valid outside the original pane. Mouse release commits one selection command; Escape or pointer-capture loss cancels and restores the prior selection. A drag that crosses the movement threshold must not also place a note when released.
+
+Use consistent modifiers: an unmodified box replaces selection, Shift adds, the platform primary modifier toggles, and Alt subtracts. Direct clicking uses the same set algebra. Selection is limited to the active BMS branch projection; locked/hidden semantic layers and disabled tracks are excluded unless the user explicitly enables their selection. Results use deterministic document order so Shift + lane and other successive commands behave predictably.
+
+Selection gestures operate through a headless `area_selection_controller_t` that consumes pointer positions, viewport transforms, modifier state, and hit-test records, then returns preview/commit/cancel actions. Rendering only draws its returned rectangle and highlights.
+
+Mouse input is a complete note-authoring path. In the active placement tool, moving over an empty playable cell shows a snapped ghost note with its lane, row, note kind, armed sample, and collision validity; a click creates or toggles the note through the same command used by lane keys. Dragging may paint notes at newly crossed snapped cells as one transaction, with duplicate cells suppressed, while a movement that begins as area selection never also places a note. Hold placement uses an explicit hold tool or gesture with a previewed snapped head and tail, and invalid/reversed/colliding results do not mutate the chart.
+
+All editable chart objects expose hover state through controller hit-test records rather than renderer-only state. Notes, hold parts, BPM and other timing markers, BGM/BGA events, measure boundaries, anchors, and slice handles show a clear hover outline/cursor and a concise value tooltip where useful. A single click selects or positions the cursor according to the active tool; a double click opens the type-specific inline editor or properties popover, so double-clicking a BPM marker edits its BPM and double-clicking a note edits its label, layer, kind, and sample fields. Double-click timing thresholds and pointer slop use platform settings where SDL exposes them, and the second click must hit the same stable object ID. Keyboard activation can open the same editor for accessibility and test parity.
+
+Also support StepMania-style spacebar area selection. The first Space press sets a range start at the edit cursor; navigation extends the marked region; the second Space press commits the range selection. Escape cancels the pending marker. The active lane scope determines whether the result includes playable notes, BGM events, timing events, or all visible editable tracks. Range selection, including reversed start/end order, becomes the input to copy, cut, delete, quantize, layer painting, Lua generation, and comparison tools.
+
+### Quantization and row transforms
+
+Quantization moves selected row data to the nearest point on a grid requested by the user. A `quantize_request_t` contains the stable event IDs or selected row/range, event-family scope, exact destination grid, tie policy, hold policy, collision policy, and anchor policy. The UI may take the grid from the active snap or accept a numeric division count directly.
+
+Offer two clearly named grid bases because variable-length measures make them different:
+
+- **standard-measure divisions** place points at exact multiples of `1 / d` of a standard 4/4 measure, matching the chart's global resolution and snap model;
+- **per-measure divisions** divide each authored measure into `d` equal local cells, matching BMS-style row quantization even when `#xxx02` changes that measure's length.
+
+Events at the same exact source position form a row and receive one computed destination, preserving chords and coincident keysound layers. Only objects in the requested scope move; a whole-row option deliberately includes every editable object on selected rows. Notes and BGM events are the normal scope. BPM, SV, stops, delays, warps, kiai, bookmarks, and other timing/navigation data require explicit inclusion because moving them can change audible timing.
+
+Calculate nearest destinations with exact rational arithmetic. Exact halfway cases use a visible deterministic policy, defaulting to the earlier grid point, with later-point selection available. The preview shows every old/new row, movement distance in divisions and audio time, measure-boundary crossings, and objects that remain unchanged. Apply is one atomic undoable command; cancel or any rejected row leaves the document unchanged.
+
+The requested grid must be representable by the global division count. If it is not, offer cancel or exact promotion to the least compatible global resolution before quantization; approximate rounding requires a separate explicit lossy policy and preview. Quantization never silently reduces the chart's global resolution.
+
+For holds, support moving the head and tail to their nearest rows or moving the entire hold by its head while retaining exact duration. Reject or explicitly resolve zero/reversed holds and overlaps created by endpoint movement. Lane collisions, multiple exclusive timing values at one row, BGM occupancy, events crossing format/layout boundaries, and beat- versus audio-anchored data are handled through named policies rather than implicit overwrite. The BGM allocator may move a collision to the next ordered BGM lane while retaining the quantized row.
+
+Conversion-time quantization calls this same transform on a temporary document and includes the row diff in `conversion_report_t`. The CLI therefore cannot use a separate rounding implementation from the editor.
+
+### Keyboard lane editing and snap navigation
+
+Define lane-key bindings in the active lane-layout profile and let the user override them. Bind defaults by physical keyboard position rather than the character produced by the current OS layout, while displaying the user's localized key names. This keeps the editing gesture stable across Windows, macOS, Linux, and non-QWERTY text input. Text entry, IME events, and key repeat must not accidentally place or move notes.
+
+A bare lane key creates or toggles the playable note at the edit row when there is no playable-note selection. With a selection, the bare lane key moves all selected playable notes to that destination lane and keeps them selected. **Shift + lane key** follows uBMSC's sequencing behavior: move the first selected playable note in deterministic document order, preserve its exact position and hold length, deselect that one note, optionally audition it, and leave the remaining notes selected for subsequent lane assignments. Each keypress is one undoable command. A collision, incompatible note kind, locked destination, or out-of-profile lane must show an error and leave both notes and selection unchanged. Non-playable timing and BGM objects remain selected but are ignored by lane reassignment unless a later command explicitly maps them.
+
+Provide these initial binding profiles:
+
+- For single-play and compact split profiles, assign the left/only stage in lane order to the physical number row: `1 2 3 4 5 6 7 8 9 0`. Assign the right stage in double-play profiles to the row below: `Q W E R T Y U I O P`. Use only as many keys as that stage contains, including a scratch lane only where the lane profile places it in the ordered stage.
+- For BMS 14K double play, use the requested interleaved BMS-editor layout: left stage `Q A W S E D R F`, right stage `H U J I K O L P`. These eight positions per side include the stage's seven keys and scratch according to the selected inside/outside-scratch profile rather than assuming scratch identity from the typed key.
+- For BMSON-only Keyboardmania-style 24K, use a two-octave virtual-piano map in chromatic lane order: lower octave `Z S X D C V G B H N J M`, upper octave `Q 2 W 3 E R 5 T 6 Y 7 U`. The staggered letter/number positions visually separate natural and accidental keys.
+- For BMSON-only Keyboardmania-style 48K, reuse the same 24-key piano map for the focused left or right 24-key stage. Dedicated commands switch or directly focus a stage, and the split-stage field makes the target visible before entry. This avoids assigning gameplay lanes to Space or Shift, which already have selection and move semantics. Users with a second keyboard, a MIDI keyboard, or a preferred full-key layout may bind all 48 lanes directly once multi-device input is available.
+
+Show the active mapping as an optional key legend over the lane headers. Validate profiles for duplicate bindings within one active stage, conflicts with required editing gestures, inaccessible lanes, and platform-reserved combinations. Input commands operate on semantic lane IDs, so changing a key binding never remaps chart data.
+
+Up and Down move the edit cursor by one active snap interval, crossing measure boundaries through exact rational position arithmetic. A pending Space range selection follows the cursor, so repeated Up/Down presses extend or contract the range exactly as the visible grid indicates. This navigation does not silently move selected notes; note movement is an explicit command.
+
+Measure paging is a separate command with a user-configurable positive measure count, defaulting to one. Page Up/Page Down invoke it on Windows and Linux; Option+Up/Option+Down invoke it on macOS. Paging preserves the cursor's exact fractional position within a measure when the destination geometry permits it, otherwise it previews or applies the documented nearest valid row policy, and clamps at the song boundary without wrapping. Holding the command begins repeat after one second and switches to a faster configured repeat interval after three seconds. The input controller uses a monotonic clock and ignores duplicate native key-repeat events, making the thresholds deterministic across platforms; release, focus loss, modal/text focus, or loss of the required modifier cancels the held state immediately.
+
+Mouse wheels and precision trackpads scroll the chart viewport without moving chart data or quantizing the edit cursor. Consume SDL's precise floating-point deltas, preserve subpixel remainder between events, honor the OS natural/reversed direction information, and accept both axes. Vertical input scrolls chart time; horizontal input scrolls the pane under the pointer, including the independently scrollable BGM pane and wide variable-column fields. Shift may translate a one-axis wheel into horizontal scrolling where that matches platform convention, while the platform primary modifier plus wheel/trackpad performs cursor-anchored zoom. Sensitivity for coarse wheel notches and smooth scrolling is configurable separately.
+
+Trackpad momentum remains viewport motion and can be interrupted immediately by direct pointer/keyboard navigation, focus loss, or opening a modal editor. The controller coalesces high-rate deltas per frame, clamps against content bounds without oscillation, and routes a gesture to the pane where it began until that gesture ends so crossing a divider cannot jump another pane. Do not infer note placement, selection, or timing changes from a scroll gesture. Tests use synthetic precise deltas and a fake frame clock rather than relying on host hardware.
+
+Clicking the mouse wheel/middle button latches an autoscroll state for the pane under the pointer, aimed especially at BMS charts with many horizontally arranged BGM lanes. The latch records an anchor and keeps that pane captured after button release; pointer displacement from the anchor controls signed horizontal and vertical velocity with a dead zone and configurable maximum speed. Horizontal motion in a BGM pane changes only its independent horizontal offset. A second middle click, Escape, focus loss, modal opening, or an ordinary editing click cancels the latch immediately. Entering/cancelling the latch never selects, places, or edits an object, and its anchor/velocity indicator makes the active state visible.
+
+Left and Right cycle backward and forward through a profile-configurable StepMania-style snap list. The initial list starts with the requested `1/4`, `1/8`, and `1/6` modes and continues with common straight and tuplet fractions. A snap `1/d` is available only when one standard-measure interval is integral at the chart resolution (`resolution % d == 0`); at 960, for example, denominators 4, 8, 6, 12, 16, 24, 32, 48, 64, 96, 192, 240, 320, 480, and 960 are exact. Cycling skips unsupported entries. If no next entry exists it keeps the current snap and gives visible feedback. Changing resolution must preview any required active-snap fallback along with positional quantization; it cannot leave the editor on an inexact snap.
+
+Modifier dispatch should follow the useful structure observed in the [uBMSC/pBMSC input handlers](references/pbmsc-input-handling.md): resolve the focused editing context and exact global shortcuts first, then lane assignments, then modifier-insensitive navigation commands. Sample modifiers from the key event, suppress mutation on auto-repeat by default, and keep command construction independent from Nuklear rendering callbacks.
+
+### Tags, bookmarks, and song sections
+
+Store UTF-8 search tags as ordered metadata with normalized lookup plus retained source spelling/order for loss-aware export. The osu! adapter reads and writes the space-separated `[Metadata]` `Tags` field defined by the official [`.osu` file-format documentation](https://osu.ppy.sh/wiki/en/Client/File_formats/osu_%28file_format%29). Tags may be edited per difficulty or applied across selected difficulties in the project; semantic note layers and note labels remain separate concepts.
+
+Provide a marker/section lane and a searchable section list. A marker may be an unlabeled point bookmark or a labeled point/range such as `Intro`, `Verse 1`, `Chorus`, `Bridge`, or `Outro`. Commands add a marker at the cursor, set a range from the current selection, jump previous/next, loop a section, rename/recolor, and select the section's chart events. Markers may be beat-anchored or audio-time-anchored, and timing edits show which will move.
+
+osu! `[Editor]` bookmarks are integer millisecond points and carry no label or range. Import them as audio-time point markers. Export every compatible point marker, plus the start of a labeled range when requested; retain labels, colors, range ends, and beat anchors in the native project and diagnose that loss when producing standalone `.osu`. MIDI export may emit labeled markers as marker meta-events.
+
+### BMS channel maps and MIDI destinations
+
+Make a BMS channel map editable per lane-layout segment or reusable as a named profile. Each entry has a semantic lane ID, display order, stage group, role (`playable`, `scratch`, `invisible`, `mine`, `autoplay`, or retained/unknown), raw two-character BMS object channel, and optional MIDI port/channel/note/velocity defaults. Keep timing/resource channels reserved and validate any attempted collision with them. Preserve unknown source channels as raw retained lanes until the user maps or explicitly discards them.
+
+Custom maps allow nonstandard BMS layouts to import without squeezing objects into built-in columns. Export validates duplicate raw channels, dialect-specific channel syntax, scratch/player-side expectations, long-note pairing, and conflicts with repeated BGM allocation. A map change proposes a lane migration and loss report; it never changes existing semantic lane IDs merely because a display or output code changed.
+
+MIDI export uses the same semantic-lane destinations. Holds become note-on/note-off pairs; taps use a configurable short duration; keysound/layer labels and song sections may become text or marker meta-events. Provide two explicit timing policies: **musical** export preserves chart beats, BPM, and meter where Standard MIDI can express them, while **performance** export preserves audible note times against a chosen MIDI tempo/grid. Stops, delays, warps, scroll velocity, kiai, and format-specific keysound semantics require diagnostics because MIDI has no direct equivalents. Choose a PPQ that represents all exported chart positions exactly or reject/preview quantization rather than rounding silently.
+
+### BMS branch tree and active projection
+
+Preserve BMS random and conditional source as an ordered control-flow tree rather than evaluating and discarding it during import. Initial nodes cover `#RANDOM`/`#SETRANDOM`/`#ENDRANDOM`, `#IF`/`#ELSEIF`/`#ELSE`/`#ENDIF`, and `#SWITCH`/`#SETSWITCH`/`#CASE`/`#DEF`/`#SKIP`/`#ENDSW`. Retain original spelling, raw source spans, line endings, nesting, and branch-local commands. Common commands outside a branch remain root content.
+
+The chart window includes a visible outline/tree component. Random and switch nodes show their range or fixed value; conditional and case nodes show labels, probability/effective reachability, contained object counts, measure range, and diagnostics. For every active random/switch node, the user chooses a value manually, steps through values, or asks for a deterministic seeded roll. Independent top-level blocks and active nested blocks produce a branch-selection environment containing several selected leaves.
+
+The note, timing, BGM, waveform, metadata/resource preview, and playback views are a deterministic projection of root/common content plus the leaves activated by that environment. Notes from inactive leaves are absent by default, as requested; an optional non-editable ghost overlay may be added later. Changing a tree choice is view state and does not rewrite the chart. It clears or parks selections that are no longer visible so keyboard and batch commands cannot mutate hidden objects accidentally.
+
+New events and metadata edits need an explicit insertion scope shown beside the tree: the current selected leaf, a chosen ancestor/common scope, or all sibling leaves through a deliberate replicated command. Moving an object between branches and adding/removing/reordering branches are atomic undoable operations. Before commit, validate branch-local `#WAV`/BPM/STOP/SCROLL definitions, lane/resource collisions, and timing effects against every affected projection.
+
+Evaluation must be profile-driven and sequence-aware. `#RANDOM n` chooses an integer in `1..n`; `#SETRANDOM` fixes the value. `#IF` groups, `#ELSEIF`, and `#ELSE` select according to that surrounding value. `#SWITCH`/`#SETSWITCH` begins at the matching `#CASE` or `#DEF` and preserves target-profile fallthrough until `#SKIP` or `#ENDSW`. Nested random and switch blocks remain nested nodes. The editor should enumerate reachable outcomes for tests and warnings within a configured cap, while seeded sampling handles combinatorial trees interactively.
+
+Export offers two distinct operations: preserve the authored control tree, or flatten the currently selected projection into a non-random BMS file. Preservation retains stable source ordering where possible. Flattening is explicit and never replaces the branched source without a warning. Compatibility diagnostics are tied to the selected BMS target because command nesting, `#ELSE`, switch behavior, malformed recovery, and maximum depth vary among implementations; see the [control-flow research and `libotoworm` audit](references/bms-control-flow.md).
+
+### Clipboard interoperability
+
+Copy and paste must work within wormedit and across established BMS editors. Publish a versioned native wormedit payload containing exact relative measure/division positions, lane semantics, event types, holds, timing/BGM events, stable sound references, labels, and semantic layers. Also publish BMSE and iBMSC-compatible clipboard representations when the selected data can be represented by them. Use plain text as an inspectable fallback where the platform clipboard supports only text.
+
+Paste detects the native, BMSE, and iBMSC representations and converts them into one preview transaction. Anchor the earliest copied musical position at the edit cursor while retaining relative spacing; offer lane mapping when source and destination profiles differ. Show conflicts, quantization caused by the destination global division count, missing `#WAV`/BPM/STOP definitions, unsupported event kinds, and metadata loss before commit. One paste is one undoable command.
+
+Treat BMSE and iBMSC clipboard formats as external compatibility formats with fixture-backed parsers/writers, not as the internal clipboard model. Stage 0 should capture clipboard output from representative editor versions and compare it with their available documentation/source; see the [clipboard compatibility research notes](references/bms-editor-clipboard.md). Historical limitations such as partial multi-line BGM transfer must be diagnosed at the compatibility boundary rather than collapsing wormedit's ordered BGM lanes.
+
+Cut deletes source events only after at least one requested clipboard representation is written successfully. Malformed or unsupported clipboard input must leave the document and existing selection unchanged.
+
+## Side-by-side chart comparison
+
+Allow two or more difficulties from the same song project to be previewed in parallel panes. The panes share transport, waveform time, vertical position, zoom, playback rate, and edit cursor; each keeps its own horizontal lane scroll where layouts differ. A baseline chart can be selected, or comparison can flag a row when any visible chart differs from another.
+
+Default comparison aligns exact musical rows and compares a normalized row signature: semantic lane, note kind, hold start/end state, keysound/slice identity when requested, and selected metadata such as semantic layer. Every differing row receives a yellow background band across the compared chart panes. Matching rows retain the normal background. Options may exclude layers, labels, or sound assignments when the author wants to compare gameplay only.
+
+If charts have different timing maps, offer explicit musical-position and audio-time alignment modes and show which is active. If lane profiles cannot be mapped semantically, mark the layout boundary and report the unmatched lanes rather than producing a misleading equality result. Comparison is read-only initially; later copy/paste can use the existing selection/command system to move a marked interval between difficulties.
+
+## Playback and timing preview
+
+The DDReam-style waveform is the primary timing-authoring and synchronization surface, not a decorative overview. It overlays draggable beat markers, measure/active-snap grid lines, timing anchors, current/proposed BPM spans, stops, delays, warps, SV/scroll state, note rows, BGM/BGA events, and a sample-frame playhead over the waveform. Authors can zoom from whole-song peaks to sample-level alignment, scrub directly, select/loop a waveform interval, and keep the detailed waveform locked to the chart field while editing.
+
+Playback streams from the original audio, supports seek and looped regions, and offers beat-assist, note-assist, and a configurable metronome. The metronome schedules from exact musical positions through the same timing/offset/discontinuity evaluator as chart preview; it accents the retained musical meter and grouping when present, otherwise uses the selected fallback grouping. Optional subdivisions must be representable on the current grid. Notes inside warps produce no elapsed-time click, and a click on a stop/delay boundary follows the format-profile event-order rule. Count-in may begin before beat zero when the audio/offset range allows it. The waveform stays visually fixed while a timing preview moves the proposed beat grid over it, making before/after alignment immediately visible. Playback-rate changes are preview controls and must not rewrite chart timing or audio.
+
+Also provide a chart-play preview that shows the chart moving through its active skin/layout against receptors while the music plays. It uses the same timing, warp, scroll/SV, lane-layout, branch-projection, BGA-event, and sample-frame transport evaluators as editing and export. Authors can start at the cursor or selection, seek, loop a section, and watch holds, stops, scroll changes, split stages, kiai, BGA changes, and other supported presentation state at their effective times.
+
+Preview audio modes include music-only and full chart autoplay. Full autoplay schedules both autoplay/BGM events and playable-note keysounds, so a BMS preview plays `#xxx01` sounds plus the `#WAV` assigned to every visible playable object as if an autoplay player hit it. BMSON fused/layered sounds and specification-derived slices play together; BMS branch-dependent resources and notes come only from the active branch projection. A later interactive playtest may trigger playable-note sounds from live input, but deterministic full autoplay is the initial required verification mode.
+
+Build one immutable preview schedule from exact chart events and map it to audio sample frames. Music and keysounds use one device clock, one output format, and a bounded mixer; same-row sounds retain their defined order and polyphony instead of replacing one another accidentally. Seeking or changing the active branch/difficulty invalidates the old schedule, kills voices from that transport session, and starts a newly identified session. Missing, undecodable, or late keysounds produce event-linked diagnostics without blocking the main music stream.
+
+Stopping transport is a hard audio stop. It synchronously marks the current `transport_session_id_t` cancelled, prevents queued/decode-completion work from submitting more voices, clears all scheduled events and decoder/ring buffers, and stops every active music, autoplay, playable-note, and click-preview voice. The mixer must output silence for that session by the next audio callback/buffer; no keysound tail, release envelope, or stale asynchronous job may continue after Stop. Starting again creates a new session ID so an old callback cannot resurrect playback. Closing a document or audio device uses the same stop path.
+
+Timing edits use a live preview transaction. While a beat is dragged, keep the waveform fixed and redraw the proposed beat grid, BPM values, notes, and affected event times continuously. Show the target audio time/sample frame, old and proposed BPM, affected beat/measure range, and whether the operation will insert, replace, or remove BPM events. Mouse release commits the whole fit as one undoable command; Escape restores the original timing.
+
+Support two beat-drag operations:
+
+1. **Ctrl-drag an individual beat (local beat snap).** Pin the dragged beat to the selected audio frame and adjust the adjacent timing interval or intervals so the beat reaches that point. Neighboring locked anchors remain fixed. This may create or update BPM changes around the dragged beat, which allows live or drifting performances to be synchronized beat by beat without moving unrelated anchors.
+2. **Drag-to-fit from the last BPM change (interval fit).** Keep the previous BPM-change anchor fixed, drag the current beat to an audio frame, and solve one BPM for the entire interval. All intermediate beat markers expand or contract uniformly. For an interval without pauses or warps, `new BPM = 60 * beat distance / audio-time distance`; the timing service must account for stops, delays, and warps before applying the equivalent calculation.
+
+The first mode is local and may yield adjacent BPM segments. The second rewrites the constant-BPM span from the last change point through the dragged beat. Changes after the fitted endpoint follow the document's anchor policy: locked anchors remain fixed and require compensating timing, while unlocked downstream events are recomputed from the new timing map. The preview must make that consequence visible before commit.
+
+Beat snapping should always allow direct alignment by eye with the waveform. Optional magnetic snapping may target a nearby waveform onset/peak, with an adjustable threshold and a temporary bypass modifier. Store the chosen target as an audio sample frame so repeated edits do not accumulate millisecond rounding errors.
+
+## Waveform and streaming audio
+
+Here, streamed audio means finite, seekable MP3 and Ogg files of variable length. It does not currently mean a live input or network stream. MP3 is a required first-class music format for SM/SSC and osu!mania projects: import, playback, accurate seeking, waveform generation/cache, timing preview, looping, and chart-play preview must all work from MP3 sources. Waveform generation and playback must not require retaining a fully decoded song in memory. Add a decoder interface that yields interleaved PCM chunks and reports sample rate, channels, duration, and seek capability.
+
+On import or first view, a background waveform job should:
+
+1. decode sequential chunks;
+2. calculate min/max peaks and optionally RMS values in fixed source-frame windows;
+3. build coarser peak levels for zoomed-out views;
+4. publish completed ranges incrementally so the waveform appears while scanning continues;
+5. cache the result using source identity plus decoder/cache version.
+
+Rendering selects the cache level that is closest to one peak bucket per screen pixel. The same cache supports a full-song stream, a keysound, a BGM click-preview, and a zoomed slice editor. Playback uses a bounded decode/ring buffer and seeks independently from waveform analysis. File length must affect processing time and cache size, not decoded-memory residency.
+
+Audio decoding must use cross-platform libraries from the shared codebase on Windows, macOS, and Linux. Do not make a platform's system codec framework the sole implementation for a supported format. The decoder spike should choose the library/backend, verify seeking and sample-frame consistency on all three targets, and establish the exact initial format matrix. MP3 and Ogg Vorbis are required for streamed music; WAV, Ogg Vorbis, and FLAC are required for BMS keysounds and fallback resolution. Full-song FLAC and Opus may be exposed when the chosen backend supports their seek behavior consistently.
+
+## Format adapters and capability policy
+
+Each adapter declares what it can import, edit, and export. Validation runs against the selected export target rather than weakening the internal model to the least capable format.
+
+The capability table is bidirectional. A format/profile is promoted from experimental to supported only when both reader and writer fixtures pass semantic import-edit-export-reimport tests, including negative cases and atomic output failure. Features that require an extension, transformation, or rejection remain explicit cells in that table.
+
+One native project may own several ordered difficulties and one or more named output groups. SM and SSC output groups collect compatible difficulties into one song file. BMS/BME/BML/PMS, BMSON, and osu!mania normally emit one chart file per selected difficulty, so their writer returns a deterministic reviewed output set rather than pretending that one path always means one file. The output plan resolves shared assets, filenames, target metadata, collisions, and overwrite policy before serializing, then publishes every file transactionally as one operation. A failure must leave the previous output set intact. Late-stage Quaver export follows the grouping rules verified for its selected format profile.
+
+### Shared conversion pipeline and command-line tool
+
+In-editor conversion and a headless, raindrop-style command-line converter use the same conversion library. The UI builds a `conversion_request_t`, previews its report, and commits chosen outputs; the CLI builds the same request from arguments. Neither path calls UI code, and neither gets a private shortcut through the current lossy transient `Chart` model.
+
+The pipeline has explicit stages: byte/file ingestion, source-profile detection, loss-aware decode into `song_document_t`, optional branch/difficulty selection and intentional transforms, target-capability validation, serialization to temporary outputs, semantic re-import verification where enabled, then atomic publication. Every stage returns typed diagnostics and leaves the live document and existing destination files unchanged on failure.
+
+The initial command surface should retain rdconverter's useful single-input, output, and target-format flow while making automation reliable. Support `--input`, `--output`, `--from auto|FORMAT`, `--to FORMAT`, target implementation/profile, difficulty selection, BMS branch choices or deterministic seed, preserve-tree versus flatten-active projection, warp-encoding policy, output text encoding, quantization/loss policy, overwrite policy, dry-run/validate-only, and human or JSON diagnostics. Batch conversion may accept a directory or manifest after the single-file path is stable.
+
+Defaults must be deterministic and non-interactive. Ambiguous source encodings, unknown target profiles, unrepresentable divisions, lossy branch flattening, or inexact warp encodings fail unless arguments explicitly resolve them. Define stable exit codes for success, invalid arguments, input/decode failure, validation/loss rejection, and output failure. Normal output and diagnostics have stable streams/schema so scripts can consume them.
+
+The executable name and any exact compatibility aliases remain a packaging decision, but its library entry point is also the in-editor Convert command. Raindrop's existing `rdconverter` is a useful behavioral starting point: it maps a positional/input path plus output directory and format to libotoworm conversion calls. Wormedit should preserve that directness while fixing its ambiguous unknown-format path, catch-and-return-success behavior, inconsistent file/directory output contracts, and lack of loss reports. See the [warp and converter source audit](references/stepmania-warps-and-conversion.md).
+
+### BMS family
+
+Preserve measure divisions/lengths, BPM definitions and changes, STOP events, SCROLL events where the chosen dialect supports them, playable and BGM keysounds, LN representation, scratch lanes, WAV/BMP definitions including unused entries, timed BGA events/layers, repeated BGM source lines, `#OFFSET`, random/conditional/switch control flow, and source header metadata. Follow the project notes from the [BMS command memo](references/bms-command-memo.md), including non-merged repeated `#xxx01` lines, structural `00` slots, `#xxx02` measure ratios, BMS-specific STOP units, and profile-dependent branch behavior. Export writes `#OFFSET <seconds>` whenever the canonical offset is present and reports player support separately. It must handle identifier limits and event collisions explicitly. Target dialect and player compatibility need to be selectable because "BMS" is a family rather than one uniform capability set.
+
+Read BMS-family files as bytes before parsing commands. Detect BOM/valid UTF-8 first, then score likely legacy encodings including CP932/Shift-JIS, EUC-KR/CP949, and Windows-1252. Detection produces a ranked result and confidence rather than an unquestioned encoding. Show decoded title/artist and problematic byte spans before import when confidence is low, and allow the user to override the encoding and re-preview immediately.
+
+Normalize decoded editor strings to UTF-8 while retaining original bytes, selected encoding, line endings, and unchanged source spans for loss-aware saves. On export, let the user retain the source encoding or choose another. Characters that cannot be represented must produce a diagnostic with choices such as changing the encoding or editing the value; never silently discard or transliterate them.
+
+Keep encoding detection separate from conversion. Evaluate a detector such as uchardet plus an `iconv`-compatible conversion wrapper. GNU libiconv is a candidate for consistent Windows support and covers CP932/Shift-JIS, EUC-KR/CP949, Windows-1252, and UTF-8; macOS/Linux system `iconv` behavior and aliases must be normalized behind the same tested interface, or the same conversion library should be packaged on all targets.
+
+### StepMania
+
+Treat both `.sm` and `.ssc` as authoring targets. Preserve chart type/lane layout, signed `OFFSET`, `BPMS`, stops, delays, warps, `SCROLLS`, and `SPEEDS`, including transition duration and beat/time mode wherever the selected target supports them. Build a tested feature matrix for current `.sm` and `.ssc` behavior, including functionality later accepted or grandfathered into `.sm`; do not use the extension alone as a proxy for capability. The target implementation/profile also chooses whether canonical warps are emitted natively or through a StepMania 3.9-compatible negative-BPM encoding. Import, validation, and export should preserve each format's placement and scoping rules, and report a downgrade only for a feature the selected target/profile cannot represent.
+
+Preserve native tap, hold, mine, lift, fake, keysound, and retained roll note symbols according to the selected StepMania profile. The core maps common holds and mines directly while retaining the more specific source kind/provenance needed for a stable write. Full roll authoring/play simulation and Pump-style ticked-hold semantics are deliberately late-stage features.
+
+### osu!mania
+
+Preserve key count, absolute hit-object timing, holds, uninherited timing points used for BPM, inherited timing points used for slider velocity, audio offset, sample-set fields and custom hitsound filenames, background/video/storyboard event assets, editor bookmarks, ordered search tags, kiai state, other retained timing-point effect bits, and relevant difficulty metadata. Difficulty-scoped metadata must expose at least `[Metadata] Version` as the difficulty name plus `[Difficulty] HPDrainRate`, OverallDifficulty, and CircleSize/key count, with ApproachRate retained where present and slider-related fields retained losslessly even when mania editing does not use them directly. Validate finite/range-compatible numeric values against the selected osu! profile and retain original spelling/provenance for stable round trips. BPM and SV must remain distinct in the UI even though both are represented by timing points in the file. Non-mania `.osu` files should be rejected with a useful diagnostic.
+
+Kiai is a first-class editable state lane with visible on/off regions and preview feedback. In stable `.osu` formats it is timing-point `effects` bit 0; bit 3 and unknown retained bits must survive edits to kiai. Import preserves the effective kiai state and same-time control-point provenance. Export updates or creates the minimum necessary control points at region boundaries without changing BPM, SV, sample settings, volume, meter, or unrelated effect flags. Side-by-side comparison can optionally include kiai and bookmark/section differences.
+
+### Quaver (late stage)
+
+Reserve a format-adapter profile for the Quaver rhythm game and its chart format. Research its normative schema and current implementation behavior when this milestone begins, then specify exact mappings for variable key counts, timing, scroll velocity, long notes, samples, metadata, and multi-difficulty file organization. Until paired reader/writer fixtures and negative cases pass, label the adapter experimental and exclude it from the initial supported-format claims.
+
+### BMSON
+
+Preserve the file's resolution, mode hint/lane mapping, bar lines, BPM and stop events, BGA metadata where retained by the chosen support level, sound-channel order, note continuation flags, and long-note lengths. Implement slicing and restarting according to the [BMSON 1.0 specification](https://github.com/bemusic/bmson-spec/blob/master/doc/index.rst): note pulses create slice points, and `c` determines whether the source continues or restarts. Mixed sounds at the same position must survive import and export with the specified layering and polyphony behavior.
+
+BMSON 1.0 scope is slicing only. Do not expose fades, gain, pan, or arbitrary clip boundaries as BMSON-authored properties. If such processing is ever added as a general project feature, BMSON export must reject it or require an explicit destructive render to new source audio; it must never emit non-standard BMSON fields. Initial work should target version `1.0.0`, with older input handled only to the level that can be verified.
+
+Keyboardmania-style 24K and 48K are BMSON-only editor profiles. Serialize them using BMSON's `generic-nkeys` convention as `generic-24keys` and `generic-48keys`, with `x = 1..n` ordered left to right; the 48K editor profile may present two visible 24-key stages without changing those source lane numbers. BMSON's canonical mode-hint list names beat 5K/7K/10K/14K and pop'n 5K/9K, while its generic rule covers other symmetric key counts. Do not map these layouts to MGQ/BMS channels.
+
+BMSON 1.0 notes natively express taps and long-note lengths. Invisible notes and mines remain native-project kinds and block BMSON export unless the chosen conversion request explicitly removes or transforms them with a loss report.
+
+## Project persistence and round trips
+
+Introduce a native, versioned editor project format early. It holds the full editable song document: an ordered set of charts/difficulties with stable IDs, shared and scoped metadata, named output groups, global grid settings, note labels and semantic layers, timing anchors, UI state, asset references, waveform-cache references, source-format provenance, generator recipes, and any editor data that interchange chart formats cannot encode. Keep generated BMS, SM/SSC, osu!mania, BMSON, OSB, and later Quaver files as exports so one project can target several formats.
+
+Metadata has explicit scope and inheritance. Shared song fields include title, subtitle, primary artist, genre, music, preview, and common artwork where their meanings align. Per-difficulty fields include difficulty name, chart author/credit, rating, mode/key count, and target-specific overrides. A difficulty inherits a shared value until it sets an override; clearing an override returns to inheritance, while an explicit empty target value remains distinct when a format permits it.
+
+The Metadata tab groups target fields under clearly labeled **BMS**, **StepMania**, **osu!**, and **BMSON** sections and identifies whether each value belongs to the song, difficulty, or output file. For example, BMS `#SUBARTIST` and `#STAGEFILE` are presented with those source names and their BMS scope; osu! exposes difficulty `Version`, `HPDrainRate`/HP, `OverallDifficulty`/OD, `CircleSize`/keys, `ApproachRate`, tags, and preview/bookmark fields. A normalized field may map to another target where semantics match, but retained spelling, ordering, duplicates, and source ownership remain available for loss-aware re-export. Format-only fields never disappear merely because the current export target does not use them.
+
+The project format must support Lua-based note generation as a durable recipe, not only as already-expanded notes. A generator record contains its Lua source or project-relative script reference, scripting API version, named parameters, deterministic seed, ordered input asset IDs, last-run input/script hashes, and optional generated-object provenance. Save materialized generated notes as ordinary editable notes as well, so opening a project does not implicitly rerun code. When a script or input changes, offer a previewable regenerate operation and show the proposed add/change/remove diff before commit.
+
+Use the Premake-style OSBX Lua DSL for generated source modules. Storyboard modules and note/difficulty modules may be included separately, so a project can regenerate or export one without evaluating the other. A combined generator may still emit both atomically. Note modules can declare several stable difficulty IDs; SM/SSC exporters collect compatible difficulties into one file while other target adapters emit the appropriate per-difficulty files.
+
+Allow MIDI files to be imported as project assets and consumed by Lua generators through a host-provided MIDI API. Parse MIDI in cross-platform C/C++ code and expose structured, immutable data to Lua: file timing division, tracks, channels, note-on/off intervals, pitch, velocity, controller events, tempo events, time signatures, markers, and track names where present. Scripts should address an imported asset by stable ID rather than depend on an absolute path.
+
+MIDI tick positions must remain exact in the asset model. The generator API provides explicit conversion helpers between MIDI ticks, metric time, and chart measure/division positions. Importing MIDI tempo or meter into the chart is an explicit generator/user operation; merely loading a MIDI asset must not alter chart timing. A user-selected external MIDI file becomes a project asset before the script reads it, giving scripts read-only access to declared inputs without coupling generators to arbitrary filesystem paths.
+
+Chart Lua modules may generate SV, StepMania `SCROLLS`, and StepMania `SPEEDS` from a deterministic function over normalized parametric space `p` in `[0, 1]`; the typed API and numerical rules are specified in [the OSBX/Lua DSL draft](osbx-draft-spec.md#parametric-scroll-and-speed-generation). Curve generation first produces a raw typed point/event batch, then applies an ordered post-process pipeline that may normalize or multiply it before target compilation. Preview shows the raw function, processed result, effective scroll, integral report, and compatibility diagnostics before apply/cancel. Store the function/parameters, sampling policy, ordered post-process stages, target event family, source interval, seed if used, and resulting materialized events as generator provenance.
+
+The on-disk packaging choice remains open: it may be a folder/manifest during development and optionally a single-file archive later. In either form, use project-relative asset references, content identities for relinking/change detection, schema migrations, and lossless preservation of unknown fields from newer project versions where practical.
+
+Saving should be atomic: write a temporary file in the destination directory, validate it, and replace the prior file only after success. A format round-trip fixture should compare semantic documents, with a second textual-stability check only where stable source preservation is promised.
+
+Add timed autosave and crash recovery as a document service. While dirty, write a complete native-project snapshot every five minutes to an adjacent `<project-filename>.bak`; untitled and standalone-import sessions use a stable project-ID `.bak` in the platform recovery directory. Write, flush, checksum, re-open, and validate a same-directory temporary file before atomically replacing the prior backup. Any failure leaves both the primary project and last known-good backup untouched.
+
+On startup and whenever a project is opened, detect matching backups, crash markers, and optional recovery journals. Compare validated project IDs and monotonic document revisions rather than trusting modification times alone. A newer valid backup produces a recovery banner with inspect, recover, save-as, and discard actions; it never overwrites the primary automatically. If a prior crash is detected, the primary validates, and no newer valid backup exists, copy that known-good saved state atomically to `.bak` before continuing. Preserve a newer backup and quarantine corrupt candidates with diagnostics.
+
+Keep crash handling behind a cross-platform `crash_backend_t`. A top-level caught exception may ask the normal recovery coordinator for a validated emergency backup. A hard signal/structured exception handler writes only a fixed-size preallocated crash marker/minimal diagnostic and then terminates or chains to normal platform reporting; it must not allocate, lock the document, call UI/audio/Lua, or serialize potentially corrupt process state. Recover hard crashes from the last validated autosave and a checksummed append-only command journal maintained during normal execution. See the [autosave and crash-recovery contract](references/recovery-design.md).
+
+## Undo, validation, and diagnostics
+
+All edits should be commands over the document model. Commands provide apply/unapply behavior and can group drag gestures or multi-note operations into one undo step. Audio analysis and decoding are derived jobs and do not belong in undo history.
+
+Validation results should point to stable event or asset IDs and use three levels:
+
+- error: the selected target cannot be written or would create invalid data;
+- warning: export is possible but will lose or approximate information;
+- information: compatibility advice that does not change data.
+
+## Test strategy and regression gates
+
+Testability is an architectural requirement. Document operations, timing calculations, format adapters, audio jobs, and editor interactions should expose deterministic logic behind small interfaces rather than living only inside Nuklear event/render callbacks. Use Catch2 v3 as the C++ test framework, integrate it through CTest, and make the regression suite a required gate for changes to these systems. Every parser, converter, command, and interaction contract needs both positive and negative cases.
+
+The top-level CMake build should `include(CTest)` and add the test tree only under `BUILD_TESTING`. Resolve a pinned Catch2 v3 release as a test-only dependency, preferring an already supplied package/source directory and using the project's controlled dependency mechanism as a fallback. Test executables link `Catch2::Catch2WithMain`; production libraries do not acquire a Catch2 dependency.
+
+Use Catch2's CMake extras and register each executable with `catch_discover_tests`. Set `DISCOVERY_MODE PRE_TEST` so discovery occurs through CTest immediately before testing rather than requiring each test binary to run as a post-build action. Give suites stable prefixes and CTest labels such as `unit`, `format`, `integration`, `audio`, and `render`, allowing CI and developers to select layers without maintaining duplicate `add_test` lists.
+
+Keep test targets small enough that the core model/timing/command suites do not link Nuklear, OpenGL, an audio device, or the application executable. Use Catch2 sections, generators, and matchers where they make positive/negative tables clearer, while keeping fixture names and expected diagnostics explicit. `ctest --test-dir <build> --output-on-failure` is the common runner; CI should also use `ctest -N` or an equivalent check to fail when a configured suite unexpectedly discovers zero tests.
+
+The suite should include:
+
+- unit tests for the default 960 resolution, rational positions, global redivision, variable measure lengths, time-signature interpretation, lane-layout changes, supported-snap filtering, and beat/time/sample-frame conversion;
+- measure-length parser tests for exact BMS decimal and fraction forms, leading/trailing zeros, very small/large values, overflow, zero/negative/non-finite input, bounded IEEE-754 rationalization, denominator/iteration limits, stable approximation diagnostics, and guaranteed termination under optimized builds;
+- table-driven quantization tests for standard-measure and per-measure grids, active-snap and numeric divisions, exact hits, nearest earlier/later points, halfway tie policies, chords/coincident layers, row scopes, variable measure lengths, holds, global-resolution promotion, undo/redo, and editor/CLI result equivalence;
+- lane-profile tests for continuous and split-stage presentation, including BMS 10K/14K player sides and configurable osu!mania partitions;
+- table-driven BMS lane-map fixtures for BMS 5K/10K, BME 7K/14K, standard/BME-style PMS 5K/9K/18K, foot-pedal/free-zone, double-scratch, octave, and Project2DX profiles across visible, invisible, LN, and mine families;
+- BMSON lane-profile fixtures for canonical beat/pop'n hints and BMSON-only `generic-24keys`/`generic-48keys`, including exact `x` ordering and split-stage presentation;
+- note-kind fixtures for invisible notes, every supported long-note notation, mines/damage provenance, StepMania rolls/lifts/fakes, rendering/hit testing, copy/paste, quantization, and explicit unsupported-target rejection/transforms;
+- late StepMania compatibility fixtures for roll re-hit/life behavior and chart-scoped `TICKCOUNTS` segments, including tick scheduling across BPM changes, stops, delays, warps, hold boundaries, same-row changes, zero/invalid counts, import/export profile differences, and preview cancellation;
+- semantic-layer tests for palette editing, painting/erasing, visibility/lock behavior, selection, project serialization, undo/redo, and layer-aware Lua command output;
+- note-view tests for skin/snap toggling, exact rational snap classification, StepMania color lookup, and semantic-layer indicators in snap mode;
+- table-driven timing tests for Ctrl-drag local beat snapping and last-BPM interval fitting, including locked anchors, stops, delays, warps, cancel, commit, undo, and redo;
+- timing discontinuity tests that cover stops and delays separately, same-position event ordering, seek boundaries, BMS STOP units independent of measure length, and unsupported-target diagnostics;
+- offset tests for positive, zero, and negative exact decimal values, StepMania sign/scope, BMS `#OFFSET` extension import/write/reload, duplicate/conflicting fields, osu!/BMSON exact-shift conversion, negative target positions, preview alignment, and source spelling/provenance;
+- warp golden tests for native `WARPS`, negative BPM, negative stops, consecutive legacy sections, same-position events, notes inside warps, stops/delays inside warps, adjacent/overlapping warps, canonical import, strategy-selected export, and semantic export/re-import verification;
+- architecture boundary tests that exercise core data, timing, commands, format transforms, and conversion reports without Nuklear, SDL audio devices, process launching, or global service state;
+- UI frontend boundary tests that prohibit third-party UI headers outside adapter directories, exercise shared view-model/action contracts without a window, and run the same scripted workflows against every enabled frontend;
+- frontend performance fixtures for dense charts, hundreds of horizontally scrollable BGM lanes, timing/waveform overlays, 24K/48K fields, metadata tables, and side-by-side comparison, with separate controller, composition, draw-list, allocation, and GPU timing;
+- controller tests that feed pointer/modifier events into the editor logic and assert mouse selection, snapped note/hold placement, paint-drag deduplication, hover transitions/tooltips, same-object double-click editing, Space range marking, preview overlays, cancellation, collision rejection, and resulting commands without requiring a window or audio device;
+- timing-panel/controller tests for modeless focus, note/BGM/BGA and timing-lane visibility, locked-event hit testing, blocked mouse/keyboard/paste/Lua timing mutations, unlocked edits, and unchanged document/history after rejection;
+- metronome tests using a fake sample-frame clock for meter accents including retained 6/8 grouping, fallback grouping, subdivisions, count-in, offset, BPM changes, stops/delays, warps, seek/loop/playback-rate changes, and hard Stop;
+- keyboard-input tests for physical-key lookup, modifier precedence, Up/Down exact snap navigation, Left/Right supported-snap cycling, configurable measure paging through Page keys or macOS Option+Up/Down, exact one-second repeat and three-second acceleration thresholds under a fake monotonic clock, release/focus-loss cancellation, Space-range extension, number-row and QWERTY double-play mappings, the `Q A W S E D R F` / `H U J I K O L P` 14K profile, 24K piano order, 48K stage focus, remapping, whole-selection lane moves, and successive first-note Shift + lane move/deselect/audition commands;
+- viewport-input tests for coarse wheel notches and fractional trackpad deltas, subpixel accumulation, natural direction, vertical and horizontal pane routing, BGM independence, cursor-anchored zoom, momentum cancellation, boundary clamping, middle-click latch capture/dead-zone/velocity/cancellation, and proof that scrolling emits no edit command;
+- clipboard golden fixtures for native, BMSE, and iBMSC copy/paste, including cross-layout mapping, time-origin anchoring, holds, timing/BGM events, resource references, and successful cut ordering;
+- BMS BGM-lane tests that preserve ordered repeated `#xxx01` lines, leading/intermediate/trailing `00` slots, subdivisions, collision-to-next-lane allocation, independent horizontal scrolling, edit, export, and reload;
+- resource-catalog tests for BMS `#WAV`/`#BMP` and osu! sample/background/video/storyboard entries, including unused definitions, shared sample/BGM assets, stable IDs/order, import/place/assign/replace/delete, usage lookup, deterministic target-ID allocation, audition, thumbnails, and export/reload;
+- click-preview tests using a fake audio backend that assert the exact asset, slice frames, layers, replacement/stop behavior, and BMSON polyphony rules requested by the BGM controller;
+- chart-play preview tests using a fake sample-frame clock and mixer that assert visual event times, music/BGM/playable-note scheduling, BMS `#WAV` lookup, repeated BGM lanes, same-row polyphony, BMSON slices/layers, active branch projection, seek/loop/restart, and playback-rate behavior;
+- hard-stop tests that assert cancellation of the transport session, clearing of scheduled and buffered work, immediate voice-stop requests for music and every keysound class, silence by the next mix callback, and rejection of late decoder completions from the cancelled session;
+- BMSON 1.0 conformance fixtures for restart/continuation slicing, duplicate pulses, conflicting continuation flags, BGM/playable collisions, fused layered notes, and unequal long-note lengths;
+- exact measure-to-BMSON flattening tests for 960-to-240 and 192-to-48 resolution, promoted output resolution, fractional-measure `lines`, missing versus empty `lines`, cross-measure holds, chart-level timing tracks, and rejection instead of pulse truncation;
+- razor-slicing controller tests for several snapped markers, continue/restart toggles, drag/delete/order, region audition, playable/BGM assignment, atomic commit/cancel/undo, and rejection of duplicate, boundary, out-of-range, or non-representable free-frame cuts without partial mutation;
+- semantic round-trip fixtures for every supported format and textual golden files where stable output is part of the contract;
+- native-project migration and round-trip tests covering embedded/referenced Lua, generator parameters and seeds, materialized output, asset relinking, unknown fields, and stale-recipe detection;
+- native-project tests covering several ordered difficulties, shared/inherited/overridden metadata, explicitly empty values, format-scoped provenance, and deterministic output groups;
+- autosave/recovery tests with a fake monotonic clock at the five-minute boundary, dirty/clean revisions, adjacent and untitled `.bak` paths, atomic replacement faults, checksum/schema corruption, stale temporary files, primary/backup revision ordering, startup detection, recovery actions, and proof that failures retain the previous valid files;
+- isolated crash-handler subprocess tests for top-level exceptions and supported platform faults, including crashes during allocation, document locking, serialization, audio, and autosave; assert the low-level handler does not deadlock or attempt document serialization and that the last validated `.bak` remains readable;
+- metadata adapter fixtures for BMS `#SUBARTIST`/`#STAGEFILE`, StepMania song/chart fields, osu!mania difficulty name/OD/HP/key count/AR, and BMSON fields, including malformed values and unsupported-target retention;
+- MIDI fixtures covering multiple tracks/channels, exact tick positions, tempo and meter changes, overlapping notes, controllers, markers, malformed input, and deterministic Lua mapping into notes/layers;
+- parametric-curve tests for linear/exponential functions, finite two-region bumps, zero-width impulses, fixed/adaptive sampling, SV/`SCROLLS`/`SPEEDS` output, exact endpoints, bump balancing and optional integrated-length normalization, preview/apply/cancel, regeneration, and target diagnostics;
+- BMS byte fixtures for BOM/UTF-8, CP932/Shift-JIS, EUC-KR/CP949, Windows-1252, ASCII ambiguity, invalid byte sequences, manual override, lossless unchanged saves, and unrepresentable edited characters;
+- chart-comparison tests for shared navigation, baseline/any-pair difference modes, normalized row signatures, layout mismatches, musical/audio-time alignment, and yellow-row markers;
+- tab-controller tests for shared transport/difficulty context, per-tab focus and retained view state, document-level undo, separate included storyboard dirty state, and prevention of hidden-tab or text-field lane-key handling;
+- metadata/navigation tests for ordered osu! tags, bookmark millisecond round trips, labeled beat/time-anchored sections, section jump/loop/select commands, and standalone-export loss diagnostics;
+- osu! timing-effect fixtures for kiai on/off boundaries, inherited and uninherited control points, simultaneous points, retained bit 3/unknown bits, minimal export insertion, and preview/comparison state;
+- BMS channel-map tests for exact command-memo assignments, raw unknown channels, ambiguous profile detection, custom playable/scratch/free-zone/pedal/stage assignments, reserved-channel rejection, duplicate output channels, unsupported family/lane combinations, layout transitions, long-note pairing, and stable import/export;
+- BMS control-tree golden tests for all random/set-random/if/elseif/else/end and switch/set-switch/case/default/skip/end commands, common content, nested mixed blocks, selected-leaf projection, seeded evaluation, editing scope, preserved-tree export, and explicit current-projection flattening;
+- MIDI export fixtures for lane-to-channel/note maps, taps, holds, velocities, tempo/meter, section markers, exact PPQ selection, musical/performance policies, and timing-feature diagnostics;
+- OSBX DSL tests for separate storyboard/note modules, multiple emitted difficulties, affine matrices, ordered compound transforms, hierarchy, keyframes, Lua/MIDI generation, OSB compatibility compilation, and shared preview/video evaluation;
+- conversion-library and CLI golden tests that submit equivalent UI/CLI requests and compare diagnostics and bytes, including deterministic profiles/branches, dry-run, JSON reports, exit codes, overwrite refusal, temporary-file cleanup, semantic re-import checks, bundled SM/SSC difficulties, deterministic per-difficulty BMS/BMSON/osu! output sets, and atomic multi-file failure;
+- streamed MP3/Ogg tests for sequential decode, seeks near the start/middle/end, waveform-cache determinism, cancellation, corrupt input, and memory use that stays bounded as file length grows;
+- build and test jobs on Windows, macOS, and Linux using the selected cross-platform audio libraries.
+
+Negative coverage must include truncated/oversized clipboard payloads, unknown records, invalid numbers and lane IDs, missing resources, unsafe resource paths, duplicate/conflicting WAV/BMP identifiers, exhausted target identifiers, unsupported sample/BGA media, deletion of referenced catalog entries, impossible holds, unrepresentable destination divisions, invalid/zero quantization grids, overflow during resolution promotion, reversed holds after endpoint quantization, unresolved row/lane/timing collisions, invalid encodings, malformed BMS object pairs, undefined BPM/STOP/WAV/BMP references, orphan/duplicate/missing BMS branch delimiters, invalid roll ranges/labels, unreachable/default conflicts, excessive nesting/outcome expansion, branch-local missing resources, malformed/unbounded legacy negative-BPM runs, a warp that the chosen target strategy cannot encode exactly, ambiguous converter inputs, unknown profiles, forbidden overwrite, cyclic OSBX graphs, invalid matrices, broken MIDI events, non-finite/overflowing curve values, invalid curve intervals, zero-integral normalization, excessive sampling, unrepresentable impulses, corrupt/truncated audio, cancelled background jobs, and exporter failures. Assert that rejected inputs do not partially mutate a document or replace a valid output file. Add bounded fuzz/property tests for byte-oriented BMS, clipboard, MIDI, and native-project parsers once their schemas stabilize.
+
+Keyboard negative cases must include unmapped and duplicate bindings, Shift with no playable-note selection, mixed selections, locked lanes, invalid destination lanes, note-kind incompatibility, destination collisions, auto-repeat, focus loss, text/IME input, unsupported snap denominators, and navigation across invalid measure geometry. A rejected Shift + lane move retains the original selection so the author can resolve the problem and retry.
+
+Use a controllable sample-frame clock for preview and transport tests. Keep renderer screenshot tests small and focused on layout, including split-stage gutters and scratch lanes; event placement and interaction behavior should primarily be checked through model/controller outputs so failures are stable and easy to diagnose.
+
+For note rendering, test mode-profile-to-glyph/orientation mappings directly for every 4K, 5K, and 6K profile. Keep a small set of image snapshots for arrow heads, holds, mines/special notes where supported, snap-color mode, semantic layer colors, yellow comparison rows, hidden/solo layers, split-stage gutters, independently scrolled BGM panes, column transitions, and mixed arrow/square skins at standard and high-DPI scales.
+
+## Implementation stages
+
+### 0. Fixtures and capability inventory
+
+- Add a Catch2 v3 test harness before expanding the model: top-level `include(CTest)`, a `BUILD_TESTING`-guarded test directory, `Catch2::Catch2WithMain`, and `catch_discover_tests(... DISCOVERY_MODE PRE_TEST)` registration visible to `ctest -N`.
+- Pin the BMSON 1.0 specification as the normative slicing fixture source and record the inspected BmsONE revision as UI/reference evidence. Add the published multi-pulse slicing example and all specified edge cases as expected semantic results before implementing the writer.
+- Assemble small, redistributable fixtures for BMS, BME/BML, SM, SSC, osu!mania, and BMSON 1.0.
+- Require paired reader/writer fixtures for every advertised format profile; no import-only profile counts as supported.
+- Include awkward cases: default 960- and alternate 192-division grids, supported/unsupported snap fractions, events requiring global division-count promotion, ambiguous time-signature interpretations, fractional measure lengths, column-count changes, stops/delays/warps, negative or zero scroll where legal, transitioning speeds, mixed BMSON sounds, continuation slices, holds, used/unused/missing WAV/BMP/sample/BGA resources, repeated BMS BGM lines with structural `00` slots, custom/unknown BMS channels, nested BMS random/conditional/switch trees, osu! tags/bookmarks/kiai transitions, and streamed music.
+- Add exact channel-map fixtures for every initial common BMS/BME/PMS layout and its corresponding visible/invisible/LN/mine families, including ambiguous combinations that must remain custom rather than being misdetected.
+- Add paired StepMania fixtures for native warps, 3.9-style negative BPM, negative-stop warps, stops within warp spans, same-beat timing commands, and target-profile export/re-import expectations.
+- Add BMS command-memo fixtures for repeated BGM lines, measure ratios, BPM/STOP collisions, STOP units, and selected compatibility-profile differences.
+- Add BMS control-flow fixtures for selected and fixed random values, IF/ELSEIF/ELSE groups, SWITCH/CASE/DEF fallthrough and SKIP, mixed nesting, common/orphan content, and malformed recovery profiles.
+- Add encoded BMS fixtures for UTF-8, CP932/Shift-JIS, EUC-KR/CP949, and Windows-1252, including ambiguous and invalid inputs.
+- Capture and document native clipboard samples from BMSE and iBMSC versions in scope, including their behavior for BGM, long notes, BPM, STOP, and free-grid positions.
+- Add matched SM/SSC fixtures for every timing feature both formats may express, so support is based on observed parse/write behavior rather than an assumed format hierarchy.
+- Add short and long MP3/Ogg fixtures and verify bounded-memory sequential decode, seeking, waveform completion, cache reuse, and click-preview on Windows, macOS, and Linux.
+- Document the exact data currently exposed or discarded by `libotoworm` for each fixture as reference evidence.
+- Assign every supported format feature to a wormedit-owned byte-preserving codec/timing component. Do not extend or link `libotoworm` as the implementation path.
+
+Exit condition: the initial import/export capability table and expected semantic result for every fixture are checked in.
+
+### 1. Editor document and timing engine
+
+- Add stable IDs, a default-960 chart division count, layout/stage segments, custom channel maps, a lossless BMS control tree and branch membership, a semantic note-layer palette, tags, navigation markers/sections, rational local positions, measure chunks with editable lengths, typed timing/scroll/kiai/BGA events, timing anchors, ordered BGM source lanes, notes, audio/visual assets, clips, and a shared resource catalog with target provenance.
+- Add data-defined built-in BMS lane profiles for the command memo's common 5K/7K/10K/14K/PMS and special layouts, with confidence-based detection and lossless custom-map fallback. Add Keyboardmania-style 24K/48K only as BMSON generic-key profiles.
+- Add exact signed beat-zero/audio offset data and apply it consistently in timing, waveform, preview, and conversion.
+- Add exact global redivision operations, time-signature suggestions/disambiguation, and prefix indexes for global position lookup.
+- Implement beat/pulse, chart-time, and audio-time conversion with tested boundary behavior around BPM changes, stops, delays, and warps.
+- Store canonical exact-beat warps and legacy negative-BPM/negative-stop provenance; add profile-driven import normalization and warp export policies.
+- Replace the lossy `Chart` conversion with an importer that reports preserved, approximated, and dropped fields.
+- Add byte-oriented BMS ingestion, encoding detection/override, UTF-8 normalization, original-byte provenance, and an iconv-compatible conversion interface.
+- Implement wormedit-owned BMS control-tree parsing/evaluation with fixed rolls, explicit ends, mixed nesting, switch fallthrough, and caller-selected deterministic projections without discarding the tree; use the `libotoworm` audit only as a regression reference.
+- Establish native project serialization, asset references, generator-recipe records, and a migration/version field.
+- Serialize several ordered difficulties, shared/per-difficulty/format-scoped metadata with explicit inheritance, and named single-file or multi-file output groups.
+- Add the five-minute native-project autosave coordinator, validated atomic `.bak` envelope, optional checksummed command journal, startup recovery scan, and platform crash-marker backend described in the recovery contract.
+- Define serialized, remappable input profiles using physical key positions, including all initial single-, double-, 14K-, 24K-, and 48K-stage mappings.
+
+Exit condition: fixtures import into an inspectable document without losing data required by their intended round trip.
+
+### 2. Read-only chart view and streamed waveform
+
+- Replace the scaffold's direct Nuklear calls with backend-neutral workspace/tab view models and typed UI actions, then put Nuklear lifecycle, widget composition, styling, and third-party types entirely in its frontend adapter.
+- Add a checked single-value CMake UI-backend selection and private frontend alias target; keep ImGui/Clay adapters optional until a replacement or performance spike is needed.
+- Build the shared song-workspace tab controller and Setup, Metadata, Timing, Compose, Audio/Slices, and Compare/Validate shells with retained transport/difficulty context and isolated focus handling. Keep the Storyboard tab as a disabled/placeholder entry until stage 7 if helpful for layout stability.
+- Build the fixed left timing rail with measure/meter, BPM, scroll/SV, speed, stop, delay, warp, kiai, anchor, and section lanes; the variable-column note field with skin/snap views, continuous/split-stage presentation and layer coloring; the independently horizontally scrollable BGM pane; timing markers; and a read-only BMS branch outline driving the active selected-leaf projection.
+- Add synchronized side-by-side difficulty preview with normalized row comparison and yellow backgrounds on differing rows.
+- Add chunked decoding, multiresolution peak generation, cache invalidation, and waveform rendering.
+- Add preview transport, seek, loop, playback rate, beat/note assist ticks, meter-aware metronome/count-in, zoom, synchronized cursor behavior, and a chart-play view driven by the shared timing/scroll evaluator.
+- Add the modeless Timing Settings panel with independent visibility for every timing lane, including BPM, and enforce timing locks through headless commands/controllers.
+- Add full-autoplay preview scheduling for music, BMS/BMSON BGM, playable-note keysounds, slices, and simultaneous layers using one sample-frame clock.
+- Implement hard Stop as transport-session cancellation plus synchronous queue/voice flush, with silence by the next audio callback and protection against late decode jobs.
+- Add non-committing visual previews for local beat snapping and last-BPM interval fitting.
+- Display note sound/slice references and labels read-only, with slice-aware click-preview on BGM events.
+- Display searchable sample/BGM/BGA resource lists, usage/missing state, audio audition, visual thumbnails, and timed BGA changes in chart-play preview.
+
+Exit condition: every fixture can be navigated with timing, effective scroll, notes, and waveform aligned at known checkpoints.
+
+### 3. Core editing
+
+- Implement mouse and Space range selection, first-class snapped mouse note/hold placement and paint drag, object hover states and type-specific double-click editors, global division and exact snap/grid policy, Up/Down snap navigation, Left/Right supported-snap cycling, configurable cross-platform measure paging with timed repeat/acceleration, note and hold creation, move/resize/delete, and note labels.
+- Implement previewable exact row quantization using active-snap or numeric standard-measure/per-measure divisions, deterministic ties, configurable row/event and hold scope, collision diagnostics, optional exact resolution promotion, and one atomic command.
+- Implement profile-driven lane-key entry, whole-selection lane assignment, and successive first-note Shift + lane move/deselect/audition behavior, including the on-screen binding legend and 48K stage focus.
+- Implement native rich copy/paste plus fixture-backed BMSE and iBMSC clipboard adapters with previewed lane/resource/conflict mapping.
+- Implement sample/BGM/BGA resource import and create/assign/replace placement commands, referenced-resource deletion protection, usage navigation, and deterministic BMS identifier allocation.
+- Implement semantic-layer palette editing, note painting/assignment, filters, solo/lock behavior, and native-project persistence.
+- Implement measure insertion/removal, exact length editing, global redivision, time-signature selection, and column-layout changes.
+- Implement BPM and SV event editing, including StepMania speed transitions.
+- Implement ordered tag editing, bookmark/section creation and navigation, and kiai region editing with retained timing-effect bits.
+- Implement custom BMS channel-map editing with migration preview and validation.
+- Implement BMS branch creation/removal/reordering, selected-leaf/common insertion scopes, branch moves/replication, manual/seeded branch selection, and tree-aware selection safety.
+- Implement Ctrl-drag local beat fitting, last-BPM interval fitting, locked anchors, optional waveform-onset snapping, and atomic preview/commit behavior.
+- Add command-based undo/redo, dirty tracking, clipboard operations, and live validation; expose document revisions to the stage-one autosave/recovery service.
+- Define timing-edit behavior for beat-anchored and time-anchored notes.
+
+Exit condition: a chart can be authored and recovered after restart without exporting it.
+
+### 4. Audio clips and BMSON authoring
+
+- Build an asset browser and sound-channel waveform view that displays specification-derived slice boundaries and provides audition controls.
+- Add the multi-marker razor mode over the timing-aligned channel waveform. Snap clicks to the active divisor, default to continuation, use Shift-click for restart, preview all edits, and commit/cancel the marker set atomically.
+- Assign BMS keysounds and BMSON sound-channel events to playable notes or BGM events.
+- Edit BMSON restart/continuation state and event positions, recomputing derived slices as timing changes.
+- Import and preserve BMSON channel/continuation provenance; export valid BMSON 1.0 sound channels without fade, gain, pan, or non-standard slice fields.
+- Add the specified collision/layering behavior, open-ended final slices, source replacement/relinking, and missing-file diagnostics.
+
+Exit condition: the mixed-sound and continuation fixtures round-trip semantically, and a long source can be sliced into a newly authored BMSON chart without rendering separate audio files.
+
+### 5. Format export passes
+
+- Implement the shared conversion request/pipeline and expose it through both in-editor conversion preview and the headless rdconverter-style CLI.
+- Implement and validate SM and SSC export as authoring peers, using their explicit capability profiles.
+- Complete paired readers and writers for every advertised format profile and gate support claims on semantic export/re-import fixtures.
+- Add native-warp and StepMania 3.9 negative-BPM export strategies selected by target implementation, with semantic re-import verification.
+- Implement osu!mania export with timing-point and sample mapping.
+- Implement selected BMS dialect exports with keysound/resource allocation, custom channel maps, preserved control trees, and explicit active-projection flattening.
+- Implement Standard MIDI export from semantic lane maps, with explicit musical/performance timing policies and exact-or-diagnosed PPQ conversion.
+- Add per-target preview, warnings, and round-trip regression tests.
+
+Exit condition: the supported feature matrix has no unclassified losses and exported fixtures reload to the expected semantic documents.
+
+### 6. Editing depth and performance
+
+- Add batch transforms, reusable quantization presets/reports, timing shifts, lane remapping, label search, and audio-clip reuse tools.
+- Profile large charts and long compressed audio; bound memory use and keep decode/analysis work off the UI thread.
+- Add cancellation and progress reporting for imports, waveform generation, validation, and export.
+
+### 7. Deferred storyboard and scripting authoring
+
+- Parse standalone `.osb` files and difficulty-specific storyboard content from `.osu` `[Events]` into a shared storyboard model while retaining unknown text losslessly.
+- Implement the Premake-style [OSBX Lua DSL](osbx-draft-spec.md), including separate storyboard/chart modules, stable IDs, multiple difficulties, groups, 2D affine matrices, ordered compound transforms, reusable clips, and OSB compatibility diagnostics.
+- Activate the Storyboard workspace tab and build an osu!-style canvas and keyframe timeline editor for sprites, animations, samples, hierarchy, layers/draw order, origins/pivots, transform stacks, property tracks/easing, loops, triggers, and variables.
+- Preview storyboards through the same sample-frame transport clock and deterministic scene evaluator used by offline rendering, including Pass/Fail-state simulation and optional chart overlays.
+- Export standalone `.osb` and embedded difficulty-specific events with semantic round-trip tests and stable ordering where ordering affects draw behavior.
+- Embed a cross-platform Lua runtime for pattern generators after defining a versioned scripting API.
+- Add cross-platform MIDI parsing and import MIDI files as stable project assets.
+- Give Lua scripts read-only access to selection, measures, timing, lane profiles, storyboard assets/nodes, imported MIDI data, and deterministic seeded randomness. Scripts may emit chart notes/layers, OSBX objects/keyframes, or both in one proposed command batch.
+- Add deterministic parametric generators for SV, `SCROLLS`, and `SPEEDS`, including linear/exponential helpers, finite two-region bumps, explicit zero-width impulses, fixed/adaptive sampling, and an ordered post-process pipeline with optional normalization that preserves integrated scroll displacement or distance over the segment.
+- Allow note and storyboard modules to be included, evaluated, previewed, and exported independently. Let one project emit several named difficulties, including multiple charts collected into an SM/SSC file.
+- Persist Lua generator recipes, inputs, parameters, seeds, hashes, and materialized note/storyboard output in the project; regeneration is always explicit and previewable.
+- Add storyboard-to-video export behind an encoder interface. Evaluate linked FFmpeg libraries versus a packaged/discovered `ffmpeg` process for timestamped frames, audio mixing/muxing, cancellation, diagnostics, and cross-platform distribution.
+- Add execution limits, cancellation, structured diagnostics, and explicit API-version compatibility. Pattern scripts should not mutate the live document directly.
+- Add golden tests for bundled chart/storyboard generators, fixed-seed determinism, matrix/keyframe output, separate/combined modules, multiple difficulties, invalid script handling, API migrations, preview/apply/cancel, and undo/redo.
+
+Exit condition: supported storyboard fixtures edit, preview, export to OSB, and render to video predictably; OSBX matrix/compound behavior follows its versioned specification; and bundled Lua generators produce identical chart/storyboard command batches on Windows, macOS, and Linux for a fixed document and seed.
+
+### 8. Late format and gameplay compatibility
+
+- Add Quaver reader/writer profiles only after its normative schema and current implementation behavior are captured in paired positive/negative fixtures.
+- Add full StepMania roll authoring with a distinct hold subtype, visual skin, repeated-input preview behavior, target-profile serialization, and preservation of implementation-specific judgement/life settings.
+- Add Pump-style ticked holds through chart-scoped tick-count timing segments, including a visible timing lane/editor, exact tick scheduling over hold intervals, gameplay preview, conversion diagnostics, and SM/SSC profile-specific read/write behavior.
+- Keep ordinary holds independent from tick policy: changing a tick-count segment must not rewrite hold endpoints, and exporting to a target without ticked holds must preserve project data while producing an explicit loss/transform decision.
+- Add deterministic tests for edits, same-position timing order, preview seeking, side-by-side comparison, copy/paste, undo/redo, and semantic export/re-import of rolls and ticked holds.
+
+Exit condition: each promoted late adapter/gameplay profile has symmetric read/write coverage, deterministic preview semantics, and no unclassified loss.
+
+## Early technical decisions
+
+- Use Catch2 v3 for C++ tests and discover individual cases through CMake/CTest with `catch_discover_tests`, rather than registering each executable as one opaque test.
+- Use a layered, data-oriented C++20 architecture: C-shaped aggregates and free-function transformations, with `optional`, `variant`, RAII, spans/views, ranges, and typed results providing modern safety.
+- Rust-like explicit error/value flow and readable monadic pipelines are welcome; expected failures remain values rather than control flow hidden in exceptions.
+- Prefer `std::` facilities. Boost is allowed for specific justified gaps, remains narrowly linked, and stays behind project-owned types and interfaces.
+- Use `snake_case` for project code and `<type>_t` for project-defined types; prefer scoped `enum class` types. Methods on structs are welcome when they express behavior local to that data.
+- Keep views, controllers, commands/policies, core data, format codecs, and platform backends as separate dependency layers. Avoid manager singletons and routine class hierarchies.
+- Treat Nuklear as a replaceable initial frontend: controllers own semantic view state/actions, frontend adapters own widget-library types/composition, and performance-critical editor surfaces use shared renderer-neutral draw/hit-test data. Permit ImGui or Clay replacement through one CMake/frontend boundary.
+- Express closed conversion strategies as policy values plus tables/free functions or variant visitors. Reserve virtual interfaces for open runtime backends such as decoders and encoders.
+- Keep file adapters outside the UI layer.
+- Use ordered, independently editable measures as the chart's primary event containers; do not use a monolithic chart-wide event buffer.
+- Keep global division count, exact measure-length ratio, and displayed time signature as distinct properties.
+- Keep playable notes, holds, and BGM lane objects inside ordered measure chunks. Keep BPM, stops, delays, warps, SV/scroll/speed, kiai, bookmarks, and other cross-measure information in separate chart-level tracks addressed by exact measure-local positions.
+- Default new charts to 960 divisions per standard 4/4 measure (`192 * 5`).
+- Store high-resolution measures sparsely and prohibit silent quantization when changing the global division count.
+- Quantize row data through one exact-rational `quantize_request_t` transform shared by editor commands and conversion. Preserve coincident rows, preview all movement/collisions, and never silently alter global resolution.
+- Map the editor's divisions per standard measure to BMSON pulses per quarter note explicitly: 960 maps naturally to 240 and 192 to 48. Emit measure boundaries as BMSON bar-line pulses and promote output resolution or reject instead of truncating.
+- Treat BPM and scroll velocity as separate authored tracks even if a source format stores them in the same section.
+- Store one exact signed beat-zero/audio offset using the StepMania sign convention. Read/write native SM/SSC `OFFSET`, always write the requested BMS `#OFFSET` extension when present, and transform or reject explicitly for targets without an equivalent field.
+- Represent playable columns through layout segments rather than a fixed compile-time maximum.
+- Keep lane identity separate from note rendering, with StepMania-style arrow profiles available for 4K, 5K, and 6K.
+- Toggle the note field between target-game skin rendering and an exact rational snap-color view.
+- Support continuous and split-stage presentation for double-style charts, with built-in BMS 10K/14K grouping and configurable osu!mania partitions.
+- Keep semantic note layers separate from gameplay note kinds and exported format data; persist their palette and assignments in the native project document.
+- Preserve repeated BMS `#xxx01` statements as ordered BGM lanes with structural `00` cells; keep their horizontal scroll independent from playable lanes and make their sounds directly previewable.
+- Maintain one stable resource catalog with Samples, BGM, and BGA list views. Preserve unused BMS WAV/BMP and osu! sample/event resources, and keep placed note/BGM/BGA events separate from the assets they reference.
+- Treat stops and delays as required distinct timing events regardless of target support, with explicit loss diagnostics and well-defined discontinuity ordering.
+- Store warps canonically as exact musical intervals. Normalize StepMania 3.9 negative BPM and negative-stop warps on import while retaining provenance, then choose native-warp or legacy encoding through a target-profile export strategy.
+- Treat `libotoworm` only as readable reference code and fixture evidence. Wormedit owns and tests every production parser, writer, timing evaluator, and converter and removes the `otoworm::otoworm` link after replacement coverage lands.
+- Preserve BMS random/IF/ELSE/switch programs as editable trees; render root content plus the currently selected active leaves and never collapse the source to one hidden random evaluation on import.
+- Detect BMS text encoding before parsing, normalize to UTF-8 internally, retain byte/encoding provenance, and evaluate iconv-compatible cross-platform conversion.
+- Treat finite, seekable MP3 and Ogg files of variable length as the required streamed-audio case.
+- Use cross-platform decoding libraries for Windows, macOS, and Linux; keep waveform generation and playback independent of OS-only codec APIs.
+- Treat waveform beat anchors as editable synchronization objects and derive the necessary BPM changes through a previewable timing solver.
+- Preview chart motion and music through the same timing/scroll evaluator used by editing. Full autoplay includes BMS/BMSON BGM and playable-note keysounds.
+- Treat transport Stop as a hard cancellation boundary: flush every music/keysound/click-preview voice and queue immediately, silence the next mix buffer, and reject stale asynchronous completions by session ID.
+- Support both `.sm` and `.ssc` as authoring targets and classify their capabilities feature by feature.
+- Preserve source-format provenance until the user intentionally normalizes it.
+- Use immutable/stable identifiers for editable entities.
+- Make audio clips reference source frames and keep slicing non-destructive.
+- Keep BMSON 1.0 authoring limited to its pulse/continuation-based slicing model; do not add fade, gain, or pan fields.
+- Use the BMSON 1.0 distinct-pulse slicing and restart rules as normative. Use BmsONE's grid-click, Shift-restart, waveform-lane, and audition behavior as interaction reference, extended by an atomic multi-marker razor workflow.
+- Do not use the current seconds-keyed `std::map` representation as the long-term editable document.
+- Keep core editing and preview behavior headless-testable and run regression tests on all three target platforms.
+- Support both mouse selection and StepMania-style Space range selection through testable controllers.
+- Treat the mouse as a complete authoring input: snapped note/hold placement, hover feedback for every editable object, paint drag, and same-object double-click property editing such as BPM values.
+- Page by a configurable positive number of measures (default one) with Page Up/Down on Windows/Linux and Option+Up/Down on macOS; begin held repeat at one second and accelerate it at three seconds through controller-owned timing.
+- Support coarse mouse wheels and smooth two-axis trackpad scrolling with precise-delta accumulation, natural direction, gesture-stable pane routing, independent BGM horizontal motion, configurable sensitivity, cursor-anchored zoom, and interruptible momentum.
+- Provide a visible middle-click autoscroll latch captured to the starting pane, including two-axis velocity and independent horizontal BGM-lane scrolling, with immediate deterministic cancellation.
+- Store remappable physical lane-key bindings in lane profiles; use the number row for the left/only stage, QWERTY row for the right stage, the specified interleaved BMS 14K layout, and a banked virtual-piano layout for 24K/48K.
+- Store invisible notes, long notes, mines, and retained format-specific note kinds explicitly; render and edit them without collapsing their source semantics.
+- Reserve distinct StepMania roll and tick-count timing semantics in the model, with full roll/Pump-style ticked-hold authoring and preview deferred to the late compatibility milestone.
+- Follow uBMSC's successive Shift + lane assignment semantics: move, deselect, and optionally audition the first selected playable note while retaining the rest of the selection.
+- Use Up/Down for exact active-snap cursor movement and Left/Right to cycle only snap fractions supported by the current resolution.
+- Treat osu! tags, bookmarks, and kiai timing state as first-class data; preserve unrelated timing-effect bits when kiai changes.
+- Use editable semantic-to-BMS/MIDI channel maps for custom BMS layouts and Standard MIDI export.
+- Include the command memo's common BMS/BME/PMS lane mappings as data-defined profiles while preserving exact raw channel identities and unusual custom layouts.
+- Support synchronized side-by-side difficulty preview and mark differing musical rows with a yellow background.
+- Use an osu!-style tabbed song workspace with separate Setup, Metadata, Timing, Compose, Storyboard, Audio/Slices, and Compare/Validate controllers over shared document, difficulty, transport, and command history.
+- Use one conversion library for in-editor and rdconverter-style command-line conversion, with deterministic profiles, typed loss reports, transactional output, and stable automation behavior.
+- Defer `.osb`/OSBX authoring, video export, and Lua generation until the chart/timing milestones are stable, while preserving lossless storyboard data and clean extension points now.
+- Make Lua generators first-class, versioned project records that can emit chart or storyboard data separately, or both atomically, with explicit regeneration, deterministic seeds, declared asset inputs, and materialized editable output.
+- Let one project/DSL source emit several named difficulties, including grouped SM/SSC output.
+- Expose imported MIDI to generators through a structured host API with exact tick data; do not require Lua scripts to parse MIDI bytes or read arbitrary paths.
+- Treat Lua scroll curves as versioned recipes over `p in [0,1]`; preview their sampled events and use the same deterministic integration for normalization, display, regeneration, and tests.
+- Use the versioned Premake-style OSBX Lua DSL for matrix/compound storyboard generation and one scene evaluator for keyframe editing, preview, OSB compilation, and video rendering.
+- Treat FFmpeg as the leading video encoding/muxing candidate behind an implementation-neutral cross-platform encoder interface.
+- Give native projects several ordered difficulties and reviewed output groups: bundle compatible SM/SSC charts and emit deterministic per-difficulty files for BMS-family, BMSON, and osu!mania targets.
+- Put metadata in a dedicated tab with explicit shared, per-difficulty, and target-format scope; include BMS `#SUBARTIST`/`#STAGEFILE` and osu!mania difficulty name, OD, HP, key count, and retained AR.
+- Keep Quaver rhythm-game support as a late-stage bidirectional adapter governed by the same capability and regression gates.
+- Autosave dirty documents every five minutes to a validated atomic `.bak`, detect and compare it on reopen, preserve the primary and last good backup on every failure, and keep hard-crash handlers limited to safe marker/diagnostic work.
+
+## Open questions
+
+1. What should note labels mean in practice: private author comments, visible note text, keysound names, gameplay annotations, or several of these?
+2. Must labels travel with standalone chart files, or is native-project persistence sufficient for formats without a native representation?
+3. Which BMS dialect/player is the primary export compatibility target (for example, conservative legacy BMS versus modern extensions used by beatoraja)?
+4. How much non-gameplay source data must round-trip initially: BGA/storyboard/video, preview metadata, custom headers/tags, and comments?
+5. When a BPM edit affects time-anchored osu!mania notes, which behavior should be the default: keep their audio times fixed or move them with the beat grid?
+6. May column count change only at measure boundaries, or must mid-measure layout changes be editable too?
+7. When locally dragging an unlocked beat, should the default preserve both neighboring beat anchors by changing BPM on both sides, or preserve only the previous anchor and allow the following grid to move?
+8. Which exact 5K and 6K StepMania-style layouts and arrow orientations should ship as built-in profiles?
+9. Should the later storyboard editor initially target standalone shared `.osb` files, difficulty-specific `[Events]`, or both in its first release?
+10. Should notes eventually allow several semantic tags/layers at once, and if so, how should multiple assigned colors be drawn?
+11. Which exact BMS double-play profiles should be named 10K and 14K in the UI, and should scratch columns sit outside or inside each player stage by default?
+12. Should the native project ship first as a human-readable folder/manifest, a single-file archive, or both?
+13. Which MIDI features beyond notes, tempo, meter, markers, and controller data must the first Lua API expose (for example pitch bend, aftertouch, lyrics, or SysEx)?
+14. What is the complete note-snap color table for straight and tuplet divisions beyond the initial red/blue/yellow classes?
+15. Which BMS encodings and aliases belong in the automatic detector's initial candidate set, and what confidence threshold should force manual confirmation?
+16. Which initial video containers/codecs, resolutions, frame rates, alpha/background policies, and audio-mix options are required?
+17. What should the converter executable be named, and should it provide an `rdconverter` compatibility alias or only a compatible workflow?
+18. Which StepMania implementations define the initial export profiles, and exactly which native-warp, negative-BPM, and negative-stop encodings does each accept?
+
+## Immediate next work
+
+Start with stage 0 rather than UI implementation. The first deliverable should be the fixture set, BMS command-memo cases, native/legacy StepMania warp cases, and a checked reference matrix showing current `libotoworm` behavior beside wormedit's independent required semantics. In parallel, sketch the layered C++20 aggregates and APIs for rational positions, stable IDs, canonical warps/provenance, BGM source lanes, encoding provenance, audio assets/clips, lane profiles, typed timing events, and shared conversion requests/reports; those types are shared by timing lanes, the DDReam-style waveform, comparison, labels, BMSON slicing, the UI converter, and the CLI.

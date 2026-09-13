@@ -1,0 +1,88 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "headless",
+      "displayName": "Headless core and tests",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/headless",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON",
+        "WORMEDIT_BUILD_APP": "OFF",
+        "WORMEDIT_ENABLE_LUA": "ON"
+      }
+    },
+    {
+      "name": "linux-cross-headless",
+      "displayName": "Cross-compile headless core for Linux",
+      "inherits": "headless",
+      "binaryDir": "${sourceDir}/build/linux-cross-headless",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/linux-cross.cmake",
+      "cacheVariables": {
+        "WORMEDIT_LINUX_C_COMPILER": "$env{WORMEDIT_LINUX_C_COMPILER}",
+        "WORMEDIT_LINUX_CXX_COMPILER": "$env{WORMEDIT_LINUX_CXX_COMPILER}",
+        "WORMEDIT_LINUX_SYSROOT": "$env{WORMEDIT_LINUX_SYSROOT}",
+        "WORMEDIT_LINUX_TARGET": "$env{WORMEDIT_LINUX_TARGET}",
+        "WORMEDIT_CROSS_EMULATOR": "$env{WORMEDIT_CROSS_EMULATOR}"
+      }
+    },
+    {
+      "name": "windows-cross-headless",
+      "displayName": "Cross-compile headless core for Windows",
+      "inherits": "headless",
+      "binaryDir": "${sourceDir}/build/windows-cross-headless",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/windows-cross.cmake",
+      "cacheVariables": {
+        "WORMEDIT_WINDOWS_C_COMPILER": "$env{WORMEDIT_WINDOWS_C_COMPILER}",
+        "WORMEDIT_WINDOWS_CXX_COMPILER": "$env{WORMEDIT_WINDOWS_CXX_COMPILER}",
+        "WORMEDIT_WINDOWS_RC_COMPILER": "$env{WORMEDIT_WINDOWS_RC_COMPILER}",
+        "WORMEDIT_WINDOWS_SYSROOT": "$env{WORMEDIT_WINDOWS_SYSROOT}",
+        "WORMEDIT_WINDOWS_TARGET": "$env{WORMEDIT_WINDOWS_TARGET}",
+        "WORMEDIT_CROSS_EMULATOR": "$env{WORMEDIT_CROSS_EMULATOR}"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "headless",
+      "configurePreset": "headless"
+    },
+    {
+      "name": "linux-cross-headless",
+      "configurePreset": "linux-cross-headless"
+    },
+    {
+      "name": "windows-cross-headless",
+      "configurePreset": "windows-cross-headless"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "headless",
+      "configurePreset": "headless",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-cross-headless",
+      "configurePreset": "linux-cross-headless",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-cross-headless",
+      "configurePreset": "windows-cross-headless",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

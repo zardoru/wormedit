@@ -17,6 +17,8 @@ enum class bms_parse_diagnostic_code_t {
     invalid_measure,
     malformed_control,
     duplicate_resource,
+    unsupported_channel,
+    unresolved_reference,
 };
 
 struct bms_parse_diagnostic_t {
@@ -35,6 +37,11 @@ struct bms_parse_options_t {
     std::size_t max_line_bytes{1024U * 1024U};
     std::size_t max_nesting_depth{256};
     std::size_t max_lines{262144};
+    // Exact BMS subdivisions may promote the chart's row resolution. Payloads
+    // requiring a larger resolution remain raw and receive a diagnostic.
+    std::uint64_t max_chart_resolution{1'000'000'000ULL};
+    // Optional built-in profile selected by the project or importing caller.
+    std::optional<std::string> lane_profile_id;
 };
 
 struct bms_parse_result_t {
@@ -49,8 +56,8 @@ struct bms_parse_result_t {
 // backend provided by the build and host; unsupported requests fail explicitly.
 [[nodiscard]] auto is_bms_text_encoding_supported(text_encoding_t encoding) -> bool;
 
-// Parses BMS-family bytes into a loss-aware source tree. This initial reader handles
-// metadata, resources, measure lengths, and control flow; chart-channel payloads remain raw.
+// Parses BMS-family bytes into a loss-aware source tree and materializes supported
+// root-level channel events. Conditional channel payloads remain raw until projection.
 [[nodiscard]] auto parse_bms_bytes(std::span<const std::byte> bytes,
                                    bms_parse_options_t options = {}) -> bms_parse_result_t;
 

@@ -280,7 +280,9 @@ struct bgm_event_t {
     object_id_t id;
     local_position_t position;
     object_id_t source_lane;
-    resource_id_t sound;
+    // Empty BMS channel objects still occupy a source slot, so imported events
+    // may have no sound binding while retaining their structural position.
+    std::optional<resource_id_t> sound;
     std::size_t structural_slot{};
     std::optional<branch_id_t> branch;
     source_provenance_t provenance;
@@ -449,6 +451,8 @@ enum class resource_role_t {
 struct target_resource_identity_t {
     format_family_t family{format_family_t::native_project};
     std::string identifier;
+    // Format-specific namespace, required for BMS WAV versus BMP IDs.
+    std::string namespace_name;
 };
 
 struct resource_entry_t {

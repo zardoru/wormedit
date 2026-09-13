@@ -1,10 +1,14 @@
 #include <wormedit/core/document.h>
 
 #include <algorithm>
+#include <cctype>
+#include <functional>
 #include <limits>
+#include <map>
 #include <numeric>
 #include <ranges>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -84,6 +88,452 @@ auto measure_error_message(measure_error_t error) -> std::string {
 auto contains_resource(const std::unordered_set<std::uint64_t>& resources, resource_id_t id)
     -> bool {
     return id && resources.contains(id.value);
+}
+
+auto valid_format_family(format_family_t family) -> bool {
+    switch (family) {
+    case format_family_t::native_project:
+    case format_family_t::bms:
+    case format_family_t::stepmania:
+    case format_family_t::osu_mania:
+    case format_family_t::bmson:
+    case format_family_t::midi:
+    case format_family_t::quaver:
+        return true;
+    }
+    return false;
+}
+
+auto canonical_target_identifier(const target_resource_identity_t& identity) -> std::string {
+    auto result = identity.identifier;
+    if (identity.family == format_family_t::bms) {
+        std::ranges::transform(result, result.begin(), [](unsigned char character) {
+            return character >= 'a' && character <= 'z'
+                       ? static_cast<char>(character - ('a' - 'A'))
+                       : static_cast<char>(character);
+        });
+    }
+    return result;
+}
+
+auto canonical_target_namespace(const target_resource_identity_t& identity) -> std::string {
+    auto result = identity.namespace_name;
+    if (identity.family == format_family_t::bms) {
+        std::ranges::transform(result, result.begin(), [](unsigned char character) {
+            return character >= 'a' && character <= 'z'
+                       ? static_cast<char>(character - ('a' - 'A'))
+                       : static_cast<char>(character);
+        });
+    }
+    return result;
+}
+
+auto line_ending_size(bms_line_ending_t ending) -> std::optional<std::size_t> {
+    switch (ending) {
+    case bms_line_ending_t::none:
+        return 0;
+    case bms_line_ending_t::lf:
+    case bms_line_ending_t::cr:
+        return 1;
+    case bms_line_ending_t::crlf:
+        return 2;
+    }
+    return std::nullopt;
+}
+
+auto is_synthetic_control_node(const bms_control_node_t& node) -> bool {
+    return node.kind == bms_control_kind_t::if_group;
+}
+
+auto first_source_byte(const bms_control_node_t& node) -> std::optional<std::size_t> {
+    if (node.kind != bms_control_kind_t::root && !is_synthetic_control_node(node)) {
+        return node.source_span.byte_begin;
+    }
+    for (const auto& child : node.children) {
+        if (const auto first = first_source_byte(child); first.has_value()) {
+            return first;
+        }
+    }
+    if (node.close_source_span.has_value()) {
+        return node.close_source_span->byte_begin;
+    }
+    return std::nullopt;
+}
+
+auto control_kind_has_value(bms_control_kind_t kind) -> bool {
+    switch (kind) {
+    case bms_control_kind_t::random:
+    case bms_control_kind_t::set_random:
+    case bms_control_kind_t::if_branch:
+    case bms_control_kind_t::else_if_branch:
+    case bms_control_kind_t::switch_block:
+    case bms_control_kind_t::set_switch:
+    case bms_control_kind_t::case_branch:
+        return true;
+    case bms_control_kind_t::root:
+    case bms_control_kind_t::raw_statement:
+    case bms_control_kind_t::if_group:
+    case bms_control_kind_t::else_branch:
+    case bms_control_kind_t::default_branch:
+    case bms_control_kind_t::skip:
+        return false;
+    }
+    return false;
+}
+
+auto control_kind_requires_positive_value(bms_control_kind_t kind) -> bool {
+    switch (kind) {
+    case bms_control_kind_t::random:
+    case bms_control_kind_t::set_random:
+    case bms_control_kind_t::if_branch:
+    case bms_control_kind_t::else_if_branch:
+    case bms_control_kind_t::switch_block:
+    case bms_control_kind_t::set_switch:
+    case bms_control_kind_t::case_branch:
+        return true;
+    case bms_control_kind_t::root:
+    case bms_control_kind_t::raw_statement:
+    case bms_control_kind_t::if_group:
+    case bms_control_kind_t::else_branch:
+    case bms_control_kind_t::default_branch:
+    case bms_control_kind_t::skip:
+        return false;
+    }
+    return false;
+}
+
+auto valid_control_kind(bms_control_kind_t kind) -> bool {
+    switch (kind) {
+    case bms_control_kind_t::root:
+    case bms_control_kind_t::raw_statement:
+    case bms_control_kind_t::random:
+    case bms_control_kind_t::set_random:
+    case bms_control_kind_t::if_group:
+    case bms_control_kind_t::if_branch:
+    case bms_control_kind_t::else_if_branch:
+    case bms_control_kind_t::else_branch:
+    case bms_control_kind_t::switch_block:
+    case bms_control_kind_t::set_switch:
+    case bms_control_kind_t::case_branch:
+    case bms_control_kind_t::default_branch:
+    case bms_control_kind_t::skip:
+        return true;
+    }
+    return false;
+}
+
+auto is_conditional_branch(bms_control_kind_t kind) -> bool {
+    return kind == bms_control_kind_t::if_branch ||
+           kind == bms_control_kind_t::else_if_branch ||
+           kind == bms_control_kind_t::else_branch;
+}
+
+auto control_kind_may_have_close(bms_control_kind_t kind) -> bool {
+    return kind == bms_control_kind_t::random || kind == bms_control_kind_t::if_group ||
+           kind == bms_control_kind_t::switch_block;
+}
+
+auto is_switch_branch(bms_control_kind_t kind) -> bool {
+    return kind == bms_control_kind_t::case_branch ||
+           kind == bms_control_kind_t::default_branch;
+}
+
+auto validate_bms_control_tree(const chart_document_t& chart,
+                               diagnostic_list_t& diagnostics) -> void {
+    std::unordered_map<std::uint64_t, const bms_control_node_t*> nodes_by_id;
+    std::unordered_set<std::uint64_t> node_ids;
+    struct source_record_t {
+        bms_source_span_t span;
+        std::size_t source_order{};
+    };
+    std::vector<source_record_t> source_records;
+
+    std::optional<std::size_t> original_source_size;
+    for (const auto& group : chart.metadata.format_groups) {
+        if (group.family == format_family_t::bms && group.encoding.original_bytes) {
+            original_source_size = group.encoding.original_bytes->size();
+            break;
+        }
+    }
+
+    if (!chart.bms_control_tree.has_value()) {
+        if (!chart.active_branch_selection.empty()) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "active branch selection exists without a BMS control tree");
+        }
+        return;
+    }
+
+    const auto& root = *chart.bms_control_tree;
+    if (root.kind != bms_control_kind_t::root) {
+        add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                       "BMS control tree root has a non-root kind");
+    }
+    if (root.source_span.byte_begin != 0) {
+        add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                       "BMS control tree root must begin at source byte zero");
+    }
+    if (original_source_size.has_value() && root.source_span.byte_end != *original_source_size) {
+        add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                       "BMS control tree root span does not cover its retained source bytes");
+    }
+    if (root.close_source_span.has_value() || root.close_text.has_value() ||
+        root.close_source_order.has_value() || root.close_line_ending.has_value()) {
+        add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                       "BMS control tree root cannot carry a closing directive");
+    }
+
+    const auto span_is_valid = [&](bms_source_span_t span, std::string_view description) {
+        auto valid = true;
+        if (span.byte_end <= span.byte_begin) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           std::string(description) + " has an empty or reversed source span");
+            valid = false;
+        }
+        if (original_source_size.has_value() && span.byte_end > *original_source_size) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           std::string(description) + " extends past the retained source bytes");
+            valid = false;
+        }
+        return valid;
+    };
+
+    const auto validate_line_metadata = [&](bms_source_span_t span, bms_line_ending_t ending,
+                                            std::string_view description) {
+        const auto ending_size = line_ending_size(ending);
+        if (!ending_size.has_value()) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           std::string(description) + " has an unknown line ending");
+        } else if (span.byte_end >= span.byte_begin &&
+                   span.byte_end - span.byte_begin < *ending_size) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           std::string(description) + " span is shorter than its line ending");
+        }
+    };
+
+    std::function<void(const bms_control_node_t&, bool, std::size_t, std::size_t)> visit;
+    visit = [&](const bms_control_node_t& node, bool is_root, std::size_t parent_begin,
+                std::size_t parent_end) {
+        if (!require_id(diagnostics, node.id, "BMS control node")) {
+            // Continue validating shape and provenance even for a zero ID.
+        } else if (!node_ids.insert(node.id.value).second) {
+            add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
+                           "BMS control node ID is duplicated");
+        } else {
+            nodes_by_id.emplace(node.id.value, &node);
+        }
+
+        if (!is_root && node.kind == bms_control_kind_t::root) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "nested BMS control node has root kind");
+        }
+        if (!valid_control_kind(node.kind)) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "BMS control node has an unknown kind");
+        }
+        if (control_kind_has_value(node.kind) && !node.value.has_value()) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "BMS control node kind requires a numeric value");
+        }
+        if (control_kind_requires_positive_value(node.kind) && node.value.has_value() &&
+            *node.value <= 0) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "BMS control node requires a positive numeric value");
+        }
+
+        const auto has_close_span = node.close_source_span.has_value();
+        if (has_close_span != node.close_text.has_value() ||
+            has_close_span != node.close_source_order.has_value() ||
+            has_close_span != node.close_line_ending.has_value()) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "BMS control node closing source fields must be present together");
+        }
+        if (has_close_span && !control_kind_may_have_close(node.kind)) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "BMS control node kind cannot carry a closing directive");
+        }
+        if (control_kind_may_have_close(node.kind) && !has_close_span) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "BMS control block is missing its closing directive");
+        }
+
+        auto child_begin = parent_begin;
+        auto child_end = parent_end;
+        if (is_root) {
+            if (node.source_span.byte_end < node.source_span.byte_begin) {
+                add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                               "BMS control tree root has a reversed source span");
+                child_end = parent_end;
+            } else {
+                if (original_source_size.has_value() &&
+                    node.source_span.byte_end > *original_source_size) {
+                    add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                                   "BMS control tree root extends past its retained source bytes");
+                }
+                child_begin = node.source_span.byte_begin;
+                child_end = node.source_span.byte_end;
+            }
+            if (!node.original_text.empty() || node.source_order != 0 ||
+                node.line_ending != bms_line_ending_t::none) {
+                add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                               "BMS control tree root cannot represent a physical source line");
+            }
+        } else if (is_synthetic_control_node(node)) {
+            if (node.source_span.byte_begin != 0 || node.source_span.byte_end != 0 ||
+                !node.original_text.empty() || node.source_order != 0 ||
+                node.line_ending != bms_line_ending_t::none) {
+                add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                               "synthetic IF group cannot carry a physical source line");
+            }
+        } else {
+            const auto span_valid = span_is_valid(node.source_span, "BMS control node");
+            validate_line_metadata(node.source_span, node.line_ending, "BMS control node");
+            if (node.source_span.byte_begin < parent_begin ||
+                node.source_span.byte_end > parent_end) {
+                add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                               "BMS control node source span escapes its containing control block");
+            }
+            if (span_valid) {
+                source_records.push_back({node.source_span, node.source_order});
+            }
+            child_begin = node.source_span.byte_end;
+        }
+
+        auto subtree_end = child_end;
+        if (has_close_span) {
+            const auto close = *node.close_source_span;
+            const auto close_valid = span_is_valid(close, "BMS closing directive");
+            if (node.close_line_ending.has_value()) {
+                validate_line_metadata(close, *node.close_line_ending, "BMS closing directive");
+            }
+            if (close.byte_begin < child_begin || close.byte_end > child_end) {
+                add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                               "BMS closing directive lies outside its control block source span");
+            }
+            if (close_valid && node.close_source_order.has_value()) {
+                source_records.push_back({close, *node.close_source_order});
+            }
+            if (close.byte_begin >= child_begin && close.byte_begin <= child_end) {
+                subtree_end = close.byte_begin;
+            }
+        }
+
+        if (node.kind == bms_control_kind_t::if_group) {
+            auto saw_else = false;
+            if (node.children.empty() ||
+                node.children.front().kind != bms_control_kind_t::if_branch) {
+                add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                               "BMS IF group must begin with an IF branch");
+            }
+            for (std::size_t index = 0; index < node.children.size(); ++index) {
+                const auto kind = node.children[index].kind;
+                const auto is_else = kind == bms_control_kind_t::else_branch;
+                if (!is_conditional_branch(kind) || saw_else ||
+                    (is_else && index + 1 != node.children.size())) {
+                    add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                                   "BMS IF group has an invalid branch kind or ordering");
+                    break;
+                }
+                saw_else = saw_else || is_else;
+            }
+        } else if (node.kind == bms_control_kind_t::switch_block) {
+            auto saw_default = false;
+            for (std::size_t index = 0; index < node.children.size(); ++index) {
+                const auto kind = node.children[index].kind;
+                if (!is_switch_branch(kind)) {
+                    continue;
+                }
+                if (kind == bms_control_kind_t::default_branch) {
+                    if (saw_default || index + 1 != node.children.size()) {
+                        add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                                       "BMS switch default branch must be unique and last");
+                        break;
+                    }
+                    saw_default = true;
+                } else if (kind == bms_control_kind_t::case_branch && saw_default) {
+                    add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                                   "BMS switch case cannot follow its default branch");
+                    break;
+                }
+            }
+        }
+
+        for (std::size_t index = 0; index < node.children.size(); ++index) {
+            const auto child_kind = node.children[index].kind;
+            if ((is_conditional_branch(child_kind) && node.kind != bms_control_kind_t::if_group) ||
+                (is_switch_branch(child_kind) && node.kind != bms_control_kind_t::switch_block)) {
+                add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                               "BMS branch node is attached to the wrong control block kind");
+            }
+            auto sibling_end = subtree_end;
+            for (auto next = index + 1; next < node.children.size(); ++next) {
+                if (const auto first = first_source_byte(node.children[next]);
+                    first.has_value()) {
+                    sibling_end = std::min(sibling_end, *first);
+                    break;
+                }
+            }
+            visit(node.children[index], false, child_begin, sibling_end);
+        }
+    };
+
+    visit(root, true, root.source_span.byte_begin, root.source_span.byte_end);
+
+    std::ranges::sort(source_records, {}, &source_record_t::source_order);
+    for (std::size_t index = 1; index < source_records.size(); ++index) {
+        const auto& previous = source_records[index - 1];
+        const auto& current = source_records[index];
+        if (current.source_order <= previous.source_order) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "BMS source line order is duplicated or reversed");
+        }
+        if (current.span.byte_begin < previous.span.byte_end) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "BMS source spans overlap or are out of source order");
+        }
+    }
+
+    std::unordered_set<std::uint64_t> selected_nodes;
+    for (const auto& selection : chart.active_branch_selection) {
+        if (!require_id(diagnostics, selection.branch, "active branch selection")) {
+            continue;
+        }
+        if (!selected_nodes.insert(selection.branch.value).second) {
+            add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
+                           "active branch selection refers to the same control block twice");
+        }
+        const auto found = nodes_by_id.find(selection.branch.value);
+        if (found == nodes_by_id.end()) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "active branch selection refers to an unknown control node");
+            continue;
+        }
+        const auto& selected = *found->second;
+        if (selected.kind == bms_control_kind_t::random) {
+            if (!selected.value.has_value() || selection.selected_value < 1 ||
+                selection.selected_value > *selected.value) {
+                add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                               "active RANDOM selection is outside its declared range");
+            }
+        } else if (selected.kind == bms_control_kind_t::switch_block) {
+            const auto has_matching_case = std::ranges::any_of(
+                selected.children, [&](const auto& child) {
+                    return child.kind == bms_control_kind_t::case_branch && child.value.has_value() &&
+                           *child.value == selection.selected_value;
+                });
+            const auto has_default = std::ranges::any_of(
+                selected.children, [](const auto& child) {
+                    return child.kind == bms_control_kind_t::default_branch;
+                });
+            if (!has_matching_case && !has_default) {
+                add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                               "active SWITCH selection matches no CASE and has no DEFAULT");
+            }
+        } else {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "active branch selection must refer to a RANDOM or SWITCH block");
+        }
+    }
 }
 
 auto position_row_or_diagnostic(const measure_index_t& index, local_position_t position,
@@ -166,8 +616,10 @@ auto validate_object_id(diagnostic_list_t& diagnostics,
 
 auto validate_chart(const chart_document_t& chart,
                     const std::unordered_set<std::uint64_t>& resources,
-                    const std::unordered_set<std::uint64_t>& assets, diagnostic_list_t& diagnostics)
+                    const std::unordered_set<std::uint64_t>& audio_assets,
+                    diagnostic_list_t& diagnostics)
     -> void {
+    validate_bms_control_tree(chart, diagnostics);
     if (chart.divisions_per_standard_measure == 0) {
         add_diagnostic(diagnostics, diagnostic_code_t::invalid_resolution,
                        "chart divisions per standard measure must be positive");
@@ -277,9 +729,9 @@ auto validate_chart(const chart_document_t& chart,
                 add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
                                "BGM event refers to an unknown source lane", bgm.id);
             }
-            if (!contains_resource(resources, bgm.sound)) {
+            if (bgm.sound.has_value() && !contains_resource(resources, *bgm.sound)) {
                 add_diagnostic(diagnostics, diagnostic_code_t::dangling_resource,
-                               "BGM event refers to an unknown sound resource", bgm.id);
+                              "BGM event refers to an unknown sound resource", bgm.id);
             }
         }
     }
@@ -385,7 +837,8 @@ auto validate_chart(const chart_document_t& chart,
     }
     for (const auto& channel : chart.sound_channels) {
         validate_object_id(diagnostics, object_ids, channel.id, "sound channel");
-        if (!channel.source_clip.source || !assets.contains(channel.source_clip.source.value)) {
+        if (!channel.source_clip.source ||
+            !audio_assets.contains(channel.source_clip.source.value)) {
             add_diagnostic(diagnostics, diagnostic_code_t::dangling_asset,
                            "sound channel clip refers to an unknown audio asset", channel.id);
         }
@@ -564,10 +1017,14 @@ auto validate_document(const song_document_t& song) -> diagnostic_list_t {
         "storyboard");
 
     std::unordered_set<std::uint64_t> asset_ids;
+    std::unordered_set<std::uint64_t> audio_asset_ids;
     for (const auto& asset : song.audio_assets) {
         if (asset.id && !asset_ids.insert(asset.id.value).second) {
             add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
                            "audio and visual assets share a duplicate ID");
+        }
+        if (asset.id) {
+            audio_asset_ids.insert(asset.id.value);
         }
     }
     for (const auto& asset : song.visual_assets) {
@@ -587,6 +1044,7 @@ auto validate_document(const song_document_t& song) -> diagnostic_list_t {
         }
     }
     std::unordered_set<std::uint64_t> resource_ids;
+    std::map<std::tuple<int, std::string, std::string>, resource_id_t> target_identity_owners;
     for (const auto& resource : song.resources) {
         if (resource.id) {
             resource_ids.insert(resource.id.value);
@@ -595,9 +1053,40 @@ auto validate_document(const song_document_t& song) -> diagnostic_list_t {
             add_diagnostic(diagnostics, diagnostic_code_t::dangling_asset,
                            "resource refers to an unknown asset");
         }
+        for (const auto& identity : resource.target_identities) {
+            if (!valid_format_family(identity.family)) {
+                add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                               "resource target identity has an unknown format family");
+                continue;
+            }
+            const auto identifier_is_blank = std::ranges::all_of(
+                identity.identifier, [](unsigned char character) {
+                    return std::isspace(character) != 0;
+                });
+            const auto namespace_is_blank = std::ranges::all_of(
+                identity.namespace_name, [](unsigned char character) {
+                    return std::isspace(character) != 0;
+                });
+            if (identity.identifier.empty() || identifier_is_blank ||
+                identity.identifier.find('\0') != std::string::npos ||
+                (identity.family == format_family_t::bms && identity.namespace_name.empty()) ||
+                (!identity.namespace_name.empty() && namespace_is_blank) ||
+                identity.namespace_name.find('\0') != std::string::npos) {
+                add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                               "resource target identity has an empty or invalid namespace/identifier");
+                continue;
+            }
+            const auto key = std::tuple{static_cast<int>(identity.family),
+                                        canonical_target_namespace(identity),
+                                        canonical_target_identifier(identity)};
+            if (!target_identity_owners.emplace(key, resource.id).second) {
+                add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
+                               "target resource identity is assigned more than once");
+            }
+        }
     }
     for (const auto& chart : song.charts) {
-        validate_chart(chart, resource_ids, asset_ids, diagnostics);
+        validate_chart(chart, resource_ids, audio_asset_ids, diagnostics);
     }
     for (const auto& recipe : song.generator_recipes) {
         for (const auto asset : recipe.input_assets) {

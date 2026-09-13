@@ -5,15 +5,85 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <memory>
+#include <string>
+#include <string_view>
 #include <variant>
 
 using namespace wormedit;
 
 namespace {
 
+auto make_valid_song() -> song_document_t;
+
 auto has_code(const diagnostic_list_t& diagnostics, diagnostic_code_t code) -> bool {
     return std::ranges::any_of(diagnostics,
                                [code](const auto& diagnostic) { return diagnostic.code == code; });
+}
+
+auto has_message(const diagnostic_list_t& diagnostics, std::string_view text) -> bool {
+    return std::ranges::any_of(diagnostics, [text](const auto& diagnostic) {
+        return diagnostic.message.find(text) != std::string::npos;
+    });
+}
+
+auto make_bms_control_song() -> song_document_t {
+    auto song = make_valid_song();
+    const std::string source = "#RANDOM 2\n#TITLE x\n#ENDRANDOM\n";
+    auto bytes = std::make_shared<std::vector<std::byte>>();
+    bytes->reserve(source.size());
+    for (const auto character : source) {
+        bytes->push_back(static_cast<std::byte>(static_cast<unsigned char>(character)));
+    }
+
+    auto& chart = song.charts.front();
+    chart.metadata.format_groups.push_back({
+        .family = format_family_t::bms,
+        .encoding =
+            {
+                .detected = text_encoding_t::ascii,
+                .original_bytes = bytes,
+                .unchanged_since_import = true,
+            },
+    });
+    chart.bms_control_tree = bms_control_node_t{
+        .id = branch_id_t{100},
+        .kind = bms_control_kind_t::root,
+        .source_span = {0, source.size()},
+        .children =
+            {
+                {
+                    .id = branch_id_t{101},
+                    .kind = bms_control_kind_t::random,
+                    .value = 2,
+                    .original_text = "#RANDOM 2",
+                    .command_token = "RANDOM",
+                    .raw_value = " 2",
+                    .source_span = {0, 10},
+                    .source_order = 0,
+                    .line_ending = bms_line_ending_t::lf,
+                    .close_source_span = bms_source_span_t{19, source.size()},
+                    .close_text = "#ENDRANDOM",
+                    .close_source_order = 2,
+                    .close_line_ending = bms_line_ending_t::lf,
+                    .children =
+                        {
+                            {
+                                .id = branch_id_t{102},
+                                .kind = bms_control_kind_t::raw_statement,
+                                .original_text = "#TITLE x",
+                                .command_token = "TITLE",
+                                .raw_value = " x",
+                                .source_span = {10, 19},
+                                .source_order = 1,
+                                .line_ending = bms_line_ending_t::lf,
+                            },
+                        },
+                },
+            },
+    };
+    chart.active_branch_selection = {{branch_id_t{101}, 2}};
+    return song;
 }
 
 auto make_valid_song() -> song_document_t {
@@ -355,6 +425,122 @@ TEST_CASE("document validation diagnoses dangling and impossible objects",
     });
     diagnostics = validate_document(song);
     CHECK(has_code(diagnostics, diagnostic_code_t::unknown_lane));
+}
+
+TEST_CASE("BMS branch graphs validate IDs, selections and source spans",
+          "[unit][core][document][bms]") {
+    auto song = make_bms_control_song();
+    CHECK(validate_document(song).empty());
+
+    song = make_bms_control_song();
+    song.charts.front().bms_control_tree->children.front().children.front().id = branch_id_t{101};
+    CHECK(has_code(validate_document(song), diagnostic_code_t::duplicate_id));
+
+    song = make_bms_control_song();
+    song.charts.front().bms_control_tree->children.front().id = branch_id_t{};
+    CHECK(has_code(validate_document(song), diagnostic_code_t::invalid_id));
+
+    song = make_bms_control_song();
+    song.charts.front().active_branch_selection.front().selected_value = 3;
+    CHECK(has_message(validate_document(song), "outside its declared range"));
+
+    song = make_bms_control_song();
+    song.charts.front().active_branch_selection.front().branch = branch_id_t{102};
+    CHECK(has_message(validate_document(song), "must refer to a RANDOM or SWITCH block"));
+
+    song = make_bms_control_song();
+    song.charts.front().bms_control_tree->children.front().children.front().source_span = {8, 19};
+    CHECK(has_message(validate_document(song), "escapes its containing control block"));
+
+    song = make_bms_control_song();
+    song.charts.front().bms_control_tree->children.front().close_source_span =
+        bms_source_span_t{8, 31};
+    CHECK(has_code(validate_document(song), diagnostic_code_t::invalid_id));
+
+    song = make_bms_control_song();
+    auto& unclosed_random = song.charts.front().bms_control_tree->children.front();
+    unclosed_random.close_source_span.reset();
+    unclosed_random.close_text.reset();
+    unclosed_random.close_source_order.reset();
+    unclosed_random.close_line_ending.reset();
+    song.charts.front().active_branch_selection.clear();
+    CHECK(has_message(validate_document(song), "missing its closing directive"));
+
+    song = make_bms_control_song();
+    auto& unclosed_if_group = song.charts.front().bms_control_tree->children.front();
+    unclosed_if_group.kind = bms_control_kind_t::if_group;
+    unclosed_if_group.value.reset();
+    unclosed_if_group.source_span = {0, 0};
+    unclosed_if_group.original_text.clear();
+    unclosed_if_group.command_token.clear();
+    unclosed_if_group.raw_value.clear();
+    unclosed_if_group.source_order = 0;
+    unclosed_if_group.line_ending = bms_line_ending_t::none;
+    unclosed_if_group.close_source_span.reset();
+    unclosed_if_group.close_text.reset();
+    unclosed_if_group.close_source_order.reset();
+    unclosed_if_group.close_line_ending.reset();
+    unclosed_if_group.children.front().kind = bms_control_kind_t::if_branch;
+    unclosed_if_group.children.front().value = 1;
+    song.charts.front().active_branch_selection.clear();
+    CHECK(has_message(validate_document(song), "missing its closing directive"));
+
+    song = make_bms_control_song();
+    auto& unclosed_switch = song.charts.front().bms_control_tree->children.front();
+    unclosed_switch.kind = bms_control_kind_t::switch_block;
+    unclosed_switch.value = 1;
+    unclosed_switch.close_source_span.reset();
+    unclosed_switch.close_text.reset();
+    unclosed_switch.close_source_order.reset();
+    unclosed_switch.close_line_ending.reset();
+    song.charts.front().active_branch_selection.clear();
+    CHECK(has_message(validate_document(song), "missing its closing directive"));
+}
+
+TEST_CASE("resource identities are valid and unique per target family",
+          "[unit][core][document][resources]") {
+    auto song = make_valid_song();
+    song.resources[0].target_identities = {
+        {format_family_t::bms, "a1", "WAV"},
+        {format_family_t::bmson, "sample-a"},
+    };
+    song.resources[0].roles = {resource_role_t::sample, resource_role_t::bgm};
+    CHECK(validate_document(song).empty());
+
+    song.resources[1].target_identities = {{format_family_t::bms, "A1", "BMP"}};
+    CHECK(validate_document(song).empty());
+
+    song.resources[1].target_identities = {{format_family_t::bms, "A1", "wav"}};
+    CHECK(has_message(validate_document(song), "assigned more than once"));
+
+    song = make_valid_song();
+    song.resources[0].target_identities = {
+        {format_family_t::bms, "01", "WAV"},
+        {format_family_t::bms, "01", "wav"},
+    };
+    CHECK(has_code(validate_document(song), diagnostic_code_t::duplicate_id));
+
+    song = make_valid_song();
+    song.resources[0].target_identities = {{format_family_t::bms, " \t", "WAV"}};
+    CHECK(has_message(validate_document(song), "empty or invalid namespace/identifier"));
+
+    song = make_valid_song();
+    song.resources[0].target_identities = {{format_family_t::bms, "01"}};
+    CHECK(has_message(validate_document(song), "empty or invalid namespace/identifier"));
+
+    song = make_valid_song();
+    song.resources[0].target_identities = {
+        {static_cast<format_family_t>(255), "opaque-id"},
+    };
+    CHECK(has_message(validate_document(song), "unknown format family"));
+
+    song = make_valid_song();
+    song.resources[0].asset = asset_id_t{99};
+    CHECK(has_code(validate_document(song), diagnostic_code_t::dangling_asset));
+
+    song = make_valid_song();
+    song.charts.front().sound_channels.front().source_clip.source = asset_id_t{2};
+    CHECK(has_message(validate_document(song), "unknown audio asset"));
 }
 
 TEST_CASE("input collisions are scoped by focused stage", "[unit][core][input]") {

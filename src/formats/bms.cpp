@@ -1,4 +1,5 @@
 #include <wormedit/formats/bms.h>
+#include <wormedit/core/bms_profile_detection.h>
 
 #include <algorithm>
 #include <array>
@@ -10,6 +11,7 @@
 #include <iterator>
 #include <limits>
 #include <map>
+#include <numeric>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -457,6 +459,100 @@ auto parse_measure_command(std::string_view token)
     return std::pair{measure, upper_ascii(token.substr(3, 2))};
 }
 
+struct root_channel_line_t {
+    const bms_control_node_t* node{};
+    std::size_t measure{};
+    std::string channel;
+    std::string payload;
+    std::size_t pair_count{};
+    bool materialize{};
+};
+
+auto is_playable_channel(std::string_view channel) -> bool {
+    if (channel.size() != 2) {
+        return false;
+    }
+    switch (channel.front()) {
+    case '1':
+    case '2':
+    case '3':
+    case '4':
+    case '5':
+    case '6':
+        return true;
+    case 'D':
+    case 'E':
+        return channel[1] >= '1' && channel[1] <= '9';
+    default:
+        return false;
+    }
+}
+
+auto is_materialized_note_family(std::string_view channel) -> bool {
+    return channel.size() == 2 &&
+           (channel.front() == '1' || channel.front() == '2' || channel.front() == '3' ||
+            channel.front() == '4' || channel.front() == 'D' || channel.front() == 'E');
+}
+
+auto checked_lcm(std::uint64_t left, std::uint64_t right) -> std::optional<std::uint64_t> {
+    if (left == 0 || right == 0) {
+        return std::nullopt;
+    }
+    const auto reduced = left / std::gcd(left, right);
+    if (reduced > std::numeric_limits<std::uint64_t>::max() / right) {
+        return std::nullopt;
+    }
+    return reduced * right;
+}
+
+auto resolution_for_slots(std::uint64_t current_resolution, const measure_definition_t& measure,
+                          std::size_t pair_count) -> std::optional<std::uint64_t> {
+    if (pair_count == 0 || measure.length.numerator == 0 || measure.length.denominator == 0) {
+        return std::nullopt;
+    }
+    const auto slots = static_cast<std::uint64_t>(pair_count);
+    // R * (p / q) / slots must be integral. Since p/q is reduced, the
+    // remaining denominator is q * (slots / gcd(p, slots)).
+    const auto reduced_slots = slots / std::gcd(measure.length.numerator, slots);
+    if (reduced_slots > std::numeric_limits<std::uint64_t>::max() /
+                            measure.length.denominator) {
+        return std::nullopt;
+    }
+    const auto required_multiple = reduced_slots * measure.length.denominator;
+    return checked_lcm(current_resolution, required_multiple);
+}
+
+auto parse_positive_rational(std::string_view text) -> std::optional<signed_rational_t> {
+    const auto parsed = parse_measure_length(text);
+    if (!parsed.value.has_value() ||
+        parsed.value->numerator > static_cast<std::uint64_t>(
+                                      std::numeric_limits<std::int64_t>::max())) {
+        return std::nullopt;
+    }
+    return signed_rational_t{static_cast<std::int64_t>(parsed.value->numerator),
+                             parsed.value->denominator};
+}
+
+auto source_provenance(std::string_view field, std::string_view spelling, std::size_t order,
+                       std::string_view profile = "bms-byte-parser") -> source_provenance_t {
+    return {
+        .family = format_family_t::bms,
+        .profile = std::string(profile),
+        .source_field = std::string(field),
+        .source_spelling = std::string(spelling),
+        .source_order = order,
+    };
+}
+
+auto node_source_line(const bms_control_node_t& node) -> source_line_t {
+    return {
+        .text = node.original_text,
+        .span = node.source_span,
+        .ending = node.line_ending,
+        .order = node.source_order,
+    };
+}
+
 auto has_errors(const std::vector<bms_parse_diagnostic_t>& diagnostics) -> bool {
     return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
         return diagnostic.severity == diagnostic_severity_t::error;
@@ -508,6 +604,16 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             .line = 1,
             .column = 1,
             .source_span = bms_source_span_t{0, bytes.size()},
+        });
+        return result;
+    }
+    if (options.max_chart_resolution < default_divisions_per_standard_measure) {
+        result.diagnostics.push_back({
+            .severity = diagnostic_severity_t::error,
+            .code = bms_parse_diagnostic_code_t::invalid_measure,
+            .message = "configured chart-resolution limit must be at least the default 960 rows",
+            .line = 1,
+            .column = 1,
         });
         return result;
     }
@@ -621,7 +727,7 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                 .name = name,
                 .asset = asset_id,
                 .roles = {resource_role_t::sample, resource_role_t::bgm},
-                .target_identities = {{format_family_t::bms, normalized_id}},
+                .target_identities = {{format_family_t::bms, normalized_id, "WAV"}},
                 .provenance =
                     {
                         .family = format_family_t::bms,
@@ -642,7 +748,7 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                 .name = name,
                 .asset = asset_id,
                 .roles = {resource_role_t::bga},
-                .target_identities = {{format_family_t::bms, normalized_id}},
+                .target_identities = {{format_family_t::bms, normalized_id, "BMP"}},
                 .provenance =
                     {
                         .family = format_family_t::bms,
@@ -1002,6 +1108,471 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
     if (chart.measures.empty()) {
         (void)ensure_measure(0);
     }
+
+    auto line_diagnostic = [&](const bms_control_node_t& node, diagnostic_severity_t severity,
+                               bms_parse_diagnostic_code_t code, std::string message) {
+        add_line_diagnostic(result, severity, code, std::move(message), node_source_line(node));
+    };
+
+    std::vector<const bms_control_node_t*> root_statements;
+    root_statements.reserve(root.children.size());
+    for (const auto& node : root.children) {
+        if (node.kind == bms_control_kind_t::raw_statement) {
+            root_statements.push_back(&node);
+        }
+    }
+
+    std::map<std::string, signed_rational_t, std::less<>> extended_bpms;
+    std::map<std::string, signed_rational_t, std::less<>> stop_definitions;
+    std::optional<std::pair<const bms_control_node_t*, signed_rational_t>> initial_bpm;
+    std::vector<root_channel_line_t> channel_lines;
+    std::vector<std::string> used_playable_channels;
+
+    for (const auto* node : root_statements) {
+        const auto token = upper_ascii(node->command_token);
+        if (token == "BPM" || (token.size() == 5 && token.starts_with("BPM") &&
+                                base36_digit(token[3]) && base36_digit(token[4]))) {
+            const auto parsed_value = parse_positive_rational(trim_ascii(node->raw_value));
+            if (!parsed_value.has_value()) {
+                line_diagnostic(*node, diagnostic_severity_t::warning,
+                                bms_parse_diagnostic_code_t::invalid_number,
+                                "BPM declaration is not a positive exact number; raw text is retained");
+                continue;
+            }
+            if (token == "BPM") {
+                if (initial_bpm.has_value()) {
+                    line_diagnostic(*node, diagnostic_severity_t::warning,
+                                    bms_parse_diagnostic_code_t::invalid_number,
+                                    "duplicate direct BPM declaration; later valid value is applied");
+                }
+                initial_bpm = std::pair{node, *parsed_value};
+            } else {
+                const auto identifier = token.substr(3, 2);
+                if (extended_bpms.contains(identifier)) {
+                    line_diagnostic(*node, diagnostic_severity_t::warning,
+                                    bms_parse_diagnostic_code_t::invalid_number,
+                                    "duplicate extended BPM identifier; later valid value is applied");
+                }
+                extended_bpms.insert_or_assign(identifier, *parsed_value);
+            }
+            continue;
+        }
+        if (token.size() == 6 && token.starts_with("STOP") && base36_digit(token[4]) &&
+            base36_digit(token[5])) {
+            const auto parsed_value = parse_positive_rational(trim_ascii(node->raw_value));
+            if (!parsed_value.has_value()) {
+                line_diagnostic(*node, diagnostic_severity_t::warning,
+                                bms_parse_diagnostic_code_t::invalid_number,
+                                "STOP declaration is not a positive exact number; raw text is retained");
+                continue;
+            }
+            const auto identifier = token.substr(4, 2);
+            if (stop_definitions.contains(identifier)) {
+                line_diagnostic(*node, diagnostic_severity_t::warning,
+                                bms_parse_diagnostic_code_t::invalid_number,
+                                "duplicate STOP identifier; later valid value is applied");
+            }
+            stop_definitions.insert_or_assign(identifier, *parsed_value);
+            continue;
+        }
+
+        const auto measure_command = parse_measure_command(token);
+        if (!measure_command.has_value() || node->original_text.size() < 7 ||
+            node->original_text[0] != '#' || node->original_text[6] != ':') {
+            continue;
+        }
+        const auto& [measure_number, channel] = *measure_command;
+        if (channel == "02") {
+            continue;
+        }
+        const auto payload = trim_ascii(node->raw_value);
+        const auto valid_payload = !payload.empty() && payload.size() % 2 == 0 &&
+                                   std::ranges::all_of(payload, [](char character) {
+                                       return base36_digit(character);
+                                   });
+        if (!valid_payload) {
+            continue;
+        }
+        channel_lines.push_back({
+            .node = node,
+            .measure = measure_number,
+            .channel = channel,
+            .payload = std::string(payload),
+            .pair_count = payload.size() / 2,
+        });
+        if (is_playable_channel(channel)) {
+            used_playable_channels.push_back(channel);
+        }
+    }
+
+    auto measure_length_source = [&](std::size_t measure_index)
+        -> const bms_control_node_t* {
+        const auto order = last_measure_length_order.find(measure_index);
+        if (order == last_measure_length_order.end()) {
+            return nullptr;
+        }
+        const auto found = std::ranges::find_if(root_statements, [&](const auto* node) {
+            return node->source_order == order->second;
+        });
+        return found == root_statements.end() ? nullptr : *found;
+    };
+    auto fallback_measure_length = [&](std::size_t measure_index, std::string message) {
+        auto& measure = chart.measures[measure_index];
+        measure.definition = {{1, 1}, meter_t{4, 4}};
+        if (const auto* node = measure_length_source(measure_index); node != nullptr) {
+            line_diagnostic(*node, diagnostic_severity_t::warning,
+                            bms_parse_diagnostic_code_t::invalid_measure, std::move(message));
+        } else {
+            result.diagnostics.push_back({
+                .severity = diagnostic_severity_t::warning,
+                .code = bms_parse_diagnostic_code_t::invalid_measure,
+                .message = std::move(message),
+                .line = 1,
+                .column = 1,
+            });
+        }
+    };
+
+    for (std::size_t index = 0; index < chart.measures.size(); ++index) {
+        const auto required = checked_lcm(chart.divisions_per_standard_measure,
+                                          chart.measures[index].definition.length.denominator);
+        if (!required.has_value() || *required > options.max_chart_resolution) {
+            fallback_measure_length(
+                index,
+                "measure-length denominator exceeds the configured exact chart-resolution limit; "
+                "the measure remains raw and uses its default effective length");
+            continue;
+        }
+        chart.divisions_per_standard_measure = *required;
+    }
+    for (std::size_t index = 0; index < chart.measures.size(); ++index) {
+        const auto capacity = validate_measure(chart.divisions_per_standard_measure,
+                                               chart.measures[index].definition);
+        if (!capacity.row_capacity.has_value()) {
+            fallback_measure_length(
+                index,
+                "measure length cannot be represented safely at the selected chart resolution; "
+                "the measure remains raw and uses its default effective length");
+        }
+    }
+
+    std::optional<lane_input_profile_t> selected_profile;
+    if (options.lane_profile_id.has_value()) {
+        auto detection = detect_bms_lane_profile({
+            .used_channels = used_playable_channels,
+            .explicit_profile_id = options.lane_profile_id,
+        });
+        selected_profile = detection.selected_profile;
+        if (!selected_profile.has_value()) {
+            std::string message = "selected BMS lane profile is unknown or does not map every "
+                                  "recognized playable channel; channel payloads remain raw";
+            if (!detection.evidence.empty()) {
+                message += ": ";
+                message += detection.evidence.front().message;
+            }
+            const auto first_playable = std::ranges::find_if(channel_lines, [](const auto& line) {
+                return is_playable_channel(line.channel);
+            });
+            if (first_playable != channel_lines.end()) {
+                line_diagnostic(*first_playable->node, diagnostic_severity_t::warning,
+                                bms_parse_diagnostic_code_t::unsupported_channel,
+                                std::move(message));
+            } else {
+                result.diagnostics.push_back({
+                    .severity = diagnostic_severity_t::warning,
+                    .code = bms_parse_diagnostic_code_t::unsupported_channel,
+                    .message = std::move(message),
+                    .line = 1,
+                    .column = 1,
+                });
+            }
+        } else {
+            chart.input_profile = selected_profile->input;
+            chart.lane_layouts.push_back({
+                .id = new_id<object_id_t>(ids),
+                .position = {chart.measures.front().id, 0},
+                .layout = selected_profile->layout,
+            });
+        }
+    }
+
+    for (auto& channel_line : channel_lines) {
+        const auto channel = std::string_view(channel_line.channel);
+        const auto is_builtin_channel = channel == "01" || channel == "03" || channel == "08" ||
+                                        channel == "09";
+        if (is_builtin_channel) {
+            channel_line.materialize = true;
+        } else if (is_playable_channel(channel)) {
+            if (!selected_profile.has_value()) {
+                line_diagnostic(*channel_line.node, diagnostic_severity_t::warning,
+                                bms_parse_diagnostic_code_t::unsupported_channel,
+                                options.lane_profile_id.has_value()
+                                    ? "playable-family payload is incompatible with the selected "
+                                      "profile and remains raw"
+                                    : "playable-family payload remains raw until a lane profile is "
+                                      "selected");
+                continue;
+            }
+            if (!is_materialized_note_family(channel)) {
+                line_diagnostic(*channel_line.node, diagnostic_severity_t::warning,
+                                bms_parse_diagnostic_code_t::unsupported_channel,
+                                "long-note channel is retained raw until BMS long-note pairing is "
+                                "implemented");
+                continue;
+            }
+            channel_line.materialize = true;
+        } else {
+            continue;
+        }
+
+        const auto required = resolution_for_slots(
+            chart.divisions_per_standard_measure,
+            chart.measures[channel_line.measure].definition, channel_line.pair_count);
+        if (!required.has_value() || *required > options.max_chart_resolution) {
+            channel_line.materialize = false;
+            line_diagnostic(*channel_line.node, diagnostic_severity_t::warning,
+                            bms_parse_diagnostic_code_t::invalid_measure,
+                            "exact channel subdivisions exceed the configured chart-resolution "
+                            "limit; payload remains raw");
+            continue;
+        }
+        chart.divisions_per_standard_measure = *required;
+    }
+
+    auto lane_for_channel = [&](std::string_view channel) -> const lane_definition_t* {
+        if (!selected_profile.has_value()) {
+            return nullptr;
+        }
+        const auto found = std::ranges::find_if(
+            selected_profile->layout.lanes, [channel](const lane_definition_t& lane) {
+                return (lane.bms_channels.visible.has_value() &&
+                        *lane.bms_channels.visible == channel) ||
+                       (lane.bms_channels.invisible.has_value() &&
+                        *lane.bms_channels.invisible == channel) ||
+                       (lane.bms_channels.mine.has_value() &&
+                        *lane.bms_channels.mine == channel);
+            });
+        return found == selected_profile->layout.lanes.end() ? nullptr : &*found;
+    };
+
+    auto position_for_slot = [&](const root_channel_line_t& channel_line, std::size_t slot)
+        -> std::optional<local_position_t> {
+        const auto& measure = chart.measures[channel_line.measure];
+        const auto capacity = validate_measure(chart.divisions_per_standard_measure,
+                                               measure.definition);
+        if (!capacity.row_capacity.has_value() || channel_line.pair_count == 0 ||
+            *capacity.row_capacity % channel_line.pair_count != 0) {
+            return std::nullopt;
+        }
+        const auto rows_per_slot = *capacity.row_capacity / channel_line.pair_count;
+        return local_position_t{
+            .measure = measure.id,
+            .row = static_cast<std::uint64_t>(slot) * rows_per_slot,
+        };
+    };
+
+    auto resource_for_object = [&](const bms_control_node_t& node,
+                                   std::string_view object_id) -> std::optional<resource_id_t> {
+        const auto key = std::string("WAV") + std::string(object_id);
+        const auto found = resource_ids.find(key);
+        if (found != resource_ids.end()) {
+            return found->second;
+        }
+        line_diagnostic(node, diagnostic_severity_t::warning,
+                        bms_parse_diagnostic_code_t::unresolved_reference,
+                        "channel object references an undeclared " + key +
+                            "; semantic event remains unbound");
+        return std::nullopt;
+    };
+
+    if (initial_bpm.has_value()) {
+        chart.bpms.push_back({
+            .id = new_id<object_id_t>(ids),
+            .position = {chart.measures.front().id, 0},
+            .beats_per_minute = initial_bpm->second,
+            .provenance = source_provenance("BPM", initial_bpm->first->original_text,
+                                            initial_bpm->first->source_order),
+        });
+    }
+
+    for (const auto& channel_line : channel_lines) {
+        if (!channel_line.materialize) {
+            continue;
+        }
+        const auto channel = std::string_view(channel_line.channel);
+        const auto& node = *channel_line.node;
+        std::optional<object_id_t> bgm_source_lane;
+        if (channel == "01") {
+            const auto lane_id = new_id<object_id_t>(ids);
+            bgm_source_lane = lane_id;
+            chart.bgm_source_lanes.push_back({
+                .id = lane_id,
+                .name = "BGM source #" + channel_line.node->command_token +
+                        " (line " + std::to_string(node.source_order + 1) + ")",
+                .source_order = node.source_order,
+            });
+        }
+
+        for (std::size_t slot = 0; slot < channel_line.pair_count; ++slot) {
+            const auto object_id = upper_ascii(std::string_view(channel_line.payload).substr(
+                slot * 2, 2));
+            const auto position = position_for_slot(channel_line, slot);
+            if (!position.has_value()) {
+                line_diagnostic(node, diagnostic_severity_t::warning,
+                                bms_parse_diagnostic_code_t::invalid_measure,
+                                "channel slot cannot be represented exactly at the selected "
+                                "chart resolution; payload remains raw");
+                break;
+            }
+
+            if (channel == "01") {
+                std::optional<resource_id_t> sound;
+                if (object_id != "00") {
+                    sound = resource_for_object(node, object_id);
+                }
+                chart.measures[channel_line.measure].bgm_events.push_back({
+                    .id = new_id<object_id_t>(ids),
+                    .position = *position,
+                    .source_lane = *bgm_source_lane,
+                    .sound = sound,
+                    .structural_slot = slot,
+                    .provenance = source_provenance(
+                        "01 slot " + std::to_string(slot) + " object " + object_id,
+                        node.original_text, node.source_order),
+                });
+                continue;
+            }
+
+            if (channel == "03") {
+                if (object_id == "00") {
+                    continue;
+                }
+                unsigned int bpm_value{};
+                const auto parsed_bpm = std::from_chars(
+                    object_id.data(), object_id.data() + object_id.size(), bpm_value, 16);
+                if (parsed_bpm.ec != std::errc{} ||
+                    parsed_bpm.ptr != object_id.data() + object_id.size() || bpm_value == 0) {
+                    line_diagnostic(node, diagnostic_severity_t::warning,
+                                    bms_parse_diagnostic_code_t::invalid_number,
+                                    "direct BPM object is not a positive hexadecimal byte; raw "
+                                    "slot is retained");
+                    continue;
+                }
+                chart.bpms.push_back({
+                    .id = new_id<object_id_t>(ids),
+                    .position = *position,
+                    .beats_per_minute = {static_cast<std::int64_t>(bpm_value), 1},
+                    .provenance = source_provenance(
+                        "03 slot " + std::to_string(slot) + " value " + object_id,
+                        node.original_text, node.source_order),
+                });
+                continue;
+            }
+
+            if (channel == "08") {
+                if (object_id == "00") {
+                    continue;
+                }
+                const auto found = extended_bpms.find(object_id);
+                if (found == extended_bpms.end()) {
+                    line_diagnostic(node, diagnostic_severity_t::warning,
+                                    bms_parse_diagnostic_code_t::unresolved_reference,
+                                    "extended BPM object references undeclared BPM" + object_id +
+                                        "; source slot remains raw");
+                    continue;
+                }
+                chart.bpms.push_back({
+                    .id = new_id<object_id_t>(ids),
+                    .position = *position,
+                    .beats_per_minute = found->second,
+                    .provenance = source_provenance(
+                        "08 slot " + std::to_string(slot) + " BPM" + object_id,
+                        node.original_text, node.source_order),
+                });
+                continue;
+            }
+
+            if (channel == "09") {
+                if (object_id == "00") {
+                    continue;
+                }
+                const auto found = stop_definitions.find(object_id);
+                if (found == stop_definitions.end()) {
+                    line_diagnostic(node, diagnostic_severity_t::warning,
+                                    bms_parse_diagnostic_code_t::unresolved_reference,
+                                    "STOP object references undeclared STOP" + object_id +
+                                        "; source slot remains raw");
+                    continue;
+                }
+                chart.pauses.push_back({
+                    .id = new_id<object_id_t>(ids),
+                    .position = *position,
+                    .kind = pause_kind_t::stop,
+                    .duration = found->second,
+                    .source_unit = pause_unit_t::bms_stop_ticks,
+                    .provenance = source_provenance(
+                        "09 slot " + std::to_string(slot) + " STOP" + object_id,
+                        node.original_text, node.source_order),
+                });
+                continue;
+            }
+
+            if (!is_materialized_note_family(channel)) {
+                continue;
+            }
+            const auto* lane = lane_for_channel(channel);
+            if (lane == nullptr) {
+                line_diagnostic(node, diagnostic_severity_t::warning,
+                                bms_parse_diagnostic_code_t::unsupported_channel,
+                                "selected profile has no semantic lane for this channel; source "
+                                "payload remains raw");
+                continue;
+            }
+            if (object_id == "00") {
+                continue;
+            }
+
+            auto kind = note_kind_t::tap;
+            const auto visible = lane->bms_channels.visible.has_value() &&
+                                 *lane->bms_channels.visible == channel;
+            const auto invisible = lane->bms_channels.invisible.has_value() &&
+                                   *lane->bms_channels.invisible == channel;
+            const auto mine = lane->bms_channels.mine.has_value() &&
+                              *lane->bms_channels.mine == channel;
+            if (invisible) {
+                kind = note_kind_t::invisible;
+            } else if (mine) {
+                kind = note_kind_t::mine;
+            } else if (!visible) {
+                line_diagnostic(node, diagnostic_severity_t::warning,
+                                bms_parse_diagnostic_code_t::unsupported_channel,
+                                "selected profile does not identify the note-family meaning of " +
+                                    std::string(channel) + "; source payload remains raw");
+                continue;
+            }
+
+            std::optional<resource_id_t> sound;
+            if (kind != note_kind_t::mine) {
+                sound = resource_for_object(node, object_id);
+            }
+            chart.measures[channel_line.measure].notes.push_back({
+                .id = new_id<object_id_t>(ids),
+                .position = *position,
+                .lane = lane->id,
+                .kind = kind,
+                .sound = sound,
+                .provenance = source_provenance(
+                    std::string(channel) + " slot " + std::to_string(slot) + " object " +
+                        object_id,
+                    node.original_text, node.source_order, selected_profile->layout.profile_id),
+            });
+        }
+    }
+
+    std::ranges::stable_sort(chart.bpms, {}, [](const auto& event) {
+        return event.provenance.source_order;
+    });
+
     chart.metadata.name = song.metadata.title;
     chart.metadata.author = song.metadata.artist;
     chart.metadata.format_groups.push_back({

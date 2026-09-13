@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <array>
+#include <string>
+#include <string_view>
+#include <vector>
 
 using namespace wormedit;
 
@@ -75,6 +78,147 @@ TEST_CASE("BMS 14K uses the exact interleaved keyboard map in lane order",
     CHECK(inside_scratch.input.bindings[7].key == physical_key_t::key_f);
     CHECK(inside_scratch.layout.lanes[8].role == lane_role_t::scratch);
     CHECK(inside_scratch.input.bindings[8].key == physical_key_t::key_h);
+}
+
+TEST_CASE("BMS, BME, PMS, and named compatibility profiles preserve memo channel maps",
+          "[unit][core][lane-profile][bms]") {
+    struct channel_case_t {
+        std::string_view name;
+        lane_input_profile_t profile;
+        std::vector<std::string_view> channels;
+    };
+    const std::vector cases{
+        channel_case_t{
+            "BMS 5K free-zone", make_bms_5k_profile(), {"16", "11", "12", "13", "14", "15", "17"}},
+        channel_case_t{"BMS 5K foot-pedal",
+                       make_bms_5k_foot_pedal_profile(),
+                       {"16", "11", "12", "13", "14", "15", "17"}},
+        channel_case_t{
+            "BMS 10K free-zone",
+            make_bms_10k_free_zone_profile(),
+            {"16", "11", "12", "13", "14", "15", "17", "21", "22", "23", "24", "25", "26", "27"}},
+        channel_case_t{
+            "BMS 10K foot-pedal",
+            make_bms_10k_foot_pedal_profile(),
+            {"16", "11", "12", "13", "14", "15", "17", "21", "22", "23", "24", "25", "26", "27"}},
+        channel_case_t{"BME 7K foot-pedal",
+                       make_bme_7k_foot_pedal_profile(),
+                       {"16", "11", "12", "13", "14", "15", "18", "19", "17"}},
+        channel_case_t{"BME 14K foot-pedal",
+                       make_bme_14k_foot_pedal_profile(),
+                       {"16", "11", "12", "13", "14", "15", "18", "19", "17", "21", "22", "23",
+                        "24", "25", "28", "29", "26", "27"}},
+        channel_case_t{"PMS 5-button", make_pms_5k_profile(), {"13", "14", "15", "22", "23"}},
+        channel_case_t{"PMS standard 9-button",
+                       make_pms_9k_profile(),
+                       {"11", "12", "13", "14", "15", "22", "23", "24", "25"}},
+        channel_case_t{"PMS BME-style 9-button",
+                       make_pms_bme_style_9k_profile(),
+                       {"11", "12", "13", "14", "15", "18", "19", "16", "17"}},
+        channel_case_t{"PMS BME-style 18-button",
+                       make_pms_bme_style_18k_profile(),
+                       {"11", "12", "13", "14", "15", "18", "19", "16", "17", "21", "22", "23",
+                        "24", "25", "28", "29", "26", "27"}},
+        channel_case_t{"Double scratch / FPP",
+                       make_bms_double_scratch_profile(),
+                       {"16", "11", "12", "13", "14", "15", "18", "19", "26"}},
+        channel_case_t{"Octave / foot-pedal",
+                       make_bms_octave_fp_profile(),
+                       {"16", "11", "12", "13", "14", "15", "18", "19", "22", "23", "24", "25",
+                        "28", "29", "26", "21"}},
+        channel_case_t{"Project2DX 7K",
+                       make_project2dx_7k_profile(),
+                       {"16", "11", "12", "13", "14", "15", "21", "22"}},
+    };
+
+    for (const auto& item : cases) {
+        INFO(item.name);
+        REQUIRE(item.profile.layout.lanes.size() == item.channels.size());
+        for (std::size_t index = 0; index < item.channels.size(); ++index) {
+            const auto& lane = item.profile.layout.lanes[index];
+            REQUIRE(lane.bms_channels.visible);
+            INFO(item.name << " lane " << index << " actual " << *lane.bms_channels.visible
+                           << " expected " << item.channels[index]);
+            CHECK(*lane.bms_channels.visible == item.channels[index]);
+            const auto expected_order = static_cast<std::uint32_t>(std::ranges::count_if(
+                item.profile.layout.lanes.begin(), item.profile.layout.lanes.begin() + index,
+                [&lane](const auto& previous) { return previous.stage == lane.stage; }));
+            CHECK(lane.display_order == expected_order);
+
+            const auto channel = *lane.bms_channels.visible;
+            auto invisible = channel;
+            auto long_note = channel;
+            auto mine = channel;
+            invisible[0] = channel[0] == '1' ? '3' : '4';
+            long_note[0] = channel[0] == '1' ? '5' : '6';
+            mine[0] = channel[0] == '1' ? 'D' : 'E';
+            REQUIRE(lane.bms_channels.invisible);
+            REQUIRE(lane.bms_channels.long_note);
+            REQUIRE(lane.bms_channels.mine);
+            CHECK(*lane.bms_channels.invisible == invisible);
+            CHECK(*lane.bms_channels.long_note == long_note);
+            CHECK(*lane.bms_channels.mine == mine);
+        }
+        CHECK(validate_input_profile(item.profile.layout, item.profile.input).empty());
+    }
+
+    const auto ten_key = make_bms_10k_profile();
+    CHECK(ten_key.layout.profile_id == make_bms_10k_free_zone_profile().layout.profile_id);
+    CHECK(ten_key.layout.split_stage);
+    CHECK(ten_key.layout.split_after_column == 7);
+    CHECK(ten_key.layout.lanes[0].stage == stage_group_t::left);
+    CHECK(ten_key.layout.lanes[7].stage == stage_group_t::right);
+    CHECK(ten_key.layout.lanes[6].role == lane_role_t::free_zone);
+    CHECK(ten_key.layout.lanes[13].role == lane_role_t::free_zone);
+    REQUIRE(ten_key.input.bindings.size() == 12);
+    CHECK(ten_key.input.bindings.front().key == physical_key_t::digit_1);
+    CHECK(ten_key.input.bindings[6].key == physical_key_t::key_q);
+
+    const auto five_key_pedal = make_bms_5k_foot_pedal_profile();
+    CHECK(five_key_pedal.layout.lanes.back().role == lane_role_t::foot_pedal);
+    CHECK(five_key_pedal.layout.lanes.back().bms_channels.visible == "17");
+    REQUIRE(five_key_pedal.input.bindings.size() == 6);
+    CHECK(make_bms_5k_profile().layout.profile_id ==
+          make_bms_5k_free_zone_profile().layout.profile_id);
+
+    const auto seven_key_pedal = make_bme_7k_foot_pedal_profile();
+    CHECK(seven_key_pedal.layout.lanes.back().role == lane_role_t::foot_pedal);
+    CHECK(seven_key_pedal.layout.lanes.back().bms_channels.visible == "17");
+    REQUIRE(seven_key_pedal.input.bindings.size() == 8);
+
+    const auto fourteen_key_pedals = make_bme_14k_foot_pedal_profile();
+    CHECK(fourteen_key_pedals.layout.split_after_column == 9);
+    CHECK(fourteen_key_pedals.layout.lanes[8].role == lane_role_t::foot_pedal);
+    CHECK(fourteen_key_pedals.layout.lanes[17].role == lane_role_t::foot_pedal);
+    REQUIRE(fourteen_key_pedals.input.bindings.size() == 16);
+
+    const auto pms_standard = make_pms_9k_profile();
+    CHECK(pms_standard.layout.lanes[5].stage == stage_group_t::left);
+    CHECK(pms_standard.layout.lanes[5].bms_channels.visible == "22");
+    CHECK(pms_standard.layout.lanes[5].role == lane_role_t::playable);
+
+    const auto pms_eighteen = make_pms_bme_style_18k_profile();
+    CHECK(pms_eighteen.layout.split_after_column == 9);
+    CHECK(pms_eighteen.layout.lanes[8].stage == stage_group_t::left);
+    CHECK(pms_eighteen.layout.lanes[9].stage == stage_group_t::right);
+    CHECK(pms_eighteen.input.bindings[0].key == physical_key_t::digit_1);
+    CHECK(pms_eighteen.input.bindings[9].key == physical_key_t::key_q);
+
+    const auto double_scratch = make_bms_double_scratch_profile();
+    CHECK(double_scratch.layout.lanes.front().role == lane_role_t::scratch);
+    CHECK(double_scratch.layout.lanes.back().role == lane_role_t::scratch);
+
+    const auto octave = make_bms_octave_fp_profile();
+    CHECK(octave.layout.lanes.back().role == lane_role_t::foot_pedal);
+    CHECK(octave.layout.lanes.back().stage == stage_group_t::left);
+    CHECK(octave.layout.lanes.back().display_order == 15);
+    CHECK(octave.input.profile_id == "bms-octave-fp-remap-required");
+    CHECK(octave.input.bindings.empty());
+
+    const auto project2dx = make_project2dx_7k_profile();
+    CHECK(project2dx.layout.lanes[6].bms_channels.visible == "21");
+    CHECK(project2dx.layout.lanes[6].role == lane_role_t::playable);
+    CHECK(project2dx.layout.lanes[6].stage == stage_group_t::left);
 }
 
 TEST_CASE("number-row input profile applies only to the selected stage",

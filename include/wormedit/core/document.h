@@ -639,11 +639,24 @@ enum class quantization_tie_t {
     reject,
 };
 
+enum class quantization_collision_t {
+    reject,
+    allow,
+};
+
+enum class quantization_hold_t {
+    start_only,
+    both_endpoints,
+};
+
 struct quantize_request_t {
     std::uint64_t divisions{};
     quantization_space_t space{quantization_space_t::standard_measure};
     quantization_tie_t tie{quantization_tie_t::earlier};
+    quantization_collision_t collisions{quantization_collision_t::reject};
+    quantization_hold_t holds{quantization_hold_t::both_endpoints};
     bool allow_resolution_promotion{false};
+    std::vector<object_id_t> objects;
 };
 
 struct conversion_request_t {
@@ -679,6 +692,7 @@ enum class diagnostic_code_t {
     invalid_binding,
     invalid_stage,
     invalid_rational,
+    collision,
     unsupported_feature,
     approximated_feature,
     dropped_feature,

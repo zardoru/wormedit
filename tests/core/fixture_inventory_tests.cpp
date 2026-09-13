@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -40,9 +41,48 @@ constexpr std::array fixture_paths{
     "bmson/zero-resolution-default.bmson",
 };
 
-auto read_file(const std::filesystem::path& path) -> std::string {
+constexpr std::array byte_fixture_paths{
+    "bms/encoding/utf8-bom.bms",
+    "bms/encoding/cp932-shift-jis.bms",
+    "bms/encoding/euc-kr.bms",
+    "bms/encoding/cp949-extension.bms",
+    "bms/encoding/windows-1252.bms",
+    "bms/encoding/ascii-ambiguous.bms",
+    "bms/encoding/invalid-utf8-after-bom.bms",
+    "bms/encoding/invalid-cp932-truncated-lead.bms",
+};
+
+auto read_binary_file(const std::filesystem::path& path) -> std::string {
     std::ifstream stream(path, std::ios::binary);
     return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+}
+
+auto decode_lowercase_hex(std::string_view source) -> std::optional<std::string> {
+    std::string bytes;
+    std::optional<unsigned char> high_nibble;
+    for (const auto character : source) {
+        if (character == ' ' || character == '\n' || character == '\r' || character == '\t') {
+            continue;
+        }
+        unsigned char nibble{};
+        if (character >= '0' && character <= '9') {
+            nibble = static_cast<unsigned char>(character - '0');
+        } else if (character >= 'a' && character <= 'f') {
+            nibble = static_cast<unsigned char>(character - 'a' + 10);
+        } else {
+            return std::nullopt;
+        }
+        if (!high_nibble.has_value()) {
+            high_nibble = nibble;
+        } else {
+            bytes.push_back(static_cast<char>((*high_nibble << 4U) | nibble));
+            high_nibble.reset();
+        }
+    }
+    if (high_nibble.has_value()) {
+        return std::nullopt;
+    }
+    return bytes;
 }
 
 } // namespace
@@ -50,13 +90,35 @@ auto read_file(const std::filesystem::path& path) -> std::string {
 TEST_CASE("Stage 0 chart fixtures have checked-in semantic expectations",
           "[unit][fixture][format]") {
     const auto root = std::filesystem::path(WORMEDIT_FIXTURE_DIR);
-    const auto inventory = read_file(root / "README.md");
+    const auto inventory = read_binary_file(root / "README.md");
     REQUIRE_FALSE(inventory.empty());
 
     for (const std::string_view relative_path : fixture_paths) {
         CAPTURE(relative_path);
-        const auto contents = read_file(root / relative_path);
+        const auto contents = read_binary_file(root / relative_path);
         CHECK_FALSE(contents.empty());
         CHECK(inventory.find(relative_path) != std::string::npos);
+    }
+}
+
+TEST_CASE("Stage 0 BMS encoding fixtures are inventoried as byte streams",
+          "[unit][fixture][format][encoding]") {
+    const auto root = std::filesystem::path(WORMEDIT_FIXTURE_DIR);
+    const auto inventory = read_binary_file(root / "bms/encoding/README.md");
+    REQUIRE_FALSE(inventory.empty());
+
+    for (const std::string_view relative_path : byte_fixture_paths) {
+        CAPTURE(relative_path);
+        const auto fixture_path = std::filesystem::path(relative_path);
+        const auto bytes = read_binary_file(root / fixture_path);
+        CHECK_FALSE(bytes.empty());
+        const auto fixture_name = fixture_path.filename().string();
+        CHECK(inventory.find(fixture_name) != std::string::npos);
+
+        const auto recipe_path = root / fixture_path.parent_path() / "byte-source" /
+                                 (fixture_path.stem().string() + ".hex");
+        const auto recipe = decode_lowercase_hex(read_binary_file(recipe_path));
+        REQUIRE(recipe.has_value());
+        CHECK(bytes == *recipe);
     }
 }

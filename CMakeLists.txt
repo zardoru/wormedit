@@ -25,6 +25,8 @@ add_library(wormedit_core
     src/core/document.cpp
     src/core/lane_profiles.cpp
     src/core/measure.cpp
+    src/core/quantize.cpp
+    src/core/rational.cpp
 )
 add_library(wormedit::core ALIAS wormedit_core)
 target_include_directories(wormedit_core PUBLIC "${CMAKE_SOURCE_DIR}/include")

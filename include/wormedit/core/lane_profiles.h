@@ -28,9 +28,60 @@ make_bms_14k_profile(scratch_placement_t left_scratch = scratch_placement_t::out
                      scratch_placement_t right_scratch = scratch_placement_t::outside)
     -> lane_input_profile_t;
 
-// The number row (1 through 0) is applied in display order to one stage. The
-// operation fails if the selected stage has more than ten lanes or does not
-// exist in the supplied layout.
+// BMS 5K uses channel 17 as a free-zone lane by default. The explicitly named
+// foot-pedal variant assigns the same raw channel a different semantic role.
+[[nodiscard]] auto make_bms_5k_profile(scratch_placement_t scratch = scratch_placement_t::outside)
+    -> lane_input_profile_t;
+[[nodiscard]] auto
+make_bms_5k_free_zone_profile(scratch_placement_t scratch = scratch_placement_t::outside)
+    -> lane_input_profile_t;
+[[nodiscard]] auto
+make_bms_5k_foot_pedal_profile(scratch_placement_t scratch = scratch_placement_t::outside)
+    -> lane_input_profile_t;
+[[nodiscard]] auto
+make_bms_10k_profile(scratch_placement_t left_scratch = scratch_placement_t::outside,
+                     scratch_placement_t right_scratch = scratch_placement_t::outside)
+    -> lane_input_profile_t;
+[[nodiscard]] auto
+make_bms_10k_free_zone_profile(scratch_placement_t left_scratch = scratch_placement_t::outside,
+                               scratch_placement_t right_scratch = scratch_placement_t::outside)
+    -> lane_input_profile_t;
+[[nodiscard]] auto
+make_bms_10k_foot_pedal_profile(scratch_placement_t left_scratch = scratch_placement_t::outside,
+                                scratch_placement_t right_scratch = scratch_placement_t::outside)
+    -> lane_input_profile_t;
+
+// BME 7K/14K profiles retain the existing BMS-named factories above for
+// source compatibility. The optional foot-pedal channels are separate lanes
+// and are not included in the default keyboard bindings.
+[[nodiscard]] auto make_bme_7k_profile(scratch_placement_t scratch = scratch_placement_t::outside)
+    -> lane_input_profile_t;
+[[nodiscard]] auto
+make_bme_7k_foot_pedal_profile(scratch_placement_t scratch = scratch_placement_t::outside)
+    -> lane_input_profile_t;
+[[nodiscard]] auto
+make_bme_14k_profile(scratch_placement_t left_scratch = scratch_placement_t::outside,
+                     scratch_placement_t right_scratch = scratch_placement_t::outside)
+    -> lane_input_profile_t;
+[[nodiscard]] auto
+make_bme_14k_foot_pedal_profile(scratch_placement_t left_scratch = scratch_placement_t::outside,
+                                scratch_placement_t right_scratch = scratch_placement_t::outside)
+    -> lane_input_profile_t;
+
+[[nodiscard]] auto make_pms_5k_profile() -> lane_input_profile_t;
+[[nodiscard]] auto make_pms_9k_profile() -> lane_input_profile_t;
+[[nodiscard]] auto make_pms_bme_style_9k_profile() -> lane_input_profile_t;
+[[nodiscard]] auto make_pms_bme_style_18k_profile() -> lane_input_profile_t;
+
+[[nodiscard]] auto make_bms_double_scratch_profile() -> lane_input_profile_t;
+// OCT/FP has fifteen scratch/key lanes in one stage; its default input remains
+// unbound until a keyboard bank policy is specified.
+[[nodiscard]] auto make_bms_octave_fp_profile() -> lane_input_profile_t;
+[[nodiscard]] auto make_project2dx_7k_profile() -> lane_input_profile_t;
+
+// The number row (1 through 0) is applied in display order to playable and
+// scratch lanes in one stage. The operation fails if that stage has more than
+// ten bindable lanes or does not exist in the supplied layout.
 [[nodiscard]] auto make_number_row_input_profile(const lane_layout_t& layout,
                                                  std::uint32_t stage = 0,
                                                  std::string profile_id = "number-row")

@@ -6,6 +6,7 @@ add_executable(wormedit_core_tests
     core/document_tests.cpp
     core/bms_profile_detection_tests.cpp
     core/fixture_inventory_tests.cpp
+    core/grid_tests.cpp
     core/interaction_tests.cpp
     core/lane_profile_tests.cpp
     core/measure_tests.cpp

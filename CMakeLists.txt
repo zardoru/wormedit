@@ -28,6 +28,7 @@ add_library(wormedit_core
     src/core/command.cpp
     src/core/document.cpp
     src/core/bms_profile_detection.cpp
+    src/core/grid.cpp
     src/core/interaction.cpp
     src/core/lane_profiles.cpp
     src/core/measure.cpp

@@ -21,8 +21,19 @@ void trim_undo_history(document_history_t& history) {
         return;
     }
     const auto excess = history.undo.size() - history.maximum_undo_entries;
-    history.undo.erase(history.undo.begin(), history.undo.begin() +
-                                                   static_cast<std::ptrdiff_t>(excess));
+    history.undo.erase(history.undo.begin(),
+                       history.undo.begin() + static_cast<std::ptrdiff_t>(excess));
+}
+
+void mark_retained_sources_changed(song_document_t& document) {
+    for (auto& group : document.metadata.format_groups) {
+        group.encoding.unchanged_since_import = false;
+    }
+    for (auto& chart : document.charts) {
+        for (auto& group : chart.metadata.format_groups) {
+            group.encoding.unchanged_since_import = false;
+        }
+    }
 }
 
 } // namespace
@@ -33,16 +44,14 @@ auto make_document_history(song_document_t document, std::size_t maximum_undo_en
         document.revision = 1;
     }
     const auto current_revision = document.revision;
-    const auto next_revision =
-        current_revision == std::numeric_limits<std::uint64_t>::max()
-            ? current_revision
-            : current_revision + 1;
+    const auto next_revision = current_revision == std::numeric_limits<std::uint64_t>::max()
+                                   ? current_revision
+                                   : current_revision + 1;
     return {
         .document = std::move(document),
         .next_revision = next_revision,
-        .saved_revision = initially_saved
-                              ? std::optional<std::uint64_t>{current_revision}
-                              : std::nullopt,
+        .saved_revision =
+            initially_saved ? std::optional<std::uint64_t>{current_revision} : std::nullopt,
         .maximum_undo_entries = maximum_undo_entries,
     };
 }
@@ -66,6 +75,7 @@ auto commit_document_command(document_history_t& history, song_document_t propos
     }
 
     proposed.revision = history.next_revision;
+    mark_retained_sources_changed(proposed);
     result.diagnostics = validate_document(proposed);
     if (std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
             return diagnostic.severity == diagnostic_severity_t::error;
@@ -92,13 +102,11 @@ auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
                             const quantize_request_t& request) -> quantize_command_result_t {
     quantize_command_result_t result;
     result.command.revision = history.document.revision;
-    const auto chart = std::ranges::find_if(history.document.charts, [chart_id](const auto& item) {
-        return item.id == chart_id;
-    });
+    const auto chart = std::ranges::find_if(
+        history.document.charts, [chart_id](const auto& item) { return item.id == chart_id; });
     if (chart == history.document.charts.end()) {
-        result.command.diagnostics.push_back(
-            error(diagnostic_code_t::invalid_id,
-                  "quantization command refers to an unknown chart"));
+        result.command.diagnostics.push_back(error(
+            diagnostic_code_t::invalid_id, "quantization command refers to an unknown chart"));
         return result;
     }
 
@@ -116,8 +124,8 @@ auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
     const auto proposed_chart = std::ranges::find_if(
         proposed_document.charts, [chart_id](const auto& item) { return item.id == chart_id; });
     *proposed_chart = std::move(*proposal.chart);
-    result.command = commit_document_command(history, std::move(proposed_document),
-                                             "Quantize chart");
+    result.command =
+        commit_document_command(history, std::move(proposed_document), "Quantize chart");
     return result;
 }
 

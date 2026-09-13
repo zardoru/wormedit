@@ -34,6 +34,37 @@ struct place_tap_action_t {
     local_position_t position;
 };
 
+// Hold authoring is a two-step gesture. Beginning stores an exact snapped
+// preview anchor without changing the document; committing publishes one
+// validated command. A rejected commit leaves the preview available to retry.
+struct begin_hold_action_t {
+    local_position_t position;
+};
+
+struct update_hold_preview_action_t {
+    local_position_t position;
+};
+
+struct commit_hold_action_t {
+    local_position_t position;
+};
+
+struct cancel_hold_action_t {};
+
+struct select_editor_notes_action_t {
+    std::vector<object_id_t> notes;
+};
+
+struct delete_editor_notes_action_t {};
+
+// The reference end is an unsnapped pointer/cursor position. Its snapped
+// duration delta is applied atomically to the selected notes when the
+// reference belongs to the selection, otherwise only the reference changes.
+struct resize_note_durations_action_t {
+    object_id_t reference_note;
+    local_position_t reference_end;
+};
+
 struct select_editor_lane_action_t {
     lane_id_t lane;
 };
@@ -53,8 +84,19 @@ struct scroll_editor_view_action_t {
 
 using editor_ui_action_t =
     std::variant<move_edit_cursor_action_t, cycle_edit_snap_action_t, place_tap_action_t,
-                 select_editor_lane_action_t, adjust_editor_zoom_action_t,
-                 scroll_editor_view_action_t>;
+                 begin_hold_action_t, update_hold_preview_action_t, commit_hold_action_t,
+                 cancel_hold_action_t, select_editor_notes_action_t, delete_editor_notes_action_t,
+                 resize_note_durations_action_t, select_editor_lane_action_t,
+                 adjust_editor_zoom_action_t, scroll_editor_view_action_t>;
+
+struct pending_hold_t {
+    local_position_t position;
+    lane_id_t lane;
+    std::uint64_t document_revision{};
+    std::optional<local_position_t> preview_end;
+
+    auto operator==(const pending_hold_t&) const -> bool = default;
+};
 
 struct editor_interaction_state_t {
     chart_id_t chart;
@@ -66,6 +108,8 @@ struct editor_interaction_state_t {
     double pixels_per_standard_measure{default_pixels_per_standard_measure};
     double viewport_scroll_pixels{};
     double viewport_height_pixels{1.0};
+    std::optional<pending_hold_t> pending_hold;
+    std::vector<object_id_t> selected_notes;
 };
 
 struct editor_interaction_view_model_t {
@@ -79,6 +123,8 @@ struct editor_interaction_view_model_t {
     double pixels_per_standard_measure{default_pixels_per_standard_measure};
     double viewport_scroll_pixels{};
     double viewport_height_pixels{1.0};
+    std::optional<pending_hold_t> pending_hold;
+    std::vector<object_id_t> selected_notes;
     bool can_move_backward{};
     bool can_move_forward{};
 };
@@ -106,17 +152,17 @@ struct editor_interaction_result_t {
 
 // Creates transient, frontend-independent editing state from a validated
 // history snapshot. Snap denominators are ordered by editor preference.
-[[nodiscard]] auto make_editor_interaction(
-    const document_history_t& history, chart_id_t chart, lane_id_t active_lane,
-    local_position_t cursor, std::span<const std::uint64_t> ordered_snap_denominators,
-    std::uint64_t requested_snap_denominator,
-    double viewport_height_pixels = 1.0) -> editor_interaction_setup_t;
+[[nodiscard]] auto make_editor_interaction(const document_history_t& history, chart_id_t chart,
+                                           lane_id_t active_lane, local_position_t cursor,
+                                           std::span<const std::uint64_t> ordered_snap_denominators,
+                                           std::uint64_t requested_snap_denominator,
+                                           double viewport_height_pixels = 1.0)
+    -> editor_interaction_setup_t;
 
 // Maps an exact chart position into backend-neutral vertical pixels for a view.
 [[nodiscard]] auto editor_position_y_pixels(const chart_document_t& chart,
                                             const editor_interaction_view_model_t& view,
-                                            local_position_t position)
-    -> std::optional<double>;
+                                            local_position_t position) -> std::optional<double>;
 
 // Dispatches one typed frontend action. Document edits are published through
 // commit_document_command so validation, undo, and redo share one boundary.

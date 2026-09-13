@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <memory>
 #include <ranges>
 
 using namespace wormedit;
@@ -54,8 +55,7 @@ TEST_CASE("quantization commits atomically through bounded document history",
     CHECK(history.document.revision == 1);
     CHECK_FALSE(is_document_dirty(history));
 
-    const auto applied = apply_quantize_command(
-        history, chart_id_t{1}, {.divisions = 4});
+    const auto applied = apply_quantize_command(history, chart_id_t{1}, {.divisions = 4});
     REQUIRE(applied);
     CHECK(note_row(history) == 240);
     CHECK(history.document.revision == 2);
@@ -88,8 +88,7 @@ TEST_CASE("rejected and unknown-chart quantization cannot mutate document histor
     });
     auto history = make_document_history(std::move(song));
 
-    const auto rejected = apply_quantize_command(
-        history, chart_id_t{1}, {.divisions = 4});
+    const auto rejected = apply_quantize_command(history, chart_id_t{1}, {.divisions = 4});
     CHECK_FALSE(rejected);
     CHECK(history.document.revision == 1);
     CHECK(history.undo.empty());
@@ -97,8 +96,7 @@ TEST_CASE("rejected and unknown-chart quantization cannot mutate document histor
     CHECK(history.document.charts.front().measures.front().notes[0].position.row == 100);
     CHECK(history.document.charts.front().measures.front().notes[1].position.row == 110);
 
-    const auto unknown = apply_quantize_command(
-        history, chart_id_t{99}, {.divisions = 4});
+    const auto unknown = apply_quantize_command(history, chart_id_t{99}, {.divisions = 4});
     CHECK_FALSE(unknown);
     CHECK(history.document.revision == 1);
     CHECK(history.undo.empty());
@@ -135,4 +133,45 @@ TEST_CASE("exhausted document revision rejects publication", "[unit][core][comma
     CHECK_FALSE(commit_document_command(history, std::move(proposed), "Rename song"));
     CHECK(history.document.metadata.title.empty());
     CHECK(history.undo.empty());
+}
+
+TEST_CASE("published commands invalidate retained-source exact-save claims reversibly",
+          "[unit][core][command][provenance]") {
+    auto song = make_song();
+    const auto bytes = std::make_shared<const std::vector<std::byte>>();
+    song.metadata.format_groups.push_back({
+        .family = format_family_t::bms,
+        .encoding =
+            {
+                .detected = text_encoding_t::ascii,
+                .original_bytes = bytes,
+                .unchanged_since_import = true,
+            },
+    });
+    song.charts.front().metadata.format_groups.push_back({
+        .family = format_family_t::bmson,
+        .encoding =
+            {
+                .detected = text_encoding_t::utf8,
+                .original_bytes = bytes,
+                .unchanged_since_import = true,
+            },
+    });
+    auto history = make_document_history(std::move(song));
+
+    auto proposed = history.document;
+    proposed.metadata.title = "edited";
+    REQUIRE(commit_document_command(history, std::move(proposed), "Rename song"));
+    CHECK_FALSE(history.document.metadata.format_groups.front().encoding.unchanged_since_import);
+    CHECK_FALSE(history.document.charts.front()
+                    .metadata.format_groups.front()
+                    .encoding.unchanged_since_import);
+
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.metadata.format_groups.front().encoding.unchanged_since_import);
+    CHECK(history.document.charts.front()
+              .metadata.format_groups.front()
+              .encoding.unchanged_since_import);
+    REQUIRE(redo_document_command(history));
+    CHECK_FALSE(history.document.metadata.format_groups.front().encoding.unchanged_since_import);
 }

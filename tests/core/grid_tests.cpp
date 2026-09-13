@@ -1,0 +1,169 @@
+#include <wormedit/core/grid.h>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
+#include <ranges>
+
+using namespace wormedit;
+
+namespace {
+
+auto make_chart(std::uint64_t divisions, std::vector<measure_chunk_t> measures)
+    -> chart_document_t {
+    return {
+        .id = chart_id_t{1},
+        .divisions_per_standard_measure = divisions,
+        .measures = std::move(measures),
+    };
+}
+
+auto line_at(const editor_grid_result_t& result, std::uint64_t whole_row)
+    -> const editor_grid_line_t* {
+    const auto found = std::ranges::find_if(result.lines, [whole_row](const auto& line) {
+        return line.chart_row.whole_rows == whole_row &&
+               line.chart_row.fractional_rows.numerator == 0;
+    });
+    return found == result.lines.end() ? nullptr : &*found;
+}
+
+} // namespace
+
+TEST_CASE("editor grid lines use exact meter, compound groups, variable bars, and snap overlap",
+          "[unit][core][grid]") {
+    auto chart = make_chart(960, {
+                                     {.id = measure_id_t{1}},
+                                     {.id = measure_id_t{2}, .definition = {{3, 4}, meter_t{6, 8}}},
+                                 });
+    auto request = editor_grid_request_t{
+        .visible_begin_row = 0,
+        .visible_end_row = 1680,
+        .active_snap_denominator = 4,
+        .density = {0.0, 0.0, 0.0},
+    };
+
+    const auto result = make_editor_grid_lines(chart, request);
+    REQUIRE(result);
+
+    const auto* first_group = line_at(result, 480);
+    REQUIRE(first_group != nullptr);
+    CHECK(first_group->kind == editor_grid_line_kind_t::group);
+    CHECK(first_group->emphasis == editor_grid_emphasis_t::strong);
+    const auto* second_measure = line_at(result, 960);
+    REQUIRE(second_measure != nullptr);
+    CHECK(second_measure->kind == editor_grid_line_kind_t::measure);
+    CHECK(second_measure->position.measure == measure_id_t{2});
+
+    const auto* compound_beat = line_at(result, 1080);
+    REQUIRE(compound_beat != nullptr);
+    CHECK(compound_beat->kind == editor_grid_line_kind_t::beat);
+    CHECK(compound_beat->position.measure == measure_id_t{2});
+    CHECK(compound_beat->position.whole_rows == 120);
+    const auto* compound_group = line_at(result, 1320);
+    REQUIRE(compound_group != nullptr);
+    CHECK(compound_group->kind == editor_grid_line_kind_t::group);
+    CHECK(compound_group->position.whole_rows == 360);
+
+    request.authored_groupings = {{.measure = measure_id_t{2}, .beat_counts = {2, 2, 2}}};
+    const auto regrouped = make_editor_grid_lines(chart, request);
+    REQUIRE(regrouped);
+    const auto* authored_group = line_at(regrouped, 1200);
+    REQUIRE(authored_group != nullptr);
+    CHECK(authored_group->kind == editor_grid_line_kind_t::group);
+    CHECK(authored_group->position.whole_rows == 240);
+}
+
+TEST_CASE("editor grid preserves fractional beat coordinates below note-row resolution",
+          "[unit][core][grid]") {
+    auto chart = make_chart(3, {
+                                   {.id = measure_id_t{1}, .definition = {{1, 3}, meter_t{2, 6}}},
+                               });
+    const auto result = make_editor_grid_lines(chart, {.visible_begin_row = 0,
+                                                       .visible_end_row = 1,
+                                                       .pixels_per_standard_measure = 192.0,
+                                                       .density = {0.0, 0.0, 0.0}});
+    REQUIRE(result);
+    const auto beat = std::ranges::find_if(
+        result.lines, [](const auto& line) { return line.kind == editor_grid_line_kind_t::beat; });
+    REQUIRE(beat != result.lines.end());
+    CHECK(beat->position.measure == measure_id_t{1});
+    CHECK(beat->position.whole_rows == 0);
+    CHECK((beat->position.fractional_rows == rational_t{1, 2}));
+    CHECK(beat->chart_row.whole_rows == 0);
+    CHECK((beat->chart_row.fractional_rows == rational_t{1, 2}));
+}
+
+TEST_CASE("grid zoom suppresses dense subdivisions without moving retained lines",
+          "[unit][core][grid]") {
+    const auto chart = make_chart(960, {{.id = measure_id_t{1}}});
+    const auto high_zoom = make_editor_grid_lines(chart, {.visible_begin_row = 0,
+                                                          .visible_end_row = 960,
+                                                          .active_snap_denominator = 16,
+                                                          .pixels_per_standard_measure = 192.0});
+    const auto low_zoom = make_editor_grid_lines(chart, {.visible_begin_row = 0,
+                                                         .visible_end_row = 960,
+                                                         .active_snap_denominator = 16,
+                                                         .pixels_per_standard_measure = 24.0});
+    REQUIRE(high_zoom);
+    REQUIRE(low_zoom);
+
+    CHECK(std::ranges::any_of(high_zoom.lines, [](const auto& line) {
+        return line.kind == editor_grid_line_kind_t::active_snap;
+    }));
+    CHECK(std::ranges::none_of(low_zoom.lines, [](const auto& line) {
+        return line.kind == editor_grid_line_kind_t::active_snap ||
+               line.kind == editor_grid_line_kind_t::beat;
+    }));
+    const auto* high_group = line_at(high_zoom, 480);
+    const auto* low_group = line_at(low_zoom, 480);
+    REQUIRE(high_group != nullptr);
+    REQUIRE(low_group != nullptr);
+    CHECK(high_group->kind == low_group->kind);
+    CHECK(high_group->position == low_group->position);
+    CHECK(high_group->chart_row == low_group->chart_row);
+}
+
+TEST_CASE("visible grid intervals are half-open and reject malformed groupings",
+          "[unit][core][grid]") {
+    const auto chart = make_chart(960, {{.id = measure_id_t{1}}});
+    const auto clipped = make_editor_grid_lines(chart, {.visible_begin_row = 100,
+                                                        .visible_end_row = 480,
+                                                        .pixels_per_standard_measure = 192.0,
+                                                        .density = {0.0, 0.0, 0.0}});
+    REQUIRE(clipped);
+    REQUIRE(clipped.lines.size() == 1);
+    CHECK(clipped.lines.front().chart_row.whole_rows == 240);
+
+    auto metered =
+        make_chart(960, {
+                            {.id = measure_id_t{2}, .definition = {{3, 4}, meter_t{6, 8}}},
+                        });
+    const auto invalid_grouping = make_editor_grid_lines(
+        metered, {.visible_begin_row = 0,
+                  .visible_end_row = 720,
+                  .authored_groupings = {{.measure = measure_id_t{2}, .beat_counts = {2, 2}}}});
+    CHECK_FALSE(invalid_grouping);
+    CHECK(std::ranges::any_of(invalid_grouping.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == diagnostic_code_t::invalid_measure;
+    }));
+}
+
+TEST_CASE("dense grid thinning retains stable representatives instead of hiding pairs",
+          "[unit][core][grid][density]") {
+    const auto chart =
+        make_chart(960, {
+                            {.id = measure_id_t{1}, .definition = {{7, 8}, meter_t{7, 8}}},
+                        });
+    const auto result = make_editor_grid_lines(
+        chart, {.visible_begin_row = 0,
+                .visible_end_row = 840,
+                .pixels_per_standard_measure = 64.0,
+                .density = {9.0, 9.0, 9.0},
+                .authored_groupings = {
+                    {.measure = measure_id_t{1}, .beat_counts = {1, 1, 1, 1, 1, 1, 1}}}});
+    REQUIRE(result);
+    const auto groups = std::ranges::count_if(
+        result.lines, [](const auto& line) { return line.kind == editor_grid_line_kind_t::group; });
+    CHECK(groups > 0);
+    CHECK(groups < 6);
+}

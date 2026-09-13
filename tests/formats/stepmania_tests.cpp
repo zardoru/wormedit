@@ -126,6 +126,101 @@ TEST_CASE("StepMania legacy negative timing encodings become canonical beat warp
     CHECK(at(stop.song->charts.front().warps.front().span.end, 3, 0));
 }
 
+TEST_CASE("Versioned SSC metadata remains editable without losing format-only fields",
+          "[unit][format][stepmania]") {
+    auto parsed = fixture("versioned-metadata.ssc", wormedit::stepmania_profile_t::ssc);
+    REQUIRE(parsed.song.has_value());
+    REQUIRE_FALSE(parsed.has_errors());
+    CHECK(parsed.song->metadata.title == "Versioned metadata fixture");
+    CHECK(parsed.song->metadata.artist == "Wormedit fixture authors");
+    REQUIRE(parsed.song->charts.size() == 1);
+    auto& chart = parsed.song->charts.front();
+    CHECK(chart.metadata.name == "Editable chart name");
+    CHECK(chart.metadata.author == "Chart Author");
+    CHECK((chart.metadata.rating == wormedit::signed_rational_t{11, 1}));
+
+    const auto& song_fields = parsed.song->metadata.format_groups.front().ordered_fields;
+    CHECK(std::ranges::find(song_fields, std::pair{std::string{"VERSION"}, std::string{"0.83"}}) !=
+          song_fields.end());
+    CHECK(std::ranges::find(song_fields,
+                            std::pair{std::string{"SUBTITLE"}, std::string{"Retained subtitle"}}) !=
+          song_fields.end());
+    CHECK(std::ranges::find(song_fields, std::pair{std::string{"TITLETRANSLIT"},
+                                                   std::string{"Versioned Metadata Fixture"}}) !=
+          song_fields.end());
+    CHECK(std::ranges::find(song_fields, std::pair{std::string{"ARTISTTRANSLIT"},
+                                                   std::string{"Wormedit Fixture Authors"}}) !=
+          song_fields.end());
+
+    parsed.song->metadata.title = "Edited title";
+    chart.metadata.name = "Edited chart";
+    chart.metadata.author = "Edited Author";
+    chart.metadata.rating = {25, 2};
+    const auto written =
+        wormedit::write_stepmania(*parsed.song, {.profile = wormedit::stepmania_profile_t::ssc});
+    REQUIRE(written.text.has_value());
+    CHECK(written.text->find("#VERSION:0.83;") != std::string::npos);
+    CHECK(written.text->find("#SUBTITLE:Retained subtitle;") != std::string::npos);
+    CHECK(written.text->find("#TITLETRANSLIT:Versioned Metadata Fixture;") != std::string::npos);
+    CHECK(written.text->find("#ARTISTTRANSLIT:Wormedit Fixture Authors;") != std::string::npos);
+    CHECK(written.text->find("#GENRE:Test Genre;") != std::string::npos);
+    CHECK(written.text->find("#ORIGIN:Wormedit;") != std::string::npos);
+    CHECK(written.text->find("#CREDIT:Fixture maintainers;") != std::string::npos);
+    CHECK(written.text->find("#BANNER:banner.png;") != std::string::npos);
+    CHECK(written.text->find("#BACKGROUND:background.png;") != std::string::npos);
+    CHECK(written.text->find("#CDTITLE:cdtitle.png;") != std::string::npos);
+    CHECK(written.text->find("#SAMPLESTART:12.500;") != std::string::npos);
+    CHECK(written.text->find("#SAMPLELENGTH:15.000;") != std::string::npos);
+    CHECK(written.text->find("#SELECTABLE:YES;") != std::string::npos);
+    CHECK(written.text->find("#DISPLAYBPM:120:180;") != std::string::npos);
+    CHECK(written.text->find("#TITLE:Edited title;") != std::string::npos);
+    CHECK(written.text->find("#DESCRIPTION:Retained chart description;") != std::string::npos);
+    CHECK(written.text->find("#CHARTNAME:Edited chart;") != std::string::npos);
+    CHECK(written.text->find("#CREDIT:Edited Author;") != std::string::npos);
+    CHECK(written.text->find("#CREDIT:Chart Author;") == std::string::npos);
+    CHECK(written.text->find("#MUSIC:chart.ogg;") != std::string::npos);
+    CHECK(written.text->find("#METER:12.5;") != std::string::npos);
+
+    const auto reimported = parse_ssc(*written.text);
+    REQUIRE(reimported.song.has_value());
+    REQUIRE_FALSE(reimported.has_errors());
+    const auto& reparsed_chart = reimported.song->charts.front();
+    CHECK(reparsed_chart.metadata.name == "Edited chart");
+    CHECK(reparsed_chart.metadata.author == "Edited Author");
+    CHECK((reparsed_chart.metadata.rating == wormedit::signed_rational_t{25, 2}));
+}
+
+TEST_CASE("SM global CREDIT maps to chart authors and conflicting edits reject",
+          "[unit][format][stepmania]") {
+    constexpr std::string_view source =
+        "#TITLE:Credit scope;#CREDIT:Global Author;#BPMS:0=120;"
+        "#NOTES:dance-single:Easy chart:Easy:2:0,0,0,0,0:\n1000\n0000\n0000\n0000\n;"
+        "#NOTES:dance-single:Hard chart:Hard:8:0,0,0,0,0:\n0100\n0000\n0000\n0000\n;";
+    auto options = wormedit::stepmania_parse_options_t{};
+    options.profile = wormedit::stepmania_profile_t::sm;
+    auto parsed = wormedit::parse_stepmania_bytes(
+        std::as_bytes(std::span{source.data(), source.size()}), options);
+    REQUIRE(parsed.song.has_value());
+    REQUIRE(parsed.song->charts.size() == 2);
+    CHECK(parsed.song->charts[0].metadata.author == "Global Author");
+    CHECK(parsed.song->charts[1].metadata.author == "Global Author");
+
+    auto written =
+        wormedit::write_stepmania(*parsed.song, {.profile = wormedit::stepmania_profile_t::sm});
+    REQUIRE(written.text.has_value());
+    CHECK(written.text->find("#CREDIT:Global Author;") != std::string::npos);
+
+    parsed.song->charts[1].metadata.author = "Another Author";
+    written =
+        wormedit::write_stepmania(*parsed.song, {.profile = wormedit::stepmania_profile_t::sm});
+    CHECK_FALSE(written.text.has_value());
+    CHECK(std::ranges::any_of(written.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code ==
+                   wormedit::stepmania_write_diagnostic_code_t::conflicting_song_metadata &&
+               diagnostic.field == "CREDIT";
+    }));
+}
+
 TEST_CASE("Native warp timing, notes, and unknown metadata write deterministically and reimport",
           "[unit][format][stepmania]") {
     const auto input = fixture("matched-timing.ssc", wormedit::stepmania_profile_t::ssc);

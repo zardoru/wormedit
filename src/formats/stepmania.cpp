@@ -822,7 +822,14 @@ auto parse_stepmania_bytes(std::span<const std::byte> bytes, stepmania_parse_opt
                 fail(stepmania_parse_diagnostic_code_t::division_limit,
                      "Default StepMania editor grid exceeds the configured division limit",
                      chart_index, last_field(chart_source.fields, "NOTES")->offset);
-            chart.metadata.name = description;
+            const auto* chart_name = last_field(chart_source.fields, "CHARTNAME");
+            chart.metadata.name = chart_name ? std::string(trim(chart_name->value)) : description;
+            if (options.profile == stepmania_profile_t::ssc) {
+                if (const auto* credit = last_field(chart_source.fields, "CREDIT"))
+                    chart.metadata.author = std::string(trim(credit->value));
+            } else if (const auto* credit = last_field(song_fields, "CREDIT")) {
+                chart.metadata.author = std::string(trim(credit->value));
+            }
             chart.metadata.format_groups.push_back(
                 as_metadata_group(chart_source.fields, options.profile, source_bytes));
             if (options.profile == stepmania_profile_t::sm) {
@@ -1664,10 +1671,22 @@ auto write_stepmania(const song_document_t& song, stepmania_write_options_t opti
     if (!song.metadata.artist.empty())
         emit("ARTIST", song.metadata.artist);
     const auto* song_group = family_group(song.metadata.format_groups);
-    const std::set<std::string> modeled_song{
+    std::set<std::string> modeled_song{
         "TITLE",     "ARTIST",     "OFFSET",     "BPMS",     "STOPS",       "DELAYS",
         "WARPS",     "SCROLLS",    "SPEEDS",     "NOTEDATA", "STEPSTYPE",   "DESCRIPTION",
         "CHARTNAME", "CHARTSTYLE", "DIFFICULTY", "METER",    "RADARVALUES", "NOTES"};
+    if (options.profile == stepmania_profile_t::sm) {
+        modeled_song.insert("CREDIT");
+        const auto& author = charts.front()->metadata.author;
+        if (std::ranges::any_of(
+                charts, [&](const auto* chart) { return chart->metadata.author != author; })) {
+            report(stepmania_write_diagnostic_code_t::conflicting_song_metadata,
+                   "SM stores CREDIT at song scope; selected charts have different authors",
+                   "CREDIT");
+        } else if (!author.empty()) {
+            emit("CREDIT", author);
+        }
+    }
     append_unknown_fields(output, song_group, modeled_song, options.preserve_unknown_fields,
                           result.diagnostics, options.max_output_bytes);
     std::vector<std::vector<std::pair<std::string, std::string>>> timing_by_chart;
@@ -1740,8 +1759,11 @@ auto write_stepmania(const song_document_t& song, stepmania_write_options_t opti
                    "STEPSTYPE");
             return;
         }
+        const auto retained_description = group_value(group, "DESCRIPTION");
         const auto description =
-            !chart.metadata.name.empty() ? chart.metadata.name : group_value(group, "DESCRIPTION");
+            options.profile == stepmania_profile_t::sm
+                ? (!chart.metadata.name.empty() ? chart.metadata.name : retained_description)
+                : retained_description;
         const auto difficulty =
             group_value(group, "DIFFICULTY").empty() ? "Edit" : group_value(group, "DIFFICULTY");
         const auto meter =
@@ -1757,8 +1779,8 @@ auto write_stepmania(const song_document_t& song, stepmania_write_options_t opti
             return;
         const std::set<std::string> modeled_chart{
             "NOTEDATA", "STEPSTYPE",   "DESCRIPTION", "CHARTNAME", "CHARTSTYLE", "DIFFICULTY",
-            "METER",    "RADARVALUES", "NOTES",       "OFFSET",    "BPMS",       "STOPS",
-            "DELAYS",   "WARPS",       "SCROLLS",     "SPEEDS"};
+            "METER",    "RADARVALUES", "CREDIT",      "NOTES",     "OFFSET",     "BPMS",
+            "STOPS",    "DELAYS",      "WARPS",       "SCROLLS",   "SPEEDS"};
         if (options.profile == stepmania_profile_t::ssc) {
             emit("NOTEDATA", "");
             emit("STEPSTYPE", step_type);
@@ -1767,12 +1789,15 @@ auto write_stepmania(const song_document_t& song, stepmania_write_options_t opti
             emit("DIFFICULTY", difficulty);
             emit("METER", meter);
             emit("RADARVALUES", radar);
-            const auto chart_name = group_value(group, "CHARTNAME");
+            const auto chart_name = !chart.metadata.name.empty() ? chart.metadata.name
+                                                                 : group_value(group, "CHARTNAME");
             const auto chart_style = group_value(group, "CHARTSTYLE");
             if (!chart_name.empty())
                 emit("CHARTNAME", chart_name);
             if (!chart_style.empty())
                 emit("CHARTSTYLE", chart_style);
+            if (!chart.metadata.author.empty())
+                emit("CREDIT", chart.metadata.author);
             append_unknown_fields(output, group, modeled_chart, options.preserve_unknown_fields,
                                   result.diagnostics, options.max_output_bytes);
             for (const auto& [key, value] : timing_by_chart[chart_index])

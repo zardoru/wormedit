@@ -1,0 +1,33 @@
+#VERSION:0.83;
+#TITLE:Versioned metadata fixture;
+#SUBTITLE:Retained subtitle;
+#TITLETRANSLIT:Versioned Metadata Fixture;
+#ARTIST:Wormedit fixture authors;
+#ARTISTTRANSLIT:Wormedit Fixture Authors;
+#GENRE:Test Genre;
+#ORIGIN:Wormedit;
+#CREDIT:Fixture maintainers;
+#MUSIC:fixture.ogg;
+#BANNER:banner.png;
+#BACKGROUND:background.png;
+#CDTITLE:cdtitle.png;
+#SAMPLESTART:12.500;
+#SAMPLELENGTH:15.000;
+#SELECTABLE:YES;
+#DISPLAYBPM:120:180;
+#NOTEDATA:;
+#CHARTNAME:Editable chart name;
+#STEPSTYPE:dance-single;
+#DESCRIPTION:Retained chart description;
+#CHARTSTYLE:single;
+#CREDIT:Chart Author;
+#DIFFICULTY:Edit;
+#METER:11;
+#RADARVALUES:0.1,0.2,0.3,0.4,0.5;
+#MUSIC:chart.ogg;
+#NOTES:
+1000
+0000
+0100
+0000
+;

@@ -7,6 +7,7 @@
 #include <wormedit/core/command.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/recovery_controller.h>
+#include <wormedit/core/startup_session.h>
 #include <wormedit/core/workspace.h>
 
 #include <SDL3/SDL_events.h>
@@ -19,6 +20,7 @@
 #include <cstring>
 #include <filesystem>
 #include <iterator>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -328,10 +330,11 @@ auto first_recovery_diagnostic(
     return {};
 }
 
-auto dispatch_recovery_ui_action(const WormUiWorkspaceAction& action,
-                                 wormedit::native_project_recovery_controller_t& controller,
-                                 wormedit::document_history_t& history,
-                                 wormedit::workspace_controller_t& workspace) -> std::string {
+auto dispatch_recovery_ui_action(
+    const WormUiWorkspaceAction& action, wormedit::native_project_recovery_controller_t& controller,
+    wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
+    std::optional<wormedit::native_project_document_version_t> scanned_primary_version)
+    -> std::string {
     using namespace wormedit;
     const native_project_recovery_action_target_t target{
         .scan_generation = action.recovery_scan_generation,
@@ -350,11 +353,7 @@ auto dispatch_recovery_ui_action(const WormUiWorkspaceAction& action,
             .expected_session =
                 {
                     .is_set = true,
-                    .version =
-                        native_project_document_version_t{
-                            .project_id = history.document.id,
-                            .revision = history.document.revision,
-                        },
+                    .version = scanned_primary_version,
                 },
         };
         break;
@@ -413,6 +412,10 @@ auto dispatch_recovery_ui_action(const WormUiWorkspaceAction& action,
             history = std::move(replacement_history);
             workspace = std::move(*replacement_binding.workspace);
         }
+        // A recovered document is no longer the primary baseline captured by
+        // this scan. Invalidate every remaining row token before returning to
+        // the event loop so another click cannot replace the recovered session.
+        (void)controller.replace_scan({});
         return "Recovery loaded into the current session. Review it and save explicitly.";
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS:
         return "Recovery candidate saved as a new project; the current workspace was unchanged.";
@@ -429,7 +432,21 @@ auto dispatch_recovery_ui_action(const WormUiWorkspaceAction& action,
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    constexpr int maximum_startup_paths = 30;
+    if (argc > maximum_startup_paths + 1) {
+        std::fprintf(stderr, "usage: wormedit [project.wormedit [recovery-artifact ...]]\n");
+        return 2;
+    }
+    wormedit::native_project_startup_request_t startup_request;
+    if (argc > 1)
+        startup_request.primary_path = std::filesystem::path{argv[1]};
+    for (int index = 2; index < argc; ++index)
+        startup_request.recovery_entries.emplace_back(argv[index]);
+    const auto requested_primary_path = startup_request.primary_path;
+    auto startup =
+        wormedit::prepare_native_project_startup(initial_document(), std::move(startup_request));
+
     if (!SDL_Init(0)) {
         std::fprintf(stderr, "SDL init failed\n");
         return 1;
@@ -457,7 +474,8 @@ int main() {
         return 1;
     }
 
-    auto history = wormedit::make_document_history(initial_document());
+    auto history =
+        wormedit::make_document_history(std::move(startup.document), 128, startup.loaded_primary);
     auto binding = wormedit::make_workspace_controller(history);
     if (!binding) {
         std::fprintf(stderr, "Initial workspace binding failed\n");
@@ -468,12 +486,19 @@ int main() {
         return 1;
     }
     auto workspace = std::move(*binding.workspace);
-    std::string status = "Workspace ready";
-    // This entry point creates a fresh untitled workspace and currently has no
-    // project path or caller-owned recovery directory to scan. Keep the panel
-    // visible with that exact limitation instead of showing an empty fake scan.
+    std::string status;
+    if (startup.loaded_primary) {
+        status = "Opened native project: " + requested_primary_path.generic_string();
+    } else if (startup.recovery_scan_configured) {
+        status = "Primary project was not loaded; review the completed recovery scan.";
+    } else {
+        status = "New unsaved workspace ready";
+    }
     wormedit::native_project_recovery_controller_t recovery_controller;
-    constexpr bool recovery_scan_configured = false;
+    if (startup.recovery_scan_configured)
+        (void)recovery_controller.replace_scan(std::move(startup.recovery_scan));
+    const auto recovery_scan_configured = startup.recovery_scan_configured;
+    const auto scanned_primary_version = startup.primary_version;
 
     bool running = true;
     while (running) {
@@ -512,8 +537,8 @@ int main() {
                                                             : applied.diagnostics.front().message);
             } else if (action.kind >= WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT &&
                        action.kind <= WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE) {
-                status =
-                    dispatch_recovery_ui_action(action, recovery_controller, history, workspace);
+                status = dispatch_recovery_ui_action(action, recovery_controller, history,
+                                                     workspace, scanned_primary_version);
             }
         }
 

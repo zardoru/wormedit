@@ -63,6 +63,56 @@ struct bms_parse_result_t {
     [[nodiscard]] auto has_errors() const -> bool;
 };
 
+enum class bms_branch_statement_edit_diagnostic_code_t {
+    missing_chart,
+    missing_control_tree,
+    invalid_branch_selection,
+    target_not_found,
+    ambiguous_target,
+    target_not_branch_statement,
+    active_statement,
+    provenance_mismatch,
+    invalid_replacement,
+    resource_limit,
+};
+
+struct bms_branch_statement_edit_diagnostic_t {
+    diagnostic_severity_t severity{diagnostic_severity_t::error};
+    bms_branch_statement_edit_diagnostic_code_t code{
+        bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch};
+    std::string message;
+    std::string path;
+};
+
+struct bms_branch_statement_edit_t {
+    // BMS-family documents contain one chart, but callers editing a multi-chart
+    // project must identify the intended chart explicitly.
+    std::optional<chart_id_t> chart;
+    branch_id_t statement;
+    // All retained identity fields are required so a stale inspector row cannot
+    // silently edit a different statement after the tree changes.
+    std::size_t expected_source_order{};
+    bms_source_span_t expected_source_span;
+    std::string expected_original_text;
+    std::string replacement_text;
+    std::size_t max_replacement_bytes{1024U * 1024U};
+};
+
+struct bms_branch_statement_edit_result_t {
+    std::optional<song_document_t> song;
+    std::vector<bms_branch_statement_edit_diagnostic_t> diagnostics;
+
+    [[nodiscard]] auto has_errors() const -> bool;
+};
+
+// Atomically replaces one source-backed raw statement in an inactive BMS branch.
+// The command token and control-tree shape are immutable in this bounded editing
+// slice. Active statements must instead be edited through their materialized
+// semantic objects so the chart projection cannot become stale.
+[[nodiscard]] auto edit_bms_inactive_branch_statement(const song_document_t& song,
+                                                      bms_branch_statement_edit_t edit)
+    -> bms_branch_statement_edit_result_t;
+
 // ASCII and UTF-8 are always available. Legacy encodings depend on the conversion
 // backend provided by the build and host; unsupported requests fail explicitly.
 [[nodiscard]] auto is_bms_text_encoding_supported(text_encoding_t encoding) -> bool;

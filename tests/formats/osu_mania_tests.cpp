@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <filesystem>
 #include <fstream>
@@ -785,5 +786,179 @@ CircleSize:1
     CHECK_FALSE(rejected.text.has_value());
     CHECK(std::ranges::any_of(rejected.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::invalid_metadata;
+    }));
+}
+
+TEST_CASE("osu!mania round-trips the standard metadata inventory",
+          "[unit][format][osu-mania][writer][metadata]") {
+    constexpr std::string_view source = R"osu(osu file format v14
+[General]
+AudioFilename:music.ogg
+AudioLeadIn:1500
+AudioHash:legacy-hash
+PreviewTime:12500
+Countdown:1
+SampleSet:Soft
+StackLeniency:0.7
+Mode:3
+LetterboxInBreaks:1
+StoryFireInFront:0
+UseSkinSprites:1
+AlwaysShowPlayfield:0
+OverlayPosition:Below
+SkinPreference:metadata-test
+EpilepsyWarning:1
+CountdownOffset:2
+SpecialStyle:1
+WidescreenStoryboard:1
+SamplesMatchPlaybackRate:1
+[Editor]
+Bookmarks:-1000,2500
+DistanceSpacing:1.25
+BeatDivisor:6
+GridSize:8
+TimelineZoom:2.5
+[Metadata]
+Title:Roman title
+TitleUnicode:Unicode title
+Artist:Roman artist
+ArtistUnicode:Unicode artist
+Creator:Mapper
+Version:Challenge
+Source:Original work
+Tags:alpha beta
+BeatmapID:123
+BeatmapSetID:456
+[Difficulty]
+HPDrainRate:5
+CircleSize:7
+OverallDifficulty:8
+ApproachRate:9
+SliderMultiplier:1.4
+SliderTickRate:1
+[Colours]
+Combo1:255,0,0
+SliderTrackOverride:1,2,3
+SliderBorder:4,5,6
+[TimingPoints]
+0,500,4,1,0,100,1,0
+[HitObjects]
+36,192,0,1,0,
+)osu";
+    const auto imported = parse_inline(source);
+    REQUIRE(imported.song.has_value());
+    CHECK_FALSE(imported.has_errors());
+
+    const auto written = write_inline(*imported.song);
+    REQUIRE(written.text.has_value());
+    CHECK_FALSE(written.has_errors());
+
+    constexpr std::array expected_lines{
+        "AudioFilename: music.ogg",
+        "AudioLeadIn:1500",
+        "AudioHash:legacy-hash",
+        "PreviewTime:12500",
+        "Countdown:1",
+        "SampleSet:Soft",
+        "StackLeniency:0.7",
+        "LetterboxInBreaks:1",
+        "StoryFireInFront:0",
+        "UseSkinSprites:1",
+        "AlwaysShowPlayfield:0",
+        "OverlayPosition:Below",
+        "SkinPreference:metadata-test",
+        "EpilepsyWarning:1",
+        "CountdownOffset:2",
+        "SpecialStyle:1",
+        "WidescreenStoryboard:1",
+        "SamplesMatchPlaybackRate:1",
+        "Bookmarks: -1000,2500",
+        "DistanceSpacing:1.25",
+        "BeatDivisor:6",
+        "GridSize:8",
+        "TimelineZoom:2.5",
+        "Title:Roman title",
+        "TitleUnicode:Unicode title",
+        "Artist:Roman artist",
+        "ArtistUnicode:Unicode artist",
+        "Creator:Mapper",
+        "Version:Challenge",
+        "Source:Original work",
+        "Tags:alpha beta",
+        "BeatmapID:123",
+        "BeatmapSetID:456",
+        "HPDrainRate:5",
+        "CircleSize:7",
+        "OverallDifficulty:8",
+        "ApproachRate:9",
+        "SliderMultiplier:1.4",
+        "SliderTickRate:1",
+        "Combo1:255,0,0",
+        "SliderTrackOverride:1,2,3",
+        "SliderBorder:4,5,6",
+    };
+    for (const auto line : expected_lines) {
+        CAPTURE(line);
+        CHECK(written.text->find(line) != std::string::npos);
+    }
+
+    const auto reimported = parse_inline(*written.text);
+    REQUIRE(reimported.song.has_value());
+    CHECK_FALSE(reimported.has_errors());
+    const auto& fields = reimported.song->metadata.format_groups.front().ordered_fields;
+    const auto has_field = [&](std::string_view identity, std::string_view value) {
+        return std::ranges::any_of(fields, [&](const auto& field) {
+            return field.first == identity && field.second == value;
+        });
+    };
+    CHECK(has_field("General.AudioLeadIn", "1500"));
+    CHECK(has_field("Editor.TimelineZoom", "2.5"));
+    CHECK(has_field("Metadata.TitleUnicode", "Unicode title"));
+    CHECK(has_field("Metadata.ArtistUnicode", "Unicode artist"));
+    CHECK(has_field("Metadata.Source", "Original work"));
+    CHECK(has_field("Metadata.BeatmapID", "123"));
+    CHECK(has_field("Metadata.BeatmapSetID", "456"));
+    CHECK(has_field("Difficulty.SliderTickRate", "1"));
+    CHECK(has_field("Colours.SliderBorder", "4,5,6"));
+}
+
+TEST_CASE("osu!mania enforces metadata-specific read and write bounds",
+          "[unit][format][osu-mania][metadata][bounds]") {
+    constexpr std::string_view source = R"osu(osu file format v14
+[General]
+Mode:3
+[Difficulty]
+CircleSize:1
+[TimingPoints]
+0,500,4,0,0,100,1,0
+[HitObjects]
+256,192,0,1,0,
+)osu";
+    const auto source_bytes = bytes(source);
+
+    wormedit::osu_mania_parse_options_t field_options;
+    field_options.max_metadata_fields = 1;
+    const auto field_limited = wormedit::parse_osu_mania_bytes(source_bytes, field_options);
+    CHECK_FALSE(field_limited.song.has_value());
+    CHECK(has_code(field_limited, wormedit::osu_mania_parse_diagnostic_code_t::metadata_limit));
+
+    wormedit::osu_mania_parse_options_t byte_options;
+    byte_options.max_metadata_bytes = 5;
+    const auto byte_limited = wormedit::parse_osu_mania_bytes(source_bytes, byte_options);
+    CHECK_FALSE(byte_limited.song.has_value());
+    CHECK(has_code(byte_limited, wormedit::osu_mania_parse_diagnostic_code_t::metadata_limit));
+
+    const auto imported = parse_inline(source);
+    REQUIRE(imported.song.has_value());
+    const auto write_field_limited = write_inline(*imported.song, {.max_metadata_fields = 1});
+    CHECK_FALSE(write_field_limited.text.has_value());
+    CHECK(std::ranges::any_of(write_field_limited.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::metadata_limit;
+    }));
+
+    const auto write_byte_limited = write_inline(*imported.song, {.max_metadata_bytes = 5});
+    CHECK_FALSE(write_byte_limited.text.has_value());
+    CHECK(std::ranges::any_of(write_byte_limited.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::metadata_limit;
     }));
 }

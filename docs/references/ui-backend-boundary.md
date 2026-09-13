@@ -9,7 +9,9 @@ contract and dispatches revision-checked tab changes. The headless seven-tab
 workspace and recovery-banner controllers provide bounded backend-neutral
 views/actions. The frontend now renders target-format metadata summaries plus
 explicit Inspect/Recover/Save-as/Discard/Quarantine choices; editable pane
-composition, startup recovery-path discovery, and normalized platform input remain.
+composition, platform-native project/recovery discovery, and normalized platform
+input remain. Caller-supplied primary and recovery paths are already scanned
+during starter startup.
 
 Nuklear is the initial editor frontend, not a permanent dependency of the application model. A future ImGui frontend or a Clay-based layout/widget frontend should be replaceable without changing chart storage, timing, audio, commands, selection, transport, format codecs, or renderer-neutral chart drawing.
 

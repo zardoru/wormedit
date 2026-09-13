@@ -52,6 +52,7 @@ add_library(wormedit_core
     src/core/rational.cpp
     src/core/recovery_controller.cpp
     src/core/storyboard.cpp
+    src/core/startup_session.cpp
     src/core/task_graph.cpp
     src/core/timing.cpp
     src/core/viewport_input.cpp

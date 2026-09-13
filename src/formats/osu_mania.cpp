@@ -301,6 +301,20 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
 
         std::vector<source_line_t> lines;
         std::vector<field_t> fields;
+        std::size_t metadata_field_count{};
+        std::size_t metadata_bytes{};
+        const auto account_metadata = [&](std::size_t bytes, std::size_t field_order,
+                                          std::size_t field_offset) {
+            if (metadata_field_count >= options.max_metadata_fields ||
+                bytes > options.max_metadata_bytes ||
+                metadata_bytes > options.max_metadata_bytes - bytes) {
+                fail(osu_mania_parse_diagnostic_code_t::metadata_limit,
+                     "osu! metadata exceeds the configured field-count or byte limit", field_order,
+                     field_offset);
+            }
+            ++metadata_field_count;
+            metadata_bytes += bytes;
+        };
         std::string current_section;
         std::size_t offset{};
         std::size_t order{};
@@ -358,10 +372,12 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
                              "known osu! key/value sections require a colon-delimited field",
                              line.order, line.byte_offset);
                     }
+                    account_metadata(line.text.size(), line.order, line.byte_offset);
                     fields.push_back({line.section, "[]", std::string(line.text),
                                       std::string(line.text), line.order});
                     continue;
                 }
+                account_metadata(line.text.size(), line.order, line.byte_offset);
                 fields.push_back({line.section, std::string(trim(line.text.substr(0, colon))),
                                   std::string(trim(line.text.substr(colon + 1))),
                                   std::string(line.text), line.order});
@@ -2133,6 +2149,41 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
                                 : std::vector<passthrough_field_t>{};
         if (result.has_errors())
             throw osu_write_abort_t{};
+        std::size_t metadata_field_count{};
+        std::size_t metadata_bytes{};
+        const auto account_metadata = [&](std::string_view line) {
+            if (metadata_field_count >= options.max_metadata_fields ||
+                line.size() > options.max_metadata_bytes ||
+                metadata_bytes > options.max_metadata_bytes - line.size()) {
+                fail(osu_mania_write_diagnostic_code_t::metadata_limit,
+                     "osu! metadata exceeds the configured field-count or byte limit", "metadata");
+            }
+            ++metadata_field_count;
+            metadata_bytes += line.size();
+        };
+        if (!music_files.empty())
+            account_metadata("AudioFilename: " + music_files.front());
+        account_metadata("Mode: 3");
+        if (!bookmark_times.empty()) {
+            std::string line{"Bookmarks: "};
+            for (std::size_t index = 0; index < bookmark_times.size(); ++index) {
+                if (index != 0)
+                    line.push_back(',');
+                line += std::to_string(bookmark_times[index]);
+            }
+            account_metadata(line);
+        }
+        account_metadata("Title:" + song.metadata.title);
+        account_metadata("Artist:" + song.metadata.artist);
+        account_metadata("Creator:" + chart->metadata.author);
+        account_metadata("Version:" + chart->metadata.name);
+        if (!tags.empty())
+            account_metadata("Tags:" + tags);
+        account_metadata("CircleSize:" + std::to_string(keys));
+        for (const auto& field : extra_fields)
+            if (field.section != "Events" && field.section != "TimingPoints" &&
+                field.section != "HitObjects")
+                account_metadata(field.line);
         std::string output;
         std::size_t output_lines{};
         const auto append_line = [&](std::string_view line) {

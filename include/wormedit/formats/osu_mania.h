@@ -21,6 +21,7 @@ enum class osu_mania_parse_diagnostic_code_t {
     invalid_hit_object,
     invalid_resource_path,
     missing_timing_anchor,
+    metadata_limit,
     measure_limit,
     event_limit,
     source_limit,
@@ -41,6 +42,9 @@ struct osu_mania_parse_options_t {
     std::size_t max_events{500'000};
     std::size_t max_measures{65'536};
     std::optional<std::filesystem::path> asset_base_directory;
+    // Applies to non-timeline key/value and retained custom-section rows.
+    std::size_t max_metadata_fields{4'096};
+    std::size_t max_metadata_bytes{1U * 1024U * 1024U};
 };
 
 struct osu_mania_parse_result_t {
@@ -58,6 +62,7 @@ enum class osu_mania_write_diagnostic_code_t {
     unrepresentable_position,
     invalid_resource,
     invalid_metadata,
+    metadata_limit,
     timestamp_quantization,
     lossy_transform,
     output_limit,
@@ -78,6 +83,9 @@ struct osu_mania_write_options_t {
     std::size_t max_events{500'000};
     std::size_t max_measures{65'536};
     std::size_t max_rows_per_measure{1'000'000};
+    // Applies to serialized non-timeline fields, including retained fields.
+    std::size_t max_metadata_fields{4'096};
+    std::size_t max_metadata_bytes{1U * 1024U * 1024U};
 };
 
 struct osu_mania_write_result_t {

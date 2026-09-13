@@ -18,6 +18,7 @@ add_executable(wormedit_core_tests
     core/rational_tests.cpp
     core/recovery_controller_tests.cpp
     core/storyboard_tests.cpp
+    core/startup_session_tests.cpp
     core/task_graph_tests.cpp
     core/timing_tests.cpp
     core/viewport_input_tests.cpp

@@ -69,6 +69,7 @@ enum class stepmania_write_diagnostic_code_t {
     unsupported_feature,
     unrepresentable_position,
     conflicting_song_timing,
+    conflicting_song_metadata,
     legacy_warp_conversion,
     invalid_metadata,
     output_limit,

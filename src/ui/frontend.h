@@ -30,6 +30,7 @@
 #define WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY 32768
 #define WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY 128
 #define WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY 16
+#define WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY 16
 #define WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY 96
 #define WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY 4
 #define WORM_UI_COMPOSE_MIN_PIXELS_PER_MEASURE 24.0
@@ -299,6 +300,20 @@ typedef struct WormUiComposeInputAction {
     double y_pixels;
 } WormUiComposeInputAction;
 
+typedef enum WormUiComposeViewportInputKind {
+    WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL = 0,
+    WORM_UI_COMPOSE_VIEWPORT_INPUT_SMOOTH_WHEEL,
+} WormUiComposeViewportInputKind;
+
+typedef struct WormUiComposeViewportInput {
+    WormUiComposeViewportInputKind kind;
+    bool zoom_modifier;
+    double delta_x;
+    double delta_y;
+    double cursor_x_pixels;
+    double cursor_y_pixels;
+} WormUiComposeViewportInput;
+
 typedef enum WormUiMetadataEditKind {
     WORM_UI_METADATA_EDIT_NONE = 0,
     WORM_UI_METADATA_EDIT_SONG,
@@ -340,6 +355,8 @@ typedef struct WormUiWorkspaceAction {
     double compose_input_viewport_width_pixels;
     WormUiComposeInputAction compose_inputs[WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY];
     size_t compose_input_count;
+    WormUiComposeViewportInput compose_viewport_inputs[WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY];
+    size_t compose_viewport_input_count;
 } WormUiWorkspaceAction;
 
 // Private application/frontend boundary. Implementations own all widget

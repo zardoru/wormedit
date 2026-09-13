@@ -49,15 +49,20 @@ add_library(wormedit_core
     src/core/grid.cpp
     src/core/interaction.cpp
     src/core/lane_profiles.cpp
+    src/core/marker_editor.cpp
     src/core/metadata_editor.cpp
     src/core/measure.cpp
+    src/core/measure_editor.cpp
+    src/core/pause_warp_editor.cpp
     src/core/quantize.cpp
     src/core/rational.cpp
     src/core/recovery_controller.cpp
+    src/core/scroll_speed_editor.cpp
     src/core/storyboard.cpp
     src/core/startup_session.cpp
     src/core/task_graph.cpp
     src/core/timing.cpp
+    src/core/timing_anchor_editor.cpp
     src/core/viewport_input.cpp
     src/core/workspace.cpp
     src/formats/bms.cpp

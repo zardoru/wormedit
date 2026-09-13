@@ -8,6 +8,8 @@
 
 #include "nuklear_sdl_gl3_sdl3.h"
 
+#include <SDL3/SDL_keyboard.h>
+
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -66,6 +68,18 @@ struct compose_key_event_t {
 
 static std::array<compose_key_event_t, 64> g_compose_key_events{};
 static size_t g_compose_key_event_count{};
+struct compose_wheel_event_t {
+    double delta_x{};
+    double delta_y{};
+    double mouse_x{};
+    double mouse_y{};
+    uint16_t modifiers{};
+    bool coarse_steps{};
+};
+
+static std::array<compose_wheel_event_t, WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY>
+    g_compose_wheel_events{};
+static size_t g_compose_wheel_event_count{};
 static bool g_window_focused{true};
 static bool g_compose_cancel_pending{};
 static bool g_compose_keyboard_focus{};
@@ -75,6 +89,7 @@ static bool g_compose_lane_hold_active{};
 static uint32_t g_compose_lane_hold_keycode{};
 static uint64_t g_compose_lane_hold_lane_id{};
 static uint64_t g_last_compose_chart_id{};
+static uint64_t g_last_compose_document_revision{};
 
 static void append_compose_input(WormUiWorkspaceAction* action, WormUiComposeInputKind kind,
                                  double x_pixels = 0.0, double y_pixels = 0.0, uint64_t lane_id = 0,
@@ -125,6 +140,39 @@ static void queue_compose_key_event(const SDL_KeyboardEvent* event, bool down) {
         .modifiers = static_cast<uint16_t>(event->mod),
         .down = down,
         .repeat = event->repeat,
+    };
+}
+
+static void queue_compose_wheel_event(const SDL_MouseWheelEvent* event) {
+    if (!event || !g_window_focused || !g_window ||
+        (event->windowID != 0 && event->windowID != SDL_GetWindowID(g_window)) ||
+        !std::isfinite(event->x) || !std::isfinite(event->y) || !std::isfinite(event->mouse_x) ||
+        !std::isfinite(event->mouse_y)) {
+        return;
+    }
+    if (g_compose_wheel_event_count == g_compose_wheel_events.size()) {
+        g_compose_wheel_event_count = 0;
+        g_compose_cancel_pending = true;
+        g_compose_key_event_count = 0;
+        g_compose_pointer_hold_active = false;
+        g_compose_lane_hold_active = false;
+        g_compose_keyboard_focus = false;
+        g_compose_lane_hold_keycode = 0;
+        g_compose_lane_hold_lane_id = 0;
+        return;
+    }
+    const auto whole_steps = std::trunc(event->x) == event->x && std::trunc(event->y) == event->y &&
+                             (event->x != 0.0f || event->y != 0.0f);
+    // Convert SDL's positive-away wheel convention into content-offset deltas.
+    // FLIPPED sources already report the opposite sign, so they need no negation.
+    const auto direction_sign = event->direction == SDL_MOUSEWHEEL_FLIPPED ? 1.0 : -1.0;
+    g_compose_wheel_events[g_compose_wheel_event_count++] = {
+        .delta_x = static_cast<double>(event->x) * direction_sign,
+        .delta_y = static_cast<double>(event->y) * direction_sign,
+        .mouse_x = event->mouse_x,
+        .mouse_y = event->mouse_y,
+        .modifiers = static_cast<uint16_t>(SDL_GetModState()),
+        .coarse_steps = whole_steps,
     };
 }
 
@@ -801,7 +849,9 @@ bool worm_ui_frontend_init(SDL_Window* window) {
     g_compose_keyboard_focus = false;
     g_compose_pointer_hold_active = false;
     g_compose_lane_hold_active = false;
+    g_compose_wheel_event_count = 0;
     g_last_compose_chart_id = 0;
+    g_last_compose_document_revision = 0;
     return true;
 }
 
@@ -816,9 +866,12 @@ void worm_ui_frontend_shutdown(void) {
     g_window = NULL;
     g_context = NULL;
     g_compose_key_event_count = 0;
+    g_compose_wheel_event_count = 0;
     g_compose_pointer_hold_active = false;
     g_compose_lane_hold_active = false;
     g_compose_keyboard_focus = false;
+    g_last_compose_chart_id = 0;
+    g_last_compose_document_revision = 0;
 }
 
 void worm_ui_frontend_begin_input(void) {
@@ -835,6 +888,7 @@ bool worm_ui_frontend_handle_event(const SDL_Event* event) {
         g_window_focused = false;
         g_compose_cancel_pending = true;
         g_compose_key_event_count = 0;
+        g_compose_wheel_event_count = 0;
         g_compose_keyboard_focus = false;
         g_compose_pointer_hold_active = false;
         g_compose_lane_hold_active = false;
@@ -842,6 +896,8 @@ bool worm_ui_frontend_handle_event(const SDL_Event* event) {
         g_window_focused = true;
     } else if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) {
         queue_compose_key_event(&event->key, event->type == SDL_EVENT_KEY_DOWN);
+    } else if (event->type == SDL_EVENT_MOUSE_WHEEL) {
+        queue_compose_wheel_event(&event->wheel);
     }
     SDL_Event mutable_event = *event;
     return nk_sdl_handle_event(&mutable_event) != 0;
@@ -1118,6 +1174,28 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                            view->viewport_width_pixels / viewport.w;
     const auto pointer_y = (static_cast<double>(g_context->input.mouse.pos.y) - viewport.y) *
                            view->viewport_height_pixels / viewport.h;
+    if (!g_compose_action_overflowed && view->scene_available && g_window_focused) {
+        for (size_t index = 0; index < g_compose_wheel_event_count; ++index) {
+            const auto& wheel = g_compose_wheel_events[index];
+            if (wheel.mouse_x < viewport.x || wheel.mouse_x > viewport.x + viewport.w ||
+                wheel.mouse_y < viewport.y || wheel.mouse_y > viewport.y + viewport.h) {
+                continue;
+            }
+            const auto zoom_modifier = (wheel.modifiers & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0;
+            action->compose_viewport_inputs[action->compose_viewport_input_count++] = {
+                .kind = wheel.coarse_steps ? WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL
+                                           : WORM_UI_COMPOSE_VIEWPORT_INPUT_SMOOTH_WHEEL,
+                .zoom_modifier = zoom_modifier,
+                .delta_x = wheel.delta_x,
+                .delta_y = wheel.delta_y,
+                .cursor_x_pixels =
+                    (wheel.mouse_x - viewport.x) * view->viewport_width_pixels / viewport.w,
+                .cursor_y_pixels =
+                    (wheel.mouse_y - viewport.y) * view->viewport_height_pixels / viewport.h,
+            };
+        }
+    }
+    g_compose_wheel_event_count = 0;
     const bool alt_down = nk_input_is_key_down(&g_context->input, NK_KEY_ALT) != 0;
     const bool left_down = g_context->input.mouse.buttons[NK_BUTTON_LEFT].down != 0;
     if (!g_compose_action_overflowed && view->scene_available && pointer_pressed_in_view &&
@@ -1331,12 +1409,14 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
           !compose_geometry_valid(&view->compose))) ||
         view->active_tab < WORM_UI_WORKSPACE_TAB_SETUP ||
         view->active_tab > WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE) {
+        g_compose_wheel_event_count = 0;
         return action;
     }
 
     int width = 0;
     int height = 0;
     if (!SDL_GetWindowSize(g_window, &width, &height) || width <= 0 || height <= 0) {
+        g_compose_wheel_event_count = 0;
         return action;
     }
 
@@ -1349,16 +1429,31 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
             append_compose_input(&action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
             g_compose_cancel_pending = false;
         }
-        if (g_last_compose_chart_id != view->compose.chart_id) {
-            g_compose_keyboard_focus = false;
+        const auto chart_changed = g_last_compose_chart_id != view->compose.chart_id;
+        const auto revision_changed =
+            g_last_compose_document_revision != view->compose.document_revision;
+        if (chart_changed || revision_changed) {
             g_compose_pointer_hold_active = false;
             g_compose_lane_hold_active = false;
+            g_compose_lane_hold_keycode = 0;
+            g_compose_lane_hold_lane_id = 0;
+        }
+        if (chart_changed) {
+            // Events received before the first frame for another chart still
+            // target the previously visible geometry. Events after an ordinary
+            // document edit already belong to the current frame/revision.
             g_compose_key_event_count = 0;
+            g_compose_wheel_event_count = 0;
+            g_compose_keyboard_focus = false;
+        }
+        if (chart_changed || revision_changed) {
             g_last_compose_chart_id = view->compose.chart_id;
+            g_last_compose_document_revision = view->compose.document_revision;
         }
     } else {
         g_compose_cancel_pending = false;
         g_compose_key_event_count = 0;
+        g_compose_wheel_event_count = 0;
         g_compose_keyboard_focus = false;
         if (g_compose_pointer_hold_active || g_compose_lane_hold_active) {
             append_compose_input(&action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
@@ -1366,6 +1461,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         g_compose_pointer_hold_active = false;
         g_compose_lane_hold_active = false;
         g_last_compose_chart_id = 0;
+        g_last_compose_document_revision = 0;
     }
 
     if (nk_begin(g_context, "wormedit-workspace", nk_rect(0, 0, (float)width, (float)height),

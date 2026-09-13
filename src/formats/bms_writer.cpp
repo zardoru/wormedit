@@ -1108,6 +1108,8 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     const auto branch_tree = options.branch_policy == bms_branch_policy_t::flatten_active
                                  ? branch_tree_analysis_t{}
                                  : retained_branch_tree;
+    const bool flattening_active_projection =
+        options.branch_policy == bms_branch_policy_t::flatten_active;
     if (!chart.active_branch_selection.empty() && !retained_branch_tree.has_branches) {
         fail(bms_write_diagnostic_code_t::branch_provenance,
              "active branch selections have no retained source tree to preserve",
@@ -1329,10 +1331,10 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
                    !is_retained_timing_provenance(event.provenance);
         });
     };
-    if (has_unsupported_root_timing(chart.pauses) || has_unsupported_root_timing(chart.warps) ||
-        has_unsupported_root_timing(chart.scrolls) || has_unsupported_root_timing(chart.speeds) ||
-        has_unsupported_root_timing(chart.kiai) || !chart.timing_anchors.empty() ||
-        !chart.sections.empty() || !chart.sound_channels.empty()) {
+    if ((!flattening_active_projection && has_unsupported_root_timing(chart.pauses)) ||
+        has_unsupported_root_timing(chart.warps) || has_unsupported_root_timing(chart.scrolls) ||
+        has_unsupported_root_timing(chart.speeds) || has_unsupported_root_timing(chart.kiai) ||
+        !chart.timing_anchors.empty() || !chart.sections.empty() || !chart.sound_channels.empty()) {
         fail(bms_write_diagnostic_code_t::unsupported_feature,
              "chart contains timing or media features outside the normalized writer slice",
              "$.charts[]");
@@ -1896,6 +1898,119 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     std::map<std::pair<std::size_t, std::string>, channel_line_t> channel_lines;
     std::map<std::pair<std::size_t, std::uint64_t>, channel_line_t> bgm_lines;
     std::map<std::pair<std::size_t, std::string>, std::size_t> bga_line_order;
+    std::vector<std::string> projected_timing_declarations;
+    const bpm_event_t* projected_initial_bpm{};
+    if (flattening_active_projection) {
+        const auto measure_index_for = [&](local_position_t position,
+                                           std::string_view path) -> std::size_t {
+            const auto measure =
+                std::ranges::find(chart.measures, position.measure, &measure_chunk_t::id);
+            if (measure == chart.measures.end()) {
+                fail(bms_write_diagnostic_code_t::invalid_geometry,
+                     "timing event references a measure outside the chart", std::string(path));
+            }
+            return static_cast<std::size_t>(std::distance(chart.measures.begin(), measure));
+        };
+        const auto add_timing_channel_event = [&](local_position_t position,
+                                                  std::string_view channel,
+                                                  std::string_view object_id, std::string path) {
+            const auto measure = measure_index_for(position, path);
+            const auto [numerator, denominator] = fraction_at(index, position, path);
+            const auto key = std::pair{measure, std::string(channel)};
+            auto [line, inserted] = channel_lines.try_emplace(
+                key, channel_line_t{.measure = measure, .channel = std::string(channel)});
+            (void)inserted;
+            line->second.notes.push_back(
+                {numerator, denominator, std::string(object_id), std::move(path)});
+        };
+
+        std::vector<std::pair<const bpm_event_t*, std::uint64_t>> ordered_bpms;
+        ordered_bpms.reserve(chart.bpms.size());
+        for (const auto& bpm : chart.bpms) {
+            const auto absolute = absolute_row(index, bpm.position);
+            if (!absolute.has_value()) {
+                fail(bms_write_diagnostic_code_t::invalid_geometry,
+                     "BPM event is outside the chart's measure geometry", "$.charts[].bpms");
+            }
+            (void)exact_decimal(bpm.beats_per_minute, "$.charts[].bpms[].beats_per_minute");
+            ordered_bpms.emplace_back(&bpm, *absolute);
+        }
+        std::ranges::stable_sort(ordered_bpms, [](const auto& left, const auto& right) {
+            return std::tie(left.second, left.first->provenance.source_order,
+                            left.first->id.value) < std::tie(right.second,
+                                                             right.first->provenance.source_order,
+                                                             right.first->id.value);
+        });
+
+        std::vector<std::pair<signed_rational_t, std::string>> bpm_identifiers;
+        std::size_t next_bpm_identifier = 1;
+        std::optional<std::uint64_t> previous_bpm_row;
+        for (const auto& [bpm, absolute] : ordered_bpms) {
+            if (previous_bpm_row == absolute) {
+                fail(bms_write_diagnostic_code_t::duplicate_event,
+                     "multiple BPM events share one BMS channel position and cannot be flattened "
+                     "without changing their ordering",
+                     "$.charts[].bpms");
+            }
+            previous_bpm_row = absolute;
+            if (absolute == 0) {
+                projected_initial_bpm = bpm;
+                continue;
+            }
+            auto identifier = std::ranges::find_if(bpm_identifiers, [&](const auto& entry) {
+                return entry.first == bpm->beats_per_minute;
+            });
+            if (identifier == bpm_identifiers.end()) {
+                if (next_bpm_identifier >= 1296) {
+                    fail(bms_write_diagnostic_code_t::resource_limit,
+                         "flattened BMS timing exceeds 1295 extended BPM identifiers",
+                         "$.charts[].bpms");
+                }
+                const auto id = base36_id(next_bpm_identifier++);
+                projected_timing_declarations.push_back(
+                    "#BPM" + id + " " +
+                    exact_decimal(bpm->beats_per_minute, "$.charts[].bpms[].beats_per_minute"));
+                bpm_identifiers.emplace_back(bpm->beats_per_minute, id);
+                identifier = std::prev(bpm_identifiers.end());
+            }
+            add_timing_channel_event(bpm->position, "08", identifier->second,
+                                     "$.charts[].bpms[" + std::to_string(bpm->id.value) + "]");
+        }
+
+        std::vector<std::pair<signed_rational_t, std::string>> stop_identifiers;
+        std::size_t next_stop_identifier = 1;
+        for (const auto& pause : chart.pauses) {
+            if (pause.kind != pause_kind_t::stop ||
+                pause.source_unit != pause_unit_t::bms_stop_ticks) {
+                fail(bms_write_diagnostic_code_t::unsupported_feature,
+                     "active-projection flattening supports BMS STOP ticks only; delay and other "
+                     "pause units cannot be converted without a timing approximation",
+                     "$.charts[].pauses[" + std::to_string(pause.id.value) + "]");
+            }
+            (void)exact_decimal(pause.duration, "$.charts[].pauses[].duration");
+            const auto absolute = absolute_row(index, pause.position);
+            if (!absolute.has_value()) {
+                fail(bms_write_diagnostic_code_t::invalid_geometry,
+                     "STOP event is outside the chart's measure geometry", "$.charts[].pauses");
+            }
+            auto identifier = std::ranges::find_if(
+                stop_identifiers, [&](const auto& entry) { return entry.first == pause.duration; });
+            if (identifier == stop_identifiers.end()) {
+                if (next_stop_identifier >= 1296) {
+                    fail(bms_write_diagnostic_code_t::resource_limit,
+                         "flattened BMS timing exceeds 1295 STOP identifiers", "$.charts[].pauses");
+                }
+                const auto id = base36_id(next_stop_identifier++);
+                projected_timing_declarations.push_back(
+                    "#STOP" + id + " " +
+                    exact_decimal(pause.duration, "$.charts[].pauses[].duration"));
+                stop_identifiers.emplace_back(pause.duration, id);
+                identifier = std::prev(stop_identifiers.end());
+            }
+            add_timing_channel_event(pause.position, "09", identifier->second,
+                                     "$.charts[].pauses[" + std::to_string(pause.id.value) + "]");
+        }
+    }
     struct hold_endpoint_t {
         std::uint64_t row{};
         std::uint64_t note_id{};
@@ -2545,23 +2660,30 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     if (!artist_emitted && !artist.empty() && !artist_is_branch_projection)
         output.emplace_back("#ARTIST " + artist);
 
-    std::vector<const bpm_event_t*> root_bpms;
-    for (const auto& bpm : chart.bpms) {
-        if (!is_branch_provenance(bpm.provenance) &&
-            !is_retained_timing_provenance(bpm.provenance)) {
-            root_bpms.push_back(&bpm);
+    if (flattening_active_projection) {
+        if (projected_initial_bpm != nullptr) {
+            output.emplace_back("#BPM " + exact_decimal(projected_initial_bpm->beats_per_minute,
+                                                        "$.charts[].bpms[].beats_per_minute"));
         }
-    }
-    if (root_bpms.size() > 1 ||
-        (!root_bpms.empty() &&
-         absolute_row(index, root_bpms.front()->position) != std::optional<std::uint64_t>{0})) {
-        fail(bms_write_diagnostic_code_t::unsupported_feature,
-             "this writer slice can export only one direct BPM at chart position zero",
-             "$.charts[].bpms");
-    }
-    if (!root_bpms.empty()) {
-        output.emplace_back(
-            "#BPM " + exact_decimal(root_bpms.front()->beats_per_minute, "$.charts[].bpms[0].bpm"));
+    } else {
+        std::vector<const bpm_event_t*> root_bpms;
+        for (const auto& bpm : chart.bpms) {
+            if (!is_branch_provenance(bpm.provenance) &&
+                !is_retained_timing_provenance(bpm.provenance)) {
+                root_bpms.push_back(&bpm);
+            }
+        }
+        if (root_bpms.size() > 1 ||
+            (!root_bpms.empty() &&
+             absolute_row(index, root_bpms.front()->position) != std::optional<std::uint64_t>{0})) {
+            fail(bms_write_diagnostic_code_t::unsupported_feature,
+                 "this writer slice can export only one direct BPM at chart position zero",
+                 "$.charts[].bpms");
+        }
+        if (!root_bpms.empty()) {
+            output.emplace_back("#BPM " + exact_decimal(root_bpms.front()->beats_per_minute,
+                                                        "$.charts[].bpms[0].bpm"));
+        }
     }
 
     for (const auto& declaration : declarations) {
@@ -2574,6 +2696,8 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
         output.emplace_back("#" + declaration.name_space + identity->second + " " +
                             declaration.resource->name);
     }
+    output.insert(output.end(), projected_timing_declarations.begin(),
+                  projected_timing_declarations.end());
 
     bool warned_meter = false;
     for (std::size_t measure = 0; measure < chart.measures.size(); ++measure) {

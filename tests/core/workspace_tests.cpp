@@ -208,6 +208,45 @@ TEST_CASE("workspace exposes one shared document-history context across tabs",
     CHECK(metadata.view->history.dirty);
 }
 
+TEST_CASE("metadata workspace exposes bounded ordered song and difficulty format fields",
+          "[unit][core][workspace][metadata]") {
+    auto song = workspace_song();
+    song.metadata.format_groups = {
+        {.family = format_family_t::bms,
+         .ordered_fields = {{"SUBARTIST", "one"}, {"SUBARTIST", "two"}, {"STAGEFILE", "stage.png"}},
+         .ordered_field_source_orders = {8, 9}}};
+    song.charts.front().metadata.format_groups = {
+        {.family = format_family_t::stepmania,
+         .ordered_fields = {{"CREDIT", "Difficulty author"}},
+         .ordered_field_source_orders = {20}}};
+    auto bound = make_workspace_controller(song);
+    REQUIRE(bound);
+    auto& workspace = *bound.workspace;
+    REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::metadata}));
+    const auto result = make_workspace_view(workspace, song);
+    REQUIRE(result);
+    const auto& metadata = std::get<workspace_metadata_view_t>(result.view->tab_view);
+    REQUIRE(metadata.format_fields.size() == 4);
+    CHECK(metadata.format_fields[0].name == "SUBARTIST");
+    CHECK(metadata.format_fields[1].name == "SUBARTIST");
+    CHECK(metadata.format_fields[0].source_order == 8);
+    CHECK_FALSE(metadata.format_fields[2].source_order.has_value());
+    CHECK(metadata.format_fields[3].chart_scoped);
+    CHECK(metadata.format_fields[3].family == format_family_t::stepmania);
+
+    auto count_capped = make_workspace_controller(song, {.maximum_summary_items = 3});
+    REQUIRE(count_capped);
+    REQUIRE(apply(*count_capped.workspace, song,
+                  workspace_switch_tab_action_t{workspace_tab_t::metadata}));
+    CHECK_FALSE(make_workspace_view(*count_capped.workspace, song));
+
+    auto byte_capped = make_workspace_controller(song, {.maximum_metadata_text_bytes = 8});
+    REQUIRE(byte_capped);
+    REQUIRE(apply(*byte_capped.workspace, song,
+                  workspace_switch_tab_action_t{workspace_tab_t::metadata}));
+    CHECK_FALSE(make_workspace_view(*byte_capped.workspace, song));
+}
+
 TEST_CASE("workspace validates stable identities, focus targets, and resource caps",
           "[unit][core][workspace][bounds]") {
     auto song = workspace_song();

@@ -7,8 +7,9 @@ widget types now live under `src/ui/nuklear`; the application loop translates
 the real workspace controller view through a private scalar view/action
 contract and dispatches revision-checked tab changes. The headless seven-tab
 workspace and recovery-banner controllers provide bounded backend-neutral
-views/actions; substantive pane composition, the recovery banner, and normalized
-platform input remain.
+views/actions. The frontend now renders target-format metadata summaries plus
+explicit Inspect/Recover/Save-as/Discard/Quarantine choices; editable pane
+composition, startup recovery-path discovery, and normalized platform input remain.
 
 Nuklear is the initial editor frontend, not a permanent dependency of the application model. A future ImGui frontend or a Clay-based layout/widget frontend should be replaceable without changing chart storage, timing, audio, commands, selection, transport, format codecs, or renderer-neutral chart drawing.
 

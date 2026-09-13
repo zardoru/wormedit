@@ -660,17 +660,79 @@ auto make_workspace_view(const workspace_controller_t& workspace, const song_doc
         break;
     }
     case workspace_tab_t::metadata: {
-        if (!enforce_summary_cap(document.metadata.ordered_search_tags.size(), workspace,
-                                 "search tag list", result.diagnostics)) {
+        std::size_t item_count = document.metadata.ordered_search_tags.size();
+        std::size_t text_bytes{};
+        const auto account_text = [&](std::string_view text) {
+            return checked_add(text_bytes, text.size()) &&
+                   text_bytes <= workspace.limits.maximum_metadata_text_bytes;
+        };
+        const auto account_groups = [&](const auto& groups) {
+            for (const auto& group : groups) {
+                if (!checked_add(item_count, group.ordered_fields.size()))
+                    return false;
+                for (const auto& [name, value] : group.ordered_fields)
+                    if (!account_text(name) || !account_text(value))
+                        return false;
+            }
+            return true;
+        };
+        if (!account_text(document.metadata.title) || !account_text(document.metadata.artist)) {
+            add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
+                      "metadata text exceeds the configured view byte cap");
             return result;
         }
-        view.tab_view = workspace_metadata_view_t{
+        for (const auto& tag : document.metadata.ordered_search_tags)
+            if (!account_text(tag)) {
+                add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
+                          "metadata text exceeds the configured view byte cap");
+                return result;
+            }
+        if ((chart != nullptr &&
+             (!account_text(chart->metadata.name) || !account_text(chart->metadata.author))) ||
+            !account_groups(document.metadata.format_groups) ||
+            (chart != nullptr && !account_groups(chart->metadata.format_groups))) {
+            add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
+                      "metadata field count or text bytes overflow the configured view bounds");
+            return result;
+        }
+        if (!enforce_summary_cap(item_count, workspace, "metadata field list",
+                                 result.diagnostics)) {
+            return result;
+        }
+        workspace_metadata_view_t content{
             .title = document.metadata.title,
             .artist = document.metadata.artist,
             .search_tags = document.metadata.ordered_search_tags,
             .selected_difficulty = selected_difficulty,
             .chart_author = chart == nullptr ? std::string{} : chart->metadata.author,
         };
+        content.format_fields.reserve(item_count - document.metadata.ordered_search_tags.size());
+        const auto append_groups = [&](const auto& groups, bool chart_scoped) {
+            for (std::size_t group_index = 0; group_index < groups.size(); ++group_index) {
+                const auto& group = groups[group_index];
+                for (std::size_t field_index = 0; field_index < group.ordered_fields.size();
+                     ++field_index) {
+                    const auto& [name, value] = group.ordered_fields[field_index];
+                    content.format_fields.push_back({
+                        .chart_scoped = chart_scoped,
+                        .family = group.family,
+                        .group_index = group_index,
+                        .field_index = field_index,
+                        .name = name,
+                        .value = value,
+                        .source_order =
+                            field_index < group.ordered_field_source_orders.size()
+                                ? std::optional<
+                                      std::size_t>{group.ordered_field_source_orders[field_index]}
+                                : std::nullopt,
+                    });
+                }
+            }
+        };
+        append_groups(document.metadata.format_groups, false);
+        if (chart != nullptr)
+            append_groups(chart->metadata.format_groups, true);
+        view.tab_view = std::move(content);
         break;
     }
     case workspace_tab_t::timing: {

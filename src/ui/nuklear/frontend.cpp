@@ -9,12 +9,34 @@
 #include "nuklear_sdl_gl3_sdl3.h"
 
 #include <stddef.h>
+#include <string.h>
 
 #define WORMEDIT_MAX_VERTEX_MEMORY (512 * 1024)
 #define WORMEDIT_MAX_ELEMENT_MEMORY (128 * 1024)
 
 static SDL_Window* g_window;
 static struct nk_context* g_context;
+static char g_recovery_save_as_destination[WORM_UI_RECOVERY_DESTINATION_CAPACITY];
+
+static int recovery_action_offered(const WormUiRecoveryCandidateView* candidate, size_t action) {
+    return candidate && (candidate->action_mask & action) != 0;
+}
+
+static void set_recovery_action(WormUiWorkspaceAction* action,
+                                const WormUiRecoveryCandidateView* candidate,
+                                WormUiWorkspaceActionKind kind) {
+    if (!action || !candidate) {
+        return;
+    }
+    action->kind = kind;
+    action->recovery_scan_generation = candidate->scan_generation;
+    action->recovery_row_index = candidate->row_index;
+    action->recovery_candidate_index = candidate->candidate_index;
+    if (kind == WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS) {
+        memcpy(action->recovery_save_as_destination, g_recovery_save_as_destination,
+               sizeof(action->recovery_save_as_destination));
+    }
+}
 
 bool worm_ui_frontend_init(SDL_Window* window) {
     if (!window || g_context) {
@@ -73,10 +95,13 @@ void worm_ui_frontend_end_input(void) {
 }
 
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
-    WormUiWorkspaceAction action = {WORM_UI_WORKSPACE_ACTION_NONE, WORM_UI_WORKSPACE_TAB_SETUP};
+    WormUiWorkspaceAction action = {
+        WORM_UI_WORKSPACE_ACTION_NONE, WORM_UI_WORKSPACE_TAB_SETUP, 0, 0, 0, {0}};
     if (!g_context || !g_window || !view || !view->project_title || !view->artist ||
         !view->selected_difficulty || !view->status_text || !view->git_hash || !view->tab_heading ||
         view->summary_line_count > WORM_UI_WORKSPACE_SUMMARY_CAPACITY ||
+        view->recovery_candidate_count > WORM_UI_RECOVERY_ROW_CAPACITY ||
+        view->recovery_diagnostic_count > WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY ||
         view->active_tab < WORM_UI_WORKSPACE_TAB_SETUP ||
         view->active_tab > WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE) {
         return action;
@@ -123,7 +148,111 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         nk_layout_row_dynamic(g_context, 28, 1);
         nk_label(g_context, view->tab_heading, NK_TEXT_LEFT);
 
-        const float content_height = height > 300 ? (float)height - 165.0f : 120.0f;
+        float recovery_height = 0.0f;
+        if (view->recovery_panel_visible) {
+            recovery_height = 40.0f +
+                              (view->recovery_notice && view->recovery_notice[0] ? 22.0f : 0.0f) +
+                              (float)view->recovery_candidate_count * 48.0f +
+                              (float)view->recovery_diagnostic_count * 18.0f;
+            for (size_t row = 0; row < view->recovery_candidate_count; ++row) {
+                const WormUiRecoveryCandidateView* candidate = &view->recovery_candidates[row];
+                if (recovery_action_offered(candidate, WORM_UI_RECOVERY_ACTION_SAVE_AS)) {
+                    recovery_height += 25.0f;
+                    if (g_recovery_save_as_destination[0] == '\0') {
+                        recovery_height += 18.0f;
+                    }
+                }
+                if (candidate->disabled_reason && candidate->disabled_reason[0]) {
+                    recovery_height += 20.0f;
+                }
+            }
+            nk_layout_row_dynamic(g_context, 24, 1);
+            nk_label(g_context, view->recovery_heading ? view->recovery_heading : "Recovery",
+                     NK_TEXT_LEFT);
+            if (view->recovery_notice && view->recovery_notice[0]) {
+                nk_layout_row_dynamic(g_context, 22, 1);
+                nk_label(g_context, view->recovery_notice, NK_TEXT_LEFT);
+            }
+            for (size_t row = 0; row < view->recovery_candidate_count; ++row) {
+                const WormUiRecoveryCandidateView* candidate = &view->recovery_candidates[row];
+                nk_layout_row_dynamic(g_context, 20, 1);
+                nk_labelf(g_context, NK_TEXT_LEFT, "%s  %s",
+                          candidate->path_label ? candidate->path_label : "(unknown recovery path)",
+                          candidate->summary ? candidate->summary : "");
+
+                nk_layout_row_dynamic(g_context, 25, 5);
+                const struct {
+                    size_t bit;
+                    const char* label;
+                    WormUiWorkspaceActionKind kind;
+                } buttons[] = {
+                    {WORM_UI_RECOVERY_ACTION_INSPECT, "Inspect",
+                     WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT},
+                    {WORM_UI_RECOVERY_ACTION_RECOVER, "Recover",
+                     WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER},
+                    {WORM_UI_RECOVERY_ACTION_SAVE_AS, "Save as",
+                     WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS},
+                    {WORM_UI_RECOVERY_ACTION_DISCARD, "Discard",
+                     WORM_UI_WORKSPACE_ACTION_RECOVERY_DISCARD},
+                    {WORM_UI_RECOVERY_ACTION_QUARANTINE, "Quarantine",
+                     WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE},
+                };
+                for (size_t button = 0; button < sizeof(buttons) / sizeof(buttons[0]); ++button) {
+                    const int offered = recovery_action_offered(candidate, buttons[button].bit);
+                    if (!offered) {
+                        nk_widget_disable_begin(g_context);
+                    }
+                    const int clicked = nk_button_label(g_context, buttons[button].label);
+                    if (!offered) {
+                        nk_widget_disable_end(g_context);
+                    }
+                    int save_as_ready = 1;
+                    if (buttons[button].kind == WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS) {
+                        save_as_ready = g_recovery_save_as_destination[0] != '\0';
+                    }
+                    if (offered && save_as_ready && clicked &&
+                        action.kind == WORM_UI_WORKSPACE_ACTION_NONE) {
+                        set_recovery_action(&action, candidate, buttons[button].kind);
+                    }
+                }
+                if (recovery_action_offered(candidate, WORM_UI_RECOVERY_ACTION_SAVE_AS)) {
+                    nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 2);
+                    nk_layout_row_push(g_context, 0.18f);
+                    nk_label(g_context, "New project path", NK_TEXT_LEFT);
+                    nk_layout_row_push(g_context, 0.82f);
+                    (void)nk_edit_string_zero_terminated(
+                        g_context, NK_EDIT_FIELD, g_recovery_save_as_destination,
+                        sizeof(g_recovery_save_as_destination), nk_filter_default);
+                    nk_layout_row_end(g_context);
+                    if (g_recovery_save_as_destination[0] == '\0') {
+                        nk_layout_row_dynamic(g_context, 18, 1);
+                        nk_label(g_context,
+                                 "Save as is disabled until a new destination is entered.",
+                                 NK_TEXT_LEFT);
+                    }
+                }
+                if (candidate->disabled_reason && candidate->disabled_reason[0]) {
+                    nk_layout_row_dynamic(g_context, 20, 1);
+                    nk_label(g_context, candidate->disabled_reason, NK_TEXT_LEFT);
+                }
+            }
+            if (view->recovery_rows_truncated) {
+                nk_layout_row_dynamic(g_context, 18, 1);
+                nk_label(g_context, "Additional recovery candidates are not shown.", NK_TEXT_LEFT);
+            }
+            for (size_t diagnostic = 0; diagnostic < view->recovery_diagnostic_count;
+                 ++diagnostic) {
+                if (view->recovery_diagnostics[diagnostic]) {
+                    nk_layout_row_dynamic(g_context, 18, 1);
+                    nk_label(g_context, view->recovery_diagnostics[diagnostic], NK_TEXT_LEFT);
+                }
+            }
+        }
+
+        float content_height = height > 300 ? (float)height - 165.0f - recovery_height : 80.0f;
+        if (content_height < 80.0f) {
+            content_height = 80.0f;
+        }
         nk_layout_row_dynamic(g_context, content_height, 1);
         if (nk_group_begin(g_context, "workspace-content", NK_WINDOW_BORDER)) {
             nk_layout_row_dynamic(g_context, 24, 1);

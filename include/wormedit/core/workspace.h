@@ -39,6 +39,7 @@ struct workspace_limits_t {
     std::size_t maximum_summary_items{1'000'000};
     std::size_t maximum_focus_region_bytes{128};
     std::size_t maximum_validation_diagnostics{4'096};
+    std::size_t maximum_metadata_text_bytes{32U * 1024U * 1024U};
 };
 
 // Focus is logical rather than widget/toolkit-specific. A focus target can be
@@ -168,11 +169,22 @@ struct workspace_setup_view_t {
 };
 
 struct workspace_metadata_view_t {
+    struct format_field_t {
+        bool chart_scoped{};
+        format_family_t family{format_family_t::native_project};
+        std::size_t group_index{};
+        std::size_t field_index{};
+        std::string name;
+        std::string value;
+        std::optional<std::size_t> source_order;
+    };
+
     std::string title;
     std::string artist;
     std::vector<std::string> search_tags;
     std::optional<workspace_chart_option_t> selected_difficulty;
     std::string chart_author;
+    std::vector<format_field_t> format_fields;
 };
 
 struct workspace_timing_view_t {

@@ -1,6 +1,8 @@
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bms_writer.h>
 
+#include <wormedit/core/timing.h>
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -988,6 +990,97 @@ TEST_CASE("BMS writer preserves mixed root and branch timing statements",
     const auto rejected_pause = wormedit::write_bms(edited_pause, options);
     CHECK_FALSE(rejected_pause.bytes.has_value());
     CHECK(has_error(rejected_pause, wormedit::bms_write_diagnostic_code_t::branch_provenance));
+}
+
+TEST_CASE("BMS active flatten serializes projected BPM, STOP, and fractional measures",
+          "[unit][format][bms][writer]") {
+    constexpr std::string_view source =
+        "#PLAYER 1\n#TITLE Flatten timing\n#BPM 120\n#BPM01 180\n#BPM02 240\n"
+        "#STOP01 48\n#STOP02 96\n#RANDOM 2\n#IF 1\n#00002:0.75\n"
+        "#00008:00010002\n#00009:00010002\n#ELSE\n#00002:1.25\n"
+        "#00008:0003\n#00009:0002\n#ENDIF\n#ENDRANDOM\n";
+    wormedit::bms_parse_options_t parse_options;
+    parse_options.lane_profile_id = "bme-7k-outside-scratch";
+    parse_options.branch_choices = {
+        {.control_source_order = line_order(source, "#RANDOM 2"), .selected_value = 1}};
+    const auto imported = parse(source, parse_options);
+    REQUIRE(imported.song.has_value());
+    REQUIRE_FALSE(imported.has_errors());
+    const auto& projected = imported.song->charts.front();
+    REQUIRE(projected.bpms.size() == 3);
+    REQUIRE(projected.pauses.size() == 2);
+    CHECK((projected.measures.front().definition.length == wormedit::rational_t{3, 4}));
+
+    wormedit::bms_write_options_t preserve_options;
+    preserve_options.lane_profile_id = "bme-7k-outside-scratch";
+    preserve_options.preserve_unchanged_source = false;
+    const auto preserved = wormedit::write_bms(*imported.song, preserve_options);
+    REQUIRE(preserved.bytes.has_value());
+    CHECK_FALSE(preserved.has_errors());
+    CHECK(preserved.bytes->find("#RANDOM 2") != std::string::npos);
+    CHECK(preserved.bytes->find("#ELSE") != std::string::npos);
+    CHECK(preserved.bytes->find("#ENDRANDOM") != std::string::npos);
+    CHECK(preserved.bytes->find("#00002:1.25") != std::string::npos);
+    CHECK(preserved.bytes->find("#00008:0003") != std::string::npos);
+    CHECK(preserved.bytes->find("#00009:0002") != std::string::npos);
+
+    auto flatten_options = preserve_options;
+    flatten_options.branch_policy = wormedit::bms_branch_policy_t::flatten_active;
+    const auto flattened = wormedit::write_bms(*imported.song, flatten_options);
+    INFO((flattened.diagnostics.empty() ? std::string{} : flattened.diagnostics.back().message));
+    REQUIRE(flattened.bytes.has_value());
+    CHECK_FALSE(flattened.has_errors());
+    CHECK(has_warning(flattened, wormedit::bms_write_diagnostic_code_t::lossy_transform));
+    CHECK(flattened.bytes->find("#RANDOM") == std::string::npos);
+    CHECK(flattened.bytes->find("#ELSE") == std::string::npos);
+    CHECK(flattened.bytes->find("#BPM 120") != std::string::npos);
+    CHECK(flattened.bytes->find("#BPM01 180") != std::string::npos);
+    CHECK(flattened.bytes->find("#BPM02 240") != std::string::npos);
+    CHECK(flattened.bytes->find("#STOP01 48") != std::string::npos);
+    CHECK(flattened.bytes->find("#STOP02 96") != std::string::npos);
+    CHECK(flattened.bytes->find("#00002:0.75") != std::string::npos);
+    CHECK(flattened.bytes->find("#00002:1.25") == std::string::npos);
+    const auto flattened_again = wormedit::write_bms(*imported.song, flatten_options);
+    REQUIRE(flattened_again.bytes.has_value());
+    CHECK(*flattened_again.bytes == *flattened.bytes);
+
+    const auto reparsed = parse(*flattened.bytes, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(reparsed.song.has_value());
+    CHECK_FALSE(reparsed.has_errors());
+    const auto& roundtrip = reparsed.song->charts.front();
+    REQUIRE(roundtrip.bpms.size() == projected.bpms.size());
+    REQUIRE(roundtrip.pauses.size() == projected.pauses.size());
+    CHECK((roundtrip.measures.front().definition.length ==
+           projected.measures.front().definition.length));
+
+    const auto source_timing = wormedit::build_timing_index(projected);
+    const auto roundtrip_timing = wormedit::build_timing_index(roundtrip);
+    REQUIRE(source_timing.index.has_value());
+    REQUIRE(roundtrip_timing.index.has_value());
+    REQUIRE(source_timing.index->rows.size() == roundtrip_timing.index->rows.size());
+    for (std::size_t row = 0; row < source_timing.index->rows.size(); ++row) {
+        CHECK(source_timing.index->rows[row].effective_bpm ==
+              roundtrip_timing.index->rows[row].effective_bpm);
+        CHECK(source_timing.index->rows[row].before_delays_seconds ==
+              roundtrip_timing.index->rows[row].before_delays_seconds);
+        CHECK(source_timing.index->rows[row].event_seconds ==
+              roundtrip_timing.index->rows[row].event_seconds);
+        CHECK(source_timing.index->rows[row].after_stops_seconds ==
+              roundtrip_timing.index->rows[row].after_stops_seconds);
+    }
+
+    auto non_bms_pause = *imported.song;
+    non_bms_pause.charts.front().pauses.front().source_unit = wormedit::pause_unit_t::seconds;
+    const auto rejected_pause = wormedit::write_bms(non_bms_pause, flatten_options);
+    CHECK_FALSE(rejected_pause.bytes.has_value());
+    CHECK(has_error(rejected_pause, wormedit::bms_write_diagnostic_code_t::unsupported_feature));
+
+    auto nonterminating = *imported.song;
+    nonterminating.charts.front().measures.push_back(
+        {.id = wormedit::measure_id_t{9'999}, .definition = {.length = {1, 3}}});
+    const auto rejected_ratio = wormedit::write_bms(nonterminating, flatten_options);
+    CHECK_FALSE(rejected_ratio.bytes.has_value());
+    CHECK(has_error(rejected_ratio, wormedit::bms_write_diagnostic_code_t::unrepresentable_number));
 }
 
 TEST_CASE("BMS writer patches active branch channel events and uniquely bound timing values",

@@ -66,6 +66,9 @@ struct bms_write_result_t {
 // Writes unchanged imported BMS bytes exactly, or emits deterministic normalized
 // BMS in the requested encoding for metadata, resources, measure lengths, initial
 // BPM, taps, holds, repeated BGM source lanes, and representable BGA events.
+// Explicit flatten_active output also emits projected BPM changes, BMS STOP-tick
+// pauses, and exact supported measure ratios; unsupported pause units fail rather
+// than being converted approximately.
 // Unsupported semantic features fail with typed diagnostics. Preserve-tree output
 // always emits every retained branch and its control statements; it never emits
 // only the selected materialized projection or only its patches. Provenanced branch

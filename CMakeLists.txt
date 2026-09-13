@@ -46,6 +46,7 @@ add_library(wormedit_core
     src/core/grid.cpp
     src/core/interaction.cpp
     src/core/lane_profiles.cpp
+    src/core/metadata_editor.cpp
     src/core/measure.cpp
     src/core/quantize.cpp
     src/core/rational.cpp

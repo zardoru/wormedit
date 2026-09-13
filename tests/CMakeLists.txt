@@ -12,6 +12,7 @@ add_executable(wormedit_core_tests
     core/grid_tests.cpp
     core/interaction_tests.cpp
     core/lane_profile_tests.cpp
+    core/metadata_editor_tests.cpp
     core/measure_tests.cpp
     core/quantize_tests.cpp
     core/rational_tests.cpp

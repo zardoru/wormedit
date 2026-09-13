@@ -50,6 +50,43 @@ struct osu_mania_parse_result_t {
     [[nodiscard]] auto has_errors() const -> bool;
 };
 
+enum class osu_mania_write_diagnostic_code_t {
+    missing_chart,
+    invalid_document,
+    unsupported_feature,
+    invalid_layout,
+    unrepresentable_position,
+    invalid_resource,
+    invalid_metadata,
+    timestamp_quantization,
+    lossy_transform,
+    output_limit,
+};
+
+struct osu_mania_write_diagnostic_t {
+    diagnostic_severity_t severity{diagnostic_severity_t::error};
+    osu_mania_write_diagnostic_code_t code{osu_mania_write_diagnostic_code_t::invalid_document};
+    std::string message;
+    std::string field;
+};
+
+struct osu_mania_write_options_t {
+    std::optional<chart_id_t> chart;
+    bool preserve_unknown_fields{true};
+    std::size_t max_output_bytes{64U * 1024U * 1024U};
+    std::size_t max_lines{1'000'000};
+    std::size_t max_events{500'000};
+    std::size_t max_measures{65'536};
+    std::size_t max_rows_per_measure{1'000'000};
+};
+
+struct osu_mania_write_result_t {
+    std::optional<std::string> text;
+    std::vector<osu_mania_write_diagnostic_t> diagnostics;
+
+    [[nodiscard]] auto has_errors() const -> bool;
+};
+
 // Parses one UTF-8 osu!mania .osu file. Parsing is bounded and transactional:
 // the song is published only when the entire source has passed validation.
 // Hit-object milliseconds remain available exactly in chart format metadata
@@ -58,5 +95,13 @@ struct osu_mania_parse_result_t {
 [[nodiscard]] auto parse_osu_mania_bytes(std::span<const std::byte> bytes,
                                          osu_mania_parse_options_t options = {})
     -> osu_mania_parse_result_t;
+
+// Emits one deterministic UTF-8 osu!mania .osu chart. Hit-object times are
+// integer milliseconds rounded to nearest, with exact half-millisecond ties
+// away from zero. Unchanged imported note times are retained when the rounded
+// modeled position still maps to the same source millisecond.
+[[nodiscard]] auto write_osu_mania(const song_document_t& song,
+                                   osu_mania_write_options_t options = {})
+    -> osu_mania_write_result_t;
 
 } // namespace wormedit

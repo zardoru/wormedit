@@ -481,6 +481,7 @@ struct editor_hit_test_entry_t {
 struct editor_note_span_entry_t {
     object_id_t note;
     lane_id_t lane;
+    note_kind_t kind{note_kind_t::tap};
     std::uint64_t begin_row{};
     std::uint64_t end_row{};
 };

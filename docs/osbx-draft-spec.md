@@ -294,19 +294,19 @@ Initial built-ins are:
 - `curve.dirac { at, area }`, an impulse primitive described below;
 - `curve.multiply { value, curve }`, which scales another curve and is also the operation used by normalization.
 
-Fixed sampling declares an exact point count or exact musical step. Adaptive sampling recursively subdivides until the piecewise interpolation stays within the declared error tolerance or reaches `max_points`. It always includes both endpoints, uses a specified deterministic traversal/order, and evaluates the same points on every platform. Generated positions must be exactly representable at the chart resolution; the preview offers resolution promotion or explicit quantization when they are not.
+Fixed sampling declares an exact point count or exact musical step. Adaptive sampling recursively subdivides until the piecewise interpolation stays within the declared error tolerance or reaches `max_points`. It always includes both endpoints, uses a specified deterministic traversal/order, and evaluates the same points on every platform. Sampling is transient preview/export state, not stored chart data. Recipe range anchors must be exactly representable at the chart resolution; generated output positions must be exactly representable by the selected target, and export preview offers a target-resolution promotion or explicit quantization policy when they are not.
 
 The output family controls interpretation:
 
-- `sv` emits generic internal instantaneous multiplier points;
-- `scrolls` emits StepMania `SCROLLS`-style multiplier points;
-- `speeds` emits StepMania `SPEEDS` values plus an explicit transition duration and beat/time transition mode. A curve cannot target `speeds` until those transition fields are supplied or inherited from a declared policy.
+- `sv` evaluates as a generic instantaneous multiplier function that an exporter can sample into target points;
+- `scrolls` evaluates with StepMania `SCROLLS`-style multiplier semantics;
+- `speeds` evaluates with StepMania `SPEEDS` semantics plus an explicit transition duration and beat/time transition mode. A curve cannot target `speeds` until those transition fields are supplied or inherited from a declared policy.
 
 ### Post-process pipeline and length-preserving normalization
 
-Sampling produces an immutable raw curve batch before normalization or target-specific compilation. An ordered `postprocess` list transforms a copy of that batch. Initial stages are `multiply { value }`, `normalize { mode, value }`, and `balance_bump { solve, target_average }`; later stages can be versioned without changing the curve-function contract. Stage order is significant and is shown in the preview. Both the raw batch and final processed batch remain inspectable in generator provenance.
+Preview or export sampling produces an immutable transient raw curve batch before normalization or target-specific compilation. An ordered `postprocess` list transforms a copy of that batch. Initial stages are `multiply { value }`, `normalize { mode, value }`, and `balance_bump { solve, target_average }`; later stages can be versioned without changing the curve-function contract. Stage order is significant and is shown in the preview. The recipe records the pipeline, while the transient raw and final sampled batches remain inspectable only in preview/export reports and derived caches.
 
-The same post-process interface may operate on a generated batch or a selected existing SV/`SCROLLS`/`SPEEDS` segment after it has been converted to the typed piecewise representation. This makes normalization a reusable explicit command instead of behavior embedded in each curve function.
+The same post-process interface may use a selected existing SV/`SCROLLS`/`SPEEDS` segment as the baseline piecewise function. Applying it creates an editable recipe over that exact selected range instead of replacing the source segment with sampled points. This makes normalization a reusable explicit command instead of behavior embedded in each curve function.
 
 Normalization is optional. `preserve_displacement` multiplies every processed value and impulse area by one scalar so the signed integral of effective scroll over the interval equals its value before applying the post-process chain. With baseline `b(p)` and the incoming multiplier `f(p)`, the scale is:
 
@@ -317,7 +317,7 @@ output(p) = k * f(p)
 
 An optional `value` multiplies the preserved target integral, so `value = 1` retains the original displacement and `value = 2` requests twice that displacement. `preserve_distance` uses integrals of absolute effective scroll when negative scroll makes signed displacement cancel. `preserve_average` is an alias of displacement preservation over normalized `p`; it exists as UI wording, not a different calculation.
 
-Built-in curves may retain an analytic-integral hint, but post-processing computes against the actual typed batch that will be compiled, including structural impulse areas and any prior post-process stages. Arbitrary Lua curves use the same deterministic piecewise representation selected for emitted output, so preview, normalization, and regeneration cannot disagree. A zero or non-finite denominator, overflow, or an output forbidden by the target profile rejects the proposed batch.
+Built-in curves may retain an analytic-integral hint, but post-processing computes against the same transient typed batch that export will compile, including structural impulse areas and any prior post-process stages. Arbitrary Lua curves use the same deterministic sampling rules selected for emitted output, so preview, normalization, and export cannot disagree. A zero or non-finite denominator, overflow, or an output forbidden by the target profile rejects the preview/export batch without changing the recipe.
 
 ### Finite bumps
 
@@ -347,15 +347,17 @@ A Dirac delta is not sampled as an ordinary numeric function: a point sample wou
 
 If an export target has no exact impulse, the user may choose an explicit finite box or triangular pulse with a representable width. Its height is derived so its integrated area remains `a`; the generated entry/exit points and approximation error appear in preview. Otherwise export rejects the impulse. Coincident impulses combine only through an explicit policy, and impulses at interval boundaries have documented left/right ownership.
 
-### Preview and regeneration
+### Composition, preview, and recipe editing
 
-The curve editor shows the source function, sampled control points, raw and post-processed values, each post-process stage, cumulative scroll displacement/distance, point count, resolution changes, and the exact typed events to add, replace, or remove. Applying one curve or one post-process operation is one undoable command. The stored recipe records API version, range anchors, domain, output family, built-in/function source identity, parameters, sampling settings, ordered post-process stages, target profile, and hashes of timing inputs.
+Every enabled curve recipe evaluates to a multiplier. Where recipes overlap, multiply their outputs pointwise with the base authored scroll value in stable recipe order. Reordering affects deterministic evaluation/diagnostics but not the mathematical result while all finite multipliers commute; preserving an explicit order leaves room for versioned non-commutative post-process stages. A recipe never replaces or absorbs another recipe's source. The curve editor can enable/disable, reorder, duplicate, and edit recipes independently and shows each input curve plus the composed effective result.
 
-Regeneration is explicit. A timing or resolution change marks dependent recipes stale and offers a new diff; it does not silently rewrite materialized SV/speed/scroll events.
+The curve editor shows the source function, transient sampled control points, raw and post-processed values, each post-process stage, cumulative scroll displacement/distance, point count, target-resolution changes, and the exact typed events export would emit. Applying one curve or one post-process operation stores only the recipe as one undoable command. The stored recipe records API version, exact range anchors, domain, output family, built-in/function source identity, parameters, sampling settings, ordered post-process stages, stable composition order, enabled state, target profile, and hashes of timing inputs.
+
+Range anchors are visual handles. Dragging either endpoint or the whole interval uses the active exact chart grid by default, previews without mutation, and commits one recipe edit; Escape restores the prior anchors. Timing or resolution changes re-evaluate recipes and may mark their preview/export report stale, but never rewrite a materialized SV/speed/scroll event set because none is stored. Only export materializes the composed function, and that compilation is read-only with respect to the project document.
 
 ## Visual editing of Lua output
 
-The keyframe editor operates on the materialized typed document. Canonically generated DSL modules may be rewritten by the editor. For arbitrary procedural Lua, direct visual edits are stored as project overrides or require an explicit "detach/bake to editable DSL" operation; wormedit must not pretend it can safely rewrite general Lua source.
+The keyframe and generated-note editors operate on the materialized typed document. Canonically generated DSL modules may be rewritten by the editor. For arbitrary procedural Lua, direct visual edits are stored as project overrides or require an explicit "detach/bake to editable DSL" operation; wormedit must not pretend it can safely rewrite general Lua source. Parametric SV/scroll/speed recipes are the exception described above: their functions and ranges remain directly editable and are never baked merely to display or save them.
 
 Regeneration shows how procedural output and visual overrides interact. Conflicting overrides require an explicit keep-generated, keep-override, or manual resolution.
 
@@ -409,7 +411,7 @@ Required regression coverage:
 - exact matrix layout, stack order, pivots, hierarchy, and interpolation;
 - keyframe editing, preview/apply/cancel, visual overrides, regeneration conflicts, undo/redo;
 - fixed-seed Lua generation from structured MIDI;
-- deterministic parametric SV/`SCROLLS`/`SPEEDS` generation, ordered post-processing, normalization of generated and selected existing segments, impulses and finite-pulse compilation, stale-recipe detection, and preview/apply/cancel;
+- deterministic parametric SV/`SCROLLS`/`SPEEDS` recipes, snapped endpoint/whole-range dragging, stable multiplicative overlap composition, enable/disable/reorder, ordered post-processing, normalization against selected existing segments, impulses and finite-pulse export compilation, save/reload without sampled point clouds, stale preview detection, and preview/apply/cancel;
 - standard OSB exact/baked/rasterized/rejected export paths;
 - identical scene-evaluation snapshots for preview and offline rendering timestamps;
 - short video renders probed for frame count, duration, and audio synchronization on Windows, macOS, and Linux.

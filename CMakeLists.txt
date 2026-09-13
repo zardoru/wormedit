@@ -50,14 +50,17 @@ add_library(wormedit_core
     src/core/interaction.cpp
     src/core/lane_profiles.cpp
     src/core/marker_editor.cpp
+    src/core/marker_navigation.cpp
     src/core/metadata_editor.cpp
     src/core/measure.cpp
     src/core/measure_editor.cpp
+    src/core/note_label_editor.cpp
     src/core/pause_warp_editor.cpp
     src/core/quantize.cpp
     src/core/rational.cpp
     src/core/recovery_controller.cpp
     src/core/scroll_speed_editor.cpp
+    src/core/semantic_layer_editor.cpp
     src/core/storyboard.cpp
     src/core/startup_session.cpp
     src/core/task_graph.cpp

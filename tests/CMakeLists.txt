@@ -16,14 +16,17 @@ add_executable(wormedit_core_tests
     core/interaction_tests.cpp
     core/lane_profile_tests.cpp
     core/marker_editor_tests.cpp
+    core/marker_navigation_tests.cpp
     core/metadata_editor_tests.cpp
     core/measure_editor_tests.cpp
     core/measure_tests.cpp
+    core/note_label_editor_tests.cpp
     core/pause_warp_editor_tests.cpp
     core/quantize_tests.cpp
     core/rational_tests.cpp
     core/recovery_controller_tests.cpp
     core/scroll_speed_editor_tests.cpp
+    core/semantic_layer_editor_tests.cpp
     core/storyboard_tests.cpp
     core/startup_session_tests.cpp
     core/task_graph_tests.cpp

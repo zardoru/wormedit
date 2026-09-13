@@ -811,6 +811,53 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                                         static_cast<double>(maximum_scroll));
     interaction_view.viewport_scroll_pixels = retained_state->viewport_scroll_pixels;
     view.pixels_per_standard_measure = interaction_view.pixels_per_standard_measure;
+    const auto scalar_selection_mode = [](wormedit::editor_area_selection_mode_t mode) {
+        switch (mode) {
+        case wormedit::editor_area_selection_mode_t::replace:
+            return WORM_UI_COMPOSE_SELECTION_REPLACE;
+        case wormedit::editor_area_selection_mode_t::add:
+            return WORM_UI_COMPOSE_SELECTION_ADD;
+        case wormedit::editor_area_selection_mode_t::toggle:
+            return WORM_UI_COMPOSE_SELECTION_TOGGLE;
+        }
+        return WORM_UI_COMPOSE_SELECTION_REPLACE;
+    };
+    if (interaction_view.pending_editor_area_selection) {
+        const auto& preview = *interaction_view.pending_editor_area_selection;
+        view.area_selection_preview_visible = true;
+        view.area_selection_preview_mode =
+            scalar_selection_mode(retained_state->pending_editor_area_selection->mode);
+        view.area_selection_preview_bounds = {
+            std::clamp(preview.left_pixels, 0.0, view.viewport_width_pixels),
+            std::clamp(preview.top_pixels, 0.0, view.viewport_height_pixels),
+            std::clamp(preview.right_pixels, 0.0, view.viewport_width_pixels),
+            std::clamp(preview.bottom_pixels, 0.0, view.viewport_height_pixels),
+        };
+    }
+    if (retained_state->pending_space_range_selection) {
+        const auto& pending = *retained_state->pending_space_range_selection;
+        const auto& measures = std::get<wormedit::measure_index_t>(measure_index);
+        const auto anchor_row = wormedit::absolute_row(measures, pending.anchor);
+        const auto cursor_row = wormedit::absolute_row(measures, retained_state->cursor);
+        if (anchor_row && cursor_row) {
+            const auto pixels_per_row = interaction_view.pixels_per_standard_measure /
+                                        static_cast<double>(chart.divisions_per_standard_measure);
+            const auto first_row = std::min(*anchor_row, *cursor_row);
+            const auto last_row = std::max(*anchor_row, *cursor_row);
+            const auto top = static_cast<double>(first_row) * pixels_per_row -
+                             interaction_view.viewport_scroll_pixels;
+            const auto bottom = static_cast<double>(last_row + 1) * pixels_per_row -
+                                interaction_view.viewport_scroll_pixels;
+            view.space_range_preview_visible = true;
+            view.space_range_preview_mode = scalar_selection_mode(pending.mode);
+            view.space_range_preview_bounds = {
+                0.0,
+                std::clamp(top, 0.0, view.viewport_height_pixels),
+                view.viewport_width_pixels,
+                std::clamp(bottom, 0.0, view.viewport_height_pixels),
+            };
+        }
+    }
     flattened.compose_interaction_view_storage = interaction_view;
     std::size_t lane_key_binding_count{};
     bool lane_key_bindings_truncated{};
@@ -1253,6 +1300,18 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
     }
 
     auto status = std::string{};
+    const auto selection_mode = [](WormUiComposeSelectionMode mode)
+        -> std::optional<wormedit::editor_area_selection_mode_t> {
+        switch (mode) {
+        case WORM_UI_COMPOSE_SELECTION_REPLACE:
+            return wormedit::editor_area_selection_mode_t::replace;
+        case WORM_UI_COMPOSE_SELECTION_ADD:
+            return wormedit::editor_area_selection_mode_t::add;
+        case WORM_UI_COMPOSE_SELECTION_TOGGLE:
+            return wormedit::editor_area_selection_mode_t::toggle;
+        }
+        return std::nullopt;
+    };
     for (std::size_t index = 0; index < ui_action.compose_input_count; ++index) {
         if (history.document.revision != ui_action.compose_input_document_revision ||
             workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
@@ -1395,6 +1454,45 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             }
             break;
         }
+        case WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN:
+            if (!selection_mode(input.selection_mode).has_value()) {
+                return "Compose area selection used an unknown selection mode.";
+            }
+            result = dispatch_editor_action(
+                history, state,
+                begin_editor_area_selection_action_t{
+                    .x_pixels = input.x_pixels,
+                    .y_pixels = input.y_pixels,
+                    .field_left_pixels = 0.0,
+                    .field_width_pixels = ui_action.compose_input_viewport_width_pixels,
+                    .mode = *selection_mode(input.selection_mode),
+                });
+            accepted = "Area selection started.";
+            break;
+        case WORM_UI_COMPOSE_INPUT_AREA_SELECTION_UPDATE:
+            result = dispatch_editor_action(
+                history, state,
+                update_editor_area_selection_action_t{input.x_pixels, input.y_pixels, true});
+            accepted = "Area selection preview updated.";
+            break;
+        case WORM_UI_COMPOSE_INPUT_AREA_SELECTION_RELEASE:
+            result = dispatch_editor_action(
+                history, state,
+                commit_editor_area_selection_action_t{input.x_pixels, input.y_pixels, true});
+            accepted = "Area selection committed.";
+            break;
+        case WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION:
+            if (!selection_mode(input.selection_mode).has_value()) {
+                return "Compose Space selection used an unknown selection mode.";
+            }
+            result = dispatch_editor_action(history, state,
+                                            space_range_selection_action_t{
+                                                .mode = *selection_mode(input.selection_mode),
+                                            });
+            accepted = state.pending_space_range_selection
+                           ? "Space range selection started; move the cursor and press Space again."
+                           : "Space range selection committed.";
+            break;
         case WORM_UI_COMPOSE_INPUT_POINTER_CLICK: {
             const auto chart =
                 std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);

@@ -185,6 +185,12 @@ typedef struct WormUiComposeCursorView {
     uint64_t lane_id;
 } WormUiComposeCursorView;
 
+typedef enum WormUiComposeSelectionMode {
+    WORM_UI_COMPOSE_SELECTION_REPLACE = 0,
+    WORM_UI_COMPOSE_SELECTION_ADD,
+    WORM_UI_COMPOSE_SELECTION_TOGGLE,
+} WormUiComposeSelectionMode;
+
 typedef struct WormUiComposeLaneKeyBinding {
     uint32_t scancode;
     uint64_t lane_id;
@@ -226,6 +232,12 @@ typedef struct WormUiComposeView {
     const WormUiComposeNoteView* note_endpoints;
     size_t note_endpoint_count;
     const WormUiComposeCursorView* cursor;
+    bool area_selection_preview_visible;
+    WormUiComposeRect area_selection_preview_bounds;
+    WormUiComposeSelectionMode area_selection_preview_mode;
+    bool space_range_preview_visible;
+    WormUiComposeRect space_range_preview_bounds;
+    WormUiComposeSelectionMode space_range_preview_mode;
     const WormUiComposeLaneKeyBinding* lane_key_bindings;
     size_t lane_key_binding_count;
     bool branch_outline_available;
@@ -289,6 +301,10 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN,
     WORM_UI_COMPOSE_INPUT_ALT_POINTER_UPDATE,
     WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE,
+    WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN,
+    WORM_UI_COMPOSE_INPUT_AREA_SELECTION_UPDATE,
+    WORM_UI_COMPOSE_INPUT_AREA_SELECTION_RELEASE,
+    WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION,
     WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE,
 } WormUiComposeInputKind;
 
@@ -296,6 +312,7 @@ typedef struct WormUiComposeInputAction {
     WormUiComposeInputKind kind;
     uint64_t lane_id;
     bool successive;
+    WormUiComposeSelectionMode selection_mode;
     double x_pixels;
     double y_pixels;
 } WormUiComposeInputAction;

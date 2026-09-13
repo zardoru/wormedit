@@ -252,6 +252,11 @@ TEST_CASE("hit testing returns lane, note, hold head, and cross-measure tail tar
     REQUIRE(hold_tail.has_value());
     CHECK(hold_tail->kind == editor_hit_target_kind_t::hold_tail);
     CHECK(hold_tail->note == object_id_t{102});
+    const auto hold_body = hit(150.0, {measure_id_t{1}, 720});
+    REQUIRE(hold_body.has_value());
+    CHECK(hold_body->kind == editor_hit_target_kind_t::note);
+    CHECK(hold_body->note == object_id_t{102});
+    CHECK(hold_body->note_kind == note_kind_t::hold);
     const auto empty_lane = hit(250.0, {measure_id_t{2}, 240});
     REQUIRE(empty_lane.has_value());
     CHECK(empty_lane->kind == editor_hit_target_kind_t::lane);

@@ -1053,6 +1053,7 @@ auto build_editor_hit_test_index(const chart_document_t& chart, std::uint64_t do
             index.note_spans.push_back({
                 .note = note.id,
                 .lane = note.lane,
+                .kind = note.kind,
                 .begin_row = *begin_row,
                 .end_row = *end_row,
             });
@@ -1469,6 +1470,47 @@ auto hit_test_editor(const chart_document_t& chart, const editor_hit_test_index_
             };
             result_priority = priority;
             result_distance = distance;
+        }
+    }
+    if (result_priority == 0 && index.note_span_tree_leaf_base != 0 &&
+        index.note_span_tree_max_end.size() == index.note_span_tree_leaf_base * 2) {
+        const auto after_candidate_spans = std::ranges::upper_bound(
+            index.note_spans, *pointer_row, {}, &editor_note_span_entry_t::begin_row);
+        const auto candidate_count = static_cast<std::size_t>(
+            std::distance(index.note_spans.begin(), after_candidate_spans));
+        const editor_note_span_entry_t* body{};
+        const auto visit = [&](auto&& self, std::size_t node, std::size_t first,
+                               std::size_t last) -> void {
+            if (first >= candidate_count || index.note_span_tree_max_end[node] <= *pointer_row) {
+                return;
+            }
+            if (last - first == 1) {
+                if (first >= index.note_spans.size()) {
+                    return;
+                }
+                const auto& span = index.note_spans[first];
+                if (span.lane == lane && span.begin_row < *pointer_row &&
+                    *pointer_row < span.end_row &&
+                    (body == nullptr || span.note.value < body->note.value)) {
+                    body = &span;
+                }
+                return;
+            }
+            const auto middle = first + (last - first) / 2;
+            self(self, node * 2, first, middle);
+            self(self, node * 2 + 1, middle, last);
+        };
+        if (candidate_count != 0) {
+            visit(visit, 1, 0, index.note_span_tree_leaf_base);
+        }
+        if (body != nullptr) {
+            result = {
+                .kind = editor_hit_target_kind_t::note,
+                .lane = body->lane,
+                .note = body->note,
+                .note_kind = body->kind,
+                .position = *pointer_position,
+            };
         }
     }
     return result;

@@ -69,7 +69,9 @@ struct bms_write_result_t {
 // Unsupported semantic features fail with typed diagnostics. Provenanced branch
 // metadata/resource edits, measure-length edits, and direct BPM declaration edits to
 // the active projection replace only their uniquely attributable retained source
-// statements; other branch content remains source-backed.
+// statements, active-branch channel events, extended BPM definitions/events, and
+// uniquely attributable pauses replace only their retained source statements;
+// other branch content remains source-backed.
 [[nodiscard]] auto write_bms(const song_document_t& song, bms_write_options_t options = {})
     -> bms_write_result_t;
 

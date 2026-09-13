@@ -37,6 +37,7 @@ if(WORMEDIT_BUILD_APP AND NOT WORMEDIT_UI_BACKEND STREQUAL "nuklear")
 endif()
 
 add_library(wormedit_core
+    src/core/chart_compare.cpp
     src/core/command.cpp
     src/core/document.cpp
     src/core/editor_scene.cpp
@@ -48,8 +49,10 @@ add_library(wormedit_core
     src/core/measure.cpp
     src/core/quantize.cpp
     src/core/rational.cpp
+    src/core/recovery_controller.cpp
     src/core/task_graph.cpp
     src/core/timing.cpp
+    src/core/workspace.cpp
     src/formats/bms.cpp
     src/formats/bms_writer.cpp
     src/formats/bmson.cpp

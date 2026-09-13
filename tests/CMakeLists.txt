@@ -3,6 +3,7 @@ include(Catch)
 add_executable(wormedit_core_tests
     core/audio_fixture_inventory_tests.cpp
     core/bga_preview_tests.cpp
+    core/chart_compare_tests.cpp
     core/command_tests.cpp
     core/document_tests.cpp
     core/editor_scene_tests.cpp
@@ -14,8 +15,10 @@ add_executable(wormedit_core_tests
     core/measure_tests.cpp
     core/quantize_tests.cpp
     core/rational_tests.cpp
+    core/recovery_controller_tests.cpp
     core/task_graph_tests.cpp
     core/timing_tests.cpp
+    core/workspace_tests.cpp
     formats/bms_tests.cpp
     formats/bms_writer_tests.cpp
     formats/bmson_tests.cpp

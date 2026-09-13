@@ -240,10 +240,14 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         !std::isfinite(request.field_width_pixels) || request.field_width_pixels <= 0.0 ||
         !finite_nonnegative(request.split_stage_gutter_pixels) ||
         !std::isfinite(request.note_head_height_pixels) || request.note_head_height_pixels <= 0.0 ||
+        !std::isfinite(request.comparison_difference_height_pixels) ||
+        request.comparison_difference_height_pixels <= 0.0 ||
         !std::isfinite(request.hold_body_width_ratio) || request.hold_body_width_ratio <= 0.0 ||
         request.hold_body_width_ratio > 1.0 || request.maximum_grid_lines == 0 ||
         request.maximum_authored_groupings == 0 ||
         request.authored_groupings.size() > request.maximum_authored_groupings ||
+        request.maximum_comparison_difference_rows == 0 ||
+        request.comparison_difference_rows.size() > request.maximum_comparison_difference_rows ||
         request.maximum_scene_primitives == 0 || request.maximum_composition_operations == 0 ||
         view.selected_notes.size() > index.notes.size() ||
         !std::isfinite(view.pixels_per_standard_measure) ||
@@ -381,6 +385,51 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                  .bounds = {left, y_for_row(clipped_begin), right, y_for_row(clipped_end)}});
         }
         visible_bands.push_back(std::move(band));
+    }
+
+    std::vector<std::pair<std::uint64_t, local_position_t>> comparison_rows;
+    comparison_rows.reserve(request.comparison_difference_rows.size());
+    for (const auto position : request.comparison_difference_rows) {
+        const auto row = absolute_row(index.measures, position);
+        if (!row) {
+            result.diagnostics.push_back(
+                error(diagnostic_code_t::row_out_of_range,
+                      "field-scene comparison row is outside chart geometry"));
+            return result;
+        }
+        comparison_rows.emplace_back(*row, position);
+    }
+    std::ranges::sort(comparison_rows,
+                      [](const auto& left, const auto& right) { return left.first < right.first; });
+    const auto duplicate_comparison =
+        std::ranges::adjacent_find(comparison_rows, [](const auto& left, const auto& right) {
+            return left.first == right.first;
+        });
+    if (duplicate_comparison != comparison_rows.end()) {
+        result.diagnostics.push_back(
+            error(diagnostic_code_t::collision,
+                  "field-scene comparison rows must be unique exact positions"));
+        return result;
+    }
+    const auto half_difference_height = request.comparison_difference_height_pixels / 2.0;
+    for (const auto& [row, position] : comparison_rows) {
+        if (static_cast<long double>(row) < query_low ||
+            static_cast<long double>(row) > query_high) {
+            continue;
+        }
+        if (!operate() || !consume()) {
+            result.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_resolution,
+                      "field-scene comparison rows exceed a composition cap"));
+            return result;
+        }
+        const auto y = y_for_row(row);
+        const editor_field_rect_t bounds{request.field_left_pixels, y - half_difference_height,
+                                         request.field_left_pixels + request.field_width_pixels,
+                                         y + half_difference_height};
+        if (rect_intersects_viewport(bounds, view.viewport_height_pixels)) {
+            scene.comparison_differences.push_back({.position = position, .bounds = bounds});
+        }
     }
 
     const auto grid = make_editor_grid_lines(

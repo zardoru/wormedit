@@ -90,7 +90,8 @@ TEST_CASE("field scene composes split layout bands, exact grid, holds, selection
         chart, std::get<wormedit::editor_field_scene_index_t>(built), view(),
         {.field_left_pixels = 10.0,
          .field_width_pixels = 200.0,
-         .split_stage_gutter_pixels = 12.0});
+         .split_stage_gutter_pixels = 12.0,
+         .comparison_difference_rows = {{wormedit::measure_id_t{2}, 0}}});
     REQUIRE(result);
     const auto& scene = *result.scene;
     CHECK(scene.visible_begin_row == 480);
@@ -99,6 +100,11 @@ TEST_CASE("field scene composes split layout bands, exact grid, holds, selection
     CHECK(scene.layout_bands[0].profile_id == "first");
     CHECK(scene.layout_bands[1].profile_id == "second");
     CHECK(scene.lanes.size() == 4);
+    REQUIRE(scene.comparison_differences.size() == 1);
+    CHECK(scene.comparison_differences[0].bounds.left == 10.0);
+    CHECK(scene.comparison_differences[0].bounds.right == 210.0);
+    CHECK(scene.comparison_differences[0].bounds.top == Catch::Approx(91.0));
+    CHECK(scene.comparison_differences[0].bounds.bottom == Catch::Approx(101.0));
 
     const auto first_lane_two = std::ranges::find_if(scene.lanes, [](const auto& geometry) {
         return geometry.layout_band == 0 && geometry.lane == wormedit::lane_id_t{2};
@@ -180,6 +186,33 @@ TEST_CASE("field scene rejects stale indexes and returns no partial geometry at 
         {.field_left_pixels = 0, .field_width_pixels = 200, .maximum_composition_operations = 1});
     CHECK_FALSE(work_capped);
     CHECK_FALSE(work_capped.scene.has_value());
+
+    const auto bad_comparison = wormedit::make_editor_field_scene(
+        chart, index, view(),
+        {.field_left_pixels = 0,
+         .field_width_pixels = 200,
+         .comparison_difference_rows = {{wormedit::measure_id_t{999}, 0}}});
+    CHECK_FALSE(bad_comparison);
+    CHECK_FALSE(bad_comparison.scene.has_value());
+
+    const auto duplicate_comparison = wormedit::make_editor_field_scene(
+        chart, index, view(),
+        {.field_left_pixels = 0,
+         .field_width_pixels = 200,
+         .comparison_difference_rows = {{wormedit::measure_id_t{1}, 720},
+                                        {wormedit::measure_id_t{1}, 720}}});
+    CHECK_FALSE(duplicate_comparison);
+    CHECK(has_code(duplicate_comparison.diagnostics, wormedit::diagnostic_code_t::collision));
+
+    const auto comparison_capped = wormedit::make_editor_field_scene(
+        chart, index, view(),
+        {.field_left_pixels = 0,
+         .field_width_pixels = 200,
+         .comparison_difference_rows = {{wormedit::measure_id_t{1}, 720},
+                                        {wormedit::measure_id_t{2}, 0}},
+         .maximum_comparison_difference_rows = 1});
+    CHECK_FALSE(comparison_capped);
+    CHECK_FALSE(comparison_capped.scene.has_value());
 }
 
 TEST_CASE("field scene interval tree narrows a sparse 50k-note viewport",

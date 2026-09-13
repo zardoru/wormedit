@@ -6,6 +6,7 @@
 #include <array>
 #include <cctype>
 #include <cerrno>
+#include <charconv>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -14,6 +15,7 @@
 #include <ranges>
 #include <set>
 #include <span>
+#include <sstream>
 #include <string_view>
 #include <tuple>
 #include <utility>
@@ -389,6 +391,17 @@ auto exact_decimal(signed_rational_t value, std::string path) -> std::string {
                          std::move(path));
 }
 
+auto parse_positive_timing_value(std::string_view text) -> std::optional<signed_rational_t> {
+    const auto parsed = parse_measure_length(text);
+    if (!parsed.value.has_value() ||
+        parsed.value->numerator >
+            static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        return std::nullopt;
+    }
+    return signed_rational_t{static_cast<std::int64_t>(parsed.value->numerator),
+                             parsed.value->denominator};
+}
+
 auto checked_lcm(std::uint64_t left, std::uint64_t right) -> std::optional<std::uint64_t> {
     if (left == 0 || right == 0)
         return std::nullopt;
@@ -464,6 +477,170 @@ auto source_measure_line_matches_bytes(const source_measure_line_t& source,
     return true;
 }
 
+struct retained_channel_line_t {
+    std::size_t source_order{};
+    std::size_t measure_index{};
+    std::string channel;
+    std::string text;
+    std::string raw_value;
+    bms_source_span_t source_span;
+    bms_line_ending_t line_ending{bms_line_ending_t::none};
+};
+
+struct retained_timing_declaration_t {
+    std::size_t source_order{};
+    std::string token;
+    std::string raw_value;
+    std::string text;
+    bms_source_span_t source_span;
+    bms_line_ending_t line_ending{bms_line_ending_t::none};
+};
+
+struct channel_slot_field_t {
+    std::string channel;
+    std::size_t slot{};
+    std::string object_id;
+};
+
+struct long_note_source_field_t {
+    std::string start_channel;
+    std::size_t start_slot{};
+    std::string start_object_id;
+    std::string end_channel;
+    std::size_t end_slot{};
+    std::string end_object_id;
+    std::size_t end_source_order{};
+};
+
+auto parse_long_note_source_field(std::string_view field)
+    -> std::optional<long_note_source_field_t> {
+    std::istringstream stream{std::string(field)};
+    std::string label;
+    std::string start_channel;
+    std::size_t start_slot{};
+    std::string start_object;
+    std::string end_channel;
+    std::size_t end_slot{};
+    std::string end_object;
+    std::size_t end_line{};
+    if (!(stream >> label) || label != "long-note" || !(stream >> label) || label != "start" ||
+        !(stream >> start_channel >> label >> start_slot >> label >> start_object) ||
+        label != "object" || !(stream >> label) || label != "paired" || !(stream >> label) ||
+        label != "with" || !(stream >> end_channel >> label >> end_slot >> label >> end_object) ||
+        label != "object" || !(stream >> label) || label != "on" || !(stream >> label) ||
+        label != "source" || !(stream >> label) || label != "line" || !(stream >> end_line) ||
+        end_line == 0 || start_channel.size() != 2 || end_channel.size() != 2 ||
+        start_object.size() != 2 || end_object.size() != 2 ||
+        !std::ranges::all_of(start_channel, base36_digit) ||
+        !std::ranges::all_of(end_channel, base36_digit) ||
+        !std::ranges::all_of(start_object, base36_digit) ||
+        !std::ranges::all_of(end_object, base36_digit)) {
+        return std::nullopt;
+    }
+    std::string trailing;
+    if (stream >> trailing) {
+        return std::nullopt;
+    }
+    return long_note_source_field_t{ascii_upper(std::move(start_channel)),
+                                    start_slot,
+                                    ascii_upper(std::move(start_object)),
+                                    ascii_upper(std::move(end_channel)),
+                                    end_slot,
+                                    ascii_upper(std::move(end_object)),
+                                    end_line - 1};
+}
+
+auto parse_channel_slot_field(std::string_view field) -> std::optional<channel_slot_field_t> {
+    // Materialized BMS channel events use a deliberately small, canonical
+    // source-field grammar. Reject anything that would make the source identity
+    // ambiguous instead of trying to infer an edit target from prose.
+    const auto slot_marker = field.find(" slot ");
+    const auto object_marker =
+        field.find(" object ", slot_marker == std::string_view::npos ? 0 : slot_marker + 6);
+    if (slot_marker != 2 || object_marker == std::string_view::npos ||
+        field.size() != object_marker + 10) {
+        return std::nullopt;
+    }
+    std::size_t slot{};
+    const auto slot_text = field.substr(slot_marker + 6, object_marker - slot_marker - 6);
+    const auto parsed_slot =
+        std::from_chars(slot_text.data(), slot_text.data() + slot_text.size(), slot);
+    const auto object_id = field.substr(object_marker + 8);
+    if (parsed_slot.ec != std::errc{} || parsed_slot.ptr != slot_text.data() + slot_text.size() ||
+        object_id.size() != 2 || !base36_digit(object_id[0]) || !base36_digit(object_id[1])) {
+        return std::nullopt;
+    }
+    return channel_slot_field_t{std::string(field.substr(0, 2)), slot,
+                                ascii_upper(std::string(object_id))};
+}
+
+auto branch_channel_slot_field(std::string_view field) -> std::optional<channel_slot_field_t> {
+    auto parsed = parse_channel_slot_field(field);
+    if (parsed.has_value()) {
+        return parsed;
+    }
+    if (field.starts_with("03 slot ")) {
+        const auto value_marker = field.find(" value ", 8);
+        if (value_marker == std::string_view::npos || field.size() != value_marker + 9) {
+            return std::nullopt;
+        }
+        std::size_t slot{};
+        const auto slot_text = field.substr(8, value_marker - 8);
+        const auto parsed_slot =
+            std::from_chars(slot_text.data(), slot_text.data() + slot_text.size(), slot);
+        const auto object_id = field.substr(value_marker + 7);
+        if (parsed_slot.ec != std::errc{} ||
+            parsed_slot.ptr != slot_text.data() + slot_text.size() || object_id.size() != 2 ||
+            !base36_digit(object_id[0]) || !base36_digit(object_id[1])) {
+            return std::nullopt;
+        }
+        return channel_slot_field_t{"03", slot, ascii_upper(std::string(object_id))};
+    }
+    if (field.starts_with("08 slot ")) {
+        const auto bpm_marker = field.find(" BPM", 8);
+        if (bpm_marker == std::string_view::npos || field.size() != bpm_marker + 6) {
+            return std::nullopt;
+        }
+        std::size_t slot{};
+        const auto slot_text = field.substr(8, bpm_marker - 8);
+        const auto parsed_slot =
+            std::from_chars(slot_text.data(), slot_text.data() + slot_text.size(), slot);
+        const auto object_id = field.substr(bpm_marker + 4);
+        if (parsed_slot.ec != std::errc{} ||
+            parsed_slot.ptr != slot_text.data() + slot_text.size() || object_id.size() != 2 ||
+            !base36_digit(object_id[0]) || !base36_digit(object_id[1])) {
+            return std::nullopt;
+        }
+        return channel_slot_field_t{"08", slot, ascii_upper(std::string(object_id))};
+    }
+    if (field.starts_with("09 slot ")) {
+        const auto stop_marker = field.find(" STOP", 8);
+        if (stop_marker == std::string_view::npos || field.size() != stop_marker + 7) {
+            return std::nullopt;
+        }
+        std::size_t slot{};
+        const auto slot_text = field.substr(8, stop_marker - 8);
+        const auto parsed_slot =
+            std::from_chars(slot_text.data(), slot_text.data() + slot_text.size(), slot);
+        const auto object_id = field.substr(stop_marker + 5);
+        if (parsed_slot.ec != std::errc{} ||
+            parsed_slot.ptr != slot_text.data() + slot_text.size() || object_id.size() != 2 ||
+            !base36_digit(object_id[0]) || !base36_digit(object_id[1])) {
+            return std::nullopt;
+        }
+        return channel_slot_field_t{"09", slot, ascii_upper(std::string(object_id))};
+    }
+    return std::nullopt;
+}
+
+auto retained_line_matches_bytes(std::string_view text, bms_source_span_t source_span,
+                                 bms_line_ending_t line_ending,
+                                 std::span<const std::byte> original_bytes) -> bool {
+    source_measure_line_t source{
+        .text = std::string(text), .source_span = source_span, .line_ending = line_ending};
+    return source_measure_line_matches_bytes(source, original_bytes);
+}
+
 struct branch_tree_analysis_t {
     bool has_branches{};
     bool has_branch_timing{};
@@ -477,6 +654,8 @@ struct branch_tree_analysis_t {
     std::map<std::size_t, std::pair<std::string, std::string>> branch_metadata_fields;
     std::map<std::size_t, std::pair<std::string, std::string>> branch_resource_fields;
     std::map<std::size_t, std::string> branch_resource_source_lines;
+    std::map<std::size_t, retained_channel_line_t> branch_channel_lines;
+    std::map<std::size_t, retained_timing_declaration_t> timing_declarations;
     std::map<std::size_t, source_measure_line_t> branch_measure_ratio_lines;
     std::map<std::size_t, source_measure_line_t> branch_direct_bpm_lines;
     std::vector<source_measure_line_t> root_measure_ratio_lines;
@@ -587,6 +766,16 @@ auto analyze_branch_tree(const bms_control_node_t& root) -> branch_tree_analysis
                     if (is_timing_command(token)) {
                         result.has_branch_timing = true;
                         result.retained_timing_source_orders.insert(node.source_order);
+                        if ((token.size() == 5 && token.starts_with("BPM") &&
+                             base36_digit(token[3]) && base36_digit(token[4])) ||
+                            (token.size() == 6 && token.starts_with("STOP") &&
+                             base36_digit(token[4]) && base36_digit(token[5]))) {
+                            result.timing_declarations.emplace(
+                                node.source_order,
+                                retained_timing_declaration_t{node.source_order, token,
+                                                              node.raw_value, node.original_text,
+                                                              node.source_span, node.line_ending});
+                        }
                         if (token == "BPM") {
                             result.branch_direct_bpm_lines.emplace(
                                 node.source_order,
@@ -605,6 +794,20 @@ auto analyze_branch_tree(const bms_control_node_t& root) -> branch_tree_analysis
                         result.branch_resource_source_lines.emplace(node.source_order,
                                                                     node.original_text);
                     }
+                    if (!is_measure_length_command(token).has_value() && token.size() == 5 &&
+                        token[0] >= '0' && token[0] <= '9' && token[1] >= '0' && token[1] <= '9' &&
+                        token[2] >= '0' && token[2] <= '9' && base36_digit(token[3]) &&
+                        base36_digit(token[4]) && node.original_text.size() >= 7 &&
+                        node.original_text[6] == ':') {
+                        result.branch_channel_lines.emplace(
+                            node.source_order,
+                            retained_channel_line_t{
+                                node.source_order,
+                                static_cast<std::size_t>((token[0] - '0') * 100 +
+                                                         (token[1] - '0') * 10 + (token[2] - '0')),
+                                token.substr(3, 2), node.original_text, node.raw_value,
+                                node.source_span, node.line_ending});
+                    }
                     result.preserved_lines.emplace_back(node.source_order, node.original_text);
                 } else {
                     const auto token = ascii_upper(node.command_token);
@@ -621,6 +824,16 @@ auto analyze_branch_tree(const bms_control_node_t& root) -> branch_tree_analysis
                     if (is_timing_command(token)) {
                         result.root_timing_lines.emplace_back(node.source_order,
                                                               node.original_text);
+                        if ((token.size() == 5 && token.starts_with("BPM") &&
+                             base36_digit(token[3]) && base36_digit(token[4])) ||
+                            (token.size() == 6 && token.starts_with("STOP") &&
+                             base36_digit(token[4]) && base36_digit(token[5]))) {
+                            result.timing_declarations.emplace(
+                                node.source_order,
+                                retained_timing_declaration_t{node.source_order, token,
+                                                              node.raw_value, node.original_text,
+                                                              node.source_span, node.line_ending});
+                        }
                         if (token == "BPM") {
                             result.root_direct_bpm_lines.push_back(
                                 {.source_order = node.source_order,
@@ -969,9 +1182,8 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     }
     if (branch_tree.has_branches) {
         warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
-             "branch events, extended timing declarations, and timing channel lines remain "
-             "source-backed; direct edits to those "
-             "branch-projected objects are not applied by this writer slice",
+             "branch content remains source-backed; only uniquely attributable active event and "
+             "timing edits are applied in place",
              "$.charts[].bms_control_tree");
     }
     if (branch_tree.has_unmodeled_root_statement) {
@@ -1034,11 +1246,22 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
         const auto projection =
             std::ranges::find(chart.bms_bpm_projections, bpm.id, &bms_bpm_projection_t::event);
         if (projection == chart.bms_bpm_projections.end() ||
-            projection->source_order != bpm.provenance.source_order ||
-            projection->imported_position != bpm.position) {
+            projection->source_order != bpm.provenance.source_order) {
             fail(bms_write_diagnostic_code_t::branch_provenance,
                  "source-backed BMS BPM timing was edited structurally or lacks its import "
                  "baseline",
+                 "$.charts[].bpms");
+        }
+        const auto channel_field = branch_channel_slot_field(bpm.provenance.source_field);
+        const bool branch_channel_bpm =
+            is_branch_provenance(bpm.provenance) && channel_field.has_value() &&
+            (channel_field->channel == "03" || channel_field->channel == "08");
+        if (branch_channel_bpm) {
+            continue;
+        }
+        if (projection->imported_position != bpm.position) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "a retained direct BPM declaration cannot be moved as a channel event",
                  "$.charts[].bpms");
         }
         if (projection->imported_beats_per_minute == bpm.beats_per_minute) {
@@ -1078,14 +1301,24 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
         const auto projection = std::ranges::find(chart.bms_pause_projections, pause.id,
                                                   &bms_pause_projection_t::event);
         if (projection == chart.bms_pause_projections.end() ||
-            projection->source_order != pause.provenance.source_order ||
-            projection->imported_position != pause.position ||
+            projection->source_order != pause.provenance.source_order) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "source-backed BMS pause timing was edited or lacks its import baseline; direct "
+                 "branch timing editing requires a retained channel event",
+                 "$.charts[].pauses");
+        }
+        const auto channel_field = branch_channel_slot_field(pause.provenance.source_field);
+        if (is_branch_provenance(pause.provenance) && channel_field.has_value() &&
+            channel_field->channel == "09") {
+            continue;
+        }
+        if (projection->imported_position != pause.position ||
             projection->imported_kind != pause.kind ||
             projection->imported_duration != pause.duration ||
             projection->imported_source_unit != pause.source_unit) {
             fail(bms_write_diagnostic_code_t::branch_provenance,
-                 "source-backed BMS pause timing was edited or lacks its import baseline; direct "
-                 "branch timing editing is not implemented",
+                 "source-backed BMS pause timing was edited without an attributable branch "
+                 "channel event",
                  "$.charts[].pauses");
         }
     }
@@ -1264,6 +1497,402 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     }
     const auto& index = std::get<measure_index_t>(measure_index_result);
 
+    struct branch_channel_edit_t {
+        const retained_channel_line_t* source{};
+        std::string text;
+        std::size_t payload_begin{};
+        std::string payload;
+        std::set<std::size_t> cleared_slots;
+        std::map<std::size_t, std::string> written_slots;
+        std::map<std::size_t, std::size_t> written_slot_origins;
+    };
+    std::map<std::size_t, branch_channel_edit_t> branch_channel_edits;
+    std::map<std::pair<std::size_t, std::size_t>, std::string> branch_channel_slot_claims;
+    const auto claim_branch_channel_slot = [&](const source_provenance_t& provenance,
+                                               const channel_slot_field_t& field,
+                                               std::string_view path) {
+        const auto source = branch_tree.branch_channel_lines.find(provenance.source_order);
+        if (source == branch_tree.branch_channel_lines.end() ||
+            !branch_tree.branch_source_orders.contains(provenance.source_order) ||
+            !active_branch_orders.has_value() ||
+            !active_branch_orders->contains(provenance.source_order) ||
+            source->second.channel != field.channel ||
+            provenance.source_spelling != source->second.text ||
+            !has_bms_source_provenance(provenance)) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "branch channel event does not identify one active retained source line",
+                 std::string(path));
+        }
+        const auto expected_measure = (source->second.measure_index < 10    ? std::string("00")
+                                       : source->second.measure_index < 100 ? std::string("0")
+                                                                            : std::string()) +
+                                      std::to_string(source->second.measure_index);
+        const auto separator = source->second.text.find(':');
+        if (separator != 6 || source->second.text.substr(1, 3) != expected_measure ||
+            ascii_upper(source->second.text.substr(4, 2)) != source->second.channel ||
+            source->second.text.substr(7) != source->second.raw_value ||
+            field.slot >= trim_ascii_whitespace(source->second.raw_value).size() / 2 ||
+            trim_ascii_whitespace(source->second.raw_value).size() % 2 != 0 ||
+            ascii_upper(std::string(
+                trim_ascii_whitespace(source->second.raw_value).substr(field.slot * 2, 2))) !=
+                field.object_id) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "branch channel event slot does not match its retained source payload",
+                 std::string(path));
+        }
+        const auto [claim, inserted] = branch_channel_slot_claims.emplace(
+            std::pair{provenance.source_order, field.slot}, std::string(path));
+        if (!inserted && claim->second != path) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "more than one active semantic event claims a retained channel slot",
+                 std::string(path));
+        }
+        return &source->second;
+    };
+    const auto edit_branch_channel_slot = [&](std::size_t source_order,
+                                              const retained_channel_line_t& source,
+                                              std::size_t old_slot, std::size_t new_slot,
+                                              std::string_view object_id, std::string_view path) {
+        const auto original_bytes = branch_source_bytes;
+        if (!original_bytes || !retained_line_matches_bytes(source.text, source.source_span,
+                                                            source.line_ending, *original_bytes)) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "edited branch channel line does not match unchanged imported source bytes",
+                 std::string(path));
+        }
+        auto [edit, inserted] = branch_channel_edits.try_emplace(source_order);
+        if (inserted) {
+            const auto colon = source.text.find(':');
+            if (colon != 6 || source.text.substr(7) != source.raw_value ||
+                trim_ascii_whitespace(source.raw_value).empty() ||
+                trim_ascii_whitespace(source.raw_value).size() % 2 != 0 ||
+                !std::ranges::all_of(trim_ascii_whitespace(source.raw_value), base36_digit)) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "edited branch channel payload is not a valid retained BMS slot line",
+                     std::string(path));
+            }
+            const auto untrimmed_payload = std::string_view(source.text).substr(7);
+            const auto trimmed_payload = trim_ascii_whitespace(untrimmed_payload);
+            edit->second.source = &source;
+            edit->second.text = source.text;
+            edit->second.payload_begin =
+                7 + static_cast<std::size_t>(trimmed_payload.data() - untrimmed_payload.data());
+            edit->second.payload = std::string(trimmed_payload);
+        }
+        auto& patch = edit->second;
+        const auto slot_count = patch.payload.size() / 2;
+        if (old_slot >= slot_count || new_slot >= slot_count || object_id.size() != 2 ||
+            !std::ranges::all_of(object_id, base36_digit)) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "edited branch event position or identifier does not fit its retained source line",
+                 std::string(path));
+        }
+        if (old_slot != new_slot) {
+            patch.cleared_slots.insert(old_slot);
+        }
+        const auto normalized_object_id = ascii_upper(std::string(object_id));
+        const auto [written, write_inserted] =
+            patch.written_slots.emplace(new_slot, normalized_object_id);
+        if (!write_inserted && written->second != ascii_upper(std::string(object_id))) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "edited branch events collide in one retained channel slot", std::string(path));
+        }
+        const auto [origin, origin_inserted] =
+            patch.written_slot_origins.emplace(new_slot, old_slot);
+        if (!origin_inserted && origin->second != old_slot) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "multiple edited branch events target one retained channel slot",
+                 std::string(path));
+        }
+    };
+    const auto expected_branch_slot_position =
+        [&](const retained_channel_line_t& source,
+            std::size_t slot) -> std::optional<local_position_t> {
+        if (source.measure_index >= chart.measures.size()) {
+            return std::nullopt;
+        }
+        auto measure = chart.measures[source.measure_index];
+        const auto measure_projection =
+            std::ranges::find(chart.bms_measure_length_projections, source.measure_index,
+                              &bms_measure_length_projection_t::measure_index);
+        if (measure_projection != chart.bms_measure_length_projections.end()) {
+            measure.definition.length = measure_projection->imported_length;
+            measure.definition.meter.reset();
+        }
+        const auto capacity =
+            validate_measure(chart.divisions_per_standard_measure, measure.definition);
+        const auto slot_count = trim_ascii_whitespace(source.raw_value).size() / 2;
+        if (!capacity.row_capacity.has_value() || slot_count == 0 ||
+            *capacity.row_capacity % slot_count != 0 || slot >= slot_count) {
+            return std::nullopt;
+        }
+        return local_position_t{measure.id, static_cast<std::uint64_t>(slot) *
+                                                (*capacity.row_capacity / slot_count)};
+    };
+    const auto branch_slot_for_position = [&](const retained_channel_line_t& source,
+                                              local_position_t position,
+                                              std::string_view path) -> std::size_t {
+        if (source.measure_index >= chart.measures.size() ||
+            chart.measures[source.measure_index].id != position.measure) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "branch channel event cannot be moved to a different measure", std::string(path));
+        }
+        const auto [numerator, denominator] = fraction_at(index, position, std::string(path));
+        const auto slot_count = trim_ascii_whitespace(source.raw_value).size() / 2;
+        if (slot_count == 0 || numerator > std::numeric_limits<std::uint64_t>::max() / slot_count ||
+            (numerator * slot_count) % denominator != 0 ||
+            numerator * slot_count / denominator >= slot_count) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "edited branch event position does not map to a slot on its retained source line",
+                 std::string(path));
+        }
+        return static_cast<std::size_t>(numerator * slot_count / denominator);
+    };
+
+    std::map<std::size_t, std::string> branch_timing_declaration_edits;
+    const auto effective_timing_declaration =
+        [&](std::string_view token, std::size_t event_source_order,
+            signed_rational_t imported_value) -> const retained_timing_declaration_t* {
+        const retained_timing_declaration_t* effective{};
+        for (const auto& [source_order, declaration] : branch_tree.timing_declarations) {
+            if (declaration.token != token || source_order >= event_source_order ||
+                (branch_tree.branch_source_orders.contains(source_order) &&
+                 (!active_branch_orders.has_value() ||
+                  !active_branch_orders->contains(source_order)))) {
+                continue;
+            }
+            const auto parsed =
+                parse_positive_timing_value(trim_ascii_whitespace(declaration.raw_value));
+            if (!parsed.has_value() || *parsed != imported_value) {
+                continue;
+            }
+            if (effective == nullptr || effective->source_order < source_order) {
+                effective = &declaration;
+            }
+        }
+        return effective;
+    };
+    const auto validate_branch_timing_declaration_edit =
+        [&](const retained_timing_declaration_t& declaration, std::string_view identifier,
+            std::string_view channel, std::string_view path) {
+            if (!branch_source_bytes ||
+                !retained_line_matches_bytes(declaration.text, declaration.source_span,
+                                             declaration.line_ending, *branch_source_bytes)) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "edited branch timing declaration does not match unchanged imported source "
+                     "bytes",
+                     std::string(path));
+            }
+            if (branch_tree.branch_source_orders.contains(declaration.source_order)) {
+                if (!active_branch_orders.has_value() ||
+                    !active_branch_orders->contains(declaration.source_order)) {
+                    fail(bms_write_diagnostic_code_t::branch_provenance,
+                         "timing declaration is not inside the selected active branch",
+                         std::string(path));
+                }
+                return;
+            }
+            for (const auto& [source_order, line] : branch_tree.branch_channel_lines) {
+                if (active_branch_orders.has_value() &&
+                    active_branch_orders->contains(source_order)) {
+                    continue;
+                }
+                if (line.channel != channel || source_order <= declaration.source_order) {
+                    continue;
+                }
+                const auto payload = trim_ascii_whitespace(line.raw_value);
+                for (std::size_t slot = 0; slot + 1 < payload.size(); slot += 2) {
+                    if (payload.substr(slot, 2) == identifier) {
+                        fail(bms_write_diagnostic_code_t::branch_provenance,
+                             "root timing declaration is also used by an inactive sibling "
+                             "branch, so editing it would change that sibling",
+                             std::string(path));
+                    }
+                }
+            }
+        };
+    const auto declaration_referenced_by_bpm = [&](const retained_timing_declaration_t& target,
+                                                   std::string_view identifier,
+                                                   signed_rational_t replacement,
+                                                   std::string_view path) {
+        for (const auto& bpm : chart.bpms) {
+            const auto field = branch_channel_slot_field(bpm.provenance.source_field);
+            if (!field.has_value() || field->channel != "08" || field->object_id != identifier) {
+                continue;
+            }
+            const auto projection =
+                std::ranges::find(chart.bms_bpm_projections, bpm.id, &bms_bpm_projection_t::event);
+            if (projection == chart.bms_bpm_projections.end()) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "extended BPM event has no unique import baseline", std::string(path));
+            }
+            const auto* declaration = effective_timing_declaration(
+                "BPM" + std::string(identifier), bpm.provenance.source_order,
+                projection->imported_beats_per_minute);
+            if (declaration != nullptr && declaration->source_order == target.source_order &&
+                bpm.beats_per_minute != replacement) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "all active events bound to one extended BPM declaration must agree on its "
+                     "replacement value",
+                     std::string(path));
+            }
+        }
+    };
+    const auto declaration_referenced_by_pause = [&](const retained_timing_declaration_t& target,
+                                                     std::string_view identifier,
+                                                     signed_rational_t replacement,
+                                                     std::string_view path) {
+        for (const auto& pause : chart.pauses) {
+            const auto field = branch_channel_slot_field(pause.provenance.source_field);
+            if (!field.has_value() || field->channel != "09" || field->object_id != identifier) {
+                continue;
+            }
+            const auto projection = std::ranges::find(chart.bms_pause_projections, pause.id,
+                                                      &bms_pause_projection_t::event);
+            if (projection == chart.bms_pause_projections.end()) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "STOP event has no unique import baseline", std::string(path));
+            }
+            const auto* declaration = effective_timing_declaration("STOP" + std::string(identifier),
+                                                                   pause.provenance.source_order,
+                                                                   projection->imported_duration);
+            if (declaration != nullptr && declaration->source_order == target.source_order &&
+                pause.duration != replacement) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "all active pauses bound to one STOP declaration must agree on its "
+                     "replacement value",
+                     std::string(path));
+            }
+        }
+    };
+
+    for (const auto& bpm : chart.bpms) {
+        if (!is_branch_provenance(bpm.provenance)) {
+            continue;
+        }
+        if (bpm.provenance.source_field == "BPM") {
+            continue;
+        }
+        const auto projection =
+            std::ranges::find(chart.bms_bpm_projections, bpm.id, &bms_bpm_projection_t::event);
+        const auto field = branch_channel_slot_field(bpm.provenance.source_field);
+        if (projection == chart.bms_bpm_projections.end() ||
+            projection->source_order != bpm.provenance.source_order || !field.has_value() ||
+            (field->channel != "03" && field->channel != "08")) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "edited branch BPM does not identify one retained direct or extended BPM slot",
+                 "$.charts[].bpms");
+        }
+        const auto* source = claim_branch_channel_slot(
+            bpm.provenance, *field, "$.charts[].bpms[" + std::to_string(bpm.id.value) + "]");
+        const auto original_position = expected_branch_slot_position(*source, field->slot);
+        if (!original_position.has_value() || *original_position != projection->imported_position) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "branch BPM event slot does not match its imported position", "$.charts[].bpms");
+        }
+        const auto target_slot =
+            bpm.position == projection->imported_position
+                ? field->slot
+                : branch_slot_for_position(*source, bpm.position, "$.charts[].bpms[].position");
+        const bool position_changed = target_slot != field->slot;
+        const bool value_changed = bpm.beats_per_minute != projection->imported_beats_per_minute;
+        if (!position_changed && !value_changed) {
+            continue;
+        }
+        if (field->channel == "03") {
+            if (bpm.beats_per_minute.numerator <= 0 || bpm.beats_per_minute.denominator != 1 ||
+                bpm.beats_per_minute.numerator > 255) {
+                fail(bms_write_diagnostic_code_t::unrepresentable_number,
+                     "direct branch BPM channel events require an integer from 1 through 255",
+                     "$.charts[].bpms[].beats_per_minute");
+            }
+            constexpr std::string_view hex = "0123456789ABCDEF";
+            const auto value = static_cast<unsigned>(bpm.beats_per_minute.numerator);
+            const std::string object_id{hex[value >> 4U], hex[value & 0x0fU]};
+            edit_branch_channel_slot(bpm.provenance.source_order, *source, field->slot, target_slot,
+                                     object_id, "$.charts[].bpms");
+            continue;
+        }
+        if (value_changed) {
+            const auto* declaration =
+                effective_timing_declaration("BPM" + field->object_id, bpm.provenance.source_order,
+                                             projection->imported_beats_per_minute);
+            if (declaration == nullptr) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "extended BPM event does not resolve to one active retained declaration",
+                     "$.charts[].bpms");
+            }
+            validate_branch_timing_declaration_edit(*declaration, field->object_id, "08",
+                                                    "$.charts[].bpms");
+            declaration_referenced_by_bpm(*declaration, field->object_id, bpm.beats_per_minute,
+                                          "$.charts[].bpms");
+            branch_timing_declaration_edits.insert_or_assign(
+                declaration->source_order,
+                exact_decimal(bpm.beats_per_minute, "$.charts[].bpms[].beats_per_minute"));
+        }
+        if (position_changed) {
+            edit_branch_channel_slot(bpm.provenance.source_order, *source, field->slot, target_slot,
+                                     field->object_id, "$.charts[].bpms");
+        }
+    }
+
+    for (const auto& pause : chart.pauses) {
+        if (!is_branch_provenance(pause.provenance)) {
+            continue;
+        }
+        const auto projection = std::ranges::find(chart.bms_pause_projections, pause.id,
+                                                  &bms_pause_projection_t::event);
+        const auto field = branch_channel_slot_field(pause.provenance.source_field);
+        if (projection == chart.bms_pause_projections.end() ||
+            projection->source_order != pause.provenance.source_order || !field.has_value() ||
+            field->channel != "09" || pause.kind != pause_kind_t::stop ||
+            pause.source_unit != pause_unit_t::bms_stop_ticks ||
+            projection->imported_kind != pause.kind ||
+            projection->imported_source_unit != pause.source_unit) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "edited branch pause is not a uniquely attributable BMS STOP channel event",
+                 "$.charts[].pauses");
+        }
+        const auto* source = claim_branch_channel_slot(
+            pause.provenance, *field, "$.charts[].pauses[" + std::to_string(pause.id.value) + "]");
+        const auto original_position = expected_branch_slot_position(*source, field->slot);
+        if (!original_position.has_value() || *original_position != projection->imported_position) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "branch STOP event slot does not match its imported position",
+                 "$.charts[].pauses");
+        }
+        const auto target_slot =
+            pause.position == projection->imported_position
+                ? field->slot
+                : branch_slot_for_position(*source, pause.position, "$.charts[].pauses[].position");
+        const bool position_changed = target_slot != field->slot;
+        const bool duration_changed = pause.duration != projection->imported_duration;
+        if (!position_changed && !duration_changed) {
+            continue;
+        }
+        if (duration_changed) {
+            const auto* declaration = effective_timing_declaration("STOP" + field->object_id,
+                                                                   pause.provenance.source_order,
+                                                                   projection->imported_duration);
+            if (declaration == nullptr) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "STOP event does not resolve to one active retained declaration",
+                     "$.charts[].pauses");
+            }
+            validate_branch_timing_declaration_edit(*declaration, field->object_id, "09",
+                                                    "$.charts[].pauses");
+            declaration_referenced_by_pause(*declaration, field->object_id, pause.duration,
+                                            "$.charts[].pauses");
+            branch_timing_declaration_edits.insert_or_assign(
+                declaration->source_order,
+                exact_decimal(pause.duration, "$.charts[].pauses[].duration"));
+        }
+        if (position_changed) {
+            edit_branch_channel_slot(pause.provenance.source_order, *source, field->slot,
+                                     target_slot, field->object_id, "$.charts[].pauses");
+        }
+    }
+
     std::map<std::pair<std::size_t, std::string>, channel_line_t> channel_lines;
     std::map<std::pair<std::size_t, std::uint64_t>, channel_line_t> bgm_lines;
     std::map<std::pair<std::size_t, std::string>, std::size_t> bga_line_order;
@@ -1277,8 +1906,153 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     for (std::size_t measure = 0; measure < chart.measures.size(); ++measure) {
         for (const auto& note : chart.measures[measure].notes) {
             const auto path = "$.charts[].measures[" + std::to_string(measure) + "].notes[]";
-            if (is_branch_provenance(note.provenance))
+            if (is_branch_provenance(note.provenance)) {
+                if (const auto long_field =
+                        parse_long_note_source_field(note.provenance.source_field);
+                    long_field.has_value()) {
+                    const auto start_source =
+                        branch_tree.branch_channel_lines.find(note.provenance.source_order);
+                    const auto end_source =
+                        branch_tree.branch_channel_lines.find(long_field->end_source_order);
+                    if (start_source == branch_tree.branch_channel_lines.end() ||
+                        end_source == branch_tree.branch_channel_lines.end() ||
+                        note.provenance.source_spelling !=
+                            start_source->second.text + "\n" + end_source->second.text ||
+                        note.kind != note_kind_t::hold || !note.end.has_value()) {
+                        fail(bms_write_diagnostic_code_t::branch_provenance,
+                             "branch hold does not identify its retained start and end channel "
+                             "lines",
+                             path);
+                    }
+                    const channel_slot_field_t start_field{long_field->start_channel,
+                                                           long_field->start_slot,
+                                                           long_field->start_object_id};
+                    const channel_slot_field_t end_field{
+                        long_field->end_channel, long_field->end_slot, long_field->end_object_id};
+                    auto start_provenance = note.provenance;
+                    start_provenance.source_spelling = start_source->second.text;
+                    (void)claim_branch_channel_slot(start_provenance, start_field, path);
+                    auto end_provenance = note.provenance;
+                    end_provenance.source_order = long_field->end_source_order;
+                    end_provenance.source_spelling = end_source->second.text;
+                    (void)claim_branch_channel_slot(end_provenance, end_field, path + ".end");
+                    const auto start_position =
+                        expected_branch_slot_position(start_source->second, long_field->start_slot);
+                    const auto end_position =
+                        expected_branch_slot_position(end_source->second, long_field->end_slot);
+                    if (!start_position.has_value() || !end_position.has_value()) {
+                        fail(bms_write_diagnostic_code_t::branch_provenance,
+                             "branch hold endpoints do not map to valid retained source slots",
+                             path);
+                    }
+                    const auto lane =
+                        std::ranges::find(layout.lanes, note.lane, &lane_definition_t::id);
+                    if (lane == layout.lanes.end() || !lane->bms_channels.long_note.has_value() ||
+                        ascii_upper(*lane->bms_channels.long_note) != long_field->start_channel ||
+                        long_field->end_channel != long_field->start_channel) {
+                        fail(bms_write_diagnostic_code_t::branch_provenance,
+                             "branch hold lane no longer matches its retained BMS channel", path);
+                    }
+                    std::string object_id = long_field->start_object_id;
+                    if (note.sound.has_value()) {
+                        const auto wav = audio_ids.find(note.sound->value);
+                        if (wav == audio_ids.end()) {
+                            fail(bms_write_diagnostic_code_t::unresolved_resource,
+                                 "branch hold refers to a resource that is not exported as WAV",
+                                 path + ".sound");
+                        }
+                        object_id = wav->second;
+                    }
+                    const auto target_start_slot =
+                        *start_position == note.position
+                            ? long_field->start_slot
+                            : branch_slot_for_position(start_source->second, note.position,
+                                                       path + ".position");
+                    const auto target_end_slot =
+                        *end_position == *note.end
+                            ? long_field->end_slot
+                            : branch_slot_for_position(end_source->second, *note.end,
+                                                       path + ".end");
+                    if (target_start_slot != long_field->start_slot ||
+                        object_id != long_field->start_object_id) {
+                        edit_branch_channel_slot(note.provenance.source_order, start_source->second,
+                                                 long_field->start_slot, target_start_slot,
+                                                 object_id, path);
+                    }
+                    if (target_end_slot != long_field->end_slot) {
+                        edit_branch_channel_slot(long_field->end_source_order, end_source->second,
+                                                 long_field->end_slot, target_end_slot,
+                                                 long_field->end_object_id, path + ".end");
+                    }
+                    continue;
+                }
+                const auto field = parse_channel_slot_field(note.provenance.source_field);
+                if (!field.has_value()) {
+                    fail(bms_write_diagnostic_code_t::branch_provenance,
+                         "branch note does not identify one retained channel slot", path);
+                }
+                const auto* source = claim_branch_channel_slot(note.provenance, *field, path);
+                const auto original_position = expected_branch_slot_position(*source, field->slot);
+                if (!original_position.has_value()) {
+                    fail(bms_write_diagnostic_code_t::branch_provenance,
+                         "branch note slot does not map to a valid retained source position", path);
+                }
+                const auto lane =
+                    std::ranges::find(layout.lanes, note.lane, &lane_definition_t::id);
+                std::optional<std::string> expected_channel;
+                if (lane != layout.lanes.end()) {
+                    switch (note.kind) {
+                    case note_kind_t::tap:
+                        expected_channel = lane->bms_channels.visible;
+                        break;
+                    case note_kind_t::invisible:
+                        expected_channel = lane->bms_channels.invisible;
+                        break;
+                    case note_kind_t::mine:
+                        expected_channel = lane->bms_channels.mine;
+                        break;
+                    default:
+                        break;
+                    }
+                }
+                if (!expected_channel.has_value() ||
+                    ascii_upper(*expected_channel) != field->channel || note.end.has_value()) {
+                    fail(bms_write_diagnostic_code_t::branch_provenance,
+                         "branch note lane or kind no longer matches its retained BMS channel",
+                         path);
+                }
+                std::string object_id = field->object_id;
+                if (note.kind != note_kind_t::mine && note.sound.has_value()) {
+                    const auto wav = audio_ids.find(note.sound->value);
+                    if (wav == audio_ids.end()) {
+                        fail(bms_write_diagnostic_code_t::unresolved_resource,
+                             "branch note refers to a resource that is not exported as WAV",
+                             path + ".sound");
+                    }
+                    object_id = wav->second;
+                } else if (note.kind != note_kind_t::mine) {
+                    const bool source_object_resolves =
+                        std::ranges::any_of(song.resources, [&](const auto& resource) {
+                            return bms_identity(resource, "WAV") ==
+                                   std::optional<std::string>{field->object_id};
+                        });
+                    if (source_object_resolves || note.position != *original_position) {
+                        fail(bms_write_diagnostic_code_t::branch_provenance,
+                             "an unbound branch note cannot be safely edited from its raw source "
+                             "slot",
+                             path);
+                    }
+                }
+                const auto target_slot =
+                    note.position == *original_position
+                        ? field->slot
+                        : branch_slot_for_position(*source, note.position, path + ".position");
+                if (target_slot != field->slot || object_id != field->object_id) {
+                    edit_branch_channel_slot(note.provenance.source_order, *source, field->slot,
+                                             target_slot, object_id, path);
+                }
                 continue;
+            }
             if ((note.kind != note_kind_t::tap && note.kind != note_kind_t::hold) ||
                 (note.kind == note_kind_t::tap && note.end.has_value())) {
                 fail(bms_write_diagnostic_code_t::unsupported_feature,
@@ -1358,8 +2132,48 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
 
         for (const auto& event : chart.measures[measure].bgm_events) {
             const auto path = "$.charts[].measures[" + std::to_string(measure) + "].bgm_events[]";
-            if (is_branch_provenance(event.provenance))
+            if (is_branch_provenance(event.provenance)) {
+                const auto field = parse_channel_slot_field(event.provenance.source_field);
+                if (!field.has_value() || field->channel != "01" ||
+                    event.structural_slot != field->slot) {
+                    fail(bms_write_diagnostic_code_t::branch_provenance,
+                         "branch BGM event does not identify its retained source slot", path);
+                }
+                const auto* source = claim_branch_channel_slot(event.provenance, *field, path);
+                const auto source_lane = std::ranges::find(
+                    chart.bgm_source_lanes, event.source_lane, &bgm_source_lane_t::id);
+                if (source_lane == chart.bgm_source_lanes.end() ||
+                    source_lane->source_order != event.provenance.source_order ||
+                    event.branch.has_value()) {
+                    fail(bms_write_diagnostic_code_t::branch_provenance,
+                         "branch BGM event source lane no longer matches its retained source line",
+                         path);
+                }
+                const auto original_position = expected_branch_slot_position(*source, field->slot);
+                if (!original_position.has_value()) {
+                    fail(bms_write_diagnostic_code_t::branch_provenance,
+                         "branch BGM slot does not map to a valid retained source position", path);
+                }
+                std::string object_id = "00";
+                if (event.sound.has_value()) {
+                    const auto wav = audio_ids.find(event.sound->value);
+                    if (wav == audio_ids.end()) {
+                        fail(bms_write_diagnostic_code_t::unresolved_resource,
+                             "branch BGM event refers to a resource that is not exported as WAV",
+                             path + ".sound");
+                    }
+                    object_id = wav->second;
+                }
+                const auto target_slot =
+                    event.position == *original_position
+                        ? field->slot
+                        : branch_slot_for_position(*source, event.position, path + ".position");
+                if (target_slot != field->slot || object_id != field->object_id) {
+                    edit_branch_channel_slot(event.provenance.source_order, *source, field->slot,
+                                             target_slot, object_id, path);
+                }
                 continue;
+            }
             if (event.branch.has_value()) {
                 fail(bms_write_diagnostic_code_t::unsupported_feature,
                      "branch-local BGM events require an explicit branch export policy", path);
@@ -1432,8 +2246,49 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
                                                   right.provenance.source_order, right.id.value);
     });
     for (const auto& event : sorted_bga_events) {
-        if (is_branch_provenance(event.provenance))
+        if (is_branch_provenance(event.provenance)) {
+            const auto field = parse_channel_slot_field(event.provenance.source_field);
+            if (!field.has_value() || (field->channel != "04" && field->channel != "06" &&
+                                       field->channel != "07" && field->channel != "0A")) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "branch BGA event does not identify one retained visual channel slot",
+                     "$.charts[].bga_events[]");
+            }
+            const auto* source =
+                claim_branch_channel_slot(event.provenance, *field, "$.charts[].bga_events[]");
+            const bool channel_matches_kind =
+                (field->channel == "04" && event.kind == visual_event_kind_t::background) ||
+                (field->channel == "06" && event.kind == visual_event_kind_t::poor) ||
+                ((field->channel == "07" || field->channel == "0A") &&
+                 event.kind == visual_event_kind_t::layer);
+            if (!channel_matches_kind) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "branch BGA kind no longer matches its retained BMS channel",
+                     "$.charts[].bga_events[]");
+            }
+            const auto original_position = expected_branch_slot_position(*source, field->slot);
+            if (!original_position.has_value()) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "branch BGA slot does not map to a valid retained source position",
+                     "$.charts[].bga_events[]");
+            }
+            const auto bmp = visual_ids.find(event.resource.value);
+            if (bmp == visual_ids.end()) {
+                fail(bms_write_diagnostic_code_t::unresolved_resource,
+                     "branch BGA event refers to a resource that is not exported as BMP",
+                     "$.charts[].bga_events[].resource");
+            }
+            const auto target_slot =
+                event.position == *original_position
+                    ? field->slot
+                    : branch_slot_for_position(*source, event.position,
+                                               "$.charts[].bga_events[].position");
+            if (target_slot != field->slot || bmp->second != field->object_id) {
+                edit_branch_channel_slot(event.provenance.source_order, *source, field->slot,
+                                         target_slot, bmp->second, "$.charts[].bga_events[]");
+            }
             continue;
+        }
         const std::string path = "$.charts[].bga_events[]";
         std::string channel;
         switch (event.kind) {
@@ -1848,6 +2703,8 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     std::set<std::size_t> emitted_branch_resource_edits;
     std::set<std::size_t> emitted_branch_measure_ratio_edits;
     std::set<std::size_t> emitted_branch_direct_bpm_edits;
+    std::set<std::size_t> emitted_branch_timing_declaration_edits;
+    std::set<std::size_t> emitted_branch_channel_edits;
     for (const auto& [source_order, line] : branch_tree.preserved_lines) {
         if (has_line_break_or_nul(line) || !valid_utf8(line)) {
             fail(bms_write_diagnostic_code_t::branch_provenance,
@@ -1858,10 +2715,59 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
         const auto resource_edit = branch_resource_edits.find(source_order);
         const auto ratio_edit = branch_measure_ratio_edits.find(source_order);
         const auto bpm_edit = branch_direct_bpm_edits.find(source_order);
+        const auto timing_declaration_edit = branch_timing_declaration_edits.find(source_order);
+        const auto channel_edit = branch_channel_edits.find(source_order);
+        if (channel_edit != branch_channel_edits.end()) {
+            auto& patch = channel_edit->second;
+            if (patch.source == nullptr || patch.text != line ||
+                patch.payload_begin > patch.text.size() ||
+                patch.payload.size() > patch.text.size() - patch.payload_begin) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "edited branch channel line does not match its retained control-tree line",
+                     "$.charts[].bms_control_tree");
+            }
+            auto payload = patch.payload;
+            for (const auto slot : patch.cleared_slots) {
+                if (slot >= payload.size() / 2) {
+                    fail(bms_write_diagnostic_code_t::branch_provenance,
+                         "edited branch channel clear operation is outside its retained line",
+                         "$.charts[].bms_control_tree");
+                }
+                payload.replace(slot * 2, 2, "00");
+            }
+            for (const auto& [slot, object_id] : patch.written_slots) {
+                if (slot >= payload.size() / 2) {
+                    fail(bms_write_diagnostic_code_t::branch_provenance,
+                         "edited branch channel write operation is outside its retained line",
+                         "$.charts[].bms_control_tree");
+                }
+                const auto origin = patch.written_slot_origins.find(slot);
+                const auto original_object = patch.payload.substr(slot * 2, 2);
+                if (origin == patch.written_slot_origins.end() ||
+                    (slot != origin->second && !patch.cleared_slots.contains(slot) &&
+                     (original_object != "00" ||
+                      branch_channel_slot_claims.contains({source_order, slot})))) {
+                    fail(bms_write_diagnostic_code_t::branch_provenance,
+                         "edited branch channel event would overwrite another retained source "
+                         "slot",
+                         "$.charts[].bms_control_tree");
+                }
+                payload.replace(slot * 2, 2, object_id);
+            }
+            patch.text.replace(patch.payload_begin, patch.payload.size(), payload);
+            preserved_tree_lines.push_back(std::move(patch.text));
+            if (!emitted_branch_channel_edits.insert(source_order).second) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "edited branch channel line appears more than once in the retained tree",
+                     "$.charts[].bms_control_tree");
+            }
+            continue;
+        }
         if (metadata_edit == branch_metadata_edits.end() &&
             resource_edit == branch_resource_edits.end() &&
             ratio_edit == branch_measure_ratio_edits.end() &&
-            bpm_edit == branch_direct_bpm_edits.end()) {
+            bpm_edit == branch_direct_bpm_edits.end() &&
+            timing_declaration_edit == branch_timing_declaration_edits.end()) {
             preserved_tree_lines.push_back(line);
             continue;
         }
@@ -1869,7 +2775,8 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
             static_cast<unsigned>(metadata_edit != branch_metadata_edits.end()) +
             static_cast<unsigned>(resource_edit != branch_resource_edits.end()) +
             static_cast<unsigned>(ratio_edit != branch_measure_ratio_edits.end()) +
-            static_cast<unsigned>(bpm_edit != branch_direct_bpm_edits.end());
+            static_cast<unsigned>(bpm_edit != branch_direct_bpm_edits.end()) +
+            static_cast<unsigned>(timing_declaration_edit != branch_timing_declaration_edits.end());
         if (edit_count != 1) {
             fail(bms_write_diagnostic_code_t::branch_provenance,
                  "one retained branch statement is ambiguously claimed by multiple edits",
@@ -1909,6 +2816,26 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
                 fail(bms_write_diagnostic_code_t::branch_provenance,
                      "edited branch BPM does not identify one unambiguous retained source "
                      "statement",
+                     "$.charts[].bms_control_tree");
+            }
+            preserved_tree_lines.push_back(*replaced);
+            continue;
+        }
+        if (timing_declaration_edit != branch_timing_declaration_edits.end()) {
+            const auto source = branch_tree.timing_declarations.find(source_order);
+            if (source == branch_tree.timing_declarations.end()) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "edited extended BPM or STOP value has no retained source declaration",
+                     "$.charts[].bms_control_tree");
+            }
+            const auto replaced =
+                replace_retained_header_value(line, source->second.token, source->second.raw_value,
+                                              timing_declaration_edit->second);
+            if (!replaced.has_value() ||
+                !emitted_branch_timing_declaration_edits.insert(source_order).second) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "edited timing declaration does not identify one unambiguous retained "
+                     "source statement",
                      "$.charts[].bms_control_tree");
             }
             preserved_tree_lines.push_back(*replaced);
@@ -1967,6 +2894,17 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     if (emitted_branch_direct_bpm_edits.size() != branch_direct_bpm_edits.size()) {
         fail(bms_write_diagnostic_code_t::branch_provenance,
              "one or more edited branch BPM statements are absent from the retained tree",
+             "$.charts[].bms_control_tree");
+    }
+    if (emitted_branch_timing_declaration_edits.size() != branch_timing_declaration_edits.size()) {
+        fail(bms_write_diagnostic_code_t::branch_provenance,
+             "one or more edited extended BPM or STOP declarations are absent from the retained "
+             "tree",
+             "$.charts[].bms_control_tree");
+    }
+    if (emitted_branch_channel_edits.size() != branch_channel_edits.size()) {
+        fail(bms_write_diagnostic_code_t::branch_provenance,
+             "one or more edited branch channel lines are absent from the retained tree",
              "$.charts[].bms_control_tree");
     }
     if (branch_tree.has_branches && !preserved_tree_lines.empty()) {

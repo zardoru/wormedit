@@ -80,6 +80,11 @@ struct editor_field_grid_geometry_t {
     exact_chart_row_t chart_row;
 };
 
+struct editor_field_comparison_difference_geometry_t {
+    local_position_t position;
+    editor_field_rect_t bounds;
+};
+
 struct editor_field_note_endpoint_geometry_t {
     object_id_t note;
     lane_id_t lane;
@@ -106,6 +111,9 @@ struct editor_field_scene_t {
     std::uint64_t visible_end_row{};
     std::vector<editor_field_layout_band_t> layout_bands;
     std::vector<editor_field_lane_geometry_t> lanes;
+    // Frontends render these behind the field with the comparison-difference
+    // color (yellow in the default skin).
+    std::vector<editor_field_comparison_difference_geometry_t> comparison_differences;
     std::vector<editor_field_grid_geometry_t> grid_lines;
     std::vector<editor_field_hold_body_geometry_t> hold_bodies;
     std::vector<editor_field_note_endpoint_geometry_t> note_endpoints;
@@ -117,11 +125,14 @@ struct editor_field_scene_request_t {
     double field_width_pixels{};
     double split_stage_gutter_pixels{12.0};
     double note_head_height_pixels{10.0};
+    double comparison_difference_height_pixels{10.0};
     double hold_body_width_ratio{0.35};
     editor_grid_density_t grid_density;
     std::vector<editor_grid_grouping_t> authored_groupings;
+    std::vector<local_position_t> comparison_difference_rows;
     std::size_t maximum_grid_lines{100'000};
     std::size_t maximum_authored_groupings{4'096};
+    std::size_t maximum_comparison_difference_rows{100'000};
     std::size_t maximum_scene_primitives{250'000};
     std::size_t maximum_composition_operations{500'000};
 };

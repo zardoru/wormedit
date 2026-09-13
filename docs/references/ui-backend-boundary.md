@@ -4,8 +4,9 @@ Status: reviewed planning contract; the checked CMake cache enum and private
 `wormedit::ui_frontend` target are implemented for the initial Nuklear adapter.
 Its lifecycle, event translation, scaffold composition, and widget types now
 live under `src/ui/nuklear`; the application loop consumes a private semantic
-view/action contract. Normalized platform input and real workspace view models
-remain.
+view/action contract. The headless seven-tab workspace and recovery-banner
+controllers now provide bounded backend-neutral views/actions; normalized
+platform input and their real Nuklear shell composition remain.
 
 Nuklear is the initial editor frontend, not a permanent dependency of the application model. A future ImGui frontend or a Clay-based layout/widget frontend should be replaceable without changing chart storage, timing, audio, commands, selection, transport, format codecs, or renderer-neutral chart drawing.
 

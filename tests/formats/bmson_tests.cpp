@@ -1,0 +1,346 @@
+#include <wormedit/formats/bmson.h>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <span>
+#include <string_view>
+#include <vector>
+
+namespace {
+
+auto read_binary(const std::filesystem::path& path) -> std::vector<std::byte> {
+    std::ifstream stream(path, std::ios::binary);
+    const std::string source{std::istreambuf_iterator<char>(stream),
+                             std::istreambuf_iterator<char>()};
+    std::vector<std::byte> bytes;
+    bytes.reserve(source.size());
+    for (const auto character : source) {
+        bytes.push_back(static_cast<std::byte>(static_cast<unsigned char>(character)));
+    }
+    return bytes;
+}
+
+auto fixture(std::string_view name) -> wormedit::bmson_parse_result_t {
+    return wormedit::parse_bmson_bytes(
+        read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / name));
+}
+
+auto parse_text(std::string_view source, wormedit::bmson_parse_options_t options = {})
+    -> wormedit::bmson_parse_result_t {
+    return wormedit::parse_bmson_bytes(std::as_bytes(std::span{source.data(), source.size()}),
+                                       std::move(options));
+}
+
+auto absolute(const wormedit::chart_document_t& chart, wormedit::local_position_t position)
+    -> std::optional<std::uint64_t> {
+    const auto index = wormedit::build_measure_index(chart);
+    if (!std::holds_alternative<wormedit::measure_index_t>(index)) return std::nullopt;
+    return wormedit::absolute_row(std::get<wormedit::measure_index_t>(index), position);
+}
+
+auto has_error_code(const wormedit::bmson_parse_result_t& result,
+                    wormedit::bmson_parse_diagnostic_code_t code) -> bool {
+    return std::ranges::any_of(result.diagnostics, [&](const auto& diagnostic) {
+        return diagnostic.severity == wormedit::diagnostic_severity_t::error &&
+               diagnostic.code == code;
+    });
+}
+
+} // namespace
+
+TEST_CASE("BMSON 1.0 fixtures retain source bytes and valid document structure",
+          "[unit][format][bmson]") {
+    for (const auto name : {"slicing-and-mixed-sounds.bmson", "published-vox-slicing.bmson",
+                            "conflicting-continuation-flags.bmson", "zero-resolution-default.bmson",
+                            "null-resolution-default.bmson", "omitted-resolution-default.bmson"}) {
+        DYNAMIC_SECTION(name) {
+            const auto result = fixture(name);
+            REQUIRE(result.song.has_value());
+            CHECK_FALSE(result.has_errors());
+            CHECK(wormedit::validate_document(*result.song).empty());
+            REQUIRE(result.song->metadata.format_groups.size() == 1);
+            const auto& song_source = result.song->metadata.format_groups.front().encoding;
+            CHECK(song_source.detected == wormedit::text_encoding_t::utf8);
+            CHECK(song_source.unchanged_since_import);
+            REQUIRE(song_source.original_bytes);
+            REQUIRE(result.song->charts.size() == 1);
+            REQUIRE(result.song->charts.front().metadata.format_groups.size() == 1);
+            CHECK(result.song->charts.front().metadata.format_groups.front().encoding.original_bytes ==
+                  song_source.original_bytes);
+        }
+    }
+}
+
+TEST_CASE("BMSON pulse geometry, bar lines, timing and mixed sound slices are materialized",
+          "[unit][format][bmson]") {
+    const auto result = fixture("slicing-and-mixed-sounds.bmson");
+    REQUIRE(result.song.has_value());
+    const auto& chart = result.song->charts.front();
+    CHECK(chart.divisions_per_standard_measure == 960);
+    REQUIRE(chart.measures.size() == 3);
+    CHECK((chart.measures[0].definition.length == wormedit::rational_t{1, 1}));
+    CHECK((chart.measures[1].definition.length == wormedit::rational_t{3, 4}));
+    CHECK((chart.measures[2].definition.length == wormedit::rational_t{1, 1}));
+    REQUIRE(chart.bpms.size() == 2);
+    CHECK((chart.bpms[0].beats_per_minute == wormedit::signed_rational_t{120, 1}));
+    CHECK((chart.bpms[1].beats_per_minute == wormedit::signed_rational_t{150, 1}));
+    REQUIRE(chart.pauses.size() == 1);
+    CHECK(chart.pauses[0].kind == wormedit::pause_kind_t::stop);
+    CHECK(chart.pauses[0].source_unit == wormedit::pause_unit_t::beats);
+    CHECK((chart.pauses[0].duration == wormedit::signed_rational_t{1, 2}));
+    REQUIRE(chart.sound_channels.size() == 2);
+    CHECK(chart.sound_channels[0].events.size() == 4);
+    // x=0 at pulse 240 remains in the source channel, but has no semantic BGM event
+    // because that slice also has x=3.
+    CHECK(chart.sound_channels[1].events.size() == 3);
+    CHECK(std::ranges::any_of(chart.sound_channels[1].events, [](const auto& event) {
+        return !event.playable && event.position.row == 240;
+    }));
+    CHECK(chart.measures[0].bgm_events.empty());
+    REQUIRE(chart.measures[0].notes.size() == 4);
+    CHECK(absolute(chart, chart.measures[0].notes[0].position) == 0);
+    CHECK(absolute(chart, chart.measures[0].notes[1].position) == 240);
+    REQUIRE(chart.measures[1].notes.size() == 2);
+    const auto hold = std::ranges::find_if(chart.measures[1].notes, [](const auto& note) {
+        return note.kind == wormedit::note_kind_t::hold;
+    });
+    REQUIRE(hold != chart.measures[1].notes.end());
+    CHECK(absolute(chart, hold->position) == 960);
+    REQUIRE(hold->end.has_value());
+    CHECK(absolute(chart, *hold->end) == 1440);
+    CHECK(result.song->visual_assets.size() == 1);
+    REQUIRE(chart.bga_events.size() == 1);
+    CHECK(chart.bga_events.front().kind == wormedit::visual_event_kind_t::background);
+}
+
+TEST_CASE("BMSON continuation collisions normalize to restart while preserving source spelling",
+          "[unit][format][bmson]") {
+    const auto result = fixture("conflicting-continuation-flags.bmson");
+    REQUIRE(result.song.has_value());
+    const auto& channel = result.song->charts.front().sound_channels.front();
+    REQUIRE(channel.events.size() == 3);
+    CHECK_FALSE(channel.events[0].continuation);
+    CHECK_FALSE(channel.events[1].continuation);
+    CHECK(channel.events[2].continuation);
+    CHECK(channel.events[0].provenance.source_spelling.find("\"c\": true") != std::string::npos);
+    CHECK(channel.events[1].provenance.source_spelling.find("\"c\": false") != std::string::npos);
+}
+
+TEST_CASE("BMSON resolution zero null and omission all select 240 and retain spelling",
+          "[unit][format][bmson]") {
+    for (const auto [name, spelling] : {
+             std::pair{"zero-resolution-default.bmson", "0"},
+             std::pair{"null-resolution-default.bmson", "null"},
+             std::pair{"omitted-resolution-default.bmson", "<omitted>"}}) {
+        const auto result = fixture(name);
+        REQUIRE(result.song.has_value());
+        const auto& chart = result.song->charts.front();
+        CHECK(chart.divisions_per_standard_measure == 960);
+        const auto& fields = chart.metadata.format_groups.front().ordered_fields;
+        const auto resolution = std::ranges::find(fields, std::string("resolution"),
+                                                   &std::pair<std::string, std::string>::first);
+        REQUIRE(resolution != fields.end());
+        CHECK(resolution->second == spelling);
+    }
+}
+
+TEST_CASE("BMSON same-source channels share one audio asset while retaining independent resources",
+          "[unit][format][bmson]") {
+    const auto result = parse_text(R"({
+      "version":"1.0.0", "info":{"title":"shared","artist":"a","init_bpm":120},
+      "sound_channels":[
+        {"name":"same.wav","notes":[{"x":0,"y":0,"c":false}]},
+        {"name":"same.wav","notes":[{"x":0,"y":240,"c":true}]}
+      ]
+    })");
+    REQUIRE(result.song.has_value());
+    CHECK_FALSE(result.has_errors());
+    CHECK(result.song->audio_assets.size() == 1);
+    CHECK(result.song->resources.size() == 2);
+    const auto& chart = result.song->charts.front();
+    REQUIRE(chart.measures.front().bgm_events.size() == 2);
+    REQUIRE(chart.measures[0].bgm_events[0].sound.has_value());
+    REQUIRE(chart.measures[0].bgm_events[1].sound.has_value());
+    const auto& bgm1 = chart.measures[0].bgm_events[0];
+    const auto& bgm2 = chart.measures[0].bgm_events[1];
+    const auto resource_asset = [&](wormedit::resource_id_t resource) {
+        const auto found = std::ranges::find(result.song->resources, resource,
+                                             &wormedit::resource_entry_t::id);
+        REQUIRE(found != result.song->resources.end());
+        return found->asset;
+    };
+    CHECK(resource_asset(*bgm1.sound) == resource_asset(*bgm2.sound));
+    CHECK(wormedit::validate_document(*result.song).empty());
+}
+
+TEST_CASE("BMSON non-playable source-channel events use lane zero but playable events cannot",
+          "[unit][format][bmson]") {
+    const auto bgm = fixture("published-vox-slicing.bmson");
+    REQUIRE(bgm.song.has_value());
+    const auto& chart = bgm.song->charts.front();
+    const auto& bgm_channel = chart.sound_channels.front();
+    const auto bgm_event = std::ranges::find_if(bgm_channel.events,
+                                                [](const auto& event) { return !event.playable; });
+    REQUIRE(bgm_event != bgm_channel.events.end());
+    CHECK_FALSE(bgm_event->lane);
+    CHECK(wormedit::validate_document(*bgm.song).empty());
+
+    auto invalid = *bgm.song;
+    auto& playable = invalid.charts.front().sound_channels.front().events.front();
+    REQUIRE(playable.playable);
+    playable.lane = {};
+    const auto diagnostics = wormedit::validate_document(invalid);
+    CHECK(std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::diagnostic_code_t::unknown_lane;
+    }));
+}
+
+TEST_CASE("BMSON malformed pulse and resolution fixtures produce typed errors",
+          "[unit][format][bmson]") {
+    const auto wrong_resolution = fixture("negative-wrong-resolution-type.bmson");
+    CHECK_FALSE(wrong_resolution.song.has_value());
+    CHECK(has_error_code(wrong_resolution, wormedit::bmson_parse_diagnostic_code_t::invalid_type));
+    for (const auto name : {"negative-pulse-position.bmson", "negative-fractional-pulse-position.bmson"}) {
+        const auto result = fixture(name);
+        CHECK_FALSE(result.song.has_value());
+        CHECK_FALSE(result.diagnostics.empty());
+        CHECK(result.diagnostics.front().byte_offset.has_value());
+    }
+    const auto overflow = fixture("negative-overflow-pulse-position.bmson");
+    CHECK_FALSE(overflow.song.has_value());
+    CHECK(has_error_code(overflow, wormedit::bmson_parse_diagnostic_code_t::integer_out_of_range));
+    const auto negative_resolution = parse_text(
+        R"({"version":"1.0.0","info":{"init_bpm":120,"resolution":-240}})");
+    REQUIRE(negative_resolution.song.has_value());
+    CHECK(negative_resolution.song->charts.front().divisions_per_standard_measure == 960);
+    const auto& fields = negative_resolution.song->charts.front().metadata.format_groups.front().ordered_fields;
+    const auto resolution = std::ranges::find(fields, std::string("resolution"),
+                                               &std::pair<std::string, std::string>::first);
+    REQUIRE(resolution != fields.end());
+    CHECK(resolution->second == "-240");
+}
+
+TEST_CASE("BMSON reader enforces source bounds and rejects malformed JSON without partial documents",
+          "[unit][format][bmson]") {
+    wormedit::bmson_parse_options_t options;
+    options.max_source_bytes = 4;
+    const auto too_large = parse_text("{\"x\":1}", options);
+    CHECK_FALSE(too_large.song.has_value());
+    CHECK(has_error_code(too_large, wormedit::bmson_parse_diagnostic_code_t::invalid_value));
+
+    const auto malformed = parse_text("{\"version\":\"1.0.0\",}");
+    CHECK_FALSE(malformed.song.has_value());
+    CHECK(has_error_code(malformed, wormedit::bmson_parse_diagnostic_code_t::invalid_json));
+
+    const auto enormous_number = parse_text(
+        R"({"version":"1.0.0","info":{"init_bpm":1e1000000}})");
+    CHECK_FALSE(enormous_number.song.has_value());
+    CHECK_FALSE(enormous_number.diagnostics.empty());
+}
+
+TEST_CASE("BMSON JSON parser retains exact spans and enforces structural limits",
+          "[unit][format][bmson]") {
+    constexpr std::string_view exact_source =
+        R"({"version":"1.0.0","info":{"init_bpm":120},"bpm_events":[ { "y" : 0, "bpm" : 1.20e2 } ]})";
+    const auto exact = parse_text(exact_source);
+    REQUIRE(exact.song.has_value());
+    const auto& chart = exact.song->charts.front();
+    REQUIRE(chart.bpms.size() == 1);
+    CHECK(chart.bpms.front().provenance.source_spelling == R"({ "y" : 0, "bpm" : 1.20e2 })");
+    CHECK((chart.bpms.front().beats_per_minute == wormedit::signed_rational_t{120, 1}));
+
+    const std::string duplicate_source =
+        R"({"version":"1.0.0","info":{"init_bpm":120,"init_bpm":121}})";
+    const auto duplicate = parse_text(duplicate_source);
+    CHECK_FALSE(duplicate.song.has_value());
+    CHECK(has_error_code(duplicate, wormedit::bmson_parse_diagnostic_code_t::invalid_json));
+    REQUIRE_FALSE(duplicate.diagnostics.empty());
+    REQUIRE(duplicate.diagnostics.front().byte_offset.has_value());
+    CHECK(*duplicate.diagnostics.front().byte_offset == duplicate_source.rfind("\"init_bpm\""));
+
+    wormedit::bmson_parse_options_t depth_options;
+    depth_options.max_nesting_depth = 0;
+    const auto too_deep = parse_text(R"({"version":"1.0.0","info":{"init_bpm":120}})",
+                                     depth_options);
+    CHECK_FALSE(too_deep.song.has_value());
+    CHECK(has_error_code(too_deep, wormedit::bmson_parse_diagnostic_code_t::invalid_json));
+
+    wormedit::bmson_parse_options_t value_options;
+    value_options.max_json_values = 1;
+    const auto too_many = parse_text(R"({"version":"1.0.0","info":{"init_bpm":120}})",
+                                     value_options);
+    CHECK_FALSE(too_many.song.has_value());
+    CHECK(has_error_code(too_many, wormedit::bmson_parse_diagnostic_code_t::invalid_json));
+
+    std::string invalid_utf8 = R"({"version":"1.0.0","info":{"init_bpm":120},"x":" )";
+    invalid_utf8.push_back(static_cast<char>(0xff));
+    const auto invalid_encoding = parse_text(invalid_utf8);
+    CHECK_FALSE(invalid_encoding.song.has_value());
+    CHECK(has_error_code(invalid_encoding, wormedit::bmson_parse_diagnostic_code_t::invalid_json));
+}
+
+TEST_CASE("BMSON fixed beat modes use canonical x positions and reject out-of-range notes",
+          "[unit][format][bmson]") {
+    const auto default_mode = parse_text(
+        R"({"version":"1.0.0","info":{"init_bpm":120},"sound_channels":[{"name":"a.wav","notes":[{"x":8,"y":0}]}]})");
+    REQUIRE(default_mode.song.has_value());
+    const auto& default_chart = default_mode.song->charts.front();
+    REQUIRE(default_chart.lane_layouts.size() == 1);
+    CHECK(default_chart.lane_layouts.front().layout.display_name == "beat-7k");
+    REQUIRE(default_chart.lane_layouts.front().layout.lanes.size() == 8);
+    CHECK(default_chart.lane_layouts.front().layout.lanes.back().role == wormedit::lane_role_t::scratch);
+    REQUIRE(default_chart.measures.front().notes.size() == 1);
+    CHECK(default_chart.measures.front().notes.front().lane.value == 100008);
+
+    const auto default_out_of_range = parse_text(
+        R"({"version":"1.0.0","info":{"init_bpm":120},"sound_channels":[{"name":"a.wav","notes":[{"x":9,"y":0}]}]})");
+    CHECK_FALSE(default_out_of_range.song.has_value());
+    CHECK(has_error_code(default_out_of_range, wormedit::bmson_parse_diagnostic_code_t::invalid_value));
+
+    const auto beat_5k = parse_text(
+        R"({"version":"1.0.0","info":{"init_bpm":120,"mode_hint":"beat-5k"},"sound_channels":[{"name":"a.wav","notes":[{"x":8,"y":0}]}]})");
+    REQUIRE(beat_5k.song.has_value());
+    const auto& beat_5k_layout = beat_5k.song->charts.front().lane_layouts.front().layout;
+    REQUIRE(beat_5k_layout.lanes.size() == 6);
+    CHECK(beat_5k_layout.lanes.back().id.value == 100008);
+    CHECK(beat_5k_layout.lanes.back().role == wormedit::lane_role_t::scratch);
+
+    const auto beat_10k = parse_text(
+        R"({"version":"1.0.0","info":{"init_bpm":120,"mode_hint":"beat-10k"},"sound_channels":[{"name":"a.wav","notes":[{"x":16,"y":0}]}]})");
+    REQUIRE(beat_10k.song.has_value());
+    const auto& beat_10k_chart = beat_10k.song->charts.front();
+    REQUIRE(beat_10k_chart.lane_layouts.front().layout.lanes.size() == 12);
+    REQUIRE(beat_10k_chart.measures.front().notes.size() == 1);
+    CHECK(beat_10k_chart.measures.front().notes.front().lane.value == 100016);
+    CHECK(beat_10k_chart.lane_layouts.front().layout.lanes.back().role == wormedit::lane_role_t::scratch);
+}
+
+TEST_CASE("BMSON x null is BGM and resource paths normalize both separators safely",
+          "[unit][format][bmson]") {
+    const auto bgm = parse_text(
+        R"({"version":"1.0.0","info":{"init_bpm":120},"sound_channels":[{"name":"sub\\folder/tone.wav","notes":[{"x":null,"y":0}]}]})");
+    REQUIRE(bgm.song.has_value());
+    REQUIRE(bgm.song->audio_assets.size() == 1);
+    CHECK(bgm.song->audio_assets.front().source_path.generic_string() == "sub/folder/tone.wav");
+    REQUIRE(bgm.song->resources.size() == 1);
+    CHECK(bgm.song->resources.front().provenance.source_spelling ==
+          R"("sub\\folder/tone.wav")");
+    REQUIRE(bgm.song->charts.front().measures.front().bgm_events.size() == 1);
+    const auto& source_event = bgm.song->charts.front().sound_channels.front().events.front();
+    CHECK_FALSE(source_event.playable);
+    CHECK_FALSE(source_event.lane);
+
+    const auto nul_path = parse_text(
+        R"({"version":"1.0.0","info":{"init_bpm":120},"sound_channels":[{"name":"tone\u0000.wav","notes":[]}]})");
+    CHECK_FALSE(nul_path.song.has_value());
+    CHECK(has_error_code(nul_path, wormedit::bmson_parse_diagnostic_code_t::invalid_value));
+
+    const auto traversal = parse_text(
+        R"({"version":"1.0.0","info":{"init_bpm":120},"sound_channels":[{"name":"sub\\..\\tone.wav","notes":[]}]})");
+    CHECK_FALSE(traversal.song.has_value());
+    CHECK(has_error_code(traversal, wormedit::bmson_parse_diagnostic_code_t::invalid_value));
+}

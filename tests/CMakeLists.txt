@@ -11,6 +11,7 @@ add_executable(wormedit_core_tests
     core/quantize_tests.cpp
     core/rational_tests.cpp
     formats/bms_tests.cpp
+    formats/bmson_tests.cpp
 )
 target_compile_definitions(wormedit_core_tests
     PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"

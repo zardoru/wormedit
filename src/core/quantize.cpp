@@ -302,8 +302,9 @@ auto validate_layout_effects(const chart_document_t& chart, const measure_index_
     }
     for (const auto& channel : chart.sound_channels) {
         for (const auto& event : channel.events) {
-            if (!lane_is_active(event.position, event.lane) ||
-                (event.end.has_value() && !lane_is_active(*event.end, event.lane))) {
+            if (event.playable &&
+                (!lane_is_active(event.position, event.lane) ||
+                 (event.end.has_value() && !lane_is_active(*event.end, event.lane)))) {
                 error(diagnostics, diagnostic_code_t::unknown_lane,
                       "quantization would move a sound event outside its active lane layout",
                       event.id);

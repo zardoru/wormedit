@@ -479,6 +479,7 @@ struct sound_channel_event_t {
     lane_id_t lane;
     bool continuation{false};
     bool playable{true};
+    source_provenance_t provenance;
 };
 
 struct sound_channel_t {

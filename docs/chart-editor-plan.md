@@ -107,6 +107,7 @@ Every dependency is exposed through a narrow imported/alias CMake target and lin
 
 Initial dependency direction:
 
+- **JSON:** use pinned nlohmann/json 3.12.0 behind `nlohmann_json::nlohmann_json` for BMSON and future native-project parsing. Enable diagnostic byte positions so wormedit can retain exact source spellings while owning semantic validation, size/depth/value limits, path safety, and typed diagnostics.
 - **Lua:** adapt raindrop's [`FindLua.cmake`](../../raindrop/cmake/Modules/FindLua.cmake), which currently builds pinned Lua 5.4.8 `onelua.c` as `Lua::Lua`. Keep the resulting module/target in wormedit so installed and standalone builds do not depend on a sibling raindrop checkout or build directory.
 - **MIDI files:** select a dedicated Standard MIDI File library rather than writing a byte parser. [Craig Sapp's `midifile`](https://github.com/craigsapp/midifile) is the leading small-library candidate; stage 0 must test exact ticks, tempo/meter/meta events, running status, malformed bounds, read/write needs, license, CMake consumption, and Windows/macOS/Linux behavior before pinning it. Real-time MIDI device I/O is a separate later dependency and must not drive this choice.
 - **Ogg/Vorbis:** add pinned libogg/libvorbis targets, normalized for example as `Ogg::ogg`, `Vorbis::vorbis`, and `Vorbis::vorbisfile`, or use another selected decoder only if it satisfies the same cross-platform seek/sample-frame fixtures. Raindrop's [`FindOggVorbis.cmake`](../../raindrop/cmake/Modules/FindOggVorbis.cmake) is reference integration.

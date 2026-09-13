@@ -4,17 +4,18 @@ The stage-zero build separates the headless core/tests from the existing SDL/Ope
 
 ## Native headless build
 
-Catch2 and Lua accept local source directories for offline/reproducible builds:
+nlohmann/json, Catch2, and Lua accept local source directories for offline/reproducible builds:
 
 ```sh
 cmake --preset headless \
+  -DWORMEDIT_NLOHMANN_JSON_SOURCE_DIR=/path/to/nlohmann-json-3.12.0 \
   -DWORMEDIT_CATCH2_SOURCE_DIR=/path/to/Catch2 \
   -DWORMEDIT_LUA_SOURCE_DIR=/path/to/lua-5.4.8
 cmake --build --preset headless
 ctest --preset headless
 ```
 
-Omit the source-directory options when network-backed FetchContent is acceptable. Catch2 is pinned to commit `2b60af89e23d28eefc081bc930831ee9d45ea58b` (v3.8.1 source), and Lua is pinned to `6e22fedb74cf0c9b6656e9fce8b7331db847c605` (Lua 5.4.8 source).
+Omit the source-directory options when network-backed FetchContent is acceptable. nlohmann/json is pinned to the v3.12.0 release archive and SHA-256, uses its MIT license, and is built with diagnostic byte positions enabled. Catch2 is pinned to commit `2b60af89e23d28eefc081bc930831ee9d45ea58b` (v3.8.1 source), and Lua is pinned to `6e22fedb74cf0c9b6656e9fce8b7331db847c605` (Lua 5.4.8 source).
 
 ## Cross-compiling the headless core for Linux
 
@@ -27,6 +28,7 @@ export WORMEDIT_LINUX_SYSROOT=/path/to/linux-sysroot
 export WORMEDIT_LINUX_TARGET=x86_64-unknown-linux-gnu
 
 cmake --preset linux-cross-headless \
+  -DWORMEDIT_NLOHMANN_JSON_SOURCE_DIR=/path/to/nlohmann-json-3.12.0 \
   -DWORMEDIT_CATCH2_SOURCE_DIR=/path/to/Catch2 \
   -DWORMEDIT_LUA_SOURCE_DIR=/path/to/lua-5.4.8
 cmake --build --preset linux-cross-headless
@@ -47,6 +49,7 @@ export WORMEDIT_WINDOWS_RC_COMPILER=/path/to/x86_64-w64-mingw32-windres
 export WORMEDIT_WINDOWS_TARGET=x86_64-w64-windows-gnu
 
 cmake --preset windows-cross-headless \
+  -DWORMEDIT_NLOHMANN_JSON_SOURCE_DIR=/path/to/nlohmann-json-3.12.0 \
   -DWORMEDIT_CATCH2_SOURCE_DIR=/path/to/Catch2 \
   -DWORMEDIT_LUA_SOURCE_DIR=/path/to/lua-5.4.8
 cmake --build --preset windows-cross-headless

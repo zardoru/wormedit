@@ -13,6 +13,7 @@ and retains the original public domain attribution header.
 
 ```sh
 cmake --preset headless \
+  -DWORMEDIT_NLOHMANN_JSON_SOURCE_DIR=/path/to/nlohmann-json-3.12.0 \
   -DWORMEDIT_CATCH2_SOURCE_DIR=/path/to/Catch2 \
   -DWORMEDIT_LUA_SOURCE_DIR=/path/to/lua-5.4.8
 cmake --build --preset headless

@@ -18,6 +18,8 @@ include(FetchContent)
 
 set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
+include(cmake/dependencies/nlohmann_json.cmake)
+
 option(WORMEDIT_BUILD_APP "Build the existing SDL/OpenGL application scaffold" ON)
 option(WORMEDIT_ENABLE_LUA "Build the pinned Lua runtime adapter" OFF)
 option(WORMEDIT_ENABLE_AUDIO_DECODER "Build the headless MP3/Ogg decoder target" ON)
@@ -31,10 +33,12 @@ add_library(wormedit_core
     src/core/quantize.cpp
     src/core/rational.cpp
     src/formats/bms.cpp
+    src/formats/bmson.cpp
 )
 add_library(wormedit::core ALIAS wormedit_core)
 target_include_directories(wormedit_core PUBLIC "${CMAKE_SOURCE_DIR}/include")
 target_compile_features(wormedit_core PUBLIC cxx_std_20)
+target_link_libraries(wormedit_core PRIVATE nlohmann_json::nlohmann_json)
 
 find_package(Iconv QUIET)
 if(Iconv_FOUND)

@@ -851,7 +851,13 @@ auto validate_chart(const chart_document_t& chart,
             validate_object_id(diagnostics, object_ids, event.id, "sound channel event");
             const auto begin =
                 position_row_or_diagnostic(index, event.position, diagnostics, event.id);
-            if (!lane_is_active(chart, index, event.position, event.lane)) {
+            if (event.playable && !event.lane) {
+                add_diagnostic(diagnostics, diagnostic_code_t::unknown_lane,
+                               "playable sound channel event must have a non-zero lane", event.id);
+            } else if (!event.playable && event.lane) {
+                add_diagnostic(diagnostics, diagnostic_code_t::unknown_lane,
+                               "non-playable BGM sound channel event must use lane zero", event.id);
+            } else if (event.playable && !lane_is_active(chart, index, event.position, event.lane)) {
                 add_diagnostic(diagnostics, diagnostic_code_t::unknown_lane,
                                "sound channel event refers to a lane absent from its active layout",
                                event.id);

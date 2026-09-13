@@ -1,11 +1,13 @@
 #include "wormedit/audio.h"
 #include "wormedit/window.h"
 
+#include "sys/platform_recovery.h"
 #include "ui/frontend.h"
 #include "wormedit/config.h"
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/recovery_controller.h>
 #include <wormedit/core/startup_session.h>
 #include <wormedit/core/workspace.h>
@@ -58,9 +60,16 @@ auto initial_document() -> wormedit::song_document_t {
 struct flattened_workspace_t {
     WormUiWorkspaceView view{};
     std::array<std::string, WORM_UI_WORKSPACE_SUMMARY_CAPACITY> summary_storage;
+    std::array<std::string, WORM_UI_RECOVERY_ROW_CAPACITY> recovery_path_storage;
     std::array<std::string, WORM_UI_RECOVERY_ROW_CAPACITY> recovery_summary_storage;
     std::array<std::string, WORM_UI_RECOVERY_ROW_CAPACITY> recovery_disabled_storage;
     std::array<std::string, WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY> recovery_diagnostic_storage;
+    std::vector<const char*> metadata_search_tag_storage;
+    std::vector<std::size_t> metadata_search_tag_length_storage;
+    std::array<WormUiMetadataFormatFieldView, WORM_UI_METADATA_FORMAT_FIELD_CAPACITY>
+        metadata_format_field_storage{};
+    std::array<WormUiMetadataFormatTargetView, WORM_UI_METADATA_FORMAT_TARGET_CAPACITY>
+        metadata_format_target_storage{};
 };
 
 auto recovery_status_name(wormedit::native_project_recovery_candidate_status_t status)
@@ -191,6 +200,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
         result.view.recovery_rows_truncated || recovery_row_count < recovery.rows.size();
     for (std::size_t index = 0; index < recovery_row_count; ++index) {
         const auto& row = recovery.rows[index];
+        result.recovery_path_storage[index] = row.path_label;
         auto& summary = result.recovery_summary_storage[index];
         summary = std::string(recovery_status_name(row.status)) + " · " +
                   std::string(recovery_comparison_name(row.comparison));
@@ -216,7 +226,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                 "Unavailable actions are disabled by the recovery controller's safety checks.";
         }
         result.view.recovery_candidates[index] = {
-            .path_label = row.path_label.c_str(),
+            .path_label = result.recovery_path_storage[index].c_str(),
             .summary = summary.c_str(),
             .disabled_reason = disabled_reason.empty() ? nullptr : disabled_reason.c_str(),
             .action_mask = action_mask,
@@ -265,6 +275,122 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
             } else if constexpr (std::is_same_v<tab_t, wormedit::workspace_metadata_view_t>) {
                 result.view.project_title = tab.title.c_str();
                 result.view.artist = tab.artist.c_str();
+                auto& metadata = result.view.metadata;
+                metadata.visible = true;
+                metadata.document_revision = source.document_revision;
+                metadata.title = tab.title.c_str();
+                metadata.artist = tab.artist.c_str();
+                metadata.title_bytes = tab.title.size();
+                metadata.artist_bytes = tab.artist.size();
+                metadata.search_tag_count = tab.search_tags.size();
+                metadata.song_fields_editable =
+                    tab.title.size() <= WORM_UI_METADATA_TITLE_BYTES &&
+                    tab.artist.size() <= WORM_UI_METADATA_TITLE_BYTES &&
+                    tab.search_tags.size() <= WORM_UI_METADATA_SEARCH_TAG_CAPACITY;
+                metadata.search_tags_editable =
+                    tab.search_tags.size() <= WORM_UI_METADATA_SEARCH_TAG_CAPACITY;
+                if (metadata.search_tags_editable) {
+                    result.metadata_search_tag_storage.reserve(tab.search_tags.size());
+                    result.metadata_search_tag_length_storage.reserve(tab.search_tags.size());
+                    for (const auto& tag : tab.search_tags) {
+                        result.metadata_search_tag_storage.push_back(tag.c_str());
+                        result.metadata_search_tag_length_storage.push_back(tag.size());
+                        metadata.search_tags_editable =
+                            metadata.search_tags_editable &&
+                            tag.size() <= WORM_UI_METADATA_SEARCH_TAG_BYTES;
+                    }
+                }
+                metadata.search_tags = metadata.search_tags_editable
+                                           ? result.metadata_search_tag_storage.data()
+                                           : nullptr;
+                metadata.search_tag_bytes = metadata.search_tags_editable
+                                                ? result.metadata_search_tag_length_storage.data()
+                                                : nullptr;
+                metadata.song_fields_editable =
+                    metadata.song_fields_editable && metadata.search_tags_editable;
+                metadata.has_chart = tab.selected_difficulty.has_value();
+                if (tab.selected_difficulty) {
+                    metadata.chart_id = tab.selected_difficulty->id.value;
+                    metadata.chart_name = tab.selected_difficulty->difficulty_name.c_str();
+                    metadata.chart_author = tab.chart_author.c_str();
+                    metadata.chart_name_bytes = tab.selected_difficulty->difficulty_name.size();
+                    metadata.chart_author_bytes = tab.chart_author.size();
+                    metadata.chart_fields_editable =
+                        tab.selected_difficulty->difficulty_name.size() <=
+                            WORM_UI_METADATA_CHART_TEXT_BYTES &&
+                        tab.chart_author.size() <= WORM_UI_METADATA_CHART_TEXT_BYTES;
+                    metadata.has_chart_rating = tab.selected_difficulty->rating.has_value();
+                    if (tab.selected_difficulty->rating) {
+                        metadata.chart_rating_numerator =
+                            tab.selected_difficulty->rating->numerator;
+                        metadata.chart_rating_denominator =
+                            tab.selected_difficulty->rating->denominator;
+                    }
+                }
+                metadata.format_fields_truncated =
+                    tab.format_fields.size() > WORM_UI_METADATA_FORMAT_FIELD_CAPACITY;
+                metadata.format_field_total_count = tab.format_fields.size();
+                metadata.format_field_count =
+                    std::min(tab.format_fields.size(),
+                             static_cast<std::size_t>(WORM_UI_METADATA_FORMAT_FIELD_CAPACITY));
+                for (std::size_t index = 0; index < metadata.format_field_count; ++index) {
+                    const auto& field = tab.format_fields[index];
+                    result.metadata_format_field_storage[index] = {
+                        .chart_scoped = field.chart_scoped,
+                        .family = static_cast<std::uint8_t>(field.family),
+                        .first_group_for_family = field.first_group_for_family,
+                        .group_index = field.group_index,
+                        .field_index = field.field_index,
+                        .group_field_count = field.group_field_count,
+                        .name = field.name.c_str(),
+                        .value = field.value.c_str(),
+                        .name_bytes = field.name.size(),
+                        .value_bytes = field.value.size(),
+                        .has_source_order = field.source_order.has_value(),
+                        .source_order = field.source_order.value_or(0),
+                    };
+                }
+                metadata.format_fields = result.metadata_format_field_storage.data();
+                constexpr std::array format_families{
+                    wormedit::format_family_t::native_project, wormedit::format_family_t::bms,
+                    wormedit::format_family_t::stepmania,      wormedit::format_family_t::osu_mania,
+                    wormedit::format_family_t::bmson,          wormedit::format_family_t::midi,
+                    wormedit::format_family_t::quaver};
+                const auto append_format_targets = [&](const auto& groups, bool chart_scoped) {
+                    std::array<const wormedit::format_metadata_t*, format_families.size()>
+                        first_groups{};
+                    std::array<std::size_t, format_families.size()> first_group_indices{};
+                    for (std::size_t group_index = 0; group_index < groups.size(); ++group_index) {
+                        const auto family_index =
+                            static_cast<std::size_t>(groups[group_index].family);
+                        if (family_index < first_groups.size() &&
+                            first_groups[family_index] == nullptr) {
+                            first_groups[family_index] = &groups[group_index];
+                            first_group_indices[family_index] = group_index;
+                        }
+                    }
+                    for (const auto family : format_families) {
+                        const auto family_index = static_cast<std::size_t>(family);
+                        const auto* found = first_groups[family_index];
+                        const auto index = metadata.format_target_count++;
+                        result.metadata_format_target_storage[index] = {
+                            .chart_scoped = chart_scoped,
+                            .family = static_cast<std::uint8_t>(family),
+                            .group_exists = found != nullptr,
+                            .group_index = found == nullptr ? 0 : first_group_indices[family_index],
+                            .field_count = found == nullptr ? 0 : found->ordered_fields.size(),
+                        };
+                    }
+                };
+                append_format_targets(document.metadata.format_groups, false);
+                if (tab.selected_difficulty) {
+                    const auto selected =
+                        std::ranges::find(document.charts, tab.selected_difficulty->id,
+                                          &wormedit::chart_document_t::id);
+                    if (selected != document.charts.end())
+                        append_format_targets(selected->metadata.format_groups, true);
+                }
+                metadata.format_targets = result.metadata_format_target_storage.data();
                 append("Song title: " + tab.title);
                 append("Artist: " + tab.artist);
                 append("Search tags: " + std::to_string(tab.search_tags.size()));
@@ -348,12 +474,22 @@ auto dispatch_recovery_ui_action(
         request = inspect_native_project_recovery_action_t{.target = target};
         break;
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER:
+        if (!history.undo.empty() || !history.redo.empty()) {
+            return "The current workspace changed after recovery discovery; save or restart "
+                   "before replacing it with a recovery candidate.";
+        }
         request = recover_native_project_recovery_action_t{
             .target = target,
             .expected_session =
                 {
                     .is_set = true,
-                    .version = scanned_primary_version,
+                    .version =
+                        scanned_primary_version.has_value()
+                            ? std::optional<
+                                  native_project_document_version_t>{native_project_document_version_t{
+                                  .project_id = history.document.id,
+                                  .revision = history.document.revision}}
+                            : std::nullopt,
                 },
         };
         break;
@@ -430,6 +566,96 @@ auto dispatch_recovery_ui_action(
     }
 }
 
+auto dispatch_metadata_ui_action(const WormUiWorkspaceAction& action,
+                                 wormedit::document_history_t& history,
+                                 wormedit::workspace_controller_t& workspace) -> std::string {
+    using namespace wormedit;
+    const auto failed = [](const document_command_result_t& result) {
+        if (!result.diagnostics.empty())
+            return result.diagnostics.front().message;
+        return std::string{"Metadata edit was not applied."};
+    };
+    const auto publish = [&](document_command_result_t result) {
+        if (!result.applied)
+            return result.diagnostics.empty() ? std::string{"No metadata changes."}
+                                              : failed(result);
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty()
+                       ? std::string{"Metadata changed, but workspace rebinding failed."}
+                       : rebound.diagnostics.front().message;
+        }
+        return std::string{"Metadata updated."};
+    };
+
+    switch (action.metadata_edit) {
+    case WORM_UI_METADATA_EDIT_SONG: {
+        if (!action.metadata_title || !action.metadata_artist ||
+            action.metadata_search_tag_count > WORM_UI_METADATA_SEARCH_TAG_CAPACITY ||
+            (action.metadata_search_tag_count != 0 && !action.metadata_search_tags)) {
+            return "Metadata edit payload is incomplete or exceeds the tag-count cap.";
+        }
+        std::vector<std::string> tags;
+        tags.reserve(action.metadata_search_tag_count);
+        for (std::size_t index = 0; index < action.metadata_search_tag_count; ++index) {
+            if (!action.metadata_search_tags[index])
+                return "Metadata edit contains an empty tag pointer.";
+            tags.emplace_back(action.metadata_search_tags[index]);
+        }
+        return publish(apply_metadata_edit(history, action.metadata_document_revision,
+                                           set_song_metadata_action_t{action.metadata_title,
+                                                                      action.metadata_artist,
+                                                                      std::move(tags)}));
+    }
+    case WORM_UI_METADATA_EDIT_CHART:
+        if (action.metadata_chart_id == 0 || !action.metadata_chart_name ||
+            !action.metadata_chart_author) {
+            return "Chart metadata edit payload is incomplete.";
+        }
+        return publish(apply_metadata_edit(
+            history, action.metadata_document_revision,
+            set_chart_metadata_action_t{chart_id_t{action.metadata_chart_id},
+                                        action.metadata_chart_name, action.metadata_chart_author,
+                                        action.metadata_has_chart_rating
+                                            ? std::optional<signed_rational_t>{signed_rational_t{
+                                                  action.metadata_chart_rating_numerator,
+                                                  action.metadata_chart_rating_denominator}}
+                                            : std::nullopt}));
+    case WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD:
+    case WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD:
+    case WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD: {
+        if (action.metadata_format_family > static_cast<std::uint8_t>(format_family_t::quaver)) {
+            return "Format metadata edit refers to an unknown format family.";
+        }
+        const format_metadata_target_t target{
+            action.metadata_format_chart_scoped
+                ? std::optional<chart_id_t>{chart_id_t{action.metadata_chart_id}}
+                : std::nullopt,
+            static_cast<format_family_t>(action.metadata_format_family)};
+        metadata_edit_action_t edit;
+        if (action.metadata_edit == WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD) {
+            if (!action.metadata_format_name || !action.metadata_format_value)
+                return "Format metadata replacement payload is incomplete.";
+            edit = replace_format_metadata_field_action_t{target, action.metadata_format_index,
+                                                          action.metadata_format_name,
+                                                          action.metadata_format_value};
+        } else if (action.metadata_edit == WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD) {
+            edit = erase_format_metadata_field_action_t{target, action.metadata_format_index};
+        } else {
+            if (!action.metadata_format_name || !action.metadata_format_value)
+                return "Format metadata insertion payload is incomplete.";
+            edit = insert_format_metadata_field_action_t{target, action.metadata_format_index,
+                                                         action.metadata_format_name,
+                                                         action.metadata_format_value};
+        }
+        return publish(apply_metadata_edit(history, action.metadata_document_revision, edit));
+    }
+    case WORM_UI_METADATA_EDIT_NONE:
+        break;
+    }
+    return "Invalid metadata edit action.";
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -444,13 +670,17 @@ int main(int argc, char** argv) {
     for (int index = 2; index < argc; ++index)
         startup_request.recovery_entries.emplace_back(argv[index]);
     const auto requested_primary_path = startup_request.primary_path;
-    auto startup =
-        wormedit::prepare_native_project_startup(initial_document(), std::move(startup_request));
 
     if (!SDL_Init(0)) {
         std::fprintf(stderr, "SDL init failed\n");
         return 1;
     }
+    const auto platform_recovery = wormedit::prepare_platform_recovery_directory();
+    if (platform_recovery) {
+        startup_request.recovery_directories.push_back(platform_recovery.path);
+    }
+    auto startup =
+        wormedit::prepare_native_project_startup(initial_document(), std::move(startup_request));
 
     WormAudioSystem audio{};
     if (!worm_audio_init(&audio)) {
@@ -489,10 +719,15 @@ int main(int argc, char** argv) {
     std::string status;
     if (startup.loaded_primary) {
         status = "Opened native project: " + requested_primary_path.generic_string();
-    } else if (startup.recovery_scan_configured) {
+    } else if (!requested_primary_path.empty()) {
         status = "Primary project was not loaded; review the completed recovery scan.";
+    } else if (platform_recovery) {
+        status = "New unsaved workspace ready; platform recovery scan complete.";
     } else {
-        status = "New unsaved workspace ready";
+        status = "New unsaved workspace ready; recovery discovery unavailable.";
+    }
+    if (!platform_recovery && !platform_recovery.error.empty()) {
+        status += " " + platform_recovery.error;
     }
     wormedit::native_project_recovery_controller_t recovery_controller;
     if (startup.recovery_scan_configured)
@@ -523,6 +758,35 @@ int main(int argc, char** argv) {
             for (std::size_t line = 0; line < flattened.view.summary_line_count; ++line) {
                 flattened.view.summary_lines[line] = flattened.summary_storage[line].c_str();
             }
+            for (std::size_t row = 0; row < flattened.view.recovery_candidate_count; ++row) {
+                flattened.view.recovery_candidates[row].path_label =
+                    flattened.recovery_path_storage[row].c_str();
+                flattened.view.recovery_candidates[row].summary =
+                    flattened.recovery_summary_storage[row].c_str();
+                flattened.view.recovery_candidates[row].disabled_reason =
+                    flattened.recovery_disabled_storage[row].empty()
+                        ? nullptr
+                        : flattened.recovery_disabled_storage[row].c_str();
+            }
+            for (std::size_t diagnostic = 0; diagnostic < flattened.view.recovery_diagnostic_count;
+                 ++diagnostic) {
+                flattened.view.recovery_diagnostics[diagnostic] =
+                    flattened.recovery_diagnostic_storage[diagnostic].c_str();
+            }
+            if (flattened.view.metadata.visible) {
+                flattened.view.metadata.search_tags =
+                    flattened.view.metadata.search_tags_editable
+                        ? flattened.metadata_search_tag_storage.data()
+                        : nullptr;
+                flattened.view.metadata.search_tag_bytes =
+                    flattened.view.metadata.search_tags_editable
+                        ? flattened.metadata_search_tag_length_storage.data()
+                        : nullptr;
+                flattened.view.metadata.format_fields =
+                    flattened.metadata_format_field_storage.data();
+                flattened.view.metadata.format_targets =
+                    flattened.metadata_format_target_storage.data();
+            }
             const auto action = worm_ui_frontend_compose(&flattened.view);
             if (action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
                 running = false;
@@ -535,6 +799,8 @@ int main(int argc, char** argv) {
                              ? "Workspace tab changed"
                              : (applied.diagnostics.empty() ? "Workspace action rejected"
                                                             : applied.diagnostics.front().message);
+            } else if (action.metadata_edit != WORM_UI_METADATA_EDIT_NONE) {
+                status = dispatch_metadata_ui_action(action, history, workspace);
             } else if (action.kind >= WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT &&
                        action.kind <= WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE) {
                 status = dispatch_recovery_ui_action(action, recovery_controller, history,

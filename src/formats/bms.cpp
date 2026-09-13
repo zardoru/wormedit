@@ -2428,15 +2428,364 @@ auto edit_bms_inactive_branch_statement(const song_document_t& song,
     edited_target->command_token = replacement.token;
     edited_target->raw_value = replacement.raw_value;
 
-    const auto mark_changed = [](std::vector<format_metadata_t>& groups) {
+    const auto mark_changed = [&](std::vector<format_metadata_t>& groups) {
         for (auto& group : groups) {
-            if (group.family == format_family_t::bms) {
+            if (group.family == format_family_t::bms && group.encoding.original_bytes &&
+                group.encoding.original_bytes.get() == source->bytes.get()) {
                 group.encoding.unchanged_since_import = false;
             }
         }
     };
     mark_changed(result.song->metadata.format_groups);
     mark_changed(edited_chart.metadata.format_groups);
+    return result;
+}
+
+auto insert_bms_inactive_branch_statement(const song_document_t& song,
+                                          bms_branch_statement_insert_t insertion)
+    -> bms_branch_statement_edit_result_t {
+    bms_branch_statement_edit_result_t result;
+    const auto reject = [&](bms_branch_statement_edit_diagnostic_code_t code, std::string message,
+                            std::string path) {
+        result.diagnostics.push_back(
+            {diagnostic_severity_t::error, code, std::move(message), std::move(path)});
+    };
+
+    const chart_document_t* chart{};
+    std::size_t chart_index{};
+    if (song.charts.size() != 1) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::unsupported_song_shape,
+               "inactive branch insertion currently requires a one-chart BMS source document",
+               "$.charts");
+        return result;
+    }
+    if (insertion.chart.has_value()) {
+        const auto found = std::ranges::find(song.charts, *insertion.chart, &chart_document_t::id);
+        if (found == song.charts.end()) {
+            reject(bms_branch_statement_edit_diagnostic_code_t::missing_chart,
+                   "requested chart ID does not exist", "$.charts");
+            return result;
+        }
+        chart_index = static_cast<std::size_t>(found - song.charts.begin());
+        chart = &*found;
+    } else if (song.charts.size() == 1) {
+        chart = &song.charts.front();
+    } else {
+        reject(bms_branch_statement_edit_diagnostic_code_t::missing_chart,
+               "select one chart explicitly when the song does not contain exactly one chart",
+               "$.charts");
+        return result;
+    }
+    const auto path = "$.charts[" + std::to_string(chart_index) + "].bms_control_tree";
+    if (!chart->bms_control_tree.has_value()) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::missing_control_tree,
+               "the selected chart has no retained BMS control tree", path);
+        return result;
+    }
+    if (!insertion.leaf_branch || !insertion.after_statement) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::target_not_found,
+               "the leaf branch and insertion anchor IDs must be valid", path);
+        return result;
+    }
+    if (insertion.statement_text.size() > insertion.max_statement_bytes) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::resource_limit,
+               "inserted statement exceeds the configured byte limit", path);
+        return result;
+    }
+
+    const auto is_leaf_branch = [](bms_control_kind_t kind) {
+        return kind == bms_control_kind_t::if_branch ||
+               kind == bms_control_kind_t::else_if_branch ||
+               kind == bms_control_kind_t::else_branch || kind == bms_control_kind_t::case_branch ||
+               kind == bms_control_kind_t::default_branch;
+    };
+    const bms_control_node_t* leaf{};
+    const bms_control_node_t* anchor{};
+    const bms_control_node_t* anchor_parent{};
+    std::size_t leaf_id_count{};
+    std::size_t anchor_id_count{};
+    std::size_t leaf_order_count{};
+    std::size_t anchor_order_count{};
+    std::uint64_t max_branch_id{};
+    std::size_t max_source_order{};
+    const auto find_targets = [&](const auto& self, const bms_control_node_t& node) -> void {
+        max_branch_id = std::max(max_branch_id, node.id.value);
+        max_source_order = std::max(max_source_order, node.source_order);
+        if (node.close_source_order.has_value()) {
+            max_source_order = std::max(max_source_order, *node.close_source_order);
+        }
+        if (node.id == insertion.leaf_branch) {
+            ++leaf_id_count;
+            leaf = &node;
+        }
+        if (node.id == insertion.after_statement) {
+            ++anchor_id_count;
+            anchor = &node;
+        }
+        if (node.kind != bms_control_kind_t::root && node.kind != bms_control_kind_t::if_group) {
+            if (node.source_order == insertion.expected_leaf_source_order) {
+                ++leaf_order_count;
+            }
+            if (node.source_order == insertion.expected_statement_source_order) {
+                ++anchor_order_count;
+            }
+        }
+        for (const auto& child : node.children) {
+            if (child.id == insertion.after_statement) {
+                anchor_parent = &node;
+            }
+            self(self, child);
+        }
+    };
+    find_targets(find_targets, *chart->bms_control_tree);
+    if (leaf_id_count == 0 || anchor_id_count == 0) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::target_not_found,
+               "the retained tree does not contain the requested leaf or insertion anchor", path);
+        return result;
+    }
+    if (leaf_id_count != 1 || anchor_id_count != 1 || leaf_order_count != 1 ||
+        anchor_order_count != 1) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::ambiguous_target,
+               "the leaf, anchor ID, or source order is not unique in the retained tree", path);
+        return result;
+    }
+    if (!is_leaf_branch(leaf->kind) || leaf != anchor_parent ||
+        anchor->kind != bms_control_kind_t::raw_statement) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::target_not_branch_statement,
+               "insertion requires a raw statement directly inside the identified leaf branch",
+               path);
+        return result;
+    }
+    if (leaf->source_order != insertion.expected_leaf_source_order ||
+        leaf->source_span.byte_begin != insertion.expected_leaf_source_span.byte_begin ||
+        leaf->source_span.byte_end != insertion.expected_leaf_source_span.byte_end ||
+        leaf->original_text != insertion.expected_leaf_original_text ||
+        anchor->source_order != insertion.expected_statement_source_order ||
+        anchor->source_span.byte_begin != insertion.expected_statement_source_span.byte_begin ||
+        anchor->source_span.byte_end != insertion.expected_statement_source_span.byte_end ||
+        anchor->original_text != insertion.expected_statement_original_text) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch,
+               "the leaf or anchor no longer matches the caller's retained source identity", path);
+        return result;
+    }
+
+    const auto source = retained_bms_source(song, *chart);
+    const auto retained_leaf =
+        source.has_value() ? retained_line_text(*source, *leaf) : std::optional<std::string>{};
+    const auto retained_anchor =
+        source.has_value() ? retained_line_text(*source, *anchor) : std::optional<std::string>{};
+    const auto parsed_leaf = parse_line(leaf->original_text);
+    const auto parsed_anchor = parse_line(anchor->original_text);
+    if (!source.has_value() || !retained_leaf.has_value() || !retained_anchor.has_value() ||
+        *retained_leaf != leaf->original_text || *retained_anchor != anchor->original_text ||
+        parsed_leaf.token.empty() || parsed_anchor.token.empty() ||
+        !equal_ascii_case_insensitive(parsed_leaf.token, leaf->command_token) ||
+        !equal_ascii_case_insensitive(parsed_anchor.token, anchor->command_token) ||
+        parsed_anchor.raw_value != anchor->raw_value) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch,
+               "the leaf and anchor cannot be verified against their retained source bytes", path);
+        return result;
+    }
+
+    const auto active_orders =
+        active_branch_statement_orders(*chart->bms_control_tree, chart->active_branch_selection);
+    if (!active_orders.has_value()) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::invalid_branch_selection,
+               "the chart's active branch selections do not resolve against this control tree",
+               path);
+        return result;
+    }
+    if (active_orders->contains(anchor->source_order)) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::active_statement,
+               "statements cannot be inserted into the currently active branch leaf", path);
+        return result;
+    }
+
+    const auto parsed_statement = parse_line(insertion.statement_text);
+    if (insertion.statement_text.empty() || insertion.statement_text.front() != '#' ||
+        insertion.statement_text.find_first_of("\r\n\0", 0, 3) != std::string::npos ||
+        utf8_error_offset(insertion.statement_text).has_value() || parsed_statement.token.empty() ||
+        is_control_token(parsed_statement.token) ||
+        !std::ranges::all_of(insertion.statement_text,
+                             [](unsigned char character) { return character < 0x80; })) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::invalid_replacement,
+               "inserted text must be one ASCII BMS statement, not a control directive", path);
+        return result;
+    }
+    if (max_branch_id == std::numeric_limits<std::uint64_t>::max()) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::resource_limit,
+               "the retained branch ID space is exhausted", path);
+        return result;
+    }
+    if (anchor->source_order == std::numeric_limits<std::size_t>::max() ||
+        max_source_order == std::numeric_limits<std::size_t>::max()) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::resource_limit,
+               "the retained source-order space is exhausted", path);
+        return result;
+    }
+    const auto line_ending = ending_bytes(anchor->line_ending);
+    if (line_ending.empty()) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch,
+               "the insertion anchor has no retained line ending", path);
+        return result;
+    }
+    const auto insertion_offset = anchor->source_span.byte_end;
+    if (insertion_offset > source->bytes->size() ||
+        insertion.statement_text.size() >
+            std::numeric_limits<std::size_t>::max() - line_ending.size() ||
+        insertion.statement_text.size() + line_ending.size() >
+            std::numeric_limits<std::size_t>::max() - source->bytes->size()) {
+        reject(bms_branch_statement_edit_diagnostic_code_t::resource_limit,
+               "the inserted statement would exceed the retained source size range", path);
+        return result;
+    }
+    const auto inserted_size = insertion.statement_text.size() + line_ending.size();
+
+    result.song = song;
+    auto& edited_chart = result.song->charts[chart_index];
+    bms_control_node_t* edited_leaf{};
+    const auto find_mutable_leaf = [&](const auto& self, bms_control_node_t& node) -> void {
+        if (node.id == insertion.leaf_branch) {
+            edited_leaf = &node;
+            return;
+        }
+        for (auto& child : node.children) {
+            self(self, child);
+            if (edited_leaf != nullptr) {
+                return;
+            }
+        }
+    };
+    find_mutable_leaf(find_mutable_leaf, *edited_chart.bms_control_tree);
+    const auto position = std::ranges::find(edited_leaf->children, insertion.after_statement,
+                                            &bms_control_node_t::id);
+    auto updated_source = std::make_shared<std::vector<std::byte>>();
+    updated_source->reserve(source->bytes->size() + inserted_size);
+    updated_source->insert(updated_source->end(), source->bytes->begin(),
+                           source->bytes->begin() + static_cast<std::ptrdiff_t>(insertion_offset));
+    for (const auto character : insertion.statement_text) {
+        updated_source->push_back(static_cast<std::byte>(static_cast<unsigned char>(character)));
+    }
+    for (const auto character : line_ending) {
+        updated_source->push_back(static_cast<std::byte>(static_cast<unsigned char>(character)));
+    }
+    updated_source->insert(updated_source->end(),
+                           source->bytes->begin() + static_cast<std::ptrdiff_t>(insertion_offset),
+                           source->bytes->end());
+
+    const auto shift_source_order = [&](std::size_t& source_order) {
+        if (source_order > anchor->source_order &&
+            source_order != std::numeric_limits<std::size_t>::max()) {
+            ++source_order;
+        }
+    };
+    const auto shift_span = [&](bms_source_span_t& span) {
+        if (span.byte_begin >= insertion_offset) {
+            span.byte_begin += inserted_size;
+            span.byte_end += inserted_size;
+        }
+    };
+    const auto shift_tree = [&](const auto& self, bms_control_node_t& node) -> void {
+        if (node.kind == bms_control_kind_t::root) {
+            node.source_span.byte_end += inserted_size;
+        } else {
+            shift_span(node.source_span);
+            shift_source_order(node.source_order);
+        }
+        if (node.close_source_span.has_value()) {
+            shift_span(*node.close_source_span);
+        }
+        if (node.close_source_order.has_value()) {
+            shift_source_order(*node.close_source_order);
+        }
+        for (auto& child : node.children) {
+            self(self, child);
+        }
+    };
+    shift_tree(shift_tree, *edited_chart.bms_control_tree);
+
+    bms_control_node_t inserted{
+        .id = branch_id_t{max_branch_id + 1},
+        .kind = bms_control_kind_t::raw_statement,
+        .original_text = std::move(insertion.statement_text),
+        .command_token = parsed_statement.token,
+        .raw_value = parsed_statement.raw_value,
+        .source_span = {insertion_offset, insertion_offset + inserted_size},
+        .source_order = insertion.expected_statement_source_order + 1,
+        .line_ending = anchor->line_ending,
+    };
+    edited_leaf->children.insert(position + 1, std::move(inserted));
+
+    const auto shift_provenance = [&](source_provenance_t& provenance) {
+        if (provenance.family == format_family_t::bms) {
+            shift_source_order(provenance.source_order);
+        }
+    };
+    const auto shift_group_orders = [&](std::vector<format_metadata_t>& groups) {
+        for (auto& group : groups) {
+            if (group.family != format_family_t::bms || !group.encoding.original_bytes ||
+                group.encoding.original_bytes.get() != source->bytes.get()) {
+                continue;
+            }
+            for (auto& source_order : group.ordered_field_source_orders) {
+                shift_source_order(source_order);
+            }
+            group.encoding.original_bytes = updated_source;
+            group.encoding.unchanged_since_import = false;
+        }
+    };
+    shift_group_orders(result.song->metadata.format_groups);
+    for (auto& resource : result.song->resources) {
+        shift_provenance(resource.provenance);
+    }
+    shift_group_orders(edited_chart.metadata.format_groups);
+    for (auto& measure : edited_chart.measures) {
+        for (auto& note : measure.notes) {
+            shift_provenance(note.provenance);
+        }
+        for (auto& event : measure.bgm_events) {
+            shift_provenance(event.provenance);
+        }
+    }
+    for (auto& lane : edited_chart.bgm_source_lanes) {
+        shift_source_order(lane.source_order);
+    }
+    for (auto& event : edited_chart.bpms) {
+        shift_provenance(event.provenance);
+    }
+    for (auto& event : edited_chart.pauses) {
+        shift_provenance(event.provenance);
+    }
+    for (auto& event : edited_chart.warps) {
+        shift_provenance(event.provenance);
+    }
+    for (auto& event : edited_chart.scrolls) {
+        shift_provenance(event.provenance);
+    }
+    for (auto& event : edited_chart.speeds) {
+        shift_provenance(event.provenance);
+    }
+    for (auto& event : edited_chart.kiai) {
+        shift_provenance(event.provenance);
+    }
+    for (auto& event : edited_chart.bga_events) {
+        shift_provenance(event.provenance);
+    }
+    for (auto& channel : edited_chart.sound_channels) {
+        for (auto& event : channel.events) {
+            shift_provenance(event.provenance);
+        }
+    }
+    for (auto& projection : edited_chart.bms_measure_length_projections) {
+        shift_source_order(projection.source_order);
+    }
+    for (auto& projection : edited_chart.bms_bpm_projections) {
+        shift_source_order(projection.source_order);
+    }
+    for (auto& projection : edited_chart.bms_pause_projections) {
+        shift_source_order(projection.source_order);
+    }
+
     return result;
 }
 

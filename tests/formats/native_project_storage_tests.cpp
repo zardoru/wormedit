@@ -573,6 +573,84 @@ TEST_CASE("recovery into an empty session validates a recovery with no primary f
     CHECK_FALSE(std::filesystem::exists(primary));
 }
 
+TEST_CASE("platform recovery directories are scanned deterministically for an empty session",
+          "[unit][format][native-project][recovery][scan][directories]") {
+    using candidate_kind_t = wormedit::native_project_recovery_candidate_kind_t;
+    temporary_directory_t directory;
+    const auto recovery_directory = directory.path / "recovery";
+    const auto nested_directory = recovery_directory / "nested";
+    std::filesystem::create_directories(nested_directory);
+    const auto first = recovery_directory / "a-project.bak";
+    const auto second = recovery_directory / "z-project.bak";
+    const auto interrupted = recovery_directory / "middle-project.bak.wormedit-tmp-interrupted";
+    const auto quarantined =
+        recovery_directory / "newest-project.bak.wormedit-quarantine-123-456-1";
+    const auto nested = nested_directory / "ignored.bak";
+    REQUIRE(wormedit::publish_native_project_recovery_atomic(first, valid_song(2), {}).published);
+    REQUIRE(wormedit::publish_native_project_recovery_atomic(second, valid_song(4), {}).published);
+    REQUIRE(
+        wormedit::publish_native_project_recovery_atomic(interrupted, valid_song(3), {}).published);
+    REQUIRE(wormedit::publish_native_project_recovery_atomic(quarantined, valid_song(100), {})
+                .published);
+    REQUIRE(wormedit::publish_native_project_recovery_atomic(nested, valid_song(99), {}).published);
+
+    const auto scan = wormedit::scan_native_project_recovery_candidates(
+        {.caller_supplied_directories = {recovery_directory}, .discover_stale_temporaries = false});
+    REQUIRE(scan.candidates.size() == 3);
+    CHECK(scan.candidates[0].path == first);
+    CHECK(scan.candidates[1].path == interrupted);
+    CHECK(scan.candidates[2].path == second);
+    CHECK(scan.candidates[0].kind == candidate_kind_t::caller_supplied_entry);
+    CHECK(scan.candidates[1].kind == candidate_kind_t::stale_recovery_temporary);
+    CHECK(scan.candidates[2].kind == candidate_kind_t::caller_supplied_entry);
+    CHECK(std::ranges::none_of(scan.candidates,
+                               [&](const auto& candidate) { return candidate.path == nested; }));
+    CHECK(std::ranges::none_of(
+        scan.candidates, [&](const auto& candidate) { return candidate.path == quarantined; }));
+    REQUIRE(scan.preferred_recovery_candidate.has_value());
+    CHECK(scan.candidates[*scan.preferred_recovery_candidate].path == second);
+
+    wormedit::native_project_recovery_action_options_t options;
+    options.expected_session.is_set = true;
+    const auto recovered = wormedit::apply_native_project_recovery_action(
+        scan, *scan.preferred_recovery_candidate,
+        wormedit::native_project_recovery_action_t::recover_into_session, options);
+    REQUIRE(recovered.applied);
+    REQUIRE(recovered.document.has_value());
+    CHECK(recovered.document->revision == 4);
+
+    options.expected_session.version =
+        wormedit::native_project_document_version_t{.project_id = valid_song(1).id, .revision = 1};
+    const auto nonempty_session = wormedit::apply_native_project_recovery_action(
+        scan, *scan.preferred_recovery_candidate,
+        wormedit::native_project_recovery_action_t::recover_into_session, options);
+    CHECK_FALSE(nonempty_session.applied);
+    CHECK(nonempty_session.has_errors());
+
+    const auto limited_scan = wormedit::scan_native_project_recovery_candidates(
+        {.caller_supplied_directories = {recovery_directory}, .discover_stale_temporaries = false},
+        {.maximum_candidates = 2});
+    CHECK(limited_scan.candidates.size() == 2);
+    CHECK(std::ranges::any_of(limited_scan.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code ==
+               wormedit::native_project_storage_diagnostic_code_t::resource_limit;
+    }));
+
+    const auto oversized_directory = directory.path / "oversized-recovery";
+    std::filesystem::create_directories(oversized_directory);
+    for (std::size_t index = 0; index < 65; ++index) {
+        write_text(oversized_directory / ("candidate-" + std::to_string(index)), "invalid");
+    }
+    const auto oversized_scan = wormedit::scan_native_project_recovery_candidates(
+        {.caller_supplied_directories = {oversized_directory}, .discover_stale_temporaries = false},
+        {.maximum_candidates = 1});
+    CHECK(oversized_scan.candidates.empty());
+    CHECK(std::ranges::any_of(oversized_scan.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code ==
+               wormedit::native_project_storage_diagnostic_code_t::resource_limit;
+    }));
+}
+
 TEST_CASE("recovery actions reject changed artifacts and quarantine by recoverable move",
           "[unit][format][native-project][recovery][actions][faults]") {
     using action_t = wormedit::native_project_recovery_action_t;

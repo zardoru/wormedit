@@ -9,14 +9,16 @@ auto prepare_native_project_startup(song_document_t fallback,
                                     native_project_startup_request_t request)
     -> native_project_startup_result_t {
     native_project_startup_result_t result{.document = std::move(fallback)};
-    result.recovery_scan_configured =
-        !request.primary_path.empty() || !request.recovery_entries.empty();
+    result.recovery_scan_configured = !request.primary_path.empty() ||
+                                      !request.recovery_entries.empty() ||
+                                      !request.recovery_directories.empty();
     if (!result.recovery_scan_configured)
         return result;
 
     result.recovery_scan = scan_native_project_recovery_candidates(
         {.primary_path = std::move(request.primary_path),
-         .caller_supplied_entries = std::move(request.recovery_entries)},
+         .caller_supplied_entries = std::move(request.recovery_entries),
+         .caller_supplied_directories = std::move(request.recovery_directories)},
         std::move(request.scan_options));
     const auto primary =
         std::ranges::find_if(result.recovery_scan.candidates, [](const auto& item) {

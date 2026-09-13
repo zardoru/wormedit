@@ -1,3 +1,4 @@
+#include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/workspace.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -212,9 +213,11 @@ TEST_CASE("metadata workspace exposes bounded ordered song and difficulty format
           "[unit][core][workspace][metadata]") {
     auto song = workspace_song();
     song.metadata.format_groups = {
+        {.family = format_family_t::native_project},
         {.family = format_family_t::bms,
          .ordered_fields = {{"SUBARTIST", "one"}, {"SUBARTIST", "two"}, {"STAGEFILE", "stage.png"}},
-         .ordered_field_source_orders = {8, 9}}};
+         .ordered_field_source_orders = {8, 9}},
+        {.family = format_family_t::bms, .ordered_fields = {{"SUBARTIST", "later group"}}}};
     song.charts.front().metadata.format_groups = {
         {.family = format_family_t::stepmania,
          .ordered_fields = {{"CREDIT", "Difficulty author"}},
@@ -226,13 +229,29 @@ TEST_CASE("metadata workspace exposes bounded ordered song and difficulty format
     const auto result = make_workspace_view(workspace, song);
     REQUIRE(result);
     const auto& metadata = std::get<workspace_metadata_view_t>(result.view->tab_view);
-    REQUIRE(metadata.format_fields.size() == 4);
+    REQUIRE(metadata.format_fields.size() == 5);
     CHECK(metadata.format_fields[0].name == "SUBARTIST");
     CHECK(metadata.format_fields[1].name == "SUBARTIST");
     CHECK(metadata.format_fields[0].source_order == 8);
+    CHECK(metadata.format_fields[0].group_index == 1);
+    CHECK(metadata.format_fields[0].group_field_count == 3);
+    CHECK(metadata.format_fields[0].first_group_for_family);
     CHECK_FALSE(metadata.format_fields[2].source_order.has_value());
-    CHECK(metadata.format_fields[3].chart_scoped);
-    CHECK(metadata.format_fields[3].family == format_family_t::stepmania);
+    CHECK(metadata.format_fields[3].family == format_family_t::bms);
+    CHECK(metadata.format_fields[3].group_index == 2);
+    CHECK_FALSE(metadata.format_fields[3].first_group_for_family);
+    CHECK(metadata.format_fields[4].chart_scoped);
+    CHECK(metadata.format_fields[4].family == format_family_t::stepmania);
+
+    auto history = make_document_history(song);
+    REQUIRE(apply_metadata_edit(
+        history, history.document.revision,
+        replace_format_metadata_field_action_t{
+            {std::nullopt, format_family_t::bms}, 1, "SUBARTIST", "edited primary group"}));
+    CHECK(history.document.metadata.format_groups[1].ordered_fields[1].second ==
+          "edited primary group");
+    CHECK(history.document.metadata.format_groups[2].ordered_fields.front().second ==
+          "later group");
 
     auto count_capped = make_workspace_controller(song, {.maximum_summary_items = 3});
     REQUIRE(count_capped);

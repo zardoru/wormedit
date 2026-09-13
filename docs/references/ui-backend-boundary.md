@@ -6,12 +6,14 @@ Its lifecycle, event translation, responsive workspace-shell composition, and
 widget types now live under `src/ui/nuklear`; the application loop translates
 the real workspace controller view through a private scalar view/action
 contract and dispatches revision-checked tab changes. The headless seven-tab
-workspace and recovery-banner controllers provide bounded backend-neutral
-views/actions. The frontend now renders target-format metadata summaries plus
-explicit Inspect/Recover/Save-as/Discard/Quarantine choices; editable pane
-composition, platform-native project/recovery discovery, and normalized platform
-input remain. Caller-supplied primary and recovery paths are already scanned
-during starter startup.
+workspace, metadata editor, and recovery-banner controllers provide bounded
+backend-neutral views/actions. The Metadata pane edits song title/artist and
+ordered tags, selected-difficulty name/author, and generic ordered format
+fields through revision-checked commands. The SDL application resolves and
+scans its per-user recovery directory and renders explicit
+Inspect/Recover/Save-as/Discard/Quarantine choices. Inheritance/rating controls,
+typed per-format metadata forms, broader pane editors, normalized platform
+input, and periodic autosave scheduling remain.
 
 Nuklear is the initial editor frontend, not a permanent dependency of the application model. A future ImGui frontend or a Clay-based layout/widget frontend should be replaceable without changing chart storage, timing, audio, commands, selection, transport, format codecs, or renderer-neutral chart drawing.
 

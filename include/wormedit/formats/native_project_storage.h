@@ -160,6 +160,10 @@ struct native_project_recovery_scan_request_t {
     // An empty path scans only the caller-supplied entries.
     std::filesystem::path primary_path;
     std::vector<std::filesystem::path> caller_supplied_entries;
+    // Dedicated application recovery roots. Immediate child regular files are
+    // discovered under the same candidate and directory-entry bounds as all
+    // other scan inputs; nested directories and symbolic links are ignored.
+    std::vector<std::filesystem::path> caller_supplied_directories;
     bool discover_stale_temporaries{true};
 };
 
@@ -207,7 +211,8 @@ struct native_project_recovery_scan_result_t {
     -> native_project_recovery_parse_result_t;
 
 // Validate each supplied artifact independently. The scanner recognizes the
-// adjacent `.bak`, caller-owned untitled recovery entries, and same-directory
+// adjacent `.bak`, caller-owned untitled recovery entries, immediate regular
+// files in dedicated caller-owned recovery directories, and same-directory
 // `.wormedit-tmp-*` generations from interrupted primary or recovery writes. It
 // reports quarantine recommendations but never moves or deletes files.
 [[nodiscard]] auto

@@ -85,3 +85,23 @@ TEST_CASE("startup keeps the fallback when the primary is missing and exposes it
     CHECK(result.document.id == wormedit::song_id_t{1});
     REQUIRE(result.recovery_scan.preferred_recovery_candidate.has_value());
 }
+
+TEST_CASE("startup discovers an untitled recovery from a caller-owned platform directory",
+          "[unit][core][startup-session]") {
+    temporary_directory_t directory;
+    const auto recovery_directory = directory.path / "recovery";
+    std::filesystem::create_directories(recovery_directory);
+    const auto backup = recovery_directory / "project-9.wormedit.bak";
+    REQUIRE(wormedit::publish_native_project_recovery_atomic(backup, song(9, 4), {}).published);
+
+    const auto result = wormedit::prepare_native_project_startup(
+        song(1, 1), {.recovery_directories = {recovery_directory}});
+    CHECK(result.recovery_scan_configured);
+    CHECK_FALSE(result.loaded_primary);
+    CHECK_FALSE(result.primary_version.has_value());
+    CHECK(result.document.id == wormedit::song_id_t{1});
+    REQUIRE(result.recovery_scan.preferred_recovery_candidate.has_value());
+    CHECK(
+        result.recovery_scan.candidates[*result.recovery_scan.preferred_recovery_candidate].path ==
+        backup);
+}

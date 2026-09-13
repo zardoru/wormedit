@@ -580,6 +580,7 @@ auto parse_timing_fields(const std::vector<field_t>& song_fields,
                                                   static_cast<long double>(right.beat.denominator);
                          return left_value < right_value;
                      });
+    bool reported_negative_bpm{};
     for (std::size_t index = 0; index < source_bpms.size(); ++index) {
         const auto& entry = source_bpms[index];
         if (entry.bpm.numerator > 0) {
@@ -590,6 +591,13 @@ auto parse_timing_fields(const std::vector<field_t>& song_fields,
                  .provenance = provenance("BPMS", "", entry.field->order)});
             continue;
         }
+        if (options.source_implementation_profile !=
+                stepmania_implementation_profile_t::unspecified &&
+            options.source_implementation_profile !=
+                stepmania_implementation_profile_t::legacy_negative_bpm)
+            fail(stepmania_parse_diagnostic_code_t::implementation_profile_mismatch,
+                 "Negative BPM warp syntax requires the legacy_negative_bpm source profile",
+                 entry.field->order, entry.field->offset);
         auto boundary = index + 1;
         while (boundary < source_bpms.size() && source_bpms[boundary].bpm.numerator <= 0)
             ++boundary;
@@ -604,10 +612,15 @@ auto parse_timing_fields(const std::vector<field_t>& song_fields,
                                      chart.divisions_per_standard_measure)},
              .source_encoding = warp_provenance_t::negative_bpm,
              .provenance = provenance("BPMS", "negative BPM region", entry.field->order)});
-        diagnostics.push_back({diagnostic_severity_t::warning,
-                               stepmania_parse_diagnostic_code_t::legacy_warp_encoding,
-                               "Legacy negative BPM timing was canonicalized to a beat-domain warp",
-                               entry.field->order, entry.field->offset});
+        if (!reported_negative_bpm) {
+            diagnostics.push_back(
+                {diagnostic_severity_t::warning,
+                 stepmania_parse_diagnostic_code_t::legacy_warp_encoding,
+                 "Legacy negative BPM timing was canonicalized to beat-domain warps; additional "
+                 "events of this encoding are summarized here",
+                 entry.field->order, entry.field->offset});
+            reported_negative_bpm = true;
+        }
         index = boundary - 1;
     }
     const auto bpm_at_row = [&](std::uint64_t row) -> std::optional<signed_rational_t> {
@@ -620,6 +633,7 @@ auto parse_timing_fields(const std::vector<field_t>& song_fields,
         }
         return bpm;
     };
+    bool reported_negative_stop{};
     read_pairs("STOPS", [&](auto, auto duration, auto row, const field_t& field) {
         if (duration.numerator >= 0) {
             chart.pauses.push_back(
@@ -631,6 +645,13 @@ auto parse_timing_fields(const std::vector<field_t>& song_fields,
                  .provenance = provenance("STOPS", "", field.order)});
             return;
         }
+        if (options.source_implementation_profile !=
+                stepmania_implementation_profile_t::unspecified &&
+            options.source_implementation_profile !=
+                stepmania_implementation_profile_t::legacy_negative_stop)
+            fail(stepmania_parse_diagnostic_code_t::implementation_profile_mismatch,
+                 "Negative STOP warp syntax requires the legacy_negative_stop source profile",
+                 field.order, field.offset);
         const auto bpm = bpm_at_row(row);
         if (!bpm || bpm->numerator <= 0)
             fail(stepmania_parse_diagnostic_code_t::invalid_timing,
@@ -650,11 +671,15 @@ auto parse_timing_fields(const std::vector<field_t>& song_fields,
                       local_position(row + *span, chart.divisions_per_standard_measure)},
              .source_encoding = warp_provenance_t::negative_stop,
              .provenance = provenance("STOPS", "negative STOP", field.order)});
-        diagnostics.push_back(
-            {diagnostic_severity_t::warning,
-             stepmania_parse_diagnostic_code_t::legacy_warp_encoding,
-             "Legacy negative STOP timing was canonicalized to a beat-domain warp", field.order,
-             field.offset});
+        if (!reported_negative_stop) {
+            diagnostics.push_back(
+                {diagnostic_severity_t::warning,
+                 stepmania_parse_diagnostic_code_t::legacy_warp_encoding,
+                 "Legacy negative STOP timing was canonicalized to beat-domain warps; additional "
+                 "events of this encoding are summarized here",
+                 field.order, field.offset});
+            reported_negative_stop = true;
+        }
     });
     read_pairs("DELAYS", [&](auto, auto duration, auto row, const field_t& field) {
         if (duration.numerator < 0)
@@ -669,6 +694,13 @@ auto parse_timing_fields(const std::vector<field_t>& song_fields,
              .provenance = provenance("DELAYS", "", field.order)});
     });
     read_pairs("WARPS", [&](auto, auto length, auto row, const field_t& field) {
+        if (options.source_implementation_profile !=
+                stepmania_implementation_profile_t::unspecified &&
+            options.source_implementation_profile !=
+                stepmania_implementation_profile_t::native_warps)
+            fail(stepmania_parse_diagnostic_code_t::implementation_profile_mismatch,
+                 "WARPS syntax requires the native_warps source profile", field.order,
+                 field.offset);
         if (length.numerator <= 0)
             fail(stepmania_parse_diagnostic_code_t::invalid_timing,
                  "WARPS lengths must be positive", field.order, field.offset);
@@ -1179,9 +1211,28 @@ auto make_timing_fields(const chart_document_t& chart, const stepmania_write_opt
                         std::vector<stepmania_write_diagnostic_t>& diagnostics)
     -> std::vector<std::pair<std::string, std::string>> {
     using event_t = std::tuple<std::uint64_t, std::size_t, std::string>;
+    const auto warp_encoding = [&] {
+        switch (options.target_implementation_profile) {
+        case stepmania_implementation_profile_t::native_warps:
+            return warp_encoding_t::native;
+        case stepmania_implementation_profile_t::legacy_negative_bpm:
+            return warp_encoding_t::negative_bpm;
+        case stepmania_implementation_profile_t::legacy_negative_stop:
+            return warp_encoding_t::negative_stop;
+        case stepmania_implementation_profile_t::unspecified:
+            return options.warp_encoding;
+        }
+        return options.warp_encoding;
+    }();
+    bool reported_legacy_conversion{};
     const auto report = [&](stepmania_write_diagnostic_code_t code, std::string message,
                             std::string field,
                             diagnostic_severity_t severity = diagnostic_severity_t::error) {
+        if (code == stepmania_write_diagnostic_code_t::legacy_warp_conversion) {
+            if (reported_legacy_conversion)
+                return;
+            reported_legacy_conversion = true;
+        }
         diagnostics.push_back({severity, code, std::move(message), std::move(field)});
     };
     if (options.profile == stepmania_profile_t::sm) {
@@ -1191,7 +1242,7 @@ auto make_timing_fields(const chart_document_t& chart, const stepmania_write_opt
         if (!chart.speeds.empty())
             report(stepmania_write_diagnostic_code_t::unsupported_feature,
                    "This SM writer profile cannot represent SPEEDS", "SPEEDS");
-        if (!chart.warps.empty() && options.warp_encoding == warp_encoding_t::native)
+        if (!chart.warps.empty() && warp_encoding == warp_encoding_t::native)
             report(stepmania_write_diagnostic_code_t::unsupported_feature,
                    "This SM writer profile requires an explicit legacy strategy for warps",
                    "WARPS");
@@ -1245,11 +1296,11 @@ auto make_timing_fields(const chart_document_t& chart, const stepmania_write_opt
         warps.emplace_back(*begin, *end);
     }
     std::sort(warps.begin(), warps.end());
-    if (options.warp_encoding == warp_encoding_t::reject && !warps.empty())
+    if (warp_encoding == warp_encoding_t::reject && !warps.empty())
         report(stepmania_write_diagnostic_code_t::unsupported_feature,
                "Selected warp policy rejects StepMania warps", "WARPS");
-    if (options.warp_encoding == warp_encoding_t::negative_bpm ||
-        options.warp_encoding == warp_encoding_t::negative_stop) {
+    if (warp_encoding == warp_encoding_t::negative_bpm ||
+        warp_encoding == warp_encoding_t::negative_stop) {
         for (std::size_t i = 1; i < warps.size(); ++i) {
             if (warps[i].first <= warps[i - 1].second)
                 report(stepmania_write_diagnostic_code_t::unsupported_feature,
@@ -1276,7 +1327,7 @@ auto make_timing_fields(const chart_document_t& chart, const stepmania_write_opt
                        pause.kind == pause_kind_t::stop ? "STOPS" : "DELAYS");
         }
     }
-    if (options.warp_encoding == warp_encoding_t::negative_bpm && !warps.empty()) {
+    if (warp_encoding == warp_encoding_t::negative_bpm && !warps.empty()) {
         const auto original = bpm_events;
         const auto current_bpm = [&](std::uint64_t row) -> std::optional<std::string> {
             std::optional<std::string> value;
@@ -1341,7 +1392,7 @@ auto make_timing_fields(const chart_document_t& chart, const stepmania_write_opt
         (event.kind == pause_kind_t::stop ? stop_events : delay_events)
             .emplace_back(*row, event.provenance.source_order, *beat + "=" + *duration);
     }
-    if (options.warp_encoding == warp_encoding_t::negative_stop) {
+    if (warp_encoding == warp_encoding_t::negative_stop) {
         for (const auto& [begin, end] : warps) {
             std::optional<std::string> bpm_text;
             std::uint64_t bpm_row{};
@@ -1405,7 +1456,7 @@ auto make_timing_fields(const chart_document_t& chart, const stepmania_write_opt
     serialize_events(bpm_events, "BPMS", result);
     serialize_events(stop_events, "STOPS", result);
     serialize_events(delay_events, "DELAYS", result);
-    if (options.warp_encoding == warp_encoding_t::native && !warps.empty()) {
+    if (warp_encoding == warp_encoding_t::native && !warps.empty()) {
         std::vector<event_t> warp_events;
         for (const auto& [begin, end] : warps) {
             const auto start = beat_text(begin, "WARPS");

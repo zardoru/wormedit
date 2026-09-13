@@ -167,6 +167,7 @@ if(WORMEDIT_BUILD_APP)
         src/editor/field.cpp
         src/sys/audio.cpp
         src/sys/main.cpp
+        src/sys/platform_recovery.cpp
         src/sys/window.cpp
         src/ui/nuklear/frontend.cpp
     )

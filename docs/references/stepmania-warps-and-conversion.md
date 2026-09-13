@@ -18,6 +18,31 @@ These routines are useful reference cases, but they do not retain the exact sour
 
 Historical behavior is also described by the [ITG simfile gimmicks reference](https://itgwiki.dominick.cc/en/packs-and-simfiles/gimmicks): older StepMania content used negative BPMs or negative stops for warp-like fast-forwarding before explicit warp syntax was available. StepMania's own issue tracker records compatibility differences around [warps and negative BPM](https://github.com/stepmania/stepmania/issues/810). Exact accepted behavior must be fixture-tested per implementation profile rather than inferred from the extension.
 
+## Wormedit timing syntax profiles
+
+The paired Wormedit codec now separates `.sm`/`.ssc` syntax from timing
+compatibility choices. Its explicit source/target choices are `native_warps`,
+`legacy_negative_bpm`, and `legacy_negative_stop`; they describe timing syntax
+accepted or emitted, not a claim about a particular StepMania release. The
+parser canonicalizes accepted legacy encodings to exact beat-domain warps,
+retains the source field/provenance, and reports a summarized warning. An
+explicit source profile asserts one syntax family: native `WARPS` under either
+legacy profile, or a negative encoding that disagrees with the selected legacy
+profile, is rejected with a profile-mismatch diagnostic. An unspecified source
+profile still accepts recognized native and legacy encodings, so callers that
+need an asserted compatibility target must choose one explicitly.
+
+For output, SSC can emit native `WARPS` or an explicitly selected legacy form.
+The SM writer requires a legacy strategy for warps because standard SM consumers
+do not load `WARPS`. Legacy negative-BPM/negative-STOP output rejects
+overlapping or adjacent warps, BPM changes inside a warp, and pauses inside a
+warp when it cannot preserve the timing exactly. Native `WARPS` remains an
+explicit SSC encoding, with detailed overlap and in-warp event behavior still
+subject to the selected reader/player profile. The repeated-negative-BPM fixture
+covers two source regions and their semantic re-import. These profiles are
+bounded codec policies; a broader implementation/version matrix and player-level
+compatibility evidence remain open.
+
 ## raindrop `rdconverter`
 
 Relevant sources:

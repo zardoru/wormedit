@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -630,6 +631,160 @@ TEST_CASE("BMS inactive branch statements are edited directly without flattening
     CHECK(std::ranges::find(edited_reimport.song->resources, *edited_note.sound,
                             &wormedit::resource_entry_t::id)
               ->name == "replacement.wav");
+}
+
+TEST_CASE("BMS statements can be inserted into a provenance-checked inactive leaf",
+          "[unit][format][bms][writer][branch][direct-insert]") {
+    constexpr std::string_view source = "#PLAYER 1\n#TITLE Leaf insertion\n#BPM 120\n"
+                                        "#WAV01 active.wav\n#WAV02 inactive.wav\n"
+                                        "#RANDOM 2\n#IF 1\n#00011:0100\n#ELSE\n#00011:0200\n"
+                                        "#ENDIF\n#ENDRANDOM\n";
+    wormedit::bms_parse_options_t parse_options;
+    parse_options.lane_profile_id = "bme-7k-outside-scratch";
+    parse_options.branch_choices = {
+        {.control_source_order = line_order(source, "#RANDOM 2"), .selected_value = 2}};
+    const auto imported = parse(source, parse_options);
+    REQUIRE(imported.song.has_value());
+    REQUIRE_FALSE(imported.has_errors());
+    const auto& chart = imported.song->charts.front();
+    REQUIRE(chart.bms_control_tree.has_value());
+    const auto* leaf = control_node_at(*chart.bms_control_tree, line_order(source, "#IF 1"));
+    const auto* anchor =
+        control_statement_at(*chart.bms_control_tree, line_order(source, "#00011:0100"));
+    REQUIRE(leaf != nullptr);
+    REQUIRE(anchor != nullptr);
+
+    const wormedit::bms_branch_statement_insert_t insertion{
+        .leaf_branch = leaf->id,
+        .expected_leaf_source_order = leaf->source_order,
+        .expected_leaf_source_span = leaf->source_span,
+        .expected_leaf_original_text = leaf->original_text,
+        .after_statement = anchor->id,
+        .expected_statement_source_order = anchor->source_order,
+        .expected_statement_source_span = anchor->source_span,
+        .expected_statement_original_text = anchor->original_text,
+        .statement_text = "#00012:01",
+    };
+    auto inserted = wormedit::insert_bms_inactive_branch_statement(*imported.song, insertion);
+    REQUIRE(inserted.song.has_value());
+    CHECK_FALSE(inserted.has_errors());
+    CHECK(inserted.song->charts.front().measures.front().notes.size() == 1);
+    const auto active_resource = std::ranges::find(
+        inserted.song->resources, std::string("active.wav"), &wormedit::resource_entry_t::name);
+    REQUIRE(active_resource != inserted.song->resources.end());
+    inserted.song->charts.front().measures.front().notes.front().sound = active_resource->id;
+
+    const auto written =
+        wormedit::write_bms(*inserted.song, {.lane_profile_id = parse_options.lane_profile_id});
+    INFO((written.diagnostics.empty() ? std::string{} : written.diagnostics.back().message));
+    REQUIRE(written.bytes.has_value());
+    CHECK_FALSE(written.has_errors());
+    CHECK(occurrences(*written.bytes, "#RANDOM 2") == 1);
+    CHECK(occurrences(*written.bytes, "#IF 1") == 1);
+    CHECK(occurrences(*written.bytes, "#ELSE") == 1);
+    CHECK(occurrences(*written.bytes, "#ENDIF") == 1);
+    CHECK(occurrences(*written.bytes, "#ENDRANDOM") == 1);
+    CHECK(written.bytes->find("#00011:0100\n#00012:01\n#ELSE") != std::string::npos);
+    CHECK(occurrences(*written.bytes, "#00011:0100") == 2);
+
+    parse_options.branch_choices = {
+        {.control_source_order = line_order(*written.bytes, "#RANDOM 2"), .selected_value = 1}};
+    const auto original_branch = parse(*written.bytes, parse_options);
+    REQUIRE(original_branch.song.has_value());
+    CHECK(original_branch.song->charts.front().measures.front().notes.size() == 2);
+
+    parse_options.branch_choices.front().selected_value = 2;
+    const auto inserted_branch = parse(*written.bytes, parse_options);
+    REQUIRE(inserted_branch.song.has_value());
+    const auto& notes = inserted_branch.song->charts.front().measures.front().notes;
+    REQUIRE(notes.size() == 1);
+    CHECK(std::ranges::any_of(notes, [&](const auto& note) {
+        if (!note.sound.has_value()) {
+            return false;
+        }
+        const auto resource = std::ranges::find(inserted_branch.song->resources, *note.sound,
+                                                &wormedit::resource_entry_t::id);
+        return resource != inserted_branch.song->resources.end() && resource->name == "active.wav";
+    }));
+
+    auto ambiguous = *imported.song;
+    wormedit::bms_control_node_t* mutable_leaf{};
+    const auto find_mutable_leaf = [&](const auto& self,
+                                       wormedit::bms_control_node_t& node) -> void {
+        if (node.id == insertion.leaf_branch) {
+            mutable_leaf = &node;
+            return;
+        }
+        for (auto& child : node.children) {
+            self(self, child);
+            if (mutable_leaf != nullptr) {
+                return;
+            }
+        }
+    };
+    find_mutable_leaf(find_mutable_leaf, *ambiguous.charts.front().bms_control_tree);
+    REQUIRE(mutable_leaf != nullptr);
+    const auto mutable_anchor =
+        std::ranges::find(mutable_leaf->children, anchor->id, &wormedit::bms_control_node_t::id);
+    REQUIRE(mutable_anchor != mutable_leaf->children.end());
+    const auto duplicate_anchor = *mutable_anchor;
+    mutable_leaf->children.push_back(duplicate_anchor);
+    const auto ambiguous_result =
+        wormedit::insert_bms_inactive_branch_statement(ambiguous, insertion);
+    CHECK_FALSE(ambiguous_result.song.has_value());
+    CHECK(branch_edit_has_error(
+        ambiguous_result, wormedit::bms_branch_statement_edit_diagnostic_code_t::ambiguous_target));
+
+    auto stale = insertion;
+    ++stale.expected_statement_source_span.byte_begin;
+    const auto stale_result = wormedit::insert_bms_inactive_branch_statement(*imported.song, stale);
+    CHECK_FALSE(stale_result.song.has_value());
+    CHECK(branch_edit_has_error(
+        stale_result, wormedit::bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch));
+
+    const auto* active_leaf = control_node_at(*chart.bms_control_tree, line_order(source, "#ELSE"));
+    const auto* active_anchor =
+        control_statement_at(*chart.bms_control_tree, line_order(source, "#00011:0200"));
+    REQUIRE(active_leaf != nullptr);
+    REQUIRE(active_anchor != nullptr);
+    const auto active_insertion = wormedit::bms_branch_statement_insert_t{
+        .leaf_branch = active_leaf->id,
+        .expected_leaf_source_order = active_leaf->source_order,
+        .expected_leaf_source_span = active_leaf->source_span,
+        .expected_leaf_original_text = active_leaf->original_text,
+        .after_statement = active_anchor->id,
+        .expected_statement_source_order = active_anchor->source_order,
+        .expected_statement_source_span = active_anchor->source_span,
+        .expected_statement_original_text = active_anchor->original_text,
+        .statement_text = "#00012:01",
+    };
+    const auto active_result =
+        wormedit::insert_bms_inactive_branch_statement(*imported.song, active_insertion);
+    CHECK_FALSE(active_result.song.has_value());
+    CHECK(branch_edit_has_error(
+        active_result, wormedit::bms_branch_statement_edit_diagnostic_code_t::active_statement));
+
+    auto multiple_charts = *imported.song;
+    auto second_chart = multiple_charts.charts.front();
+    second_chart.id = wormedit::chart_id_t{9'999};
+    multiple_charts.charts.push_back(std::move(second_chart));
+    const auto multiple_result =
+        wormedit::insert_bms_inactive_branch_statement(multiple_charts, insertion);
+    CHECK_FALSE(multiple_result.song.has_value());
+    CHECK(branch_edit_has_error(
+        multiple_result,
+        wormedit::bms_branch_statement_edit_diagnostic_code_t::unsupported_song_shape));
+
+    auto exhausted = *imported.song;
+    auto* exhausted_else = const_cast<wormedit::bms_control_node_t*>(
+        control_node_at(*exhausted.charts.front().bms_control_tree, line_order(source, "#ELSE")));
+    REQUIRE(exhausted_else != nullptr);
+    exhausted_else->source_order = std::numeric_limits<std::size_t>::max();
+    const auto exhausted_result =
+        wormedit::insert_bms_inactive_branch_statement(exhausted, insertion);
+    CHECK_FALSE(exhausted_result.song.has_value());
+    CHECK(branch_edit_has_error(
+        exhausted_result, wormedit::bms_branch_statement_edit_diagnostic_code_t::resource_limit));
 }
 
 TEST_CASE("BMS direct branch editing rejects stale active and structural targets",

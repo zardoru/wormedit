@@ -44,3 +44,19 @@ Stage 0 should lock these observations down with direct library tests before dec
 - Preserve malformed or unsupported structures as raw nodes with diagnostics whenever safe recovery is possible.
 - Bound nesting, node counts, and outcome enumeration without limiting ordinary file size or silently flattening branches.
 - Test every supported target profile with positive and negative fixtures and compare both the control tree and each selected projection after export/reload.
+
+## Current Wormedit editing slice
+
+The retained control tree supports exact-provenance replacement of one raw
+statement in an inactive branch. A separate command can insert a valid raw
+statement immediately after a source-verified statement in an exact inactive
+leaf. Replacement requires the statement ID, source order, byte span, retained
+text, and command token to match; insertion additionally requires exact leaf
+and anchor identities plus their source order, spans, and retained text. Active,
+stale, ambiguous, structural, malformed, or over-limit requests reject
+atomically. Active branch content must still be edited through materialized
+semantic objects. Inactive insertion is
+currently limited to a one-chart BMS source document; broader native projects
+must wait for an explicit source-identity contract for selecting among charts.
+Branch creation/removal/reordering, common-scope or replicated insertion, and
+moving content between branches remain unimplemented.

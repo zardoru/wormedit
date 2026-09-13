@@ -8,8 +8,15 @@
 
 #include "nuklear_sdl_gl3_sdl3.h"
 
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cstring>
+#include <limits>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
+#include <vector>
 
 #define WORMEDIT_MAX_VERTEX_MEMORY (512 * 1024)
 #define WORMEDIT_MAX_ELEMENT_MEMORY (128 * 1024)
@@ -17,6 +24,30 @@
 static SDL_Window* g_window;
 static struct nk_context* g_context;
 static char g_recovery_save_as_destination[WORM_UI_RECOVERY_DESTINATION_CAPACITY];
+static constexpr size_t metadata_visible_tag_count = 64;
+static uint64_t g_metadata_buffer_revision = std::numeric_limits<uint64_t>::max();
+static uint64_t g_metadata_buffer_chart_id{};
+static bool g_metadata_buffer_has_chart{};
+static bool g_metadata_song_buffers_valid{};
+static bool g_metadata_chart_buffers_valid{};
+static bool g_metadata_tag_buffers_valid{};
+static std::array<char, WORM_UI_METADATA_TITLE_BYTES + 1> g_metadata_title{};
+static std::array<char, WORM_UI_METADATA_TITLE_BYTES + 1> g_metadata_artist{};
+static std::array<char, WORM_UI_METADATA_CHART_TEXT_BYTES + 1> g_metadata_chart_name{};
+static std::array<char, WORM_UI_METADATA_CHART_TEXT_BYTES + 1> g_metadata_chart_author{};
+static std::vector<std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1>> g_metadata_search_tags;
+static std::vector<const char*> g_metadata_search_tag_pointers;
+static std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1> g_metadata_new_search_tag{};
+static size_t g_metadata_selected_format_field = std::numeric_limits<size_t>::max();
+static bool g_metadata_format_target_valid{};
+static bool g_metadata_format_target_chart_scoped{};
+static uint8_t g_metadata_format_target_family{};
+static size_t g_metadata_format_target_index{};
+static size_t g_metadata_format_target_field_count{};
+static bool g_metadata_format_insert_mode{};
+static bool g_metadata_format_buffers_valid{};
+static std::vector<char> g_metadata_format_name;
+static std::vector<char> g_metadata_format_value;
 
 static int recovery_action_offered(const WormUiRecoveryCandidateView* candidate, size_t action) {
     return candidate && (candidate->action_mask & action) != 0;
@@ -35,6 +66,509 @@ static void set_recovery_action(WormUiWorkspaceAction* action,
     if (kind == WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS) {
         memcpy(action->recovery_save_as_destination, g_recovery_save_as_destination,
                sizeof(action->recovery_save_as_destination));
+    }
+}
+
+static int copy_metadata_text(char* destination, size_t capacity, const char* source,
+                              size_t source_bytes) {
+    if (!destination || capacity == 0 || !source || source_bytes >= capacity ||
+        strlen(source) != source_bytes) {
+        if (destination && capacity != 0) {
+            destination[0] = '\0';
+        }
+        return 0;
+    }
+    memcpy(destination, source, source_bytes);
+    destination[source_bytes] = '\0';
+    return 1;
+}
+
+static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
+    if (!metadata) {
+        return;
+    }
+    g_metadata_buffer_revision = metadata->document_revision;
+    g_metadata_buffer_has_chart = metadata->has_chart;
+    g_metadata_buffer_chart_id = metadata->has_chart ? metadata->chart_id : 0;
+    g_metadata_song_buffers_valid =
+        metadata->song_fields_editable &&
+        copy_metadata_text(g_metadata_title.data(), g_metadata_title.size(), metadata->title,
+                           metadata->title_bytes) &&
+        copy_metadata_text(g_metadata_artist.data(), g_metadata_artist.size(), metadata->artist,
+                           metadata->artist_bytes);
+    g_metadata_chart_buffers_valid =
+        metadata->has_chart && metadata->chart_fields_editable &&
+        copy_metadata_text(g_metadata_chart_name.data(), g_metadata_chart_name.size(),
+                           metadata->chart_name, metadata->chart_name_bytes) &&
+        copy_metadata_text(g_metadata_chart_author.data(), g_metadata_chart_author.size(),
+                           metadata->chart_author, metadata->chart_author_bytes);
+    g_metadata_tag_buffers_valid =
+        metadata->search_tags_editable &&
+        metadata->search_tag_count <= WORM_UI_METADATA_SEARCH_TAG_CAPACITY &&
+        (metadata->search_tag_count == 0 || (metadata->search_tags && metadata->search_tag_bytes));
+    g_metadata_search_tags.clear();
+    if (g_metadata_tag_buffers_valid) {
+        g_metadata_search_tags.reserve(metadata->search_tag_count);
+        for (size_t index = 0; index < metadata->search_tag_count; ++index) {
+            std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1> tag{};
+            if (!copy_metadata_text(tag.data(), tag.size(), metadata->search_tags[index],
+                                    metadata->search_tag_bytes[index])) {
+                g_metadata_tag_buffers_valid = 0;
+                g_metadata_search_tags.clear();
+                break;
+            }
+            g_metadata_search_tags.push_back(tag);
+        }
+    }
+    g_metadata_search_tag_pointers.clear();
+    g_metadata_new_search_tag.fill('\0');
+    g_metadata_selected_format_field = std::numeric_limits<size_t>::max();
+    g_metadata_format_target_valid = 0;
+    g_metadata_format_target_chart_scoped = 0;
+    g_metadata_format_target_family = 0;
+    g_metadata_format_target_index = 0;
+    g_metadata_format_target_field_count = 0;
+    g_metadata_format_insert_mode = 0;
+    g_metadata_format_buffers_valid = 0;
+    g_metadata_format_name.clear();
+    g_metadata_format_value.clear();
+}
+
+static int metadata_buffer_key_changed(const WormUiMetadataView* metadata) {
+    const uint64_t chart_id = metadata && metadata->has_chart ? metadata->chart_id : 0;
+    const int has_chart = metadata && metadata->has_chart;
+    return metadata &&
+           (g_metadata_buffer_revision != metadata->document_revision ||
+            g_metadata_buffer_chart_id != chart_id || g_metadata_buffer_has_chart != has_chart);
+}
+
+static int metadata_song_changed(const WormUiMetadataView* metadata) {
+    if (!metadata || !g_metadata_song_buffers_valid || !g_metadata_tag_buffers_valid ||
+        !metadata->title || !metadata->artist) {
+        return 0;
+    }
+    if (metadata->search_tag_count != g_metadata_search_tags.size()) {
+        return 1;
+    }
+    if (strcmp(g_metadata_title.data(), metadata->title) != 0 ||
+        strcmp(g_metadata_artist.data(), metadata->artist) != 0) {
+        return 1;
+    }
+    for (size_t index = 0; index < g_metadata_search_tags.size(); ++index) {
+        if (!metadata->search_tags ||
+            strcmp(g_metadata_search_tags[index].data(), metadata->search_tags[index]) != 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int metadata_chart_changed(const WormUiMetadataView* metadata) {
+    return metadata && metadata->has_chart && g_metadata_chart_buffers_valid &&
+           metadata->chart_name && metadata->chart_author &&
+           (strcmp(g_metadata_chart_name.data(), metadata->chart_name) != 0 ||
+            strcmp(g_metadata_chart_author.data(), metadata->chart_author) != 0);
+}
+
+static void metadata_input_row(const char* label, char* buffer, size_t capacity, int enabled) {
+    nk_layout_row_begin(g_context, NK_DYNAMIC, 26, 2);
+    nk_layout_row_push(g_context, 0.20f);
+    nk_label(g_context, label, NK_TEXT_LEFT);
+    nk_layout_row_push(g_context, 0.80f);
+    if (!enabled) {
+        nk_widget_disable_begin(g_context);
+    }
+    (void)nk_edit_string_zero_terminated(g_context, NK_EDIT_FIELD, buffer, capacity,
+                                         nk_filter_default);
+    if (!enabled) {
+        nk_widget_disable_end(g_context);
+    }
+    nk_layout_row_end(g_context);
+}
+
+static void set_metadata_song_action(WormUiWorkspaceAction* action,
+                                     const WormUiMetadataView* metadata) {
+    if (!action || !metadata || action->metadata_edit != WORM_UI_METADATA_EDIT_NONE ||
+        !g_metadata_tag_buffers_valid ||
+        g_metadata_search_tags.size() > WORM_UI_METADATA_SEARCH_TAG_CAPACITY) {
+        return;
+    }
+    g_metadata_search_tag_pointers.clear();
+    g_metadata_search_tag_pointers.reserve(g_metadata_search_tags.size());
+    for (const auto& tag : g_metadata_search_tags) {
+        g_metadata_search_tag_pointers.push_back(tag.data());
+    }
+    action->metadata_edit = WORM_UI_METADATA_EDIT_SONG;
+    action->metadata_document_revision = metadata->document_revision;
+    action->metadata_title = g_metadata_title.data();
+    action->metadata_artist = g_metadata_artist.data();
+    action->metadata_search_tags = g_metadata_search_tag_pointers.data();
+    action->metadata_search_tag_count = g_metadata_search_tag_pointers.size();
+}
+
+static void set_metadata_chart_action(WormUiWorkspaceAction* action,
+                                      const WormUiMetadataView* metadata) {
+    if (!action || !metadata || action->metadata_edit != WORM_UI_METADATA_EDIT_NONE ||
+        !metadata->has_chart || !g_metadata_chart_buffers_valid) {
+        return;
+    }
+    action->metadata_edit = WORM_UI_METADATA_EDIT_CHART;
+    action->metadata_document_revision = metadata->document_revision;
+    action->metadata_chart_id = metadata->chart_id;
+    action->metadata_chart_name = g_metadata_chart_name.data();
+    action->metadata_chart_author = g_metadata_chart_author.data();
+    action->metadata_has_chart_rating = metadata->has_chart_rating;
+    action->metadata_chart_rating_numerator = metadata->chart_rating_numerator;
+    action->metadata_chart_rating_denominator = metadata->chart_rating_denominator;
+}
+
+static const char* metadata_format_family_name(uint8_t family) {
+    static const char* names[] = {"Native", "BMS",  "StepMania", "osu!mania",
+                                  "BMSON",  "MIDI", "Quaver"};
+    return family < sizeof(names) / sizeof(names[0]) ? names[family] : "Unknown";
+}
+
+static int initialize_format_buffers(const WormUiMetadataFormatFieldView* field, int insert_mode) {
+    g_metadata_format_name.assign(WORM_UI_METADATA_FORMAT_NAME_BYTES + 1, '\0');
+    g_metadata_format_value.assign(WORM_UI_METADATA_FORMAT_VALUE_BYTES + 1, '\0');
+    g_metadata_format_insert_mode = insert_mode != 0;
+    if (insert_mode) {
+        g_metadata_format_buffers_valid = field && field->first_group_for_family;
+        return g_metadata_format_buffers_valid;
+    }
+    if (!field || !field->first_group_for_family || !field->name || !field->value ||
+        field->group_field_count > WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY) {
+        g_metadata_format_buffers_valid = 0;
+        return 0;
+    }
+    g_metadata_format_buffers_valid =
+        copy_metadata_text(g_metadata_format_name.data(), g_metadata_format_name.size(),
+                           field->name, field->name_bytes) &&
+        copy_metadata_text(g_metadata_format_value.data(), g_metadata_format_value.size(),
+                           field->value, field->value_bytes);
+    return g_metadata_format_buffers_valid;
+}
+
+static void initialize_format_target_buffers(const WormUiMetadataView* metadata,
+                                             const WormUiMetadataFormatTargetView* target) {
+    if (!metadata || !target || target->family > 6 ||
+        (target->chart_scoped && !metadata->has_chart) ||
+        target->field_count > WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY) {
+        g_metadata_format_target_valid = 0;
+        g_metadata_format_buffers_valid = 0;
+        return;
+    }
+    g_metadata_selected_format_field = std::numeric_limits<size_t>::max();
+    g_metadata_format_target_valid = 1;
+    g_metadata_format_target_chart_scoped = target->chart_scoped;
+    g_metadata_format_target_family = target->family;
+    g_metadata_format_target_field_count = target->field_count;
+    g_metadata_format_target_index = target->field_count;
+    g_metadata_format_insert_mode = 1;
+    g_metadata_format_name.assign(WORM_UI_METADATA_FORMAT_NAME_BYTES + 1, '\0');
+    g_metadata_format_value.assign(WORM_UI_METADATA_FORMAT_VALUE_BYTES + 1, '\0');
+    g_metadata_format_buffers_valid = 1;
+}
+
+static void set_metadata_format_action(WormUiWorkspaceAction* action,
+                                       const WormUiMetadataView* metadata,
+                                       WormUiMetadataEditKind kind) {
+    const int needs_text = kind != WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD;
+    if (!action || !metadata || action->metadata_edit != WORM_UI_METADATA_EDIT_NONE ||
+        !g_metadata_format_target_valid || (needs_text && !g_metadata_format_buffers_valid) ||
+        g_metadata_format_target_family > 6 ||
+        (g_metadata_format_target_chart_scoped && !metadata->has_chart)) {
+        return;
+    }
+    action->metadata_edit = kind;
+    action->metadata_document_revision = metadata->document_revision;
+    action->metadata_chart_id = g_metadata_format_target_chart_scoped ? metadata->chart_id : 0;
+    action->metadata_format_chart_scoped = g_metadata_format_target_chart_scoped;
+    action->metadata_format_family = g_metadata_format_target_family;
+    action->metadata_format_index = g_metadata_format_target_index;
+    action->metadata_format_name = needs_text ? g_metadata_format_name.data() : nullptr;
+    action->metadata_format_value = needs_text ? g_metadata_format_value.data() : nullptr;
+}
+
+static void render_metadata_editor(const WormUiMetadataView* metadata,
+                                   WormUiWorkspaceAction* action) {
+    if (!metadata || !metadata->visible) {
+        return;
+    }
+    if (metadata_buffer_key_changed(metadata)) {
+        initialize_metadata_buffers(metadata);
+    }
+
+    nk_layout_row_dynamic(g_context, 24, 1);
+    nk_label(g_context, "Song metadata", NK_TEXT_LEFT);
+    metadata_input_row("Title", g_metadata_title.data(), g_metadata_title.size(),
+                       metadata->song_fields_editable && g_metadata_song_buffers_valid);
+    metadata_input_row("Artist", g_metadata_artist.data(), g_metadata_artist.size(),
+                       metadata->song_fields_editable && g_metadata_song_buffers_valid);
+
+    nk_layout_row_dynamic(g_context, 24, 1);
+    nk_labelf(g_context, NK_TEXT_LEFT, "Ordered search tags (%zu; duplicates are preserved)",
+              metadata->search_tag_count);
+    const int tags_editable = metadata->song_fields_editable && g_metadata_song_buffers_valid &&
+                              g_metadata_tag_buffers_valid;
+    if (!g_metadata_tag_buffers_valid || !metadata->song_fields_editable) {
+        nk_layout_row_dynamic(g_context, 22, 1);
+        nk_label(g_context, "Tags are read-only because the song metadata exceeds an edit cap.",
+                 NK_TEXT_LEFT);
+    } else {
+        const size_t visible_tags =
+            std::min(g_metadata_search_tags.size(), metadata_visible_tag_count);
+        for (size_t index = 0; index < visible_tags; ++index) {
+            char remove_label[32];
+            (void)snprintf(remove_label, sizeof(remove_label), "Remove %zu", index + 1);
+            nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 3);
+            nk_layout_row_push(g_context, 0.10f);
+            nk_labelf(g_context, NK_TEXT_LEFT, "%zu", index + 1);
+            nk_layout_row_push(g_context, 0.75f);
+            if (!tags_editable) {
+                nk_widget_disable_begin(g_context);
+            }
+            (void)nk_edit_string_zero_terminated(
+                g_context, NK_EDIT_FIELD, g_metadata_search_tags[index].data(),
+                g_metadata_search_tags[index].size(), nk_filter_default);
+            if (!tags_editable) {
+                nk_widget_disable_end(g_context);
+            }
+            nk_layout_row_push(g_context, 0.15f);
+            if (!tags_editable) {
+                nk_widget_disable_begin(g_context);
+            }
+            if (nk_button_label(g_context, remove_label)) {
+                g_metadata_search_tags.erase(g_metadata_search_tags.begin() +
+                                             static_cast<std::ptrdiff_t>(index));
+                if (!tags_editable) {
+                    nk_widget_disable_end(g_context);
+                }
+                nk_layout_row_end(g_context);
+                break;
+            }
+            if (!tags_editable) {
+                nk_widget_disable_end(g_context);
+            }
+            nk_layout_row_end(g_context);
+        }
+        if (g_metadata_search_tags.size() > metadata_visible_tag_count) {
+            nk_layout_row_dynamic(g_context, 20, 1);
+            nk_labelf(g_context, NK_TEXT_LEFT, "Showing first %zu tags; the rest stay unchanged.",
+                      metadata_visible_tag_count);
+        }
+        nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 2);
+        nk_layout_row_push(g_context, 0.82f);
+        if (!tags_editable) {
+            nk_widget_disable_begin(g_context);
+        }
+        (void)nk_edit_string_zero_terminated(g_context, NK_EDIT_FIELD,
+                                             g_metadata_new_search_tag.data(),
+                                             g_metadata_new_search_tag.size(), nk_filter_default);
+        if (!tags_editable) {
+            nk_widget_disable_end(g_context);
+        }
+        nk_layout_row_push(g_context, 0.18f);
+        const int can_add_tag =
+            tags_editable && g_metadata_search_tags.size() < WORM_UI_METADATA_SEARCH_TAG_CAPACITY &&
+            g_metadata_new_search_tag[0] != '\0';
+        if (!can_add_tag) {
+            nk_widget_disable_begin(g_context);
+        }
+        const int add_tag = nk_button_label(g_context, "Add tag");
+        if (!can_add_tag) {
+            nk_widget_disable_end(g_context);
+        }
+        if (add_tag && can_add_tag) {
+            g_metadata_search_tags.push_back(g_metadata_new_search_tag);
+            g_metadata_new_search_tag.fill('\0');
+        }
+        nk_layout_row_end(g_context);
+    }
+
+    const int song_changed = metadata_song_changed(metadata);
+    nk_layout_row_dynamic(g_context, 26, 1);
+    if (!song_changed || !metadata->song_fields_editable) {
+        nk_widget_disable_begin(g_context);
+    }
+    if (nk_button_label(g_context, "Apply song metadata") && song_changed &&
+        metadata->song_fields_editable) {
+        set_metadata_song_action(action, metadata);
+    }
+    if (!song_changed || !metadata->song_fields_editable) {
+        nk_widget_disable_end(g_context);
+    }
+
+    nk_layout_row_dynamic(g_context, 24, 1);
+    nk_label(g_context,
+             metadata->has_chart ? "Selected difficulty metadata"
+                                 : "Select a difficulty to edit chart metadata",
+             NK_TEXT_LEFT);
+    if (metadata->has_chart) {
+        metadata_input_row("Difficulty", g_metadata_chart_name.data(), g_metadata_chart_name.size(),
+                           metadata->chart_fields_editable && g_metadata_chart_buffers_valid);
+        metadata_input_row("Mapper", g_metadata_chart_author.data(), g_metadata_chart_author.size(),
+                           metadata->chart_fields_editable && g_metadata_chart_buffers_valid);
+        const int chart_changed = metadata_chart_changed(metadata);
+        nk_layout_row_dynamic(g_context, 26, 1);
+        if (!chart_changed || !metadata->chart_fields_editable) {
+            nk_widget_disable_begin(g_context);
+        }
+        if (nk_button_label(g_context, "Apply difficulty metadata") && chart_changed &&
+            metadata->chart_fields_editable) {
+            set_metadata_chart_action(action, metadata);
+        }
+        if (!chart_changed || !metadata->chart_fields_editable) {
+            nk_widget_disable_end(g_context);
+        }
+    }
+
+    nk_layout_row_dynamic(g_context, 24, 1);
+    nk_labelf(g_context, NK_TEXT_LEFT, "Format-specific fields (%zu; duplicates stay ordered)",
+              metadata->format_field_total_count);
+    if (metadata->format_field_count != 0 && !metadata->format_fields) {
+        nk_layout_row_dynamic(g_context, 20, 1);
+        nk_label(g_context, "Format field list is unavailable.", NK_TEXT_LEFT);
+        return;
+    }
+    for (size_t index = 0; index < metadata->format_field_count; ++index) {
+        const WormUiMetadataFormatFieldView* field = &metadata->format_fields[index];
+        char edit_label[32];
+        (void)snprintf(edit_label, sizeof(edit_label), "Edit %zu", index + 1);
+        nk_layout_row_begin(g_context, NK_DYNAMIC, 26, 2);
+        nk_layout_row_push(g_context, 0.78f);
+        nk_labelf(g_context, NK_TEXT_LEFT, "%s · %s · %s #%zu%s",
+                  field->chart_scoped ? "Chart" : "Song",
+                  metadata_format_family_name(field->family), field->name ? field->name : "(empty)",
+                  field->field_index + 1, field->has_source_order ? " (source)" : "");
+        nk_layout_row_push(g_context, 0.22f);
+        const int field_editable = field->first_group_for_family && field->family <= 6 &&
+                                   (!field->chart_scoped || metadata->has_chart);
+        if (!field_editable) {
+            nk_widget_disable_begin(g_context);
+        }
+        if (nk_button_label(g_context, edit_label) && field_editable) {
+            g_metadata_selected_format_field = index;
+            g_metadata_format_target_valid = 1;
+            g_metadata_format_target_chart_scoped = field->chart_scoped;
+            g_metadata_format_target_family = field->family;
+            g_metadata_format_target_index = field->field_index;
+            g_metadata_format_target_field_count = field->group_field_count;
+            initialize_format_buffers(field, 0);
+        }
+        if (!field_editable) {
+            nk_widget_disable_end(g_context);
+        }
+        nk_layout_row_end(g_context);
+    }
+    if (metadata->format_fields_truncated) {
+        nk_layout_row_dynamic(g_context, 20, 1);
+        nk_label(g_context, "Additional format fields are hidden by the frontend row cap.",
+                 NK_TEXT_LEFT);
+    }
+    nk_layout_row_dynamic(g_context, 24, 1);
+    nk_label(g_context, "Add a field to a format group", NK_TEXT_LEFT);
+    if (metadata->format_target_count != 0 && !metadata->format_targets) {
+        nk_layout_row_dynamic(g_context, 20, 1);
+        nk_label(g_context, "Format group targets are unavailable.", NK_TEXT_LEFT);
+    } else {
+        for (size_t index = 0; index < metadata->format_target_count; ++index) {
+            const WormUiMetadataFormatTargetView* target = &metadata->format_targets[index];
+            char add_label[32];
+            (void)snprintf(add_label, sizeof(add_label), "Add field %zu", index + 1);
+            nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 2);
+            nk_layout_row_push(g_context, 0.76f);
+            nk_labelf(g_context, NK_TEXT_LEFT, "%s · %s · %s (%zu fields)",
+                      target->chart_scoped ? "Chart" : "Song",
+                      metadata_format_family_name(target->family),
+                      target->group_exists ? "existing group" : "new group", target->field_count);
+            nk_layout_row_push(g_context, 0.24f);
+            const int target_editable =
+                target->family <= 6 && (!target->chart_scoped || metadata->has_chart) &&
+                target->field_count < WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY;
+            if (!target_editable) {
+                nk_widget_disable_begin(g_context);
+            }
+            if (nk_button_label(g_context, add_label) && target_editable) {
+                initialize_format_target_buffers(metadata, target);
+            }
+            if (!target_editable) {
+                nk_widget_disable_end(g_context);
+            }
+            nk_layout_row_end(g_context);
+        }
+    }
+    if (g_metadata_format_target_valid) {
+        const WormUiMetadataFormatFieldView* field =
+            g_metadata_selected_format_field < metadata->format_field_count
+                ? &metadata->format_fields[g_metadata_selected_format_field]
+                : nullptr;
+        nk_layout_row_dynamic(g_context, 24, 1);
+        if (field && !g_metadata_format_insert_mode) {
+            nk_labelf(g_context, NK_TEXT_LEFT, "%s · %s field #%zu",
+                      field->chart_scoped ? "Chart" : "Song",
+                      metadata_format_family_name(field->family), field->field_index + 1);
+        } else {
+            nk_labelf(g_context, NK_TEXT_LEFT, "New %s · %s field",
+                      g_metadata_format_target_chart_scoped ? "Chart" : "Song",
+                      metadata_format_family_name(g_metadata_format_target_family));
+        }
+        if (!g_metadata_format_buffers_valid) {
+            nk_layout_row_dynamic(g_context, 20, 1);
+            nk_label(g_context,
+                     "Field is read-only because it exceeds the text cap or group scope.",
+                     NK_TEXT_LEFT);
+            if (field && field->first_group_for_family) {
+                nk_layout_row_dynamic(g_context, 26, 1);
+                if (nk_button_label(g_context, "Delete field to repair metadata") &&
+                    action->metadata_edit == WORM_UI_METADATA_EDIT_NONE) {
+                    set_metadata_format_action(action, metadata,
+                                               WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD);
+                }
+            }
+        } else {
+            metadata_input_row("Name", g_metadata_format_name.data(), g_metadata_format_name.size(),
+                               1);
+            metadata_input_row("Value", g_metadata_format_value.data(),
+                               g_metadata_format_value.size(), 1);
+            if (g_metadata_format_insert_mode) {
+                nk_layout_row_dynamic(g_context, 26, 1);
+                const int insert_enabled = g_metadata_format_target_field_count <
+                                           WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY;
+                if (!insert_enabled) {
+                    nk_widget_disable_begin(g_context);
+                }
+                if (nk_button_label(g_context, "Insert field at end of this format group") &&
+                    insert_enabled && action->metadata_edit == WORM_UI_METADATA_EDIT_NONE) {
+                    set_metadata_format_action(action, metadata,
+                                               WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD);
+                }
+                if (!insert_enabled) {
+                    nk_widget_disable_end(g_context);
+                }
+            } else {
+                nk_layout_row_begin(g_context, NK_DYNAMIC, 26, 3);
+                nk_layout_row_push(g_context, 0.34f);
+                if (nk_button_label(g_context, "Replace field") && field &&
+                    action->metadata_edit == WORM_UI_METADATA_EDIT_NONE) {
+                    set_metadata_format_action(action, metadata,
+                                               WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD);
+                }
+                nk_layout_row_push(g_context, 0.33f);
+                if (nk_button_label(g_context, "Delete field") && field &&
+                    action->metadata_edit == WORM_UI_METADATA_EDIT_NONE) {
+                    set_metadata_format_action(action, metadata,
+                                               WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD);
+                }
+                nk_layout_row_push(g_context, 0.33f);
+                if (nk_button_label(g_context, "Prepare new field") && field &&
+                    action->metadata_edit == WORM_UI_METADATA_EDIT_NONE) {
+                    g_metadata_format_target_index = field->group_field_count;
+                    initialize_format_buffers(field, 1);
+                }
+                nk_layout_row_end(g_context);
+            }
+        }
     }
 }
 
@@ -95,13 +629,17 @@ void worm_ui_frontend_end_input(void) {
 }
 
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
-    WormUiWorkspaceAction action = {
-        WORM_UI_WORKSPACE_ACTION_NONE, WORM_UI_WORKSPACE_TAB_SETUP, 0, 0, 0, {0}};
+    WormUiWorkspaceAction action{};
+    action.kind = WORM_UI_WORKSPACE_ACTION_NONE;
+    action.tab = WORM_UI_WORKSPACE_TAB_SETUP;
     if (!g_context || !g_window || !view || !view->project_title || !view->artist ||
         !view->selected_difficulty || !view->status_text || !view->git_hash || !view->tab_heading ||
         view->summary_line_count > WORM_UI_WORKSPACE_SUMMARY_CAPACITY ||
         view->recovery_candidate_count > WORM_UI_RECOVERY_ROW_CAPACITY ||
         view->recovery_diagnostic_count > WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY ||
+        (view->metadata.visible &&
+         (view->metadata.format_field_count > WORM_UI_METADATA_FORMAT_FIELD_CAPACITY ||
+          view->metadata.format_target_count > WORM_UI_METADATA_FORMAT_TARGET_CAPACITY)) ||
         view->active_tab < WORM_UI_WORKSPACE_TAB_SETUP ||
         view->active_tab > WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE) {
         return action;
@@ -255,13 +793,17 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         }
         nk_layout_row_dynamic(g_context, content_height, 1);
         if (nk_group_begin(g_context, "workspace-content", NK_WINDOW_BORDER)) {
-            nk_layout_row_dynamic(g_context, 24, 1);
-            if (view->summary_line_count == 0) {
-                nk_label(g_context, "No items in this view.", NK_TEXT_LEFT);
-            }
-            for (size_t line = 0; line < view->summary_line_count; ++line) {
-                if (view->summary_lines[line]) {
-                    nk_label(g_context, view->summary_lines[line], NK_TEXT_LEFT);
+            if (view->metadata.visible) {
+                render_metadata_editor(&view->metadata, &action);
+            } else {
+                nk_layout_row_dynamic(g_context, 24, 1);
+                if (view->summary_line_count == 0) {
+                    nk_label(g_context, "No items in this view.", NK_TEXT_LEFT);
+                }
+                for (size_t line = 0; line < view->summary_line_count; ++line) {
+                    if (view->summary_lines[line]) {
+                        nk_label(g_context, view->summary_lines[line], NK_TEXT_LEFT);
+                    }
                 }
             }
             nk_group_end(g_context);

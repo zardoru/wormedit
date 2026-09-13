@@ -1,10 +1,12 @@
 # Autosave and crash-recovery design
 
 Status: reviewed planning contract; atomic primary/recovery publication, the
-headless five-minute coordinator, the bounded startup scanner, headless
-recovery-action/quarantine execution, and the generation-checked recovery
-banner controller are implemented. Frontend banner composition, command
-journaling, and crash-marker backends remain planned.
+headless five-minute autosave coordinator, bounded startup scanning,
+recovery-action/quarantine execution, the generation-checked recovery banner,
+and SDL-based per-user recovery-directory discovery are implemented. The
+application does not yet schedule periodic autosaves, so it currently writes
+no automatic five-minute backups. Command journaling and crash-marker backends
+remain planned.
 
 ## Recovery artifacts
 
@@ -23,9 +25,14 @@ Each backup envelope contains:
 - a complete native project payload;
 - optional validated command-journal position.
 
-## Five-minute autosave
+## Five-minute autosave contract
 
-While a document is dirty, the autosave coordinator snapshots an immutable document revision every five minutes. The cadence uses a monotonic clock and continues during ordinary idle time; a long-running export or waveform job does not reset it. Autosave work runs outside the UI/audio threads, but completion is committed only if its revision and project identity still match the request.
+The headless coordinator can snapshot an immutable dirty document revision when
+the application calls it, using a monotonic clock and revision/project identity
+checks. The five-minute cadence, background execution, and publication rules
+below are the intended application behavior, but no application loop currently
+calls the coordinator periodically. A long-running export or waveform job
+should not reset the cadence once that loop is added.
 
 Write `<name>.bak.tmp` in the same directory, serialize completely, flush it, read/validate its envelope and payload, flush the containing directory where supported, and atomically replace `<name>.bak`. If serialization, space, permission, flush, checksum, or validation fails, retain the previous known-good `.bak` and show a non-modal diagnostic. Stale temporary files are recognized and validated separately at startup; they never outrank a valid completed backup merely by timestamp.
 
@@ -35,7 +42,7 @@ An explicit successful project save records its revision and is flushed/validate
 
 Opening a project and application startup both search for a matching `.bak`, untitled recovery entries, a crash marker, and any command journal. Validate each candidate independently before comparing it with the primary file. Use project ID and revision first and timestamps only as supporting evidence, since clocks can move.
 
-The implemented scanner covers the primary, adjacent `.bak`, caller-supplied recovery entries, and interrupted same-directory primary/recovery temporary files. It validates raw native projects separately from checksummed recovery envelopes, applies bounded candidate/file/total-byte/diagnostic limits, ranks only within one project identity, and attaches a size plus SHA-256 scan ticket to each fully-read artifact. The headless action executor rereads and validates that exact content before returning a read-only/session document or mutating anything. Recover-into-session requires the caller's expected current ID/revision (or an explicitly empty session) and confirms it still matches the scanned primary. Save-as is create-only and cannot target the primary. Discard and recommended quarantine move only the selected artifact to a unique same-directory quarantine name, verify the moved content, and attempt restoration if verification fails; the scanner itself never mutates files. A bounded backend-neutral controller converts scans into clipped scalar banner rows and typed action tokens. Every token is bound to a scan generation and displayed row/candidate identity; replacing a scan or successfully moving an artifact invalidates prior tokens before another action can reach storage.
+The implemented scanner covers the primary, adjacent `.bak`, caller-supplied recovery entries and directories, and interrupted same-directory primary/recovery temporary files. At application startup SDL resolves and creates Wormedit's per-user preference directory, appends its `recovery` subdirectory to the bounded scan, and the headless scanner examines its regular files. The scanner validates raw native projects separately from checksummed recovery envelopes, applies bounded candidate/file/total-byte/diagnostic limits, ranks only within one project identity, and attaches a size plus SHA-256 scan ticket to each fully-read artifact. The headless action executor rereads and validates that exact content before returning a read-only/session document or mutating anything. Recover-into-session requires the caller's expected current ID/revision (or an explicitly empty session) and confirms it still matches the scanned primary. Save-as is create-only and cannot target the primary. Discard and recommended quarantine move only the selected artifact to a unique same-directory quarantine name, verify the moved content, and attempt restoration if verification fails; the scanner itself never mutates files. A bounded backend-neutral controller converts scans into clipped scalar banner rows and typed action tokens. Every token is bound to a scan generation and displayed row/candidate identity; replacing a scan or successfully moving an artifact invalidates prior tokens before another action can reach storage.
 
 If a valid backup is newer than the explicit save, show a recovery banner before editing with actions to inspect it read-only, recover it into the session, save it as a new project, or discard it. Never overwrite the primary project merely because a backup exists. Show the saved and backup revisions/times plus a document-level change summary when both can be decoded. If the primary is missing or corrupt and the backup is valid, recommend recovery while retaining the corrupt original for inspection.
 

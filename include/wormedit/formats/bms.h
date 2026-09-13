@@ -74,6 +74,7 @@ enum class bms_branch_statement_edit_diagnostic_code_t {
     provenance_mismatch,
     invalid_replacement,
     resource_limit,
+    unsupported_song_shape,
 };
 
 struct bms_branch_statement_edit_diagnostic_t {
@@ -111,6 +112,31 @@ struct bms_branch_statement_edit_result_t {
 // semantic objects so the chart projection cannot become stale.
 [[nodiscard]] auto edit_bms_inactive_branch_statement(const song_document_t& song,
                                                       bms_branch_statement_edit_t edit)
+    -> bms_branch_statement_edit_result_t;
+
+struct bms_branch_statement_insert_t {
+    std::optional<chart_id_t> chart;
+    // Insert into this exact leaf branch, immediately after the raw statement
+    // identified below. Both identities are checked against retained source.
+    branch_id_t leaf_branch;
+    std::size_t expected_leaf_source_order{};
+    bms_source_span_t expected_leaf_source_span;
+    std::string expected_leaf_original_text;
+    branch_id_t after_statement;
+    std::size_t expected_statement_source_order{};
+    bms_source_span_t expected_statement_source_span;
+    std::string expected_statement_original_text;
+    std::string statement_text;
+    std::size_t max_statement_bytes{1024U * 1024U};
+};
+
+// Atomically inserts one source-backed, single-line BMS statement after a raw
+// statement in an inactive IF/ELSEIF/ELSE/CASE/DEFAULT leaf. Until provenance
+// carries a source-file identity, insertion is limited to a one-chart song so
+// shifting source orders cannot affect an unrelated imported BMS chart. The
+// control tree remains intact and preserve-tree emission retains every branch.
+[[nodiscard]] auto insert_bms_inactive_branch_statement(const song_document_t& song,
+                                                        bms_branch_statement_insert_t insertion)
     -> bms_branch_statement_edit_result_t;
 
 // ASCII and UTF-8 are always available. Legacy encodings depend on the conversion

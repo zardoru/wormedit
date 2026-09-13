@@ -172,8 +172,10 @@ struct workspace_metadata_view_t {
     struct format_field_t {
         bool chart_scoped{};
         format_family_t family{format_family_t::native_project};
+        bool first_group_for_family{};
         std::size_t group_index{};
         std::size_t field_index{};
+        std::size_t group_field_count{};
         std::string name;
         std::string value;
         std::optional<std::size_t> source_order;

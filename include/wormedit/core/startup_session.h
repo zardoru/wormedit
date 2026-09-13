@@ -11,6 +11,7 @@ namespace wormedit {
 struct native_project_startup_request_t {
     std::filesystem::path primary_path;
     std::vector<std::filesystem::path> recovery_entries;
+    std::vector<std::filesystem::path> recovery_directories;
     native_project_recovery_scan_options_t scan_options{};
 };
 

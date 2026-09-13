@@ -15,6 +15,15 @@ enum class stepmania_profile_t {
     ssc,
 };
 
+// Timing compatibility only; these profiles describe accepted/emitted warp
+// syntax, not a specific StepMania release or complete implementation.
+enum class stepmania_implementation_profile_t {
+    unspecified,
+    native_warps,
+    legacy_negative_bpm,
+    legacy_negative_stop,
+};
+
 enum class stepmania_parse_diagnostic_code_t {
     invalid_encoding,
     malformed_tag,
@@ -22,6 +31,7 @@ enum class stepmania_parse_diagnostic_code_t {
     unsupported_step_type,
     invalid_timing,
     legacy_warp_encoding,
+    implementation_profile_mismatch,
     invalid_notes,
     invalid_hold,
     position_not_representable,
@@ -42,6 +52,8 @@ struct stepmania_parse_diagnostic_t {
 
 struct stepmania_parse_options_t {
     stepmania_profile_t profile{stepmania_profile_t::sm};
+    stepmania_implementation_profile_t source_implementation_profile{
+        stepmania_implementation_profile_t::unspecified};
     std::size_t max_source_bytes{16U * 1024U * 1024U};
     std::size_t max_fields{100'000};
     std::size_t max_charts{4096};
@@ -85,6 +97,8 @@ struct stepmania_write_diagnostic_t {
 
 struct stepmania_write_options_t {
     stepmania_profile_t profile{stepmania_profile_t::sm};
+    stepmania_implementation_profile_t target_implementation_profile{
+        stepmania_implementation_profile_t::unspecified};
     std::optional<chart_id_t> chart;
     warp_encoding_t warp_encoding{warp_encoding_t::native};
     bool preserve_unknown_fields{true};

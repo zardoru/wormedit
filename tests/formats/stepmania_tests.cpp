@@ -26,17 +26,24 @@ auto read_binary(const std::filesystem::path& path) -> std::vector<std::byte> {
     return bytes;
 }
 
-auto fixture(std::string_view name, wormedit::stepmania_profile_t profile)
+auto fixture(std::string_view name, wormedit::stepmania_profile_t profile,
+             wormedit::stepmania_implementation_profile_t implementation =
+                 wormedit::stepmania_implementation_profile_t::unspecified)
     -> wormedit::stepmania_parse_result_t {
     auto options = wormedit::stepmania_parse_options_t{};
     options.profile = profile;
+    options.source_implementation_profile = implementation;
     return wormedit::parse_stepmania_bytes(
         read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "stepmania" / name), options);
 }
 
-auto parse_ssc(std::string_view source) -> wormedit::stepmania_parse_result_t {
+auto parse_ssc(std::string_view source,
+               wormedit::stepmania_implementation_profile_t implementation =
+                   wormedit::stepmania_implementation_profile_t::unspecified)
+    -> wormedit::stepmania_parse_result_t {
     auto options = wormedit::stepmania_parse_options_t{};
     options.profile = wormedit::stepmania_profile_t::ssc;
+    options.source_implementation_profile = implementation;
     return wormedit::parse_stepmania_bytes(std::as_bytes(std::span{source.data(), source.size()}),
                                            options);
 }
@@ -106,7 +113,8 @@ TEST_CASE("StepMania matched timing and chart notes parse transactionally",
 
 TEST_CASE("StepMania legacy negative timing encodings become canonical beat warps",
           "[unit][format][stepmania]") {
-    const auto bpm = fixture("legacy-negative-bpm.sm", wormedit::stepmania_profile_t::sm);
+    const auto bpm = fixture("legacy-negative-bpm.sm", wormedit::stepmania_profile_t::sm,
+                             wormedit::stepmania_implementation_profile_t::legacy_negative_bpm);
     REQUIRE(bpm.song.has_value());
     REQUIRE_FALSE(bpm.has_errors());
     REQUIRE(bpm.song->charts.front().bpms.size() == 2);
@@ -116,7 +124,8 @@ TEST_CASE("StepMania legacy negative timing encodings become canonical beat warp
     CHECK(at(bpm.song->charts.front().warps.front().span.begin, 2, 0));
     CHECK(at(bpm.song->charts.front().warps.front().span.end, 3, 0));
 
-    const auto stop = fixture("legacy-negative-stop.sm", wormedit::stepmania_profile_t::sm);
+    const auto stop = fixture("legacy-negative-stop.sm", wormedit::stepmania_profile_t::sm,
+                              wormedit::stepmania_implementation_profile_t::legacy_negative_stop);
     REQUIRE(stop.song.has_value());
     REQUIRE_FALSE(stop.has_errors());
     REQUIRE(stop.song->charts.front().warps.size() == 1);
@@ -124,6 +133,58 @@ TEST_CASE("StepMania legacy negative timing encodings become canonical beat warp
           wormedit::warp_provenance_t::negative_stop);
     CHECK(at(stop.song->charts.front().warps.front().span.begin, 2, 0));
     CHECK(at(stop.song->charts.front().warps.front().span.end, 3, 0));
+}
+
+TEST_CASE("StepMania source profiles gate legacy warp syntax and summarize diagnostics",
+          "[unit][format][stepmania]") {
+    using implementation_t = wormedit::stepmania_implementation_profile_t;
+    const auto native = fixture("native-warp.ssc", wormedit::stepmania_profile_t::ssc,
+                                implementation_t::native_warps);
+    REQUIRE(native.song.has_value());
+    CHECK(native.song->charts.front().warps.front().source_encoding ==
+          wormedit::warp_provenance_t::native);
+    CHECK(native.diagnostics.empty());
+
+    const auto native_as_legacy = fixture("native-warp.ssc", wormedit::stepmania_profile_t::ssc,
+                                          implementation_t::legacy_negative_bpm);
+    CHECK_FALSE(native_as_legacy.song.has_value());
+    REQUIRE(native_as_legacy.diagnostics.size() == 1);
+    CHECK(native_as_legacy.diagnostics.front().code ==
+          wormedit::stepmania_parse_diagnostic_code_t::implementation_profile_mismatch);
+
+    const auto mismatched = fixture("legacy-negative-bpm.sm", wormedit::stepmania_profile_t::sm,
+                                    implementation_t::native_warps);
+    CHECK_FALSE(mismatched.song.has_value());
+    REQUIRE(mismatched.diagnostics.size() == 1);
+    CHECK(mismatched.diagnostics.front().code ==
+          wormedit::stepmania_parse_diagnostic_code_t::implementation_profile_mismatch);
+    const auto stop_mismatched =
+        fixture("legacy-negative-stop.sm", wormedit::stepmania_profile_t::sm,
+                implementation_t::legacy_negative_bpm);
+    CHECK_FALSE(stop_mismatched.song.has_value());
+    REQUIRE(stop_mismatched.diagnostics.size() == 1);
+    CHECK(stop_mismatched.diagnostics.front().code ==
+          wormedit::stepmania_parse_diagnostic_code_t::implementation_profile_mismatch);
+
+    const auto repeated =
+        fixture("legacy-negative-bpm-multiple.sm", wormedit::stepmania_profile_t::sm,
+                implementation_t::legacy_negative_bpm);
+    REQUIRE(repeated.song.has_value());
+    const auto& chart = repeated.song->charts.front();
+    REQUIRE(chart.warps.size() == 2);
+    CHECK(at(chart.warps[0].span.begin, 2, 0));
+    CHECK(at(chart.warps[0].span.end, 3, 0));
+    CHECK(at(chart.warps[1].span.begin, 4, 0));
+    CHECK(at(chart.warps[1].span.end, 5, 0));
+    REQUIRE(repeated.diagnostics.size() == 1);
+    CHECK(repeated.diagnostics.front().code ==
+          wormedit::stepmania_parse_diagnostic_code_t::legacy_warp_encoding);
+    CHECK(repeated.song->metadata.format_groups.front().ordered_fields.front().first == "TITLE");
+    CHECK(std::ranges::find(repeated.song->metadata.format_groups.front().ordered_fields,
+                            std::pair{std::string{"BPMS"},
+                                      std::string{"0.000=120.000,4.000=-120.000,8.000=120.000,"
+                                                  "12.000=-120.000,16.000=120.000"}}) !=
+          repeated.song->metadata.format_groups.front().ordered_fields.end());
 }
 
 TEST_CASE("Versioned SSC metadata remains editable without losing format-only fields",
@@ -378,4 +439,69 @@ TEST_CASE("Legacy warp writers diagnose and preserve representable conversions",
                       .warp_encoding = wormedit::warp_encoding_t::negative_stop});
     REQUIRE(legacy_stop.text.has_value());
     CHECK(legacy_stop.text->find("#STOPS:4=-2;") != std::string::npos);
+}
+
+TEST_CASE("StepMania target implementation profiles choose exact warp encodings",
+          "[unit][format][stepmania]") {
+    using implementation_t = wormedit::stepmania_implementation_profile_t;
+    const auto input = fixture("native-warp.ssc", wormedit::stepmania_profile_t::ssc,
+                               implementation_t::native_warps);
+    REQUIRE(input.song.has_value());
+
+    const auto native_output = wormedit::write_stepmania(
+        *input.song, {.profile = wormedit::stepmania_profile_t::ssc,
+                      .target_implementation_profile = implementation_t::native_warps});
+    REQUIRE(native_output.text.has_value());
+    CHECK(native_output.text->find("#WARPS:4=4;") != std::string::npos);
+    CHECK(native_output.text->find("#STOPS:") == std::string::npos);
+
+    const auto legacy_bpm = wormedit::write_stepmania(
+        *input.song, {.profile = wormedit::stepmania_profile_t::ssc,
+                      .target_implementation_profile = implementation_t::legacy_negative_bpm});
+    REQUIRE(legacy_bpm.text.has_value());
+    CHECK(legacy_bpm.text->find("#WARPS:") == std::string::npos);
+    CHECK(legacy_bpm.text->find("#BPMS:0=120,4=-120,8=120;") != std::string::npos);
+    const auto bpm_reimported = parse_ssc(*legacy_bpm.text, implementation_t::legacy_negative_bpm);
+    REQUIRE(bpm_reimported.song.has_value());
+    const auto& bpm_warp = bpm_reimported.song->charts.front().warps.front();
+    CHECK(bpm_warp.source_encoding == wormedit::warp_provenance_t::negative_bpm);
+    CHECK(at(bpm_warp.span.begin, 2, 0));
+    CHECK(at(bpm_warp.span.end, 3, 0));
+
+    const auto legacy_stop = wormedit::write_stepmania(
+        *input.song, {.profile = wormedit::stepmania_profile_t::ssc,
+                      .target_implementation_profile = implementation_t::legacy_negative_stop});
+    REQUIRE(legacy_stop.text.has_value());
+    CHECK(legacy_stop.text->find("#WARPS:") == std::string::npos);
+    CHECK(legacy_stop.text->find("#STOPS:4=-2;") != std::string::npos);
+    const auto stop_reimported =
+        parse_ssc(*legacy_stop.text, implementation_t::legacy_negative_stop);
+    REQUIRE(stop_reimported.song.has_value());
+    const auto& stop_warp = stop_reimported.song->charts.front().warps.front();
+    CHECK(stop_warp.source_encoding == wormedit::warp_provenance_t::negative_stop);
+    CHECK(at(stop_warp.span.begin, 2, 0));
+    CHECK(at(stop_warp.span.end, 3, 0));
+
+    const auto repeated =
+        fixture("legacy-negative-bpm-multiple.sm", wormedit::stepmania_profile_t::sm,
+                implementation_t::legacy_negative_bpm);
+    REQUIRE(repeated.song.has_value());
+    const auto repeated_output = wormedit::write_stepmania(
+        *repeated.song, {.profile = wormedit::stepmania_profile_t::ssc,
+                         .target_implementation_profile = implementation_t::legacy_negative_stop});
+    REQUIRE(repeated_output.text.has_value());
+    CHECK(repeated_output.text->find("#STOPS:4=-2,12=-2;") != std::string::npos);
+    CHECK(std::ranges::count_if(repeated_output.diagnostics, [](const auto& diagnostic) {
+              return diagnostic.code ==
+                         wormedit::stepmania_write_diagnostic_code_t::legacy_warp_conversion &&
+                     diagnostic.severity == wormedit::diagnostic_severity_t::warning;
+          }) == 1);
+    const auto repeated_reimported =
+        parse_ssc(*repeated_output.text, implementation_t::legacy_negative_stop);
+    REQUIRE(repeated_reimported.song.has_value());
+    REQUIRE(repeated_reimported.song->charts.front().warps.size() == 2);
+    CHECK(at(repeated_reimported.song->charts.front().warps[0].span.begin, 2, 0));
+    CHECK(at(repeated_reimported.song->charts.front().warps[0].span.end, 3, 0));
+    CHECK(at(repeated_reimported.song->charts.front().warps[1].span.begin, 4, 0));
+    CHECK(at(repeated_reimported.song->charts.front().warps[1].span.end, 5, 0));
 }

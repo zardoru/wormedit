@@ -1243,6 +1243,8 @@ auto scan_native_project_recovery_candidates(const native_project_recovery_scan_
                        native_project_recovery_candidate_kind_t::adjacent_backup);
     }
     bool inputs_within_limit = true;
+    std::vector<std::filesystem::path> completed_recovery_entries;
+    completed_recovery_entries.reserve(std::min(maximum_candidates, std::size_t{16}));
     const auto maximum_caller_entries =
         std::min(request.caller_supplied_entries.size(), maximum_candidates);
     if (request.caller_supplied_entries.size() > maximum_caller_entries) {
@@ -1255,6 +1257,97 @@ auto scan_native_project_recovery_candidates(const native_project_recovery_scan_
         const auto& path = request.caller_supplied_entries[index];
         if (!add_spec(path, native_project_recovery_candidate_kind_t::caller_supplied_entry)) {
             inputs_within_limit = false;
+            break;
+        }
+        completed_recovery_entries.push_back(path);
+    }
+
+    struct discovered_entry_t {
+        std::filesystem::path path;
+        native_project_recovery_candidate_kind_t kind{
+            native_project_recovery_candidate_kind_t::caller_supplied_entry};
+    };
+    const auto maximum_directory_entries =
+        std::min(std::max<std::size_t>(maximum_candidates * 16, 64),
+                 absolute_maximum_scan_directory_entries);
+    const auto maximum_caller_directories =
+        std::min(request.caller_supplied_directories.size(), maximum_candidates);
+    if (request.caller_supplied_directories.size() > maximum_caller_directories) {
+        inputs_within_limit = false;
+        add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
+                            native_project_storage_diagnostic_code_t::resource_limit,
+                            "recovery scan stopped at its caller-directory limit");
+    }
+    for (std::size_t directory_index = 0; directory_index < maximum_caller_directories;
+         ++directory_index) {
+        const auto& directory = request.caller_supplied_directories[directory_index];
+        if (directory.empty()) {
+            continue;
+        }
+        std::error_code error;
+        std::filesystem::directory_iterator iterator{directory, error};
+        if (error) {
+            add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
+                                native_project_storage_diagnostic_code_t::read_failure,
+                                "could not inspect caller recovery directory: " + error.message(),
+                                directory);
+            continue;
+        }
+        std::vector<discovered_entry_t> discovered;
+        discovered.reserve(std::min(maximum_candidates, std::size_t{16}));
+        std::size_t directory_entries_examined{};
+        bool directory_within_limit = true;
+        for (const std::filesystem::directory_iterator end; iterator != end;
+             iterator.increment(error)) {
+            if (error) {
+                add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
+                                    native_project_storage_diagnostic_code_t::read_failure,
+                                    "could not continue caller recovery directory scan: " +
+                                        error.message(),
+                                    directory);
+                break;
+            }
+            if (++directory_entries_examined > maximum_directory_entries) {
+                inputs_within_limit = false;
+                directory_within_limit = false;
+                discovered.clear();
+                add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
+                                    native_project_storage_diagnostic_code_t::resource_limit,
+                                    "caller recovery directory exceeds its entry limit; no partial "
+                                    "candidate set was retained",
+                                    directory);
+                break;
+            }
+            std::error_code type_error;
+            const auto status = iterator->symlink_status(type_error);
+            if (type_error || status.type() != std::filesystem::file_type::regular) {
+                continue;
+            }
+            const auto filename = path_to_utf8(iterator->path().filename());
+            if (filename.find(".wormedit-quarantine-") != std::string::npos) {
+                continue;
+            }
+            const auto kind =
+                filename.find(".wormedit-tmp-") != std::string::npos
+                    ? native_project_recovery_candidate_kind_t::stale_recovery_temporary
+                    : native_project_recovery_candidate_kind_t::caller_supplied_entry;
+            discovered.push_back({.path = iterator->path(), .kind = kind});
+        }
+        if (directory_within_limit) {
+            std::ranges::sort(discovered, {}, [](const auto& entry) {
+                return path_to_utf8(entry.path.lexically_normal());
+            });
+            for (const auto& entry : discovered) {
+                if (!add_spec(entry.path, entry.kind)) {
+                    inputs_within_limit = false;
+                    break;
+                }
+                if (entry.kind == native_project_recovery_candidate_kind_t::caller_supplied_entry) {
+                    completed_recovery_entries.push_back(entry.path);
+                }
+            }
+        }
+        if (!inputs_within_limit || specs.size() >= maximum_candidates) {
             break;
         }
     }
@@ -1276,9 +1369,6 @@ auto scan_native_project_recovery_candidates(const native_project_recovery_scan_
             return;
         }
         const auto prefix = temporary_prefix(destination);
-        const auto maximum_directory_entries =
-            std::min(std::max<std::size_t>(maximum_candidates * 16, 64),
-                     absolute_maximum_scan_directory_entries);
         std::size_t directory_entries_examined{};
         for (const std::filesystem::directory_iterator end; iterator != end;
              iterator.increment(error)) {
@@ -1326,8 +1416,7 @@ auto scan_native_project_recovery_candidates(const native_project_recovery_scan_
                     native_project_recovery_candidate_kind_t::stale_recovery_temporary);
             }
         }
-        for (std::size_t index = 0; index < maximum_caller_entries; ++index) {
-            const auto& path = request.caller_supplied_entries[index];
+        for (const auto& path : completed_recovery_entries) {
             if (specs.size() >= maximum_candidates) {
                 break;
             }
@@ -1978,24 +2067,28 @@ auto apply_native_project_recovery_action(const native_project_recovery_scan_res
 
     if (action == native_project_recovery_action_t::recover_into_session) {
         const auto* primary = find_primary();
-        if (primary == nullptr) {
+        if (primary == nullptr && options.expected_session.version.has_value()) {
             add_action_error(result,
                              native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
-                             "scan has no primary baseline for session recovery", candidate.path);
+                             "a nonempty session cannot recover from a scan with no primary "
+                             "baseline",
+                             candidate.path);
             return result;
         }
-        if (!verify_primary_baseline(*primary)) {
+        if (primary != nullptr && !verify_primary_baseline(*primary)) {
             return result;
         }
 
         const auto primary_version =
-            primary->status == native_project_recovery_candidate_status_t::valid
+            primary != nullptr &&
+                    primary->status == native_project_recovery_candidate_status_t::valid
                 ? primary->version
                 : std::optional<native_project_document_version_t>{};
         if (options.expected_session.version != primary_version) {
-            add_action_error(
-                result, native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
-                "current session no longer matches the scanned primary revision", primary->path);
+            add_action_error(result,
+                             native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
+                             "current session no longer matches the scanned primary revision",
+                             primary != nullptr ? primary->path : candidate.path);
             return result;
         }
         if (options.expected_session.version.has_value() &&

@@ -75,8 +75,9 @@ struct bms_write_result_t {
 // metadata/resource edits, measure-length edits, direct/extended BPM edits, channel
 // events, and uniquely attributable pauses replace only their retained source
 // statements. Other branch content remains source-backed. The paired BMS API also
-// supports exact-provenance replacement of inactive raw branch statements; direct
-// control-structure editing remains outside this bounded writer contract.
+// supports exact-provenance replacement of inactive raw branch statements and
+// insertion after a source-verified statement in an inactive leaf; direct control-
+// structure editing remains outside this bounded writer contract.
 [[nodiscard]] auto write_bms(const song_document_t& song, bms_write_options_t options = {})
     -> bms_write_result_t;
 

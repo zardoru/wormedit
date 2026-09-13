@@ -453,12 +453,26 @@ TEST_CASE("osu!mania supports every layout from 1K through 18K",
         const auto& chart = result.song->charts.front();
         REQUIRE(chart.lane_layouts.size() == 1);
         REQUIRE(chart.lane_layouts.front().layout.lanes.size() == static_cast<std::size_t>(keys));
+        CHECK(wormedit::validate_document(*result.song).empty());
         const auto first = lane_for_source(chart, "0,192,0,");
         const auto last = lane_for_source(chart, "512,192,500,");
         REQUIRE(first.has_value());
         REQUIRE(last.has_value());
         CHECK(*first == chart.lane_layouts.front().layout.lanes.front().id);
         CHECK(*last == chart.lane_layouts.front().layout.lanes.back().id);
+    }
+}
+
+TEST_CASE("osu!mania rejects key counts outside 1K through 18K",
+          "[unit][format][osu-mania][lanes][negative]") {
+    for (const auto keys : {0, 19}) {
+        CAPTURE(keys);
+        const auto source =
+            std::string{"osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:"} +
+            std::to_string(keys) + "\n[TimingPoints]\n0,500,4,0,0,100,1,0\n[HitObjects]\n";
+        const auto result = parse_inline(source);
+        CHECK_FALSE(result.song.has_value());
+        CHECK(has_code(result, wormedit::osu_mania_parse_diagnostic_code_t::invalid_difficulty));
     }
 }
 
@@ -478,6 +492,7 @@ TEST_CASE("osu!mania writer preserves every lane from 1K through 18K",
         }
         const auto imported = parse_inline(source);
         REQUIRE(imported.song.has_value());
+        CHECK(wormedit::validate_document(*imported.song).empty());
         const auto written = write_inline(*imported.song);
         REQUIRE(written.text.has_value());
         CHECK_FALSE(written.has_errors());
@@ -485,6 +500,7 @@ TEST_CASE("osu!mania writer preserves every lane from 1K through 18K",
 
         const auto reimported = parse_inline(*written.text);
         REQUIRE(reimported.song.has_value());
+        CHECK(wormedit::validate_document(*reimported.song).empty());
         const auto& chart = reimported.song->charts.front();
         REQUIRE(chart.lane_layouts.size() == 1);
         REQUIRE(chart.lane_layouts.front().layout.lanes.size() == static_cast<std::size_t>(keys));
@@ -504,6 +520,46 @@ TEST_CASE("osu!mania writer preserves every lane from 1K through 18K",
                   chart.lane_layouts.front().layout.lanes[static_cast<std::size_t>(lane)].id);
         }
     }
+}
+
+TEST_CASE("osu!mania writer rejects layouts outside 1K through 18K while the model stays generic",
+          "[unit][format][osu-mania][writer][lanes][negative]") {
+    constexpr std::string_view source = R"osu(osu file format v14
+[General]
+Mode:3
+[Difficulty]
+CircleSize:1
+[TimingPoints]
+0,500,4,0,0,100,1,0
+[HitObjects]
+256,192,0,1,0,
+)osu";
+    const auto imported = parse_inline(source);
+    REQUIRE(imported.song.has_value());
+
+    auto empty_layout = *imported.song;
+    empty_layout.charts.front().lane_layouts.front().layout.lanes.clear();
+    empty_layout.charts.front().measures.front().notes.clear();
+    const auto empty_result = write_inline(empty_layout);
+    CHECK_FALSE(empty_result.text.has_value());
+    CHECK(std::ranges::any_of(empty_result.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::invalid_layout;
+    }));
+
+    auto nineteen_keys = *imported.song;
+    auto& layout = nineteen_keys.charts.front().lane_layouts.front().layout;
+    for (std::uint32_t order = 1; order < 19; ++order) {
+        layout.lanes.push_back({.id = wormedit::lane_id_t{10'000 + order},
+                                .name = "Key " + std::to_string(order + 1),
+                                .role = wormedit::lane_role_t::playable,
+                                .display_order = order});
+    }
+    CHECK(wormedit::validate_document(nineteen_keys).empty());
+    const auto nineteen_result = write_inline(nineteen_keys);
+    CHECK_FALSE(nineteen_result.text.has_value());
+    CHECK(std::ranges::any_of(nineteen_result.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::invalid_layout;
+    }));
 }
 
 TEST_CASE("osu!mania writer round-trips metadata, timing, holds, bookmarks and assets",

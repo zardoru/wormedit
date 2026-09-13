@@ -1,0 +1,19 @@
+#TITLE:Fixture: repeated legacy negative BPM warp encoding;
+#MUSIC:fixture.ogg;
+#OFFSET:0.000;
+#BPMS:0.000=120.000,4.000=-120.000,8.000=120.000,12.000=-120.000,16.000=120.000;
+#NOTES:
+     dance-single:
+     Repeated negative BPM regions:
+     Challenge:
+     10:
+     0.500,0.500,0.500,0.500,0.500:
+1000
+0000
+0100
+0000
+0000
+0010
+0000
+0000
+;

@@ -1,6 +1,7 @@
 #include <wormedit/core/workspace.h>
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <ranges>
 #include <string_view>
@@ -708,16 +709,26 @@ auto make_workspace_view(const workspace_controller_t& workspace, const song_doc
         };
         content.format_fields.reserve(item_count - document.metadata.ordered_search_tags.size());
         const auto append_groups = [&](const auto& groups, bool chart_scoped) {
+            constexpr auto format_family_count =
+                static_cast<std::size_t>(format_family_t::quaver) + 1U;
+            std::array<bool, format_family_count> seen_families{};
             for (std::size_t group_index = 0; group_index < groups.size(); ++group_index) {
                 const auto& group = groups[group_index];
+                const auto family_index = static_cast<std::size_t>(group.family);
+                const auto first_group_for_family =
+                    family_index < seen_families.size() && !seen_families[family_index];
+                if (family_index < seen_families.size())
+                    seen_families[family_index] = true;
                 for (std::size_t field_index = 0; field_index < group.ordered_fields.size();
                      ++field_index) {
                     const auto& [name, value] = group.ordered_fields[field_index];
                     content.format_fields.push_back({
                         .chart_scoped = chart_scoped,
                         .family = group.family,
+                        .first_group_for_family = first_group_for_family,
                         .group_index = group_index,
                         .field_index = field_index,
+                        .group_field_count = group.ordered_fields.size(),
                         .name = name,
                         .value = value,
                         .source_order =

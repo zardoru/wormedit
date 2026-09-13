@@ -22,6 +22,7 @@ add_library(wormedit_audio_decoder
     "${CMAKE_SOURCE_DIR}/src/audio/block_cache.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/miniaudio_backend.c"
     "${CMAKE_SOURCE_DIR}/src/audio/decoder.cpp"
+    "${CMAKE_SOURCE_DIR}/src/audio/preview_bridge.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/transport.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/waveform.cpp"
 )
@@ -46,6 +47,7 @@ set_target_properties(wormedit_audio_decoder PROPERTIES
 )
 
 find_package(Threads REQUIRED)
+target_link_libraries(wormedit_audio_decoder PUBLIC wormedit::core)
 target_link_libraries(wormedit_audio_decoder PRIVATE Threads::Threads)
 if(UNIX)
     target_link_libraries(wormedit_audio_decoder PRIVATE m)

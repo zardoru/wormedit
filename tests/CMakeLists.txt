@@ -42,6 +42,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
     add_executable(wormedit_audio_tests
         core/audio_block_cache_tests.cpp
         core/audio_decoder_tests.cpp
+        core/audio_preview_bridge_tests.cpp
         core/audio_transport_tests.cpp
         core/audio_waveform_tests.cpp
     )

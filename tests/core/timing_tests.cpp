@@ -4,6 +4,7 @@
 
 #include <array>
 #include <chrono>
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -33,6 +34,13 @@ auto seconds_at(const timing_index_t& timing, std::uint64_t row,
     const auto result = timing_at(timing, row, side);
     REQUIRE(result);
     return *result.seconds;
+}
+
+auto row_at(const timing_index_t& timing, signed_rational_t seconds,
+            timing_inverse_options_t options = {}) -> signed_rational_t {
+    const auto result = musical_position_at(timing, seconds, options);
+    REQUIRE(result);
+    return *result.absolute_row;
 }
 
 } // namespace
@@ -98,6 +106,103 @@ TEST_CASE("warps consume no elapsed time and suppress interior pauses and events
     CHECK(*inside.seconds == signed_rational_t{2, 1});
     CHECK(*end.seconds == signed_rational_t{2, 1});
     CHECK(seconds_at(timing, 1'200) == signed_rational_t{3, 1});
+}
+
+TEST_CASE("inverse timing maps delays and stops to their row and preserves fractional rows",
+          "[unit][core][timing][inverse]") {
+    auto chart = base_chart();
+    chart.pauses = {
+        {.id = object_id_t{20},
+         .position = {measure_id_t{1}, 240},
+         .kind = pause_kind_t::stop,
+         .duration = {48, 1},
+         .source_unit = pause_unit_t::bms_stop_ticks},
+        {.id = object_id_t{21},
+         .position = {measure_id_t{1}, 240},
+         .kind = pause_kind_t::delay,
+         .duration = {500, 1},
+         .source_unit = pause_unit_t::milliseconds},
+    };
+    const auto built = build_timing_index(chart);
+    REQUIRE(built);
+    const auto& timing = *built.index;
+
+    CHECK(row_at(timing, {5, 4}) == signed_rational_t{120, 1});
+    CHECK(row_at(timing, {3, 2}) == signed_rational_t{240, 1});
+    CHECK(row_at(timing, {7, 4}) == signed_rational_t{240, 1});
+    CHECK(row_at(timing, {2, 1}) == signed_rational_t{240, 1});
+    CHECK(row_at(timing, {9, 4}) == signed_rational_t{240, 1});
+    CHECK(row_at(timing, {5, 2}) == signed_rational_t{240, 1});
+    CHECK(row_at(timing, {11, 4}) == signed_rational_t{360, 1});
+
+    // At 120 BPM one row is 1/480 second, so this exact audio time is row 247/2.
+    CHECK(row_at(timing, {1'207, 960}) == signed_rational_t{247, 2});
+    CHECK(row_at(timing, seconds_at(timing, 240, timing_boundary_side_t::before_delays)) ==
+          signed_rational_t{240, 1});
+    CHECK(row_at(timing, seconds_at(timing, 240)) == signed_rational_t{240, 1});
+    CHECK(row_at(timing, seconds_at(timing, 240, timing_boundary_side_t::after_stops)) ==
+          signed_rational_t{240, 1});
+}
+
+TEST_CASE("inverse timing exposes the selected side of a half-open warp plateau",
+          "[unit][core][timing][inverse][warp]") {
+    auto chart = base_chart();
+    chart.warps.push_back(
+        {.id = object_id_t{30}, .span = {{measure_id_t{1}, 480}, {measure_id_t{2}, 0}}});
+    const auto built = build_timing_index(chart);
+    REQUIRE(built);
+    const auto& timing = *built.index;
+
+    const auto entry = musical_position_at(timing, {2, 1});
+    REQUIRE(entry);
+    CHECK(entry.absolute_row == signed_rational_t{480, 1});
+    CHECK(entry.inside_warp);
+    const auto exit =
+        musical_position_at(timing, {2, 1}, {.warp_side = timing_warp_inverse_side_t::exit});
+    REQUIRE(exit);
+    CHECK(exit.absolute_row == signed_rational_t{960, 1});
+    CHECK_FALSE(exit.inside_warp);
+    CHECK(row_at(timing, {9, 4}) == signed_rational_t{1'020, 1});
+
+    const auto begin_round_trip = timing_at(timing, 480);
+    const auto end_round_trip = timing_at(timing, 960);
+    REQUIRE(begin_round_trip);
+    REQUIRE(end_round_trip);
+    CHECK(*begin_round_trip.seconds == *end_round_trip.seconds);
+    CHECK(row_at(timing, *begin_round_trip.seconds,
+                 {.warp_side = timing_warp_inverse_side_t::entry}) == signed_rational_t{480, 1});
+    CHECK(row_at(timing, *end_round_trip.seconds,
+                 {.warp_side = timing_warp_inverse_side_t::exit}) == signed_rational_t{960, 1});
+}
+
+TEST_CASE("inverse timing honors signed beat-zero offsets and reports bounded failures",
+          "[unit][core][timing][inverse][bounds]") {
+    auto chart = base_chart();
+    chart.beat_zero_audio_offset_seconds = {-1, 1};
+    const auto built = build_timing_index(chart);
+    REQUIRE(built);
+    const auto& timing = *built.index;
+
+    CHECK(row_at(timing, {-1, 1}) == signed_rational_t{0, 1});
+    CHECK(row_at(timing, {-3, 4}) == signed_rational_t{120, 1});
+    const auto too_early = musical_position_at(timing, {-3, 2});
+    REQUIRE_FALSE(too_early);
+    CHECK(too_early.error->code == timing_error_code_t::position_out_of_range);
+    const auto too_late = musical_position_at(timing, {10, 1});
+    REQUIRE_FALSE(too_late);
+    CHECK(too_late.error->code == timing_error_code_t::position_out_of_range);
+    const auto invalid_rational = musical_position_at(timing, {0, 0});
+    REQUIRE_FALSE(invalid_rational);
+    CHECK(invalid_rational.error->code == timing_error_code_t::invalid_document);
+
+    chart.beat_zero_audio_offset_seconds = {};
+    const auto zero_offset = build_timing_index(chart);
+    REQUIRE(zero_offset);
+    const auto unrepresentable =
+        musical_position_at(*zero_offset.index, {std::numeric_limits<std::int64_t>::max(),
+                                                 std::numeric_limits<std::uint64_t>::max() - 2});
+    REQUIRE_FALSE(unrepresentable);
+    CHECK(unrepresentable.error->code == timing_error_code_t::arithmetic_overflow);
 }
 
 TEST_CASE("same-row BPM source order controls beat-derived pause duration",

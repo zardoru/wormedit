@@ -2023,6 +2023,27 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
     std::ranges::stable_sort(chart.bpms, {},
                              [](const auto& event) { return event.provenance.source_order; });
 
+    chart.bms_bpm_projections.reserve(chart.bpms.size());
+    for (const auto& event : chart.bpms) {
+        chart.bms_bpm_projections.push_back({
+            .event = event.id,
+            .source_order = event.provenance.source_order,
+            .imported_position = event.position,
+            .imported_beats_per_minute = event.beats_per_minute,
+        });
+    }
+    chart.bms_pause_projections.reserve(chart.pauses.size());
+    for (const auto& event : chart.pauses) {
+        chart.bms_pause_projections.push_back({
+            .event = event.id,
+            .source_order = event.provenance.source_order,
+            .imported_position = event.position,
+            .imported_kind = event.kind,
+            .imported_duration = event.duration,
+            .imported_source_unit = event.source_unit,
+        });
+    }
+
     chart.metadata.name = song.metadata.title;
     chart.metadata.author = song.metadata.artist;
     chart.metadata.format_groups.push_back({

@@ -405,8 +405,27 @@ TEST_CASE("BMS writer preserves nested control trees and edits root content outs
 
     options.branch_policy = wormedit::bms_branch_policy_t::flatten_active;
     const auto flatten = wormedit::write_bms(song, options);
-    CHECK_FALSE(flatten.bytes.has_value());
-    CHECK(has_error(flatten, wormedit::bms_write_diagnostic_code_t::unsupported_branch_policy));
+    INFO((flatten.diagnostics.empty() ? std::string{} : flatten.diagnostics.back().message));
+    REQUIRE(flatten.bytes.has_value());
+    CHECK_FALSE(flatten.has_errors());
+    CHECK(has_warning(flatten, wormedit::bms_write_diagnostic_code_t::lossy_transform));
+    CHECK(flatten.bytes->find("#RANDOM") == std::string::npos);
+    CHECK(flatten.bytes->find("#IF") == std::string::npos);
+    CHECK(flatten.bytes->find("branch-b.wav") != std::string::npos);
+    CHECK(flatten.bytes->find("branch-default.wav") == std::string::npos);
+    CHECK(flatten.bytes->find("outer-else.wav") == std::string::npos);
+    const auto flattened_reparse =
+        parse(*flatten.bytes, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(flattened_reparse.song.has_value());
+    CHECK(flattened_reparse.song->charts.front().active_branch_selection.empty());
+    CHECK(flattened_reparse.song->charts.front().measures.front().notes.size() == 2);
+
+    auto unresolved = song;
+    unresolved.charts.front().active_branch_selection.clear();
+    const auto unresolved_flatten = wormedit::write_bms(unresolved, options);
+    CHECK_FALSE(unresolved_flatten.bytes.has_value());
+    CHECK(has_error(unresolved_flatten,
+                    wormedit::bms_write_diagnostic_code_t::unsupported_branch_policy));
 }
 
 TEST_CASE("BMS writer preserves branch metadata and exact ratios while allowing root edits",
@@ -414,8 +433,8 @@ TEST_CASE("BMS writer preserves branch metadata and exact ratios while allowing 
     constexpr std::string_view metadata_source =
         "#PLAYER 1\n#TITLE Root title\n#00002:5/4\n#WAV03 root.wav\n#00011:03\n"
         "#RANDOM 2\n#IF 1\n#TITLE Branch one\n#00002:3/4\n#WAV01 one.wav\n"
-        "#00011:01\n#ELSE\n#TITLE Branch two\n#00002:1/2\n#WAV02 two.wav\n"
-        "#00011:02\n#ENDIF\n#ENDRANDOM\n";
+        "#00011:0001\n#ELSE\n#TITLE Branch two\n#00002:1/2\n#WAV02 two.wav\n"
+        "#00011:000002\n#ENDIF\n#ENDRANDOM\n";
     wormedit::bms_parse_options_t parse_options;
     parse_options.lane_profile_id = "bme-7k-outside-scratch";
     parse_options.branch_choices.push_back(
@@ -472,6 +491,26 @@ TEST_CASE("BMS writer preserves branch metadata and exact ratios while allowing 
     CHECK((root_projection.song->charts.front().measures.front().definition.length ==
            wormedit::rational_t{5, 4}));
 
+    auto flatten_options = options;
+    flatten_options.branch_policy = wormedit::bms_branch_policy_t::flatten_active;
+    const auto flattened = wormedit::write_bms(*metadata_import.song, flatten_options);
+    std::string flatten_diagnostics;
+    for (const auto& diagnostic : flattened.diagnostics) {
+        flatten_diagnostics += diagnostic.message + " at " + diagnostic.path + "\n";
+    }
+    INFO(flatten_diagnostics);
+    REQUIRE(flattened.bytes.has_value());
+    CHECK(has_warning(flattened, wormedit::bms_write_diagnostic_code_t::lossy_transform));
+    CHECK(flattened.bytes->find("#RANDOM") == std::string::npos);
+    CHECK(occurrences(*flattened.bytes, "#TITLE Branch one") == 1);
+    CHECK(flattened.bytes->find("#TITLE Branch two") == std::string::npos);
+    CHECK(flattened.bytes->find("two.wav") == std::string::npos);
+    const auto flattened_projection = parse(*flattened.bytes);
+    REQUIRE(flattened_projection.song.has_value());
+    CHECK(flattened_projection.song->metadata.title == "Branch one");
+    CHECK((flattened_projection.song->charts.front().measures.front().definition.length ==
+           wormedit::rational_t{3, 4}));
+
     edited_song.charts.front().measures.front().definition.length = {7, 4};
     const auto edited_branch_ratio = wormedit::write_bms(edited_song, options);
     CHECK_FALSE(edited_branch_ratio.bytes.has_value());
@@ -527,6 +566,80 @@ TEST_CASE("BMS writer keeps branch-only metadata inside its branch",
     const auto reparsed = parse(*written.bytes);
     REQUIRE(reparsed.song.has_value());
     CHECK(reparsed.song->metadata.title.empty());
+}
+
+TEST_CASE("BMS writer preserves mixed root and branch timing statements",
+          "[unit][format][bms][writer]") {
+    constexpr std::string_view source =
+        "#PLAYER 1\n#TITLE Mixed timing\n#BPM 120\n#BPM01 150\n#STOP01 48\n"
+        "#00008:0001\n#00009:0001\n#RANDOM 2\n#IF 1\n#BPM 180\n#BPM02 200\n"
+        "#STOP02 96\n#00008:0002\n#00009:0002\n#ELSE\n#BPM 240\n#BPM03 220\n"
+        "#STOP03 144\n#00008:0003\n#00009:0003\n#ENDIF\n#ENDRANDOM\n";
+    wormedit::bms_parse_options_t parse_options;
+    parse_options.lane_profile_id = "bme-7k-outside-scratch";
+    parse_options.branch_choices.push_back(
+        {.control_source_order = line_order(source, "#RANDOM 2"), .selected_value = 1});
+    const auto imported = parse(source, parse_options);
+    REQUIRE(imported.song.has_value());
+
+    auto edited = *imported.song;
+    edited.metadata.title = "Edited mixed timing";
+    wormedit::bms_write_options_t options;
+    options.lane_profile_id = "bme-7k-outside-scratch";
+    options.preserve_unchanged_source = false;
+    const auto written = wormedit::write_bms(edited, options);
+    REQUIRE(written.bytes.has_value());
+    CHECK_FALSE(written.has_errors());
+    CHECK(occurrences(*written.bytes, "#BPM 120") == 1);
+    CHECK(occurrences(*written.bytes, "#BPM 180") == 1);
+    CHECK(occurrences(*written.bytes, "#BPM 240") == 1);
+    CHECK(occurrences(*written.bytes, "#BPM01 150") == 1);
+    CHECK(occurrences(*written.bytes, "#BPM02 200") == 1);
+    CHECK(occurrences(*written.bytes, "#BPM03 220") == 1);
+    CHECK(occurrences(*written.bytes, "#STOP01 48") == 1);
+    CHECK(occurrences(*written.bytes, "#STOP02 96") == 1);
+    CHECK(occurrences(*written.bytes, "#STOP03 144") == 1);
+    CHECK(occurrences(*written.bytes, "#00008:0001") == 1);
+    CHECK(occurrences(*written.bytes, "#00008:0002") == 1);
+    CHECK(occurrences(*written.bytes, "#00008:0003") == 1);
+    CHECK(occurrences(*written.bytes, "#00009:0001") == 1);
+    CHECK(occurrences(*written.bytes, "#00009:0002") == 1);
+    CHECK(occurrences(*written.bytes, "#00009:0003") == 1);
+
+    const auto random_order = line_order(*written.bytes, "#RANDOM 2");
+    parse_options.branch_choices = {{.control_source_order = random_order, .selected_value = 1}};
+    const auto first = parse(*written.bytes, parse_options);
+    REQUIRE(first.song.has_value());
+    CHECK(std::ranges::any_of(first.song->charts.front().bpms, [](const auto& bpm) {
+        return bpm.beats_per_minute == wormedit::signed_rational_t{180, 1};
+    }));
+    CHECK(std::ranges::any_of(first.song->charts.front().pauses, [](const auto& pause) {
+        return pause.duration == wormedit::signed_rational_t{96, 1};
+    }));
+
+    parse_options.branch_choices.front().selected_value = 2;
+    const auto second = parse(*written.bytes, parse_options);
+    REQUIRE(second.song.has_value());
+    CHECK(std::ranges::any_of(second.song->charts.front().bpms, [](const auto& bpm) {
+        return bpm.beats_per_minute == wormedit::signed_rational_t{240, 1};
+    }));
+    CHECK(std::ranges::any_of(second.song->charts.front().pauses, [](const auto& pause) {
+        return pause.duration == wormedit::signed_rational_t{144, 1};
+    }));
+
+    auto edited_timing = *imported.song;
+    REQUIRE_FALSE(edited_timing.charts.front().bpms.empty());
+    edited_timing.charts.front().bpms.front().beats_per_minute = {181, 1};
+    const auto rejected_bpm = wormedit::write_bms(edited_timing, options);
+    CHECK_FALSE(rejected_bpm.bytes.has_value());
+    CHECK(has_error(rejected_bpm, wormedit::bms_write_diagnostic_code_t::branch_provenance));
+
+    auto edited_pause = *imported.song;
+    REQUIRE_FALSE(edited_pause.charts.front().pauses.empty());
+    edited_pause.charts.front().pauses.front().duration = {49, 1};
+    const auto rejected_pause = wormedit::write_bms(edited_pause, options);
+    CHECK_FALSE(rejected_pause.bytes.has_value());
+    CHECK(has_error(rejected_pause, wormedit::bms_write_diagnostic_code_t::branch_provenance));
 }
 
 TEST_CASE("BMS writer diagnoses unsafe retained metadata tokens", "[unit][format][bms][writer]") {

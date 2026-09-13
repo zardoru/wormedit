@@ -1,0 +1,109 @@
+#pragma once
+
+#include <wormedit/audio/transport.h>
+#include <wormedit/core/timing.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <span>
+#include <vector>
+
+namespace wormedit::audio {
+
+struct preview_voice_source_t {
+    audio_source_identity_t source;
+    std::uint64_t source_start_frame{};
+    std::uint64_t frame_count{};
+    float gain{1.0F};
+};
+
+struct preview_resource_source_binding_t {
+    resource_id_t resource;
+    preview_voice_source_t voice;
+};
+
+struct preview_metronome_source_binding_t {
+    metronome_accent_t accent{metronome_accent_t::regular};
+    preview_voice_source_t voice;
+};
+
+enum class preview_bridge_start_status_t : std::uint8_t {
+    started,
+    not_started,
+    unsupported_sample_rate,
+    invalid_schedule,
+    invalid_source_binding,
+    duplicate_source_binding,
+    transport_start_failed,
+};
+
+struct preview_bridge_start_result_t {
+    preview_bridge_start_status_t status{preview_bridge_start_status_t::transport_start_failed};
+    std::optional<session_token_t> token;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == preview_bridge_start_status_t::started && token.has_value();
+    }
+};
+
+enum class preview_bridge_pump_status_t : std::uint8_t {
+    ready,
+    not_started,
+    stale_generation,
+    capacity_limited,
+    non_monotonic_window,
+    voice_id_exhausted,
+    transport_rejected_voice,
+};
+
+struct preview_bridge_pump_result_t {
+    preview_bridge_pump_status_t status{preview_bridge_pump_status_t::not_started};
+    std::size_t scheduled_events{};
+    std::size_t missing_sources{};
+};
+
+// Control-thread bridge from immutable core preview queues to the bounded
+// transport. The schedule must outlive the active bridge session. Call
+// materialize_until() away from the audio callback and refill after callbacks
+// retire voices; a capacity-limited result leaves the first unqueued event at
+// its queue head for the next refill.
+class preview_transport_bridge_t {
+  public:
+    explicit preview_transport_bridge_t(transport_t& transport) : transport_(transport) {}
+
+    [[nodiscard]] auto start(const preview_schedule_t& schedule,
+                             std::span<const preview_resource_source_binding_t> resources,
+                             std::span<const preview_metronome_source_binding_t> metronome = {},
+                             std::uint64_t seek_frame = 0) -> preview_bridge_start_result_t;
+    [[nodiscard]] auto seek(std::uint64_t sample_frame) -> preview_bridge_start_result_t;
+    [[nodiscard]] auto restart() -> preview_bridge_start_result_t {
+        return seek(0);
+    }
+    [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
+
+    // Queues events with sample_frame < exclusive_end_frame. This method may
+    // allocate while preparing voices, so it belongs on a control thread.
+    [[nodiscard]] auto materialize_until(std::uint64_t exclusive_end_frame)
+        -> preview_bridge_pump_result_t;
+
+    [[nodiscard]] auto session_token() const noexcept -> std::optional<session_token_t> {
+        return token_;
+    }
+
+  private:
+    [[nodiscard]] auto begin_session(std::uint64_t seek_frame) -> preview_bridge_start_result_t;
+
+    transport_t& transport_;
+    const preview_schedule_t* schedule_{};
+    std::vector<preview_resource_source_binding_t> resources_;
+    std::vector<preview_metronome_source_binding_t> metronome_;
+    preview_queue_head_t playable_head_;
+    preview_queue_head_t bgm_head_;
+    preview_queue_head_t metronome_head_;
+    std::optional<session_token_t> token_;
+    std::uint64_t next_voice_id_{1};
+    std::uint64_t last_materialized_end_{};
+};
+
+} // namespace wormedit::audio

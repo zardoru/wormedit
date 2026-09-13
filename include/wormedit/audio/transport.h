@@ -68,12 +68,13 @@ struct transport_stop_result_t {
 // worker tokens before clearing every voice, so once it returns the next
 // callback is guaranteed to emit digital silence.
 class transport_t {
-public:
+  public:
     explicit transport_t(decoded_block_cache_t& block_cache,
                          std::size_t maximum_scheduled_voices = 256);
 
     [[nodiscard]] auto start() -> std::optional<session_token_t>;
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
+    [[nodiscard]] auto is_current(session_token_t token) const noexcept -> bool;
 
     [[nodiscard]] auto decode_block(decoder_t& decoder, session_token_t token,
                                     audio_block_key_t key) -> block_decode_result_t;
@@ -84,12 +85,21 @@ public:
 
     [[nodiscard]] auto scheduled_voice_count() const -> std::size_t;
 
-private:
+  private:
+    struct scheduled_voice_entry_t {
+        transport_voice_t voice;
+        bool active{};
+    };
+
     decoded_block_cache_t& block_cache_;
     decode_session_t decode_session_;
     std::size_t maximum_scheduled_voices_{};
     mutable std::mutex mutex_;
-    std::vector<transport_voice_t> scheduled_voices_;
+    // Storage is reserved once and bounded by maximum_scheduled_voices_. The
+    // mix callback only marks completed slots inactive; schedule_voice() on a
+    // control thread reuses their storage without growing the vector.
+    std::vector<scheduled_voice_entry_t> scheduled_voices_;
+    std::size_t active_scheduled_voices_{};
     std::optional<std::uint64_t> next_timeline_frame_;
 };
 

@@ -339,6 +339,26 @@ struct pause_event_t {
     source_provenance_t provenance;
 };
 
+// BMS timing declarations and channel rows may be distributed across root and
+// conditional scopes. Imported events keep an explicit semantic baseline so a
+// full-tree writer can retain those source statements without silently ignoring
+// a later edit to the materialized projection.
+struct bms_bpm_projection_t {
+    object_id_t event;
+    std::size_t source_order{};
+    local_position_t imported_position;
+    signed_rational_t imported_beats_per_minute;
+};
+
+struct bms_pause_projection_t {
+    object_id_t event;
+    std::size_t source_order{};
+    local_position_t imported_position;
+    pause_kind_t imported_kind{pause_kind_t::stop};
+    signed_rational_t imported_duration;
+    pause_unit_t imported_source_unit{pause_unit_t::seconds};
+};
+
 enum class warp_provenance_t {
     native,
     negative_bpm,
@@ -589,6 +609,8 @@ struct chart_document_t {
     std::vector<bga_event_t> bga_events;
     std::vector<sound_channel_t> sound_channels;
     std::vector<bms_measure_length_projection_t> bms_measure_length_projections;
+    std::vector<bms_bpm_projection_t> bms_bpm_projections;
+    std::vector<bms_pause_projection_t> bms_pause_projections;
     std::optional<bms_control_node_t> bms_control_tree;
     std::vector<branch_selection_t> active_branch_selection;
 };

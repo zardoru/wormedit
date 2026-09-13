@@ -86,6 +86,77 @@ auto add_exact(signed_rational_t left, signed_rational_t right)
     return normalized({*scaled_left + *scaled_right, *denominator});
 }
 
+auto subtract_exact(signed_rational_t left, signed_rational_t right)
+    -> std::optional<signed_rational_t> {
+    const auto left_normal = normalized(left);
+    const auto right_normal = normalized(right);
+    if (!left_normal || !right_normal) {
+        return std::nullopt;
+    }
+    const auto common = std::gcd(left_normal->denominator, right_normal->denominator);
+    const auto left_scale = right_normal->denominator / common;
+    const auto right_scale = left_normal->denominator / common;
+    const auto scaled_left = checked_signed_multiply(left_normal->numerator, left_scale);
+    const auto scaled_right = checked_signed_multiply(right_normal->numerator, right_scale);
+    const auto denominator = checked_multiply(left_normal->denominator, left_scale);
+    if (!scaled_left || !scaled_right || !denominator ||
+        (*scaled_right > 0 &&
+         *scaled_left < std::numeric_limits<std::int64_t>::min() + *scaled_right) ||
+        (*scaled_right < 0 &&
+         *scaled_left > std::numeric_limits<std::int64_t>::max() + *scaled_right)) {
+        return std::nullopt;
+    }
+    return normalized({*scaled_left - *scaled_right, *denominator});
+}
+
+auto compare_positive_fractions(std::uint64_t left_numerator, std::uint64_t left_denominator,
+                                std::uint64_t right_numerator, std::uint64_t right_denominator)
+    -> int {
+    auto reversed = false;
+    while (true) {
+        const auto left_whole = left_numerator / left_denominator;
+        const auto right_whole = right_numerator / right_denominator;
+        if (left_whole != right_whole) {
+            const auto comparison = left_whole < right_whole ? -1 : 1;
+            return reversed ? -comparison : comparison;
+        }
+        const auto left_remainder = left_numerator % left_denominator;
+        const auto right_remainder = right_numerator % right_denominator;
+        if (left_remainder == 0 || right_remainder == 0) {
+            if (left_remainder == right_remainder) {
+                return 0;
+            }
+            const auto comparison = left_remainder == 0 ? -1 : 1;
+            return reversed ? -comparison : comparison;
+        }
+        left_numerator = left_denominator;
+        left_denominator = left_remainder;
+        right_numerator = right_denominator;
+        right_denominator = right_remainder;
+        reversed = !reversed;
+    }
+}
+
+auto compare_exact(signed_rational_t left, signed_rational_t right) -> std::optional<int> {
+    const auto left_normal = normalized(left);
+    const auto right_normal = normalized(right);
+    if (!left_normal || !right_normal) {
+        return std::nullopt;
+    }
+    const bool left_negative = left_normal->numerator < 0;
+    const bool right_negative = right_normal->numerator < 0;
+    if (left_negative != right_negative) {
+        return left_negative ? -1 : 1;
+    }
+    auto comparison =
+        compare_positive_fractions(magnitude(left_normal->numerator), left_normal->denominator,
+                                   magnitude(right_normal->numerator), right_normal->denominator);
+    if (left_negative) {
+        comparison = -comparison;
+    }
+    return comparison;
+}
+
 auto positive_fraction(std::vector<std::uint64_t> numerators,
                        std::vector<std::uint64_t> denominators)
     -> std::optional<signed_rational_t> {
@@ -605,6 +676,143 @@ auto timing_at(const timing_index_t& index, const measure_index_t& measures,
                                "timing query position is outside chart geometry")};
     }
     return timing_at(index, *row, side);
+}
+
+auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
+                         timing_inverse_options_t options) -> timing_position_query_result_t {
+    const auto query = normalized(seconds);
+    if (!query) {
+        return {.error = error(timing_error_code_t::invalid_document,
+                               "inverse timing query requires valid rational seconds")};
+    }
+    if (index.divisions_per_standard_measure == 0 || index.rows.empty() ||
+        index.segments.size() + 1 != index.rows.size() || index.rows.front().absolute_row != 0 ||
+        index.rows.back().absolute_row != index.total_rows) {
+        return {.error = error(timing_error_code_t::invalid_document,
+                               "inverse timing query requires a complete timing index")};
+    }
+    const auto before_chart = compare_exact(*query, index.rows.front().before_delays_seconds);
+    const auto after_chart = compare_exact(*query, index.rows.back().after_stops_seconds);
+    if (!before_chart || !after_chart) {
+        return {.error = error(timing_error_code_t::invalid_document,
+                               "timing index contains an invalid rational boundary")};
+    }
+    if (*before_chart < 0 || *after_chart > 0) {
+        return {.error = error(timing_error_code_t::position_out_of_range,
+                               "audio time lies outside chart timing bounds")};
+    }
+
+    // A warp collapses every row in its half-open span to one audio time. Find
+    // that plateau first so its endpoint choice is independent of neighboring
+    // row pauses or segments.
+    const auto first_segment =
+        std::lower_bound(index.segments.begin(), index.segments.end(), *query,
+                         [](const timing_segment_t& segment, signed_rational_t value) {
+                             const auto comparison = compare_exact(segment.end_seconds, value);
+                             return comparison && *comparison < 0;
+                         });
+    if (first_segment != index.segments.end()) {
+        const auto first_index = static_cast<std::size_t>(first_segment - index.segments.begin());
+        auto warp_entry = std::optional<std::uint64_t>{};
+        auto warp_exit = std::optional<std::uint64_t>{};
+        for (auto segment_index = first_index; segment_index < index.segments.size();
+             ++segment_index) {
+            const auto& segment = index.segments[segment_index];
+            const auto begin_comparison = compare_exact(segment.begin_seconds, *query);
+            if (!begin_comparison || *begin_comparison > 0) {
+                break;
+            }
+            if (!segment.warped) {
+                continue;
+            }
+            const auto end_comparison = compare_exact(segment.end_seconds, *query);
+            if (!end_comparison) {
+                return {.error = error(timing_error_code_t::invalid_document,
+                                       "timing index contains an invalid segment time")};
+            }
+            if (*begin_comparison == 0 && *end_comparison == 0) {
+                if (!warp_entry) {
+                    warp_entry = segment.begin_row;
+                }
+                warp_exit = segment.end_row;
+            }
+        }
+        if (warp_entry && warp_exit) {
+            const auto selected =
+                options.warp_side == timing_warp_inverse_side_t::entry ? *warp_entry : *warp_exit;
+            if (selected > maximum_i64_magnitude) {
+                return {.error = error(timing_error_code_t::arithmetic_overflow,
+                                       "inverse musical row exceeds exact position bounds")};
+            }
+            const auto row = std::ranges::lower_bound(index.rows, selected, {},
+                                                      &timing_row_state_t::absolute_row);
+            if (row == index.rows.end() || row->absolute_row != selected) {
+                return {.error = error(timing_error_code_t::invalid_document,
+                                       "warp endpoint is missing from the timing index")};
+            }
+            return {.absolute_row = signed_rational_t{static_cast<std::int64_t>(selected), 1},
+                    .inside_warp = row->inside_warp};
+        }
+    }
+
+    const auto row =
+        std::lower_bound(index.rows.begin(), index.rows.end(), *query,
+                         [](const timing_row_state_t& boundary, signed_rational_t value) {
+                             const auto comparison =
+                                 compare_exact(boundary.after_stops_seconds, value);
+                             return comparison && *comparison < 0;
+                         });
+    if (row == index.rows.end()) {
+        return {.error = error(timing_error_code_t::position_out_of_range,
+                               "audio time lies outside chart timing bounds")};
+    }
+    const auto arrival_comparison = compare_exact(*query, row->before_delays_seconds);
+    const auto departure_comparison = compare_exact(*query, row->after_stops_seconds);
+    if (!arrival_comparison || !departure_comparison) {
+        return {.error = error(timing_error_code_t::invalid_document,
+                               "timing index contains an invalid row time")};
+    }
+    if (*arrival_comparison >= 0 && *departure_comparison <= 0) {
+        if (row->absolute_row > maximum_i64_magnitude) {
+            return {.error = error(timing_error_code_t::arithmetic_overflow,
+                                   "inverse musical row exceeds exact position bounds")};
+        }
+        return {.absolute_row = signed_rational_t{static_cast<std::int64_t>(row->absolute_row), 1},
+                .inside_warp = row->inside_warp};
+    }
+
+    const auto row_index = static_cast<std::size_t>(row - index.rows.begin());
+    if (*arrival_comparison < 0 && row_index > 0) {
+        const auto& segment = index.segments[row_index - 1];
+        if (segment.warped) {
+            return {.error = error(timing_error_code_t::invalid_document,
+                                   "audio time does not identify a row on a warp plateau")};
+        }
+        const auto delta_seconds = subtract_exact(*query, segment.begin_seconds);
+        if (!delta_seconds || delta_seconds->numerator < 0 ||
+            segment.effective_bpm.numerator <= 0 || segment.effective_bpm.denominator == 0) {
+            return {.error = error(timing_error_code_t::arithmetic_overflow,
+                                   "inverse timing segment exceeds exact arithmetic bounds")};
+        }
+        const auto row_delta =
+            positive_fraction({static_cast<std::uint64_t>(delta_seconds->numerator),
+                               index.divisions_per_standard_measure,
+                               static_cast<std::uint64_t>(segment.effective_bpm.numerator)},
+                              {delta_seconds->denominator, 240, segment.effective_bpm.denominator});
+        if (!row_delta || segment.begin_row > maximum_i64_magnitude) {
+            return {.error = error(timing_error_code_t::arithmetic_overflow,
+                                   "inverse musical row exceeds exact arithmetic bounds")};
+        }
+        const auto absolute =
+            add_exact({static_cast<std::int64_t>(segment.begin_row), 1}, *row_delta);
+        if (!absolute) {
+            return {.error = error(timing_error_code_t::arithmetic_overflow,
+                                   "inverse musical row exceeds exact arithmetic bounds")};
+        }
+        return {.absolute_row = *absolute};
+    }
+    return {.error = error(timing_error_code_t::position_out_of_range,
+                           "audio time has no musical position in the timing index")};
 }
 
 auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,

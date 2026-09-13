@@ -29,8 +29,7 @@ auto fixture_path(std::string_view name) -> std::filesystem::path {
 
 } // namespace
 
-TEST_CASE("decoded block cache enforces exact byte and frame capacity",
-          "[unit][audio][cache]") {
+TEST_CASE("decoded block cache enforces exact byte and frame capacity", "[unit][audio][cache]") {
     const wormedit::audio::decoded_block_cache_t defaults;
     CHECK(defaults.limits().maximum_frames_per_asset == 65'536);
     CHECK(defaults.limits().maximum_bytes_per_asset == 512U * 1024U);
@@ -73,8 +72,7 @@ TEST_CASE("decoded block cache applies deterministic global and per-asset LRU ev
         const auto oldest = key("asset-a", "source-v1", 0);
         const auto refreshed = key("asset-b", "source-v1", 0);
         const auto incoming = key("asset-c", "source-v1", 0);
-        REQUIRE(cache.store(oldest, 1, one_frame) ==
-                wormedit::audio::block_store_status_t::stored);
+        REQUIRE(cache.store(oldest, 1, one_frame) == wormedit::audio::block_store_status_t::stored);
         REQUIRE(cache.store(refreshed, 1, one_frame) ==
                 wormedit::audio::block_store_status_t::stored);
         CHECK(cache.contains(oldest)); // Makes asset A newer than asset B.
@@ -115,8 +113,7 @@ TEST_CASE("decoded block cache applies deterministic global and per-asset LRU ev
     }
 }
 
-TEST_CASE("decoded block keys distinguish asset and source revisions",
-          "[unit][audio][cache]") {
+TEST_CASE("decoded block keys distinguish asset and source revisions", "[unit][audio][cache]") {
     wormedit::audio::decoded_block_cache_t cache;
     const auto data_a = samples(1, 0.125F);
     const auto data_b = samples(1, 0.5F);
@@ -139,6 +136,26 @@ TEST_CASE("decoded block keys distinguish asset and source revisions",
     CHECK(revised_block->interleaved_stereo.front() == 0.5F);
     CHECK(other_block->interleaved_stereo.front() == 0.5F);
     CHECK(cache.stats().entries == 3);
+}
+
+TEST_CASE("decoded block cache exposes a synchronous non-copying view",
+          "[unit][audio][cache][realtime]") {
+    wormedit::audio::decoded_block_cache_t cache;
+    const auto source_key = key("asset-a", "source-v1", 0);
+    const auto block = samples(4, 0.375F);
+    REQUIRE(cache.store(source_key, 4, block) == wormedit::audio::block_store_status_t::stored);
+
+    auto invoked = false;
+    CHECK(cache.with_block(source_key, [&](const auto& cached) {
+        CHECK(cached.frame_count == 4);
+        CHECK(cached.interleaved_stereo == block);
+        invoked = true;
+    }));
+    CHECK(invoked);
+    CHECK_FALSE(cache.with_block(key("missing", "source-v1", 0), [](const auto&) {}));
+    const auto stats = cache.stats();
+    CHECK(stats.hits == 1);
+    CHECK(stats.misses == 1);
 }
 
 TEST_CASE("zero-capacity block cache rejects storage without retaining PCM",
@@ -214,8 +231,8 @@ TEST_CASE("fixture block decode is bounded, cached, and session-gated",
     REQUIRE(token.has_value());
     const auto block_key = key("fixture:sliced-seek", "ogg:generated-v1", 0);
 
-    const auto first = wormedit::audio::decode_and_cache_block(
-        decoder, cache, session, *token, block_key);
+    const auto first =
+        wormedit::audio::decode_and_cache_block(decoder, cache, session, *token, block_key);
     CHECK(first.status == wormedit::audio::block_decode_status_t::decoded);
     CHECK(first.frames == wormedit::audio::maximum_read_frames);
     CHECK(cache.stats().cached_frames == wormedit::audio::maximum_read_frames);
@@ -227,8 +244,8 @@ TEST_CASE("fixture block decode is bounded, cached, and session-gated",
           wormedit::audio::maximum_read_frames * wormedit::audio::output_channel_count);
     const auto expected_samples = cached->interleaved_stereo;
 
-    const auto second = wormedit::audio::decode_and_cache_block(
-        decoder, cache, session, *token, block_key);
+    const auto second =
+        wormedit::audio::decode_and_cache_block(decoder, cache, session, *token, block_key);
     CHECK(second.status == wormedit::audio::block_decode_status_t::cache_hit);
     CHECK(second.decoder_status == wormedit::audio::read_status_t::success);
     CHECK(cache.stats().hits == 2);
@@ -240,8 +257,7 @@ TEST_CASE("fixture block decode is bounded, cached, and session-gated",
     CHECK(cached_again->interleaved_stereo == expected_samples);
 
     session.stop();
-    CHECK(wormedit::audio::decode_and_cache_block(
-              decoder, cache, session, *token, block_key)
+    CHECK(wormedit::audio::decode_and_cache_block(decoder, cache, session, *token, block_key)
               .status == wormedit::audio::block_decode_status_t::stale_generation);
     CHECK(session.pending_count() == 0);
     CHECK(cache.contains(block_key));

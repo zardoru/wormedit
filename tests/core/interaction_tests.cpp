@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <chrono>
 #include <limits>
 #include <ranges>
 
@@ -166,6 +167,346 @@ TEST_CASE(
     REQUIRE(undo_document_command(history));
     CHECK(note_count(history) == 1);
     CHECK(history.document.revision == 2);
+}
+
+TEST_CASE("editor y mapping preserves exact rows through zoom and scroll",
+          "[unit][core][interaction][mapping]") {
+    auto history = make_document_history(make_song());
+    constexpr std::array snaps{4ULL};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
+                                         snaps, 4, 192.0);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+
+    const auto scrolled = dispatch_editor_action(history, state, scroll_editor_view_action_t{48.0});
+    REQUIRE(scrolled);
+    REQUIRE(scrolled.view.has_value());
+    const auto before_zoom = editor_position_y_pixels(history.document.charts.front(),
+                                                      *scrolled.view, {measure_id_t{1}, 480});
+    REQUIRE(before_zoom.has_value());
+    CHECK(*before_zoom == 48.0);
+    CHECK(editor_position_at_y_pixels(history.document.charts.front(), *scrolled.view,
+                                      *before_zoom) == local_position_t{measure_id_t{1}, 480});
+
+    const auto zoomed =
+        dispatch_editor_action(history, state, adjust_editor_zoom_action_t{2.0, 48.0});
+    REQUIRE(zoomed);
+    REQUIRE(zoomed.view.has_value());
+    const auto after_zoom = editor_position_y_pixels(history.document.charts.front(), *zoomed.view,
+                                                     {measure_id_t{1}, 480});
+    REQUIRE(after_zoom.has_value());
+    CHECK(*after_zoom == 48.0);
+    CHECK(editor_position_at_y_pixels(history.document.charts.front(), *zoomed.view, *after_zoom) ==
+          local_position_t{measure_id_t{1}, 480});
+}
+
+TEST_CASE("hit testing returns lane, note, hold head, and cross-measure tail targets",
+          "[unit][core][interaction][hit-test]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 240},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::tap},
+        {.id = object_id_t{102},
+         .position = {measure_id_t{1}, 480},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{2}, 120}},
+        {.id = object_id_t{103},
+         .position = {measure_id_t{1}, 240},
+         .lane = lane_id_t{2},
+         .kind = note_kind_t::tap},
+    };
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{4ULL};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                               {measure_id_t{1}, 0}, snaps, 4, 384.0);
+    REQUIRE(setup);
+    const auto built =
+        build_editor_hit_test_index(history.document.charts.front(), history.document.revision);
+    REQUIRE(std::holds_alternative<editor_hit_test_index_t>(built));
+    const auto& index = std::get<editor_hit_test_index_t>(built);
+    const auto hit = [&](double x, local_position_t position) {
+        const auto y =
+            editor_position_y_pixels(history.document.charts.front(), *setup.view, position);
+        REQUIRE(y.has_value());
+        return hit_test_editor(history.document.charts.front(), index, *setup.view,
+                               {.x_pixels = x,
+                                .y_pixels = *y,
+                                .field_left_pixels = 100.0,
+                                .field_width_pixels = 200.0,
+                                .note_hit_radius_pixels = 3.0});
+    };
+
+    const auto tap = hit(150.0, {measure_id_t{1}, 240});
+    REQUIRE(tap.has_value());
+    CHECK(tap->kind == editor_hit_target_kind_t::note);
+    CHECK(tap->note == object_id_t{101});
+    const auto hold_head = hit(150.0, {measure_id_t{1}, 480});
+    REQUIRE(hold_head.has_value());
+    CHECK(hold_head->kind == editor_hit_target_kind_t::hold_head);
+    CHECK(hold_head->note == object_id_t{102});
+    const auto hold_tail = hit(150.0, {measure_id_t{2}, 120});
+    REQUIRE(hold_tail.has_value());
+    CHECK(hold_tail->kind == editor_hit_target_kind_t::hold_tail);
+    CHECK(hold_tail->note == object_id_t{102});
+    const auto empty_lane = hit(250.0, {measure_id_t{2}, 240});
+    REQUIRE(empty_lane.has_value());
+    CHECK(empty_lane->kind == editor_hit_target_kind_t::lane);
+    CHECK(empty_lane->lane == lane_id_t{2});
+
+    auto stale_view = *setup.view;
+    ++stale_view.document_revision;
+    CHECK_FALSE(hit_test_editor(history.document.charts.front(), index, stale_view,
+                                {.x_pixels = 150.0,
+                                 .y_pixels = 48.0,
+                                 .field_left_pixels = 100.0,
+                                 .field_width_pixels = 200.0}));
+}
+
+TEST_CASE("overlapping hit records use stable hold-head priority",
+          "[unit][core][interaction][hit-test][priority]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 240},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::tap},
+        {.id = object_id_t{102},
+         .position = {measure_id_t{1}, 240},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, 480}},
+    };
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{4ULL};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                               {measure_id_t{1}, 0}, snaps, 4, 192.0);
+    REQUIRE(setup);
+    const auto built = build_editor_hit_test_index(history.document.charts.front(), 1);
+    REQUIRE(std::holds_alternative<editor_hit_test_index_t>(built));
+    const auto y = editor_position_y_pixels(history.document.charts.front(), *setup.view,
+                                            {measure_id_t{1}, 240});
+    REQUIRE(y.has_value());
+    const editor_hit_test_request_t request{
+        .x_pixels = 150.0,
+        .y_pixels = *y,
+        .field_left_pixels = 100.0,
+        .field_width_pixels = 200.0,
+    };
+    const auto first =
+        hit_test_editor(history.document.charts.front(), std::get<editor_hit_test_index_t>(built),
+                        *setup.view, request);
+    const auto second =
+        hit_test_editor(history.document.charts.front(), std::get<editor_hit_test_index_t>(built),
+                        *setup.view, request);
+    REQUIRE(first.has_value());
+    REQUIRE(second.has_value());
+    CHECK(first->kind == editor_hit_target_kind_t::hold_head);
+    CHECK(first->note == object_id_t{102});
+    CHECK(first == second);
+}
+
+TEST_CASE("note paint interpolates snap rows, suppresses duplicates, and commits atomically",
+          "[unit][core][interaction][paint]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
+    const auto preview = dispatch_editor_action(
+        history, state,
+        update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true});
+    REQUIRE(preview);
+    REQUIRE(preview.view->pending_note_paint_gesture.has_value());
+    REQUIRE(preview.view->pending_note_paint_gesture->targets != nullptr);
+    CHECK(preview.view->pending_note_paint_gesture->targets->size() == 3);
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true}));
+    CHECK(state.pending_note_paint_gesture->targets->size() == 3);
+    CHECK(note_count(history) == 0);
+    CHECK(history.document.revision == 1);
+
+    const auto committed = dispatch_editor_action(
+        history, state,
+        end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true});
+    REQUIRE(committed);
+    CHECK(committed.document_changed);
+    CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+    CHECK(note_count(history) == 3);
+    CHECK(history.undo.size() == 1);
+    CHECK(history.document.charts.front().measures.front().notes[0].position.row == 0);
+    CHECK(history.document.charts.front().measures.front().notes[1].position.row == 240);
+    CHECK(history.document.charts.front().measures.front().notes[2].position.row == 480);
+    REQUIRE(undo_document_command(history));
+    CHECK(note_count(history) == 0);
+}
+
+TEST_CASE("single-cell paint toggles taps and rejects hold collisions atomically",
+          "[unit][core][interaction][paint]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    const auto click = [&] {
+        REQUIRE(dispatch_editor_action(
+            history, state,
+            begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true}));
+        return dispatch_editor_action(
+            history, state,
+            end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true});
+    };
+    const auto created = click();
+    REQUIRE(created);
+    CHECK(note_count(history) == 1);
+    const auto removed = click();
+    REQUIRE(removed);
+    CHECK(removed.document_changed);
+    CHECK(note_count(history) == 0);
+    CHECK(history.undo.size() == 2);
+    REQUIRE(undo_document_command(history));
+    CHECK(note_count(history) == 1);
+
+    auto colliding_song = make_song();
+    colliding_song.charts.front().measures.front().notes.push_back({
+        .id = object_id_t{101},
+        .position = {measure_id_t{1}, 240},
+        .lane = lane_id_t{1},
+        .kind = note_kind_t::hold,
+        .end = local_position_t{measure_id_t{1}, 720},
+    });
+    REQUIRE(validate_document(colliding_song).empty());
+    auto colliding_history = make_document_history(std::move(colliding_song));
+    auto colliding_state = make_state(colliding_history);
+    REQUIRE(dispatch_editor_action(
+        colliding_history, colliding_state,
+        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
+    REQUIRE(dispatch_editor_action(
+        colliding_history, colliding_state,
+        update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true}));
+    const auto collision = dispatch_editor_action(
+        colliding_history, colliding_state,
+        end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true});
+    CHECK_FALSE(collision);
+    CHECK(has_code(collision.diagnostics, diagnostic_code_t::collision));
+    CHECK(colliding_history.document.revision == 1);
+    CHECK(colliding_history.undo.empty());
+    CHECK(note_count(colliding_history) == 1);
+    CHECK(colliding_state.pending_note_paint_gesture.has_value());
+}
+
+TEST_CASE("paint gestures cancel on capture loss and leave previews intact on cap rejection",
+          "[unit][core][interaction][paint][cancel]") {
+    auto song = make_song();
+    song.charts.front().divisions_per_standard_measure = 100'001;
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{100'001ULL};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
+                                         snaps, 100'001);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
+    const auto capped = dispatch_editor_action(
+        history, state,
+        update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 50'000}, true});
+    CHECK_FALSE(capped);
+    CHECK(has_code(capped.diagnostics, diagnostic_code_t::invalid_resolution));
+    REQUIRE(state.pending_note_paint_gesture.has_value());
+    CHECK(state.pending_note_paint_gesture->targets->size() == 1);
+    CHECK(note_count(history) == 0);
+    CHECK(history.document.revision == 1);
+
+    const auto capture_lost = dispatch_editor_action(
+        history, state,
+        update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, false});
+    REQUIRE(capture_lost);
+    CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost}));
+    CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
+    auto external_edit = history.document;
+    external_edit.metadata.title = "external change";
+    REQUIRE(commit_document_command(history, std::move(external_edit), "External edit"));
+    const auto stale = dispatch_editor_action(
+        history, state,
+        end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true});
+    CHECK_FALSE(stale);
+    CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    CHECK(history.document.revision == 2);
+    CHECK(note_count(history) == 0);
+    CHECK(history.undo.size() == 1);
+    CHECK(state.pending_note_paint_gesture.has_value());
+    REQUIRE(dispatch_editor_action(
+        history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::escape}));
+    CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+}
+
+TEST_CASE("hit-test buckets handle dense measures and 50k notes within a discrete safety ceiling",
+          "[unit][core][interaction][hit-test][stress]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.divisions_per_standard_measure = 100'000;
+    chart.measures.front().notes.reserve(50'000);
+    for (std::uint64_t index = 0; index < 50'000; ++index) {
+        chart.measures.front().notes.push_back({
+            .id = object_id_t{1'000 + index},
+            .position = {measure_id_t{1}, index * 2},
+            .lane = lane_id_t{1},
+            .kind = note_kind_t::tap,
+        });
+    }
+    chart.measures.back().notes.push_back({
+        .id = object_id_t{60'000},
+        .position = {measure_id_t{2}, 600},
+        .lane = lane_id_t{1},
+        .kind = note_kind_t::tap,
+    });
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{100'000ULL};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
+                                         snaps, 100'000, 200.0);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+    const auto scrolled =
+        dispatch_editor_action(history, state, scroll_editor_view_action_t{10'000.0});
+    REQUIRE(scrolled);
+
+    // This measures one-time index construction plus one pointer query against
+    // the 125 ms discrete-interaction guard. It does not claim a 16.7 ms frame
+    // budget for repeated rendering/drag updates.
+    const auto started = std::chrono::steady_clock::now();
+    const auto built =
+        build_editor_hit_test_index(history.document.charts.front(), history.document.revision);
+    REQUIRE(std::holds_alternative<editor_hit_test_index_t>(built));
+    const auto& index = std::get<editor_hit_test_index_t>(built);
+    REQUIRE(index.measure_buckets.size() == 2);
+    CHECK(index.measure_buckets.front().size() == 50'000);
+    CHECK(index.measure_buckets.back().size() == 1);
+    const auto y = editor_position_y_pixels(history.document.charts.front(), *scrolled.view,
+                                            {measure_id_t{2}, 600});
+    REQUIRE(y.has_value());
+    const auto hit = hit_test_editor(history.document.charts.front(), index, *scrolled.view,
+                                     {.x_pixels = 150.0,
+                                      .y_pixels = *y,
+                                      .field_left_pixels = 100.0,
+                                      .field_width_pixels = 200.0,
+                                      .note_hit_radius_pixels = 2.0});
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    REQUIRE(hit.has_value());
+    CHECK(hit->note == object_id_t{60'000});
+    CHECK(elapsed < std::chrono::milliseconds{125});
 }
 
 TEST_CASE("interaction rejects invalid targets and occupied non-tap notes atomically",

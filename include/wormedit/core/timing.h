@@ -93,6 +93,28 @@ struct timing_query_result_t {
     }
 };
 
+enum class timing_warp_inverse_side_t {
+    // A zero-time warp plateau resolves to the first row in the collapsed span.
+    entry,
+    // A zero-time warp plateau resolves to the row just after the collapsed span.
+    exit,
+};
+
+struct timing_inverse_options_t {
+    timing_warp_inverse_side_t warp_side{timing_warp_inverse_side_t::entry};
+};
+
+struct timing_position_query_result_t {
+    // Exact absolute musical row; fractional rows are retained between boundaries.
+    std::optional<signed_rational_t> absolute_row;
+    bool inside_warp{};
+    std::optional<timing_diagnostic_t> error;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return absolute_row.has_value();
+    }
+};
+
 enum class sample_rounding_t {
     floor,
     ceil,
@@ -119,6 +141,10 @@ struct sample_frame_result_t {
                              local_position_t position,
                              timing_boundary_side_t side = timing_boundary_side_t::event)
     -> timing_query_result_t;
+
+[[nodiscard]] auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
+                                       timing_inverse_options_t options = {})
+    -> timing_position_query_result_t;
 
 [[nodiscard]] auto
 sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,

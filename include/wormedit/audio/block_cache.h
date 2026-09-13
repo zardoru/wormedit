@@ -66,14 +66,32 @@ struct block_cache_stats_t {
 
 // A bounded, thread-safe LRU of normalized 44.1 kHz stereo float blocks.
 // find() returns one value copy so callers never hold a pointer invalidated by
-// a concurrent eviction. Cache accounting covers retained blocks, not copies
-// explicitly requested by the caller.
+// a concurrent eviction. with_block() instead invokes a caller synchronously
+// under the cache lock and does not copy PCM; the callback must not retain the
+// reference or call back into this cache.
 class decoded_block_cache_t {
-public:
+  public:
     explicit decoded_block_cache_t(block_cache_limits_t limits = {});
 
-    [[nodiscard]] auto find(const audio_block_key_t& key)
-        -> std::optional<decoded_audio_block_t>;
+    [[nodiscard]] auto find(const audio_block_key_t& key) -> std::optional<decoded_audio_block_t>;
+    template <typename callable_t>
+    [[nodiscard]] auto with_block(const audio_block_key_t& key, callable_t&& operation) -> bool {
+        std::scoped_lock lock(mutex_);
+        if (key.source.asset_identity.empty() || key.source.source_identity.empty()) {
+            ++stats_.misses;
+            return false;
+        }
+        const auto found = find_entry(key);
+        if (found == most_recent_first_.end()) {
+            ++stats_.misses;
+            return false;
+        }
+        ++stats_.hits;
+        most_recent_first_.splice(most_recent_first_.begin(), most_recent_first_, found);
+        std::invoke(std::forward<callable_t>(operation),
+                    static_cast<const decoded_audio_block_t&>(most_recent_first_.front()));
+        return true;
+    }
     [[nodiscard]] auto cached_frame_count(const audio_block_key_t& key)
         -> std::optional<std::size_t>;
     [[nodiscard]] auto contains(const audio_block_key_t& key) -> bool;
@@ -85,7 +103,7 @@ public:
     [[nodiscard]] auto limits() const noexcept -> block_cache_limits_t;
     [[nodiscard]] auto stats() const -> block_cache_stats_t;
 
-private:
+  private:
     using entry_list_t = std::list<decoded_audio_block_t>;
     using entry_iterator_t = entry_list_t::iterator;
 
@@ -122,7 +140,7 @@ enum class session_publish_status_t {
 // events, voices, and decoder/ring buffers; this session object does not own
 // those buffers or the persistent decoded-block cache.
 class decode_session_t {
-public:
+  public:
     explicit decode_session_t(std::size_t maximum_pending_blocks = 4);
 
     [[nodiscard]] auto start() -> std::optional<session_token_t>;
@@ -143,7 +161,7 @@ public:
         return true;
     }
 
-private:
+  private:
     mutable std::mutex mutex_;
     std::uint64_t generation_{};
     bool active_{};

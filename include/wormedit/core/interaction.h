@@ -2,10 +2,13 @@
 
 #include <wormedit/core/command.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -92,6 +95,44 @@ struct release_note_duration_gesture_action_t {
     local_position_t reference_end;
 };
 
+struct note_paint_target_t {
+    lane_id_t lane;
+    local_position_t position;
+
+    auto operator==(const note_paint_target_t&) const -> bool = default;
+};
+
+struct begin_note_paint_gesture_action_t {
+    lane_id_t lane;
+    local_position_t position;
+    bool pointer_captured{true};
+};
+
+struct update_note_paint_gesture_action_t {
+    lane_id_t lane;
+    local_position_t position;
+    bool pointer_captured{true};
+};
+
+struct end_note_paint_gesture_action_t {
+    lane_id_t lane;
+    local_position_t position;
+    bool pointer_captured{true};
+};
+
+struct paint_cell_key_t {
+    lane_id_t lane;
+    std::uint64_t absolute_row{};
+
+    auto operator==(const paint_cell_key_t&) const -> bool = default;
+};
+
+struct paint_cell_hash_t {
+    [[nodiscard]] auto operator()(paint_cell_key_t cell) const noexcept -> std::size_t;
+};
+
+inline constexpr std::size_t maximum_note_paint_targets = 50'000;
+
 enum class editor_gesture_cancel_reason_t {
     escape,
     focus_lost,
@@ -141,9 +182,10 @@ using editor_ui_action_t = std::variant<
     begin_alt_pointer_hold_gesture_action_t, update_alt_pointer_hold_gesture_action_t,
     release_alt_pointer_hold_gesture_action_t, begin_note_duration_gesture_action_t,
     update_note_duration_gesture_action_t, release_note_duration_gesture_action_t,
-    cancel_editor_gesture_action_t, select_editor_notes_action_t, delete_editor_notes_action_t,
-    resize_note_durations_action_t, select_editor_lane_action_t, adjust_editor_zoom_action_t,
-    scroll_editor_view_action_t>;
+    begin_note_paint_gesture_action_t, update_note_paint_gesture_action_t,
+    end_note_paint_gesture_action_t, cancel_editor_gesture_action_t, select_editor_notes_action_t,
+    delete_editor_notes_action_t, resize_note_durations_action_t, select_editor_lane_action_t,
+    adjust_editor_zoom_action_t, scroll_editor_view_action_t>;
 
 struct pending_hold_t {
     local_position_t position;
@@ -173,6 +215,19 @@ struct pending_note_duration_gesture_t {
     auto operator==(const pending_note_duration_gesture_t&) const -> bool = default;
 };
 
+struct pending_note_paint_gesture_t {
+    std::uint64_t document_revision{};
+    std::shared_ptr<const std::vector<note_paint_target_t>> targets;
+    std::unordered_set<paint_cell_key_t, paint_cell_hash_t> visited;
+    lane_id_t last_lane;
+    local_position_t last_position;
+};
+
+struct note_paint_gesture_preview_t {
+    std::uint64_t document_revision{};
+    std::shared_ptr<const std::vector<note_paint_target_t>> targets;
+};
+
 struct editor_interaction_state_t {
     chart_id_t chart;
     lane_id_t active_lane;
@@ -185,6 +240,7 @@ struct editor_interaction_state_t {
     double viewport_height_pixels{1.0};
     std::optional<pending_hold_t> pending_hold;
     std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
+    std::optional<pending_note_paint_gesture_t> pending_note_paint_gesture;
     std::vector<object_id_t> selected_notes;
 };
 
@@ -201,6 +257,7 @@ struct editor_interaction_view_model_t {
     double viewport_height_pixels{1.0};
     std::optional<pending_hold_t> pending_hold;
     std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
+    std::optional<note_paint_gesture_preview_t> pending_note_paint_gesture;
     std::vector<object_id_t> selected_notes;
     bool can_move_backward{};
     bool can_move_forward{};
@@ -240,6 +297,64 @@ struct editor_interaction_result_t {
 [[nodiscard]] auto editor_position_y_pixels(const chart_document_t& chart,
                                             const editor_interaction_view_model_t& view,
                                             local_position_t position) -> std::optional<double>;
+
+// Maps screen y through the view's exact measure-prefix geometry, zoom, and
+// scroll to the nearest editable row. Half-row ties resolve toward the earlier row.
+[[nodiscard]] auto editor_position_at_y_pixels(const chart_document_t& chart,
+                                               const editor_interaction_view_model_t& view,
+                                               double y_pixels) -> std::optional<local_position_t>;
+
+enum class editor_hit_target_kind_t {
+    lane,
+    note,
+    hold_head,
+    hold_tail,
+};
+
+struct editor_hit_target_t {
+    editor_hit_target_kind_t kind{editor_hit_target_kind_t::lane};
+    lane_id_t lane;
+    std::optional<object_id_t> note;
+    std::optional<note_kind_t> note_kind;
+    local_position_t position;
+
+    auto operator==(const editor_hit_target_t&) const -> bool = default;
+};
+
+struct editor_hit_test_entry_t {
+    object_id_t note;
+    lane_id_t lane;
+    note_kind_t kind{note_kind_t::tap};
+    local_position_t position;
+    std::uint64_t absolute_row{};
+    bool is_tail{};
+};
+
+// Build once per document revision and reuse while querying pointer motion.
+// Each measure bucket contains note heads and hold tails owned by that measure.
+struct editor_hit_test_index_t {
+    chart_id_t chart;
+    std::uint64_t document_revision{};
+    measure_index_t measures;
+    std::vector<std::vector<editor_hit_test_entry_t>> measure_buckets;
+};
+
+struct editor_hit_test_request_t {
+    double x_pixels{};
+    double y_pixels{};
+    double field_left_pixels{};
+    double field_width_pixels{};
+    double note_hit_radius_pixels{8.0};
+};
+
+[[nodiscard]] auto build_editor_hit_test_index(const chart_document_t& chart,
+                                               std::uint64_t document_revision)
+    -> std::variant<editor_hit_test_index_t, diagnostic_list_t>;
+[[nodiscard]] auto hit_test_editor(const chart_document_t& chart,
+                                   const editor_hit_test_index_t& index,
+                                   const editor_interaction_view_model_t& view,
+                                   const editor_hit_test_request_t& request)
+    -> std::optional<editor_hit_target_t>;
 
 // Dispatches one typed frontend action. Document edits are published through
 // commit_document_command so validation, undo, and redo share one boundary.

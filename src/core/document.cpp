@@ -108,9 +108,8 @@ auto canonical_target_identifier(const target_resource_identity_t& identity) -> 
     auto result = identity.identifier;
     if (identity.family == format_family_t::bms) {
         std::ranges::transform(result, result.begin(), [](unsigned char character) {
-            return character >= 'a' && character <= 'z'
-                       ? static_cast<char>(character - ('a' - 'A'))
-                       : static_cast<char>(character);
+            return character >= 'a' && character <= 'z' ? static_cast<char>(character - ('a' - 'A'))
+                                                        : static_cast<char>(character);
         });
     }
     return result;
@@ -120,9 +119,8 @@ auto canonical_target_namespace(const target_resource_identity_t& identity) -> s
     auto result = identity.namespace_name;
     if (identity.family == format_family_t::bms) {
         std::ranges::transform(result, result.begin(), [](unsigned char character) {
-            return character >= 'a' && character <= 'z'
-                       ? static_cast<char>(character - ('a' - 'A'))
-                       : static_cast<char>(character);
+            return character >= 'a' && character <= 'z' ? static_cast<char>(character - ('a' - 'A'))
+                                                        : static_cast<char>(character);
         });
     }
     return result;
@@ -223,8 +221,7 @@ auto valid_control_kind(bms_control_kind_t kind) -> bool {
 }
 
 auto is_conditional_branch(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::if_branch ||
-           kind == bms_control_kind_t::else_if_branch ||
+    return kind == bms_control_kind_t::if_branch || kind == bms_control_kind_t::else_if_branch ||
            kind == bms_control_kind_t::else_branch;
 }
 
@@ -234,12 +231,11 @@ auto control_kind_may_have_close(bms_control_kind_t kind) -> bool {
 }
 
 auto is_switch_branch(bms_control_kind_t kind) -> bool {
-    return kind == bms_control_kind_t::case_branch ||
-           kind == bms_control_kind_t::default_branch;
+    return kind == bms_control_kind_t::case_branch || kind == bms_control_kind_t::default_branch;
 }
 
-auto validate_bms_control_tree(const chart_document_t& chart,
-                               diagnostic_list_t& diagnostics) -> void {
+auto validate_bms_control_tree(const chart_document_t& chart, diagnostic_list_t& diagnostics)
+    -> void {
     std::unordered_map<std::uint64_t, const bms_control_node_t*> nodes_by_id;
     std::unordered_set<std::uint64_t> node_ids;
     struct source_record_t {
@@ -467,8 +463,7 @@ auto validate_bms_control_tree(const chart_document_t& chart,
             }
             auto sibling_end = subtree_end;
             for (auto next = index + 1; next < node.children.size(); ++next) {
-                if (const auto first = first_source_byte(node.children[next]);
-                    first.has_value()) {
+                if (const auto first = first_source_byte(node.children[next]); first.has_value()) {
                     sibling_end = std::min(sibling_end, *first);
                     break;
                 }
@@ -516,15 +511,14 @@ auto validate_bms_control_tree(const chart_document_t& chart,
                                "active RANDOM selection is outside its declared range");
             }
         } else if (selected.kind == bms_control_kind_t::switch_block) {
-            const auto has_matching_case = std::ranges::any_of(
-                selected.children, [&](const auto& child) {
-                    return child.kind == bms_control_kind_t::case_branch && child.value.has_value() &&
-                           *child.value == selection.selected_value;
+            const auto has_matching_case =
+                std::ranges::any_of(selected.children, [&](const auto& child) {
+                    return child.kind == bms_control_kind_t::case_branch &&
+                           child.value.has_value() && *child.value == selection.selected_value;
                 });
-            const auto has_default = std::ranges::any_of(
-                selected.children, [](const auto& child) {
-                    return child.kind == bms_control_kind_t::default_branch;
-                });
+            const auto has_default = std::ranges::any_of(selected.children, [](const auto& child) {
+                return child.kind == bms_control_kind_t::default_branch;
+            });
             if (!has_matching_case && !has_default) {
                 add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
                                "active SWITCH selection matches no CASE and has no DEFAULT");
@@ -764,7 +758,7 @@ auto validate_chart(const chart_document_t& chart,
             }
             if (bgm.sound.has_value() && !contains_resource(resources, *bgm.sound)) {
                 add_diagnostic(diagnostics, diagnostic_code_t::dangling_resource,
-                              "BGM event refers to an unknown sound resource", bgm.id);
+                               "BGM event refers to an unknown sound resource", bgm.id);
             }
         }
     }
@@ -793,6 +787,46 @@ auto validate_chart(const chart_document_t& chart,
         if (pause.duration.denominator == 0 || pause.duration.numerator < 0) {
             add_diagnostic(diagnostics, diagnostic_code_t::invalid_rational,
                            "pause duration must be a non-negative rational", pause.id);
+        }
+    }
+    std::unordered_set<std::uint64_t> projected_bpm_ids;
+    for (const auto& projection : chart.bms_bpm_projections) {
+        const auto event = std::ranges::find(chart.bpms, projection.event, &bpm_event_t::id);
+        if (!projection.event || event == chart.bpms.end()) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "BMS BPM projection refers to an unknown event", projection.event);
+        } else if (!projected_bpm_ids.insert(projection.event.value).second) {
+            add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
+                           "BMS BPM projection is duplicated for one event", projection.event);
+        } else if (event->provenance.source_order != projection.source_order) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "BMS BPM projection source identity does not match its event",
+                           projection.event);
+        }
+        if (projection.imported_beats_per_minute.denominator == 0 ||
+            projection.imported_beats_per_minute.numerator <= 0) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_rational,
+                           "BMS imported BPM baseline must be positive", projection.event);
+        }
+    }
+    std::unordered_set<std::uint64_t> projected_pause_ids;
+    for (const auto& projection : chart.bms_pause_projections) {
+        const auto event = std::ranges::find(chart.pauses, projection.event, &pause_event_t::id);
+        if (!projection.event || event == chart.pauses.end()) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "BMS pause projection refers to an unknown event", projection.event);
+        } else if (!projected_pause_ids.insert(projection.event.value).second) {
+            add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
+                           "BMS pause projection is duplicated for one event", projection.event);
+        } else if (event->provenance.source_order != projection.source_order) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "BMS pause projection source identity does not match its event",
+                           projection.event);
+        }
+        if (projection.imported_duration.denominator == 0 ||
+            projection.imported_duration.numerator < 0) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_rational,
+                           "BMS imported pause baseline must be non-negative", projection.event);
         }
     }
     for (const auto& scroll : chart.scrolls) {
@@ -890,7 +924,8 @@ auto validate_chart(const chart_document_t& chart,
             } else if (!event.playable && event.lane) {
                 add_diagnostic(diagnostics, diagnostic_code_t::unknown_lane,
                                "non-playable BGM sound channel event must use lane zero", event.id);
-            } else if (event.playable && !lane_is_active(chart, index, event.position, event.lane)) {
+            } else if (event.playable &&
+                       !lane_is_active(chart, index, event.position, event.lane)) {
                 add_diagnostic(diagnostics, diagnostic_code_t::unknown_lane,
                                "sound channel event refers to a lane absent from its active layout",
                                event.id);
@@ -1099,12 +1134,12 @@ auto validate_document(const song_document_t& song) -> diagnostic_list_t {
                                "resource target identity has an unknown format family");
                 continue;
             }
-            const auto identifier_is_blank = std::ranges::all_of(
-                identity.identifier, [](unsigned char character) {
+            const auto identifier_is_blank =
+                std::ranges::all_of(identity.identifier, [](unsigned char character) {
                     return std::isspace(character) != 0;
                 });
-            const auto namespace_is_blank = std::ranges::all_of(
-                identity.namespace_name, [](unsigned char character) {
+            const auto namespace_is_blank =
+                std::ranges::all_of(identity.namespace_name, [](unsigned char character) {
                     return std::isspace(character) != 0;
                 });
             if (identity.identifier.empty() || identifier_is_blank ||
@@ -1112,13 +1147,14 @@ auto validate_document(const song_document_t& song) -> diagnostic_list_t {
                 (identity.family == format_family_t::bms && identity.namespace_name.empty()) ||
                 (!identity.namespace_name.empty() && namespace_is_blank) ||
                 identity.namespace_name.find('\0') != std::string::npos) {
-                add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
-                               "resource target identity has an empty or invalid namespace/identifier");
+                add_diagnostic(
+                    diagnostics, diagnostic_code_t::invalid_id,
+                    "resource target identity has an empty or invalid namespace/identifier");
                 continue;
             }
-            const auto key = std::tuple{static_cast<int>(identity.family),
-                                        canonical_target_namespace(identity),
-                                        canonical_target_identifier(identity)};
+            const auto key =
+                std::tuple{static_cast<int>(identity.family), canonical_target_namespace(identity),
+                           canonical_target_identifier(identity)};
             if (!target_identity_owners.emplace(key, resource.id).second) {
                 add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
                                "target resource identity is assigned more than once");

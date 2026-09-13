@@ -677,7 +677,28 @@ TEST_CASE("BMS field and measure projection provenance validates as parallel bou
         .source_order = 12,
         .imported_length = {1, 1},
     });
+    chart.bms_bpm_projections.push_back({
+        .event = object_id_t{5},
+        .source_order = 0,
+        .imported_position = {measure_id_t{1}, 0},
+        .imported_beats_per_minute = {120, 1},
+    });
+    chart.bms_pause_projections.push_back({
+        .event = object_id_t{6},
+        .source_order = 0,
+        .imported_position = {measure_id_t{1}, 480},
+        .imported_kind = pause_kind_t::stop,
+        .imported_duration = {1, 2},
+        .imported_source_unit = pause_unit_t::bms_stop_ticks,
+    });
     CHECK(validate_document(song).empty());
+
+    chart.bms_bpm_projections.front().source_order = 9;
+    CHECK(has_message(validate_document(song), "source identity does not match"));
+    chart.bms_bpm_projections.front().source_order = 0;
+    chart.bms_pause_projections.push_back(chart.bms_pause_projections.front());
+    CHECK(has_message(validate_document(song), "pause projection is duplicated"));
+    chart.bms_pause_projections.pop_back();
 
     song.metadata.format_groups.back().ordered_field_source_orders.push_back(12);
     CHECK(has_message(validate_document(song), "more source-order identities than fields"));

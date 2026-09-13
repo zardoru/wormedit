@@ -22,10 +22,20 @@ suppressed with a diagnostic. This is the initial canonical rule; format adapter
 must still apply and test any profile-specific boundary ordering before claiming a
 semantic round trip.
 
+`musical_position_at` performs the inverse lookup against the same exact index and
+returns an exact absolute row, including fractional rows between timing boundaries.
+Audio times within a delay or stop resolve to that pause's row. Since a half-open
+warp span collapses to one audio time, inverse lookup makes this ambiguity explicit:
+`timing_inverse_options_t::warp_side` selects the warp entry or exit, with entry as
+the default. This endpoint choice is the seam where a format adapter can apply a
+profile's inverse convention.
+
 Sample conversion is exact until the caller-selected final rounding step (`floor`,
 `ceil`, or nearest with ties to even). Negative audio times are valid timing values,
 but cannot enter a transport queue starting at frame zero and are diagnosed when a
-schedule is compiled.
+schedule is compiled. Inverse lookup accepts negative times when the chart's signed
+beat-zero offset places them inside the chart's timing range; queries beyond either
+end return a typed `position_out_of_range` diagnostic.
 
 `build_preview_schedule` creates separate contiguous arrays for playable sounds,
 BGM, BGA, and meter-aware metronome pulses. Simultaneous playable events retain
@@ -36,7 +46,21 @@ they never erase or allocate on the realtime path. A timing-source fingerprint
 rejects accidental reuse after a timing or measure edit, while application-level
 generation guards remain responsible for document/session publication.
 
-Current bounds are deliberate: the index requires a positive BPM at row zero;
-inverse audio-time-to-musical-position mapping, profile-selectable discontinuity
-ordering, count-in before frame zero, scroll/speed evaluation, and transport voice
-materialization remain subsequent timing-engine slices.
+`preview_transport_bridge_t` consumes the playable, BGM, and metronome heads from a
+control thread. It merges them by frame, resolves bounded resource/accent bindings,
+and fills pre-reserved transport voice slots only through the configured capacity.
+When capacity is full, the first unscheduled event remains at its queue head for a
+later refill. Seek and restart binary-search fresh heads under a new session
+generation; Stop invalidates that generation and clears every active slot. Expired
+slots are only marked inactive in the mix callback and are reused by control-thread
+scheduling without callback-side vector growth or erasure. PCM blocks are mixed
+through a synchronous non-copying cache view, so lookup does not allocate or retain
+an eviction-unsafe pointer; cache access is still mutex-serialized. BGA remains a
+renderer queue rather than an audio voice.
+
+Current bounds are deliberate: the index requires a positive BPM at row zero.
+Count-in before frame zero, scroll/speed evaluation, richer profile-specific
+boundary rules, renderer-side BGA consumption, and SDL device integration remain
+subsequent timing-engine slices. The timing source fingerprint continues to reject
+stale preview schedules after timing or measure edits; callers still use document
+generation guards when publishing asynchronous work.

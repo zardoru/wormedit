@@ -44,7 +44,7 @@ struct bms_write_options_t {
     // Original bytes are emitted only while their import provenance is still unchanged.
     bool preserve_unchanged_source{true};
     // Full-tree preservation is the safe default. Active-projection flattening
-    // is a separate, explicitly lossy operation and is not implemented yet.
+    // is a separate, explicitly lossy operation and requires resolved choices.
     bms_branch_policy_t branch_policy{bms_branch_policy_t::preserve_tree};
     // BMS channel payloads are bounded by both this slot count and the parser's line limit.
     std::size_t max_slots_per_line{500'000};

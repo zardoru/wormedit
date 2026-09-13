@@ -1,16 +1,22 @@
 include(Catch)
 
 add_executable(wormedit_core_tests
+    core/audio_fixture_inventory_tests.cpp
     core/document_tests.cpp
+    core/bms_profile_detection_tests.cpp
     core/fixture_inventory_tests.cpp
     core/lane_profile_tests.cpp
     core/measure_tests.cpp
     core/quantize_tests.cpp
     core/rational_tests.cpp
+    formats/bms_tests.cpp
 )
 target_compile_definitions(wormedit_core_tests
     PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
 )
+if(Iconv_FOUND)
+    target_compile_definitions(wormedit_core_tests PRIVATE WORMEDIT_TEST_HAS_ICONV=1)
+endif()
 target_link_libraries(wormedit_core_tests
     PRIVATE
         wormedit::core

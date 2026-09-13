@@ -23,14 +23,22 @@ option(WORMEDIT_ENABLE_LUA "Build the pinned Lua runtime adapter" OFF)
 
 add_library(wormedit_core
     src/core/document.cpp
+    src/core/bms_profile_detection.cpp
     src/core/lane_profiles.cpp
     src/core/measure.cpp
     src/core/quantize.cpp
     src/core/rational.cpp
+    src/formats/bms.cpp
 )
 add_library(wormedit::core ALIAS wormedit_core)
 target_include_directories(wormedit_core PUBLIC "${CMAKE_SOURCE_DIR}/include")
 target_compile_features(wormedit_core PUBLIC cxx_std_20)
+
+find_package(Iconv QUIET)
+if(Iconv_FOUND)
+    target_link_libraries(wormedit_core PRIVATE Iconv::Iconv)
+    target_compile_definitions(wormedit_core PRIVATE WORMEDIT_HAS_ICONV=1)
+endif()
 
 if(MSVC)
     target_compile_options(wormedit_core PRIVATE /W4 /permissive-)

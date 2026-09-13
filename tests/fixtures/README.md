@@ -1,6 +1,6 @@
 # Hand-authored chart fixtures
 
-These small text charts are synthetic, redistributable test inputs authored for Wormedit. They contain no copied commercial chart data or audio. Filenames such as `fixture.ogg`, `bgm-a.wav`, and `background.jpg` are intentional resource references; the corresponding media is not bundled. The fixture corpus records input semantics and capability expectations, not a claim that a reader or writer is already implemented.
+These synthetic, redistributable test inputs were authored for Wormedit and contain no copied commercial chart data or audio. Filenames such as `fixture.ogg`, `bgm-a.wav`, and `background.jpg` in chart text are intentional resource references; those specific resources are not bundled. A separate set of generated audio-only assets is documented in [`audio/README.md`](audio/README.md). The fixture corpus records input semantics and capability expectations, not a claim that a reader or writer is already implemented.
 
 ## Expected semantics and capability inventory
 
@@ -38,4 +38,4 @@ These small text charts are synthetic, redistributable test inputs authored for 
 
 This Stage 0 slice covers hand-authored text cases for the immediate parser and timing work: BMS/BME/BML/PMS, mixed and fixed BMS control flow, byte-authored BMS encoding cases (documented in [`bms/encoding/README.md`](bms/encoding/README.md)), SM/SSC matched timing and native/legacy warp encodings, osu!mania metadata/resources/kiai, and BMSON bar lines/slices/mixed sounds. The BMSON `vox.wav` case is the specification's published data sequence transcribed from YAML to JSON. The paired SM/SSC case is a matched input comparison, not proof that every StepMania feature is accepted by every player. Compatibility results must name the parser/writer profile. BMSON expectations follow the [BMSON 1.0 specification](https://github.com/bemusic/bmson-spec/blob/master/doc/index.rst), including its zero-resolution default and duplicate continuation-flag rule.
 
-It does not yet contain clipboard captures, real audio/image/video assets, exhaustive BMS lane-map permutations, or a full published BMSON sample with media. No fixture should be described as passing a reader/writer test until a harness asserts the expected semantics above.
+The audio directory contains synthetic tones, a polyphonic source, silence, and a longer seek/stream sample; it does not contain recorded audio. The corpus does not yet contain clipboard captures, image/video assets, exhaustive BMS lane-map permutations, or a full published BMSON sample with media. No fixture should be described as passing a reader/writer test until a harness asserts the expected semantics above.

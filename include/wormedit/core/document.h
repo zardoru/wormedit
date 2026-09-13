@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -110,7 +111,9 @@ struct source_provenance_t {
 struct encoding_provenance_t {
     text_encoding_t detected{text_encoding_t::unknown};
     std::optional<text_encoding_t> user_override;
-    std::vector<std::byte> original_bytes;
+    // Imported source can be shared by parse results and song/chart provenance without
+    // multiplying the retained file-sized allocation. A null pointer means no source bytes.
+    std::shared_ptr<const std::vector<std::byte>> original_bytes;
     bool unchanged_since_import{false};
 };
 
@@ -486,13 +489,28 @@ enum class bms_control_kind_t {
     raw_statement,
     random,
     set_random,
+    if_group,
     if_branch,
     else_if_branch,
     else_branch,
     switch_block,
+    set_switch,
     case_branch,
     default_branch,
     skip,
+};
+
+enum class bms_line_ending_t {
+    none,
+    lf,
+    crlf,
+    cr,
+};
+
+struct bms_source_span_t {
+    // Half-open offsets into the original encoded byte stream, including the line ending.
+    std::size_t byte_begin{};
+    std::size_t byte_end{};
 };
 
 struct bms_control_node_t {
@@ -500,6 +518,15 @@ struct bms_control_node_t {
     bms_control_kind_t kind{bms_control_kind_t::raw_statement};
     std::optional<std::int64_t> value;
     std::string original_text;
+    std::string command_token;
+    std::string raw_value;
+    bms_source_span_t source_span;
+    std::size_t source_order{};
+    bms_line_ending_t line_ending{bms_line_ending_t::none};
+    std::optional<bms_source_span_t> close_source_span;
+    std::optional<std::string> close_text;
+    std::optional<std::size_t> close_source_order;
+    std::optional<bms_line_ending_t> close_line_ending;
     std::vector<bms_control_node_t> children;
 };
 

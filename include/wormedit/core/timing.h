@@ -1,0 +1,220 @@
+#pragma once
+
+#include <wormedit/core/document.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <iterator>
+#include <optional>
+#include <span>
+#include <string>
+#include <vector>
+
+namespace wormedit {
+
+enum class timing_error_code_t {
+    invalid_document,
+    missing_initial_bpm,
+    invalid_bpm,
+    invalid_pause,
+    invalid_warp,
+    arithmetic_overflow,
+    position_out_of_range,
+    negative_sample_frame,
+    capacity_exceeded,
+};
+
+struct timing_diagnostic_t {
+    diagnostic_severity_t severity{diagnostic_severity_t::error};
+    timing_error_code_t code{timing_error_code_t::invalid_document};
+    std::string message;
+    std::optional<object_id_t> object;
+};
+
+enum class timing_boundary_side_t {
+    // Arrival at the musical row, before a delay at that row.
+    before_delays,
+    // Gameplay/event time. Delays apply before this point; stops apply after it.
+    event,
+    // Departure from the row after both delays and stops.
+    after_stops,
+};
+
+struct timing_row_state_t {
+    std::uint64_t absolute_row{};
+    signed_rational_t before_delays_seconds;
+    signed_rational_t event_seconds;
+    signed_rational_t after_stops_seconds;
+    signed_rational_t effective_bpm;
+    bool inside_warp{};
+};
+
+struct timing_segment_t {
+    std::uint64_t begin_row{};
+    std::uint64_t end_row{};
+    signed_rational_t begin_seconds;
+    signed_rational_t end_seconds;
+    signed_rational_t effective_bpm;
+    bool warped{};
+};
+
+struct timing_index_t {
+    std::uint64_t divisions_per_standard_measure{};
+    std::uint64_t total_rows{};
+    // Detects accidental reuse after timing/measure edits. UI publication still
+    // uses the document generation guard because a hash is not a session token.
+    std::uint64_t source_fingerprint{};
+    std::vector<timing_row_state_t> rows;
+    std::vector<timing_segment_t> segments;
+};
+
+struct timing_build_options_t {
+    std::size_t maximum_boundaries{100'000};
+    std::size_t maximum_timing_events{200'000};
+};
+
+struct timing_build_result_t {
+    std::optional<timing_index_t> index;
+    std::vector<timing_diagnostic_t> diagnostics;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return index.has_value();
+    }
+};
+
+struct timing_query_result_t {
+    std::optional<signed_rational_t> seconds;
+    bool inside_warp{};
+    std::optional<timing_diagnostic_t> error;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return seconds.has_value();
+    }
+};
+
+enum class sample_rounding_t {
+    floor,
+    ceil,
+    nearest_ties_to_even,
+};
+
+struct sample_frame_result_t {
+    std::optional<std::uint64_t> frame;
+    std::optional<timing_diagnostic_t> error;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return frame.has_value();
+    }
+};
+
+[[nodiscard]] auto build_timing_index(const chart_document_t& chart,
+                                      timing_build_options_t options = {}) -> timing_build_result_t;
+
+[[nodiscard]] auto timing_at(const timing_index_t& index, std::uint64_t absolute_row,
+                             timing_boundary_side_t side = timing_boundary_side_t::event)
+    -> timing_query_result_t;
+
+[[nodiscard]] auto timing_at(const timing_index_t& index, const measure_index_t& measures,
+                             local_position_t position,
+                             timing_boundary_side_t side = timing_boundary_side_t::event)
+    -> timing_query_result_t;
+
+[[nodiscard]] auto
+sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
+                sample_rounding_t rounding = sample_rounding_t::nearest_ties_to_even)
+    -> sample_frame_result_t;
+
+enum class metronome_accent_t : std::uint8_t {
+    regular,
+    group,
+    measure,
+};
+
+struct preview_audio_event_t {
+    std::uint64_t sample_frame{};
+    object_id_t object;
+    resource_id_t resource;
+    std::optional<lane_id_t> lane;
+    std::size_t source_order{};
+    std::size_t secondary_order{};
+};
+
+struct preview_visual_event_t {
+    std::uint64_t sample_frame{};
+    object_id_t object;
+    resource_id_t resource;
+    visual_event_kind_t kind{visual_event_kind_t::background};
+    std::size_t draw_order{};
+    std::size_t source_order{};
+};
+
+struct preview_metronome_event_t {
+    std::uint64_t sample_frame{};
+    measure_id_t measure;
+    std::uint32_t pulse{};
+    metronome_accent_t accent{metronome_accent_t::regular};
+};
+
+struct preview_schedule_t {
+    std::uint32_t sample_rate{};
+    std::vector<preview_audio_event_t> playable;
+    std::vector<preview_audio_event_t> bgm;
+    std::vector<preview_visual_event_t> bga;
+    std::vector<preview_metronome_event_t> metronome;
+};
+
+struct preview_schedule_options_t {
+    std::uint32_t sample_rate{44'100};
+    sample_rounding_t rounding{sample_rounding_t::nearest_ties_to_even};
+    std::size_t maximum_playable_events{100'000};
+    std::size_t maximum_bgm_events{100'000};
+    std::size_t maximum_bga_events{100'000};
+    std::size_t maximum_metronome_events{100'000};
+    bool include_metronome{true};
+};
+
+struct preview_schedule_result_t {
+    std::optional<preview_schedule_t> schedule;
+    std::vector<timing_diagnostic_t> diagnostics;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return schedule.has_value();
+    }
+};
+
+[[nodiscard]] auto build_preview_schedule(const chart_document_t& chart,
+                                          const timing_index_t& timing,
+                                          preview_schedule_options_t options = {})
+    -> preview_schedule_result_t;
+
+struct preview_queue_head_t {
+    std::size_t index{};
+};
+
+// Seek uses binary search. Realtime advancement only changes the small head
+// handle and returns a view into the immutable contiguous queue.
+template <typename event_t>
+void seek_preview_queue(std::span<const event_t> events, preview_queue_head_t& head,
+                        std::uint64_t sample_frame) {
+    head.index = static_cast<std::size_t>(std::distance(
+        events.begin(), std::lower_bound(events.begin(), events.end(), sample_frame,
+                                         [](const event_t& event, std::uint64_t frame) {
+                                             return event.sample_frame < frame;
+                                         })));
+}
+
+template <typename event_t>
+[[nodiscard]] auto advance_preview_queue(std::span<const event_t> events,
+                                         preview_queue_head_t& head,
+                                         std::uint64_t exclusive_end_frame)
+    -> std::span<const event_t> {
+    head.index = std::min(head.index, events.size());
+    const auto begin = head.index;
+    while (head.index < events.size() && events[head.index].sample_frame < exclusive_end_frame) {
+        ++head.index;
+    }
+    return events.subspan(begin, head.index - begin);
+}
+
+} // namespace wormedit

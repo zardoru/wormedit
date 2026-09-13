@@ -192,15 +192,12 @@ void complete_locked(scheduler_state_t& scheduler, const std::shared_ptr<graph_s
             continue;
         }
 
-        const auto failed_dependency =
-            std::ranges::find_if(node.dependencies, [&graph](const auto dependency) {
-                return !graph->nodes[dependency].result.succeeded();
-            });
-        if (failed_dependency != node.dependencies.end()) {
-            const auto& error = *graph->nodes[*failed_dependency].result.error;
-            mark_terminal_locked(scheduler, *graph, ready,
-                                 cancelled_result(task_error_code_t::dependency_failed,
-                                                  "dependency failed: " + error.message));
+        if (graph->stop_source.stop_requested() || scheduler.stopping) {
+            const auto code = scheduler.stopping ? task_error_code_t::scheduler_stopped
+                                                 : task_error_code_t::cancelled;
+            const auto* reason =
+                scheduler.stopping ? "scheduler is shutting down" : "task graph was cancelled";
+            mark_terminal_locked(scheduler, *graph, ready, cancelled_result(code, reason));
             for (const auto dependent : node.dependents) {
                 auto& child = graph->nodes[dependent];
                 if (!is_terminal(child.status) && child.dependencies_left > 0 &&
@@ -208,12 +205,16 @@ void complete_locked(scheduler_state_t& scheduler, const std::shared_ptr<graph_s
                     graph->propagation.push_back(dependent);
                 }
             }
-        } else if (graph->stop_source.stop_requested() || scheduler.stopping) {
-            const auto code = scheduler.stopping ? task_error_code_t::scheduler_stopped
-                                                 : task_error_code_t::cancelled;
-            const auto* reason =
-                scheduler.stopping ? "scheduler is shutting down" : "task graph was cancelled";
-            mark_terminal_locked(scheduler, *graph, ready, cancelled_result(code, reason));
+        } else if (const auto failed_dependency =
+                       std::ranges::find_if(node.dependencies,
+                                            [&graph](const auto dependency) {
+                                                return !graph->nodes[dependency].result.succeeded();
+                                            });
+                   failed_dependency != node.dependencies.end()) {
+            const auto& error = *graph->nodes[*failed_dependency].result.error;
+            mark_terminal_locked(scheduler, *graph, ready,
+                                 cancelled_result(task_error_code_t::dependency_failed,
+                                                  "dependency failed: " + error.message));
             for (const auto dependent : node.dependents) {
                 auto& child = graph->nodes[dependent];
                 if (!is_terminal(child.status) && child.dependencies_left > 0 &&

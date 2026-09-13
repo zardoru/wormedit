@@ -662,3 +662,38 @@ TEST_CASE("measure buckets validate and index fifty thousand notes",
     }
     CHECK(note_count == 50'000);
 }
+
+TEST_CASE("BMS field and measure projection provenance validates as parallel bounded data",
+          "[unit][core][document][bms][provenance]") {
+    auto song = make_valid_song();
+    auto& chart = song.charts.front();
+    song.metadata.format_groups.push_back({
+        .family = format_family_t::bms,
+        .ordered_fields = {{"TITLE", "one"}, {"ARTIST", "two"}},
+        .ordered_field_source_orders = {10, 11},
+    });
+    chart.bms_measure_length_projections.push_back({
+        .measure_index = 0,
+        .source_order = 12,
+        .imported_length = {1, 1},
+    });
+    CHECK(validate_document(song).empty());
+
+    song.metadata.format_groups.back().ordered_field_source_orders.push_back(12);
+    CHECK(has_message(validate_document(song), "more source-order identities than fields"));
+    song.metadata.format_groups.back().ordered_field_source_orders = {10, 10};
+    CHECK(has_message(validate_document(song), "source-order identity is duplicated"));
+
+    song.metadata.format_groups.back().ordered_field_source_orders = {10, 11};
+    chart.bms_measure_length_projections.push_back({
+        .measure_index = 0,
+        .source_order = 13,
+        .imported_length = {1, 1},
+    });
+    CHECK(has_message(validate_document(song), "projection is duplicated"));
+    chart.bms_measure_length_projections.back().measure_index = 99;
+    chart.bms_measure_length_projections.back().imported_length = {0, 1};
+    const auto invalid_projection = validate_document(song);
+    CHECK(has_message(invalid_projection, "unknown measure index"));
+    CHECK(has_message(invalid_projection, "baseline must be positive"));
+}

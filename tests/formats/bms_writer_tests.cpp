@@ -409,21 +409,87 @@ TEST_CASE("BMS writer preserves nested control trees and edits root content outs
     CHECK(has_error(flatten, wormedit::bms_write_diagnostic_code_t::unsupported_branch_policy));
 }
 
-TEST_CASE("BMS writer rejects unsafe branch metadata and root/branch ordering ambiguity",
+TEST_CASE("BMS writer preserves branch metadata and exact ratios while allowing root edits",
           "[unit][format][bms][writer]") {
     constexpr std::string_view metadata_source =
-        "#PLAYER 1\n#RANDOM 1\n#IF 1\n#TITLE Branch title\n#WAV01 click.wav\n"
-        "#00011:01\n#ENDIF\n#ENDRANDOM\n";
+        "#PLAYER 1\n#TITLE Root title\n#00002:5/4\n#WAV03 root.wav\n#00011:03\n"
+        "#RANDOM 2\n#IF 1\n#TITLE Branch one\n#00002:3/4\n#WAV01 one.wav\n"
+        "#00011:01\n#ELSE\n#TITLE Branch two\n#00002:1/2\n#WAV02 two.wav\n"
+        "#00011:02\n#ENDIF\n#ENDRANDOM\n";
     wormedit::bms_parse_options_t parse_options;
     parse_options.lane_profile_id = "bme-7k-outside-scratch";
-    parse_options.branch_choices.push_back({.control_source_order = 1, .selected_value = 1});
+    parse_options.branch_choices.push_back(
+        {.control_source_order = line_order(metadata_source, "#RANDOM 2"), .selected_value = 1});
     const auto metadata_import = parse(metadata_source, parse_options);
     REQUIRE(metadata_import.song.has_value());
-    const auto metadata_result =
-        wormedit::write_bms(*metadata_import.song, {.lane_profile_id = "bme-7k-outside-scratch",
-                                                    .preserve_unchanged_source = false});
-    CHECK_FALSE(metadata_result.bytes.has_value());
-    CHECK(has_error(metadata_result, wormedit::bms_write_diagnostic_code_t::branch_provenance));
+    auto edited_song = *metadata_import.song;
+    edited_song.metadata.title = "Edited root title";
+    auto& chart = edited_song.charts.front();
+    const auto root_note =
+        std::ranges::find_if(chart.measures.front().notes, [&](const auto& note) {
+            return note.provenance.source_order == line_order(metadata_source, "#00011:03");
+        });
+    REQUIRE(root_note != chart.measures.front().notes.end());
+    root_note->position.row = 120;
+
+    wormedit::bms_write_options_t options;
+    options.lane_profile_id = "bme-7k-outside-scratch";
+    options.preserve_unchanged_source = false;
+    const auto written = wormedit::write_bms(edited_song, options);
+    REQUIRE(written.bytes.has_value());
+    CHECK_FALSE(written.has_errors());
+    CHECK(written.bytes->find("#TITLE Edited root title") != std::string::npos);
+    CHECK(occurrences(*written.bytes, "#TITLE Branch one") == 1);
+    CHECK(occurrences(*written.bytes, "#TITLE Branch two") == 1);
+    CHECK(occurrences(*written.bytes, "#00002:5/4") == 1);
+    CHECK(occurrences(*written.bytes, "#00002:3/4") == 1);
+    CHECK(occurrences(*written.bytes, "#00002:1/2") == 1);
+    CHECK(line_order(*written.bytes, "#TITLE Edited root title") <
+          line_order(*written.bytes, "#RANDOM 2"));
+
+    const auto written_random_order = line_order(*written.bytes, "#RANDOM 2");
+    parse_options.branch_choices = {
+        {.control_source_order = written_random_order, .selected_value = 1}};
+    const auto first_branch = parse(*written.bytes, parse_options);
+    REQUIRE(first_branch.song.has_value());
+    CHECK(first_branch.song->metadata.title == "Branch one");
+    CHECK((first_branch.song->charts.front().measures.front().definition.length ==
+           wormedit::rational_t{3, 4}));
+    CHECK(std::ranges::any_of(first_branch.song->charts.front().measures.front().notes,
+                              [](const auto& note) { return note.position.row == 120; }));
+
+    parse_options.branch_choices.front().selected_value = 2;
+    const auto second_branch = parse(*written.bytes, parse_options);
+    REQUIRE(second_branch.song.has_value());
+    CHECK(second_branch.song->metadata.title == "Branch two");
+    CHECK((second_branch.song->charts.front().measures.front().definition.length ==
+           wormedit::rational_t{1, 2}));
+
+    parse_options.branch_choices.clear();
+    const auto root_projection = parse(*written.bytes, parse_options);
+    REQUIRE(root_projection.song.has_value());
+    CHECK(root_projection.song->metadata.title == "Edited root title");
+    CHECK((root_projection.song->charts.front().measures.front().definition.length ==
+           wormedit::rational_t{5, 4}));
+
+    edited_song.charts.front().measures.front().definition.length = {7, 4};
+    const auto edited_branch_ratio = wormedit::write_bms(edited_song, options);
+    CHECK_FALSE(edited_branch_ratio.bytes.has_value());
+    CHECK(has_error(edited_branch_ratio, wormedit::bms_write_diagnostic_code_t::branch_provenance));
+
+    auto edited_branch_metadata = *metadata_import.song;
+    auto& metadata_fields = edited_branch_metadata.metadata.format_groups.front();
+    const auto branch_title_index =
+        std::ranges::find(metadata_fields.ordered_field_source_orders,
+                          line_order(metadata_source, "#TITLE Branch one"));
+    REQUIRE(branch_title_index != metadata_fields.ordered_field_source_orders.end());
+    metadata_fields
+        .ordered_fields[static_cast<std::size_t>(
+            branch_title_index - metadata_fields.ordered_field_source_orders.begin())]
+        .second = "Edited branch title";
+    const auto edited_branch_title = wormedit::write_bms(edited_branch_metadata, options);
+    CHECK_FALSE(edited_branch_title.bytes.has_value());
+    CHECK(has_error(edited_branch_title, wormedit::bms_write_diagnostic_code_t::branch_provenance));
 
     constexpr std::string_view straddled_source =
         "#PLAYER 1\n#TITLE Order\n#BPM 120\n#WAV01 click.wav\n#00011:01\n"
@@ -437,6 +503,30 @@ TEST_CASE("BMS writer rejects unsafe branch metadata and root/branch ordering am
                                                      .preserve_unchanged_source = false});
     CHECK_FALSE(order_result.bytes.has_value());
     CHECK(has_error(order_result, wormedit::bms_write_diagnostic_code_t::branch_provenance));
+}
+
+TEST_CASE("BMS writer keeps branch-only metadata inside its branch",
+          "[unit][format][bms][writer]") {
+    constexpr std::string_view source =
+        "#RANDOM 1\n#IF 1\n#TITLE Branch-only title\n#ENDIF\n#ENDRANDOM\n";
+    wormedit::bms_parse_options_t parse_options;
+    parse_options.branch_choices.push_back(
+        {.control_source_order = line_order(source, "#RANDOM 1"), .selected_value = 1});
+    const auto imported = parse(source, parse_options);
+    REQUIRE(imported.song.has_value());
+    REQUIRE(imported.song->metadata.title == "Branch-only title");
+
+    const auto written =
+        wormedit::write_bms(*imported.song, {.lane_profile_id = "bme-7k-outside-scratch",
+                                             .preserve_unchanged_source = false});
+    REQUIRE(written.bytes.has_value());
+    CHECK(occurrences(*written.bytes, "#TITLE Branch-only title") == 1);
+    CHECK(line_order(*written.bytes, "#RANDOM 1") <
+          line_order(*written.bytes, "#TITLE Branch-only title"));
+
+    const auto reparsed = parse(*written.bytes);
+    REQUIRE(reparsed.song.has_value());
+    CHECK(reparsed.song->metadata.title.empty());
 }
 
 TEST_CASE("BMS writer diagnoses unsafe retained metadata tokens", "[unit][format][bms][writer]") {

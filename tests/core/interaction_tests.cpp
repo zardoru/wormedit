@@ -385,6 +385,283 @@ TEST_CASE("releasing a pending hold at its head places a tap", "[unit][core][int
     CHECK(note.position == local_position_t{measure_id_t{1}, 240});
 }
 
+TEST_CASE("lane-key hold gestures snap, extend, contract to a tap, and undo atomically",
+          "[unit][core][interaction][gesture][hold]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+
+    const auto pressed =
+        dispatch_editor_action(history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    REQUIRE(pressed);
+    REQUIRE(pressed.view->pending_hold.has_value());
+    CHECK(pressed.view->pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane);
+    CHECK(pressed.view->pending_hold->position == local_position_t{measure_id_t{1}, 720});
+    CHECK(history.document.revision == 1);
+    CHECK(note_count(history) == 0);
+
+    const auto extended = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    REQUIRE(extended);
+    const auto extended_again = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    REQUIRE(extended_again);
+    REQUIRE(extended_again.view->pending_hold->preview_end.has_value());
+    CHECK(*extended_again.view->pending_hold->preview_end ==
+          local_position_t{measure_id_t{2}, 240});
+
+    const auto reversed = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
+    REQUIRE(reversed);
+    const auto reversed_again = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
+    REQUIRE(reversed_again);
+    CHECK_FALSE(reversed_again.view->pending_hold->preview_end.has_value());
+    const auto tap =
+        dispatch_editor_action(history, state, release_lane_key_hold_gesture_action_t{});
+    REQUIRE(tap);
+    CHECK(tap.document_changed);
+    REQUIRE(note_count(history) == 1);
+    CHECK(find_note(history, object_id_t{101})->kind == note_kind_t::tap);
+    CHECK_FALSE(state.pending_hold.has_value());
+    REQUIRE(undo_document_command(history));
+    CHECK(note_count(history) == 0);
+
+    REQUIRE(
+        dispatch_editor_action(history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}}));
+    REQUIRE(dispatch_editor_action(history, state,
+                                   move_edit_cursor_action_t{interaction_direction_t::forward}));
+    REQUIRE(dispatch_editor_action(history, state,
+                                   move_edit_cursor_action_t{interaction_direction_t::forward}));
+    const auto hold =
+        dispatch_editor_action(history, state, release_lane_key_hold_gesture_action_t{});
+    REQUIRE(hold);
+    CHECK(find_note(history, object_id_t{101})->kind == note_kind_t::hold);
+    CHECK(find_note(history, object_id_t{101})->end == local_position_t{measure_id_t{2}, 240});
+    REQUIRE(undo_document_command(history));
+    CHECK(note_count(history) == 0);
+}
+
+TEST_CASE("Alt pointer hold gestures cancel on modifier release or capture loss",
+          "[unit][core][interaction][gesture][hold]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+
+    const auto no_modifier = dispatch_editor_action(
+        history, state,
+        begin_alt_pointer_hold_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, false});
+    CHECK_FALSE(no_modifier);
+    CHECK_FALSE(state.pending_hold.has_value());
+
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_alt_pointer_hold_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        update_alt_pointer_hold_gesture_action_t{{measure_id_t{1}, 240}, true, true}));
+    const auto modifier_lost = dispatch_editor_action(
+        history, state,
+        update_alt_pointer_hold_gesture_action_t{{measure_id_t{1}, 480}, false, true});
+    REQUIRE(modifier_lost);
+    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK(note_count(history) == 0);
+
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_alt_pointer_hold_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
+    const auto capture_lost = dispatch_editor_action(
+        history, state,
+        release_alt_pointer_hold_gesture_action_t{{measure_id_t{1}, 480}, true, false});
+    REQUIRE(capture_lost);
+    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK(note_count(history) == 0);
+
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_alt_pointer_hold_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
+    const auto committed = dispatch_editor_action(
+        history, state,
+        release_alt_pointer_hold_gesture_action_t{{measure_id_t{2}, 240}, true, true});
+    REQUIRE(committed);
+    CHECK(committed.document_changed);
+    CHECK(find_note(history, object_id_t{101})->kind == note_kind_t::hold);
+    CHECK(find_note(history, object_id_t{101})->end == local_position_t{measure_id_t{2}, 240});
+    REQUIRE(undo_document_command(history));
+    CHECK(note_count(history) == 0);
+}
+
+TEST_CASE("hold input gestures retain stale previews and can cancel after focus loss",
+          "[unit][core][interaction][gesture][hold][revision]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    REQUIRE(
+        dispatch_editor_action(history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}}));
+
+    auto proposed = history.document;
+    proposed.metadata.title = "external edit";
+    REQUIRE(commit_document_command(history, std::move(proposed), "Rename song"));
+    const auto stale = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    CHECK_FALSE(stale);
+    CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    CHECK(state.pending_hold.has_value());
+    CHECK(note_count(history) == 0);
+
+    const auto cancelled = dispatch_editor_action(
+        history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost});
+    REQUIRE(cancelled);
+    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK(note_count(history) == 0);
+}
+
+TEST_CASE("tail drag previews and commits the same exact duration delta for a selection",
+          "[unit][core][interaction][gesture][selection][hold]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 0},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, 240}},
+        {.id = object_id_t{102},
+         .position = {measure_id_t{1}, 0},
+         .lane = lane_id_t{2},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, 480}},
+    };
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
+
+    REQUIRE(dispatch_editor_action(history, state,
+                                   begin_note_duration_gesture_action_t{object_id_t{101}}));
+    const auto expanded = dispatch_editor_action(
+        history, state, update_note_duration_gesture_action_t{{measure_id_t{1}, 480}});
+    REQUIRE(expanded);
+    REQUIRE(expanded.view->pending_note_duration_gesture.has_value());
+    REQUIRE(expanded.view->pending_note_duration_gesture->preview.size() == 2);
+    CHECK(expanded.view->pending_note_duration_gesture->preview[0].end ==
+          local_position_t{measure_id_t{1}, 480});
+    CHECK(expanded.view->pending_note_duration_gesture->preview[1].end ==
+          local_position_t{measure_id_t{1}, 720});
+    CHECK(history.document.revision == 1);
+
+    const auto committed = dispatch_editor_action(
+        history, state, release_note_duration_gesture_action_t{{measure_id_t{1}, 480}});
+    REQUIRE(committed);
+    CHECK(committed.document_changed);
+    CHECK_FALSE(state.pending_note_duration_gesture.has_value());
+    CHECK(find_note(history, object_id_t{101})->end == local_position_t{measure_id_t{1}, 480});
+    CHECK(find_note(history, object_id_t{102})->end == local_position_t{measure_id_t{1}, 720});
+    REQUIRE(undo_document_command(history));
+    CHECK(find_note(history, object_id_t{101})->end == local_position_t{measure_id_t{1}, 240});
+    CHECK(find_note(history, object_id_t{102})->end == local_position_t{measure_id_t{1}, 480});
+
+    REQUIRE(dispatch_editor_action(history, state,
+                                   begin_note_duration_gesture_action_t{object_id_t{101}}));
+    const auto contracted = dispatch_editor_action(
+        history, state, update_note_duration_gesture_action_t{{measure_id_t{1}, 0}});
+    REQUIRE(contracted);
+    REQUIRE(contracted.view->pending_note_duration_gesture.has_value());
+    CHECK(contracted.view->pending_note_duration_gesture->preview[0].kind == note_kind_t::tap);
+    CHECK_FALSE(contracted.view->pending_note_duration_gesture->preview[0].end.has_value());
+    CHECK(contracted.view->pending_note_duration_gesture->preview[1].end ==
+          local_position_t{measure_id_t{1}, 240});
+    const auto collapsed = dispatch_editor_action(
+        history, state, release_note_duration_gesture_action_t{{measure_id_t{1}, 0}});
+    REQUIRE(collapsed);
+    CHECK(find_note(history, object_id_t{101})->kind == note_kind_t::tap);
+    CHECK(find_note(history, object_id_t{102})->end == local_position_t{measure_id_t{1}, 240});
+}
+
+TEST_CASE("duration gestures reject collisions and stale revisions without partial edits",
+          "[unit][core][interaction][gesture][selection][collision]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 0},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, 240}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1}},
+    };
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(history, state,
+                                   begin_note_duration_gesture_action_t{object_id_t{101}}));
+    const auto collision = dispatch_editor_action(
+        history, state, update_note_duration_gesture_action_t{{measure_id_t{1}, 720}});
+    CHECK_FALSE(collision);
+    CHECK(has_code(collision.diagnostics, diagnostic_code_t::collision));
+    CHECK(history.document.revision == 1);
+    CHECK(find_note(history, object_id_t{101})->end == local_position_t{measure_id_t{1}, 240});
+    CHECK(state.pending_note_duration_gesture.has_value());
+
+    const auto cancel = dispatch_editor_action(
+        history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::escape});
+    REQUIRE(cancel);
+    CHECK_FALSE(state.pending_note_duration_gesture.has_value());
+
+    REQUIRE(dispatch_editor_action(history, state,
+                                   begin_note_duration_gesture_action_t{object_id_t{101}}));
+    auto proposed = history.document;
+    proposed.metadata.title = "revision changed during drag";
+    REQUIRE(commit_document_command(history, std::move(proposed), "Rename song"));
+    const auto stale = dispatch_editor_action(
+        history, state, update_note_duration_gesture_action_t{{measure_id_t{1}, 480}});
+    CHECK_FALSE(stale);
+    CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    CHECK(find_note(history, object_id_t{101})->end == local_position_t{measure_id_t{1}, 240});
+    CHECK(state.pending_note_duration_gesture.has_value());
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost}));
+    CHECK_FALSE(state.pending_note_duration_gesture.has_value());
+}
+
+TEST_CASE("duration gesture previews scale to fifty thousand selected notes",
+          "[unit][core][interaction][gesture][stress]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.divisions_per_standard_measure = 100'000;
+    chart.measures.front().notes.reserve(50'000);
+    std::vector<object_id_t> selected;
+    selected.reserve(50'000);
+    for (std::uint64_t index = 0; index < 50'000; ++index) {
+        const auto id = object_id_t{1'000 + index};
+        chart.measures.front().notes.push_back({
+            .id = id,
+            .position = {measure_id_t{1}, index * 2},
+            .lane = lane_id_t{1},
+            .kind = note_kind_t::tap,
+        });
+        selected.push_back(id);
+    }
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{100'000ULL};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
+                                         snaps, 100'000);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+    REQUIRE(dispatch_editor_action(history, state, select_editor_notes_action_t{selected}));
+    REQUIRE(dispatch_editor_action(history, state,
+                                   begin_note_duration_gesture_action_t{object_id_t{1'000}}));
+
+    const auto preview = dispatch_editor_action(
+        history, state, update_note_duration_gesture_action_t{{measure_id_t{1}, 1}});
+    REQUIRE(preview);
+    REQUIRE(preview.view->pending_note_duration_gesture.has_value());
+    REQUIRE(preview.view->pending_note_duration_gesture->preview.size() == 50'000);
+    CHECK(preview.view->pending_note_duration_gesture->preview.front().end ==
+          local_position_t{measure_id_t{1}, 1});
+    CHECK(preview.view->pending_note_duration_gesture->preview.back().end ==
+          local_position_t{measure_id_t{1}, 99'999});
+    CHECK(history.document.revision == 1);
+}
+
 TEST_CASE("hold completion restores its lane across layout transitions",
           "[unit][core][interaction][hold][layout]") {
     auto song = make_song();

@@ -295,6 +295,16 @@ struct measure_chunk_t {
     std::vector<bgm_event_t> bgm_events;
 };
 
+// BMS measure lengths are control-flow-sensitive. This records which source
+// declaration supplied the currently materialized measure length so an exporter
+// can preserve the full source tree without mistaking a branch projection for a
+// root-level edit.
+struct bms_measure_length_projection_t {
+    std::size_t measure_index{};
+    std::size_t source_order{};
+    rational_t imported_length{};
+};
+
 struct bgm_source_lane_t {
     object_id_t id;
     std::string name;
@@ -543,6 +553,9 @@ struct branch_selection_t {
 struct format_metadata_t {
     format_family_t family{format_family_t::native_project};
     std::vector<std::pair<std::string, std::string>> ordered_fields;
+    // Optional parallel source-line identities for imported fields. Entries that
+    // have no corresponding source order were authored after import.
+    std::vector<std::size_t> ordered_field_source_orders;
     encoding_provenance_t encoding;
 };
 
@@ -575,6 +588,7 @@ struct chart_document_t {
     std::vector<section_t> sections;
     std::vector<bga_event_t> bga_events;
     std::vector<sound_channel_t> sound_channels;
+    std::vector<bms_measure_length_projection_t> bms_measure_length_projections;
     std::optional<bms_control_node_t> bms_control_tree;
     std::vector<branch_selection_t> active_branch_selection;
 };

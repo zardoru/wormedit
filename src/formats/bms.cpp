@@ -718,6 +718,7 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
     std::map<std::string, resource_id_t, std::less<>> resource_ids;
     std::map<std::size_t, std::size_t> last_measure_length_order;
     std::vector<std::pair<std::string, std::string>> ordered_metadata_fields;
+    std::vector<std::size_t> ordered_metadata_source_orders;
 
     auto ensure_measure = [&](std::size_t index) -> measure_chunk_t& {
         while (chart.measures.size() <= index) {
@@ -1375,6 +1376,7 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                 song.metadata.artist = std::string(value);
             }
             ordered_metadata_fields.emplace_back(token, node->raw_value);
+            ordered_metadata_source_orders.push_back(node->source_order);
             continue;
         }
         if (token.size() == 5 && token.starts_with("WAV") && base36_digit(token[3]) &&
@@ -1471,6 +1473,7 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             // before they acquire a normalized core field. Known timing/resource
             // commands have already been consumed above.
             ordered_metadata_fields.emplace_back(token, node->raw_value);
+            ordered_metadata_source_orders.push_back(node->source_order);
             continue;
         }
 
@@ -2026,9 +2029,21 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         .family = format_family_t::bms,
         .encoding = result.encoding,
     });
+    chart.bms_measure_length_projections.reserve(chart.measures.size());
+    for (std::size_t measure_index = 0; measure_index < chart.measures.size(); ++measure_index) {
+        const auto source = last_measure_length_order.find(measure_index);
+        chart.bms_measure_length_projections.push_back({
+            .measure_index = measure_index,
+            .source_order = source == last_measure_length_order.end()
+                                ? std::numeric_limits<std::size_t>::max()
+                                : source->second,
+            .imported_length = chart.measures[measure_index].definition.length,
+        });
+    }
     song.metadata.format_groups.push_back({
         .family = format_family_t::bms,
         .ordered_fields = std::move(ordered_metadata_fields),
+        .ordered_field_source_orders = std::move(ordered_metadata_source_orders),
         .encoding = result.encoding,
     });
     song.charts.push_back(std::move(chart));

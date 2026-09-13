@@ -51,6 +51,58 @@ struct commit_hold_action_t {
 
 struct cancel_hold_action_t {};
 
+enum class hold_gesture_source_t {
+    keyboard_lane,
+    alt_pointer,
+};
+
+struct begin_lane_key_hold_gesture_action_t {
+    lane_id_t lane;
+};
+
+struct release_lane_key_hold_gesture_action_t {};
+
+struct begin_alt_pointer_hold_gesture_action_t {
+    lane_id_t lane;
+    local_position_t position;
+    bool alt_or_option_down{true};
+};
+
+struct update_alt_pointer_hold_gesture_action_t {
+    local_position_t position;
+    bool alt_or_option_down{true};
+    bool pointer_captured{true};
+};
+
+struct release_alt_pointer_hold_gesture_action_t {
+    local_position_t position;
+    bool alt_or_option_down{true};
+    bool pointer_captured{true};
+};
+
+struct begin_note_duration_gesture_action_t {
+    object_id_t reference_note;
+};
+
+struct update_note_duration_gesture_action_t {
+    local_position_t reference_end;
+};
+
+struct release_note_duration_gesture_action_t {
+    local_position_t reference_end;
+};
+
+enum class editor_gesture_cancel_reason_t {
+    escape,
+    focus_lost,
+    modifier_released,
+    pointer_capture_lost,
+};
+
+struct cancel_editor_gesture_action_t {
+    editor_gesture_cancel_reason_t reason{editor_gesture_cancel_reason_t::escape};
+};
+
 struct select_editor_notes_action_t {
     std::vector<object_id_t> notes;
 };
@@ -82,20 +134,43 @@ struct scroll_editor_view_action_t {
     double vertical_pixels{};
 };
 
-using editor_ui_action_t =
-    std::variant<move_edit_cursor_action_t, cycle_edit_snap_action_t, place_tap_action_t,
-                 begin_hold_action_t, update_hold_preview_action_t, commit_hold_action_t,
-                 cancel_hold_action_t, select_editor_notes_action_t, delete_editor_notes_action_t,
-                 resize_note_durations_action_t, select_editor_lane_action_t,
-                 adjust_editor_zoom_action_t, scroll_editor_view_action_t>;
+using editor_ui_action_t = std::variant<
+    move_edit_cursor_action_t, cycle_edit_snap_action_t, place_tap_action_t, begin_hold_action_t,
+    update_hold_preview_action_t, commit_hold_action_t, cancel_hold_action_t,
+    begin_lane_key_hold_gesture_action_t, release_lane_key_hold_gesture_action_t,
+    begin_alt_pointer_hold_gesture_action_t, update_alt_pointer_hold_gesture_action_t,
+    release_alt_pointer_hold_gesture_action_t, begin_note_duration_gesture_action_t,
+    update_note_duration_gesture_action_t, release_note_duration_gesture_action_t,
+    cancel_editor_gesture_action_t, select_editor_notes_action_t, delete_editor_notes_action_t,
+    resize_note_durations_action_t, select_editor_lane_action_t, adjust_editor_zoom_action_t,
+    scroll_editor_view_action_t>;
 
 struct pending_hold_t {
     local_position_t position;
     lane_id_t lane;
     std::uint64_t document_revision{};
     std::optional<local_position_t> preview_end;
+    std::optional<hold_gesture_source_t> gesture_source;
 
     auto operator==(const pending_hold_t&) const -> bool = default;
+};
+
+struct note_duration_preview_t {
+    object_id_t note;
+    note_kind_t kind{note_kind_t::tap};
+    std::optional<local_position_t> end;
+
+    auto operator==(const note_duration_preview_t&) const -> bool = default;
+};
+
+struct pending_note_duration_gesture_t {
+    object_id_t reference_note;
+    std::uint64_t document_revision{};
+    std::vector<object_id_t> notes;
+    local_position_t preview_end;
+    std::vector<note_duration_preview_t> preview;
+
+    auto operator==(const pending_note_duration_gesture_t&) const -> bool = default;
 };
 
 struct editor_interaction_state_t {
@@ -109,6 +184,7 @@ struct editor_interaction_state_t {
     double viewport_scroll_pixels{};
     double viewport_height_pixels{1.0};
     std::optional<pending_hold_t> pending_hold;
+    std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
     std::vector<object_id_t> selected_notes;
 };
 
@@ -124,6 +200,7 @@ struct editor_interaction_view_model_t {
     double viewport_scroll_pixels{};
     double viewport_height_pixels{1.0};
     std::optional<pending_hold_t> pending_hold;
+    std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
     std::vector<object_id_t> selected_notes;
     bool can_move_backward{};
     bool can_move_forward{};

@@ -614,12 +614,30 @@ auto validate_object_id(diagnostic_list_t& diagnostics,
     }
 }
 
+void validate_format_groups(const std::vector<format_metadata_t>& groups,
+                            diagnostic_list_t& diagnostics) {
+    for (const auto& group : groups) {
+        if (group.ordered_field_source_orders.size() > group.ordered_fields.size()) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                           "format metadata has more source-order identities than fields");
+            continue;
+        }
+        std::unordered_set<std::size_t> source_orders;
+        for (const auto source_order : group.ordered_field_source_orders) {
+            if (!source_orders.insert(source_order).second) {
+                add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
+                               "format metadata source-order identity is duplicated");
+            }
+        }
+    }
+}
+
 auto validate_chart(const chart_document_t& chart,
                     const std::unordered_set<std::uint64_t>& resources,
                     const std::unordered_set<std::uint64_t>& audio_assets,
-                    diagnostic_list_t& diagnostics)
-    -> void {
+                    diagnostic_list_t& diagnostics) -> void {
     validate_bms_control_tree(chart, diagnostics);
+    validate_format_groups(chart.metadata.format_groups, diagnostics);
     if (chart.divisions_per_standard_measure == 0) {
         add_diagnostic(diagnostics, diagnostic_code_t::invalid_resolution,
                        "chart divisions per standard measure must be positive");
@@ -636,6 +654,21 @@ auto validate_chart(const chart_document_t& chart,
         return;
     }
     const auto& index = std::get<measure_index_t>(built_index);
+    std::unordered_set<std::size_t> projected_measure_indices;
+    for (const auto& projection : chart.bms_measure_length_projections) {
+        if (projection.measure_index >= chart.measures.size()) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_measure,
+                           "BMS measure-length projection refers to an unknown measure index");
+        } else if (!projected_measure_indices.insert(projection.measure_index).second) {
+            add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
+                           "BMS measure-length projection is duplicated for one measure");
+        }
+        if (projection.imported_length.numerator == 0 ||
+            projection.imported_length.denominator == 0) {
+            add_diagnostic(diagnostics, diagnostic_code_t::invalid_rational,
+                           "BMS imported measure-length baseline must be positive");
+        }
+    }
     std::unordered_set<std::uint64_t> object_ids;
 
     check_unique_ids(
@@ -1005,6 +1038,7 @@ auto validate_input_profile(const lane_layout_t& layout, const input_profile_t& 
 auto validate_document(const song_document_t& song) -> diagnostic_list_t {
     diagnostic_list_t diagnostics;
     require_id(diagnostics, song.id, "song");
+    validate_format_groups(song.metadata.format_groups, diagnostics);
     check_unique_ids(
         diagnostics, song.audio_assets, [](const auto& asset) { return asset.id; }, "audio asset");
     check_unique_ids(

@@ -35,6 +35,7 @@ add_library(wormedit_core
     src/core/quantize.cpp
     src/core/rational.cpp
     src/core/task_graph.cpp
+    src/core/timing.cpp
     src/formats/bms.cpp
     src/formats/bms_writer.cpp
     src/formats/bmson.cpp

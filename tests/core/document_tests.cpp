@@ -621,3 +621,44 @@ TEST_CASE("inexact redivision rejects atomically", "[unit][core][document][negat
     CHECK_FALSE(unknown_measure);
     CHECK(has_code(unknown_measure.diagnostics, diagnostic_code_t::row_out_of_range));
 }
+
+TEST_CASE("measure buckets validate and index fifty thousand notes",
+          "[unit][core][document][stress]") {
+    song_document_t song{.id = song_id_t{1}};
+    chart_document_t chart{.id = chart_id_t{1}};
+    chart.measures.reserve(1'000);
+    std::uint64_t next_note_id = 10'000;
+    for (std::uint64_t measure_index = 0; measure_index < 1'000; ++measure_index) {
+        measure_chunk_t measure{.id = measure_id_t{measure_index + 1}};
+        measure.notes.reserve(50);
+        for (std::uint64_t row = 0; row < 50; ++row) {
+            measure.notes.push_back({
+                .id = object_id_t{next_note_id++},
+                .position = {measure.id, row * 19},
+                .lane = lane_id_t{1},
+            });
+        }
+        chart.measures.push_back(std::move(measure));
+    }
+    chart.lane_layouts.push_back({
+        .id = object_id_t{1},
+        .position = {chart.measures.front().id, 0},
+        .layout =
+            {
+                .profile_id = "stress-1k",
+                .lanes = {{.id = lane_id_t{1}, .name = "Key"}},
+            },
+    });
+    song.charts.push_back(std::move(chart));
+
+    CHECK(validate_document(song).empty());
+    const auto index = build_measure_index(song.charts.front());
+    REQUIRE(std::holds_alternative<measure_index_t>(index));
+    CHECK(std::get<measure_index_t>(index).entries.size() == 1'000);
+    CHECK(std::get<measure_index_t>(index).total_rows == 960'000);
+    std::size_t note_count{};
+    for (const auto& measure : song.charts.front().measures) {
+        note_count += measure.notes.size();
+    }
+    CHECK(note_count == 50'000);
+}

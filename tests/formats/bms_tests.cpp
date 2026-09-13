@@ -110,7 +110,8 @@ TEST_CASE("BMS reader imports metadata, source bytes, measures and resource decl
     REQUIRE(song.charts.size() == 1);
     const auto& chart = song.charts.front();
     REQUIRE(chart.metadata.format_groups.size() == 1);
-    CHECK(chart.metadata.format_groups[0].encoding.original_bytes == result.encoding.original_bytes);
+    CHECK(chart.metadata.format_groups[0].encoding.original_bytes ==
+          result.encoding.original_bytes);
     REQUIRE(chart.bms_control_tree.has_value());
     REQUIRE(chart.measures.size() == 2);
     CHECK((chart.measures[0].definition.length == wormedit::rational_t{3, 4}));
@@ -156,6 +157,43 @@ TEST_CASE("BMS reader imports metadata, source bytes, measures and resource decl
     CHECK(wormedit::validate_document(song).empty());
 }
 
+TEST_CASE("BMS reader retains extended metadata fields in source order",
+          "[unit][format][bms][metadata]") {
+    constexpr std::string_view source = "#PLAYER 1\n"
+                                        "#GENRE Artcore\n"
+                                        "#TITLE Main title\n"
+                                        "#SUBTITLE [Another]\n"
+                                        "#ARTIST Primary artist\n"
+                                        "#SUBARTIST feat. Wormedit\n"
+                                        "#PLAYLEVEL 12\n"
+                                        "#STAGEFILE stage.png\n"
+                                        "#BANNER banner.png\n"
+                                        "#PREVIEW preview.ogg\n"
+                                        "#CUSTOM_EXTENSION retained value\n"
+                                        "#BPM 150\n";
+
+    const auto result = parse(source);
+    REQUIRE(result.song.has_value());
+    CHECK_FALSE(result.has_errors());
+    CHECK(result.song->metadata.title == "Main title");
+    CHECK(result.song->metadata.artist == "Primary artist");
+    REQUIRE(result.song->metadata.format_groups.size() == 1);
+    CHECK(result.song->metadata.format_groups.front().ordered_fields ==
+          std::vector<std::pair<std::string, std::string>>{
+              {"PLAYER", "1"},
+              {"GENRE", "Artcore"},
+              {"TITLE", "Main title"},
+              {"SUBTITLE", "[Another]"},
+              {"ARTIST", "Primary artist"},
+              {"SUBARTIST", "feat. Wormedit"},
+              {"PLAYLEVEL", "12"},
+              {"STAGEFILE", "stage.png"},
+              {"BANNER", "banner.png"},
+              {"PREVIEW", "preview.ogg"},
+              {"CUSTOM_EXTENSION", "retained value"},
+          });
+}
+
 TEST_CASE("BMS channel materialization respects explicit profiles and exact grids",
           "[unit][format][bms][events]") {
     constexpr std::string_view source =
@@ -178,8 +216,7 @@ TEST_CASE("BMS channel materialization respects explicit profiles and exact grid
 
     auto seven_slots = std::string{"#BPM 120\n"};
     for (unsigned int index = 1; index <= 7; ++index) {
-        const auto identifier = index < 10 ? "0" + std::to_string(index)
-                                           : std::to_string(index);
+        const auto identifier = index < 10 ? "0" + std::to_string(index) : std::to_string(index);
         seven_slots += "#WAV" + identifier + " sample-" + identifier + ".wav\n";
     }
     seven_slots += "#00001:01020304050607\n";
@@ -223,9 +260,8 @@ TEST_CASE("BMS channel materialization respects explicit profiles and exact grid
 
 TEST_CASE("BMS long-note channel endpoints pair across lines and measures",
           "[unit][format][bms][events][long-note]") {
-    constexpr std::string_view source =
-        "#WAV01 head.wav\n#WAV02 tail.wav\n"
-        "#00051:0100\n#00051:0002\n#00151:0100\n#00251:0100\n";
+    constexpr std::string_view source = "#WAV01 head.wav\n#WAV02 tail.wav\n"
+                                        "#00051:0100\n#00051:0002\n#00151:0100\n#00251:0100\n";
     wormedit::bms_parse_options_t options;
     options.lane_profile_id = "bme-7k-outside-scratch";
     auto result = parse(source, options);
@@ -286,8 +322,7 @@ TEST_CASE("BMS leaves odd long-note endpoints raw and reports them",
     CHECK(std::ranges::find(raw, "#00051:0100") != raw.end());
     CHECK(wormedit::validate_document(song).empty());
 
-    constexpr std::string_view incompatible_source =
-        "#WAV01 head.wav\n#00051:0100\n#00151:0100\n";
+    constexpr std::string_view incompatible_source = "#WAV01 head.wav\n#00051:0100\n#00151:0100\n";
     options.lane_profile_id = "pms-standard-5button";
     auto incompatible = parse(incompatible_source, options);
     REQUIRE(incompatible.song.has_value());
@@ -453,9 +488,8 @@ TEST_CASE("BMS notes need a compatible selected profile and conditional payloads
     CHECK(conditional.song->charts.front().measures.front().bgm_events.empty());
     const auto& tree = *conditional.song->charts.front().bms_control_tree;
     const auto statements = find_kind(tree, wormedit::bms_control_kind_t::raw_statement);
-    CHECK(std::ranges::any_of(statements, [](const auto* node) {
-        return node->original_text == "#00001:01";
-    }));
+    CHECK(std::ranges::any_of(statements,
+                              [](const auto* node) { return node->original_text == "#00001:01"; }));
 }
 
 TEST_CASE("BMS unresolved channel references retain unbound source slots",
@@ -588,8 +622,8 @@ TEST_CASE("BMS control flow is retained as nested source nodes with closing prov
     REQUIRE(find_kind(fixed_root, wormedit::bms_control_kind_t::set_random).size() == 1);
     REQUIRE(find_kind(fixed_root, wormedit::bms_control_kind_t::set_switch).size() == 1);
 
-    const auto source_bytes = read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) /
-                                          "bms/control-flow-mixed.bms");
+    const auto source_bytes =
+        read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bms/control-flow-mixed.bms");
     const auto spans = physical_source_spans(root);
     REQUIRE_FALSE(spans.empty());
     std::size_t cursor{};
@@ -617,9 +651,8 @@ TEST_CASE("BMS reader preserves malformed and orphan source with located diagnos
     auto recovered = parse(source);
     REQUIRE(recovered.song.has_value());
     CHECK(recovered.has_errors());
-    CHECK_FALSE(std::ranges::any_of(recovered.diagnostics, [](const auto& diagnostic) {
-        return diagnostic.line == 2;
-    }));
+    CHECK_FALSE(std::ranges::any_of(recovered.diagnostics,
+                                    [](const auto& diagnostic) { return diagnostic.line == 2; }));
     CHECK(std::ranges::any_of(recovered.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::bms_parse_diagnostic_code_t::invalid_measure &&
                diagnostic.line == 3;
@@ -734,8 +767,8 @@ TEST_CASE("BMS parser source, line and nesting limits are configurable",
     CHECK(line_limited.diagnostics[0].code ==
           wormedit::bms_parse_diagnostic_code_t::malformed_line);
 
-    auto nesting_limited = parse("#RANDOM 1\n#RANDOM 2\n#ENDRANDOM\n#ENDRANDOM\n",
-                                 {.max_nesting_depth = 1});
+    auto nesting_limited =
+        parse("#RANDOM 1\n#RANDOM 2\n#ENDRANDOM\n#ENDRANDOM\n", {.max_nesting_depth = 1});
     REQUIRE(nesting_limited.song.has_value());
     CHECK(std::ranges::any_of(nesting_limited.diagnostics, [](const auto& diagnostic) {
         return diagnostic.message.find("depth limit") != std::string::npos;
@@ -749,9 +782,8 @@ TEST_CASE("BMS parser source, line and nesting limits are configurable",
 
 TEST_CASE("BMS parser retains malformed terminal branch ordering as raw source",
           "[unit][format][bms][control][recovery]") {
-    constexpr std::string_view source =
-        "#IF 1\n#ELSE\n#ELSE\n#ELIF 2\n#ENDIF\n"
-        "#SWITCH 2\n#DEF\n#DEF\n#CASE 1\n#ENDSW\n";
+    constexpr std::string_view source = "#IF 1\n#ELSE\n#ELSE\n#ELIF 2\n#ENDIF\n"
+                                        "#SWITCH 2\n#DEF\n#DEF\n#CASE 1\n#ENDSW\n";
     auto result = parse(source);
     REQUIRE(result.song.has_value());
     const auto& root = *result.song->charts[0].bms_control_tree;
@@ -880,8 +912,8 @@ TEST_CASE("WAV and BMP declarations retain unresolved relative asset paths",
     CHECK(result.song->resources[0].target_identities[0].namespace_name == "WAV");
     CHECK(result.song->resources[1].target_identities[0].namespace_name == "BMP");
 
-    auto unicode = parse("#WAV01 caf\xc3\xa9.ogg\n",
-                         {.encoding_override = wormedit::text_encoding_t::utf8});
+    auto unicode =
+        parse("#WAV01 caf\xc3\xa9.ogg\n", {.encoding_override = wormedit::text_encoding_t::utf8});
     REQUIRE(unicode.song.has_value());
     REQUIRE(unicode.song->audio_assets.size() == 1);
     CHECK(unicode.song->audio_assets[0].source_path ==

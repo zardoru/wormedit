@@ -35,6 +35,7 @@ add_library(wormedit_core
     src/core/quantize.cpp
     src/core/rational.cpp
     src/formats/bms.cpp
+    src/formats/bms_writer.cpp
     src/formats/bmson.cpp
     src/formats/bmson_writer.cpp
 )

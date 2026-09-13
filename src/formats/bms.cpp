@@ -1,5 +1,5 @@
-#include <wormedit/formats/bms.h>
 #include <wormedit/core/bms_profile_detection.h>
+#include <wormedit/formats/bms.h>
 
 #include <algorithm>
 #include <array>
@@ -446,6 +446,30 @@ auto upper_ascii(std::string_view value) -> std::string {
     return result;
 }
 
+auto is_bms_metadata_command(std::string_view token) -> bool {
+    constexpr std::array commands{
+        std::string_view{"PLAYER"},     std::string_view{"GENRE"},   std::string_view{"TITLE"},
+        std::string_view{"SUBTITLE"},   std::string_view{"ARTIST"},  std::string_view{"SUBARTIST"},
+        std::string_view{"PLAYLEVEL"},  std::string_view{"RANK"},    std::string_view{"DEFEXRANK"},
+        std::string_view{"TOTAL"},      std::string_view{"VOLWAV"},  std::string_view{"STAGEFILE"},
+        std::string_view{"BANNER"},     std::string_view{"BACKBMP"}, std::string_view{"PREVIEW"},
+        std::string_view{"DIFFICULTY"}, std::string_view{"COMMENT"}, std::string_view{"URL"},
+        std::string_view{"EMAIL"},
+    };
+    return std::ranges::find(commands, token) != commands.end();
+}
+
+auto is_safe_bms_header_token(std::string_view token) -> bool {
+    if (token.empty() || !((token.front() >= 'A' && token.front() <= 'Z') ||
+                           (token.front() >= 'a' && token.front() <= 'z'))) {
+        return false;
+    }
+    return std::ranges::all_of(token, [](char character) {
+        return (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z') ||
+               (character >= '0' && character <= '9') || character == '_';
+    });
+}
+
 auto parse_measure_command(std::string_view token)
     -> std::optional<std::pair<std::size_t, std::string>> {
     if (token.size() != 5 ||
@@ -522,8 +546,7 @@ auto resolution_for_slots(std::uint64_t current_resolution, const measure_defini
     // R * (p / q) / slots must be integral. Since p/q is reduced, the
     // remaining denominator is q * (slots / gcd(p, slots)).
     const auto reduced_slots = slots / std::gcd(measure.length.numerator, slots);
-    if (reduced_slots > std::numeric_limits<std::uint64_t>::max() /
-                            measure.length.denominator) {
+    if (reduced_slots > std::numeric_limits<std::uint64_t>::max() / measure.length.denominator) {
         return std::nullopt;
     }
     const auto required_multiple = reduced_slots * measure.length.denominator;
@@ -533,8 +556,8 @@ auto resolution_for_slots(std::uint64_t current_resolution, const measure_defini
 auto parse_positive_rational(std::string_view text) -> std::optional<signed_rational_t> {
     const auto parsed = parse_measure_length(text);
     if (!parsed.value.has_value() ||
-        parsed.value->numerator > static_cast<std::uint64_t>(
-                                      std::numeric_limits<std::int64_t>::max())) {
+        parsed.value->numerator >
+            static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
         return std::nullopt;
     }
     return signed_rational_t{static_cast<std::int64_t>(parsed.value->numerator),
@@ -914,12 +937,12 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             const auto is_else_if = token == "ELSEIF" || token == "ELIF";
             if (frame.terminal_branch_seen) {
                 push_raw_statement(root, current_path, line, parsed, ids);
-                add_line_diagnostic(
-                    result, diagnostic_severity_t::warning,
-                    bms_parse_diagnostic_code_t::malformed_control,
-                    is_else_if ? "conditional branch after #ELSE is retained as raw text"
-                               : "repeated #ELSE is retained as raw text",
-                    line);
+                add_line_diagnostic(result, diagnostic_severity_t::warning,
+                                    bms_parse_diagnostic_code_t::malformed_control,
+                                    is_else_if
+                                        ? "conditional branch after #ELSE is retained as raw text"
+                                        : "repeated #ELSE is retained as raw text",
+                                    line);
                 continue;
             }
             const auto kind =
@@ -974,12 +997,11 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             const auto is_default = token == "DEF";
             if (frame.terminal_branch_seen) {
                 push_raw_statement(root, current_path, line, parsed, ids);
-                add_line_diagnostic(
-                    result, diagnostic_severity_t::warning,
-                    bms_parse_diagnostic_code_t::malformed_control,
-                    is_default ? "repeated #DEF is retained as raw text"
-                               : "#CASE after #DEF is retained as raw text",
-                    line);
+                add_line_diagnostic(result, diagnostic_severity_t::warning,
+                                    bms_parse_diagnostic_code_t::malformed_control,
+                                    is_default ? "repeated #DEF is retained as raw text"
+                                               : "#CASE after #DEF is retained as raw text",
+                                    line);
                 continue;
             }
             const auto value = token == "CASE" ? make_control_value() : std::nullopt;
@@ -1102,8 +1124,8 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
     }
     for (std::size_t index = 0; index < choice_count; ++index) {
         const auto& choice = options.branch_choices[index];
-        const auto [found, inserted] = branch_choices.emplace(choice.control_source_order,
-                                                               choice.selected_value);
+        const auto [found, inserted] =
+            branch_choices.emplace(choice.control_source_order, choice.selected_value);
         if (!inserted) {
             const auto node = choice_nodes.find(choice.control_source_order);
             if (node != choice_nodes.end()) {
@@ -1140,8 +1162,7 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         }
         const auto& control = *node->second;
         if (control.kind == bms_control_kind_t::random &&
-            (!control.value.has_value() || choice->second < 1 ||
-             choice->second > *control.value)) {
+            (!control.value.has_value() || choice->second < 1 || choice->second > *control.value)) {
             line_diagnostic(control, diagnostic_severity_t::warning,
                             bms_parse_diagnostic_code_t::invalid_branch_selection,
                             "RANDOM choice is outside the block's declared range; its branches "
@@ -1169,9 +1190,9 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         ++choice;
     }
 
-    auto selected_if_branch = [](const bms_control_node_t& group,
-                                 std::optional<std::int64_t> random_value)
-        -> const bms_control_node_t* {
+    auto selected_if_branch =
+        [](const bms_control_node_t& group,
+           std::optional<std::int64_t> random_value) -> const bms_control_node_t* {
         if (!random_value.has_value()) {
             return nullptr;
         }
@@ -1189,8 +1210,8 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         return fallback;
     };
 
-    auto selected_switch_branch = [](const bms_control_node_t& block, std::int64_t value)
-        -> const bms_control_node_t* {
+    auto selected_switch_branch = [](const bms_control_node_t& block,
+                                     std::int64_t value) -> const bms_control_node_t* {
         const bms_control_node_t* fallback{};
         for (const auto& child : block.children) {
             if (child.kind == bms_control_kind_t::case_branch && child.value == value) {
@@ -1208,11 +1229,10 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
     std::function<void(const bms_control_node_t&, std::optional<std::int64_t>, bool,
                        std::optional<std::int64_t>&, std::optional<std::int64_t>&, bool*)>
         project_control;
-    project_control = [&](const bms_control_node_t& node,
-                         std::optional<std::int64_t> random_value, bool inside_control,
-                         std::optional<std::int64_t>& pending_random,
-                         std::optional<std::int64_t>& pending_switch,
-                         bool* switch_stopped) -> void {
+    project_control = [&](const bms_control_node_t& node, std::optional<std::int64_t> random_value,
+                          bool inside_control, std::optional<std::int64_t>& pending_random,
+                          std::optional<std::int64_t>& pending_switch,
+                          bool* switch_stopped) -> void {
         if (node.kind == bms_control_kind_t::raw_statement) {
             if (inside_control) {
                 projected_control_statements.push_back(&node);
@@ -1243,9 +1263,8 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                 selected_random = pending_random;
             }
             pending_random.reset();
-            if (selected_random.has_value() &&
-                (!node.value.has_value() || *selected_random < 1 ||
-                 *selected_random > *node.value)) {
+            if (selected_random.has_value() && (!node.value.has_value() || *selected_random < 1 ||
+                                                *selected_random > *node.value)) {
                 line_diagnostic(node, diagnostic_severity_t::warning,
                                 bms_parse_diagnostic_code_t::invalid_branch_selection,
                                 "fixed RANDOM value is outside the block's declared range; its "
@@ -1311,8 +1330,8 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         }
         for (const auto& child : node.children) {
             project_control(child, random_value,
-                            inside_control || node.kind != bms_control_kind_t::root,
-                            pending_random, pending_switch, switch_stopped);
+                            inside_control || node.kind != bms_control_kind_t::root, pending_random,
+                            pending_switch, switch_stopped);
         }
     };
     auto pending_random = std::optional<std::int64_t>{};
@@ -1330,16 +1349,14 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             }
         }
     }
-    std::ranges::sort(projected_control_statements, {}, [](const auto* node) {
-        return node->source_order;
-    });
+    std::ranges::sort(projected_control_statements, {},
+                      [](const auto* node) { return node->source_order; });
 
     std::vector<const bms_control_node_t*> active_statements = root_statements;
     active_statements.insert(active_statements.end(), projected_control_statements.begin(),
                              projected_control_statements.end());
-    std::ranges::stable_sort(active_statements, {}, [](const auto* node) {
-        return node->source_order;
-    });
+    std::ranges::stable_sort(active_statements, {},
+                             [](const auto* node) { return node->source_order; });
 
     std::map<std::string, signed_rational_t, std::less<>> extended_bpms;
     std::map<std::string, signed_rational_t, std::less<>> stop_definitions;
@@ -1351,10 +1368,10 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         const auto token = upper_ascii(node->command_token);
         const auto value = trim_ascii(node->raw_value);
 
-        if (token == "TITLE" || token == "ARTIST") {
+        if (is_bms_metadata_command(token)) {
             if (token == "TITLE") {
                 song.metadata.title = std::string(value);
-            } else {
+            } else if (token == "ARTIST") {
                 song.metadata.artist = std::string(value);
             }
             ordered_metadata_fields.emplace_back(token, node->raw_value);
@@ -1381,9 +1398,10 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                 const auto parsed_length = parse_measure_length(value);
                 if (parsed_length.value.has_value()) {
                     if (last_measure_length_order.contains(measure_number)) {
-                        line_diagnostic(*node, diagnostic_severity_t::warning,
-                                        bms_parse_diagnostic_code_t::invalid_measure,
-                                        "repeated measure-length declaration; later value is applied");
+                        line_diagnostic(
+                            *node, diagnostic_severity_t::warning,
+                            bms_parse_diagnostic_code_t::invalid_measure,
+                            "repeated measure-length declaration; later value is applied");
                     }
                     auto& measure = ensure_measure(measure_number);
                     measure.definition.length = *parsed_length.value;
@@ -1399,27 +1417,30 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         }
 
         if (token == "BPM" || (token.size() == 5 && token.starts_with("BPM") &&
-                                base36_digit(token[3]) && base36_digit(token[4]))) {
+                               base36_digit(token[3]) && base36_digit(token[4]))) {
             const auto parsed_value = parse_positive_rational(value);
             if (!parsed_value.has_value()) {
-                line_diagnostic(*node, diagnostic_severity_t::warning,
-                                bms_parse_diagnostic_code_t::invalid_number,
-                                "BPM declaration is not a positive exact number; raw text is retained");
+                line_diagnostic(
+                    *node, diagnostic_severity_t::warning,
+                    bms_parse_diagnostic_code_t::invalid_number,
+                    "BPM declaration is not a positive exact number; raw text is retained");
                 continue;
             }
             if (token == "BPM") {
                 if (initial_bpm.has_value()) {
-                    line_diagnostic(*node, diagnostic_severity_t::warning,
-                                    bms_parse_diagnostic_code_t::invalid_number,
-                                    "duplicate direct BPM declaration; later valid value is applied");
+                    line_diagnostic(
+                        *node, diagnostic_severity_t::warning,
+                        bms_parse_diagnostic_code_t::invalid_number,
+                        "duplicate direct BPM declaration; later valid value is applied");
                 }
                 initial_bpm = std::pair{node, *parsed_value};
             } else {
                 const auto identifier = token.substr(3, 2);
                 if (extended_bpms.contains(identifier)) {
-                    line_diagnostic(*node, diagnostic_severity_t::warning,
-                                    bms_parse_diagnostic_code_t::invalid_number,
-                                    "duplicate extended BPM identifier; later valid value is applied");
+                    line_diagnostic(
+                        *node, diagnostic_severity_t::warning,
+                        bms_parse_diagnostic_code_t::invalid_number,
+                        "duplicate extended BPM identifier; later valid value is applied");
                 }
                 extended_bpms.insert_or_assign(identifier, *parsed_value);
             }
@@ -1429,9 +1450,10 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             base36_digit(token[5])) {
             const auto parsed_value = parse_positive_rational(value);
             if (!parsed_value.has_value()) {
-                line_diagnostic(*node, diagnostic_severity_t::warning,
-                                bms_parse_diagnostic_code_t::invalid_number,
-                                "STOP declaration is not a positive exact number; raw text is retained");
+                line_diagnostic(
+                    *node, diagnostic_severity_t::warning,
+                    bms_parse_diagnostic_code_t::invalid_number,
+                    "STOP declaration is not a positive exact number; raw text is retained");
                 continue;
             }
             const auto identifier = token.substr(4, 2);
@@ -1444,6 +1466,14 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             continue;
         }
 
+        if (!measure_command.has_value() && is_safe_bms_header_token(token)) {
+            // Retain syntactically safe dialect extensions and custom metadata even
+            // before they acquire a normalized core field. Known timing/resource
+            // commands have already been consumed above.
+            ordered_metadata_fields.emplace_back(token, node->raw_value);
+            continue;
+        }
+
         if (!measure_command.has_value() || node->original_text.size() < 7 ||
             node->original_text[0] != '#' || node->original_text[6] != ':') {
             continue;
@@ -1453,10 +1483,9 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             continue;
         }
         const auto payload = value;
-        const auto valid_payload = !payload.empty() && payload.size() % 2 == 0 &&
-                                   std::ranges::all_of(payload, [](char character) {
-                                       return base36_digit(character);
-                                   });
+        const auto valid_payload =
+            !payload.empty() && payload.size() % 2 == 0 &&
+            std::ranges::all_of(payload, [](char character) { return base36_digit(character); });
         if (!valid_payload) {
             continue;
         }
@@ -1471,15 +1500,13 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             used_playable_channels.push_back(channel);
         }
     }
-    std::ranges::stable_sort(channel_lines, {}, [](const auto& line) {
-        return line.node->source_order;
-    });
+    std::ranges::stable_sort(channel_lines, {},
+                             [](const auto& line) { return line.node->source_order; });
 
     chart.metadata.name = song.metadata.title;
     chart.metadata.author = song.metadata.artist;
 
-    auto measure_length_source = [&](std::size_t measure_index)
-        -> const bms_control_node_t* {
+    auto measure_length_source = [&](std::size_t measure_index) -> const bms_control_node_t* {
         const auto order = last_measure_length_order.find(measure_index);
         if (order == last_measure_length_order.end()) {
             return nullptr;
@@ -1545,9 +1572,8 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                 message += ": ";
                 message += detection.evidence.front().message;
             }
-            const auto first_playable = std::ranges::find_if(channel_lines, [](const auto& line) {
-                return is_playable_channel(line.channel);
-            });
+            const auto first_playable = std::ranges::find_if(
+                channel_lines, [](const auto& line) { return is_playable_channel(line.channel); });
             if (first_playable != channel_lines.end()) {
                 line_diagnostic(*first_playable->node, diagnostic_severity_t::warning,
                                 bms_parse_diagnostic_code_t::unsupported_channel,
@@ -1595,9 +1621,9 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             continue;
         }
 
-        const auto required = resolution_for_slots(
-            chart.divisions_per_standard_measure,
-            chart.measures[channel_line.measure].definition, channel_line.pair_count);
+        const auto required = resolution_for_slots(chart.divisions_per_standard_measure,
+                                                   chart.measures[channel_line.measure].definition,
+                                                   channel_line.pair_count);
         if (!required.has_value() || *required > options.max_chart_resolution) {
             channel_line.materialize = false;
             if (is_long_note_channel(channel)) {
@@ -1624,8 +1650,7 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                         *lane.bms_channels.invisible == channel) ||
                        (lane.bms_channels.long_note.has_value() &&
                         *lane.bms_channels.long_note == channel) ||
-                       (lane.bms_channels.mine.has_value() &&
-                        *lane.bms_channels.mine == channel);
+                       (lane.bms_channels.mine.has_value() && *lane.bms_channels.mine == channel);
             });
         return found == selected_profile->layout.lanes.end() ? nullptr : &*found;
     };
@@ -1637,11 +1662,11 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         }
     }
 
-    auto position_for_slot = [&](const root_channel_line_t& channel_line, std::size_t slot)
-        -> std::optional<local_position_t> {
+    auto position_for_slot = [&](const root_channel_line_t& channel_line,
+                                 std::size_t slot) -> std::optional<local_position_t> {
         const auto& measure = chart.measures[channel_line.measure];
-        const auto capacity = validate_measure(chart.divisions_per_standard_measure,
-                                               measure.definition);
+        const auto capacity =
+            validate_measure(chart.divisions_per_standard_measure, measure.definition);
         if (!capacity.row_capacity.has_value() || channel_line.pair_count == 0 ||
             *capacity.row_capacity % channel_line.pair_count != 0) {
             return std::nullopt;
@@ -1660,10 +1685,9 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         if (found != resource_ids.end()) {
             return found->second;
         }
-        line_diagnostic(node, diagnostic_severity_t::warning,
-                        bms_parse_diagnostic_code_t::unresolved_reference,
-                        "channel object references an undeclared " + key +
-                            "; semantic event remains unbound");
+        line_diagnostic(
+            node, diagnostic_severity_t::warning, bms_parse_diagnostic_code_t::unresolved_reference,
+            "channel object references an undeclared " + key + "; semantic event remains unbound");
         return std::nullopt;
     };
 
@@ -1735,15 +1759,15 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             bgm_source_lane = lane_id;
             chart.bgm_source_lanes.push_back({
                 .id = lane_id,
-                .name = "BGM source #" + channel_line.node->command_token +
-                        " (line " + std::to_string(node.source_order + 1) + ")",
+                .name = "BGM source #" + channel_line.node->command_token + " (line " +
+                        std::to_string(node.source_order + 1) + ")",
                 .source_order = node.source_order,
             });
         }
 
         for (std::size_t slot = 0; slot < channel_line.pair_count; ++slot) {
-            const auto object_id = upper_ascii(std::string_view(channel_line.payload).substr(
-                slot * 2, 2));
+            const auto object_id =
+                upper_ascii(std::string_view(channel_line.payload).substr(slot * 2, 2));
             const auto position = position_for_slot(channel_line, slot);
             if (!position.has_value()) {
                 line_diagnostic(node, diagnostic_severity_t::warning,
@@ -1764,9 +1788,9 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                     .source_lane = *bgm_source_lane,
                     .sound = sound,
                     .structural_slot = slot,
-                    .provenance = source_provenance(
-                        "01 slot " + std::to_string(slot) + " object " + object_id,
-                        node.original_text, node.source_order),
+                    .provenance = source_provenance("01 slot " + std::to_string(slot) + " object " +
+                                                        object_id,
+                                                    node.original_text, node.source_order),
                 });
                 continue;
             }
@@ -1811,9 +1835,9 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                     .id = new_id<object_id_t>(ids),
                     .position = *position,
                     .beats_per_minute = {static_cast<std::int64_t>(bpm_value), 1},
-                    .provenance = source_provenance(
-                        "03 slot " + std::to_string(slot) + " value " + object_id,
-                        node.original_text, node.source_order),
+                    .provenance =
+                        source_provenance("03 slot " + std::to_string(slot) + " value " + object_id,
+                                          node.original_text, node.source_order),
                 });
                 continue;
             }
@@ -1834,9 +1858,9 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                     .id = new_id<object_id_t>(ids),
                     .position = *position,
                     .beats_per_minute = found->second,
-                    .provenance = source_provenance(
-                        "08 slot " + std::to_string(slot) + " BPM" + object_id,
-                        node.original_text, node.source_order),
+                    .provenance =
+                        source_provenance("08 slot " + std::to_string(slot) + " BPM" + object_id,
+                                          node.original_text, node.source_order),
                 });
                 continue;
             }
@@ -1859,9 +1883,9 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                     .kind = pause_kind_t::stop,
                     .duration = found->second,
                     .source_unit = pause_unit_t::bms_stop_ticks,
-                    .provenance = source_provenance(
-                        "09 slot " + std::to_string(slot) + " STOP" + object_id,
-                        node.original_text, node.source_order),
+                    .provenance =
+                        source_provenance("09 slot " + std::to_string(slot) + " STOP" + object_id,
+                                          node.original_text, node.source_order),
                 });
                 continue;
             }
@@ -1892,12 +1916,12 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             }
 
             auto kind = note_kind_t::tap;
-            const auto visible = lane->bms_channels.visible.has_value() &&
-                                 *lane->bms_channels.visible == channel;
+            const auto visible =
+                lane->bms_channels.visible.has_value() && *lane->bms_channels.visible == channel;
             const auto invisible = lane->bms_channels.invisible.has_value() &&
                                    *lane->bms_channels.invisible == channel;
-            const auto mine = lane->bms_channels.mine.has_value() &&
-                              *lane->bms_channels.mine == channel;
+            const auto mine =
+                lane->bms_channels.mine.has_value() && *lane->bms_channels.mine == channel;
             if (invisible) {
                 kind = note_kind_t::invisible;
             } else if (mine) {
@@ -1921,8 +1945,7 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                 .kind = kind,
                 .sound = sound,
                 .provenance = source_provenance(
-                    std::string(channel) + " slot " + std::to_string(slot) + " object " +
-                        object_id,
+                    std::string(channel) + " slot " + std::to_string(slot) + " object " + object_id,
                     node.original_text, node.source_order, selected_profile->layout.profile_id),
             });
         }
@@ -1933,16 +1956,15 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             continue;
         }
         std::ranges::stable_sort(endpoints, [](const auto& left, const auto& right) {
-            return std::tie(left.line->measure, left.position.row,
-                            left.line->node->source_order, left.slot) <
-                   std::tie(right.line->measure, right.position.row,
-                            right.line->node->source_order, right.slot);
+            return std::tie(left.line->measure, left.position.row, left.line->node->source_order,
+                            left.slot) < std::tie(right.line->measure, right.position.row,
+                                                  right.line->node->source_order, right.slot);
         });
         for (std::size_t index = 0; index + 1 < endpoints.size(); index += 2) {
             const auto& start = endpoints[index];
             const auto& end = endpoints[index + 1];
-            const auto crosses_inexact_measure = std::ranges::any_of(
-                inexact_measure_geometry, [&](const auto measure) {
+            const auto crosses_inexact_measure =
+                std::ranges::any_of(inexact_measure_geometry, [&](const auto measure) {
                     return measure >= start.line->measure && measure <= end.line->measure;
                 });
             if (crosses_inexact_measure) {
@@ -1967,13 +1989,13 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             }
             const auto sound = resource_for_object(*start.line->node, start.object_id);
             const auto end_line = end.line->node->source_order + 1;
-            const auto source_field =
-                std::string("long-note start ") + start.line->channel + " slot " +
-                std::to_string(start.slot) + " object " + start.object_id + " paired with " +
-                end.line->channel + " slot " + std::to_string(end.slot) + " object " +
-                end.object_id + " on source line " + std::to_string(end_line);
-            const auto source_spelling = start.line->node->original_text + "\n" +
-                                         end.line->node->original_text;
+            const auto source_field = std::string("long-note start ") + start.line->channel +
+                                      " slot " + std::to_string(start.slot) + " object " +
+                                      start.object_id + " paired with " + end.line->channel +
+                                      " slot " + std::to_string(end.slot) + " object " +
+                                      end.object_id + " on source line " + std::to_string(end_line);
+            const auto source_spelling =
+                start.line->node->original_text + "\n" + end.line->node->original_text;
             chart.measures[start.line->measure].notes.push_back({
                 .id = new_id<object_id_t>(ids),
                 .position = start.position,
@@ -1981,9 +2003,9 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                 .kind = note_kind_t::hold,
                 .end = end.position,
                 .sound = sound,
-                .provenance = source_provenance(
-                    source_field, source_spelling,
-                    start.line->node->source_order, selected_profile->layout.profile_id),
+                .provenance =
+                    source_provenance(source_field, source_spelling, start.line->node->source_order,
+                                      selected_profile->layout.profile_id),
             });
         }
         if (endpoints.size() % 2 != 0) {
@@ -1995,9 +2017,8 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         }
     }
 
-    std::ranges::stable_sort(chart.bpms, {}, [](const auto& event) {
-        return event.provenance.source_order;
-    });
+    std::ranges::stable_sort(chart.bpms, {},
+                             [](const auto& event) { return event.provenance.source_order; });
 
     chart.metadata.name = song.metadata.title;
     chart.metadata.author = song.metadata.artist;

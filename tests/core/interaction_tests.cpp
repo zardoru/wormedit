@@ -2022,6 +2022,134 @@ TEST_CASE("editor deletion removes a cursor note or selected notes atomically",
     CHECK(note_count(history) == 3);
 }
 
+TEST_CASE("bare lane assignment moves every selected note and retains selection",
+          "[unit][core][interaction][selection][lane]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
+    };
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state, select_editor_notes_action_t{{object_id_t{102}, object_id_t{101}}}));
+
+    const auto assigned = dispatch_editor_action(
+        history, state, assign_selected_notes_to_lane_action_t{lane_id_t{2}, false});
+    REQUIRE(assigned);
+    CHECK(assigned.document_changed);
+    CHECK_FALSE(assigned.audition.has_value());
+    CHECK(find_note(history, object_id_t{101})->lane == lane_id_t{2});
+    CHECK(find_note(history, object_id_t{102})->lane == lane_id_t{2});
+    CHECK(assigned.view->selected_notes ==
+          std::vector<object_id_t>{object_id_t{102}, object_id_t{101}});
+    CHECK(assigned.view->active_lane == lane_id_t{2});
+    REQUIRE(undo_document_command(history));
+    CHECK(find_note(history, object_id_t{101})->lane == lane_id_t{1});
+}
+
+TEST_CASE("Shift lane assignment consumes deterministic selected notes and requests audition",
+          "[unit][core][interaction][selection][lane]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}},
+        {.id = object_id_t{103}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
+    };
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        select_editor_notes_action_t{{object_id_t{101}, object_id_t{103}, object_id_t{102}}}));
+
+    const auto first = dispatch_editor_action(
+        history, state, assign_selected_notes_to_lane_action_t{lane_id_t{2}, true});
+    REQUIRE(first);
+    CHECK(first.document_changed);
+    REQUIRE(first.audition.has_value());
+    CHECK(first.audition->note == object_id_t{102});
+    CHECK_FALSE(first.audition->sound.has_value());
+    CHECK(first.view->selected_notes ==
+          std::vector<object_id_t>{object_id_t{101}, object_id_t{103}});
+    CHECK(find_note(history, object_id_t{102})->lane == lane_id_t{2});
+
+    const auto second = dispatch_editor_action(
+        history, state, assign_selected_notes_to_lane_action_t{lane_id_t{2}, true});
+    REQUIRE(second);
+    REQUIRE(second.audition.has_value());
+    CHECK(second.audition->note == object_id_t{103});
+    CHECK(second.view->selected_notes == std::vector<object_id_t>{object_id_t{101}});
+    CHECK(find_note(history, object_id_t{103})->lane == lane_id_t{2});
+}
+
+TEST_CASE("lane assignment rejects selected and existing collisions atomically",
+          "[unit][core][interaction][selection][lane]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{2}},
+        {.id = object_id_t{103}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
+        {.id = object_id_t{104}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}},
+    };
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
+    const auto revision = history.document.revision;
+
+    const auto selected_collision = dispatch_editor_action(
+        history, state, assign_selected_notes_to_lane_action_t{lane_id_t{2}, false});
+    CHECK_FALSE(selected_collision);
+    CHECK(has_code(selected_collision.diagnostics, diagnostic_code_t::collision));
+    CHECK(history.document.revision == revision);
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}, object_id_t{102}});
+
+    REQUIRE(
+        dispatch_editor_action(history, state, select_editor_notes_action_t{{object_id_t{104}}}));
+    const auto existing_collision = dispatch_editor_action(
+        history, state, assign_selected_notes_to_lane_action_t{lane_id_t{2}, false});
+    CHECK_FALSE(existing_collision);
+    CHECK(has_code(existing_collision.diagnostics, diagnostic_code_t::collision));
+    CHECK(find_note(history, object_id_t{104})->lane == lane_id_t{1});
+}
+
+TEST_CASE("lane assignment remains bounded for fifty thousand selected notes",
+          "[unit][core][interaction][selection][lane][stress]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.divisions_per_standard_measure = 100'000;
+    chart.measures.resize(1);
+    chart.measures.front().notes.clear();
+    chart.measures.front().notes.reserve(50'000);
+    std::vector<object_id_t> selected;
+    selected.reserve(50'000);
+    for (std::uint64_t index = 0; index < 50'000; ++index) {
+        const auto id = object_id_t{1'000 + index};
+        chart.measures.front().notes.push_back(
+            {.id = id, .position = {measure_id_t{1}, index * 2}, .lane = lane_id_t{1}});
+        selected.push_back(id);
+    }
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{100'000ULL};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
+                                         snaps, 100'000);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+    REQUIRE(dispatch_editor_action(history, state, select_editor_notes_action_t{selected}));
+
+    const auto assigned = dispatch_editor_action(
+        history, state, assign_selected_notes_to_lane_action_t{lane_id_t{2}, false});
+    REQUIRE(assigned);
+    CHECK(assigned.document_changed);
+    CHECK(assigned.view->selected_notes.size() == 50'000);
+    CHECK(history.document.charts.front().measures.front().notes.front().lane == lane_id_t{2});
+    CHECK(history.document.charts.front().measures.front().notes.back().lane == lane_id_t{2});
+}
+
 TEST_CASE("duration resizing applies the reference delta to every selected note",
           "[unit][core][interaction][selection][hold]") {
     auto song = make_song();

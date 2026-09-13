@@ -237,6 +237,14 @@ struct select_editor_lane_action_t {
     lane_id_t lane;
 };
 
+// A bare lane key assigns every selected note and keeps the selection. The
+// successive (Shift + lane) form assigns only the first note in deterministic
+// chart order, removes it from the selection, and returns an audition request.
+struct assign_selected_notes_to_lane_action_t {
+    lane_id_t lane;
+    bool successive{};
+};
+
 // A zoom factor above one increases the visible distance between chart rows.
 // The cursor remains at the same screen-space y coordinate while zooming.
 struct adjust_editor_zoom_action_t {
@@ -250,20 +258,22 @@ struct scroll_editor_view_action_t {
     double vertical_pixels{};
 };
 
-using editor_ui_action_t = std::variant<
-    move_edit_cursor_action_t, cycle_edit_snap_action_t, place_tap_action_t, begin_hold_action_t,
-    update_hold_preview_action_t, commit_hold_action_t, cancel_hold_action_t,
-    begin_lane_key_hold_gesture_action_t, release_lane_key_hold_gesture_action_t,
-    begin_alt_pointer_hold_gesture_action_t, update_alt_pointer_hold_gesture_action_t,
-    release_alt_pointer_hold_gesture_action_t, begin_note_duration_gesture_action_t,
-    update_note_duration_gesture_action_t, release_note_duration_gesture_action_t,
-    begin_note_paint_gesture_action_t, update_note_paint_gesture_action_t,
-    end_note_paint_gesture_action_t, begin_editor_area_selection_action_t,
-    update_editor_area_selection_action_t, commit_editor_area_selection_action_t,
-    cancel_editor_area_selection_action_t, space_range_selection_action_t,
-    cancel_editor_gesture_action_t, select_editor_notes_action_t, delete_editor_notes_action_t,
-    resize_note_durations_action_t, select_editor_lane_action_t, adjust_editor_zoom_action_t,
-    scroll_editor_view_action_t>;
+using editor_ui_action_t =
+    std::variant<move_edit_cursor_action_t, cycle_edit_snap_action_t, place_tap_action_t,
+                 begin_hold_action_t, update_hold_preview_action_t, commit_hold_action_t,
+                 cancel_hold_action_t, begin_lane_key_hold_gesture_action_t,
+                 release_lane_key_hold_gesture_action_t, begin_alt_pointer_hold_gesture_action_t,
+                 update_alt_pointer_hold_gesture_action_t,
+                 release_alt_pointer_hold_gesture_action_t, begin_note_duration_gesture_action_t,
+                 update_note_duration_gesture_action_t, release_note_duration_gesture_action_t,
+                 begin_note_paint_gesture_action_t, update_note_paint_gesture_action_t,
+                 end_note_paint_gesture_action_t, begin_editor_area_selection_action_t,
+                 update_editor_area_selection_action_t, commit_editor_area_selection_action_t,
+                 cancel_editor_area_selection_action_t, space_range_selection_action_t,
+                 cancel_editor_gesture_action_t, select_editor_notes_action_t,
+                 delete_editor_notes_action_t, resize_note_durations_action_t,
+                 select_editor_lane_action_t, assign_selected_notes_to_lane_action_t,
+                 adjust_editor_zoom_action_t, scroll_editor_view_action_t>;
 
 struct pending_hold_t {
     local_position_t position;
@@ -404,10 +414,18 @@ struct editor_interaction_setup_t {
 };
 
 struct editor_interaction_result_t {
+    struct note_audition_t {
+        object_id_t note;
+        std::optional<resource_id_t> sound;
+
+        auto operator==(const note_audition_t&) const -> bool = default;
+    };
+
     bool accepted{};
     bool document_changed{};
     std::optional<editor_interaction_view_model_t> view;
     diagnostic_list_t diagnostics;
+    std::optional<note_audition_t> audition;
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return accepted;

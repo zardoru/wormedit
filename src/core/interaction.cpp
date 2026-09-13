@@ -3707,6 +3707,213 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                        ? std::get<diagnostic_list_t>(next_view)
                                        : diagnostic_list_t{},
                 };
+            } else if constexpr (std::is_same_v<action_t, assign_selected_notes_to_lane_action_t>) {
+                if (state.selected_notes.empty()) {
+                    return diagnostic_result(
+                        history, state,
+                        {error(diagnostic_code_t::invalid_id,
+                               "lane assignment requires one or more selected notes")});
+                }
+                struct assignment_candidate_t {
+                    const note_t* note{};
+                    std::uint64_t begin{};
+                    std::uint64_t end{};
+                };
+                std::vector<assignment_candidate_t> candidates;
+                candidates.reserve(state.selected_notes.size());
+                std::unordered_set<std::uint64_t> selected_ids;
+                selected_ids.reserve(state.selected_notes.size());
+                for (const auto id : state.selected_notes) {
+                    if (!id || !selected_ids.insert(id.value).second) {
+                        return diagnostic_result(
+                            history, state,
+                            {error(diagnostic_code_t::duplicate_id,
+                                   "selected lane assignment contains an invalid or duplicate ID",
+                                   id)});
+                    }
+                }
+                for (const auto& measure : chart->measures) {
+                    for (const auto& note : measure.notes) {
+                        if (!selected_ids.contains(note.id.value)) {
+                            continue;
+                        }
+                        const auto begin = absolute_row(index, note.position);
+                        const auto end = note.end ? absolute_row(index, *note.end) : begin;
+                        if (!begin.has_value() || !end.has_value()) {
+                            return diagnostic_result(
+                                history, state,
+                                {error(diagnostic_code_t::row_out_of_range,
+                                       "selected lane assignment lies outside chart geometry",
+                                       note.id)});
+                        }
+                        candidates.push_back({&note, *begin, *end});
+                    }
+                }
+                if (candidates.size() != selected_ids.size()) {
+                    return diagnostic_result(
+                        history, state,
+                        {error(diagnostic_code_t::invalid_id,
+                               "selected lane assignment refers to an unavailable note")});
+                }
+                std::ranges::sort(candidates, [](const auto& left, const auto& right) {
+                    return std::tie(left.begin, left.note->lane.value, left.note->id.value) <
+                           std::tie(right.begin, right.note->lane.value, right.note->id.value);
+                });
+                if (typed_action.successive) {
+                    candidates.resize(1);
+                }
+
+                std::unordered_set<std::uint64_t> assigned_ids;
+                assigned_ids.reserve(candidates.size());
+                for (const auto& candidate : candidates) {
+                    assigned_ids.insert(candidate.note->id.value);
+                    if (find_active_lane(*chart, index, candidate.note->position,
+                                         typed_action.lane) == nullptr ||
+                        (candidate.note->end.has_value() &&
+                         find_active_lane(*chart, index, *candidate.note->end, typed_action.lane) ==
+                             nullptr)) {
+                        return diagnostic_result(
+                            history, state,
+                            {error(diagnostic_code_t::unknown_lane,
+                                   "target lane is unavailable at a selected note endpoint",
+                                   candidate.note->id)});
+                    }
+                }
+                struct assignment_interval_t {
+                    std::uint64_t begin{};
+                    std::uint64_t end{};
+                    object_id_t note;
+                    bool moving{};
+                };
+                std::vector<assignment_interval_t> intervals;
+                std::size_t chart_note_count{};
+                for (const auto& measure : chart->measures) {
+                    if (measure.notes.size() >
+                        std::numeric_limits<std::size_t>::max() - chart_note_count) {
+                        return diagnostic_result(
+                            history, state,
+                            {error(diagnostic_code_t::invalid_resolution,
+                                   "chart note count overflows lane-assignment capacity")});
+                    }
+                    chart_note_count += measure.notes.size();
+                }
+                if (candidates.size() >
+                    std::numeric_limits<std::size_t>::max() - chart_note_count) {
+                    return diagnostic_result(
+                        history, state,
+                        {error(diagnostic_code_t::invalid_resolution,
+                               "lane-assignment interval count exceeds capacity")});
+                }
+                intervals.reserve(chart_note_count + candidates.size());
+                for (const auto& candidate : candidates) {
+                    intervals.push_back({candidate.begin, candidate.end, candidate.note->id, true});
+                }
+                for (const auto& measure : chart->measures) {
+                    for (const auto& note : measure.notes) {
+                        if (note.lane != typed_action.lane ||
+                            assigned_ids.contains(note.id.value)) {
+                            continue;
+                        }
+                        const auto begin = absolute_row(index, note.position);
+                        const auto end = note.end ? absolute_row(index, *note.end) : begin;
+                        if (!begin.has_value() || !end.has_value()) {
+                            return diagnostic_result(
+                                history, state,
+                                {error(diagnostic_code_t::row_out_of_range,
+                                       "target-lane note lies outside chart geometry", note.id)});
+                        }
+                        intervals.push_back({*begin, *end, note.id, false});
+                    }
+                }
+                std::ranges::sort(intervals, [](const auto& left, const auto& right) {
+                    return std::tie(left.begin, left.end, left.moving, left.note.value) <
+                           std::tie(right.begin, right.end, right.moving, right.note.value);
+                });
+                std::optional<assignment_interval_t> longest_moving;
+                std::optional<assignment_interval_t> longest_existing;
+                for (const auto& interval : intervals) {
+                    const auto& opposite = interval.moving ? longest_existing : longest_moving;
+                    if (opposite.has_value() && interval.begin <= opposite->end) {
+                        return diagnostic_result(
+                            history, state,
+                            {error(diagnostic_code_t::collision,
+                                   "lane assignment overlaps another target-lane note",
+                                   interval.moving ? interval.note : opposite->note)});
+                    }
+                    if (interval.moving && longest_moving.has_value() &&
+                        interval.begin <= longest_moving->end) {
+                        return diagnostic_result(
+                            history, state,
+                            {error(diagnostic_code_t::collision,
+                                   "selected notes overlap when assigned to one lane",
+                                   interval.note)});
+                    }
+                    auto& longest = interval.moving ? longest_moving : longest_existing;
+                    if (!longest.has_value() || longest->end < interval.end) {
+                        longest = interval;
+                    }
+                }
+
+                std::optional<editor_interaction_result_t::note_audition_t> audition;
+                if (typed_action.successive) {
+                    audition = editor_interaction_result_t::note_audition_t{
+                        .note = candidates.front().note->id,
+                        .sound = candidates.front().note->sound,
+                    };
+                }
+
+                auto proposed = history.document;
+                auto* proposed_chart = find_chart(proposed, state.chart);
+                bool changed = false;
+                std::size_t assigned_count{};
+                for (auto& measure : proposed_chart->measures) {
+                    for (auto& note : measure.notes) {
+                        if (!assigned_ids.contains(note.id.value)) {
+                            continue;
+                        }
+                        changed = changed || note.lane != typed_action.lane;
+                        note.lane = typed_action.lane;
+                        ++assigned_count;
+                    }
+                }
+                if (assigned_count != candidates.size()) {
+                    return diagnostic_result(
+                        history, state,
+                        {error(diagnostic_code_t::invalid_id,
+                               "lane assignment could not resolve every selected note")});
+                }
+                if (changed) {
+                    auto command = commit_document_command(history, std::move(proposed),
+                                                           typed_action.successive
+                                                               ? "Assign next selected note to lane"
+                                                               : "Assign selected notes to lane");
+                    if (!command) {
+                        return diagnostic_result(history, state, std::move(command.diagnostics));
+                    }
+                }
+
+                if (typed_action.successive) {
+                    const auto assigned = audition->note;
+                    std::erase(state.selected_notes, assigned);
+                    std::erase_if(state.selected_objects, [&](const auto& object) {
+                        return object.kind == editor_selection_object_kind_t::note &&
+                               object.id == assigned;
+                    });
+                }
+                state.active_lane = typed_action.lane;
+                const auto next_view = make_view(history, state);
+                return {
+                    .accepted = true,
+                    .document_changed = changed,
+                    .view =
+                        std::holds_alternative<editor_interaction_view_model_t>(next_view)
+                            ? std::optional{std::get<editor_interaction_view_model_t>(next_view)}
+                            : std::nullopt,
+                    .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
+                                       ? std::get<diagnostic_list_t>(next_view)
+                                       : diagnostic_list_t{},
+                    .audition = audition,
+                };
             } else if constexpr (std::is_same_v<action_t, adjust_editor_zoom_action_t>) {
                 if (!std::isfinite(typed_action.factor) || !(typed_action.factor > 0.0)) {
                     return diagnostic_result(

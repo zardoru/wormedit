@@ -66,12 +66,13 @@ struct bms_write_result_t {
 // Writes unchanged imported BMS bytes exactly, or emits deterministic normalized
 // BMS in the requested encoding for metadata, resources, measure lengths, initial
 // BPM, taps, holds, repeated BGM source lanes, and representable BGA events.
-// Unsupported semantic features fail with typed diagnostics. Provenanced branch
-// metadata/resource edits, measure-length edits, and direct BPM declaration edits to
-// the active projection replace only their uniquely attributable retained source
-// statements, active-branch channel events, extended BPM definitions/events, and
-// uniquely attributable pauses replace only their retained source statements;
-// other branch content remains source-backed.
+// Unsupported semantic features fail with typed diagnostics. Preserve-tree output
+// always emits every retained branch and its control statements; it never emits
+// only the selected materialized projection or only its patches. Provenanced branch
+// metadata/resource edits, measure-length edits, direct/extended BPM edits, channel
+// events, and uniquely attributable pauses replace only their retained source
+// statements. Other branch content remains source-backed; direct structural branch
+// editing is not required for a complete full-tree write.
 [[nodiscard]] auto write_bms(const song_document_t& song, bms_write_options_t options = {})
     -> bms_write_result_t;
 

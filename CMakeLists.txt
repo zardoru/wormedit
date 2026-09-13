@@ -50,8 +50,10 @@ add_library(wormedit_core
     src/core/quantize.cpp
     src/core/rational.cpp
     src/core/recovery_controller.cpp
+    src/core/storyboard.cpp
     src/core/task_graph.cpp
     src/core/timing.cpp
+    src/core/viewport_input.cpp
     src/core/workspace.cpp
     src/formats/bms.cpp
     src/formats/bms_writer.cpp
@@ -59,6 +61,8 @@ add_library(wormedit_core
     src/formats/bmson_writer.cpp
     src/formats/native_project.cpp
     src/formats/native_project_storage.cpp
+    src/formats/osu_mania.cpp
+    src/formats/stepmania.cpp
 )
 add_library(wormedit::core ALIAS wormedit_core)
 target_include_directories(wormedit_core PUBLIC "${CMAKE_SOURCE_DIR}/include")

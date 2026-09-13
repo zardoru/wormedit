@@ -72,27 +72,87 @@ void worm_ui_frontend_end_input(void) {
     }
 }
 
-WormUiScaffoldAction worm_ui_frontend_compose(const WormUiScaffoldView* view) {
-    if (!g_context || !view || !view->status_text || !view->git_hash) {
-        return WORM_UI_SCAFFOLD_ACTION_NONE;
+WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
+    WormUiWorkspaceAction action = {WORM_UI_WORKSPACE_ACTION_NONE, WORM_UI_WORKSPACE_TAB_SETUP};
+    if (!g_context || !g_window || !view || !view->project_title || !view->artist ||
+        !view->selected_difficulty || !view->status_text || !view->git_hash || !view->tab_heading ||
+        view->summary_line_count > WORM_UI_WORKSPACE_SUMMARY_CAPACITY ||
+        view->active_tab < WORM_UI_WORKSPACE_TAB_SETUP ||
+        view->active_tab > WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE) {
+        return action;
     }
 
-    WormUiScaffoldAction action = WORM_UI_SCAFFOLD_ACTION_NONE;
-    if (nk_begin(g_context, "wormedit", nk_rect(20, 20, 360, 190),
-                 NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE | NK_WINDOW_MINIMIZABLE |
-                     NK_WINDOW_TITLE)) {
-        nk_layout_row_dynamic(g_context, 24, 1);
-        nk_label(g_context, "SDL3 + Nuklear scaffold", NK_TEXT_LEFT);
-        nk_label(g_context, view->status_text, NK_TEXT_LEFT);
-        nk_labelf(g_context, NK_TEXT_LEFT, "Git hash: %s", view->git_hash);
+    int width = 0;
+    int height = 0;
+    if (!SDL_GetWindowSize(g_window, &width, &height) || width <= 0 || height <= 0) {
+        return action;
+    }
 
-        nk_layout_row_dynamic(g_context, 30, 2);
-        if (nk_button_label(g_context, "Probe audio")) {
-            action = WORM_UI_SCAFFOLD_ACTION_PROBE_AUDIO;
+    if (nk_begin(g_context, "wormedit-workspace", nk_rect(0, 0, (float)width, (float)height),
+                 NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
+        nk_layout_row_begin(g_context, NK_DYNAMIC, 30, 4);
+        nk_layout_row_push(g_context, 0.24f);
+        nk_labelf(g_context, NK_TEXT_LEFT, "%s%s", view->project_title, view->dirty ? " *" : "");
+        nk_layout_row_push(g_context, 0.18f);
+        nk_labelf(g_context, NK_TEXT_LEFT, "Artist: %s", view->artist);
+        nk_layout_row_push(g_context, 0.22f);
+        nk_labelf(g_context, NK_TEXT_LEFT, "Difficulty: %s", view->selected_difficulty);
+        nk_layout_row_push(g_context, 0.36f);
+        nk_label(g_context, view->status_text, NK_TEXT_RIGHT);
+        nk_layout_row_end(g_context);
+
+        nk_layout_row_dynamic(g_context, 34, WORM_UI_WORKSPACE_TAB_COUNT);
+        for (int tab = 0; tab < WORM_UI_WORKSPACE_TAB_COUNT; ++tab) {
+            const WormUiWorkspaceTabItem* item = &view->tabs[tab];
+            if (!item->label) {
+                continue;
+            }
+            if (!item->enabled) {
+                nk_widget_disable_begin(g_context);
+            }
+            if (nk_button_label(g_context, item->label) && item->enabled &&
+                tab != (int)view->active_tab) {
+                action.kind = WORM_UI_WORKSPACE_ACTION_SWITCH_TAB;
+                action.tab = (WormUiWorkspaceTab)tab;
+            }
+            if (!item->enabled) {
+                nk_widget_disable_end(g_context);
+            }
         }
+
+        nk_layout_row_dynamic(g_context, 28, 1);
+        nk_label(g_context, view->tab_heading, NK_TEXT_LEFT);
+
+        const float content_height = height > 300 ? (float)height - 165.0f : 120.0f;
+        nk_layout_row_dynamic(g_context, content_height, 1);
+        if (nk_group_begin(g_context, "workspace-content", NK_WINDOW_BORDER)) {
+            nk_layout_row_dynamic(g_context, 24, 1);
+            if (view->summary_line_count == 0) {
+                nk_label(g_context, "No items in this view.", NK_TEXT_LEFT);
+            }
+            for (size_t line = 0; line < view->summary_line_count; ++line) {
+                if (view->summary_lines[line]) {
+                    nk_label(g_context, view->summary_lines[line], NK_TEXT_LEFT);
+                }
+            }
+            nk_group_end(g_context);
+        }
+
+        nk_layout_row_begin(g_context, NK_DYNAMIC, 28, 5);
+        nk_layout_row_push(g_context, 0.16f);
+        nk_labelf(g_context, NK_TEXT_LEFT, "History: %s",
+                  view->history_available ? "available" : "unavailable");
+        nk_layout_row_push(g_context, 0.10f);
+        nk_labelf(g_context, NK_TEXT_LEFT, "Undo: %zu", view->undo_depth);
+        nk_layout_row_push(g_context, 0.10f);
+        nk_labelf(g_context, NK_TEXT_LEFT, "Redo: %zu", view->redo_depth);
+        nk_layout_row_push(g_context, 0.52f);
+        nk_labelf(g_context, NK_TEXT_LEFT, "Revision build: %s", view->git_hash);
+        nk_layout_row_push(g_context, 0.12f);
         if (nk_button_label(g_context, "Quit")) {
-            action = WORM_UI_SCAFFOLD_ACTION_QUIT;
+            action.kind = WORM_UI_WORKSPACE_ACTION_QUIT;
         }
+        nk_layout_row_end(g_context);
     }
     nk_end(g_context);
     return action;

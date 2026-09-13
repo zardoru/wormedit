@@ -20,6 +20,7 @@ set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
 option(WORMEDIT_BUILD_APP "Build the existing SDL/OpenGL application scaffold" ON)
 option(WORMEDIT_ENABLE_LUA "Build the pinned Lua runtime adapter" OFF)
+option(WORMEDIT_ENABLE_AUDIO_DECODER "Build the headless MP3/Ogg decoder target" ON)
 
 add_library(wormedit_core
     src/core/document.cpp
@@ -48,6 +49,10 @@ endif()
 
 if(WORMEDIT_ENABLE_LUA)
     include(cmake/dependencies/lua.cmake)
+endif()
+
+if(WORMEDIT_ENABLE_AUDIO_DECODER)
+    include(cmake/dependencies/miniaudio.cmake)
 endif()
 
 if(WORMEDIT_BUILD_APP)

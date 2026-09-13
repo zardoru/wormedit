@@ -29,6 +29,25 @@ catch_discover_tests(wormedit_core_tests
     DISCOVERY_MODE PRE_TEST
 )
 
+if(WORMEDIT_ENABLE_AUDIO_DECODER)
+    add_executable(wormedit_audio_tests
+        core/audio_decoder_tests.cpp
+    )
+    target_compile_definitions(wormedit_audio_tests
+        PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    )
+    target_link_libraries(wormedit_audio_tests
+        PRIVATE
+            wormedit::audio_decoder
+            Catch2::Catch2WithMain
+    )
+    catch_discover_tests(wormedit_audio_tests
+        TEST_PREFIX "audio."
+        PROPERTIES LABELS "unit;audio"
+        DISCOVERY_MODE PRE_TEST
+    )
+endif()
+
 if(WORMEDIT_ENABLE_LUA)
     add_executable(wormedit_lua_tests
         lua/lua_runtime_tests.cpp

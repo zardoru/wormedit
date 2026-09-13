@@ -63,6 +63,7 @@ add_library(wormedit_core
     src/core/scroll_speed_editor.cpp
     src/core/semantic_layer_editor.cpp
     src/core/shortcut_profile_storage.cpp
+    src/core/shortcut_profile_startup.cpp
     src/core/storyboard.cpp
     src/core/sv_recipe.cpp
     src/core/startup_session.cpp

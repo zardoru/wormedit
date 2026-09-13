@@ -31,6 +31,7 @@
 #define WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY 128
 #define WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY 16
 #define WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY 16
+#define WORM_UI_SHORTCUT_EVENT_CAPACITY 64
 #define WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY 96
 #define WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY 4
 #define WORM_UI_TIMING_SPEED_CAPACITY 4096
@@ -197,6 +198,21 @@ typedef struct WormUiComposeLaneKeyBinding {
     uint32_t scancode;
     uint64_t lane_id;
 } WormUiComposeLaneKeyBinding;
+
+// Shortcut keys cross the frontend boundary as USB HID Keyboard/Keypad
+// usages. Modifier bits match shortcut_modifier_t's actual modifiers.
+typedef struct WormUiShortcutEvent {
+    uint16_t hid_usage;
+    uint8_t modifiers;
+    bool repeat;
+} WormUiShortcutEvent;
+
+typedef enum WormUiShortcutModifier {
+    WORM_UI_SHORTCUT_MODIFIER_SHIFT = 1 << 0,
+    WORM_UI_SHORTCUT_MODIFIER_CONTROL = 1 << 1,
+    WORM_UI_SHORTCUT_MODIFIER_ALT = 1 << 2,
+    WORM_UI_SHORTCUT_MODIFIER_META = 1 << 3,
+} WormUiShortcutModifier;
 
 typedef struct WormUiComposeBranchRowView {
     const char* display_text;
@@ -461,6 +477,14 @@ typedef struct WormUiWorkspaceAction {
     char timing_primary_denominator_text[64];
     char timing_secondary_numerator_text[64];
     char timing_secondary_denominator_text[64];
+    WormUiShortcutEvent shortcut_events[WORM_UI_SHORTCUT_EVENT_CAPACITY];
+    size_t shortcut_event_count;
+    bool shortcut_overflowed;
+    bool shortcut_window_focused;
+    bool shortcut_text_entry_active;
+    bool shortcut_ime_composition_active;
+    bool shortcut_compose_lane_focused;
+    uint64_t shortcut_focused_lane_id;
 } WormUiWorkspaceAction;
 
 // Private application/frontend boundary. Implementations own all widget

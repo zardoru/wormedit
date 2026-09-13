@@ -96,6 +96,10 @@ static std::array<char, 64> g_timing_primary_denominator{};
 static std::array<char, 64> g_timing_secondary_numerator{};
 static std::array<char, 64> g_timing_secondary_denominator{};
 static bool g_window_focused{true};
+static std::array<WormUiShortcutEvent, WORM_UI_SHORTCUT_EVENT_CAPACITY> g_shortcut_events{};
+static size_t g_shortcut_event_count{};
+static bool g_shortcut_events_overflowed{};
+static bool g_ime_composition_active{};
 static bool g_compose_cancel_pending{};
 static bool g_compose_keyboard_focus{};
 static bool g_compose_action_overflowed{};
@@ -169,6 +173,87 @@ static void queue_compose_key_event(const SDL_KeyboardEvent* event, bool down) {
         .down = down,
         .repeat = event->repeat,
     };
+}
+
+static void queue_shortcut_key_event(const SDL_KeyboardEvent* event) {
+    if (!event || !g_window || !g_window_focused || event->type != SDL_EVENT_KEY_DOWN ||
+        !event->down || event->windowID == 0 || event->windowID != SDL_GetWindowID(g_window) ||
+        g_shortcut_events_overflowed) {
+        return;
+    }
+
+    // SDL documents the usage-page-0x07 scancodes as the USB Keyboard/Keypad
+    // usages used by command_registry. Exclude unknown, modifier usages, and
+    // SDL's non-keyboard scancode pages instead of interpreting keycode text.
+    const auto hid_usage = static_cast<uint16_t>(event->scancode);
+    if (hid_usage < 0x04 || hid_usage > 0xdf) {
+        return;
+    }
+
+    // These modifiers do not have a corresponding command-registry bit. Drop
+    // AltGr/Level5 input rather than accidentally turning it into an unmodified
+    // shortcut on layouts where SDL reports it separately from right Alt.
+    if ((event->mod & (SDL_KMOD_MODE | SDL_KMOD_LEVEL5)) != 0) {
+        return;
+    }
+
+    if (g_shortcut_event_count == g_shortcut_events.size()) {
+        g_shortcut_event_count = 0;
+        g_shortcut_events_overflowed = true;
+        return;
+    }
+
+    uint8_t modifiers{};
+    if ((event->mod & SDL_KMOD_SHIFT) != 0) {
+        modifiers |= WORM_UI_SHORTCUT_MODIFIER_SHIFT;
+    }
+    if ((event->mod & SDL_KMOD_CTRL) != 0) {
+        modifiers |= WORM_UI_SHORTCUT_MODIFIER_CONTROL;
+    }
+    if ((event->mod & SDL_KMOD_ALT) != 0) {
+        modifiers |= WORM_UI_SHORTCUT_MODIFIER_ALT;
+    }
+    if ((event->mod & SDL_KMOD_GUI) != 0) {
+        modifiers |= WORM_UI_SHORTCUT_MODIFIER_META;
+    }
+
+    g_shortcut_events[g_shortcut_event_count++] = {
+        .hid_usage = hid_usage,
+        .modifiers = modifiers,
+        .repeat = event->repeat,
+    };
+}
+
+static bool nuklear_text_entry_active(void) {
+    if (!g_context || !g_context->active) {
+        return false;
+    }
+    const auto* active_window = g_context->active;
+    if (active_window->popup.win) {
+        return active_window->popup.win->edit.active != 0;
+    }
+    return active_window->edit.active != 0;
+}
+
+static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_lane_focused = false,
+                                  uint64_t focused_lane_id = 0) {
+    if (!action) {
+        return;
+    }
+    action->shortcut_event_count = g_shortcut_event_count;
+    for (size_t index = 0; index < g_shortcut_event_count; ++index) {
+        action->shortcut_events[index] = g_shortcut_events[index];
+    }
+    action->shortcut_overflowed = g_shortcut_events_overflowed;
+    action->shortcut_window_focused = g_window_focused;
+    action->shortcut_text_entry_active = nuklear_text_entry_active();
+    action->shortcut_ime_composition_active =
+        action->shortcut_text_entry_active && g_ime_composition_active;
+    action->shortcut_compose_lane_focused = compose_lane_focused && g_window_focused;
+    action->shortcut_focused_lane_id = action->shortcut_compose_lane_focused ? focused_lane_id : 0;
+
+    g_shortcut_event_count = 0;
+    g_shortcut_events_overflowed = false;
 }
 
 static void queue_compose_wheel_event(const SDL_MouseWheelEvent* event) {
@@ -874,6 +959,9 @@ bool worm_ui_frontend_init(SDL_Window* window) {
     g_window = window;
     g_context = context;
     g_window_focused = true;
+    g_shortcut_event_count = 0;
+    g_shortcut_events_overflowed = false;
+    g_ime_composition_active = false;
     g_compose_key_event_count = 0;
     g_compose_cancel_pending = false;
     g_compose_keyboard_focus = false;
@@ -899,6 +987,9 @@ void worm_ui_frontend_shutdown(void) {
     nk_sdl_shutdown();
     g_window = NULL;
     g_context = NULL;
+    g_shortcut_event_count = 0;
+    g_shortcut_events_overflowed = false;
+    g_ime_composition_active = false;
     g_compose_key_event_count = 0;
     g_compose_wheel_event_count = 0;
     g_timing_double_click_count = 0;
@@ -915,6 +1006,8 @@ void worm_ui_frontend_shutdown(void) {
 void worm_ui_frontend_begin_input(void) {
     if (g_context) {
         nk_input_begin(g_context);
+        g_shortcut_event_count = 0;
+        g_shortcut_events_overflowed = false;
         g_timing_double_click_count = 0;
     }
 }
@@ -927,8 +1020,10 @@ bool worm_ui_frontend_handle_event(const SDL_Event* event) {
         g_window_focused = false;
         g_compose_cancel_pending = true;
         g_compose_key_event_count = 0;
+        g_shortcut_event_count = 0;
         g_compose_wheel_event_count = 0;
         g_timing_double_click_count = 0;
+        g_ime_composition_active = false;
         g_compose_keyboard_focus = false;
         g_compose_pointer_hold_active = false;
         g_compose_lane_hold_active = false;
@@ -938,6 +1033,19 @@ bool worm_ui_frontend_handle_event(const SDL_Event* event) {
         g_window_focused = true;
     } else if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) {
         queue_compose_key_event(&event->key, event->type == SDL_EVENT_KEY_DOWN);
+        queue_shortcut_key_event(&event->key);
+    } else if (event->type == SDL_EVENT_TEXT_EDITING && g_window && event->edit.windowID != 0 &&
+               event->edit.windowID == SDL_GetWindowID(g_window)) {
+        g_ime_composition_active = event->edit.text && event->edit.text[0] != '\0';
+    } else if (event->type == SDL_EVENT_TEXT_EDITING_CANDIDATES && g_window &&
+               event->edit_candidates.windowID != 0 &&
+               event->edit_candidates.windowID == SDL_GetWindowID(g_window)) {
+        if (event->edit_candidates.num_candidates > 0) {
+            g_ime_composition_active = true;
+        }
+    } else if (event->type == SDL_EVENT_TEXT_INPUT && g_window && event->text.windowID != 0 &&
+               event->text.windowID == SDL_GetWindowID(g_window)) {
+        g_ime_composition_active = false;
     } else if (event->type == SDL_EVENT_MOUSE_WHEEL) {
         queue_compose_wheel_event(&event->wheel);
     } else if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.down &&
@@ -1120,31 +1228,15 @@ static void process_compose_key_events(const WormUiComposeView* view,
         }
         const bool shortcut = compose_shortcut_modifier(key_event.modifiers);
         if (key_event.keycode == static_cast<uint32_t>(SDLK_SPACE)) {
-            if ((key_event.modifiers & SDL_KMOD_ALT) == 0) {
+            constexpr auto any_space_modifier = SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT |
+                                                SDL_KMOD_GUI | SDL_KMOD_MODE | SDL_KMOD_LEVEL5;
+            if ((key_event.modifiers & any_space_modifier) == 0) {
                 append_compose_input(action, WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION, 0.0, 0.0,
-                                     0, false, compose_selection_mode(key_event.modifiers));
+                                     0, false, WORM_UI_COMPOSE_SELECTION_REPLACE);
             }
             continue;
         }
-        if (shortcut && key_event.keycode == static_cast<uint32_t>(SDLK_Z)) {
-            append_compose_input(action, (key_event.modifiers & SDL_KMOD_SHIFT) != 0
-                                             ? WORM_UI_COMPOSE_INPUT_REDO
-                                             : WORM_UI_COMPOSE_INPUT_UNDO);
-            continue;
-        }
-        if (shortcut && key_event.keycode == static_cast<uint32_t>(SDLK_Y)) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_REDO);
-            continue;
-        }
         if (shortcut) {
-            continue;
-        }
-        if (key_event.keycode == static_cast<uint32_t>(SDLK_ESCAPE)) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
-            g_compose_lane_hold_active = false;
-            g_compose_pointer_hold_active = false;
-            g_compose_area_selection_candidate_active = false;
-            g_compose_area_selection_active = false;
             continue;
         }
         if (key_event.keycode == static_cast<uint32_t>(SDLK_UP)) {
@@ -1155,13 +1247,9 @@ static void process_compose_key_events(const WormUiComposeView* view,
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD);
             continue;
         }
-        if (key_event.keycode == static_cast<uint32_t>(SDLK_DELETE) ||
-            key_event.keycode == static_cast<uint32_t>(SDLK_BACKSPACE)) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_DELETE_NOTES);
-            continue;
-        }
         if (g_compose_lane_hold_active ||
-            (key_event.modifiers & (SDL_KMOD_ALT | SDL_KMOD_GUI | SDL_KMOD_CTRL)) != 0) {
+            (key_event.modifiers & (SDL_KMOD_ALT | SDL_KMOD_GUI | SDL_KMOD_CTRL | SDL_KMOD_MODE |
+                                    SDL_KMOD_LEVEL5)) != 0) {
             continue;
         }
         for (size_t binding_index = 0; binding_index < view->lane_key_binding_count;
@@ -2014,6 +2102,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         view->active_tab < WORM_UI_WORKSPACE_TAB_SETUP ||
         view->active_tab > WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE) {
         g_compose_wheel_event_count = 0;
+        expose_shortcut_input(&action);
         return action;
     }
 
@@ -2021,6 +2110,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     int height = 0;
     if (!SDL_GetWindowSize(g_window, &width, &height) || width <= 0 || height <= 0) {
         g_compose_wheel_event_count = 0;
+        expose_shortcut_input(&action);
         return action;
     }
 
@@ -2252,6 +2342,12 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         nk_layout_row_end(g_context);
     }
     nk_end(g_context);
+    const bool compose_lane_focused = g_window_focused && g_compose_keyboard_focus &&
+                                      view->active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE &&
+                                      view->compose.visible && view->compose.scene_available &&
+                                      view->compose.cursor && view->compose.cursor->lane_id != 0;
+    expose_shortcut_input(&action, compose_lane_focused,
+                          compose_lane_focused ? view->compose.cursor->lane_id : 0);
     return action;
 }
 

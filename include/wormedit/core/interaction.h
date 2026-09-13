@@ -28,6 +28,14 @@ struct move_edit_cursor_action_t {
     interaction_direction_t direction{interaction_direction_t::forward};
 };
 
+// Moves directly to an exact chart position without applying the active snap.
+// The source revision lets callers safely consume positions returned by a
+// revision-bound query such as marker navigation.
+struct jump_edit_cursor_action_t {
+    local_position_t position;
+    std::uint64_t expected_document_revision{};
+};
+
 struct cycle_edit_snap_action_t {
     interaction_direction_t direction{interaction_direction_t::forward};
 };
@@ -259,9 +267,9 @@ struct scroll_editor_view_action_t {
 };
 
 using editor_ui_action_t =
-    std::variant<move_edit_cursor_action_t, cycle_edit_snap_action_t, place_tap_action_t,
-                 begin_hold_action_t, update_hold_preview_action_t, commit_hold_action_t,
-                 cancel_hold_action_t, begin_lane_key_hold_gesture_action_t,
+    std::variant<move_edit_cursor_action_t, jump_edit_cursor_action_t, cycle_edit_snap_action_t,
+                 place_tap_action_t, begin_hold_action_t, update_hold_preview_action_t,
+                 commit_hold_action_t, cancel_hold_action_t, begin_lane_key_hold_gesture_action_t,
                  release_lane_key_hold_gesture_action_t, begin_alt_pointer_hold_gesture_action_t,
                  update_alt_pointer_hold_gesture_action_t,
                  release_alt_pointer_hold_gesture_action_t, begin_note_duration_gesture_action_t,

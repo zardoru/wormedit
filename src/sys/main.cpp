@@ -2,16 +2,20 @@
 #include "wormedit/window.h"
 
 #include "sys/platform_recovery.h"
+#include "sys/platform_shortcut_profile.h"
 #include "ui/frontend.h"
 #include "wormedit/config.h"
 
 #include <wormedit/core/autosave_loop.h>
 #include <wormedit/core/command.h>
+#include <wormedit/core/command_registry.h>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/marker_navigation.h>
 #include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/recovery_controller.h>
+#include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/startup_session.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/timing_lane_controller.h>
@@ -40,6 +44,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -677,7 +682,7 @@ auto timing_lane_kind_to_ui(wormedit::timing_lane_kind_t lane) -> WormUiTimingLa
 
 auto begin_timing_stage(const WormUiWorkspaceAction& action,
                         const wormedit::document_history_t& history,
-                        const wormedit::workspace_controller_t& workspace)
+                        const wormedit::workspace_controller_t& workspace, bool timing_locked)
     -> wormedit::timing_lane_pseudonote_preview_t {
     using namespace wormedit;
     timing_lane_pseudonote_preview_t rejected{};
@@ -757,7 +762,7 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
     }
     return begin_timing_lane_pseudonote(
         history, chart_id_t{action.timing_chart_id}, kind, *position, std::move(initial),
-        timing_lane_initial_value_source_t::explicit_default, false);
+        timing_lane_initial_value_source_t::explicit_default, timing_locked);
 }
 
 auto parse_timing_signed(const char* text) -> std::optional<std::int64_t> {
@@ -2203,6 +2208,428 @@ auto editor_interaction_has_pending_gesture(const wormedit::editor_interaction_s
            state.pending_space_range_selection.has_value();
 }
 
+struct application_command_state_t {
+    bool timing_locked{};
+    std::optional<wormedit::layer_id_t> semantic_layer_target;
+};
+
+auto selected_chart(const wormedit::document_history_t& history,
+                    const wormedit::workspace_controller_t& workspace)
+    -> const wormedit::chart_document_t* {
+    if (!workspace.selected_chart) {
+        return nullptr;
+    }
+    const auto found = std::ranges::find(history.document.charts, *workspace.selected_chart,
+                                         &wormedit::chart_document_t::id);
+    return found == history.document.charts.end() ? nullptr : &*found;
+}
+
+auto reject_application_command(
+    std::string& status, std::string message,
+    wormedit::diagnostic_code_t code = wormedit::diagnostic_code_t::unsupported_feature)
+    -> wormedit::command_invocation_result_t {
+    status = message;
+    return {
+        .diagnostics = {{.severity = wormedit::diagnostic_severity_t::error,
+                         .code = code,
+                         .message = std::move(message)}},
+    };
+}
+
+auto accept_editor_command(const wormedit::editor_interaction_result_t& result, std::string& status,
+                           std::string_view accepted) -> wormedit::command_invocation_result_t {
+    status = compose_result_status(result, accepted);
+    return {.accepted = result.accepted, .diagnostics = result.diagnostics};
+}
+
+auto invoke_application_command(
+    const wormedit::command_invocation_context_t& invocation, wormedit::document_history_t& history,
+    wormedit::workspace_controller_t& workspace,
+    std::optional<wormedit::editor_interaction_state_t>& compose_state,
+    std::optional<wormedit::timing_lane_pseudonote_preview_t>& timing_stage,
+    application_command_state_t& application_state, std::string& status)
+    -> wormedit::command_invocation_result_t {
+    using namespace wormedit;
+    const auto& id = invocation.command.value;
+    const auto require_compose = [&]() -> editor_interaction_state_t* {
+        return workspace.active_tab == workspace_tab_t::compose && workspace.selected_chart &&
+                       compose_state && compose_state->chart == *workspace.selected_chart
+                   ? &*compose_state
+                   : nullptr;
+    };
+    const auto rebind_after_edit = [&]() -> command_invocation_result_t {
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return reject_application_command(
+                status,
+                rebound.diagnostics.empty() ? "Command applied, but workspace rebinding failed."
+                                            : rebound.diagnostics.front().message,
+                diagnostic_code_t::invalid_id);
+        }
+        return {.accepted = true};
+    };
+
+    if (id == "history.undo" || id == "history.redo") {
+        if (compose_state) {
+            (void)dispatch_editor_action(history, *compose_state, cancel_editor_gesture_action_t{});
+            (void)dispatch_editor_action(history, *compose_state, select_editor_notes_action_t{});
+        }
+        const bool undo = id == "history.undo";
+        const bool changed = undo ? undo_document_command(history) : redo_document_command(history);
+        status = changed ? (undo ? "Undo applied." : "Redo applied.")
+                         : (undo ? "Nothing to undo." : "Nothing to redo.");
+        if (!changed) {
+            return {.accepted = true};
+        }
+        timing_stage.reset();
+        return rebind_after_edit();
+    }
+
+    if (id == "edit.delete") {
+        auto* state = require_compose();
+        if (!state) {
+            return reject_application_command(status, "Delete requires the active Compose chart.");
+        }
+        const auto result = dispatch_editor_action(history, *state, delete_editor_notes_action_t{});
+        auto invocation_result = accept_editor_command(
+            result, status,
+            result.document_changed ? "Note deletion applied." : "No note at the cursor.");
+        if (result.document_changed) {
+            const auto rebound = rebind_after_edit();
+            if (!rebound) {
+                return rebound;
+            }
+        }
+        return invocation_result;
+    }
+
+    if (id == "selection.clear") {
+        auto* state = require_compose();
+        if (!state) {
+            return reject_application_command(status,
+                                              "Clear Selection requires the active Compose chart.");
+        }
+        (void)dispatch_editor_action(history, *state, cancel_editor_gesture_action_t{});
+        return accept_editor_command(
+            dispatch_editor_action(history, *state, select_editor_notes_action_t{}), status,
+            "Selection and pending Compose gesture cleared.");
+    }
+
+    if (id == "selection.select_all" || id == "selection.invert") {
+        auto* state = require_compose();
+        const auto* chart = selected_chart(history, workspace);
+        if (!state || !chart) {
+            return reject_application_command(
+                status, "Selection command requires the active Compose chart.");
+        }
+        std::unordered_set<std::uint64_t> previously_selected;
+        if (id == "selection.invert") {
+            previously_selected.reserve(state->selected_notes.size());
+            for (const auto note : state->selected_notes) {
+                previously_selected.insert(note.value);
+            }
+        }
+        std::vector<object_id_t> notes;
+        for (const auto& measure : chart->measures) {
+            for (const auto& note : measure.notes) {
+                if (id == "selection.select_all" || !previously_selected.contains(note.id.value)) {
+                    notes.push_back(note.id);
+                }
+            }
+        }
+        return accept_editor_command(
+            dispatch_editor_action(history, *state, select_editor_notes_action_t{std::move(notes)}),
+            status,
+            id == "selection.select_all" ? "All playable notes selected."
+                                         : "Playable-note selection inverted.");
+    }
+
+    if (id == "navigation.previous_snap" || id == "navigation.next_snap") {
+        auto* state = require_compose();
+        if (!state) {
+            return reject_application_command(status,
+                                              "Snap navigation requires the active Compose chart.");
+        }
+        const auto direction = id == "navigation.previous_snap" ? interaction_direction_t::backward
+                                                                : interaction_direction_t::forward;
+        return accept_editor_command(
+            dispatch_editor_action(history, *state, cycle_edit_snap_action_t{direction}), status,
+            direction == interaction_direction_t::backward ? "Previous snap selected."
+                                                           : "Next snap selected.");
+    }
+
+    if (id == "navigation.previous_marker" || id == "navigation.next_marker") {
+        auto* state = require_compose();
+        if (!state) {
+            return reject_application_command(
+                status, "Bookmark navigation requires the active Compose chart.");
+        }
+        const auto direction = id == "navigation.previous_marker"
+                                   ? marker_navigation_direction_t::previous
+                                   : marker_navigation_direction_t::next;
+        const auto marker = navigate_markers(history.document, history.document.revision,
+                                             state->chart, state->cursor, direction);
+        if (marker.status == marker_navigation_status_t::no_result) {
+            status = direction == marker_navigation_direction_t::previous
+                         ? "No previous beat-anchored bookmark or section boundary."
+                         : "No next beat-anchored bookmark or section boundary.";
+            return {.accepted = true};
+        }
+        if (!marker || !marker.item->beat_position) {
+            const auto message = marker.diagnostics.empty()
+                                     ? "Bookmark navigation could not resolve an exact beat row."
+                                     : marker.diagnostics.front().message;
+            return reject_application_command(status, message, diagnostic_code_t::invalid_id);
+        }
+        return accept_editor_command(
+            dispatch_editor_action(
+                history, *state,
+                jump_edit_cursor_action_t{*marker.item->beat_position, marker.document_revision}),
+            status,
+            direction == marker_navigation_direction_t::previous
+                ? "Moved to the previous bookmark or section boundary."
+                : "Moved to the next bookmark or section boundary.");
+    }
+
+    constexpr std::array<std::pair<std::string_view, workspace_tab_t>, 7> tab_commands{{
+        {"workspace.open_setup", workspace_tab_t::setup},
+        {"workspace.open_metadata", workspace_tab_t::metadata},
+        {"workspace.open_timing", workspace_tab_t::timing},
+        {"workspace.open_compose", workspace_tab_t::compose},
+        {"workspace.open_storyboard", workspace_tab_t::storyboard},
+        {"workspace.open_audio_slices", workspace_tab_t::audio_slices},
+        {"workspace.open_compare_validate", workspace_tab_t::compare_validate},
+    }};
+    const auto tab = std::ranges::find_if(
+        tab_commands, [&](const auto& candidate) { return candidate.first == id; });
+    if (tab != tab_commands.end()) {
+        const auto applied =
+            apply_workspace_action(workspace, history.document, history.document.revision,
+                                   workspace_switch_tab_action_t{tab->second});
+        status = applied ? "Workspace tab changed."
+                         : (applied.diagnostics.empty() ? "Workspace tab change was rejected."
+                                                        : applied.diagnostics.front().message);
+        return {.accepted = applied.applied, .diagnostics = applied.diagnostics};
+    }
+
+    if (id == "timing.toggle_lock") {
+        if (workspace.active_tab != workspace_tab_t::timing) {
+            return reject_application_command(status,
+                                              "Timing Lock requires the active Timing tab.");
+        }
+        application_state.timing_locked = !application_state.timing_locked;
+        if (application_state.timing_locked && timing_stage) {
+            cancel_timing_lane_pseudonote(*timing_stage);
+            timing_stage.reset();
+        }
+        status =
+            application_state.timing_locked ? "Timing edits locked." : "Timing edits unlocked.";
+        return {.accepted = true};
+    }
+
+    if (id.starts_with("semantic_layer.select_slot_")) {
+        auto* state = require_compose();
+        const auto* chart = selected_chart(history, workspace);
+        if (!state || !chart) {
+            return reject_application_command(status,
+                                              "Layer selection requires the active Compose chart.");
+        }
+        const auto suffix =
+            std::string_view{id}.substr(std::string_view{"semantic_layer.select_slot_"}.size());
+        std::size_t slot{};
+        const auto parsed = std::from_chars(suffix.data(), suffix.data() + suffix.size(), slot);
+        if (parsed.ec != std::errc{} || parsed.ptr != suffix.data() + suffix.size() || slot == 0 ||
+            slot > chart->semantic_layers.size()) {
+            return reject_application_command(status, "That semantic-layer slot is unavailable.");
+        }
+        const auto& layer = chart->semantic_layers[slot - 1];
+        application_state.semantic_layer_target = layer.id;
+        status = "Semantic-layer target: " + layer.name;
+        return {.accepted = true};
+    }
+
+    if (id == "semantic_layer.clear_target") {
+        application_state.semantic_layer_target.reset();
+        status = "Semantic-layer target cleared.";
+        return {.accepted = true};
+    }
+
+    if (id == "semantic_layer.apply" || id == "semantic_layer.remove" ||
+        id == "semantic_layer.toggle") {
+        auto* state = require_compose();
+        if (!state || !application_state.semantic_layer_target || state->selected_notes.empty()) {
+            return reject_application_command(
+                status, "Choose a semantic layer and select playable notes first.");
+        }
+        semantic_layer_edit_action_t action;
+        if (id == "semantic_layer.apply") {
+            action = assign_notes_to_semantic_layer_action_t{
+                state->chart, *application_state.semantic_layer_target, state->selected_notes};
+        } else if (id == "semantic_layer.remove") {
+            action = remove_notes_from_semantic_layer_action_t{
+                state->chart, *application_state.semantic_layer_target, state->selected_notes};
+        } else {
+            action = toggle_semantic_layer_membership_action_t{
+                state->chart, *application_state.semantic_layer_target, state->selected_notes};
+        }
+        const auto applied = apply_semantic_layer_edit(history, history.document.revision, action);
+        if (applied.applied) {
+            const auto rebound = rebind_after_edit();
+            if (!rebound) {
+                return rebound;
+            }
+        }
+        status = applied.applied
+                     ? "Semantic-layer membership updated."
+                     : (applied.diagnostics.empty() ? "Semantic-layer membership was unchanged."
+                                                    : applied.diagnostics.front().message);
+        return {.accepted = applied.applied || applied.diagnostics.empty(),
+                .diagnostics = applied.diagnostics};
+    }
+
+    return reject_application_command(status, "Command is not implemented by the application.");
+}
+
+void refresh_application_command_states(
+    wormedit::command_registry_t& registry, const wormedit::document_history_t& history,
+    const wormedit::workspace_controller_t& workspace,
+    const std::optional<wormedit::editor_interaction_state_t>& compose_state,
+    application_command_state_t& application_state) {
+    using namespace wormedit;
+    const auto* chart = selected_chart(history, workspace);
+    const bool compose_ready = workspace.active_tab == workspace_tab_t::compose && chart &&
+                               compose_state && compose_state->chart == chart->id;
+    const bool pending = compose_ready && editor_interaction_has_pending_gesture(*compose_state);
+    bool target_valid{};
+    if (chart && application_state.semantic_layer_target) {
+        target_valid =
+            std::ranges::find(chart->semantic_layers, *application_state.semantic_layer_target,
+                              &semantic_layer_t::id) != chart->semantic_layers.end();
+        if (!target_valid) {
+            application_state.semantic_layer_target.reset();
+        }
+    }
+    const auto set = [&](std::string id, bool enabled, std::optional<bool> checked = std::nullopt) {
+        (void)update_command_state(registry, command_id_t{std::move(id)}, enabled, checked);
+    };
+    set("document.new_project", false);
+    set("document.new_chart", false);
+    set("history.undo", !history.undo.empty());
+    set("history.redo", !history.redo.empty());
+    set("edit.delete", compose_ready);
+    set("selection.clear", compose_ready && (pending || !compose_state->selected_objects.empty()));
+    set("selection.select_all", compose_ready);
+    set("selection.invert", compose_ready);
+    set("navigation.previous_marker", compose_ready);
+    set("navigation.next_marker", compose_ready);
+    set("navigation.previous_snap", compose_ready);
+    set("navigation.next_snap", compose_ready);
+    set("transport.play_pause", false);
+    set("transport.stop", false);
+
+    constexpr std::array<std::pair<std::string_view, workspace_tab_t>, 7> tabs{{
+        {"workspace.open_setup", workspace_tab_t::setup},
+        {"workspace.open_metadata", workspace_tab_t::metadata},
+        {"workspace.open_timing", workspace_tab_t::timing},
+        {"workspace.open_compose", workspace_tab_t::compose},
+        {"workspace.open_storyboard", workspace_tab_t::storyboard},
+        {"workspace.open_audio_slices", workspace_tab_t::audio_slices},
+        {"workspace.open_compare_validate", workspace_tab_t::compare_validate},
+    }};
+    for (const auto& [id, tab] : tabs) {
+        set(std::string{id}, tab != workspace_tab_t::storyboard, workspace.active_tab == tab);
+    }
+    set("timing.toggle_lock", workspace.active_tab == workspace_tab_t::timing,
+        application_state.timing_locked);
+    set("timing.insert_bpm", false);
+    set("timing.insert_sv", false);
+    set("timing.open_settings", false);
+
+    for (std::size_t index = 0; index < 9; ++index) {
+        const bool available = compose_ready && index < chart->semantic_layers.size();
+        const bool checked =
+            available && application_state.semantic_layer_target &&
+            chart->semantic_layers[index].id == *application_state.semantic_layer_target;
+        set("semantic_layer.select_slot_" + std::to_string(index + 1), available, checked);
+    }
+    set("semantic_layer.clear_target", compose_ready && target_valid, !target_valid);
+    const bool can_apply_layer =
+        compose_ready && target_valid && !compose_state->selected_notes.empty();
+    set("semantic_layer.apply", can_apply_layer);
+    set("semantic_layer.remove", can_apply_layer);
+    set("semantic_layer.toggle", can_apply_layer);
+    set("audio.paint_hitsound", false);
+}
+
+auto application_command_focus(const WormUiWorkspaceAction& action,
+                               const wormedit::workspace_controller_t& workspace)
+    -> wormedit::command_focus_t {
+    using namespace wormedit;
+    command_focus_t focus{
+        .text_entry_active = action.shortcut_text_entry_active,
+        .ime_composition_active = action.shortcut_ime_composition_active,
+        .workspace_active = action.shortcut_window_focused,
+        .active_tab = workspace.active_tab,
+        .visible_tabs = {workspace_tab_t::setup, workspace_tab_t::metadata, workspace_tab_t::timing,
+                         workspace_tab_t::compose, workspace_tab_t::storyboard,
+                         workspace_tab_t::audio_slices, workspace_tab_t::compare_validate},
+    };
+    if (action.shortcut_compose_lane_focused && action.shortcut_focused_lane_id != 0) {
+        focus.focused_lane = lane_id_t{action.shortcut_focused_lane_id};
+    }
+    return focus;
+}
+
+constexpr auto application_primary_modifier() -> wormedit::shortcut_primary_modifier_t {
+#if defined(__APPLE__)
+    return wormedit::shortcut_primary_modifier_t::meta;
+#else
+    return wormedit::shortcut_primary_modifier_t::control;
+#endif
+}
+
+auto dispatch_application_shortcuts(
+    const WormUiWorkspaceAction& action, wormedit::command_registry_t& registry,
+    const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
+    const std::optional<wormedit::editor_interaction_state_t>& compose_state,
+    application_command_state_t& application_state, std::string& status) -> bool {
+    using namespace wormedit;
+    if (action.shortcut_overflowed ||
+        action.shortcut_event_count > WORM_UI_SHORTCUT_EVENT_CAPACITY) {
+        status = "Shortcut input exceeded its per-frame capacity and was discarded.";
+        return true;
+    }
+    bool handled{};
+    for (std::size_t index = 0; index < action.shortcut_event_count; ++index) {
+        refresh_application_command_states(registry, history, workspace, compose_state,
+                                           application_state);
+        const auto& input = action.shortcut_events[index];
+        const auto dispatched = dispatch_shortcut(
+            registry,
+            {.chord = {.key = static_cast<shortcut_key_t>(input.hid_usage),
+                       .modifiers = input.modifiers},
+             .auto_repeat = input.repeat},
+            application_command_focus(action, workspace), application_primary_modifier());
+        if (dispatched.status == command_dispatch_status_t::invoked) {
+            handled = true;
+        } else if (dispatched.status == command_dispatch_status_t::disabled) {
+            handled = true;
+            status = dispatched.command
+                         ? "Command is currently unavailable: " + dispatched.command->value
+                         : "Command is currently unavailable.";
+        } else if (dispatched.status == command_dispatch_status_t::conflict ||
+                   dispatched.status == command_dispatch_status_t::invalid_event ||
+                   dispatched.status == command_dispatch_status_t::rejected) {
+            handled = true;
+            status = dispatched.diagnostics.empty() ? "Shortcut command was rejected."
+                                                    : dispatched.diagnostics.front().message;
+        } else if (dispatched.status == command_dispatch_status_t::repeat_suppressed) {
+            handled = true;
+        }
+    }
+    return handled;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -2293,6 +2720,17 @@ int main(int argc, char** argv) {
     compose_scene_cache_t compose_scene_cache;
     std::optional<wormedit::editor_interaction_state_t> compose_interaction_state;
     wormedit::viewport_input_controller_t compose_viewport_input;
+    application_command_state_t application_command_state;
+    auto command_registry = wormedit::make_default_editor_command_registry(
+        [&](const wormedit::command_invocation_context_t& invocation) {
+            return invoke_application_command(invocation, history, workspace,
+                                              compose_interaction_state, timing_stage,
+                                              application_command_state, status);
+        });
+    const auto shortcut_startup = wormedit::load_platform_shortcut_profile(command_registry);
+    if (!shortcut_startup.diagnostics.empty()) {
+        status += " " + shortcut_startup.diagnostics.front().message;
+    }
     bool running = true;
     while (running) {
         SDL_Event event;
@@ -2414,7 +2852,12 @@ int main(int argc, char** argv) {
                                   compose_window_width, compose_window_height,
                                   compose_interaction_state);
             const auto action = worm_ui_frontend_compose(&flattened.view);
-            if (action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
+            const bool shortcut_handled =
+                action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
+                dispatch_application_shortcuts(action, command_registry, history, workspace,
+                                               compose_interaction_state, application_command_state,
+                                               status);
+            if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
                 (action.compose_input_count != 0 || action.compose_viewport_input_count != 0) &&
                 compose_interaction_state) {
                 status = dispatch_compose_input_action(
@@ -2422,6 +2865,9 @@ int main(int argc, char** argv) {
             }
             if (action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
                 running = false;
+            } else if (shortcut_handled) {
+                // Registry commands take precedence over widget actions emitted
+                // by the same input frame, preventing duplicate mutations.
             } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB) {
                 const auto applied = wormedit::apply_workspace_action(
                     workspace, history.document, history.document.revision,
@@ -2437,7 +2883,8 @@ int main(int argc, char** argv) {
                 using status_t = wormedit::timing_lane_pseudonote_status_t;
                 if (action.timing_stage_action == WORM_UI_TIMING_STAGE_BEGIN) {
                     if (!timing_stage) {
-                        auto candidate = begin_timing_stage(action, history, workspace);
+                        auto candidate = begin_timing_stage(
+                            action, history, workspace, application_command_state.timing_locked);
                         if (candidate.status == status_t::editing) {
                             timing_stage = std::move(candidate);
                             status = "Timing event staged; confirm to insert it.";
@@ -2483,11 +2930,13 @@ int main(int argc, char** argv) {
                             status = "Timing value is outside its supported bounds.";
                         } else {
                             const bool valid = wormedit::update_timing_lane_pseudonote(
-                                history, *timing_stage, *value, false);
+                                history, *timing_stage, *value,
+                                application_command_state.timing_locked);
                             if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CONFIRM &&
                                 valid) {
                                 const auto result = wormedit::confirm_timing_lane_pseudonote(
-                                    history, *timing_stage, false);
+                                    history, *timing_stage,
+                                    application_command_state.timing_locked);
                                 status = result ? "Timing event inserted."
                                                 : (result.diagnostics.empty()
                                                        ? "Timing event insertion was rejected."

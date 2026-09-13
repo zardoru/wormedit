@@ -2135,6 +2135,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
     if (state.pending_space_range_selection.has_value() &&
         !std::holds_alternative<space_range_selection_action_t>(action) &&
         !std::holds_alternative<move_edit_cursor_action_t>(action) &&
+        !std::holds_alternative<jump_edit_cursor_action_t>(action) &&
         !std::holds_alternative<cycle_edit_snap_action_t>(action) &&
         !std::holds_alternative<adjust_editor_zoom_action_t>(action) &&
         !std::holds_alternative<scroll_editor_view_action_t>(action)) {
@@ -2947,6 +2948,40 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                 if (std::holds_alternative<diagnostic_list_t>(next_view)) {
                     const auto replacement =
                         transition_lane(*chart, index, state.cursor, *next, state.active_lane);
+                    if (replacement.has_value()) {
+                        proposed_state.active_lane = *replacement;
+                        next_view = make_view(history, proposed_state);
+                    }
+                }
+                if (std::holds_alternative<diagnostic_list_t>(next_view)) {
+                    return diagnostic_result(history, state,
+                                             std::get<diagnostic_list_t>(next_view));
+                }
+                state = std::move(proposed_state);
+                return {
+                    .accepted = true,
+                    .view = std::get<editor_interaction_view_model_t>(next_view),
+                };
+            } else if constexpr (std::is_same_v<action_t, jump_edit_cursor_action_t>) {
+                if (typed_action.expected_document_revision != history.document.revision) {
+                    return diagnostic_result(
+                        history, state,
+                        {error(diagnostic_code_t::invalid_id,
+                               "cursor jump refers to a stale document revision")});
+                }
+                if (!absolute_row(index, typed_action.position).has_value()) {
+                    return diagnostic_result(
+                        history, state,
+                        {error(diagnostic_code_t::row_out_of_range,
+                               "cursor jump target lies outside chart geometry")});
+                }
+
+                auto proposed_state = state;
+                proposed_state.cursor = typed_action.position;
+                auto next_view = make_view(history, proposed_state);
+                if (std::holds_alternative<diagnostic_list_t>(next_view)) {
+                    const auto replacement = transition_lane(
+                        *chart, index, state.cursor, typed_action.position, state.active_lane);
                     if (replacement.has_value()) {
                         proposed_state.active_lane = *replacement;
                         next_view = make_view(history, proposed_state);

@@ -1532,6 +1532,77 @@ TEST_CASE("interaction crosses lane-layout transitions and exposes explicit lane
     CHECK(history.document.revision == 1);
 }
 
+TEST_CASE("exact cursor jumps preserve authored rows and transition lanes atomically",
+          "[unit][core][interaction][navigation][layout]") {
+    auto song = make_song();
+    song.charts.front().lane_layouts.push_back({
+        .id = object_id_t{101},
+        .position = {measure_id_t{2}, 0},
+        .layout =
+            {
+                .profile_id = "jump-target-layout",
+                .lanes = {{.id = lane_id_t{3}, .name = "New Key 1", .display_order = 0}},
+            },
+    });
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+
+    const auto unsnapped = dispatch_editor_action(
+        history, state,
+        jump_edit_cursor_action_t{{measure_id_t{1}, 137}, history.document.revision});
+    REQUIRE(unsnapped);
+    REQUIRE(unsnapped.view.has_value());
+    CHECK(unsnapped.view->cursor == local_position_t{measure_id_t{1}, 137});
+    CHECK(unsnapped.view->active_lane == lane_id_t{1});
+    CHECK(history.document.revision == 1);
+
+    const auto crossed = dispatch_editor_action(
+        history, state,
+        jump_edit_cursor_action_t{{measure_id_t{2}, 301}, history.document.revision});
+    REQUIRE(crossed);
+    REQUIRE(crossed.view.has_value());
+    CHECK(crossed.view->cursor == local_position_t{measure_id_t{2}, 301});
+    CHECK(crossed.view->active_lane == lane_id_t{3});
+    CHECK(crossed.view->active_lane_name == "New Key 1");
+    CHECK(history.document.revision == 1);
+}
+
+TEST_CASE("exact cursor jumps reject stale and out-of-chart targets without changing state",
+          "[unit][core][interaction][navigation][negative]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    const auto original = state;
+    const auto queried_revision = history.document.revision;
+    auto externally_edited = history.document;
+    externally_edited.metadata.title = "Changed after marker query";
+    REQUIRE(commit_document_command(history, std::move(externally_edited), "Rename song"));
+
+    const auto stale = dispatch_editor_action(
+        history, state, jump_edit_cursor_action_t{{measure_id_t{1}, 120}, queried_revision});
+    CHECK_FALSE(stale);
+    CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_id));
+    CHECK(state.cursor == original.cursor);
+    CHECK(state.active_lane == original.active_lane);
+
+    const auto missing_measure = dispatch_editor_action(
+        history, state,
+        jump_edit_cursor_action_t{{measure_id_t{99}, 0}, history.document.revision});
+    CHECK_FALSE(missing_measure);
+    CHECK(has_code(missing_measure.diagnostics, diagnostic_code_t::row_out_of_range));
+    CHECK(state.cursor == original.cursor);
+    CHECK(state.active_lane == original.active_lane);
+
+    const auto out_of_range = dispatch_editor_action(
+        history, state,
+        jump_edit_cursor_action_t{{measure_id_t{2}, 960}, history.document.revision});
+    CHECK_FALSE(out_of_range);
+    CHECK(has_code(out_of_range.diagnostics, diagnostic_code_t::row_out_of_range));
+    CHECK(state.cursor == original.cursor);
+    CHECK(state.active_lane == original.active_lane);
+    CHECK(history.document.revision == queried_revision + 1);
+}
+
 TEST_CASE("pointer zoom anchors chart rows and viewport scrolling clamps to content",
           "[unit][core][interaction][viewport]") {
     auto history = make_document_history(make_song());

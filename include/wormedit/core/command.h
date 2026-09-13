@@ -1,0 +1,73 @@
+#pragma once
+
+#include <wormedit/core/quantize.h>
+
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace wormedit {
+
+struct document_command_record_t {
+    std::string label;
+    song_document_t before;
+    song_document_t after;
+};
+
+struct document_history_t {
+    song_document_t document;
+    std::vector<document_command_record_t> undo;
+    std::vector<document_command_record_t> redo;
+    std::uint64_t next_revision{1};
+    std::optional<std::uint64_t> saved_revision;
+    std::size_t maximum_undo_entries{128};
+};
+
+struct document_command_result_t {
+    bool applied{};
+    std::uint64_t revision{};
+    diagnostic_list_t diagnostics;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return applied;
+    }
+};
+
+struct quantize_command_result_t {
+    document_command_result_t command;
+    std::vector<redivision_move_t> resolution_moves;
+    std::vector<redivision_move_t> quantized_moves;
+    std::optional<std::uint64_t> promoted_from;
+    std::optional<std::uint64_t> promoted_to;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return static_cast<bool>(command);
+    }
+};
+
+// Starts a bounded history at a caller-owned document snapshot. A zero source
+// revision is promoted to the first usable revision.
+[[nodiscard]] auto make_document_history(song_document_t document,
+                                         std::size_t maximum_undo_entries = 128,
+                                         bool initially_saved = true) -> document_history_t;
+
+[[nodiscard]] auto is_document_dirty(const document_history_t& history) noexcept -> bool;
+void mark_document_saved(document_history_t& history) noexcept;
+
+// Publishes a complete proposed document only when its graph validates. This
+// is the common atomic boundary for future editor commands.
+[[nodiscard]] auto commit_document_command(document_history_t& history,
+                                           song_document_t proposed,
+                                           std::string label) -> document_command_result_t;
+
+[[nodiscard]] auto apply_quantize_command(document_history_t& history,
+                                          chart_id_t chart,
+                                          const quantize_request_t& request)
+    -> quantize_command_result_t;
+
+[[nodiscard]] auto undo_document_command(document_history_t& history) -> bool;
+[[nodiscard]] auto redo_document_command(document_history_t& history) -> bool;
+
+} // namespace wormedit

@@ -2,6 +2,7 @@ include(Catch)
 
 add_executable(wormedit_core_tests
     core/audio_fixture_inventory_tests.cpp
+    core/command_tests.cpp
     core/document_tests.cpp
     core/bms_profile_detection_tests.cpp
     core/fixture_inventory_tests.cpp

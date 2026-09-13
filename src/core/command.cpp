@@ -1,0 +1,147 @@
+#include <wormedit/core/command.h>
+
+#include <algorithm>
+#include <limits>
+#include <ranges>
+#include <utility>
+
+namespace wormedit {
+namespace {
+
+auto error(diagnostic_code_t code, std::string message) -> diagnostic_t {
+    return {
+        .severity = diagnostic_severity_t::error,
+        .code = code,
+        .message = std::move(message),
+    };
+}
+
+void trim_undo_history(document_history_t& history) {
+    if (history.undo.size() <= history.maximum_undo_entries) {
+        return;
+    }
+    const auto excess = history.undo.size() - history.maximum_undo_entries;
+    history.undo.erase(history.undo.begin(), history.undo.begin() +
+                                                   static_cast<std::ptrdiff_t>(excess));
+}
+
+} // namespace
+
+auto make_document_history(song_document_t document, std::size_t maximum_undo_entries,
+                           bool initially_saved) -> document_history_t {
+    if (document.revision == 0) {
+        document.revision = 1;
+    }
+    const auto current_revision = document.revision;
+    const auto next_revision =
+        current_revision == std::numeric_limits<std::uint64_t>::max()
+            ? current_revision
+            : current_revision + 1;
+    return {
+        .document = std::move(document),
+        .next_revision = next_revision,
+        .saved_revision = initially_saved
+                              ? std::optional<std::uint64_t>{current_revision}
+                              : std::nullopt,
+        .maximum_undo_entries = maximum_undo_entries,
+    };
+}
+
+auto is_document_dirty(const document_history_t& history) noexcept -> bool {
+    return !history.saved_revision.has_value() ||
+           *history.saved_revision != history.document.revision;
+}
+
+void mark_document_saved(document_history_t& history) noexcept {
+    history.saved_revision = history.document.revision;
+}
+
+auto commit_document_command(document_history_t& history, song_document_t proposed,
+                             std::string label) -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision};
+    if (history.next_revision == std::numeric_limits<std::uint64_t>::max()) {
+        result.diagnostics.push_back(
+            error(diagnostic_code_t::invalid_id, "document revision sequence is exhausted"));
+        return result;
+    }
+
+    proposed.revision = history.next_revision;
+    result.diagnostics = validate_document(proposed);
+    if (std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
+            return diagnostic.severity == diagnostic_severity_t::error;
+        })) {
+        return result;
+    }
+
+    document_command_record_t record{
+        .label = std::move(label),
+        .before = history.document,
+        .after = std::move(proposed),
+    };
+    history.document = record.after;
+    history.undo.push_back(std::move(record));
+    trim_undo_history(history);
+    history.redo.clear();
+    ++history.next_revision;
+    result.applied = true;
+    result.revision = history.document.revision;
+    return result;
+}
+
+auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
+                            const quantize_request_t& request) -> quantize_command_result_t {
+    quantize_command_result_t result;
+    result.command.revision = history.document.revision;
+    const auto chart = std::ranges::find_if(history.document.charts, [chart_id](const auto& item) {
+        return item.id == chart_id;
+    });
+    if (chart == history.document.charts.end()) {
+        result.command.diagnostics.push_back(
+            error(diagnostic_code_t::invalid_id,
+                  "quantization command refers to an unknown chart"));
+        return result;
+    }
+
+    auto proposal = quantize_chart_exact(*chart, request);
+    result.resolution_moves = std::move(proposal.resolution_moves);
+    result.quantized_moves = std::move(proposal.quantized_moves);
+    result.promoted_from = proposal.promoted_from;
+    result.promoted_to = proposal.promoted_to;
+    if (!proposal) {
+        result.command.diagnostics = std::move(proposal.diagnostics);
+        return result;
+    }
+
+    auto proposed_document = history.document;
+    const auto proposed_chart = std::ranges::find_if(
+        proposed_document.charts, [chart_id](const auto& item) { return item.id == chart_id; });
+    *proposed_chart = std::move(*proposal.chart);
+    result.command = commit_document_command(history, std::move(proposed_document),
+                                             "Quantize chart");
+    return result;
+}
+
+auto undo_document_command(document_history_t& history) -> bool {
+    if (history.undo.empty()) {
+        return false;
+    }
+    auto record = std::move(history.undo.back());
+    history.undo.pop_back();
+    history.document = record.before;
+    history.redo.push_back(std::move(record));
+    return true;
+}
+
+auto redo_document_command(document_history_t& history) -> bool {
+    if (history.redo.empty()) {
+        return false;
+    }
+    auto record = std::move(history.redo.back());
+    history.redo.pop_back();
+    history.document = record.after;
+    history.undo.push_back(std::move(record));
+    trim_undo_history(history);
+    return true;
+}
+
+} // namespace wormedit

@@ -23,6 +23,7 @@ option(WORMEDIT_ENABLE_LUA "Build the pinned Lua runtime adapter" OFF)
 option(WORMEDIT_ENABLE_AUDIO_DECODER "Build the headless MP3/Ogg decoder target" ON)
 
 add_library(wormedit_core
+    src/core/command.cpp
     src/core/document.cpp
     src/core/bms_profile_detection.cpp
     src/core/lane_profiles.cpp

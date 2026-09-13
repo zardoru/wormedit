@@ -43,6 +43,7 @@ The BMSON 1.0 normative rule for `info.resolution` is now explicit: zero, null, 
 - Support variable column counts through semantic lane-layout profiles.
 - Offer StepMania-style directional arrow rendering for 4K, 5K, and 6K profiles as well as square/bar notes.
 - Toggle the field between target-game skin mode and an exact rational note-snap color mode using the StepMania editor palette.
+- Draw synchronized measure, authored beat/group, and active-snap grid lines across timing, note, BGM/BGA, and waveform panes; zoom controls visual spacing and density only, never chart rows or snapping.
 - Let double-style charts use a continuous or split-stage field. Provide BMS 10K/14K player-stage profiles and user-configurable osu!mania split boundaries without changing source column identity.
 - Provide user-defined semantic note layers with names and colors, such as yellow for vocal-following notes. Support painting, filtering, locking, selection, undo, and native-project persistence without changing exported gameplay note types.
 - Preserve repeated BMS `#xxx01` lines as distinct ordered BGM lanes, including structural `00` slots. BGM lanes share vertical time position with notes but scroll horizontally on their own.

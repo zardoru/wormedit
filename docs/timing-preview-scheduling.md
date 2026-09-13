@@ -58,9 +58,19 @@ through a synchronous non-copying cache view, so lookup does not allocate or ret
 an eviction-unsafe pointer; cache access is still mutex-serialized. BGA remains a
 renderer queue rather than an audio voice.
 
+`bga_preview_queue_t` is the renderer-neutral consumer for that visual queue. It
+validates one immutable schedule at session start, builds bounded per-kind history
+indexes for background, poor, and layer state, and restores the effective state by
+binary search on seek. Forward playback returns the stable source/draw-ordered
+event span while changing only its queue head and three current-layer values; it
+does not allocate or erase. Seek, restart, and Stop rotate generation tokens, so a
+late renderer update cannot move a newer session. Video and storyboard entries
+remain ordered events for their later specialized renderers rather than persistent
+BMS layer state.
+
 Current bounds are deliberate: the index requires a positive BPM at row zero.
 Count-in before frame zero, scroll/speed evaluation, richer profile-specific
-boundary rules, renderer-side BGA consumption, and SDL device integration remain
-subsequent timing-engine slices. The timing source fingerprint continues to reject
-stale preview schedules after timing or measure edits; callers still use document
-generation guards when publishing asynchronous work.
+boundary rules, concrete image/video/storyboard rendering, and SDL device
+integration remain subsequent timing-engine slices. The timing source fingerprint
+continues to reject stale preview schedules after timing or measure edits; callers
+still use document generation guards when publishing asynchronous work.

@@ -428,7 +428,7 @@ TEST_CASE("BMS writer preserves nested control trees and edits root content outs
                     wormedit::bms_write_diagnostic_code_t::unsupported_branch_policy));
 }
 
-TEST_CASE("BMS writer preserves branch metadata and exact ratios while allowing root edits",
+TEST_CASE("BMS writer preserves branches and exact ratios while editing the active projection",
           "[unit][format][bms][writer]") {
     constexpr std::string_view metadata_source =
         "#PLAYER 1\n#TITLE Root title\n#00002:5/4\n#WAV03 root.wav\n#00011:03\n"
@@ -458,12 +458,12 @@ TEST_CASE("BMS writer preserves branch metadata and exact ratios while allowing 
     REQUIRE(written.bytes.has_value());
     CHECK_FALSE(written.has_errors());
     CHECK(written.bytes->find("#TITLE Edited root title") != std::string::npos);
-    CHECK(occurrences(*written.bytes, "#TITLE Branch one") == 1);
+    CHECK(occurrences(*written.bytes, "#TITLE Edited root title") == 1);
     CHECK(occurrences(*written.bytes, "#TITLE Branch two") == 1);
     CHECK(occurrences(*written.bytes, "#00002:5/4") == 1);
     CHECK(occurrences(*written.bytes, "#00002:3/4") == 1);
     CHECK(occurrences(*written.bytes, "#00002:1/2") == 1);
-    CHECK(line_order(*written.bytes, "#TITLE Edited root title") <
+    CHECK(line_order(*written.bytes, "#TITLE Edited root title") >
           line_order(*written.bytes, "#RANDOM 2"));
 
     const auto written_random_order = line_order(*written.bytes, "#RANDOM 2");
@@ -471,7 +471,7 @@ TEST_CASE("BMS writer preserves branch metadata and exact ratios while allowing 
         {.control_source_order = written_random_order, .selected_value = 1}};
     const auto first_branch = parse(*written.bytes, parse_options);
     REQUIRE(first_branch.song.has_value());
-    CHECK(first_branch.song->metadata.title == "Branch one");
+    CHECK(first_branch.song->metadata.title == "Edited root title");
     CHECK((first_branch.song->charts.front().measures.front().definition.length ==
            wormedit::rational_t{3, 4}));
     CHECK(std::ranges::any_of(first_branch.song->charts.front().measures.front().notes,
@@ -487,7 +487,7 @@ TEST_CASE("BMS writer preserves branch metadata and exact ratios while allowing 
     parse_options.branch_choices.clear();
     const auto root_projection = parse(*written.bytes, parse_options);
     REQUIRE(root_projection.song.has_value());
-    CHECK(root_projection.song->metadata.title == "Edited root title");
+    CHECK(root_projection.song->metadata.title == "Root title");
     CHECK((root_projection.song->charts.front().measures.front().definition.length ==
            wormedit::rational_t{5, 4}));
 
@@ -527,8 +527,20 @@ TEST_CASE("BMS writer preserves branch metadata and exact ratios while allowing 
             branch_title_index - metadata_fields.ordered_field_source_orders.begin())]
         .second = "Edited branch title";
     const auto edited_branch_title = wormedit::write_bms(edited_branch_metadata, options);
-    CHECK_FALSE(edited_branch_title.bytes.has_value());
-    CHECK(has_error(edited_branch_title, wormedit::bms_write_diagnostic_code_t::branch_provenance));
+    REQUIRE(edited_branch_title.bytes.has_value());
+    CHECK_FALSE(edited_branch_title.has_errors());
+    CHECK(occurrences(*edited_branch_title.bytes, "#TITLE Edited branch title") == 1);
+    CHECK(occurrences(*edited_branch_title.bytes, "#TITLE Branch two") == 1);
+    const auto edited_random_order = line_order(*edited_branch_title.bytes, "#RANDOM 2");
+    parse_options.branch_choices = {
+        {.control_source_order = edited_random_order, .selected_value = 1}};
+    const auto edited_branch_reimport = parse(*edited_branch_title.bytes, parse_options);
+    REQUIRE(edited_branch_reimport.song.has_value());
+    CHECK(edited_branch_reimport.song->metadata.title == "Edited branch title");
+    parse_options.branch_choices.front().selected_value = 2;
+    const auto unchanged_other_branch = parse(*edited_branch_title.bytes, parse_options);
+    REQUIRE(unchanged_other_branch.song.has_value());
+    CHECK(unchanged_other_branch.song->metadata.title == "Branch two");
 
     constexpr std::string_view straddled_source =
         "#PLAYER 1\n#TITLE Order\n#BPM 120\n#WAV01 click.wav\n#00011:01\n"
@@ -566,6 +578,115 @@ TEST_CASE("BMS writer keeps branch-only metadata inside its branch",
     const auto reparsed = parse(*written.bytes);
     REQUIRE(reparsed.song.has_value());
     CHECK(reparsed.song->metadata.title.empty());
+}
+
+TEST_CASE("BMS writer edits projected metadata in place across branch choices",
+          "[unit][format][bms][writer]") {
+    constexpr std::string_view source =
+        "#TITLE Root title\n#RANDOM 2\n#IF 1\n#TITLE First title\n"
+        "#ARTIST First artist\n#SUBTITLE First subtitle\n#ELSE\n"
+        "#TITLE Second title\n#ARTIST Second artist\n#SUBTITLE Second subtitle\n"
+        "#ENDIF\n#ENDRANDOM\n";
+    wormedit::bms_parse_options_t parse_options;
+    parse_options.branch_choices = {
+        {.control_source_order = line_order(source, "#RANDOM 2"), .selected_value = 1}};
+    auto first = parse(source, parse_options);
+    REQUIRE(first.song.has_value());
+    auto ambiguous_provenance = *first.song;
+    const auto branch_title_order = line_order(source, "#TITLE First title");
+    const auto branch_title_source = std::ranges::find(
+        ambiguous_provenance.metadata.format_groups.front().ordered_field_source_orders,
+        branch_title_order);
+    REQUIRE(branch_title_source !=
+            ambiguous_provenance.metadata.format_groups.front().ordered_field_source_orders.end());
+    *branch_title_source = line_order(source, "#IF 1");
+    const auto ambiguous_write =
+        wormedit::write_bms(ambiguous_provenance, {
+                                                      .lane_profile_id = "bme-7k-outside-scratch",
+                                                      .preserve_unchanged_source = false,
+                                                  });
+    CHECK_FALSE(ambiguous_write.bytes.has_value());
+    CHECK(has_error(ambiguous_write, wormedit::bms_write_diagnostic_code_t::branch_provenance));
+
+    first.song->metadata.title = "Edited first title";
+    auto& first_fields = first.song->metadata.format_groups.front();
+    const auto first_subtitle_order = line_order(source, "#SUBTITLE First subtitle");
+    const auto first_subtitle =
+        std::ranges::find(first_fields.ordered_field_source_orders, first_subtitle_order);
+    REQUIRE(first_subtitle != first_fields.ordered_field_source_orders.end());
+    first_fields
+        .ordered_fields[static_cast<std::size_t>(first_subtitle -
+                                                 first_fields.ordered_field_source_orders.begin())]
+        .second = "Edited first subtitle";
+
+    wormedit::bms_write_options_t write_options;
+    write_options.lane_profile_id = "bme-7k-outside-scratch";
+    write_options.preserve_unchanged_source = false;
+    const auto first_written = wormedit::write_bms(*first.song, write_options);
+    REQUIRE(first_written.bytes.has_value());
+    CHECK_FALSE(first_written.has_errors());
+    CHECK(occurrences(*first_written.bytes, "#TITLE Root title") == 1);
+    CHECK(occurrences(*first_written.bytes, "#TITLE Edited first title") == 1);
+    CHECK(occurrences(*first_written.bytes, "#SUBTITLE Edited first subtitle") == 1);
+    CHECK(occurrences(*first_written.bytes, "#TITLE Second title") == 1);
+    CHECK(occurrences(*first_written.bytes, "#ARTIST Second artist") == 1);
+    CHECK(occurrences(*first_written.bytes, "#SUBTITLE Second subtitle") == 1);
+    CHECK(occurrences(*first_written.bytes, "#ELSE") == 1);
+    CHECK(occurrences(*first_written.bytes, "#ENDIF") == 1);
+    CHECK(occurrences(*first_written.bytes, "#ENDRANDOM") == 1);
+
+    const auto first_random_order = line_order(*first_written.bytes, "#RANDOM 2");
+    parse_options.branch_choices = {
+        {.control_source_order = first_random_order, .selected_value = 1}};
+    const auto first_reimport = parse(*first_written.bytes, parse_options);
+    REQUIRE(first_reimport.song.has_value());
+    CHECK(first_reimport.song->metadata.title == "Edited first title");
+    CHECK(std::ranges::any_of(
+        first_reimport.song->metadata.format_groups.front().ordered_fields, [](const auto& field) {
+            return field.first == "SUBTITLE" && field.second == "Edited first subtitle";
+        }));
+
+    parse_options.branch_choices.front().selected_value = 2;
+    auto second = parse(*first_written.bytes, parse_options);
+    REQUIRE(second.song.has_value());
+    second.song->metadata.artist = "Edited second artist";
+    auto& second_fields = second.song->metadata.format_groups.front();
+    const auto second_subtitle_order =
+        line_order(*first_written.bytes, "#SUBTITLE Second subtitle");
+    const auto second_subtitle =
+        std::ranges::find(second_fields.ordered_field_source_orders, second_subtitle_order);
+    REQUIRE(second_subtitle != second_fields.ordered_field_source_orders.end());
+    second_fields
+        .ordered_fields[static_cast<std::size_t>(second_subtitle -
+                                                 second_fields.ordered_field_source_orders.begin())]
+        .second = "Edited second subtitle";
+    const auto second_written = wormedit::write_bms(*second.song, write_options);
+    REQUIRE(second_written.bytes.has_value());
+    CHECK_FALSE(second_written.has_errors());
+    CHECK(occurrences(*second_written.bytes, "#ARTIST Edited second artist") == 1);
+    CHECK(occurrences(*second_written.bytes, "#SUBTITLE Edited second subtitle") == 1);
+    CHECK(occurrences(*second_written.bytes, "#TITLE Edited first title") == 1);
+
+    const auto second_random_order = line_order(*second_written.bytes, "#RANDOM 2");
+    parse_options.branch_choices = {
+        {.control_source_order = second_random_order, .selected_value = 1}};
+    const auto preserved_first = parse(*second_written.bytes, parse_options);
+    REQUIRE(preserved_first.song.has_value());
+    CHECK(preserved_first.song->metadata.title == "Edited first title");
+    parse_options.branch_choices.front().selected_value = 2;
+    const auto edited_second = parse(*second_written.bytes, parse_options);
+    REQUIRE(edited_second.song.has_value());
+    CHECK(edited_second.song->metadata.title == "Second title");
+    CHECK(edited_second.song->metadata.artist == "Edited second artist");
+    CHECK(std::ranges::any_of(
+        edited_second.song->metadata.format_groups.front().ordered_fields, [](const auto& field) {
+            return field.first == "SUBTITLE" && field.second == "Edited second subtitle";
+        }));
+
+    parse_options.branch_choices.clear();
+    const auto root_projection = parse(*second_written.bytes, parse_options);
+    REQUIRE(root_projection.song.has_value());
+    CHECK(root_projection.song->metadata.title == "Root title");
 }
 
 TEST_CASE("BMS writer preserves mixed root and branch timing statements",

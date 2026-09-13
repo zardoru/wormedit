@@ -60,7 +60,8 @@ struct bms_write_result_t {
 // Writes unchanged imported BMS bytes exactly, or emits deterministic UTF-8
 // BMS for metadata, resources, measure lengths, initial BPM, taps, holds,
 // repeated BGM source lanes, and representable BGA events. Unsupported semantic
-// features fail with typed diagnostics.
+// features fail with typed diagnostics. Provenanced branch metadata edits replace
+// only their retained source statement; other branch content remains source-backed.
 [[nodiscard]] auto write_bms(const song_document_t& song, bms_write_options_t options = {})
     -> bms_write_result_t;
 

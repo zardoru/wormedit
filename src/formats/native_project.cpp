@@ -1,0 +1,1066 @@
+#include <wormedit/formats/native_project.h>
+
+#include <nlohmann/json.hpp>
+
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <filesystem>
+#include <limits>
+#include <ranges>
+#include <stdexcept>
+#include <type_traits>
+#include <utility>
+
+namespace nlohmann {
+
+template <typename value_t> struct adl_serializer<std::optional<value_t>> {
+    static void to_json(json& output, const std::optional<value_t>& value) {
+        output = value.has_value() ? json(*value) : json(nullptr);
+    }
+
+    static void from_json(const json& input, std::optional<value_t>& value) {
+        if (input.is_null()) {
+            value.reset();
+        } else {
+            value = input.get<value_t>();
+        }
+    }
+};
+
+template <typename enum_t> struct adl_serializer<enum_t, std::enable_if_t<std::is_enum_v<enum_t>>> {
+    static void to_json(json& output, enum_t value) {
+        using underlying_t = std::underlying_type_t<enum_t>;
+        output = static_cast<underlying_t>(value);
+    }
+
+    static void from_json(const json& input, enum_t& value) {
+        using underlying_t = std::underlying_type_t<enum_t>;
+        if constexpr (std::is_signed_v<underlying_t>) {
+            if (input.is_number_unsigned()) {
+                const auto number = input.get<json::number_unsigned_t>();
+                if (number > static_cast<json::number_unsigned_t>(
+                                 std::numeric_limits<underlying_t>::max())) {
+                    throw std::out_of_range("enum value exceeds its underlying integer range");
+                }
+                value = static_cast<enum_t>(static_cast<underlying_t>(number));
+            } else if (input.is_number_integer()) {
+                const auto number = input.get<json::number_integer_t>();
+                if (number < static_cast<json::number_integer_t>(
+                                 std::numeric_limits<underlying_t>::min()) ||
+                    number > static_cast<json::number_integer_t>(
+                                 std::numeric_limits<underlying_t>::max())) {
+                    throw std::out_of_range("enum value exceeds its underlying integer range");
+                }
+                value = static_cast<enum_t>(static_cast<underlying_t>(number));
+            } else {
+                throw std::invalid_argument("enum value must be an integer");
+            }
+        } else {
+            if (!input.is_number_unsigned()) {
+                throw std::invalid_argument("enum value must be an unsigned integer");
+            }
+            const auto number = input.get<json::number_unsigned_t>();
+            if (number >
+                static_cast<json::number_unsigned_t>(std::numeric_limits<underlying_t>::max())) {
+                throw std::out_of_range("enum value exceeds its underlying integer range");
+            }
+            value = static_cast<enum_t>(static_cast<underlying_t>(number));
+        }
+    }
+};
+
+} // namespace nlohmann
+
+namespace wormedit {
+
+using json = nlohmann::json;
+
+void to_json(json& value, const format_metadata_t& metadata);
+void from_json(const json& value, format_metadata_t& metadata);
+
+template <typename tag_t> void to_json(json& value, const stable_id_t<tag_t>& id) {
+    value = id.value;
+}
+
+template <typename unsigned_t> auto strict_unsigned(const json& value) -> unsigned_t {
+    static_assert(std::is_unsigned_v<unsigned_t>);
+    if (!value.is_number_unsigned()) {
+        throw std::invalid_argument("value must be an unsigned integer");
+    }
+    const auto number = value.get<json::number_unsigned_t>();
+    if (number > static_cast<json::number_unsigned_t>(std::numeric_limits<unsigned_t>::max())) {
+        throw std::out_of_range("unsigned integer is outside its destination range");
+    }
+    return static_cast<unsigned_t>(number);
+}
+
+auto strict_signed_64(const json& value) -> std::int64_t {
+    if (value.is_number_integer() && !value.is_number_unsigned()) {
+        return value.get<json::number_integer_t>();
+    }
+    if (value.is_number_unsigned()) {
+        const auto number = value.get<json::number_unsigned_t>();
+        if (number <=
+            static_cast<json::number_unsigned_t>(std::numeric_limits<std::int64_t>::max())) {
+            return static_cast<std::int64_t>(number);
+        }
+    }
+    throw std::out_of_range("value must fit a signed 64-bit integer");
+}
+
+template <typename tag_t> void from_json(const json& value, stable_id_t<tag_t>& id) {
+    id.value = strict_unsigned<std::uint64_t>(value);
+}
+
+void to_json(json& value, const rational_t& rational) {
+    value = json{{"numerator", rational.numerator}, {"denominator", rational.denominator}};
+}
+
+void from_json(const json& value, rational_t& rational) {
+    rational.numerator = strict_unsigned<std::uint64_t>(value.at("numerator"));
+    rational.denominator = strict_unsigned<std::uint64_t>(value.at("denominator"));
+}
+
+void to_json(json& value, const meter_t& meter) {
+    value = json{{"numerator", meter.numerator}, {"denominator", meter.denominator}};
+}
+
+void from_json(const json& value, meter_t& meter) {
+    meter.numerator = strict_unsigned<std::uint32_t>(value.at("numerator"));
+    meter.denominator = strict_unsigned<std::uint32_t>(value.at("denominator"));
+}
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(measure_definition_t, length, meter)
+
+void to_json(json& value, const signed_rational_t& rational) {
+    value = json{{"numerator", rational.numerator}, {"denominator", rational.denominator}};
+}
+
+void from_json(const json& value, signed_rational_t& rational) {
+    rational.numerator = strict_signed_64(value.at("numerator"));
+    rational.denominator = strict_unsigned<std::uint64_t>(value.at("denominator"));
+}
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(color_rgba_t, red, green, blue, alpha)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(source_provenance_t, family, profile, source_field,
+                                   source_spelling, source_order)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(local_position_t, measure, row)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(position_span_t, begin, end)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(midi_destination_t, channel, note)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_channel_map_t, visible, invisible, long_note, mine)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(lane_definition_t, id, name, role, stage, display_order, glyph,
+                                   bms_channels, midi_destination)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(lane_layout_t, profile_id, display_name, lanes, split_stage,
+                                   split_after_column, bmson_generic_keys_only)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(lane_layout_segment_t, id, position, layout)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(lane_binding_t, key, lane, focused_stage)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(input_profile_t, profile_id, bindings, stage_count,
+                                   requires_focused_stage)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(semantic_layer_t, id, name, color, visible, locked)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(note_t, id, position, lane, kind, end, sound, semantic_layers,
+                                   label, branch, provenance)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bgm_event_t, id, position, source_lane, sound, structural_slot,
+                                   branch, provenance)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(measure_chunk_t, id, definition, notes, bgm_events)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_measure_length_projection_t, measure_index, source_order,
+                                   imported_length)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bgm_source_lane_t, id, name, source_order)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bpm_event_t, id, position, beats_per_minute, provenance)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(pause_event_t, id, position, kind, duration, source_unit,
+                                   provenance)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_bpm_projection_t, event, source_order, imported_position,
+                                   imported_beats_per_minute)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_pause_projection_t, event, source_order, imported_position,
+                                   imported_kind, imported_duration, imported_source_unit)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(warp_event_t, id, span, source_encoding, provenance)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(scroll_event_t, id, position, multiplier, provenance)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(speed_event_t, id, position, multiplier, transition_beats,
+                                   transition_is_seconds, provenance)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(kiai_event_t, id, position, enabled, retained_effect_bits,
+                                   provenance)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(timing_anchor_t, id, position, source_sample_frame, locked)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bookmark_t, id, label, anchor, position, audio_milliseconds)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(section_t, id, label, anchor, beat_span, audio_millisecond_span)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bga_event_t, id, position, resource, kind, provenance)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(audio_stream_info_t, sample_rate, channels, frame_count,
+                                   seekable)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(target_resource_identity_t, family, identifier, namespace_name)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(resource_entry_t, id, name, asset, roles, target_identities,
+                                   missing, provenance)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(audio_clip_t, id, source, begin_frame, end_frame)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sound_channel_event_t, id, position, end, lane, continuation,
+                                   playable, provenance)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sound_channel_t, id, name, source_clip, events)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_source_span_t, byte_begin, byte_end)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_control_node_t, id, kind, value, original_text,
+                                   command_token, raw_value, source_span, source_order, line_ending,
+                                   close_source_span, close_text, close_source_order,
+                                   close_line_ending, children)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(branch_selection_t, branch, selected_value)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(chart_metadata_t, name, author, rating, format_groups)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_document_t, id, name, retained_source_lines)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(song_metadata_t, title, artist, ordered_search_tags,
+                                   format_groups)
+
+namespace {
+
+constexpr std::string_view native_project_format = "wormedit-project";
+constexpr std::uint32_t native_project_format_version = 1;
+
+auto path_to_utf8(const std::filesystem::path& path) -> std::string {
+    const auto encoded = path.generic_u8string();
+    return {encoded.begin(), encoded.end()};
+}
+
+auto path_from_utf8(const std::string& path) -> std::filesystem::path {
+    std::u8string encoded;
+    encoded.reserve(path.size());
+    for (const auto byte : path) {
+        encoded.push_back(static_cast<char8_t>(static_cast<unsigned char>(byte)));
+    }
+    return std::filesystem::path{encoded};
+}
+
+constexpr std::string_view hex_digits = "0123456789abcdef";
+
+auto bytes_to_hex(const std::vector<std::byte>& bytes) -> std::string {
+    if (bytes.size() > std::numeric_limits<std::size_t>::max() / 2) {
+        throw std::length_error("retained byte stream is too large to encode");
+    }
+    std::string encoded;
+    encoded.reserve(bytes.size() * 2);
+    for (const auto item : bytes) {
+        const auto value = std::to_integer<std::uint8_t>(item);
+        encoded.push_back(hex_digits[value >> 4U]);
+        encoded.push_back(hex_digits[value & 0x0fU]);
+    }
+    return encoded;
+}
+
+auto hex_nibble(char value) -> std::optional<std::uint8_t> {
+    if (value >= '0' && value <= '9') {
+        return static_cast<std::uint8_t>(value - '0');
+    }
+    if (value >= 'a' && value <= 'f') {
+        return static_cast<std::uint8_t>(value - 'a' + 10);
+    }
+    if (value >= 'A' && value <= 'F') {
+        return static_cast<std::uint8_t>(value - 'A' + 10);
+    }
+    return std::nullopt;
+}
+
+auto hex_to_bytes(std::string_view encoded) -> std::vector<std::byte> {
+    if ((encoded.size() % 2) != 0) {
+        throw std::invalid_argument("hex byte stream has odd length");
+    }
+    std::vector<std::byte> result;
+    result.reserve(encoded.size() / 2);
+    for (std::size_t index = 0; index < encoded.size(); index += 2) {
+        const auto high = hex_nibble(encoded[index]);
+        const auto low = hex_nibble(encoded[index + 1]);
+        if (!high.has_value() || !low.has_value()) {
+            throw std::invalid_argument("hex byte stream contains a non-hexadecimal digit");
+        }
+        result.push_back(static_cast<std::byte>((*high << 4U) | *low));
+    }
+    return result;
+}
+
+} // namespace
+
+void to_json(json& value, const encoding_provenance_t& provenance) {
+    value = json{{"detected", provenance.detected},
+                 {"user_override", provenance.user_override},
+                 {"unchanged_since_import", provenance.unchanged_since_import}};
+    value["original_bytes_hex"] =
+        provenance.original_bytes ? json(bytes_to_hex(*provenance.original_bytes)) : json(nullptr);
+}
+
+void from_json(const json& value, encoding_provenance_t& provenance) {
+    value.at("detected").get_to(provenance.detected);
+    value.at("user_override").get_to(provenance.user_override);
+    value.at("unchanged_since_import").get_to(provenance.unchanged_since_import);
+    const auto& encoded = value.at("original_bytes_hex");
+    if (encoded.is_null()) {
+        provenance.original_bytes.reset();
+    } else {
+        provenance.original_bytes = std::make_shared<const std::vector<std::byte>>(
+            hex_to_bytes(encoded.get<std::string>()));
+    }
+}
+
+void to_json(json& value, const format_metadata_t& metadata) {
+    value = json{{"family", metadata.family},
+                 {"ordered_fields", metadata.ordered_fields},
+                 {"ordered_field_source_orders", metadata.ordered_field_source_orders},
+                 {"encoding", metadata.encoding}};
+}
+
+void from_json(const json& value, format_metadata_t& metadata) {
+    value.at("family").get_to(metadata.family);
+    value.at("ordered_fields").get_to(metadata.ordered_fields);
+    value.at("ordered_field_source_orders").get_to(metadata.ordered_field_source_orders);
+    value.at("encoding").get_to(metadata.encoding);
+}
+
+void to_json(json& value, const audio_asset_t& asset) {
+    value = json{{"id", asset.id},
+                 {"source_path", path_to_utf8(asset.source_path)},
+                 {"stream", asset.stream},
+                 {"waveform_cache_path", asset.waveform_cache_path
+                                             ? json(path_to_utf8(*asset.waveform_cache_path))
+                                             : json(nullptr)}};
+}
+
+void from_json(const json& value, audio_asset_t& asset) {
+    value.at("id").get_to(asset.id);
+    asset.source_path = path_from_utf8(value.at("source_path").get<std::string>());
+    value.at("stream").get_to(asset.stream);
+    const auto& cache = value.at("waveform_cache_path");
+    asset.waveform_cache_path = cache.is_null() ? std::optional<std::filesystem::path>{}
+                                                : path_from_utf8(cache.get<std::string>());
+}
+
+void to_json(json& value, const visual_asset_t& asset) {
+    value = json{{"id", asset.id},
+                 {"kind", asset.kind},
+                 {"source_path", path_to_utf8(asset.source_path)},
+                 {"width", asset.width},
+                 {"height", asset.height}};
+}
+
+void from_json(const json& value, visual_asset_t& asset) {
+    value.at("id").get_to(asset.id);
+    value.at("kind").get_to(asset.kind);
+    asset.source_path = path_from_utf8(value.at("source_path").get<std::string>());
+    value.at("width").get_to(asset.width);
+    value.at("height").get_to(asset.height);
+}
+
+void to_json(json& value, const midi_event_t& event) {
+    value = json{
+        {"tick", event.tick}, {"channel", event.channel}, {"data_hex", bytes_to_hex(event.data)}};
+}
+
+void from_json(const json& value, midi_event_t& event) {
+    value.at("tick").get_to(event.tick);
+    value.at("channel").get_to(event.channel);
+    event.data = hex_to_bytes(value.at("data_hex").get<std::string>());
+}
+
+void to_json(json& value, const midi_asset_t& asset) {
+    value = json{{"id", asset.id},
+                 {"source_path", path_to_utf8(asset.source_path)},
+                 {"ticks_per_quarter", asset.ticks_per_quarter},
+                 {"events", asset.events}};
+}
+
+void from_json(const json& value, midi_asset_t& asset) {
+    value.at("id").get_to(asset.id);
+    asset.source_path = path_from_utf8(value.at("source_path").get<std::string>());
+    value.at("ticks_per_quarter").get_to(asset.ticks_per_quarter);
+    value.at("events").get_to(asset.events);
+}
+
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(generator_parameter_t, name, serialized_value)
+
+void to_json(json& value, const generator_recipe_t& recipe) {
+    value = json{{"id", recipe.id},
+                 {"api_version", recipe.api_version},
+                 {"source_path", path_to_utf8(recipe.source_path)},
+                 {"input_assets", recipe.input_assets},
+                 {"parameters", recipe.parameters},
+                 {"seed", recipe.seed},
+                 {"source_hash", recipe.source_hash}};
+}
+
+void from_json(const json& value, generator_recipe_t& recipe) {
+    value.at("id").get_to(recipe.id);
+    value.at("api_version").get_to(recipe.api_version);
+    recipe.source_path = path_from_utf8(value.at("source_path").get<std::string>());
+    value.at("input_assets").get_to(recipe.input_assets);
+    value.at("parameters").get_to(recipe.parameters);
+    value.at("seed").get_to(recipe.seed);
+    value.at("source_hash").get_to(recipe.source_hash);
+}
+
+void to_json(json& value, const output_group_t& group) {
+    value = json{{"name", group.name},
+                 {"family", group.family},
+                 {"charts", group.charts},
+                 {"relative_output_path", path_to_utf8(group.relative_output_path)}};
+}
+
+void from_json(const json& value, output_group_t& group) {
+    value.at("name").get_to(group.name);
+    value.at("family").get_to(group.family);
+    value.at("charts").get_to(group.charts);
+    group.relative_output_path =
+        path_from_utf8(value.at("relative_output_path").get<std::string>());
+}
+
+void to_json(json& value, const chart_document_t& chart) {
+    value = json{{"id", chart.id},
+                 {"metadata", chart.metadata},
+                 {"source_family", chart.source_family},
+                 {"divisions_per_standard_measure", chart.divisions_per_standard_measure},
+                 {"beat_zero_audio_offset_seconds", chart.beat_zero_audio_offset_seconds},
+                 {"measures", chart.measures},
+                 {"lane_layouts", chart.lane_layouts},
+                 {"input_profile", chart.input_profile},
+                 {"semantic_layers", chart.semantic_layers},
+                 {"bgm_source_lanes", chart.bgm_source_lanes},
+                 {"bpms", chart.bpms},
+                 {"pauses", chart.pauses},
+                 {"warps", chart.warps},
+                 {"scrolls", chart.scrolls},
+                 {"speeds", chart.speeds},
+                 {"kiai", chart.kiai},
+                 {"timing_anchors", chart.timing_anchors},
+                 {"bookmarks", chart.bookmarks},
+                 {"sections", chart.sections},
+                 {"bga_events", chart.bga_events},
+                 {"sound_channels", chart.sound_channels},
+                 {"bms_measure_length_projections", chart.bms_measure_length_projections},
+                 {"bms_bpm_projections", chart.bms_bpm_projections},
+                 {"bms_pause_projections", chart.bms_pause_projections},
+                 {"bms_control_tree", chart.bms_control_tree},
+                 {"active_branch_selection", chart.active_branch_selection}};
+}
+
+void from_json(const json& value, chart_document_t& chart) {
+    value.at("id").get_to(chart.id);
+    value.at("metadata").get_to(chart.metadata);
+    value.at("source_family").get_to(chart.source_family);
+    value.at("divisions_per_standard_measure").get_to(chart.divisions_per_standard_measure);
+    value.at("beat_zero_audio_offset_seconds").get_to(chart.beat_zero_audio_offset_seconds);
+    value.at("measures").get_to(chart.measures);
+    value.at("lane_layouts").get_to(chart.lane_layouts);
+    value.at("input_profile").get_to(chart.input_profile);
+    value.at("semantic_layers").get_to(chart.semantic_layers);
+    value.at("bgm_source_lanes").get_to(chart.bgm_source_lanes);
+    value.at("bpms").get_to(chart.bpms);
+    value.at("pauses").get_to(chart.pauses);
+    value.at("warps").get_to(chart.warps);
+    value.at("scrolls").get_to(chart.scrolls);
+    value.at("speeds").get_to(chart.speeds);
+    value.at("kiai").get_to(chart.kiai);
+    value.at("timing_anchors").get_to(chart.timing_anchors);
+    value.at("bookmarks").get_to(chart.bookmarks);
+    value.at("sections").get_to(chart.sections);
+    value.at("bga_events").get_to(chart.bga_events);
+    value.at("sound_channels").get_to(chart.sound_channels);
+    value.at("bms_measure_length_projections").get_to(chart.bms_measure_length_projections);
+    value.at("bms_bpm_projections").get_to(chart.bms_bpm_projections);
+    value.at("bms_pause_projections").get_to(chart.bms_pause_projections);
+    value.at("bms_control_tree").get_to(chart.bms_control_tree);
+    value.at("active_branch_selection").get_to(chart.active_branch_selection);
+}
+
+void to_json(json& value, const song_document_t& song) {
+    value = json{{"schema_version", song.schema_version},
+                 {"id", song.id},
+                 {"revision", song.revision},
+                 {"metadata", song.metadata},
+                 {"audio_assets", song.audio_assets},
+                 {"visual_assets", song.visual_assets},
+                 {"resources", song.resources},
+                 {"midi_assets", song.midi_assets},
+                 {"generator_recipes", song.generator_recipes},
+                 {"storyboards", song.storyboards},
+                 {"charts", song.charts},
+                 {"output_groups", song.output_groups}};
+}
+
+void from_json(const json& value, song_document_t& song) {
+    value.at("schema_version").get_to(song.schema_version);
+    value.at("id").get_to(song.id);
+    value.at("revision").get_to(song.revision);
+    value.at("metadata").get_to(song.metadata);
+    value.at("audio_assets").get_to(song.audio_assets);
+    value.at("visual_assets").get_to(song.visual_assets);
+    value.at("resources").get_to(song.resources);
+    value.at("midi_assets").get_to(song.midi_assets);
+    value.at("generator_recipes").get_to(song.generator_recipes);
+    value.at("storyboards").get_to(song.storyboards);
+    value.at("charts").get_to(song.charts);
+    value.at("output_groups").get_to(song.output_groups);
+}
+
+namespace {
+
+template <typename enum_t> auto enum_at_most(enum_t value, enum_t maximum) -> bool {
+    using underlying_t = std::underlying_type_t<enum_t>;
+    const auto numeric = static_cast<underlying_t>(value);
+    return numeric >= 0 && numeric <= static_cast<underlying_t>(maximum);
+}
+
+auto valid_provenance(const source_provenance_t& provenance) -> bool {
+    return enum_at_most(provenance.family, format_family_t::quaver);
+}
+
+auto valid_encoding(const encoding_provenance_t& encoding) -> bool {
+    return enum_at_most(encoding.detected, text_encoding_t::windows_1252) &&
+           (!encoding.user_override.has_value() ||
+            enum_at_most(*encoding.user_override, text_encoding_t::windows_1252));
+}
+
+auto valid_metadata(const format_metadata_t& metadata) -> bool {
+    return enum_at_most(metadata.family, format_family_t::quaver) &&
+           valid_encoding(metadata.encoding);
+}
+
+auto valid_control_node(const bms_control_node_t& root, std::size_t maximum_depth) -> bool {
+    std::vector<std::pair<const bms_control_node_t*, std::size_t>> pending{{&root, 1}};
+    while (!pending.empty()) {
+        const auto [node, depth] = pending.back();
+        pending.pop_back();
+        if (depth > maximum_depth || !enum_at_most(node->kind, bms_control_kind_t::skip) ||
+            !enum_at_most(node->line_ending, bms_line_ending_t::cr) ||
+            (node->close_line_ending.has_value() &&
+             !enum_at_most(*node->close_line_ending, bms_line_ending_t::cr))) {
+            return false;
+        }
+        for (const auto& child : node->children) {
+            pending.emplace_back(&child, depth + 1);
+        }
+    }
+    return true;
+}
+
+auto valid_enum_domains(const song_document_t& song, std::size_t maximum_depth) -> bool {
+    for (const auto& group : song.metadata.format_groups) {
+        if (!valid_metadata(group)) {
+            return false;
+        }
+    }
+    for (const auto& resource : song.resources) {
+        if (!valid_provenance(resource.provenance) ||
+            !std::ranges::all_of(
+                resource.roles,
+                [](const auto role) { return enum_at_most(role, resource_role_t::preview); }) ||
+            !std::ranges::all_of(resource.target_identities, [](const auto& identity) {
+                return enum_at_most(identity.family, format_family_t::quaver);
+            })) {
+            return false;
+        }
+    }
+    for (const auto& asset : song.visual_assets) {
+        if (!enum_at_most(asset.kind, asset_kind_t::midi)) {
+            return false;
+        }
+    }
+    for (const auto& output : song.output_groups) {
+        if (!enum_at_most(output.family, format_family_t::quaver)) {
+            return false;
+        }
+    }
+    for (const auto& chart : song.charts) {
+        if (!enum_at_most(chart.source_family, format_family_t::quaver)) {
+            return false;
+        }
+        for (const auto& group : chart.metadata.format_groups) {
+            if (!valid_metadata(group)) {
+                return false;
+            }
+        }
+        for (const auto& segment : chart.lane_layouts) {
+            for (const auto& lane : segment.layout.lanes) {
+                if (!enum_at_most(lane.role, lane_role_t::foot_pedal) ||
+                    !enum_at_most(lane.stage, stage_group_t::right) ||
+                    !enum_at_most(lane.glyph, lane_glyph_t::arrow_right)) {
+                    return false;
+                }
+            }
+        }
+        for (const auto& binding : chart.input_profile.bindings) {
+            if (!enum_at_most(binding.key, physical_key_t::key_m)) {
+                return false;
+            }
+        }
+        for (const auto& measure : chart.measures) {
+            for (const auto& note : measure.notes) {
+                if (!enum_at_most(note.kind, note_kind_t::fake) ||
+                    !valid_provenance(note.provenance)) {
+                    return false;
+                }
+            }
+            for (const auto& bgm : measure.bgm_events) {
+                if (!valid_provenance(bgm.provenance)) {
+                    return false;
+                }
+            }
+        }
+        for (const auto& bpm : chart.bpms) {
+            if (!valid_provenance(bpm.provenance)) {
+                return false;
+            }
+        }
+        for (const auto& pause : chart.pauses) {
+            if (!enum_at_most(pause.kind, pause_kind_t::delay) ||
+                !enum_at_most(pause.source_unit, pause_unit_t::beats) ||
+                !valid_provenance(pause.provenance)) {
+                return false;
+            }
+        }
+        for (const auto& projection : chart.bms_pause_projections) {
+            if (!enum_at_most(projection.imported_kind, pause_kind_t::delay) ||
+                !enum_at_most(projection.imported_source_unit, pause_unit_t::beats)) {
+                return false;
+            }
+        }
+        for (const auto& warp : chart.warps) {
+            if (!enum_at_most(warp.source_encoding, warp_provenance_t::negative_stop) ||
+                !valid_provenance(warp.provenance)) {
+                return false;
+            }
+        }
+        for (const auto& scroll : chart.scrolls) {
+            if (!valid_provenance(scroll.provenance)) {
+                return false;
+            }
+        }
+        for (const auto& speed : chart.speeds) {
+            if (!valid_provenance(speed.provenance)) {
+                return false;
+            }
+        }
+        for (const auto& kiai : chart.kiai) {
+            if (!valid_provenance(kiai.provenance)) {
+                return false;
+            }
+        }
+        for (const auto& bookmark : chart.bookmarks) {
+            if (!enum_at_most(bookmark.anchor, marker_anchor_t::audio_time)) {
+                return false;
+            }
+        }
+        for (const auto& section : chart.sections) {
+            if (!enum_at_most(section.anchor, marker_anchor_t::audio_time)) {
+                return false;
+            }
+        }
+        for (const auto& event : chart.bga_events) {
+            if (!enum_at_most(event.kind, visual_event_kind_t::storyboard) ||
+                !valid_provenance(event.provenance)) {
+                return false;
+            }
+        }
+        for (const auto& channel : chart.sound_channels) {
+            for (const auto& event : channel.events) {
+                if (!valid_provenance(event.provenance)) {
+                    return false;
+                }
+            }
+        }
+        if (chart.bms_control_tree.has_value() &&
+            !valid_control_node(*chart.bms_control_tree, maximum_depth)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+auto lexical_nesting_within(std::string_view source, std::size_t maximum_depth) -> bool {
+    std::size_t depth{};
+    bool in_string{};
+    bool escaped{};
+    for (const auto character : source) {
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+            } else if (character == '\\') {
+                escaped = true;
+            } else if (character == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+        if (character == '"') {
+            in_string = true;
+        } else if (character == '{' || character == '[') {
+            if (depth == maximum_depth) {
+                return false;
+            }
+            ++depth;
+        } else if ((character == '}' || character == ']') && depth > 0) {
+            --depth;
+        }
+    }
+    return true;
+}
+
+class json_limit_sax_t final : public nlohmann::json_sax<json> {
+  public:
+    json_limit_sax_t(std::size_t maximum_nodes, std::size_t maximum_depth)
+        : maximum_nodes_(maximum_nodes), maximum_depth_(maximum_depth) {}
+
+    auto null() -> bool override {
+        return scalar();
+    }
+    auto boolean(bool) -> bool override {
+        return scalar();
+    }
+    auto number_integer(number_integer_t) -> bool override {
+        return scalar();
+    }
+    auto number_unsigned(number_unsigned_t) -> bool override {
+        return scalar();
+    }
+    auto number_float(number_float_t, const string_t&) -> bool override {
+        return scalar();
+    }
+    auto string(string_t&) -> bool override {
+        return scalar();
+    }
+    auto binary(binary_t&) -> bool override {
+        return scalar();
+    }
+    auto start_object(std::size_t) -> bool override {
+        return start_container();
+    }
+    auto key(string_t&) -> bool override {
+        return true;
+    }
+    auto end_object() -> bool override {
+        if (depth_ > 0) {
+            --depth_;
+        }
+        return true;
+    }
+    auto start_array(std::size_t) -> bool override {
+        return start_container();
+    }
+    auto end_array() -> bool override {
+        if (depth_ > 0) {
+            --depth_;
+        }
+        return true;
+    }
+    auto parse_error(std::size_t, const std::string&, const nlohmann::detail::exception&)
+        -> bool override {
+        malformed_ = !limit_exceeded_;
+        return false;
+    }
+
+    [[nodiscard]] auto limit_exceeded() const noexcept -> bool {
+        return limit_exceeded_;
+    }
+    [[nodiscard]] auto malformed() const noexcept -> bool {
+        return malformed_;
+    }
+
+  private:
+    auto scalar() -> bool {
+        return count_node();
+    }
+    auto start_container() -> bool {
+        if (!count_node() || depth_ == maximum_depth_) {
+            limit_exceeded_ = true;
+            return false;
+        }
+        ++depth_;
+        return true;
+    }
+    auto count_node() -> bool {
+        if (nodes_ == maximum_nodes_) {
+            limit_exceeded_ = true;
+            return false;
+        }
+        ++nodes_;
+        return true;
+    }
+
+    std::size_t maximum_nodes_{};
+    std::size_t maximum_depth_{};
+    std::size_t nodes_{};
+    std::size_t depth_{};
+    bool limit_exceeded_{};
+    bool malformed_{};
+};
+
+auto strict_numeric_shape(const json& value, std::string_view key = {}, bool signed_array = false)
+    -> bool {
+    if (value.is_number_float()) {
+        return false;
+    }
+    if (value.is_number_integer() && !value.is_number_unsigned()) {
+        const auto signed_field = key == "numerator" || key == "selected_value" || key == "value" ||
+                                  key == "audio_milliseconds" || signed_array;
+        if (!signed_field) {
+            return false;
+        }
+    }
+    if (value.is_number_unsigned()) {
+        const auto number = value.get<json::number_unsigned_t>();
+        const auto signed_field = key == "selected_value" || key == "value" ||
+                                  key == "audio_milliseconds" || signed_array;
+        if (signed_field && number > static_cast<json::number_unsigned_t>(
+                                         std::numeric_limits<std::int64_t>::max())) {
+            return false;
+        }
+        const auto at_most = [&](std::uint64_t maximum) { return number <= maximum; };
+        if ((key == "red" || key == "green" || key == "blue" || key == "alpha" ||
+             key == "channel" || key == "note") &&
+            !at_most(std::numeric_limits<std::uint8_t>::max())) {
+            return false;
+        }
+        if (key == "ticks_per_quarter" && !at_most(std::numeric_limits<std::uint16_t>::max())) {
+            return false;
+        }
+        if ((key == "sample_rate" || key == "channels" || key == "width" || key == "height" ||
+             key == "display_order" || key == "split_after_column" || key == "focused_stage" ||
+             key == "stage_count" || key == "retained_effect_bits" || key == "schema_version") &&
+            !at_most(std::numeric_limits<std::uint32_t>::max())) {
+            return false;
+        }
+    }
+    if (value.is_array()) {
+        const auto elements_are_signed = key == "audio_millisecond_span";
+        return std::ranges::all_of(value, [&](const auto& element) {
+            return strict_numeric_shape(element, {}, elements_are_signed);
+        });
+    }
+    if (value.is_object()) {
+        return std::ranges::all_of(value.items(), [&](const auto& item) {
+            return strict_numeric_shape(item.value(), item.key(), false);
+        });
+    }
+    return true;
+}
+
+auto same_schema_shape(const json& input, const json& canonical) -> bool {
+    if (input.is_object() || canonical.is_object()) {
+        if (!input.is_object() || !canonical.is_object() || input.size() != canonical.size()) {
+            return false;
+        }
+        for (const auto& [key, value] : input.items()) {
+            const auto expected = canonical.find(key);
+            if (expected == canonical.end() || !same_schema_shape(value, *expected)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (input.is_array() || canonical.is_array()) {
+        if (!input.is_array() || !canonical.is_array() || input.size() != canonical.size()) {
+            return false;
+        }
+        for (std::size_t index = 0; index < input.size(); ++index) {
+            if (!same_schema_shape(input[index], canonical[index])) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+auto json_nodes_within(const json& root, std::size_t maximum_nodes, std::size_t maximum_depth)
+    -> bool {
+    std::vector<std::pair<const json*, std::size_t>> pending{{&root, 1}};
+    std::size_t nodes{};
+    while (!pending.empty()) {
+        const auto [value, depth] = pending.back();
+        pending.pop_back();
+        if (nodes == maximum_nodes ||
+            ((value->is_array() || value->is_object()) && depth > maximum_depth)) {
+            return false;
+        }
+        ++nodes;
+        if (value->is_array()) {
+            for (const auto& item : *value) {
+                pending.emplace_back(&item, depth + 1);
+            }
+        } else if (value->is_object()) {
+            for (const auto& [key, item] : value->items()) {
+                (void)key;
+                pending.emplace_back(&item, depth + 1);
+            }
+        }
+    }
+    return true;
+}
+
+auto has_errors(const std::vector<native_project_diagnostic_t>& diagnostics) -> bool {
+    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
+        return diagnostic.severity == diagnostic_severity_t::error;
+    });
+}
+
+auto graph_diagnostic_text(const diagnostic_t& diagnostic) -> std::string {
+    auto message = diagnostic.message;
+    if (diagnostic.object.has_value()) {
+        message += " (object " + std::to_string(diagnostic.object->value) + ")";
+    }
+    return message;
+}
+
+} // namespace
+
+auto native_project_write_result_t::has_errors() const -> bool {
+    return wormedit::has_errors(diagnostics);
+}
+
+auto native_project_parse_result_t::has_errors() const -> bool {
+    return wormedit::has_errors(diagnostics);
+}
+
+auto write_native_project(const song_document_t& song, native_project_limits_t limits)
+    -> native_project_write_result_t {
+    native_project_write_result_t result;
+    if (song.schema_version != native_project_format_version) {
+        result.diagnostics.push_back(
+            {diagnostic_severity_t::error, native_project_diagnostic_code_t::unsupported_version,
+             "document schema version is unsupported", "$.document.schema_version"});
+        return result;
+    }
+    if (!valid_enum_domains(song, limits.maximum_nesting_depth)) {
+        result.diagnostics.push_back(
+            {diagnostic_severity_t::error, native_project_diagnostic_code_t::invalid_document,
+             "document contains an enum value outside the native-project schema", "$.document"});
+    }
+    if (result.has_errors()) {
+        return result;
+    }
+    const auto validation = validate_document(song);
+    for (const auto& diagnostic : validation) {
+        if (diagnostic.severity == diagnostic_severity_t::error) {
+            result.diagnostics.push_back({diagnostic.severity,
+                                          native_project_diagnostic_code_t::invalid_document,
+                                          graph_diagnostic_text(diagnostic), "$.document"});
+        }
+    }
+    if (result.has_errors()) {
+        return result;
+    }
+    try {
+        const json root{{"format", native_project_format},
+                        {"format_version", native_project_format_version},
+                        {"document", song}};
+        if (!json_nodes_within(root, limits.maximum_json_nodes, limits.maximum_nesting_depth)) {
+            result.diagnostics.push_back(
+                {diagnostic_severity_t::error, native_project_diagnostic_code_t::resource_limit,
+                 "native project exceeds the configured JSON node or nesting-depth limit", "$"});
+            return result;
+        }
+        auto bytes = root.dump(2);
+        bytes.push_back('\n');
+        if (bytes.size() > limits.maximum_source_bytes) {
+            result.diagnostics.push_back(
+                {diagnostic_severity_t::error, native_project_diagnostic_code_t::resource_limit,
+                 "serialized native project exceeds the configured byte limit", "$"});
+            return result;
+        }
+        result.bytes = std::move(bytes);
+    } catch (const std::exception& exception) {
+        result.diagnostics.push_back(
+            {diagnostic_severity_t::error, native_project_diagnostic_code_t::serialization_failure,
+             std::string("native project serialization failed: ") + exception.what(), "$"});
+    }
+    return result;
+}
+
+auto parse_native_project(std::string_view bytes, native_project_limits_t limits)
+    -> native_project_parse_result_t {
+    native_project_parse_result_t result;
+    if (bytes.size() > limits.maximum_source_bytes) {
+        result.diagnostics.push_back({diagnostic_severity_t::error,
+                                      native_project_diagnostic_code_t::resource_limit,
+                                      "native project exceeds the configured byte limit", "$"});
+        return result;
+    }
+    if (!lexical_nesting_within(bytes, limits.maximum_nesting_depth)) {
+        result.diagnostics.push_back(
+            {diagnostic_severity_t::error, native_project_diagnostic_code_t::resource_limit,
+             "native project exceeds the configured nesting-depth limit", "$"});
+        return result;
+    }
+    json_limit_sax_t sax{limits.maximum_json_nodes, limits.maximum_nesting_depth};
+    if (!json::sax_parse(bytes.begin(), bytes.end(), &sax)) {
+        result.diagnostics.push_back(
+            {diagnostic_severity_t::error,
+             sax.limit_exceeded() ? native_project_diagnostic_code_t::resource_limit
+                                  : native_project_diagnostic_code_t::malformed_json,
+             sax.limit_exceeded()
+                 ? "native project exceeds the configured JSON node or nesting-depth limit"
+                 : "native project JSON is malformed",
+             "$"});
+        return result;
+    }
+    try {
+        const auto root = json::parse(bytes);
+        if (!root.is_object() || root.value("format", std::string{}) != native_project_format) {
+            result.diagnostics.push_back({diagnostic_severity_t::error,
+                                          native_project_diagnostic_code_t::unsupported_version,
+                                          "input is not a wormedit native project", "$.format"});
+            return result;
+        }
+        if (root.size() != 3 || !root.contains("format_version") || !root.contains("document")) {
+            result.diagnostics.push_back(
+                {diagnostic_severity_t::error, native_project_diagnostic_code_t::malformed_json,
+                 "native project envelope fields do not match the selected schema version", "$"});
+            return result;
+        }
+        if (!root.at("format_version").is_number_unsigned() ||
+            root.at("format_version").get<std::uint64_t>() != native_project_format_version) {
+            result.diagnostics.push_back({diagnostic_severity_t::error,
+                                          native_project_diagnostic_code_t::unsupported_version,
+                                          "native project format version is unsupported",
+                                          "$.format_version"});
+            return result;
+        }
+        const auto& document = root.at("document");
+        if (!strict_numeric_shape(document)) {
+            result.diagnostics.push_back(
+                {diagnostic_severity_t::error, native_project_diagnostic_code_t::malformed_json,
+                 "native project numeric fields must use exact integer types and ranges",
+                 "$.document"});
+            return result;
+        }
+        auto song = document.get<song_document_t>();
+        const json canonical_document = song;
+        if (!same_schema_shape(document, canonical_document)) {
+            result.diagnostics.push_back(
+                {diagnostic_severity_t::error, native_project_diagnostic_code_t::malformed_json,
+                 "native project fields do not match the selected schema version", "$.document"});
+            return result;
+        }
+        if (song.schema_version != native_project_format_version) {
+            result.diagnostics.push_back({diagnostic_severity_t::error,
+                                          native_project_diagnostic_code_t::unsupported_version,
+                                          "document schema version is unsupported",
+                                          "$.document.schema_version"});
+            return result;
+        }
+        if (!valid_enum_domains(song, limits.maximum_nesting_depth)) {
+            result.diagnostics.push_back(
+                {diagnostic_severity_t::error, native_project_diagnostic_code_t::invalid_document,
+                 "native project contains an enum value outside the schema", "$.document"});
+            return result;
+        }
+        const auto validation = validate_document(song);
+        for (const auto& diagnostic : validation) {
+            if (diagnostic.severity == diagnostic_severity_t::error) {
+                result.diagnostics.push_back({diagnostic.severity,
+                                              native_project_diagnostic_code_t::invalid_document,
+                                              graph_diagnostic_text(diagnostic), "$.document"});
+            }
+        }
+        if (!result.has_errors()) {
+            result.song = std::move(song);
+        }
+    } catch (const json::exception& exception) {
+        result.diagnostics.push_back(
+            {diagnostic_severity_t::error, native_project_diagnostic_code_t::malformed_json,
+             std::string("native project JSON is malformed: ") + exception.what(), "$"});
+    } catch (const std::exception& exception) {
+        result.diagnostics.push_back(
+            {diagnostic_severity_t::error, native_project_diagnostic_code_t::malformed_json,
+             std::string("native project payload is malformed: ") + exception.what(), "$"});
+    }
+    return result;
+}
+
+} // namespace wormedit

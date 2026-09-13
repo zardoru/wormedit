@@ -28,6 +28,7 @@ add_library(wormedit_core
     src/core/command.cpp
     src/core/document.cpp
     src/core/bms_profile_detection.cpp
+    src/core/bga_preview.cpp
     src/core/grid.cpp
     src/core/interaction.cpp
     src/core/lane_profiles.cpp
@@ -40,6 +41,7 @@ add_library(wormedit_core
     src/formats/bms_writer.cpp
     src/formats/bmson.cpp
     src/formats/bmson_writer.cpp
+    src/formats/native_project.cpp
 )
 add_library(wormedit::core ALIAS wormedit_core)
 target_include_directories(wormedit_core PUBLIC "${CMAKE_SOURCE_DIR}/include")

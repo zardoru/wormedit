@@ -2,6 +2,7 @@ include(Catch)
 
 add_executable(wormedit_core_tests
     core/audio_fixture_inventory_tests.cpp
+    core/bga_preview_tests.cpp
     core/command_tests.cpp
     core/document_tests.cpp
     core/bms_profile_detection_tests.cpp
@@ -18,6 +19,7 @@ add_executable(wormedit_core_tests
     formats/bms_writer_tests.cpp
     formats/bmson_tests.cpp
     formats/bmson_writer_tests.cpp
+    formats/native_project_tests.cpp
 )
 target_compile_definitions(wormedit_core_tests
     PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"

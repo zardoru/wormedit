@@ -237,6 +237,24 @@ auto make_view(const document_history_t& history, const editor_interaction_state
                       .targets = state.pending_note_paint_gesture->targets,
                   }}
                 : std::nullopt,
+        .pending_editor_area_selection =
+            state.pending_editor_area_selection
+                ? std::optional{editor_area_selection_preview_t{
+                      .document_revision = state.pending_editor_area_selection->document_revision,
+                      .left_pixels =
+                          std::min(state.pending_editor_area_selection->anchor_x_pixels,
+                                   state.pending_editor_area_selection->current_x_pixels),
+                      .top_pixels = std::min(state.pending_editor_area_selection->anchor_y_pixels,
+                                             state.pending_editor_area_selection->current_y_pixels),
+                      .right_pixels =
+                          std::max(state.pending_editor_area_selection->anchor_x_pixels,
+                                   state.pending_editor_area_selection->current_x_pixels),
+                      .bottom_pixels =
+                          std::max(state.pending_editor_area_selection->anchor_y_pixels,
+                                   state.pending_editor_area_selection->current_y_pixels),
+                      .notes = state.pending_editor_area_selection->notes,
+                  }}
+                : std::nullopt,
         .selected_notes = state.selected_notes,
         .can_move_backward = *absolute >= step,
         .can_move_forward = step < index.total_rows - *absolute,
@@ -871,6 +889,19 @@ auto build_editor_hit_test_index(const chart_document_t& chart, std::uint64_t do
                     return diagnostic_list_t{*invalid};
                 }
             }
+            const auto begin_row = absolute_row(index.measures, note.position);
+            const auto end_position = note.end.value_or(note.position);
+            const auto end_row = absolute_row(index.measures, end_position);
+            if (!begin_row.has_value() || !end_row.has_value()) {
+                return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
+                                               "note span lies outside chart geometry", note.id)};
+            }
+            index.note_spans.push_back({
+                .note = note.id,
+                .lane = note.lane,
+                .begin_row = *begin_row,
+                .end_row = *end_row,
+            });
         }
     }
     for (auto& bucket : index.measure_buckets) {
@@ -883,6 +914,36 @@ auto build_editor_hit_test_index(const chart_document_t& chart, std::uint64_t do
             }
             return left.note.value < right.note.value;
         });
+    }
+    std::ranges::sort(index.note_spans, [](const auto& left, const auto& right) {
+        if (left.begin_row != right.begin_row) {
+            return left.begin_row < right.begin_row;
+        }
+        if (left.end_row != right.end_row) {
+            return left.end_row < right.end_row;
+        }
+        return left.note.value < right.note.value;
+    });
+    auto leaf_base = std::size_t{1};
+    while (leaf_base < index.note_spans.size()) {
+        if (leaf_base > std::numeric_limits<std::size_t>::max() / 2) {
+            return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
+                                           "note span index exceeds addressable size")};
+        }
+        leaf_base *= 2;
+    }
+    if (leaf_base > std::numeric_limits<std::size_t>::max() / 2) {
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
+                                       "note span index exceeds addressable size")};
+    }
+    index.note_span_tree_leaf_base = leaf_base;
+    index.note_span_tree_max_end.assign(leaf_base * 2, 0);
+    for (std::size_t span = 0; span < index.note_spans.size(); ++span) {
+        index.note_span_tree_max_end[leaf_base + span] = index.note_spans[span].end_row;
+    }
+    for (auto node = leaf_base; node-- > 1;) {
+        index.note_span_tree_max_end[node] = std::max(index.note_span_tree_max_end[node * 2],
+                                                      index.note_span_tree_max_end[node * 2 + 1]);
     }
     return index;
 }
@@ -1014,6 +1075,219 @@ auto hit_test_editor(const chart_document_t& chart, const editor_hit_test_index_
     return result;
 }
 
+auto editor_notes_in_area_selection(const chart_document_t& chart,
+                                    const editor_hit_test_index_t& index,
+                                    const editor_interaction_view_model_t& view,
+                                    const editor_area_selection_request_t& request)
+    -> std::variant<std::vector<object_id_t>, diagnostic_list_t> {
+    const auto invalid = [](diagnostic_code_t code, std::string message) {
+        return std::variant<std::vector<object_id_t>, diagnostic_list_t>{
+            diagnostic_list_t{error(code, std::move(message))}};
+    };
+    if (index.chart != chart.id || view.chart != chart.id ||
+        index.document_revision != view.document_revision) {
+        return invalid(diagnostic_code_t::invalid_hold,
+                       "area selection hit-test index is stale or belongs to another chart");
+    }
+    if (index.measure_buckets.size() != index.measures.entries.size() ||
+        index.note_span_tree_leaf_base == 0 ||
+        (index.note_span_tree_leaf_base < index.note_spans.size()) ||
+        index.note_span_tree_leaf_base > std::numeric_limits<std::size_t>::max() / 2 ||
+        index.note_span_tree_max_end.size() != index.note_span_tree_leaf_base * 2 ||
+        !std::isfinite(request.start_x_pixels) || !std::isfinite(request.start_y_pixels) ||
+        !std::isfinite(request.end_x_pixels) || !std::isfinite(request.end_y_pixels) ||
+        !std::isfinite(request.field_left_pixels) || !std::isfinite(request.field_width_pixels) ||
+        request.field_width_pixels <= 0.0 || !std::isfinite(view.pixels_per_standard_measure) ||
+        view.pixels_per_standard_measure < minimum_pixels_per_standard_measure ||
+        view.pixels_per_standard_measure > maximum_pixels_per_standard_measure ||
+        !std::isfinite(view.viewport_scroll_pixels) ||
+        !std::isfinite(view.viewport_height_pixels) || view.viewport_height_pixels <= 0.0 ||
+        chart.divisions_per_standard_measure == 0 || index.measures.total_rows == 0 ||
+        !std::isfinite(request.field_left_pixels + request.field_width_pixels)) {
+        return invalid(diagnostic_code_t::invalid_resolution,
+                       "area selection geometry or hit-test index is invalid");
+    }
+
+    const auto field_right = request.field_left_pixels + request.field_width_pixels;
+    const auto left =
+        std::max(std::min(request.start_x_pixels, request.end_x_pixels), request.field_left_pixels);
+    const auto right =
+        std::min(std::max(request.start_x_pixels, request.end_x_pixels), field_right);
+    const auto top = std::max(0.0, std::min(request.start_y_pixels, request.end_y_pixels));
+    const auto bottom = std::min(view.viewport_height_pixels,
+                                 std::max(request.start_y_pixels, request.end_y_pixels));
+    if (left > right || top > bottom) {
+        return std::vector<object_id_t>{};
+    }
+
+    const auto row_at_y = [&](double y) {
+        return (static_cast<long double>(y) + view.viewport_scroll_pixels) *
+               static_cast<long double>(chart.divisions_per_standard_measure) /
+               static_cast<long double>(view.pixels_per_standard_measure);
+    };
+    const auto minimum_row =
+        std::clamp(row_at_y(top), 0.0L, static_cast<long double>(index.measures.total_rows - 1));
+    const auto maximum_row =
+        std::clamp(row_at_y(bottom), 0.0L, static_cast<long double>(index.measures.total_rows - 1));
+    if (minimum_row > maximum_row) {
+        return std::vector<object_id_t>{};
+    }
+
+    const auto query_minimum = static_cast<std::uint64_t>(std::floor(minimum_row));
+    const auto query_maximum = static_cast<std::uint64_t>(std::ceil(maximum_row));
+    const auto after_candidate_spans = std::ranges::upper_bound(
+        index.note_spans, query_maximum, {}, &editor_note_span_entry_t::begin_row);
+    const auto candidate_count =
+        static_cast<std::size_t>(std::distance(index.note_spans.begin(), after_candidate_spans));
+
+    struct layout_segment_t {
+        std::uint64_t row{};
+        const lane_layout_t* layout{};
+    };
+    std::vector<layout_segment_t> layouts;
+    layouts.reserve(chart.lane_layouts.size());
+    for (const auto& segment : chart.lane_layouts) {
+        const auto row = absolute_row(index.measures, segment.position);
+        if (row.has_value()) {
+            layouts.push_back({*row, &segment.layout});
+        }
+    }
+    std::ranges::stable_sort(layouts, {}, &layout_segment_t::row);
+    std::vector<layout_segment_t> unique_layouts;
+    unique_layouts.reserve(layouts.size());
+    for (const auto& segment : layouts) {
+        if (!unique_layouts.empty() && unique_layouts.back().row == segment.row) {
+            unique_layouts.back() = segment;
+        } else {
+            unique_layouts.push_back(segment);
+        }
+    }
+    const auto layout_at_row = [&](long double row) -> const lane_layout_t* {
+        const auto after =
+            std::ranges::upper_bound(unique_layouts, row, {}, &layout_segment_t::row);
+        return after == unique_layouts.begin() ? nullptr : std::prev(after)->layout;
+    };
+
+    using lane_bounds_t = std::pair<double, double>;
+    std::unordered_map<const lane_layout_t*, std::unordered_map<std::uint64_t, lane_bounds_t>>
+        lane_bounds_by_layout;
+    const auto lane_column_intersects = [&](const lane_layout_t* layout, lane_id_t lane) {
+        if (layout == nullptr) {
+            return false;
+        }
+        auto cached = lane_bounds_by_layout.find(layout);
+        if (cached == lane_bounds_by_layout.end()) {
+            std::vector<const lane_definition_t*> editable_lanes;
+            editable_lanes.reserve(layout->lanes.size());
+            for (const auto& candidate : layout->lanes) {
+                if (editable_lane(candidate)) {
+                    editable_lanes.push_back(&candidate);
+                }
+            }
+            std::ranges::sort(editable_lanes, [](const auto* left_lane, const auto* right_lane) {
+                if (left_lane->display_order != right_lane->display_order) {
+                    return left_lane->display_order < right_lane->display_order;
+                }
+                return left_lane->id.value < right_lane->id.value;
+            });
+            std::unordered_map<std::uint64_t, lane_bounds_t> bounds;
+            bounds.reserve(editable_lanes.size());
+            const auto lane_width =
+                request.field_width_pixels / static_cast<double>(editable_lanes.size());
+            for (std::size_t lane_index = 0; lane_index < editable_lanes.size(); ++lane_index) {
+                const auto lane_left =
+                    request.field_left_pixels + static_cast<double>(lane_index) * lane_width;
+                bounds.emplace(editable_lanes[lane_index]->id.value,
+                               lane_bounds_t{lane_left, lane_left + lane_width});
+            }
+            cached = lane_bounds_by_layout.emplace(layout, std::move(bounds)).first;
+        }
+        const auto found = cached->second.find(lane.value);
+        if (found == cached->second.end()) {
+            return false;
+        }
+        const auto [lane_left, lane_right] = found->second;
+        if (left == right) {
+            return left >= lane_left && left < lane_right;
+        }
+        return left < lane_right && right > lane_left;
+    };
+
+    const auto note_point_intersects = [&](lane_id_t lane, std::uint64_t row) {
+        const auto y = static_cast<long double>(row) *
+                           static_cast<long double>(view.pixels_per_standard_measure) /
+                           static_cast<long double>(chart.divisions_per_standard_measure) -
+                       static_cast<long double>(view.viewport_scroll_pixels);
+        return y >= static_cast<long double>(top) && y <= static_cast<long double>(bottom) &&
+               lane_column_intersects(layout_at_row(static_cast<long double>(row)), lane);
+    };
+    const auto hold_body_intersects = [&](lane_id_t lane, std::uint64_t begin_row,
+                                          std::uint64_t end_row) {
+        auto body_begin = std::max(minimum_row, static_cast<long double>(begin_row));
+        auto body_end = std::min(maximum_row, static_cast<long double>(end_row));
+        if (body_begin > body_end || begin_row == end_row || unique_layouts.empty()) {
+            return false;
+        }
+        if (body_begin == body_end) {
+            return body_begin > static_cast<long double>(begin_row) &&
+                   body_begin < static_cast<long double>(end_row) &&
+                   lane_column_intersects(layout_at_row(body_begin), lane);
+        }
+
+        auto after =
+            std::ranges::upper_bound(unique_layouts, body_begin, {}, &layout_segment_t::row);
+        if (after == unique_layouts.begin()) {
+            return false;
+        }
+        auto segment = std::prev(after);
+        while (segment != unique_layouts.end()) {
+            const auto next = std::next(segment);
+            const auto segment_begin = std::max(body_begin, static_cast<long double>(segment->row));
+            const auto segment_end = next == unique_layouts.end()
+                                         ? body_end
+                                         : std::min(body_end, static_cast<long double>(next->row));
+            if (segment_begin < segment_end && lane_column_intersects(segment->layout, lane)) {
+                return true;
+            }
+            if (next == unique_layouts.end() || static_cast<long double>(next->row) >= body_end) {
+                break;
+            }
+            segment = next;
+        }
+        return false;
+    };
+
+    std::vector<object_id_t> selected;
+    const auto visit = [&](auto&& self, std::size_t node, std::size_t first,
+                           std::size_t last) -> void {
+        if (first >= candidate_count || index.note_span_tree_max_end[node] < query_minimum) {
+            return;
+        }
+        if (last - first == 1) {
+            if (first >= index.note_spans.size()) {
+                return;
+            }
+            const auto& span = index.note_spans[first];
+            const auto head_intersects = note_point_intersects(span.lane, span.begin_row);
+            const auto tail_intersects = note_point_intersects(span.lane, span.end_row);
+            const auto body_intersects =
+                hold_body_intersects(span.lane, span.begin_row, span.end_row);
+            if (head_intersects || tail_intersects || body_intersects) {
+                selected.push_back(span.note);
+            }
+            return;
+        }
+        const auto middle = first + (last - first) / 2;
+        self(self, node * 2, first, middle);
+        self(self, node * 2 + 1, middle, last);
+    };
+    if (candidate_count != 0) {
+        visit(visit, 1, 0, index.note_span_tree_leaf_base);
+    }
+    std::ranges::sort(selected, {}, &object_id_t::value);
+    return selected;
+}
+
 auto dispatch_editor_action(document_history_t& history, editor_interaction_state_t& state,
                             const editor_ui_action_t& action) -> editor_interaction_result_t {
     if (const auto* cancel = std::get_if<cancel_editor_gesture_action_t>(&action)) {
@@ -1031,6 +1305,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         state.pending_hold.reset();
         state.pending_note_duration_gesture.reset();
         state.pending_note_paint_gesture.reset();
+        state.pending_editor_area_selection.reset();
         const auto recovered_view = make_view(history, state);
         return {
             .accepted = true,
@@ -1044,6 +1319,19 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
     }
     if (std::holds_alternative<cancel_hold_action_t>(action)) {
         state.pending_hold.reset();
+        const auto recovered_view = make_view(history, state);
+        return {
+            .accepted = true,
+            .view = std::holds_alternative<editor_interaction_view_model_t>(recovered_view)
+                        ? std::optional{std::get<editor_interaction_view_model_t>(recovered_view)}
+                        : std::nullopt,
+            .diagnostics = std::holds_alternative<diagnostic_list_t>(recovered_view)
+                               ? std::get<diagnostic_list_t>(recovered_view)
+                               : diagnostic_list_t{},
+        };
+    }
+    if (std::holds_alternative<cancel_editor_area_selection_action_t>(action)) {
+        state.pending_editor_area_selection.reset();
         const auto recovered_view = make_view(history, state);
         return {
             .accepted = true,
@@ -1086,6 +1374,14 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "finish or cancel the active note paint gesture first")});
+    }
+    if (state.pending_editor_area_selection.has_value() &&
+        !std::holds_alternative<update_editor_area_selection_action_t>(action) &&
+        !std::holds_alternative<commit_editor_area_selection_action_t>(action)) {
+        return diagnostic_result(
+            history, state,
+            {error(diagnostic_code_t::invalid_hold,
+                   "finish or cancel the active area selection gesture first")});
     }
     const auto initial_view = make_view(history, state);
     if (std::holds_alternative<diagnostic_list_t>(initial_view)) {
@@ -1611,6 +1907,237 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         };
     };
 
+    const auto combine_area_selection = [&](const std::vector<object_id_t>& hits,
+                                            editor_area_selection_mode_t mode)
+        -> std::variant<std::vector<object_id_t>, diagnostic_list_t> {
+        if (mode != editor_area_selection_mode_t::replace &&
+            mode != editor_area_selection_mode_t::add &&
+            mode != editor_area_selection_mode_t::toggle) {
+            return diagnostic_list_t{
+                error(diagnostic_code_t::invalid_id, "unknown area selection mode")};
+        }
+        if (mode == editor_area_selection_mode_t::replace) {
+            return hits;
+        }
+        const auto available_ids = chart_note_ids(*chart);
+        std::unordered_set<std::uint64_t> combined;
+        combined.reserve(state.selected_notes.size() + hits.size());
+        for (const auto id : state.selected_notes) {
+            if (id.value == 0 || !available_ids.contains(id.value)) {
+                return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
+                                               "current selection contains a missing note", id)};
+            }
+            if (!combined.insert(id.value).second) {
+                return diagnostic_list_t{error(diagnostic_code_t::duplicate_id,
+                                               "current selection contains a duplicate note", id)};
+            }
+        }
+        std::unordered_set<std::uint64_t> hit_ids;
+        hit_ids.reserve(hits.size());
+        for (const auto id : hits) {
+            hit_ids.insert(id.value);
+        }
+        auto result = state.selected_notes;
+        if (mode == editor_area_selection_mode_t::add) {
+            for (const auto id : hits) {
+                if (combined.insert(id.value).second) {
+                    result.push_back(id);
+                }
+            }
+            return result;
+        }
+        const auto originally_selected = combined;
+        std::erase_if(result, [&](const auto id) {
+            if (hit_ids.contains(id.value)) {
+                combined.erase(id.value);
+                return true;
+            }
+            return false;
+        });
+        for (const auto id : hits) {
+            if (!originally_selected.contains(id.value)) {
+                result.push_back(id);
+            }
+        }
+        return result;
+    };
+
+    const auto begin_area_selection =
+        [&](const begin_editor_area_selection_action_t& request) -> editor_interaction_result_t {
+        if (!request.pointer_captured) {
+            return diagnostic_result(
+                history, state,
+                {error(diagnostic_code_t::invalid_hold,
+                       "pointer capture is required to begin area selection")});
+        }
+        if (state.pending_hold.has_value() || state.pending_note_duration_gesture.has_value() ||
+            state.pending_note_paint_gesture.has_value() ||
+            state.pending_editor_area_selection.has_value()) {
+            return diagnostic_result(history, state,
+                                     {error(diagnostic_code_t::invalid_hold,
+                                            "another editor gesture is already active")});
+        }
+        if (!std::isfinite(request.x_pixels) || !std::isfinite(request.y_pixels) ||
+            !std::isfinite(request.field_left_pixels) ||
+            !std::isfinite(request.field_width_pixels) || request.field_width_pixels <= 0.0 ||
+            !std::isfinite(request.field_left_pixels + request.field_width_pixels) ||
+            request.x_pixels < request.field_left_pixels ||
+            request.x_pixels >= request.field_left_pixels + request.field_width_pixels ||
+            request.y_pixels < 0.0 || request.y_pixels >= state.viewport_height_pixels) {
+            return diagnostic_result(history, state,
+                                     {error(diagnostic_code_t::invalid_resolution,
+                                            "area selection must begin inside the chart field")});
+        }
+        if (request.mode != editor_area_selection_mode_t::replace &&
+            request.mode != editor_area_selection_mode_t::add &&
+            request.mode != editor_area_selection_mode_t::toggle) {
+            return diagnostic_result(
+                history, state,
+                {error(diagnostic_code_t::invalid_id, "unknown area selection mode")});
+        }
+        auto built = build_editor_hit_test_index(*chart, history.document.revision);
+        if (std::holds_alternative<diagnostic_list_t>(built)) {
+            return diagnostic_result(history, state, std::get<diagnostic_list_t>(std::move(built)));
+        }
+        auto hit_index = std::make_shared<editor_hit_test_index_t>(
+            std::move(std::get<editor_hit_test_index_t>(built)));
+        const auto& view = std::get<editor_interaction_view_model_t>(initial_view);
+        const editor_area_selection_request_t area{
+            .start_x_pixels = request.x_pixels,
+            .start_y_pixels = request.y_pixels,
+            .end_x_pixels = request.x_pixels,
+            .end_y_pixels = request.y_pixels,
+            .field_left_pixels = request.field_left_pixels,
+            .field_width_pixels = request.field_width_pixels,
+        };
+        const auto queried = editor_notes_in_area_selection(*chart, *hit_index, view, area);
+        if (std::holds_alternative<diagnostic_list_t>(queried)) {
+            return diagnostic_result(history, state, std::get<diagnostic_list_t>(queried));
+        }
+        auto combined =
+            combine_area_selection(std::get<std::vector<object_id_t>>(queried), request.mode);
+        if (std::holds_alternative<diagnostic_list_t>(combined)) {
+            return diagnostic_result(history, state,
+                                     std::get<diagnostic_list_t>(std::move(combined)));
+        }
+        state.pending_editor_area_selection = pending_editor_area_selection_t{
+            .document_revision = history.document.revision,
+            .hit_index = std::move(hit_index),
+            .anchor_x_pixels = request.x_pixels,
+            .anchor_y_pixels = request.y_pixels,
+            .current_x_pixels = request.x_pixels,
+            .current_y_pixels = request.y_pixels,
+            .field_left_pixels = request.field_left_pixels,
+            .field_width_pixels = request.field_width_pixels,
+            .mode = request.mode,
+            .notes = std::make_shared<const std::vector<object_id_t>>(
+                std::move(std::get<std::vector<object_id_t>>(combined))),
+        };
+        const auto next_view = make_view(history, state);
+        return {
+            .accepted = std::holds_alternative<editor_interaction_view_model_t>(next_view),
+            .view = std::holds_alternative<editor_interaction_view_model_t>(next_view)
+                        ? std::optional{std::get<editor_interaction_view_model_t>(next_view)}
+                        : std::nullopt,
+            .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
+                               ? std::get<diagnostic_list_t>(next_view)
+                               : diagnostic_list_t{},
+        };
+    };
+
+    const auto update_area_selection = [&](double x_pixels, double y_pixels,
+                                           bool pointer_captured) -> editor_interaction_result_t {
+        if (!pointer_captured) {
+            return dispatch_editor_action(
+                history, state,
+                cancel_editor_gesture_action_t{
+                    editor_gesture_cancel_reason_t::pointer_capture_lost});
+        }
+        if (!state.pending_editor_area_selection.has_value()) {
+            return diagnostic_result(history, state,
+                                     {error(diagnostic_code_t::invalid_hold,
+                                            "area selection update requires an active gesture")});
+        }
+        const auto& pending = *state.pending_editor_area_selection;
+        if (pending.document_revision != history.document.revision ||
+            pending.hit_index == nullptr ||
+            pending.hit_index->document_revision != history.document.revision) {
+            return diagnostic_result(
+                history, state,
+                {error(diagnostic_code_t::invalid_hold,
+                       "area selection gesture is stale after a document edit")});
+        }
+        if (!std::isfinite(x_pixels) || !std::isfinite(y_pixels)) {
+            return diagnostic_result(history, state,
+                                     {error(diagnostic_code_t::invalid_resolution,
+                                            "area selection pointer coordinates must be finite")});
+        }
+        const auto& view = std::get<editor_interaction_view_model_t>(initial_view);
+        const editor_area_selection_request_t area{
+            .start_x_pixels = pending.anchor_x_pixels,
+            .start_y_pixels = pending.anchor_y_pixels,
+            .end_x_pixels = x_pixels,
+            .end_y_pixels = y_pixels,
+            .field_left_pixels = pending.field_left_pixels,
+            .field_width_pixels = pending.field_width_pixels,
+        };
+        const auto queried = editor_notes_in_area_selection(*chart, *pending.hit_index, view, area);
+        if (std::holds_alternative<diagnostic_list_t>(queried)) {
+            return diagnostic_result(history, state, std::get<diagnostic_list_t>(queried));
+        }
+        auto combined =
+            combine_area_selection(std::get<std::vector<object_id_t>>(queried), pending.mode);
+        if (std::holds_alternative<diagnostic_list_t>(combined)) {
+            return diagnostic_result(history, state,
+                                     std::get<diagnostic_list_t>(std::move(combined)));
+        }
+        auto& updated = *state.pending_editor_area_selection;
+        updated.current_x_pixels = x_pixels;
+        updated.current_y_pixels = y_pixels;
+        updated.notes = std::make_shared<const std::vector<object_id_t>>(
+            std::move(std::get<std::vector<object_id_t>>(combined)));
+        const auto next_view = make_view(history, state);
+        return {
+            .accepted = std::holds_alternative<editor_interaction_view_model_t>(next_view),
+            .view = std::holds_alternative<editor_interaction_view_model_t>(next_view)
+                        ? std::optional{std::get<editor_interaction_view_model_t>(next_view)}
+                        : std::nullopt,
+            .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
+                               ? std::get<diagnostic_list_t>(next_view)
+                               : diagnostic_list_t{},
+        };
+    };
+
+    const auto commit_area_selection = [&](double x_pixels, double y_pixels,
+                                           bool pointer_captured) -> editor_interaction_result_t {
+        const auto updated = update_area_selection(x_pixels, y_pixels, pointer_captured);
+        if (!updated) {
+            return updated;
+        }
+        if (!state.pending_editor_area_selection.has_value()) {
+            return updated;
+        }
+        const auto& pending = *state.pending_editor_area_selection;
+        if (pending.document_revision != history.document.revision || pending.notes == nullptr) {
+            return diagnostic_result(
+                history, state,
+                {error(diagnostic_code_t::invalid_hold,
+                       "area selection gesture is stale after a document edit")});
+        }
+        state.selected_notes = *pending.notes;
+        state.pending_editor_area_selection.reset();
+        const auto next_view = make_view(history, state);
+        return {
+            .accepted = std::holds_alternative<editor_interaction_view_model_t>(next_view),
+            .view = std::holds_alternative<editor_interaction_view_model_t>(next_view)
+                        ? std::optional{std::get<editor_interaction_view_model_t>(next_view)}
+                        : std::nullopt,
+            .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
+                               ? std::get<diagnostic_list_t>(next_view)
+                               : diagnostic_list_t{},
+        };
+    };
+
     return std::visit(
         [&](const auto& typed_action) -> editor_interaction_result_t {
             using action_t = std::decay_t<decltype(typed_action)>;
@@ -2064,6 +2591,16 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
             } else if constexpr (std::is_same_v<action_t, end_note_paint_gesture_action_t>) {
                 return end_paint_gesture(typed_action.lane, typed_action.position,
                                          typed_action.pointer_captured);
+            } else if constexpr (std::is_same_v<action_t, begin_editor_area_selection_action_t>) {
+                return begin_area_selection(typed_action);
+            } else if constexpr (std::is_same_v<action_t, update_editor_area_selection_action_t>) {
+                return update_area_selection(typed_action.x_pixels, typed_action.y_pixels,
+                                             typed_action.pointer_captured);
+            } else if constexpr (std::is_same_v<action_t, commit_editor_area_selection_action_t>) {
+                return commit_area_selection(typed_action.x_pixels, typed_action.y_pixels,
+                                             typed_action.pointer_captured);
+            } else if constexpr (std::is_same_v<action_t, cancel_editor_area_selection_action_t>) {
+                return {};
             } else if constexpr (std::is_same_v<action_t, cancel_editor_gesture_action_t>) {
                 return {};
             } else if constexpr (std::is_same_v<action_t, select_editor_notes_action_t>) {

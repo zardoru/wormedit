@@ -102,6 +102,35 @@ struct note_paint_target_t {
     auto operator==(const note_paint_target_t&) const -> bool = default;
 };
 
+enum class editor_area_selection_mode_t {
+    replace,
+    add,
+    toggle,
+};
+
+struct begin_editor_area_selection_action_t {
+    double x_pixels{};
+    double y_pixels{};
+    double field_left_pixels{};
+    double field_width_pixels{};
+    editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
+    bool pointer_captured{true};
+};
+
+struct update_editor_area_selection_action_t {
+    double x_pixels{};
+    double y_pixels{};
+    bool pointer_captured{true};
+};
+
+struct commit_editor_area_selection_action_t {
+    double x_pixels{};
+    double y_pixels{};
+    bool pointer_captured{true};
+};
+
+struct cancel_editor_area_selection_action_t {};
+
 struct begin_note_paint_gesture_action_t {
     lane_id_t lane;
     local_position_t position;
@@ -183,9 +212,11 @@ using editor_ui_action_t = std::variant<
     release_alt_pointer_hold_gesture_action_t, begin_note_duration_gesture_action_t,
     update_note_duration_gesture_action_t, release_note_duration_gesture_action_t,
     begin_note_paint_gesture_action_t, update_note_paint_gesture_action_t,
-    end_note_paint_gesture_action_t, cancel_editor_gesture_action_t, select_editor_notes_action_t,
-    delete_editor_notes_action_t, resize_note_durations_action_t, select_editor_lane_action_t,
-    adjust_editor_zoom_action_t, scroll_editor_view_action_t>;
+    end_note_paint_gesture_action_t, begin_editor_area_selection_action_t,
+    update_editor_area_selection_action_t, commit_editor_area_selection_action_t,
+    cancel_editor_area_selection_action_t, cancel_editor_gesture_action_t,
+    select_editor_notes_action_t, delete_editor_notes_action_t, resize_note_durations_action_t,
+    select_editor_lane_action_t, adjust_editor_zoom_action_t, scroll_editor_view_action_t>;
 
 struct pending_hold_t {
     local_position_t position;
@@ -228,6 +259,30 @@ struct note_paint_gesture_preview_t {
     std::shared_ptr<const std::vector<note_paint_target_t>> targets;
 };
 
+struct editor_hit_test_index_t;
+
+struct editor_area_selection_preview_t {
+    std::uint64_t document_revision{};
+    double left_pixels{};
+    double top_pixels{};
+    double right_pixels{};
+    double bottom_pixels{};
+    std::shared_ptr<const std::vector<object_id_t>> notes;
+};
+
+struct pending_editor_area_selection_t {
+    std::uint64_t document_revision{};
+    std::shared_ptr<const editor_hit_test_index_t> hit_index;
+    double anchor_x_pixels{};
+    double anchor_y_pixels{};
+    double current_x_pixels{};
+    double current_y_pixels{};
+    double field_left_pixels{};
+    double field_width_pixels{};
+    editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
+    std::shared_ptr<const std::vector<object_id_t>> notes;
+};
+
 struct editor_interaction_state_t {
     chart_id_t chart;
     lane_id_t active_lane;
@@ -241,6 +296,7 @@ struct editor_interaction_state_t {
     std::optional<pending_hold_t> pending_hold;
     std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
     std::optional<pending_note_paint_gesture_t> pending_note_paint_gesture;
+    std::optional<pending_editor_area_selection_t> pending_editor_area_selection;
     std::vector<object_id_t> selected_notes;
 };
 
@@ -258,6 +314,7 @@ struct editor_interaction_view_model_t {
     std::optional<pending_hold_t> pending_hold;
     std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
     std::optional<note_paint_gesture_preview_t> pending_note_paint_gesture;
+    std::optional<editor_area_selection_preview_t> pending_editor_area_selection;
     std::vector<object_id_t> selected_notes;
     bool can_move_backward{};
     bool can_move_forward{};
@@ -330,6 +387,13 @@ struct editor_hit_test_entry_t {
     bool is_tail{};
 };
 
+struct editor_note_span_entry_t {
+    object_id_t note;
+    lane_id_t lane;
+    std::uint64_t begin_row{};
+    std::uint64_t end_row{};
+};
+
 // Build once per document revision and reuse while querying pointer motion.
 // Each measure bucket contains note heads and hold tails owned by that measure.
 struct editor_hit_test_index_t {
@@ -337,6 +401,9 @@ struct editor_hit_test_index_t {
     std::uint64_t document_revision{};
     measure_index_t measures;
     std::vector<std::vector<editor_hit_test_entry_t>> measure_buckets;
+    std::vector<editor_note_span_entry_t> note_spans;
+    std::size_t note_span_tree_leaf_base{1};
+    std::vector<std::uint64_t> note_span_tree_max_end;
 };
 
 struct editor_hit_test_request_t {
@@ -347,6 +414,15 @@ struct editor_hit_test_request_t {
     double note_hit_radius_pixels{8.0};
 };
 
+struct editor_area_selection_request_t {
+    double start_x_pixels{};
+    double start_y_pixels{};
+    double end_x_pixels{};
+    double end_y_pixels{};
+    double field_left_pixels{};
+    double field_width_pixels{};
+};
+
 [[nodiscard]] auto build_editor_hit_test_index(const chart_document_t& chart,
                                                std::uint64_t document_revision)
     -> std::variant<editor_hit_test_index_t, diagnostic_list_t>;
@@ -355,6 +431,14 @@ struct editor_hit_test_request_t {
                                    const editor_interaction_view_model_t& view,
                                    const editor_hit_test_request_t& request)
     -> std::optional<editor_hit_target_t>;
+// Returns notes whose lane column and head, tail, or hold body intersects the
+// screen-space rectangle. The query uses exact zoom/scroll mapping and the
+// revision-bound measure/span data in the hit-test index.
+[[nodiscard]] auto editor_notes_in_area_selection(const chart_document_t& chart,
+                                                  const editor_hit_test_index_t& index,
+                                                  const editor_interaction_view_model_t& view,
+                                                  const editor_area_selection_request_t& request)
+    -> std::variant<std::vector<object_id_t>, diagnostic_list_t>;
 
 // Dispatches one typed frontend action. Document edits are published through
 // commit_document_command so validation, undo, and redo share one boundary.

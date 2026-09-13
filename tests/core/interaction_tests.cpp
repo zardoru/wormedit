@@ -309,6 +309,241 @@ TEST_CASE("overlapping hit records use stable hold-head priority",
     CHECK(first == second);
 }
 
+TEST_CASE("area selection normalizes all drag directions and applies replace, add, and toggle",
+          "[unit][core][interaction][selection][area]") {
+    auto make_selection_history = [] {
+        auto song = make_song();
+        song.charts.front().measures.front().notes = {
+            {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
+            {.id = object_id_t{102},
+             .position = {measure_id_t{1}, 480},
+             .lane = lane_id_t{2},
+             .kind = note_kind_t::hold,
+             .end = local_position_t{measure_id_t{1}, 720}},
+        };
+        REQUIRE(validate_document(song).empty());
+        return make_document_history(std::move(song));
+    };
+    constexpr std::array snaps{4ULL};
+    const std::array drag_corners{
+        std::array{110.0, 45.0, 290.0, 100.0},
+        std::array{290.0, 45.0, 110.0, 100.0},
+        std::array{110.0, 100.0, 290.0, 45.0},
+        std::array{290.0, 100.0, 110.0, 45.0},
+    };
+    for (const auto& drag : drag_corners) {
+        auto history = make_selection_history();
+        auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                             {measure_id_t{1}, 0}, snaps, 4, 192.0);
+        REQUIRE(setup);
+        auto state = std::move(*setup.state);
+        const auto begun = dispatch_editor_action(
+            history, state,
+            begin_editor_area_selection_action_t{drag[0], drag[1], 100.0, 200.0,
+                                                 editor_area_selection_mode_t::replace, true});
+        REQUIRE(begun);
+        REQUIRE(begun.view->pending_editor_area_selection.has_value());
+        CHECK(state.selected_notes.empty());
+        const auto committed = dispatch_editor_action(
+            history, state, commit_editor_area_selection_action_t{drag[2], drag[3], true});
+        REQUIRE(committed);
+        CHECK(committed.view->selected_notes ==
+              std::vector<object_id_t>{object_id_t{101}, object_id_t{102}});
+        CHECK_FALSE(committed.view->pending_editor_area_selection.has_value());
+        CHECK_FALSE(committed.document_changed);
+        CHECK(history.document.revision == 1);
+    }
+
+    auto history = make_selection_history();
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
+                                         snaps, 4, 192.0);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+    REQUIRE(
+        dispatch_editor_action(history, state, select_editor_notes_action_t{{object_id_t{102}}}));
+    const auto select_first = [&](editor_area_selection_mode_t mode) {
+        REQUIRE(dispatch_editor_action(
+            history, state,
+            begin_editor_area_selection_action_t{110.0, 46.0, 100.0, 200.0, mode, true}));
+        return dispatch_editor_action(history, state,
+                                      commit_editor_area_selection_action_t{190.0, 50.0, true});
+    };
+    const auto added = select_first(editor_area_selection_mode_t::add);
+    REQUIRE(added);
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{102}, object_id_t{101}});
+    const auto toggled = select_first(editor_area_selection_mode_t::toggle);
+    REQUIRE(toggled);
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{102}});
+    const auto replaced = select_first(editor_area_selection_mode_t::replace);
+    REQUIRE(replaced);
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_editor_area_selection_action_t{110.0, 70.0, 100.0, 200.0,
+                                             editor_area_selection_mode_t::replace, true}));
+    const auto cleared = dispatch_editor_action(
+        history, state, commit_editor_area_selection_action_t{190.0, 75.0, true});
+    REQUIRE(cleared);
+    CHECK(state.selected_notes.empty());
+}
+
+TEST_CASE("area selection maps through zoom and scroll and intersects cross-measure hold bodies",
+          "[unit][core][interaction][selection][area][mapping]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 480},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{2}, 480}},
+    };
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{4ULL};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
+                                         snaps, 4, 300.0);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+    const auto scrolled_before_zoom =
+        dispatch_editor_action(history, state, scroll_editor_view_action_t{48.0});
+    REQUIRE(scrolled_before_zoom);
+    CHECK(scrolled_before_zoom.view->viewport_scroll_pixels == 48.0);
+    const auto zoomed =
+        dispatch_editor_action(history, state, adjust_editor_zoom_action_t{2.0, 100.0});
+    REQUIRE(zoomed);
+    const auto& chart = history.document.charts.front();
+    const auto body_start = editor_position_y_pixels(chart, *zoomed.view, {measure_id_t{1}, 900});
+    const auto body_end = editor_position_y_pixels(chart, *zoomed.view, {measure_id_t{2}, 40});
+    REQUIRE(body_start.has_value());
+    REQUIRE(body_end.has_value());
+    CHECK(*body_start < *body_end);
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_editor_area_selection_action_t{110.0, *body_start, 100.0, 200.0,
+                                             editor_area_selection_mode_t::replace, true}));
+    const auto selected_body = dispatch_editor_action(
+        history, state, commit_editor_area_selection_action_t{190.0, *body_end, true});
+    REQUIRE(selected_body);
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+    CHECK(history.document.revision == 1);
+
+    const auto scrolled =
+        dispatch_editor_action(history, state, scroll_editor_view_action_t{150.0});
+    REQUIRE(scrolled);
+    const auto tail_y = editor_position_y_pixels(chart, *scrolled.view, {measure_id_t{2}, 480});
+    REQUIRE(tail_y.has_value());
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_editor_area_selection_action_t{110.0, *tail_y, 100.0, 200.0,
+                                             editor_area_selection_mode_t::replace, true}));
+    const auto selected_tail = dispatch_editor_action(
+        history, state, commit_editor_area_selection_action_t{190.0, *tail_y, true});
+    REQUIRE(selected_tail);
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+}
+
+TEST_CASE("area selection capture loss cancels and stale revisions preserve committed selection",
+          "[unit][core][interaction][selection][area][cancel]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
+    };
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{4ULL};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
+                                         snaps, 4, 192.0);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+    REQUIRE(
+        dispatch_editor_action(history, state, select_editor_notes_action_t{{object_id_t{101}}}));
+    const auto failed_begin = dispatch_editor_action(
+        history, state,
+        begin_editor_area_selection_action_t{210.0, 95.0, 100.0, 200.0,
+                                             editor_area_selection_mode_t::replace, false});
+    CHECK_FALSE(failed_begin);
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+    CHECK_FALSE(state.pending_editor_area_selection.has_value());
+
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_editor_area_selection_action_t{210.0, 95.0, 100.0, 200.0,
+                                             editor_area_selection_mode_t::replace, true}));
+    const auto capture_lost = dispatch_editor_action(
+        history, state, update_editor_area_selection_action_t{290.0, 100.0, false});
+    REQUIRE(capture_lost);
+    CHECK_FALSE(state.pending_editor_area_selection.has_value());
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_editor_area_selection_action_t{210.0, 95.0, 100.0, 200.0,
+                                             editor_area_selection_mode_t::replace, true}));
+    const auto capture_lost_on_release = dispatch_editor_action(
+        history, state, commit_editor_area_selection_action_t{290.0, 100.0, false});
+    REQUIRE(capture_lost_on_release);
+    CHECK_FALSE(state.pending_editor_area_selection.has_value());
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_editor_area_selection_action_t{210.0, 95.0, 100.0, 200.0,
+                                             editor_area_selection_mode_t::replace, true}));
+    auto external_edit = history.document;
+    external_edit.metadata.title = "revision change";
+    REQUIRE(commit_document_command(history, std::move(external_edit), "External edit"));
+    const auto stale = dispatch_editor_action(
+        history, state, commit_editor_area_selection_action_t{290.0, 100.0, true});
+    CHECK_FALSE(stale);
+    CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+    CHECK(state.pending_editor_area_selection.has_value());
+    REQUIRE(dispatch_editor_action(history, state, cancel_editor_area_selection_action_t{}));
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+    CHECK_FALSE(state.pending_editor_area_selection.has_value());
+}
+
+TEST_CASE("area selection narrows a 50k-note query to a sparse row interval",
+          "[unit][core][interaction][selection][area][stress]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.divisions_per_standard_measure = 100'000;
+    chart.measures.front().notes.reserve(50'000);
+    for (std::uint64_t note = 0; note < 50'000; ++note) {
+        chart.measures.front().notes.push_back({
+            .id = object_id_t{1'000 + note},
+            .position = {measure_id_t{1}, note * 2},
+            .lane = lane_id_t{1},
+        });
+    }
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{4ULL};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
+                                         snaps, 4, 1200.0);
+    REQUIRE(setup);
+    const auto built =
+        build_editor_hit_test_index(history.document.charts.front(), history.document.revision);
+    REQUIRE(std::holds_alternative<editor_hit_test_index_t>(built));
+    const auto y = editor_position_y_pixels(history.document.charts.front(), *setup.view,
+                                            {measure_id_t{1}, 24'000});
+    REQUIRE(y.has_value());
+    const editor_area_selection_request_t request{
+        .start_x_pixels = 110.0,
+        .start_y_pixels = *y - 1.0e-9,
+        .end_x_pixels = 190.0,
+        .end_y_pixels = *y + 1.0e-9,
+        .field_left_pixels = 100.0,
+        .field_width_pixels = 200.0,
+    };
+    const auto selected = editor_notes_in_area_selection(history.document.charts.front(),
+                                                         std::get<editor_hit_test_index_t>(built),
+                                                         *setup.view, request);
+    REQUIRE(std::holds_alternative<std::vector<object_id_t>>(selected));
+    CHECK(std::get<std::vector<object_id_t>>(selected) ==
+          std::vector<object_id_t>{object_id_t{13'000}});
+}
+
 TEST_CASE("note paint interpolates snap rows, suppresses duplicates, and commits atomically",
           "[unit][core][interaction][paint]") {
     auto history = make_document_history(make_song());

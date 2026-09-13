@@ -8,12 +8,15 @@
 #include <charconv>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <map>
 #include <numeric>
+#include <set>
 #include <string_view>
 #include <system_error>
+#include <tuple>
 #include <utility>
 
 #if defined(WORMEDIT_HAS_ICONV)
@@ -491,7 +494,12 @@ auto is_playable_channel(std::string_view channel) -> bool {
 auto is_materialized_note_family(std::string_view channel) -> bool {
     return channel.size() == 2 &&
            (channel.front() == '1' || channel.front() == '2' || channel.front() == '3' ||
-            channel.front() == '4' || channel.front() == 'D' || channel.front() == 'E');
+            channel.front() == '4' || channel.front() == '5' || channel.front() == '6' ||
+            channel.front() == 'D' || channel.front() == 'E');
+}
+
+auto is_long_note_channel(std::string_view channel) -> bool {
+    return channel.size() == 2 && (channel.front() == '5' || channel.front() == '6');
 }
 
 auto checked_lcm(std::uint64_t left, std::uint64_t right) -> std::optional<std::uint64_t> {
@@ -762,19 +770,6 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         resource_ids.emplace(target_key, resource_id);
     };
 
-    auto retain_branch_scoped = [&](const source_line_t& line, const parsed_line_t& parsed,
-                                    std::string_view description) {
-        if (frames.empty()) {
-            return false;
-        }
-        push_raw_statement(root, current_path, line, parsed, ids);
-        add_line_diagnostic(
-            result, diagnostic_severity_t::warning, bms_parse_diagnostic_code_t::malformed_control,
-            std::string(description) + " occurs inside conditional control flow and remains raw",
-            line);
-        return true;
-    };
-
     auto nesting_limit_reached = [&](const source_line_t& line, const parsed_line_t& parsed) {
         if (frames.size() < options.max_nesting_depth) {
             return false;
@@ -799,35 +794,18 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         }
 
         if (token == "TITLE" || token == "ARTIST") {
-            if (retain_branch_scoped(line, parsed, "metadata declaration")) {
-                continue;
-            }
             push_raw_statement(root, current_path, line, parsed, ids);
-            if (token == "TITLE") {
-                song.metadata.title = parsed.semantic_value;
-            } else {
-                song.metadata.artist = parsed.semantic_value;
-            }
-            ordered_metadata_fields.emplace_back(token, parsed.raw_value);
             continue;
         }
 
         if (token.size() == 5 && token.starts_with("WAV") && base36_digit(token[3]) &&
             base36_digit(token[4])) {
-            if (retain_branch_scoped(line, parsed, "resource declaration")) {
-                continue;
-            }
             push_raw_statement(root, current_path, line, parsed, ids);
-            add_resource(line, "WAV", std::string_view(token).substr(3), parsed.semantic_value);
             continue;
         }
         if (token.size() == 5 && token.starts_with("BMP") && base36_digit(token[3]) &&
             base36_digit(token[4])) {
-            if (retain_branch_scoped(line, parsed, "resource declaration")) {
-                continue;
-            }
             push_raw_statement(root, current_path, line, parsed, ids);
-            add_resource(line, "BMP", std::string_view(token).substr(3), parsed.semantic_value);
             continue;
         }
 
@@ -843,32 +821,8 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             }
             const auto& [measure_number, channel] = *measure_command;
             if (channel == "02") {
-                if (retain_branch_scoped(line, parsed, "measure-length declaration")) {
-                    continue;
-                }
                 push_raw_statement(root, current_path, line, parsed, ids);
                 (void)ensure_measure(measure_number);
-                const auto parsed_length = parse_measure_length(parsed.semantic_value);
-                if (parsed_length.value.has_value()) {
-                    if (last_measure_length_order.contains(measure_number)) {
-                        // Repeated ratio lines remain in the source tree; the later valid value
-                        // wins.
-                        add_line_diagnostic(
-                            result, diagnostic_severity_t::warning,
-                            bms_parse_diagnostic_code_t::invalid_measure,
-                            "repeated measure-length declaration; later value is applied", line);
-                    }
-                    auto& measure = ensure_measure(measure_number);
-                    measure.definition.length = *parsed_length.value;
-                    measure.definition.meter.reset();
-                    last_measure_length_order[measure_number] = line.order;
-                } else {
-                    add_line_diagnostic(
-                        result, diagnostic_severity_t::error,
-                        bms_parse_diagnostic_code_t::invalid_measure,
-                        "invalid exact BMS measure length", line,
-                        line.text.find(':') == std::string::npos ? 1 : line.text.find(':') + 2);
-                }
             } else {
                 push_raw_statement(root, current_path, line, parsed, ids);
                 (void)ensure_measure(measure_number);
@@ -1122,17 +1076,331 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         }
     }
 
+    std::map<std::size_t, const bms_control_node_t*> choice_nodes;
+    const auto find_choice_nodes = [&](const auto& self, const bms_control_node_t& node) -> void {
+        if (node.kind == bms_control_kind_t::random ||
+            node.kind == bms_control_kind_t::switch_block) {
+            choice_nodes.emplace(node.source_order, &node);
+        }
+        for (const auto& child : node.children) {
+            self(self, child);
+        }
+    };
+    find_choice_nodes(find_choice_nodes, root);
+
+    std::map<std::size_t, std::int64_t> branch_choices;
+    const auto choice_count = std::min(options.branch_choices.size(), options.max_lines);
+    if (options.branch_choices.size() > options.max_lines) {
+        result.diagnostics.push_back({
+            .severity = diagnostic_severity_t::warning,
+            .code = bms_parse_diagnostic_code_t::invalid_branch_selection,
+            .message = "branch choice count exceeds the configured physical line limit; excess "
+                       "choices are ignored",
+            .line = 1,
+            .column = 1,
+        });
+    }
+    for (std::size_t index = 0; index < choice_count; ++index) {
+        const auto& choice = options.branch_choices[index];
+        const auto [found, inserted] = branch_choices.emplace(choice.control_source_order,
+                                                               choice.selected_value);
+        if (!inserted) {
+            const auto node = choice_nodes.find(choice.control_source_order);
+            if (node != choice_nodes.end()) {
+                line_diagnostic(*node->second, diagnostic_severity_t::warning,
+                                bms_parse_diagnostic_code_t::invalid_branch_selection,
+                                "duplicate choice for a RANDOM/SWITCH block; the first choice is "
+                                "used");
+            } else {
+                result.diagnostics.push_back({
+                    .severity = diagnostic_severity_t::warning,
+                    .code = bms_parse_diagnostic_code_t::invalid_branch_selection,
+                    .message = "duplicate choice for an unknown control source order; the first "
+                               "choice is used",
+                    .line = choice.control_source_order + 1,
+                    .column = 1,
+                });
+            }
+            (void)found;
+        }
+    }
+
+    for (auto choice = branch_choices.begin(); choice != branch_choices.end();) {
+        const auto node = choice_nodes.find(choice->first);
+        if (node == choice_nodes.end()) {
+            result.diagnostics.push_back({
+                .severity = diagnostic_severity_t::warning,
+                .code = bms_parse_diagnostic_code_t::invalid_branch_selection,
+                .message = "branch choice does not identify a RANDOM or SWITCH opening line",
+                .line = choice->first + 1,
+                .column = 1,
+            });
+            choice = branch_choices.erase(choice);
+            continue;
+        }
+        const auto& control = *node->second;
+        if (control.kind == bms_control_kind_t::random &&
+            (!control.value.has_value() || choice->second < 1 ||
+             choice->second > *control.value)) {
+            line_diagnostic(control, diagnostic_severity_t::warning,
+                            bms_parse_diagnostic_code_t::invalid_branch_selection,
+                            "RANDOM choice is outside the block's declared range; its branches "
+                            "remain unprojected");
+            choice = branch_choices.erase(choice);
+            continue;
+        }
+        if (control.kind == bms_control_kind_t::switch_block) {
+            const auto has_case = std::ranges::any_of(control.children, [&](const auto& child) {
+                return child.kind == bms_control_kind_t::case_branch && child.value.has_value() &&
+                       *child.value == choice->second;
+            });
+            const auto has_default = std::ranges::any_of(control.children, [](const auto& child) {
+                return child.kind == bms_control_kind_t::default_branch;
+            });
+            if (!has_case && !has_default) {
+                line_diagnostic(control, diagnostic_severity_t::warning,
+                                bms_parse_diagnostic_code_t::invalid_branch_selection,
+                                "SWITCH choice matches no CASE and has no DEFAULT; its branches "
+                                "remain unprojected");
+                choice = branch_choices.erase(choice);
+                continue;
+            }
+        }
+        ++choice;
+    }
+
+    auto selected_if_branch = [](const bms_control_node_t& group,
+                                 std::optional<std::int64_t> random_value)
+        -> const bms_control_node_t* {
+        if (!random_value.has_value()) {
+            return nullptr;
+        }
+        const bms_control_node_t* fallback{};
+        for (const auto& child : group.children) {
+            if ((child.kind == bms_control_kind_t::if_branch ||
+                 child.kind == bms_control_kind_t::else_if_branch) &&
+                child.value == random_value) {
+                return &child;
+            }
+            if (child.kind == bms_control_kind_t::else_branch) {
+                fallback = &child;
+            }
+        }
+        return fallback;
+    };
+
+    auto selected_switch_branch = [](const bms_control_node_t& block, std::int64_t value)
+        -> const bms_control_node_t* {
+        const bms_control_node_t* fallback{};
+        for (const auto& child : block.children) {
+            if (child.kind == bms_control_kind_t::case_branch && child.value == value) {
+                return &child;
+            }
+            if (child.kind == bms_control_kind_t::default_branch) {
+                fallback = &child;
+            }
+        }
+        return fallback;
+    };
+
+    std::vector<const bms_control_node_t*> projected_control_statements;
+    std::map<std::size_t, bool> visited_choices;
+    std::function<void(const bms_control_node_t&, std::optional<std::int64_t>, bool,
+                       std::optional<std::int64_t>&, std::optional<std::int64_t>&, bool*)>
+        project_control;
+    project_control = [&](const bms_control_node_t& node,
+                         std::optional<std::int64_t> random_value, bool inside_control,
+                         std::optional<std::int64_t>& pending_random,
+                         std::optional<std::int64_t>& pending_switch,
+                         bool* switch_stopped) -> void {
+        if (node.kind == bms_control_kind_t::raw_statement) {
+            if (inside_control) {
+                projected_control_statements.push_back(&node);
+            }
+            return;
+        }
+        if (node.kind == bms_control_kind_t::set_random) {
+            pending_random = node.value;
+            return;
+        }
+        if (node.kind == bms_control_kind_t::set_switch) {
+            pending_switch = node.value;
+            return;
+        }
+        if (node.kind == bms_control_kind_t::skip) {
+            if (switch_stopped != nullptr) {
+                *switch_stopped = true;
+            }
+            return;
+        }
+        if (node.kind == bms_control_kind_t::random) {
+            auto selected_random = std::optional<std::int64_t>{};
+            if (const auto choice = branch_choices.find(node.source_order);
+                choice != branch_choices.end()) {
+                selected_random = choice->second;
+                visited_choices[node.source_order] = true;
+            } else if (pending_random.has_value()) {
+                selected_random = pending_random;
+            }
+            pending_random.reset();
+            if (selected_random.has_value() &&
+                (!node.value.has_value() || *selected_random < 1 ||
+                 *selected_random > *node.value)) {
+                line_diagnostic(node, diagnostic_severity_t::warning,
+                                bms_parse_diagnostic_code_t::invalid_branch_selection,
+                                "fixed RANDOM value is outside the block's declared range; its "
+                                "branches remain unprojected");
+                selected_random.reset();
+            }
+            if (selected_random.has_value()) {
+                chart.active_branch_selection.push_back({node.id, *selected_random});
+                for (const auto& child : node.children) {
+                    project_control(child, selected_random, true, pending_random, pending_switch,
+                                    switch_stopped);
+                }
+            }
+            return;
+        }
+        if (node.kind == bms_control_kind_t::if_group) {
+            if (const auto* selected = selected_if_branch(node, random_value);
+                selected != nullptr) {
+                project_control(*selected, random_value, true, pending_random, pending_switch,
+                                switch_stopped);
+            }
+            return;
+        }
+        if (node.kind == bms_control_kind_t::switch_block) {
+            const bms_control_node_t* selected{};
+            auto selected_value = std::optional<std::int64_t>{};
+            if (const auto choice = branch_choices.find(node.source_order);
+                choice != branch_choices.end()) {
+                selected_value = choice->second;
+                visited_choices[node.source_order] = true;
+            } else if (pending_switch.has_value()) {
+                selected_value = pending_switch;
+            }
+            pending_switch.reset();
+            if (selected_value.has_value()) {
+                selected = selected_switch_branch(node, *selected_value);
+                if (selected == nullptr) {
+                    line_diagnostic(node, diagnostic_severity_t::warning,
+                                    bms_parse_diagnostic_code_t::invalid_branch_selection,
+                                    "fixed SWITCH value matches no CASE and has no DEFAULT; its "
+                                    "branches remain unprojected");
+                    selected_value.reset();
+                } else {
+                    chart.active_branch_selection.push_back({node.id, *selected_value});
+                }
+            }
+            auto stopped = false;
+            auto entered = false;
+            for (const auto& child : node.children) {
+                if (child.kind == bms_control_kind_t::case_branch ||
+                    child.kind == bms_control_kind_t::default_branch) {
+                    entered = entered || &child == selected;
+                    if (entered && !stopped) {
+                        project_control(child, random_value, true, pending_random, pending_switch,
+                                        &stopped);
+                    }
+                } else if (entered && !stopped) {
+                    project_control(child, random_value, true, pending_random, pending_switch,
+                                    &stopped);
+                }
+            }
+            return;
+        }
+        for (const auto& child : node.children) {
+            project_control(child, random_value,
+                            inside_control || node.kind != bms_control_kind_t::root,
+                            pending_random, pending_switch, switch_stopped);
+        }
+    };
+    auto pending_random = std::optional<std::int64_t>{};
+    auto pending_switch = std::optional<std::int64_t>{};
+    project_control(root, std::nullopt, false, pending_random, pending_switch, nullptr);
+    for (const auto& [source_order, selected_value] : branch_choices) {
+        (void)selected_value;
+        if (!visited_choices.contains(source_order)) {
+            const auto node = choice_nodes.find(source_order);
+            if (node != choice_nodes.end()) {
+                line_diagnostic(*node->second, diagnostic_severity_t::warning,
+                                bms_parse_diagnostic_code_t::invalid_branch_selection,
+                                "choice targets a control block inside an unselected branch and "
+                                "is ignored");
+            }
+        }
+    }
+    std::ranges::sort(projected_control_statements, {}, [](const auto* node) {
+        return node->source_order;
+    });
+
+    std::vector<const bms_control_node_t*> active_statements = root_statements;
+    active_statements.insert(active_statements.end(), projected_control_statements.begin(),
+                             projected_control_statements.end());
+    std::ranges::stable_sort(active_statements, {}, [](const auto* node) {
+        return node->source_order;
+    });
+
     std::map<std::string, signed_rational_t, std::less<>> extended_bpms;
     std::map<std::string, signed_rational_t, std::less<>> stop_definitions;
     std::optional<std::pair<const bms_control_node_t*, signed_rational_t>> initial_bpm;
     std::vector<root_channel_line_t> channel_lines;
     std::vector<std::string> used_playable_channels;
 
-    for (const auto* node : root_statements) {
+    for (const auto* node : active_statements) {
         const auto token = upper_ascii(node->command_token);
+        const auto value = trim_ascii(node->raw_value);
+
+        if (token == "TITLE" || token == "ARTIST") {
+            if (token == "TITLE") {
+                song.metadata.title = std::string(value);
+            } else {
+                song.metadata.artist = std::string(value);
+            }
+            ordered_metadata_fields.emplace_back(token, node->raw_value);
+            continue;
+        }
+        if (token.size() == 5 && token.starts_with("WAV") && base36_digit(token[3]) &&
+            base36_digit(token[4])) {
+            add_resource(node_source_line(*node), "WAV", std::string_view(token).substr(3),
+                         std::string(value));
+            continue;
+        }
+        if (token.size() == 5 && token.starts_with("BMP") && base36_digit(token[3]) &&
+            base36_digit(token[4])) {
+            add_resource(node_source_line(*node), "BMP", std::string_view(token).substr(3),
+                         std::string(value));
+            continue;
+        }
+
+        const auto measure_command = parse_measure_command(token);
+        if (measure_command.has_value() && token.size() == 5 && node->original_text.size() >= 7 &&
+            node->original_text[0] == '#' && node->original_text[6] == ':') {
+            const auto& [measure_number, channel] = *measure_command;
+            if (channel == "02") {
+                const auto parsed_length = parse_measure_length(value);
+                if (parsed_length.value.has_value()) {
+                    if (last_measure_length_order.contains(measure_number)) {
+                        line_diagnostic(*node, diagnostic_severity_t::warning,
+                                        bms_parse_diagnostic_code_t::invalid_measure,
+                                        "repeated measure-length declaration; later value is applied");
+                    }
+                    auto& measure = ensure_measure(measure_number);
+                    measure.definition.length = *parsed_length.value;
+                    measure.definition.meter.reset();
+                    last_measure_length_order[measure_number] = node->source_order;
+                } else {
+                    line_diagnostic(*node, diagnostic_severity_t::error,
+                                    bms_parse_diagnostic_code_t::invalid_measure,
+                                    "invalid exact BMS measure length");
+                }
+                continue;
+            }
+        }
+
         if (token == "BPM" || (token.size() == 5 && token.starts_with("BPM") &&
                                 base36_digit(token[3]) && base36_digit(token[4]))) {
-            const auto parsed_value = parse_positive_rational(trim_ascii(node->raw_value));
+            const auto parsed_value = parse_positive_rational(value);
             if (!parsed_value.has_value()) {
                 line_diagnostic(*node, diagnostic_severity_t::warning,
                                 bms_parse_diagnostic_code_t::invalid_number,
@@ -1159,7 +1427,7 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         }
         if (token.size() == 6 && token.starts_with("STOP") && base36_digit(token[4]) &&
             base36_digit(token[5])) {
-            const auto parsed_value = parse_positive_rational(trim_ascii(node->raw_value));
+            const auto parsed_value = parse_positive_rational(value);
             if (!parsed_value.has_value()) {
                 line_diagnostic(*node, diagnostic_severity_t::warning,
                                 bms_parse_diagnostic_code_t::invalid_number,
@@ -1176,7 +1444,6 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             continue;
         }
 
-        const auto measure_command = parse_measure_command(token);
         if (!measure_command.has_value() || node->original_text.size() < 7 ||
             node->original_text[0] != '#' || node->original_text[6] != ':') {
             continue;
@@ -1185,7 +1452,7 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         if (channel == "02") {
             continue;
         }
-        const auto payload = trim_ascii(node->raw_value);
+        const auto payload = value;
         const auto valid_payload = !payload.empty() && payload.size() % 2 == 0 &&
                                    std::ranges::all_of(payload, [](char character) {
                                        return base36_digit(character);
@@ -1204,6 +1471,12 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             used_playable_channels.push_back(channel);
         }
     }
+    std::ranges::stable_sort(channel_lines, {}, [](const auto& line) {
+        return line.node->source_order;
+    });
+
+    chart.metadata.name = song.metadata.title;
+    chart.metadata.author = song.metadata.artist;
 
     auto measure_length_source = [&](std::size_t measure_index)
         -> const bms_control_node_t* {
@@ -1211,12 +1484,14 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         if (order == last_measure_length_order.end()) {
             return nullptr;
         }
-        const auto found = std::ranges::find_if(root_statements, [&](const auto* node) {
+        const auto found = std::ranges::find_if(active_statements, [&](const auto* node) {
             return node->source_order == order->second;
         });
-        return found == root_statements.end() ? nullptr : *found;
+        return found == active_statements.end() ? nullptr : *found;
     };
+    std::set<std::size_t> inexact_measure_geometry;
     auto fallback_measure_length = [&](std::size_t measure_index, std::string message) {
+        inexact_measure_geometry.insert(measure_index);
         auto& measure = chart.measures[measure_index];
         measure.definition = {{1, 1}, meter_t{4, 4}};
         if (const auto* node = measure_length_source(measure_index); node != nullptr) {
@@ -1296,6 +1571,7 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
         }
     }
 
+    std::vector<std::string> unmaterialized_long_note_channels;
     for (auto& channel_line : channel_lines) {
         const auto channel = std::string_view(channel_line.channel);
         const auto is_builtin_channel = channel == "01" || channel == "03" || channel == "08" ||
@@ -1313,13 +1589,6 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                                       "selected");
                 continue;
             }
-            if (!is_materialized_note_family(channel)) {
-                line_diagnostic(*channel_line.node, diagnostic_severity_t::warning,
-                                bms_parse_diagnostic_code_t::unsupported_channel,
-                                "long-note channel is retained raw until BMS long-note pairing is "
-                                "implemented");
-                continue;
-            }
             channel_line.materialize = true;
         } else {
             continue;
@@ -1330,6 +1599,9 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
             chart.measures[channel_line.measure].definition, channel_line.pair_count);
         if (!required.has_value() || *required > options.max_chart_resolution) {
             channel_line.materialize = false;
+            if (is_long_note_channel(channel)) {
+                unmaterialized_long_note_channels.push_back(channel_line.channel);
+            }
             line_diagnostic(*channel_line.node, diagnostic_severity_t::warning,
                             bms_parse_diagnostic_code_t::invalid_measure,
                             "exact channel subdivisions exceed the configured chart-resolution "
@@ -1349,11 +1621,20 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                         *lane.bms_channels.visible == channel) ||
                        (lane.bms_channels.invisible.has_value() &&
                         *lane.bms_channels.invisible == channel) ||
+                       (lane.bms_channels.long_note.has_value() &&
+                        *lane.bms_channels.long_note == channel) ||
                        (lane.bms_channels.mine.has_value() &&
                         *lane.bms_channels.mine == channel);
             });
         return found == selected_profile->layout.lanes.end() ? nullptr : &*found;
     };
+
+    std::set<std::uint64_t> incomplete_long_note_lanes;
+    for (const auto& channel : unmaterialized_long_note_channels) {
+        if (const auto* lane = lane_for_channel(channel); lane != nullptr) {
+            incomplete_long_note_lanes.insert(lane->id.value);
+        }
+    }
 
     auto position_for_slot = [&](const root_channel_line_t& channel_line, std::size_t slot)
         -> std::optional<local_position_t> {
@@ -1394,6 +1675,14 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                                             initial_bpm->first->source_order),
         });
     }
+
+    struct long_note_endpoint_t {
+        const root_channel_line_t* line{};
+        local_position_t position;
+        std::size_t slot{};
+        std::string object_id;
+    };
+    std::map<std::uint64_t, std::vector<long_note_endpoint_t>> long_note_endpoints;
 
     for (const auto& channel_line : channel_lines) {
         if (!channel_line.materialize) {
@@ -1532,6 +1821,16 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                 continue;
             }
 
+            if (is_long_note_channel(channel)) {
+                long_note_endpoints[lane->id.value].push_back({
+                    .line = &channel_line,
+                    .position = *position,
+                    .slot = slot,
+                    .object_id = object_id,
+                });
+                continue;
+            }
+
             auto kind = note_kind_t::tap;
             const auto visible = lane->bms_channels.visible.has_value() &&
                                  *lane->bms_channels.visible == channel;
@@ -1566,6 +1865,73 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                         object_id,
                     node.original_text, node.source_order, selected_profile->layout.profile_id),
             });
+        }
+    }
+
+    for (auto& [lane_value, endpoints] : long_note_endpoints) {
+        if (incomplete_long_note_lanes.contains(lane_value)) {
+            continue;
+        }
+        std::ranges::stable_sort(endpoints, [](const auto& left, const auto& right) {
+            return std::tie(left.line->measure, left.position.row,
+                            left.line->node->source_order, left.slot) <
+                   std::tie(right.line->measure, right.position.row,
+                            right.line->node->source_order, right.slot);
+        });
+        for (std::size_t index = 0; index + 1 < endpoints.size(); index += 2) {
+            const auto& start = endpoints[index];
+            const auto& end = endpoints[index + 1];
+            const auto crosses_inexact_measure = std::ranges::any_of(
+                inexact_measure_geometry, [&](const auto measure) {
+                    return measure >= start.line->measure && measure <= end.line->measure;
+                });
+            if (crosses_inexact_measure) {
+                line_diagnostic(*start.line->node, diagnostic_severity_t::warning,
+                                bms_parse_diagnostic_code_t::unpaired_long_note,
+                                "long-note endpoints cross inexact fallback measure geometry and "
+                                "remain raw");
+                continue;
+            }
+            if (std::tie(end.line->measure, end.position.row) <=
+                std::tie(start.line->measure, start.position.row)) {
+                line_diagnostic(*end.line->node, diagnostic_severity_t::warning,
+                                bms_parse_diagnostic_code_t::unpaired_long_note,
+                                "long-note endpoints share a position and remain raw because a "
+                                "positive-length hold cannot be represented");
+                continue;
+            }
+
+            const auto* lane = lane_for_channel(start.line->channel);
+            if (lane == nullptr) {
+                continue;
+            }
+            const auto sound = resource_for_object(*start.line->node, start.object_id);
+            const auto end_line = end.line->node->source_order + 1;
+            const auto source_field =
+                std::string("long-note start ") + start.line->channel + " slot " +
+                std::to_string(start.slot) + " object " + start.object_id + " paired with " +
+                end.line->channel + " slot " + std::to_string(end.slot) + " object " +
+                end.object_id + " on source line " + std::to_string(end_line);
+            const auto source_spelling = start.line->node->original_text + "\n" +
+                                         end.line->node->original_text;
+            chart.measures[start.line->measure].notes.push_back({
+                .id = new_id<object_id_t>(ids),
+                .position = start.position,
+                .lane = lane->id,
+                .kind = note_kind_t::hold,
+                .end = end.position,
+                .sound = sound,
+                .provenance = source_provenance(
+                    source_field, source_spelling,
+                    start.line->node->source_order, selected_profile->layout.profile_id),
+            });
+        }
+        if (endpoints.size() % 2 != 0) {
+            const auto& endpoint = endpoints.back();
+            line_diagnostic(*endpoint.line->node, diagnostic_severity_t::warning,
+                            bms_parse_diagnostic_code_t::unpaired_long_note,
+                            "long-note endpoint has no matching partner; its source payload "
+                            "remains raw");
         }
     }
 

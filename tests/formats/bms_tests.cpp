@@ -9,6 +9,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -31,9 +32,10 @@ auto parse(std::string_view source, wormedit::bms_parse_options_t options = {})
                                      options);
 }
 
-auto fixture(std::string_view relative) -> wormedit::bms_parse_result_t {
+auto fixture(std::string_view relative, wormedit::bms_parse_options_t options = {})
+    -> wormedit::bms_parse_result_t {
     const auto bytes = read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / relative);
-    return wormedit::parse_bms_bytes(bytes);
+    return wormedit::parse_bms_bytes(bytes, std::move(options));
 }
 
 auto find_kind(const wormedit::bms_control_node_t& node, wormedit::bms_control_kind_t kind)
@@ -219,6 +221,213 @@ TEST_CASE("BMS channel materialization respects explicit profiles and exact grid
     }));
 }
 
+TEST_CASE("BMS long-note channel endpoints pair across lines and measures",
+          "[unit][format][bms][events][long-note]") {
+    constexpr std::string_view source =
+        "#WAV01 head.wav\n#WAV02 tail.wav\n"
+        "#00051:0100\n#00051:0002\n#00151:0100\n#00251:0100\n";
+    wormedit::bms_parse_options_t options;
+    options.lane_profile_id = "bme-7k-outside-scratch";
+    auto result = parse(source, options);
+    REQUIRE(result.song.has_value());
+    const auto& song = *result.song;
+    const auto& chart = song.charts.front();
+    REQUIRE(chart.measures.size() == 3);
+    REQUIRE(chart.measures[0].notes.size() == 1);
+    REQUIRE(chart.measures[1].notes.size() == 1);
+    const auto& within_measure = chart.measures[0].notes.front();
+    CHECK(within_measure.kind == wormedit::note_kind_t::hold);
+    CHECK(within_measure.position.row == 0);
+    REQUIRE(within_measure.end.has_value());
+    CHECK(within_measure.end->measure == chart.measures[0].id);
+    CHECK(within_measure.end->row == 480);
+    CHECK(within_measure.sound == song.resources[0].id);
+    CHECK(within_measure.provenance.source_field.find("paired with") != std::string::npos);
+    CHECK(within_measure.provenance.source_spelling.find("#00051:0100") != std::string::npos);
+    CHECK(within_measure.provenance.source_spelling.find("#00051:0002") != std::string::npos);
+
+    const auto& across_measures = chart.measures[1].notes.front();
+    CHECK(across_measures.kind == wormedit::note_kind_t::hold);
+    CHECK(across_measures.position.measure == chart.measures[1].id);
+    REQUIRE(across_measures.end.has_value());
+    CHECK(across_measures.end->measure == chart.measures[2].id);
+    CHECK(across_measures.sound == song.resources[0].id);
+    CHECK(wormedit::validate_document(song).empty());
+
+    auto legacy = fixture("bms/legacy-long-note.bml", options);
+    REQUIRE(legacy.song.has_value());
+    const auto& legacy_song = *legacy.song;
+    const auto& legacy_chart = legacy_song.charts.front();
+    REQUIRE(legacy_chart.measures.front().notes.size() == 1);
+    const auto& legacy_hold = legacy_chart.measures.front().notes.front();
+    CHECK(legacy_hold.kind == wormedit::note_kind_t::hold);
+    CHECK(legacy_hold.position.row == 0);
+    REQUIRE(legacy_hold.end.has_value());
+    CHECK(legacy_hold.end->row == 480);
+    CHECK(legacy_hold.sound == legacy_song.resources[0].id);
+    CHECK(wormedit::validate_document(legacy_song).empty());
+}
+
+TEST_CASE("BMS leaves odd long-note endpoints raw and reports them",
+          "[unit][format][bms][events][long-note][recovery]") {
+    constexpr std::string_view source = "#WAV01 head.wav\n#00051:0100\n";
+    wormedit::bms_parse_options_t options;
+    options.lane_profile_id = "bme-7k-outside-scratch";
+    auto result = parse(source, options);
+    REQUIRE(result.song.has_value());
+    const auto& song = *result.song;
+    const auto& chart = song.charts.front();
+    CHECK(chart.measures.front().notes.empty());
+    CHECK(std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::bms_parse_diagnostic_code_t::unpaired_long_note &&
+               diagnostic.message.find("no matching partner") != std::string::npos;
+    }));
+    const auto raw = source_lines(*chart.bms_control_tree);
+    CHECK(std::ranges::find(raw, "#00051:0100") != raw.end());
+    CHECK(wormedit::validate_document(song).empty());
+
+    constexpr std::string_view incompatible_source =
+        "#WAV01 head.wav\n#00051:0100\n#00151:0100\n";
+    options.lane_profile_id = "pms-standard-5button";
+    auto incompatible = parse(incompatible_source, options);
+    REQUIRE(incompatible.song.has_value());
+    CHECK(incompatible.song->charts.front().measures[0].notes.empty());
+    CHECK(std::ranges::any_of(incompatible.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::bms_parse_diagnostic_code_t::unsupported_channel;
+    }));
+    CHECK(wormedit::validate_document(*incompatible.song).empty());
+
+    constexpr std::string_view capped_source =
+        "#WAV01 head.wav\n#00051:01020304050607\n#00151:01\n#00251:01\n";
+    wormedit::bms_parse_options_t capped_options;
+    capped_options.lane_profile_id = "bme-7k-outside-scratch";
+    capped_options.max_chart_resolution = 960;
+    auto capped = parse(capped_source, capped_options);
+    REQUIRE(capped.song.has_value());
+    for (const auto& measure : capped.song->charts.front().measures) {
+        CHECK(measure.notes.empty());
+    }
+    CHECK(std::ranges::any_of(capped.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::bms_parse_diagnostic_code_t::invalid_measure &&
+               diagnostic.message.find("channel subdivisions") != std::string::npos;
+    }));
+    CHECK(wormedit::validate_document(*capped.song).empty());
+
+    constexpr std::string_view capped_measure_source =
+        "#WAV01 head.wav\n#00002:0.001\n#00051:0101\n";
+    auto capped_measure = parse(capped_measure_source, capped_options);
+    REQUIRE(capped_measure.song.has_value());
+    CHECK(capped_measure.song->charts.front().measures.front().notes.empty());
+    CHECK(std::ranges::any_of(capped_measure.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::bms_parse_diagnostic_code_t::unpaired_long_note &&
+               diagnostic.message.find("fallback measure geometry") != std::string::npos;
+    }));
+    CHECK(wormedit::validate_document(*capped_measure.song).empty());
+}
+
+TEST_CASE("BMS projects explicitly selected RANDOM and reachable SWITCH branches",
+          "[unit][format][bms][control][events]") {
+    constexpr std::string_view random_source =
+        "#WAV01 key.wav\n#RANDOM 2\n#IF 1\n#00011:01\n#ELSE\n#00111:01\n"
+        "#ENDIF\n#ENDRANDOM\n#00211:01\n";
+    wormedit::bms_parse_options_t random_options;
+    random_options.lane_profile_id = "bme-7k-outside-scratch";
+    random_options.branch_choices = {{1, 1}}; // #RANDOM is physical source line 2.
+    auto random_result = parse(random_source, random_options);
+    REQUIRE(random_result.song.has_value());
+    const auto& random_song = *random_result.song;
+    const auto& random_chart = random_song.charts.front();
+    CHECK(random_chart.measures[0].notes.size() == 1);
+    CHECK(random_chart.measures[1].notes.empty());
+    CHECK(random_chart.measures[2].notes.size() == 1);
+    REQUIRE(random_chart.active_branch_selection.size() == 1);
+    CHECK(random_chart.active_branch_selection.front().selected_value == 1);
+    CHECK(wormedit::validate_document(random_song).empty());
+    const auto random_raw = source_lines(*random_chart.bms_control_tree);
+    CHECK(std::ranges::find(random_raw, "#00111:01") != random_raw.end());
+
+    constexpr std::string_view switch_source =
+        "#WAV01 key.wav\n#RANDOM 2\n#IF 2\n#SWITCH 2\n#CASE 1\n#00011:01\n"
+        "#SKIP\n#CASE 2\n#00111:01\n#SKIP\n#DEF\n#00211:01\n#ENDSW\n"
+        "#ENDIF\n#ENDRANDOM\n#00311:01\n";
+    wormedit::bms_parse_options_t switch_options;
+    switch_options.lane_profile_id = "bme-7k-outside-scratch";
+    switch_options.branch_choices = {{1, 2}, {3, 2}};
+    auto switch_result = parse(switch_source, switch_options);
+    REQUIRE(switch_result.song.has_value());
+    const auto& switch_song = *switch_result.song;
+    const auto& switch_chart = switch_song.charts.front();
+    CHECK(switch_chart.measures[0].notes.empty());
+    CHECK(switch_chart.measures[1].notes.size() == 1);
+    CHECK(switch_chart.measures[2].notes.empty());
+    CHECK(switch_chart.measures[3].notes.size() == 1);
+    REQUIRE(switch_chart.active_branch_selection.size() == 2);
+    CHECK(switch_chart.active_branch_selection[0].selected_value == 2);
+    CHECK(switch_chart.active_branch_selection[1].selected_value == 2);
+    CHECK(wormedit::validate_document(switch_song).empty());
+
+    wormedit::bms_parse_options_t fallthrough_options;
+    fallthrough_options.lane_profile_id = "bme-7k-outside-scratch";
+    fallthrough_options.branch_choices = {{22, 1}}; // #SWITCH is physical source line 23.
+    auto fallthrough = fixture("bms/control-flow-mixed.bms", fallthrough_options);
+    REQUIRE(fallthrough.song.has_value());
+    const auto& fallthrough_song = *fallthrough.song;
+    const auto& fallthrough_chart = fallthrough_song.charts.front();
+    REQUIRE(fallthrough_chart.measures.front().notes.size() == 3);
+    CHECK(fallthrough_chart.measures.front().notes[0].sound == fallthrough_song.resources[0].id);
+    CHECK(fallthrough_chart.measures.front().notes[1].sound == fallthrough_song.resources[5].id);
+    CHECK(fallthrough_chart.measures.front().notes[2].sound == fallthrough_song.resources[6].id);
+    CHECK(fallthrough_chart.active_branch_selection.size() == 1);
+    CHECK(wormedit::validate_document(fallthrough_song).empty());
+
+    constexpr std::string_view invalid_choice_source =
+        "#WAV01 key.wav\n#RANDOM 2\n#IF 1\n#00011:01\n#ENDIF\n#ENDRANDOM\n";
+    wormedit::bms_parse_options_t invalid_choice_options;
+    invalid_choice_options.lane_profile_id = "bme-7k-outside-scratch";
+    invalid_choice_options.branch_choices = {{1, 3}};
+    auto invalid_choice = parse(invalid_choice_source, invalid_choice_options);
+    REQUIRE(invalid_choice.song.has_value());
+    const auto& invalid_choice_song = *invalid_choice.song;
+    CHECK(invalid_choice_song.charts.front().measures.front().notes.empty());
+    CHECK(invalid_choice_song.charts.front().active_branch_selection.empty());
+    CHECK(std::ranges::any_of(invalid_choice.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::bms_parse_diagnostic_code_t::invalid_branch_selection;
+    }));
+    CHECK(wormedit::validate_document(invalid_choice_song).empty());
+
+    constexpr std::string_view capped_branch_source =
+        "#RANDOM 1\n#IF 1\n#00001:01020304050607\n#ENDIF\n#ENDRANDOM\n";
+    wormedit::bms_parse_options_t capped_branch_options;
+    capped_branch_options.max_chart_resolution = 960;
+    capped_branch_options.branch_choices = {{0, 1}};
+    auto capped_branch = parse(capped_branch_source, capped_branch_options);
+    REQUIRE(capped_branch.song.has_value());
+    CHECK(capped_branch.song->charts.front().bgm_source_lanes.empty());
+    CHECK(capped_branch.song->charts.front().measures.front().bgm_events.empty());
+    CHECK(std::ranges::any_of(capped_branch.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::bms_parse_diagnostic_code_t::invalid_measure &&
+               diagnostic.message.find("channel subdivisions") != std::string::npos;
+    }));
+    CHECK(wormedit::validate_document(*capped_branch.song).empty());
+}
+
+TEST_CASE("BMS fixed RANDOM and SWITCH values drive selected branch projection",
+          "[unit][format][bms][control][events]") {
+    wormedit::bms_parse_options_t options;
+    options.lane_profile_id = "bme-7k-outside-scratch";
+    auto result = fixture("bms/control-flow-fixed-values.bms", options);
+    REQUIRE(result.song.has_value());
+    const auto& song = *result.song;
+    const auto& chart = song.charts.front();
+    REQUIRE(chart.active_branch_selection.size() == 2);
+    CHECK(chart.active_branch_selection[0].selected_value == 2);
+    CHECK(chart.active_branch_selection[1].selected_value == 1);
+    REQUIRE(chart.measures.front().notes.size() == 3);
+    CHECK(chart.measures.front().notes[1].sound == song.resources[1].id);
+    CHECK(chart.measures.front().notes[2].sound == song.resources[3].id);
+    CHECK(wormedit::validate_document(song).empty());
+}
+
 TEST_CASE("BMS notes need a compatible selected profile and conditional payloads stay raw",
           "[unit][format][bms][events]") {
     constexpr std::string_view playable = "#WAV01 key.wav\n#00011:0100\n";
@@ -371,21 +580,82 @@ TEST_CASE("BMS reader preserves malformed and orphan source with located diagnos
     }));
 }
 
-TEST_CASE("BMS conditional declarations stay raw and are not flattened",
-          "[unit][format][bms][control]") {
+TEST_CASE("BMS selected branches activate source-ordered definitions and ratios",
+          "[unit][format][bms][control][events]") {
     constexpr std::string_view source =
-        "#TITLE root\n#RANDOM 2\n#IF 1\n#TITLE branch\n#WAV01 branch.wav\n"
-        "#00002:0.75\n#ENDIF\n#ENDRANDOM\n#00011:01\n";
-    auto result = parse(source);
-    REQUIRE(result.song.has_value());
-    CHECK(result.song->metadata.title == "root");
-    CHECK(result.song->resources.empty());
-    REQUIRE(result.song->charts[0].measures.size() == 1);
-    CHECK((result.song->charts[0].measures[0].definition.length == wormedit::rational_t{1, 1}));
-    CHECK(std::ranges::count_if(result.diagnostics, [](const auto& diagnostic) {
-              return diagnostic.severity == wormedit::diagnostic_severity_t::warning &&
-                     diagnostic.message.find("remains raw") != std::string::npos;
-          }) == 4);
+        "#TITLE root\n#BPM 120\n#WAV99 root.wav\n#RANDOM 2\n#IF 1\n"
+        "#TITLE selected\n#WAV01 selected.wav\n#BPM01 180\n#STOP01 48\n"
+        "#00002:0.75\n#00001:01\n#00008:01\n#00009:01\n#00011:01\n#ELSE\n"
+        "#TITLE alternate\n#WAV01 alternate.wav\n#BPM01 210\n#STOP01 72\n"
+        "#00002:0.5\n#00001:01\n#00008:01\n#00009:01\n#00011:01\n"
+        "#ENDIF\n#ENDRANDOM\n";
+
+    wormedit::bms_parse_options_t selected_options;
+    selected_options.lane_profile_id = "bme-7k-outside-scratch";
+    selected_options.branch_choices = {{3, 1}};
+    auto selected = parse(source, selected_options);
+    REQUIRE(selected.song.has_value());
+    const auto& selected_song = *selected.song;
+    const auto& selected_chart = selected_song.charts.front();
+    CHECK(selected_song.metadata.title == "selected");
+    REQUIRE(selected_song.resources.size() == 2);
+    CHECK(selected_song.resources[0].name == "root.wav");
+    CHECK(selected_song.resources[1].name == "selected.wav");
+    REQUIRE(selected_chart.measures.size() == 1);
+    CHECK((selected_chart.measures[0].definition.length == wormedit::rational_t{3, 4}));
+    REQUIRE(selected_chart.measures[0].bgm_events.size() == 1);
+    CHECK(selected_chart.measures[0].bgm_events.front().sound == selected_song.resources[1].id);
+    REQUIRE(selected_chart.measures[0].notes.size() == 1);
+    CHECK(selected_chart.measures[0].notes.front().sound == selected_song.resources[1].id);
+    const auto selected_bpm = std::ranges::find_if(selected_chart.bpms, [](const auto& event) {
+        return event.beats_per_minute == wormedit::signed_rational_t{180, 1};
+    });
+    REQUIRE(selected_bpm != selected_chart.bpms.end());
+    REQUIRE(selected_chart.pauses.size() == 1);
+    CHECK((selected_chart.pauses.front().duration == wormedit::signed_rational_t{48, 1}));
+    CHECK(wormedit::validate_document(selected_song).empty());
+    CHECK_FALSE(std::ranges::any_of(selected.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.message.find("occurs inside conditional control flow and remains raw") !=
+               std::string::npos;
+    }));
+
+    auto alternate_options = selected_options;
+    alternate_options.branch_choices = {{3, 2}};
+    auto alternate = parse(source, alternate_options);
+    REQUIRE(alternate.song.has_value());
+    const auto& alternate_song = *alternate.song;
+    const auto& alternate_chart = alternate_song.charts.front();
+    CHECK(alternate_song.metadata.title == "alternate");
+    REQUIRE(alternate_song.resources.size() == 2);
+    CHECK(alternate_song.resources[1].name == "alternate.wav");
+    CHECK((alternate_chart.measures[0].definition.length == wormedit::rational_t{1, 2}));
+    REQUIRE(alternate_chart.measures[0].bgm_events.size() == 1);
+    CHECK(alternate_chart.measures[0].bgm_events.front().sound == alternate_song.resources[1].id);
+    const auto alternate_bpm = std::ranges::find_if(alternate_chart.bpms, [](const auto& event) {
+        return event.beats_per_minute == wormedit::signed_rational_t{210, 1};
+    });
+    REQUIRE(alternate_bpm != alternate_chart.bpms.end());
+    REQUIRE(alternate_chart.pauses.size() == 1);
+    CHECK((alternate_chart.pauses.front().duration == wormedit::signed_rational_t{72, 1}));
+    CHECK(wormedit::validate_document(alternate_song).empty());
+
+    auto unselected_options = selected_options;
+    unselected_options.branch_choices.clear();
+    auto unselected = parse(source, unselected_options);
+    REQUIRE(unselected.song.has_value());
+    const auto& unselected_song = *unselected.song;
+    const auto& unselected_chart = unselected_song.charts.front();
+    CHECK(unselected_song.metadata.title == "root");
+    REQUIRE(unselected_song.resources.size() == 1);
+    CHECK(unselected_song.resources.front().name == "root.wav");
+    CHECK((unselected_chart.measures[0].definition.length == wormedit::rational_t{1, 1}));
+    CHECK(unselected_chart.measures[0].bgm_events.empty());
+    CHECK(unselected_chart.pauses.empty());
+    CHECK(std::ranges::none_of(unselected_chart.bpms, [](const auto& event) {
+        return event.beats_per_minute == wormedit::signed_rational_t{180, 1} ||
+               event.beats_per_minute == wormedit::signed_rational_t{210, 1};
+    }));
+    CHECK(wormedit::validate_document(unselected_song).empty());
 }
 
 TEST_CASE("BMS parser source, line and nesting limits are configurable",

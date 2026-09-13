@@ -19,6 +19,8 @@ enum class bms_parse_diagnostic_code_t {
     duplicate_resource,
     unsupported_channel,
     unresolved_reference,
+    invalid_branch_selection,
+    unpaired_long_note,
 };
 
 struct bms_parse_diagnostic_t {
@@ -42,6 +44,15 @@ struct bms_parse_options_t {
     std::uint64_t max_chart_resolution{1'000'000'000ULL};
     // Optional built-in profile selected by the project or importing caller.
     std::optional<std::string> lane_profile_id;
+    // Optional explicit choice for a RANDOM or SWITCH block. The source order
+    // is the zero-based physical line order of the block's opening directive.
+    // Unselected blocks retain every branch in the source tree and project no
+    // branch-local channel payloads.
+    struct branch_choice_t {
+        std::size_t control_source_order{};
+        std::int64_t selected_value{};
+    };
+    std::vector<branch_choice_t> branch_choices;
 };
 
 struct bms_parse_result_t {
@@ -57,7 +68,8 @@ struct bms_parse_result_t {
 [[nodiscard]] auto is_bms_text_encoding_supported(text_encoding_t encoding) -> bool;
 
 // Parses BMS-family bytes into a loss-aware source tree and materializes supported
-// root-level channel events. Conditional channel payloads remain raw until projection.
+// root-level semantics. Branch-local metadata, definitions, measure geometry, and
+// object payloads are projected when a RANDOM/SWITCH choice is explicitly supplied.
 [[nodiscard]] auto parse_bms_bytes(std::span<const std::byte> bytes,
                                    bms_parse_options_t options = {}) -> bms_parse_result_t;
 

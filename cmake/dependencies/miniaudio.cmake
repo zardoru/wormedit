@@ -19,6 +19,7 @@ else()
 endif()
 
 add_library(wormedit_audio_decoder
+    "${CMAKE_SOURCE_DIR}/src/audio/block_cache.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/miniaudio_backend.c"
     "${CMAKE_SOURCE_DIR}/src/audio/decoder.cpp"
 )

@@ -32,6 +32,7 @@ catch_discover_tests(wormedit_core_tests
 
 if(WORMEDIT_ENABLE_AUDIO_DECODER)
     add_executable(wormedit_audio_tests
+        core/audio_block_cache_tests.cpp
         core/audio_decoder_tests.cpp
     )
     target_compile_definitions(wormedit_audio_tests

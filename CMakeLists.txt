@@ -38,6 +38,7 @@ endif()
 
 add_library(wormedit_core
     src/core/autosave_loop.cpp
+    src/core/bms_branch_editor.cpp
     src/core/chart_compare.cpp
     src/core/command.cpp
     src/core/document.cpp

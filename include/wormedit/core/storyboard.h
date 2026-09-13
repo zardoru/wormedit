@@ -146,6 +146,8 @@ enum class storyboard_diagnostic_code_t : std::uint8_t {
     time_overflow,
 };
 
+inline constexpr std::size_t storyboard_default_maximum_path_bytes = 4 * 1024;
+
 struct storyboard_diagnostic_t {
     storyboard_diagnostic_code_t code{storyboard_diagnostic_code_t::malformed_line};
     std::size_t line{};
@@ -157,7 +159,7 @@ struct storyboard_parse_options_t {
     std::size_t maximum_lines{250'000};
     std::size_t maximum_nodes{250'000};
     std::size_t maximum_nesting{128};
-    std::size_t maximum_path_bytes{4 * 1024};
+    std::size_t maximum_path_bytes{storyboard_default_maximum_path_bytes};
 };
 
 struct storyboard_parse_result_t {

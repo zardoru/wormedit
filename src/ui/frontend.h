@@ -21,6 +21,15 @@
 #define WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY 16384
 #define WORM_UI_METADATA_FORMAT_FIELD_CAPACITY 128
 #define WORM_UI_METADATA_FORMAT_TARGET_CAPACITY 14
+#define WORM_UI_COMPOSE_BAND_CAPACITY 4096
+#define WORM_UI_COMPOSE_LANE_CAPACITY 32768
+#define WORM_UI_COMPOSE_GRID_CAPACITY 16384
+#define WORM_UI_COMPOSE_DIFFERENCE_CAPACITY 32768
+#define WORM_UI_COMPOSE_HOLD_CAPACITY 32768
+#define WORM_UI_COMPOSE_NOTE_CAPACITY 32768
+#define WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY 32768
+#define WORM_UI_COMPOSE_MIN_PIXELS_PER_MEASURE 24.0
+#define WORM_UI_COMPOSE_MAX_PIXELS_PER_MEASURE 4096.0
 
 typedef enum WormUiRecoveryAction {
     WORM_UI_RECOVERY_ACTION_INSPECT = 1 << 0,
@@ -119,6 +128,84 @@ typedef struct WormUiMetadataView {
     size_t format_target_count;
 } WormUiMetadataView;
 
+typedef struct WormUiComposeRect {
+    double left;
+    double top;
+    double right;
+    double bottom;
+} WormUiComposeRect;
+
+typedef struct WormUiComposeBandView {
+    WormUiComposeRect bounds;
+    bool split_stage;
+} WormUiComposeBandView;
+
+typedef struct WormUiComposeLaneView {
+    WormUiComposeRect bounds;
+    uint64_t lane_id;
+    uint32_t display_order;
+    uint8_t role;
+    uint8_t stage;
+    uint8_t glyph;
+} WormUiComposeLaneView;
+
+typedef struct WormUiComposeGridLineView {
+    double y_pixels;
+    uint8_t kind;
+    uint8_t emphasis;
+} WormUiComposeGridLineView;
+
+typedef struct WormUiComposeDifferenceView {
+    WormUiComposeRect bounds;
+} WormUiComposeDifferenceView;
+
+typedef struct WormUiComposeHoldView {
+    WormUiComposeRect bounds;
+    uint64_t note_id;
+    uint64_t lane_id;
+    bool selected;
+} WormUiComposeHoldView;
+
+typedef struct WormUiComposeNoteView {
+    WormUiComposeRect bounds;
+    uint64_t note_id;
+    uint64_t lane_id;
+    uint8_t kind;
+    bool tail;
+    bool selected;
+} WormUiComposeNoteView;
+
+typedef struct WormUiComposeCursorView {
+    WormUiComposeRect bounds;
+    uint64_t lane_id;
+} WormUiComposeCursorView;
+
+// Renderer-neutral field primitives projected into bounded scalar storage.
+// Coordinates are relative to the scene viewport; no chart/core types cross
+// the private frontend boundary.
+typedef struct WormUiComposeView {
+    bool visible;
+    bool scene_available;
+    bool truncated;
+    double viewport_width_pixels;
+    double viewport_height_pixels;
+    double pixels_per_standard_measure;
+    const char* status_text;
+    const WormUiComposeBandView* bands;
+    size_t band_count;
+    const WormUiComposeLaneView* lanes;
+    size_t lane_count;
+    const WormUiComposeGridLineView* grid_lines;
+    size_t grid_line_count;
+    const WormUiComposeDifferenceView* differences;
+    size_t difference_count;
+    const WormUiComposeHoldView* hold_bodies;
+    size_t hold_body_count;
+    const WormUiComposeNoteView* note_endpoints;
+    size_t note_endpoint_count;
+    const WormUiComposeCursorView* cursor;
+} WormUiComposeView;
+
 // Private scalar view consumed by the selected frontend adapter. The owning
 // application keeps every pointed-to string alive for the duration of compose.
 typedef struct WormUiWorkspaceView {
@@ -145,7 +232,17 @@ typedef struct WormUiWorkspaceView {
     size_t recovery_diagnostic_count;
     const char* recovery_diagnostics[WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY];
     WormUiMetadataView metadata;
+    WormUiComposeView compose;
 } WormUiWorkspaceView;
+
+typedef enum WormUiComposeActionKind {
+    WORM_UI_COMPOSE_ACTION_NONE = 0,
+    WORM_UI_COMPOSE_ACTION_ZOOM_IN,
+    WORM_UI_COMPOSE_ACTION_ZOOM_OUT,
+    WORM_UI_COMPOSE_ACTION_SCROLL_UP,
+    WORM_UI_COMPOSE_ACTION_SCROLL_DOWN,
+    WORM_UI_COMPOSE_ACTION_RESET_VIEW,
+} WormUiComposeActionKind;
 
 typedef enum WormUiMetadataEditKind {
     WORM_UI_METADATA_EDIT_NONE = 0,
@@ -182,6 +279,7 @@ typedef struct WormUiWorkspaceAction {
     size_t metadata_format_index;
     const char* metadata_format_name;
     const char* metadata_format_value;
+    WormUiComposeActionKind compose_action;
 } WormUiWorkspaceAction;
 
 // Private application/frontend boundary. Implementations own all widget

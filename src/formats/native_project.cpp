@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <limits>
@@ -199,9 +200,36 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_control_node_t, id, kind, value, original
                                    close_line_ending, children)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(branch_selection_t, branch, selected_value)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(chart_metadata_t, name, author, rating, format_groups)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_document_t, id, name, retained_source_lines)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_command_t, opcode, easing, start_time_ms, end_time_ms,
+                                   from, to, value_count, source_order)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_node_t, kind, command, loop_start_time_ms,
+                                   loop_iteration_count, source_order, retained_line, children)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_sprite_t, stable_id, source_order, layer, origin,
+                                   path, x, y, nodes)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_top_level_line_t, source_order, text)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(storyboard_document_model_t, sprites, retained_top_level_lines)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(song_metadata_t, title, artist, ordered_search_tags,
                                    format_groups)
+
+void to_json(json& value, const storyboard_document_t& storyboard) {
+    value = json{{"id", storyboard.id},
+                 {"name", storyboard.name},
+                 {"retained_source_lines", storyboard.retained_source_lines},
+                 {"model", storyboard.model}};
+}
+
+void from_json(const json& value, storyboard_document_t& storyboard) {
+    value.at("id").get_to(storyboard.id);
+    value.at("name").get_to(storyboard.name);
+    value.at("retained_source_lines").get_to(storyboard.retained_source_lines);
+    if (value.contains("model")) {
+        value.at("model").get_to(storyboard.model);
+    } else {
+        // Version-1 projects written before structured storyboard support contain
+        // only the retained source-line bag.
+        storyboard.model.reset();
+    }
+}
 
 namespace {
 
@@ -783,12 +811,23 @@ class json_limit_sax_t final : public nlohmann::json_sax<json> {
 
 auto strict_numeric_shape(const json& value, std::string_view key = {}, bool signed_array = false)
     -> bool {
+    if (key == "x" || key == "y") {
+        return value.is_number_float() && std::isfinite(value.get<double>());
+    }
+    if (key == "from" || key == "to") {
+        return value.is_array() && std::ranges::all_of(value, [](const auto& component) {
+                   return component.is_number_float() &&
+                          std::isfinite(component.template get<double>());
+               });
+    }
     if (value.is_number_float()) {
         return false;
     }
     if (value.is_number_integer() && !value.is_number_unsigned()) {
         const auto signed_field = key == "numerator" || key == "selected_value" || key == "value" ||
-                                  key == "audio_milliseconds" || signed_array;
+                                  key == "audio_milliseconds" || key == "start_time_ms" ||
+                                  key == "end_time_ms" || key == "loop_start_time_ms" ||
+                                  signed_array;
         if (!signed_field) {
             return false;
         }
@@ -796,14 +835,16 @@ auto strict_numeric_shape(const json& value, std::string_view key = {}, bool sig
     if (value.is_number_unsigned()) {
         const auto number = value.get<json::number_unsigned_t>();
         const auto signed_field = key == "selected_value" || key == "value" ||
-                                  key == "audio_milliseconds" || signed_array;
+                                  key == "audio_milliseconds" || key == "start_time_ms" ||
+                                  key == "end_time_ms" || key == "loop_start_time_ms" ||
+                                  signed_array;
         if (signed_field && number > static_cast<json::number_unsigned_t>(
                                          std::numeric_limits<std::int64_t>::max())) {
             return false;
         }
         const auto at_most = [&](std::uint64_t maximum) { return number <= maximum; };
         if ((key == "red" || key == "green" || key == "blue" || key == "alpha" ||
-             key == "channel" || key == "note") &&
+             key == "value_count" || key == "channel" || key == "note") &&
             !at_most(std::numeric_limits<std::uint8_t>::max())) {
             return false;
         }
@@ -831,14 +872,31 @@ auto strict_numeric_shape(const json& value, std::string_view key = {}, bool sig
     return true;
 }
 
-auto same_schema_shape(const json& input, const json& canonical) -> bool {
+enum class schema_shape_context_t {
+    ordinary,
+    storyboards,
+    storyboard_entry,
+};
+
+auto same_schema_shape(const json& input, const json& canonical,
+                       schema_shape_context_t context = schema_shape_context_t::ordinary) -> bool {
     if (input.is_object() || canonical.is_object()) {
-        if (!input.is_object() || !canonical.is_object() || input.size() != canonical.size()) {
+        if (!input.is_object() || !canonical.is_object()) {
+            return false;
+        }
+        const auto legacy_model_missing = context == schema_shape_context_t::storyboard_entry &&
+                                          input.size() + 1 == canonical.size() &&
+                                          !input.contains("model") && canonical.contains("model") &&
+                                          canonical.at("model").is_null();
+        if (input.size() != canonical.size() && !legacy_model_missing) {
             return false;
         }
         for (const auto& [key, value] : input.items()) {
             const auto expected = canonical.find(key);
-            if (expected == canonical.end() || !same_schema_shape(value, *expected)) {
+            const auto child_context = key == "storyboards" ? schema_shape_context_t::storyboards
+                                                            : schema_shape_context_t::ordinary;
+            if (expected == canonical.end() ||
+                !same_schema_shape(value, *expected, child_context)) {
                 return false;
             }
         }
@@ -848,8 +906,11 @@ auto same_schema_shape(const json& input, const json& canonical) -> bool {
         if (!input.is_array() || !canonical.is_array() || input.size() != canonical.size()) {
             return false;
         }
+        const auto child_context = context == schema_shape_context_t::storyboards
+                                       ? schema_shape_context_t::storyboard_entry
+                                       : schema_shape_context_t::ordinary;
         for (std::size_t index = 0; index < input.size(); ++index) {
-            if (!same_schema_shape(input[index], canonical[index])) {
+            if (!same_schema_shape(input[index], canonical[index], child_context)) {
                 return false;
             }
         }

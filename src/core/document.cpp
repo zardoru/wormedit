@@ -1090,6 +1090,12 @@ auto validate_document(const song_document_t& song) -> diagnostic_list_t {
     check_unique_ids(
         diagnostics, song.storyboards, [](const auto& storyboard) { return storyboard.id; },
         "storyboard");
+    for (const auto& storyboard : song.storyboards) {
+        if (storyboard.model.has_value() && !emit_osb(*storyboard.model)) {
+            add_diagnostic(diagnostics, diagnostic_code_t::unsupported_feature,
+                           "storyboard model is invalid or exceeds the bounded OSB limits");
+        }
+    }
 
     std::unordered_set<std::uint64_t> asset_ids;
     std::unordered_set<std::uint64_t> audio_asset_ids;

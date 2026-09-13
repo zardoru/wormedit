@@ -110,6 +110,19 @@ auto position_for_source(const wormedit::chart_document_t& chart, std::string_vi
     return std::nullopt;
 }
 
+auto position_for_source_time(const wormedit::chart_document_t& chart, std::int64_t time)
+    -> std::optional<wormedit::local_position_t> {
+    const auto marker = ",192," + std::to_string(time) + ",";
+    for (const auto& measure : chart.measures) {
+        const auto found = std::ranges::find_if(measure.notes, [&](const auto& note) {
+            return note.provenance.source_spelling.find(marker) != std::string::npos;
+        });
+        if (found != measure.notes.end())
+            return found->position;
+    }
+    return std::nullopt;
+}
+
 auto lane_for_source(const wormedit::chart_document_t& chart, std::string_view prefix)
     -> std::optional<wormedit::lane_id_t> {
     for (const auto& measure : chart.measures) {
@@ -518,6 +531,85 @@ TEST_CASE("osu!mania writer preserves every lane from 1K through 18K",
             REQUIRE(actual_lane.has_value());
             CHECK(*actual_lane ==
                   chart.lane_layouts.front().layout.lanes[static_cast<std::size_t>(lane)].id);
+        }
+    }
+}
+
+TEST_CASE("osu!mania key counts 1 through 18 preserve rewired measure geometry",
+          "[unit][format][osu-mania][writer][lanes][rewiring]") {
+    constexpr std::array<std::int64_t, 4> boundary_times{1000, 1500, 2499, 2500};
+
+    for (std::int64_t keys = 1; keys <= 18; ++keys) {
+        CAPTURE(keys);
+        std::string source{rewiring_source};
+        const auto circle_size = source.find("CircleSize:4");
+        REQUIRE(circle_size != std::string::npos);
+        source.replace(circle_size, std::string_view{"CircleSize:4"}.size(),
+                       "CircleSize:" + std::to_string(keys));
+
+        std::string lane_objects;
+        for (std::int64_t lane = 0; lane < keys; ++lane) {
+            const auto x = ((2 * lane + 1) * 256) / keys;
+            for (const auto time : {400 + lane * 10, 2000 + lane * 10, 3000 + lane * 10}) {
+                lane_objects += std::to_string(x) + ",192," + std::to_string(time) + ",1,0,\n";
+            }
+        }
+        const auto hit_objects = source.find("[HitObjects]\n");
+        REQUIRE(hit_objects != std::string::npos);
+        source.insert(hit_objects + std::string_view{"[HitObjects]\n"}.size(), lane_objects);
+
+        const auto imported = parse_inline(source);
+        REQUIRE(imported.song.has_value());
+        CHECK_FALSE(imported.has_errors());
+        CHECK(wormedit::validate_document(*imported.song).empty());
+        const auto& source_chart = imported.song->charts.front();
+        REQUIRE(source_chart.lane_layouts.size() == 1);
+        REQUIRE(source_chart.lane_layouts.front().layout.lanes.size() ==
+                static_cast<std::size_t>(keys));
+
+        const auto written = write_inline(*imported.song);
+        REQUIRE(written.text.has_value());
+        CHECK_FALSE(written.has_errors());
+        const auto reimported = parse_inline(*written.text);
+        REQUIRE(reimported.song.has_value());
+        CHECK_FALSE(reimported.has_errors());
+        CHECK(wormedit::validate_document(*reimported.song).empty());
+        const auto& round_tripped = reimported.song->charts.front();
+        REQUIRE(round_tripped.lane_layouts.size() == 1);
+        REQUIRE(round_tripped.lane_layouts.front().layout.lanes.size() ==
+                static_cast<std::size_t>(keys));
+        CHECK(note_source_times(round_tripped) == note_source_times(source_chart));
+
+        REQUIRE(round_tripped.measures.size() == source_chart.measures.size());
+        for (std::size_t measure = 0; measure < source_chart.measures.size(); ++measure) {
+            const auto& before = source_chart.measures[measure].definition;
+            const auto& after = round_tripped.measures[measure].definition;
+            CHECK(after.length == before.length);
+        }
+
+        for (std::int64_t lane = 0; lane < keys; ++lane) {
+            const auto x = ((2 * lane + 1) * 256) / keys;
+            const auto time = 400 + lane * 10;
+            const auto prefix = std::to_string(x) + ",192," + std::to_string(time) + ",";
+            const auto before = lane_for_source(source_chart, prefix);
+            const auto after = lane_for_source(round_tripped, prefix);
+            REQUIRE(before.has_value());
+            REQUIRE(after.has_value());
+            CHECK(
+                *before ==
+                source_chart.lane_layouts.front().layout.lanes[static_cast<std::size_t>(lane)].id);
+            CHECK(
+                *after ==
+                round_tripped.lane_layouts.front().layout.lanes[static_cast<std::size_t>(lane)].id);
+        }
+
+        for (const auto time : boundary_times) {
+            const auto before = position_for_source_time(source_chart, time);
+            const auto after = position_for_source_time(round_tripped, time);
+            REQUIRE(before.has_value());
+            REQUIRE(after.has_value());
+            CHECK(after->measure == before->measure);
+            CHECK(after->row == before->row);
         }
     }
 }

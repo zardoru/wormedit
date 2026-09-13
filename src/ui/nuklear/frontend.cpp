@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -758,10 +759,243 @@ void worm_ui_frontend_end_input(void) {
     }
 }
 
+static struct nk_rect compose_screen_rect(const WormUiComposeRect* source,
+                                          const WormUiComposeView* view, struct nk_rect viewport) {
+    const auto x_scale = viewport.w / static_cast<float>(view->viewport_width_pixels);
+    const auto y_scale = viewport.h / static_cast<float>(view->viewport_height_pixels);
+    const auto left = viewport.x + static_cast<float>(source->left) * x_scale;
+    const auto top = viewport.y + static_cast<float>(source->top) * y_scale;
+    const auto right = viewport.x + static_cast<float>(source->right) * x_scale;
+    const auto bottom = viewport.y + static_cast<float>(source->bottom) * y_scale;
+    const auto clipped_left = std::max(viewport.x, left);
+    const auto clipped_top = std::max(viewport.y, top);
+    const auto clipped_right = std::min(viewport.x + viewport.w, right);
+    const auto clipped_bottom = std::min(viewport.y + viewport.h, bottom);
+    return nk_rect(clipped_left, clipped_top, std::max(0.0f, clipped_right - clipped_left),
+                   std::max(0.0f, clipped_bottom - clipped_top));
+}
+
+static void compose_fill_rect(struct nk_command_buffer* canvas, const WormUiComposeRect* source,
+                              const WormUiComposeView* view, struct nk_rect viewport,
+                              struct nk_color color) {
+    const auto rect = compose_screen_rect(source, view, viewport);
+    if (rect.w > 0.0f && rect.h > 0.0f) {
+        nk_fill_rect(canvas, rect, 0.0f, color);
+    }
+}
+
+static struct nk_color compose_lane_color(uint8_t role, size_t display_order) {
+    const auto alternate = (display_order & 1U) != 0;
+    switch (role) {
+    case 1: // scratch
+        return alternate ? nk_rgb(48, 44, 68) : nk_rgb(42, 39, 61);
+    case 5: // free zone
+        return alternate ? nk_rgb(47, 54, 63) : nk_rgb(42, 49, 58);
+    case 6: // foot pedal
+        return alternate ? nk_rgb(40, 58, 59) : nk_rgb(36, 52, 54);
+    default:
+        return alternate ? nk_rgb(37, 45, 59) : nk_rgb(33, 40, 53);
+    }
+}
+
+static int compose_rect_valid(const WormUiComposeRect* rect) {
+    if (!rect || !std::isfinite(rect->left) || !std::isfinite(rect->top) ||
+        !std::isfinite(rect->right) || !std::isfinite(rect->bottom) || rect->right < rect->left ||
+        rect->bottom < rect->top) {
+        return 0;
+    }
+    constexpr double coordinate_limit = 10000000.0;
+    return std::abs(rect->left) <= coordinate_limit && std::abs(rect->top) <= coordinate_limit &&
+           std::abs(rect->right) <= coordinate_limit && std::abs(rect->bottom) <= coordinate_limit;
+}
+
+static int compose_geometry_valid(const WormUiComposeView* view) {
+    if (!view || !std::isfinite(view->pixels_per_standard_measure) ||
+        view->pixels_per_standard_measure < WORM_UI_COMPOSE_MIN_PIXELS_PER_MEASURE ||
+        view->pixels_per_standard_measure > WORM_UI_COMPOSE_MAX_PIXELS_PER_MEASURE ||
+        !std::isfinite(view->viewport_width_pixels) || view->viewport_width_pixels <= 0.0 ||
+        view->viewport_width_pixels > 10000000.0 || !std::isfinite(view->viewport_height_pixels) ||
+        view->viewport_height_pixels <= 0.0 || view->viewport_height_pixels > 10000000.0)
+        return 0;
+    for (size_t index = 0; index < view->band_count; ++index) {
+        if (!compose_rect_valid(&view->bands[index].bounds))
+            return 0;
+    }
+    for (size_t index = 0; index < view->lane_count; ++index) {
+        if (!compose_rect_valid(&view->lanes[index].bounds))
+            return 0;
+    }
+    for (size_t index = 0; index < view->grid_line_count; ++index) {
+        if (!std::isfinite(view->grid_lines[index].y_pixels) ||
+            std::abs(view->grid_lines[index].y_pixels) > 10000000.0)
+            return 0;
+    }
+    for (size_t index = 0; index < view->difference_count; ++index) {
+        if (!compose_rect_valid(&view->differences[index].bounds))
+            return 0;
+    }
+    for (size_t index = 0; index < view->hold_body_count; ++index) {
+        if (!compose_rect_valid(&view->hold_bodies[index].bounds))
+            return 0;
+    }
+    for (size_t index = 0; index < view->note_endpoint_count; ++index) {
+        if (!compose_rect_valid(&view->note_endpoints[index].bounds))
+            return 0;
+    }
+    return !view->cursor || compose_rect_valid(&view->cursor->bounds);
+}
+
+static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceAction* action) {
+    nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 7);
+    nk_layout_row_push(g_context, 0.07f);
+    if (nk_button_label(g_context, "Zoom -") &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_OUT;
+    nk_layout_row_push(g_context, 0.07f);
+    if (nk_button_label(g_context, "Zoom +") &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_IN;
+    nk_layout_row_push(g_context, 0.10f);
+    if (nk_button_label(g_context, "Page up") &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_SCROLL_UP;
+    nk_layout_row_push(g_context, 0.10f);
+    if (nk_button_label(g_context, "Page down") &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_SCROLL_DOWN;
+    nk_layout_row_push(g_context, 0.08f);
+    if (nk_button_label(g_context, "Reset") &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW;
+    nk_layout_row_push(g_context, 0.12f);
+    nk_labelf(g_context, NK_TEXT_LEFT, "Zoom %.0f px/measure", view->pixels_per_standard_measure);
+    nk_layout_row_push(g_context, 0.46f);
+    if (view->truncated) {
+        nk_label(g_context, "Visible geometry capped", NK_TEXT_RIGHT);
+    } else {
+        nk_labelf(g_context, NK_TEXT_RIGHT, "%zu note endpoints · %zu lanes · %zu grid lines",
+                  view->note_endpoint_count, view->lane_count, view->grid_line_count);
+    }
+    nk_layout_row_end(g_context);
+
+    const auto group_bounds = nk_window_get_content_region(g_context);
+    const auto surface_height = std::max(32.0f, group_bounds.h - 29.0f);
+    nk_layout_space_begin(g_context, NK_DYNAMIC, surface_height, 1);
+    nk_layout_space_push(g_context, nk_rect(0.0f, 0.0f, 1.0f, 1.0f));
+    struct nk_rect viewport{};
+    const auto widget_state = nk_widget(&viewport, g_context);
+    nk_layout_space_end(g_context);
+    if (widget_state == NK_WIDGET_INVALID || viewport.w <= 1.0f || viewport.h <= 1.0f)
+        return;
+
+    auto* canvas = nk_window_get_canvas(g_context);
+    if (!canvas)
+        return;
+    const auto parent_clip = canvas->clip;
+    nk_push_scissor(canvas, viewport);
+    nk_fill_rect(canvas, viewport, 0.0f, nk_rgb(22, 25, 33));
+    if (!view->scene_available) {
+        const auto* status = view->status_text ? view->status_text : "Chart field is unavailable.";
+        nk_draw_text(canvas, viewport, status, static_cast<int>(strlen(status)),
+                     g_context->style.font, nk_rgb(22, 25, 33), nk_rgb(190, 196, 207));
+        nk_push_scissor(canvas, parent_clip);
+        return;
+    }
+
+    for (size_t band_index = 0; band_index < view->band_count; ++band_index) {
+        const auto& band = view->bands[band_index];
+        const auto color = band.split_stage ? nk_rgb(27, 31, 43) : nk_rgb(25, 29, 39);
+        compose_fill_rect(canvas, &band.bounds, view, viewport, color);
+        const auto top = viewport.y + static_cast<float>(band.bounds.top) * viewport.h /
+                                          static_cast<float>(view->viewport_height_pixels);
+        const auto bottom = viewport.y + static_cast<float>(band.bounds.bottom) * viewport.h /
+                                             static_cast<float>(view->viewport_height_pixels);
+        nk_stroke_line(canvas, viewport.x, top, viewport.x + viewport.w, top, 1.0f,
+                       nk_rgb(80, 91, 112));
+        nk_stroke_line(canvas, viewport.x, bottom, viewport.x + viewport.w, bottom, 1.0f,
+                       nk_rgb(61, 70, 87));
+    }
+    for (size_t lane_index = 0; lane_index < view->lane_count; ++lane_index) {
+        const auto& lane = view->lanes[lane_index];
+        const auto rect = compose_screen_rect(&lane.bounds, view, viewport);
+        if (rect.w <= 0.0f || rect.h <= 0.0f)
+            continue;
+        nk_fill_rect(canvas, rect, 0.0f, compose_lane_color(lane.role, lane.display_order));
+        nk_stroke_line(canvas, rect.x, rect.y, rect.x, rect.y + rect.h, 1.0f, nk_rgb(62, 70, 86));
+        if (rect.w >= 28.0f && rect.h >= 18.0f) {
+            char label[16]{};
+            const auto label_length = snprintf(label, sizeof(label), "%u", lane.display_order + 1U);
+            if (label_length > 0) {
+                const auto label_bounds =
+                    nk_rect(rect.x + 2.0f, rect.y + 2.0f, std::min(28.0f, rect.w - 4.0f), 15.0f);
+                nk_draw_text(canvas, label_bounds, label, static_cast<int>(strlen(label)),
+                             g_context->style.font, nk_rgb(37, 43, 55), nk_rgb(122, 133, 153));
+            }
+        }
+    }
+    for (size_t index = 0; index < view->difference_count; ++index) {
+        compose_fill_rect(canvas, &view->differences[index].bounds, view, viewport,
+                          nk_rgba(229, 190, 58, 74));
+    }
+    for (size_t index = 0; index < view->grid_line_count; ++index) {
+        const auto& line = view->grid_lines[index];
+        if (!std::isfinite(line.y_pixels) || line.y_pixels < 0.0 ||
+            line.y_pixels > view->viewport_height_pixels)
+            continue;
+        const auto y = viewport.y + static_cast<float>(line.y_pixels) * viewport.h /
+                                        static_cast<float>(view->viewport_height_pixels);
+        struct nk_color color = nk_rgb(42, 49, 63);
+        float thickness = 0.7f;
+        if (line.kind == 3) {
+            color = nk_rgb(95, 107, 128);
+            thickness = 1.2f;
+        } else if (line.kind == 1 || line.kind == 2) {
+            color = nk_rgb(60, 70, 88);
+            thickness = line.emphasis >= 2 ? 1.1f : 0.9f;
+        } else if (line.emphasis >= 2) {
+            color = nk_rgb(52, 61, 78);
+        }
+        nk_stroke_line(canvas, viewport.x, y, viewport.x + viewport.w, y, thickness, color);
+    }
+    for (size_t index = 0; index < view->hold_body_count; ++index) {
+        const auto& hold = view->hold_bodies[index];
+        compose_fill_rect(canvas, &hold.bounds, view, viewport,
+                          hold.selected ? nk_rgb(62, 170, 204) : nk_rgb(48, 111, 151));
+    }
+    for (size_t index = 0; index < view->note_endpoint_count; ++index) {
+        const auto& note = view->note_endpoints[index];
+        auto color = note.selected ? nk_rgb(111, 221, 236) : nk_rgb(133, 182, 222);
+        if (note.kind == 4) {
+            color = nk_rgb(214, 91, 104);
+        } else if (note.kind == 5) {
+            color = nk_rgb(236, 194, 112);
+        } else if (note.tail) {
+            color = nk_rgb(113, 201, 216);
+        }
+        const auto rect = compose_screen_rect(&note.bounds, view, viewport);
+        if (rect.w > 0.0f && rect.h > 0.0f) {
+            nk_fill_rect(canvas, rect, 1.5f, color);
+            nk_stroke_rect(canvas, rect, 1.5f, 1.0f, nk_rgb(17, 24, 34));
+        }
+    }
+    if (view->cursor) {
+        const auto rect = compose_screen_rect(&view->cursor->bounds, view, viewport);
+        if (rect.w > 0.0f && rect.h > 0.0f) {
+            nk_fill_rect(canvas, rect, 0.0f, nk_rgb(248, 226, 115));
+            nk_stroke_line(canvas, rect.x, rect.y, rect.x + rect.w, rect.y, 1.0f,
+                           nk_rgb(255, 243, 174));
+            nk_stroke_line(canvas, rect.x, rect.y + rect.h, rect.x + rect.w, rect.y + rect.h, 1.0f,
+                           nk_rgb(255, 243, 174));
+        }
+    }
+    nk_push_scissor(canvas, parent_clip);
+}
+
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
     WormUiWorkspaceAction action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_NONE;
     action.tab = WORM_UI_WORKSPACE_TAB_SETUP;
+    action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
     if (!g_context || !g_window || !view || !view->project_title || !view->artist ||
         !view->selected_difficulty || !view->status_text || !view->git_hash || !view->tab_heading ||
         view->summary_line_count > WORM_UI_WORKSPACE_SUMMARY_CAPACITY ||
@@ -770,6 +1004,27 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         (view->metadata.visible &&
          (view->metadata.format_field_count > WORM_UI_METADATA_FORMAT_FIELD_CAPACITY ||
           view->metadata.format_target_count > WORM_UI_METADATA_FORMAT_TARGET_CAPACITY)) ||
+        (view->compose.visible &&
+         (view->compose.band_count > WORM_UI_COMPOSE_BAND_CAPACITY ||
+          view->compose.lane_count > WORM_UI_COMPOSE_LANE_CAPACITY ||
+          view->compose.grid_line_count > WORM_UI_COMPOSE_GRID_CAPACITY ||
+          view->compose.difference_count > WORM_UI_COMPOSE_DIFFERENCE_CAPACITY ||
+          view->compose.hold_body_count > WORM_UI_COMPOSE_HOLD_CAPACITY ||
+          view->compose.note_endpoint_count > WORM_UI_COMPOSE_NOTE_CAPACITY ||
+          !std::isfinite(view->compose.viewport_width_pixels) ||
+          view->compose.viewport_width_pixels <= 0.0 ||
+          !std::isfinite(view->compose.viewport_height_pixels) ||
+          view->compose.viewport_height_pixels <= 0.0 ||
+          !std::isfinite(view->compose.pixels_per_standard_measure) ||
+          view->compose.pixels_per_standard_measure < WORM_UI_COMPOSE_MIN_PIXELS_PER_MEASURE ||
+          view->compose.pixels_per_standard_measure > WORM_UI_COMPOSE_MAX_PIXELS_PER_MEASURE ||
+          (view->compose.band_count != 0 && !view->compose.bands) ||
+          (view->compose.lane_count != 0 && !view->compose.lanes) ||
+          (view->compose.grid_line_count != 0 && !view->compose.grid_lines) ||
+          (view->compose.difference_count != 0 && !view->compose.differences) ||
+          (view->compose.hold_body_count != 0 && !view->compose.hold_bodies) ||
+          (view->compose.note_endpoint_count != 0 && !view->compose.note_endpoints) ||
+          !compose_geometry_valid(&view->compose))) ||
         view->active_tab < WORM_UI_WORKSPACE_TAB_SETUP ||
         view->active_tab > WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE) {
         return action;
@@ -925,6 +1180,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         if (nk_group_begin(g_context, "workspace-content", NK_WINDOW_BORDER)) {
             if (view->metadata.visible) {
                 render_metadata_editor(&view->metadata, &action);
+            } else if (view->compose.visible) {
+                render_compose_field(&view->compose, &action);
             } else {
                 nk_layout_row_dynamic(g_context, 24, 1);
                 if (view->summary_line_count == 0) {

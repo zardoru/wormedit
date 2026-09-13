@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/measure.h>
+#include <wormedit/core/storyboard.h>
 
 #include <compare>
 #include <cstddef>
@@ -647,6 +648,7 @@ struct storyboard_document_t {
     storyboard_id_t id;
     std::string name;
     std::vector<std::string> retained_source_lines;
+    std::optional<storyboard_document_model_t> model;
 };
 
 struct output_group_t {

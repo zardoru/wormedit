@@ -254,7 +254,14 @@ auto valid_header_token(std::string_view value) noexcept -> bool {
 
 auto emit_node(std::string& output, const storyboard_node_t& node, std::size_t indentation,
                std::size_t maximum_bytes, std::size_t depth, std::size_t& node_count) -> bool {
-    if (depth > 128 || node_count >= 250'000)
+    if (depth > 128 || node_count >= 250'000 ||
+        (node.kind != storyboard_node_kind_t::command &&
+         node.kind != storyboard_node_kind_t::loop &&
+         node.kind != storyboard_node_kind_t::retained_line) ||
+        !valid_opcode(node.command.opcode) ||
+        !std::ranges::all_of(node.command.from,
+                             [](double value) { return std::isfinite(value); }) ||
+        !std::ranges::all_of(node.command.to, [](double value) { return std::isfinite(value); }))
         return false;
     ++node_count;
     const auto prefix = line_prefix(indentation);
@@ -1172,6 +1179,7 @@ auto emit_osb(const storyboard_document_model_t& document, std::size_t maximum_o
             }
             const auto& sprite = document.sprites[item.index];
             if (sprite.layer.empty() || sprite.origin.empty() || sprite.path.empty() ||
+                sprite.path.size() > storyboard_default_maximum_path_bytes ||
                 !valid_header_token(sprite.layer) || !valid_header_token(sprite.origin) ||
                 !valid_single_line(sprite.path) || !std::isfinite(sprite.x) ||
                 !std::isfinite(sprite.y)) {

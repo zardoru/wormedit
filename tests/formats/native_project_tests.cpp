@@ -1,3 +1,4 @@
+#include <wormedit/core/storyboard.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
@@ -95,10 +96,19 @@ auto rich_bmson_song() -> wormedit::song_document_t {
             .source_hash = "sha256:fixture",
         });
     }
+    const auto parsed_storyboard =
+        wormedit::parse_osb("[Events]\n"
+                            "Sprite,Foreground,Centre,\"sprites/a.png\",320,240\n"
+                            " L,100,2\n"
+                            "  L,20,3\n"
+                            "   F,0,0,250,0,1\n"
+                            "   _P,0,1,2,H\n"
+                            "[RetainedDirective]\n");
     song.storyboards.push_back({
         .id = wormedit::storyboard_id_t{905},
         .name = "Main",
         .retained_source_lines = {"Sprite,Background,Centre,background.png"},
+        .model = parsed_storyboard.document,
     });
     song.output_groups.push_back({
         .name = "BMSON release",
@@ -143,10 +153,112 @@ TEST_CASE("native project deterministically round-trips rich editor state",
           song.charts.front().sections.back().beat_span->begin);
     CHECK(parsed.song->charts.front().sections.back().beat_span->end ==
           song.charts.front().sections.back().beat_span->end);
+    REQUIRE(parsed.song->storyboards.front().model.has_value());
+    REQUIRE(parsed.song->storyboards.front().model->sprites.size() == 1);
+    REQUIRE(parsed.song->storyboards.front().model->sprites.front().nodes.size() == 1);
+    CHECK(parsed.song->storyboards.front().model->sprites.front().nodes.front().kind ==
+          wormedit::storyboard_node_kind_t::loop);
+    CHECK(parsed.song->storyboards.front()
+              .model->sprites.front()
+              .nodes.front()
+              .children.front()
+              .kind == wormedit::storyboard_node_kind_t::loop);
+    CHECK(parsed.song->storyboards.front().model->retained_top_level_lines.size() == 2);
+    const auto emitted_storyboard = wormedit::emit_osb(*parsed.song->storyboards.front().model);
+    REQUIRE(emitted_storyboard);
+    const auto reparsed_storyboard = wormedit::parse_osb(*emitted_storyboard.text);
+    REQUIRE(reparsed_storyboard);
+    CHECK(wormedit::storyboard_semantically_equal(*parsed.song->storyboards.front().model,
+                                                  *reparsed_storyboard.document));
 
     const auto rewritten = wormedit::write_native_project(*parsed.song);
     REQUIRE(rewritten.bytes.has_value());
     CHECK(*rewritten.bytes == *written.bytes);
+}
+
+TEST_CASE("native project reads legacy storyboards without a structured model",
+          "[unit][format][native-project][storyboard][compatibility]") {
+    const auto song = rich_bmson_song();
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.bytes.has_value());
+
+    auto legacy_json = nlohmann::json::parse(*written.bytes);
+    legacy_json["document"]["storyboards"][0].erase("model");
+    const auto parsed = wormedit::parse_native_project(legacy_json.dump());
+    REQUIRE(parsed.song.has_value());
+    CHECK_FALSE(parsed.song->storyboards.front().model.has_value());
+    CHECK(parsed.song->storyboards.front().retained_source_lines ==
+          song.storyboards.front().retained_source_lines);
+
+    const auto migrated = wormedit::write_native_project(*parsed.song);
+    REQUIRE(migrated.bytes.has_value());
+    const auto reparsed = wormedit::parse_native_project(*migrated.bytes);
+    REQUIRE(reparsed.song.has_value());
+    CHECK_FALSE(reparsed.song->storyboards.front().model.has_value());
+    CHECK(reparsed.song->storyboards.front().retained_source_lines ==
+          song.storyboards.front().retained_source_lines);
+    const auto rewritten = wormedit::write_native_project(*reparsed.song);
+    REQUIRE(rewritten.bytes.has_value());
+    CHECK(*rewritten.bytes == *migrated.bytes);
+
+    legacy_json["document"]["storyboards"][0]["future_field"] = true;
+    const auto unknown = wormedit::parse_native_project(legacy_json.dump());
+    CHECK_FALSE(unknown.song.has_value());
+    CHECK(
+        has_code(unknown.diagnostics, wormedit::native_project_diagnostic_code_t::malformed_json));
+
+    legacy_json["document"]["storyboards"][0].erase("future_field");
+    legacy_json["document"]["storyboards"][0].erase("name");
+    const auto missing_required_field = wormedit::parse_native_project(legacy_json.dump());
+    CHECK_FALSE(missing_required_field.song.has_value());
+    CHECK(has_code(missing_required_field.diagnostics,
+                   wormedit::native_project_diagnostic_code_t::malformed_json));
+}
+
+TEST_CASE("native storyboard models validate enums, paths, and loop depth",
+          "[unit][format][native-project][storyboard][negative]") {
+    const auto valid_song = rich_bmson_song();
+    REQUIRE(valid_song.storyboards.front().model.has_value());
+
+    auto invalid_opcode_song = valid_song;
+    invalid_opcode_song.storyboards.front()
+        .model->sprites.front()
+        .nodes.front()
+        .children.front()
+        .children.front()
+        .command.opcode = static_cast<wormedit::storyboard_opcode_t>(255);
+    CHECK_FALSE(wormedit::validate_document(invalid_opcode_song).empty());
+    const auto invalid_opcode_write = wormedit::write_native_project(invalid_opcode_song);
+    CHECK_FALSE(invalid_opcode_write.bytes.has_value());
+    CHECK(has_code(invalid_opcode_write.diagnostics,
+                   wormedit::native_project_diagnostic_code_t::invalid_document));
+
+    auto long_path_song = valid_song;
+    long_path_song.storyboards.front().model->sprites.front().path.assign(4 * 1024 + 1, 'p');
+    CHECK_FALSE(wormedit::validate_document(long_path_song).empty());
+    const auto long_path_write = wormedit::write_native_project(long_path_song);
+    CHECK_FALSE(long_path_write.bytes.has_value());
+    CHECK(has_code(long_path_write.diagnostics,
+                   wormedit::native_project_diagnostic_code_t::invalid_document));
+
+    auto deep_song = valid_song;
+    auto* destination = &deep_song.storyboards.front().model->sprites.front().nodes;
+    for (std::size_t depth = 0; depth < 128; ++depth) {
+        wormedit::storyboard_node_t loop;
+        loop.kind = wormedit::storyboard_node_kind_t::loop;
+        loop.loop_iteration_count = 1;
+        destination->push_back(std::move(loop));
+        destination = &destination->back().children;
+    }
+    wormedit::storyboard_node_t retained;
+    retained.kind = wormedit::storyboard_node_kind_t::retained_line;
+    retained.retained_line = "  _P,0,1,2,H";
+    destination->push_back(std::move(retained));
+    CHECK_FALSE(wormedit::validate_document(deep_song).empty());
+    const auto deep_write = wormedit::write_native_project(deep_song);
+    CHECK_FALSE(deep_write.bytes.has_value());
+    CHECK(has_code(deep_write.diagnostics,
+                   wormedit::native_project_diagnostic_code_t::invalid_document));
 }
 
 TEST_CASE("native project retains BMS source bytes and complete control trees",
@@ -206,6 +318,61 @@ TEST_CASE("native project rejects malformed, unsupported, over-limit, and invali
     const auto invalid = wormedit::parse_native_project(invalid_json.dump());
     CHECK_FALSE(invalid.song.has_value());
     CHECK(has_code(invalid.diagnostics,
+                   wormedit::native_project_diagnostic_code_t::invalid_document));
+
+    auto invalid_storyboard_kind_json = nlohmann::json::parse(*written.bytes);
+    invalid_storyboard_kind_json["document"]["storyboards"][0]["model"]["sprites"][0]["nodes"][0]
+                                ["kind"] = 255;
+    const auto invalid_storyboard_kind =
+        wormedit::parse_native_project(invalid_storyboard_kind_json.dump());
+    CHECK_FALSE(invalid_storyboard_kind.song.has_value());
+    CHECK(has_code(invalid_storyboard_kind.diagnostics,
+                   wormedit::native_project_diagnostic_code_t::invalid_document));
+
+    auto invalid_storyboard_opcode_json = nlohmann::json::parse(*written.bytes);
+    invalid_storyboard_opcode_json["document"]["storyboards"][0]["model"]["sprites"][0]["nodes"][0]
+                                  ["children"][0]["children"][0]["command"]["opcode"] = 255;
+    const auto invalid_storyboard_opcode =
+        wormedit::parse_native_project(invalid_storyboard_opcode_json.dump());
+    CHECK_FALSE(invalid_storyboard_opcode.song.has_value());
+    CHECK(has_code(invalid_storyboard_opcode.diagnostics,
+                   wormedit::native_project_diagnostic_code_t::invalid_document));
+
+    auto integer_storyboard_position_json = nlohmann::json::parse(*written.bytes);
+    integer_storyboard_position_json["document"]["storyboards"][0]["model"]["sprites"][0]["x"] =
+        320;
+    const auto integer_storyboard_position =
+        wormedit::parse_native_project(integer_storyboard_position_json.dump());
+    CHECK_FALSE(integer_storyboard_position.song.has_value());
+    CHECK(has_code(integer_storyboard_position.diagnostics,
+                   wormedit::native_project_diagnostic_code_t::malformed_json));
+
+    auto integer_storyboard_value_json = nlohmann::json::parse(*written.bytes);
+    integer_storyboard_value_json["document"]["storyboards"][0]["model"]["sprites"][0]["nodes"][0]
+                                 ["children"][0]["children"][0]["command"]["from"][0] = 0;
+    const auto integer_storyboard_value =
+        wormedit::parse_native_project(integer_storyboard_value_json.dump());
+    CHECK_FALSE(integer_storyboard_value.song.has_value());
+    CHECK(has_code(integer_storyboard_value.diagnostics,
+                   wormedit::native_project_diagnostic_code_t::malformed_json));
+
+    auto oversized_storyboard_time_json = nlohmann::json::parse(*written.bytes);
+    oversized_storyboard_time_json["document"]["storyboards"][0]["model"]["sprites"][0]["nodes"][0]
+                                  ["children"][0]["children"][0]["command"]["start_time_ms"] =
+                                      18'446'744'073'709'551'615ULL;
+    const auto oversized_storyboard_time =
+        wormedit::parse_native_project(oversized_storyboard_time_json.dump());
+    CHECK_FALSE(oversized_storyboard_time.song.has_value());
+    CHECK(has_code(oversized_storyboard_time.diagnostics,
+                   wormedit::native_project_diagnostic_code_t::malformed_json));
+
+    auto oversized_storyboard_path_json = nlohmann::json::parse(*written.bytes);
+    oversized_storyboard_path_json["document"]["storyboards"][0]["model"]["sprites"][0]["path"] =
+        std::string(4 * 1024 + 1, 'p');
+    const auto oversized_storyboard_path =
+        wormedit::parse_native_project(oversized_storyboard_path_json.dump());
+    CHECK_FALSE(oversized_storyboard_path.song.has_value());
+    CHECK(has_code(oversized_storyboard_path.diagnostics,
                    wormedit::native_project_diagnostic_code_t::invalid_document));
 
     auto fractional_integer_json = nlohmann::json::parse(*written.bytes);

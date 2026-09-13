@@ -319,6 +319,33 @@ TEST_CASE("BMSON fixed beat modes use canonical x positions and reject out-of-ra
     CHECK(beat_10k_chart.lane_layouts.front().layout.lanes.back().role == wormedit::lane_role_t::scratch);
 }
 
+TEST_CASE("BMSON generic 24K and 48K modes retain their fixed keyboard geometry",
+          "[unit][format][bmson][layout]") {
+    const auto generic_24 = parse_text(
+        R"({"version":"1.0.0","info":{"init_bpm":120,"mode_hint":"generic-24keys"},"sound_channels":[{"name":"a.wav","notes":[{"x":24,"y":0}]}]})");
+    REQUIRE(generic_24.song.has_value());
+    const auto& layout_24 = generic_24.song->charts.front().lane_layouts.front().layout;
+    CHECK(layout_24.profile_id == "bmson-generic-24keys");
+    CHECK(layout_24.lanes.size() == 24);
+    CHECK(layout_24.bmson_generic_keys_only);
+    CHECK_FALSE(layout_24.split_stage);
+
+    const auto generic_48 = parse_text(
+        R"({"version":"1.0.0","info":{"init_bpm":120,"mode_hint":"generic-48keys"},"sound_channels":[{"name":"a.wav","notes":[{"x":48,"y":0}]}]})");
+    REQUIRE(generic_48.song.has_value());
+    const auto& layout_48 = generic_48.song->charts.front().lane_layouts.front().layout;
+    CHECK(layout_48.profile_id == "bmson-generic-48keys");
+    CHECK(layout_48.lanes.size() == 48);
+    CHECK(layout_48.bmson_generic_keys_only);
+    CHECK(layout_48.split_stage);
+    CHECK(layout_48.split_after_column == 24);
+    CHECK(layout_48.lanes[24].stage == wormedit::stage_group_t::right);
+
+    const auto invalid = parse_text(
+        R"({"version":"1.0.0","info":{"init_bpm":120,"mode_hint":"generic-24keys"},"sound_channels":[{"name":"a.wav","notes":[{"x":25,"y":0}]}]})");
+    CHECK_FALSE(invalid.song.has_value());
+}
+
 TEST_CASE("BMSON x null is BGM and resource paths normalize both separators safely",
           "[unit][format][bmson]") {
     const auto bgm = parse_text(

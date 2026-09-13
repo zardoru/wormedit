@@ -23,6 +23,17 @@ enum class bmson_parse_diagnostic_code_t {
     unresolved_resource,
 };
 
+enum class bmson_write_diagnostic_code_t {
+    missing_chart,
+    invalid_document,
+    unsupported_feature,
+    invalid_geometry,
+    unrepresentable_number,
+    lossy_transform,
+    unresolved_resource,
+    duplicate_event,
+};
+
 struct bmson_parse_diagnostic_t {
     diagnostic_severity_t severity{diagnostic_severity_t::error};
     bmson_parse_diagnostic_code_t code{bmson_parse_diagnostic_code_t::invalid_json};
@@ -54,5 +65,32 @@ struct bmson_parse_result_t {
 [[nodiscard]] auto parse_bmson_bytes(std::span<const std::byte> bytes,
                                      bmson_parse_options_t options = {})
     -> bmson_parse_result_t;
+
+struct bmson_write_diagnostic_t {
+    diagnostic_severity_t severity{diagnostic_severity_t::error};
+    bmson_write_diagnostic_code_t code{bmson_write_diagnostic_code_t::invalid_document};
+    std::string message;
+    std::string json_path;
+};
+
+struct bmson_write_options_t {
+    // BMSON stores one chart per file. Omit this only when the song has exactly one chart.
+    std::optional<chart_id_t> chart;
+    // Retain unmodeled but valid source fields from an imported BMSON document.
+    bool preserve_source_fields{true};
+};
+
+struct bmson_write_result_t {
+    std::optional<std::string> json;
+    std::vector<bmson_write_diagnostic_t> diagnostics;
+
+    [[nodiscard]] auto has_errors() const -> bool;
+};
+
+// Exports one chart as BMSON 1.0 JSON. Positions and durations are represented exactly;
+// unsupported document features are reported instead of being silently discarded.
+[[nodiscard]] auto write_bmson(const song_document_t& song,
+                               bmson_write_options_t options = {})
+    -> bmson_write_result_t;
 
 } // namespace wormedit

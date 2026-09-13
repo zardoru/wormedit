@@ -864,7 +864,8 @@ Exit condition: each promoted late adapter/gameplay profile has symmetric read/w
 - Keep lane identity separate from note rendering, with StepMania-style arrow profiles available for 4K, 5K, and 6K.
 - Toggle the note field between target-game skin rendering and an exact rational snap-color view.
 - Support continuous and split-stage presentation for double-style charts, with built-in BMS 10K/14K grouping and configurable osu!mania partitions.
-- Keep semantic note layers separate from gameplay note kinds and exported format data; persist their palette and assignments in the native project document.
+- Keep semantic note layers separate from gameplay note kinds and exported format data; persist their palette and assignments in the native project document. When a target format has no layer feature, flatten layer membership with a non-fatal loss diagnostic while preserving the underlying tap, hold, mine, or other supported gameplay kind.
+- Keep bookmarks in the native project, but allow standalone export to formats without bookmark support by omitting them with a non-fatal loss diagnostic.
 - Preserve repeated BMS `#xxx01` statements as ordered BGM lanes with structural `00` cells; keep their horizontal scroll independent from playable lanes and make their sounds directly previewable.
 - Maintain one stable resource catalog with Samples, BGM, and BGA list views. Preserve unused BMS WAV/BMP and osu! sample/event resources, and keep placed note/BGM/BGA events separate from the assets they reference.
 - Treat stops and delays as required distinct timing events regardless of target support, with explicit loss diagnostics and well-defined discontinuity ordering.

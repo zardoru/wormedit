@@ -3,6 +3,7 @@
 #include <miniaudio.h>
 
 #include <limits>
+#include <mutex>
 #include <string>
 #include <utility>
 
@@ -33,6 +34,7 @@ struct decoder_t::impl_t {
     ma_decoder decoder{};
     stream_info_t stream_info{};
     bool initialized{};
+    mutable std::mutex mutex;
 
     ~impl_t() {
         if (initialized) {
@@ -127,11 +129,16 @@ auto decoder_t::info() const noexcept -> std::optional<stream_info_t> {
     if (!impl_) {
         return std::nullopt;
     }
+    const std::scoped_lock lock(impl_->mutex);
     return impl_->stream_info;
 }
 
 auto decoder_t::seek(std::uint64_t output_frame) noexcept -> bool {
-    if (!impl_ || !impl_->stream_info.seekable ||
+    if (!impl_) {
+        return false;
+    }
+    const std::scoped_lock lock(impl_->mutex);
+    if (!impl_->stream_info.seekable ||
         output_frame > impl_->stream_info.output_frame_count) {
         return false;
     }
@@ -155,6 +162,46 @@ auto decoder_t::read(std::span<float> interleaved_stereo,
         return {read_status_t::success, 0};
     }
 
+    const std::scoped_lock lock(impl_->mutex);
+    ma_uint64 frames_read{};
+    const auto result = ma_decoder_read_pcm_frames(
+        &impl_->decoder, interleaved_stereo.data(), requested_frames, &frames_read);
+    if (frames_read > requested_frames) {
+        return {read_status_t::decode_error, 0};
+    }
+    if (result == MA_SUCCESS) {
+        return {read_status_t::success, static_cast<std::size_t>(frames_read)};
+    }
+    if (result == MA_AT_END) {
+        return {read_status_t::end_of_stream, static_cast<std::size_t>(frames_read)};
+    }
+    return {read_status_t::decode_error, static_cast<std::size_t>(frames_read)};
+}
+
+auto decoder_t::read_at(std::uint64_t output_frame,
+                        std::span<float> interleaved_stereo,
+                        std::size_t requested_frames) noexcept -> read_result_t {
+    if (!impl_) {
+        return {read_status_t::not_open, 0};
+    }
+    if (requested_frames > maximum_read_frames) {
+        return {read_status_t::request_too_large, 0};
+    }
+    if (requested_frames > std::numeric_limits<std::size_t>::max() /
+                               output_channel_count ||
+        interleaved_stereo.size() < requested_frames * output_channel_count) {
+        return {read_status_t::insufficient_output_space, 0};
+    }
+
+    const std::scoped_lock lock(impl_->mutex);
+    if (!impl_->stream_info.seekable ||
+        output_frame > impl_->stream_info.output_frame_count ||
+        ma_decoder_seek_to_pcm_frame(&impl_->decoder, output_frame) != MA_SUCCESS) {
+        return {read_status_t::seek_error, 0};
+    }
+    if (requested_frames == 0) {
+        return {read_status_t::success, 0};
+    }
     ma_uint64 frames_read{};
     const auto result = ma_decoder_read_pcm_frames(
         &impl_->decoder, interleaved_stereo.data(), requested_frames, &frames_read);

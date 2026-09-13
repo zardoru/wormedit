@@ -313,15 +313,15 @@ auto decode_and_cache_block(decoder_t& decoder, decoded_block_cache_t& cache,
             .decoder_status = read_status_t::end_of_stream,
         };
     }
-    if (!decoder.seek(start_frame)) {
-        return {.status = block_decode_status_t::seek_failed};
-    }
-
     const auto remaining_frames = stream_info->output_frame_count - start_frame;
     const auto requested_frames = static_cast<std::size_t>(
         std::min<std::uint64_t>(remaining_frames, maximum_read_frames));
     std::vector<float> block(maximum_read_frames * output_channel_count);
-    const auto read = decoder.read(block, requested_frames);
+    const auto read = decoder.read_at(start_frame, block, requested_frames);
+    if (read.status == read_status_t::seek_error) {
+        return {.status = block_decode_status_t::seek_failed,
+                .decoder_status = read.status};
+    }
     if (read.status == read_status_t::decode_error || read.status == read_status_t::not_open ||
         read.status == read_status_t::request_too_large ||
         read.status == read_status_t::insufficient_output_space) {

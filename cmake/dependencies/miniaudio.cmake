@@ -22,6 +22,8 @@ add_library(wormedit_audio_decoder
     "${CMAKE_SOURCE_DIR}/src/audio/block_cache.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/miniaudio_backend.c"
     "${CMAKE_SOURCE_DIR}/src/audio/decoder.cpp"
+    "${CMAKE_SOURCE_DIR}/src/audio/transport.cpp"
+    "${CMAKE_SOURCE_DIR}/src/audio/waveform.cpp"
 )
 add_library(wormedit::audio_decoder ALIAS wormedit_audio_decoder)
 target_include_directories(wormedit_audio_decoder

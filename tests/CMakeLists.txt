@@ -6,12 +6,14 @@ add_executable(wormedit_core_tests
     core/document_tests.cpp
     core/bms_profile_detection_tests.cpp
     core/fixture_inventory_tests.cpp
+    core/interaction_tests.cpp
     core/lane_profile_tests.cpp
     core/measure_tests.cpp
     core/quantize_tests.cpp
     core/rational_tests.cpp
     formats/bms_tests.cpp
     formats/bmson_tests.cpp
+    formats/bmson_writer_tests.cpp
 )
 target_compile_definitions(wormedit_core_tests
     PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
@@ -23,6 +25,7 @@ target_link_libraries(wormedit_core_tests
     PRIVATE
         wormedit::core
         Catch2::Catch2WithMain
+        nlohmann_json::nlohmann_json
 )
 
 catch_discover_tests(wormedit_core_tests
@@ -35,6 +38,8 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
     add_executable(wormedit_audio_tests
         core/audio_block_cache_tests.cpp
         core/audio_decoder_tests.cpp
+        core/audio_transport_tests.cpp
+        core/audio_waveform_tests.cpp
     )
     target_compile_definitions(wormedit_audio_tests
         PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"

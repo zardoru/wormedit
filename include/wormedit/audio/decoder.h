@@ -28,6 +28,7 @@ enum class read_status_t {
     success,
     end_of_stream,
     not_open,
+    seek_error,
     request_too_large,
     insufficient_output_space,
     decode_error,
@@ -57,6 +58,11 @@ public:
     [[nodiscard]] auto seek(std::uint64_t output_frame) noexcept -> bool;
     [[nodiscard]] auto read(std::span<float> interleaved_stereo,
                             std::size_t requested_frames) noexcept -> read_result_t;
+    // Seeks and reads under one decoder lock so independent background jobs
+    // cannot interleave positions on a shared decoder instance.
+    [[nodiscard]] auto read_at(std::uint64_t output_frame,
+                               std::span<float> interleaved_stereo,
+                               std::size_t requested_frames) noexcept -> read_result_t;
 
 private:
     struct impl_t;

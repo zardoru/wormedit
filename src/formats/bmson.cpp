@@ -1000,8 +1000,12 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
             for (std::uint32_t x = 1; x <= 5; ++x) lane_positions.push_back(x);
         } else if (mode_hint == "popn-9k") {
             for (std::uint32_t x = 1; x <= 9; ++x) lane_positions.push_back(x);
-        }
-        else if (mode_hint != "generic-nkeys") {
+        } else if (mode_hint == "generic-24keys") {
+            for (std::uint32_t x = 1; x <= 24; ++x) lane_positions.push_back(x);
+        } else if (mode_hint == "generic-48keys") {
+            for (std::uint32_t x = 1; x <= 48; ++x) lane_positions.push_back(x);
+            for (std::uint32_t x = 25; x <= 48; ++x) right_stage.insert(x);
+        } else if (mode_hint != "generic-nkeys") {
             add_warning(result, bmson_parse_diagnostic_code_t::invalid_value,
                         "unknown mode_hint retained; using generic-nkeys lane layout", "$.info.mode_hint");
             mode_hint = "generic-nkeys";
@@ -1017,7 +1021,11 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
         lane_layout_t layout;
         layout.profile_id = "bmson-" + mode_hint;
         layout.display_name = mode_hint;
-        layout.bmson_generic_keys_only = mode_hint == "generic-nkeys";
+        layout.split_stage = mode_hint == "generic-48keys";
+        layout.split_after_column = layout.split_stage ? 24U : 0U;
+        layout.bmson_generic_keys_only = mode_hint == "generic-nkeys" ||
+                                         mode_hint == "generic-24keys" ||
+                                         mode_hint == "generic-48keys";
         for (const auto x : lane_positions) {
             layout.lanes.push_back({.id = lane_id_t{100000ULL + x},
                                     .name = scratches.contains(x) ? "Scratch" : "Key " + std::to_string(x),

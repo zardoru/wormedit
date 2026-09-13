@@ -1,12 +1,93 @@
 #include <wormedit/audio/waveform.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstdint>
 #include <limits>
+#include <thread>
 #include <utility>
 
 namespace wormedit::audio {
 namespace {
+
+constexpr std::size_t maximum_waveform_workers = 8;
+constexpr std::size_t maximum_partition_alignment_bytes = 4'096;
+
+template <typename item_t, typename callable_t>
+void for_each_partition(std::vector<item_t>& items, std::size_t worker_count,
+                        std::size_t alignment_bytes, callable_t&& operation) {
+    const auto item_count = items.size();
+    alignment_bytes =
+        std::clamp(alignment_bytes, std::size_t{1}, maximum_partition_alignment_bytes);
+    if (worker_count < 2 || item_count < 2) {
+        operation(0, item_count);
+        return;
+    }
+
+    std::array<std::size_t, maximum_waveform_workers + 1U> boundaries{};
+    boundaries[worker_count] = item_count;
+    const auto base_address = reinterpret_cast<std::uintptr_t>(items.data());
+    for (std::size_t worker_index = 1; worker_index < worker_count; ++worker_index) {
+        const auto quotient = item_count / worker_count;
+        const auto remainder = item_count % worker_count;
+        const auto target = worker_index * quotient + std::min(worker_index, remainder);
+        const auto maximum = item_count - (worker_count - worker_index);
+        const auto minimum = boundaries[worker_index - 1U] + 1U;
+        auto boundary = std::max(target, minimum);
+        if (alignment_bytes > 1U) {
+            while (boundary <= maximum &&
+                   (base_address + boundary * sizeof(item_t)) % alignment_bytes != 0U) {
+                ++boundary;
+            }
+        }
+        if (boundary > maximum) {
+            boundary = std::clamp(target, minimum, maximum);
+        }
+        boundaries[worker_index] = boundary;
+    }
+    const auto range_for = [&boundaries](std::size_t worker_index) {
+        return std::pair{boundaries[worker_index], boundaries[worker_index + 1U]};
+    };
+
+    std::vector<std::thread> workers;
+    try {
+        workers.reserve(worker_count - 1U);
+    } catch (...) {
+        operation(0, item_count);
+        return;
+    }
+
+    std::size_t launched_workers{};
+    for (std::size_t worker_index = 1; worker_index < worker_count; ++worker_index) {
+        const auto [begin, end] = range_for(worker_index);
+        try {
+            workers.emplace_back([&operation, begin, end] { operation(begin, end); });
+            ++launched_workers;
+        } catch (...) {
+            break;
+        }
+    }
+
+    const auto [first_begin, first_end] = range_for(0);
+    operation(first_begin, first_end);
+    for (std::size_t worker_index = launched_workers + 1U; worker_index < worker_count;
+         ++worker_index) {
+        const auto [begin, end] = range_for(worker_index);
+        operation(begin, end);
+    }
+    for (auto& worker : workers) {
+        worker.join();
+    }
+}
+
+auto waveform_worker_count(std::size_t bin_count, const waveform_analysis_options_t& options)
+    -> std::size_t {
+    if (options.maximum_parallel_workers < 2 || bin_count < options.parallel_minimum_bins) {
+        return 1;
+    }
+    return std::min({bin_count, options.maximum_parallel_workers, maximum_waveform_workers});
+}
 
 auto valid_source(const audio_source_identity_t& source) -> bool {
     return !source.asset_identity.empty() && !source.source_identity.empty();
@@ -55,18 +136,15 @@ auto valid_bins(std::span<const waveform_bin_t> bins, std::uint64_t total_frames
     std::uint64_t accounted_frames{};
     for (const auto& bin : bins) {
         if (bin.frame_count == 0 || bin.frame_count > frames_per_bin ||
-            bin.frame_count > std::numeric_limits<std::uint64_t>::max() -
-                                  accounted_frames) {
+            bin.frame_count > std::numeric_limits<std::uint64_t>::max() - accounted_frames) {
             return false;
         }
         accounted_frames += bin.frame_count;
         for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
-            if (!std::isfinite(bin.minimum[channel]) ||
-                !std::isfinite(bin.maximum[channel]) ||
-                !std::isfinite(bin.absolute_peak[channel]) ||
-                !std::isfinite(bin.rms[channel]) ||
-                bin.minimum[channel] > bin.maximum[channel] ||
-                bin.absolute_peak[channel] < 0.0F || bin.rms[channel] < 0.0F) {
+            if (!std::isfinite(bin.minimum[channel]) || !std::isfinite(bin.maximum[channel]) ||
+                !std::isfinite(bin.absolute_peak[channel]) || !std::isfinite(bin.rms[channel]) ||
+                bin.minimum[channel] > bin.maximum[channel] || bin.absolute_peak[channel] < 0.0F ||
+                bin.rms[channel] < 0.0F) {
                 return false;
             }
         }
@@ -80,8 +158,7 @@ auto valid_waveform(const waveform_t& waveform, std::size_t maximum_bins) -> boo
         waveform.bins.size() > maximum_bins) {
         return false;
     }
-    if (!valid_bins(waveform.bins, waveform.total_frames,
-                    waveform.key.frames_per_bin)) {
+    if (!valid_bins(waveform.bins, waveform.total_frames, waveform.key.frames_per_bin)) {
         return false;
     }
     auto prior_frames_per_bin = static_cast<std::uint64_t>(waveform.key.frames_per_bin);
@@ -110,8 +187,7 @@ auto analysis_failure(std::uint64_t block_index, block_decode_status_t status)
 
 } // namespace
 
-waveform_cache_t::waveform_cache_t(waveform_cache_limits_t limits)
-    : limits_(limits) {}
+waveform_cache_t::waveform_cache_t(waveform_cache_limits_t limits) : limits_(limits) {}
 
 auto waveform_cache_t::find_entry(const waveform_key_t& key) -> entry_iterator_t {
     return std::ranges::find(most_recent_first_, key, &waveform_t::key);
@@ -140,16 +216,14 @@ auto waveform_cache_t::store(waveform_t waveform) -> waveform_store_status_t {
         return waveform_store_status_t::invalid_waveform;
     }
     const auto bytes = waveform_bytes(waveform);
-    if (!bytes.has_value() || limits_.maximum_entries == 0 ||
-        *bytes > limits_.maximum_bytes) {
+    if (!bytes.has_value() || limits_.maximum_entries == 0 || *bytes > limits_.maximum_bytes) {
         std::scoped_lock lock(mutex_);
         ++stats_.rejected_stores;
         return waveform_store_status_t::capacity_exceeded;
     }
 
     std::scoped_lock lock(mutex_);
-    if (const auto existing = find_entry(waveform.key);
-        existing != most_recent_first_.end()) {
+    if (const auto existing = find_entry(waveform.key); existing != most_recent_first_.end()) {
         erase(existing, false);
     }
     while (stats_.entries >= limits_.maximum_entries ||
@@ -204,9 +278,9 @@ auto waveform_cache_t::stats() const -> waveform_cache_stats_t {
 }
 
 auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
-                      waveform_cache_t& waveform_cache,
-                      audio_source_identity_t source,
-                      std::uint32_t frames_per_bin) -> waveform_analysis_result_t {
+                      waveform_cache_t& waveform_cache, audio_source_identity_t source,
+                      std::uint32_t frames_per_bin, waveform_analysis_options_t options)
+    -> waveform_analysis_result_t {
     const waveform_key_t waveform_key{
         .source = std::move(source),
         .frames_per_bin = frames_per_bin,
@@ -225,20 +299,17 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
     if (!stream_info.has_value()) {
         return {.status = waveform_analysis_status_t::decoder_unavailable};
     }
-    const auto bin_count = expected_bin_count(stream_info->output_frame_count,
-                                              frames_per_bin);
-    const auto base_bytes = bin_count.has_value() &&
-                                    *bin_count <= std::numeric_limits<std::size_t>::max()
-                                ? bins_bytes(static_cast<std::size_t>(*bin_count))
-                                : std::nullopt;
+    const auto bin_count = expected_bin_count(stream_info->output_frame_count, frames_per_bin);
+    const auto base_bytes =
+        bin_count.has_value() && *bin_count <= std::numeric_limits<std::size_t>::max()
+            ? bins_bytes(static_cast<std::size_t>(*bin_count))
+            : std::nullopt;
     // A pairwise pyramid adds fewer bins than the base level. Reserve a strict
     // 2x bound before allocating either the retained peaks or RMS accumulators.
-    const auto pyramid_fits = base_bytes.has_value() &&
-                              *base_bytes <= waveform_cache.limits().maximum_bytes / 2U;
-    if (!bin_count.has_value() ||
-        *bin_count > waveform_cache.limits().maximum_bins_per_entry ||
-        *bin_count > std::numeric_limits<std::size_t>::max() ||
-        !pyramid_fits) {
+    const auto pyramid_fits =
+        base_bytes.has_value() && *base_bytes <= waveform_cache.limits().maximum_bytes / 2U;
+    if (!bin_count.has_value() || *bin_count > waveform_cache.limits().maximum_bins_per_entry ||
+        *bin_count > std::numeric_limits<std::size_t>::max() || !pyramid_fits) {
         return {.status = waveform_analysis_status_t::source_too_large};
     }
 
@@ -252,11 +323,9 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
         bin.minimum.fill(std::numeric_limits<float>::infinity());
         bin.maximum.fill(-std::numeric_limits<float>::infinity());
     }
-    std::vector<std::array<double, output_channel_count>> square_sums(
-        waveform.bins.size());
+    std::vector<std::array<double, output_channel_count>> square_sums(waveform.bins.size());
 
-    const auto block_count =
-        1U + (stream_info->output_frame_count - 1U) / maximum_read_frames;
+    const auto block_count = 1U + (stream_info->output_frame_count - 1U) / maximum_read_frames;
     std::uint64_t visited_frames{};
     for (std::uint64_t block_index = 0; block_index < block_count; ++block_index) {
         const audio_block_key_t block_key{
@@ -266,9 +335,8 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
         auto block = block_cache.find(block_key);
         if (!block.has_value()) {
             const auto start_frame = block_index * maximum_read_frames;
-            const auto requested_frames = static_cast<std::size_t>(
-                std::min<std::uint64_t>(stream_info->output_frame_count - start_frame,
-                                        maximum_read_frames));
+            const auto requested_frames = static_cast<std::size_t>(std::min<std::uint64_t>(
+                stream_info->output_frame_count - start_frame, maximum_read_frames));
             std::vector<float> samples(maximum_read_frames * output_channel_count);
             const auto read = decoder.read_at(start_frame, samples, requested_frames);
             if (read.status == read_status_t::seek_error) {
@@ -286,8 +354,7 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
                 .frame_count = read.frames_read,
                 .interleaved_stereo = std::move(samples),
             };
-            if (block_cache.store(block_key, block->frame_count,
-                                  block->interleaved_stereo) !=
+            if (block_cache.store(block_key, block->frame_count, block->interleaved_stereo) !=
                 block_store_status_t::stored) {
                 return analysis_failure(block_index,
                                         block_decode_status_t::cache_capacity_exceeded);
@@ -299,12 +366,11 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
             auto& bin = waveform.bins[bin_index];
             ++bin.frame_count;
             for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
-                const auto sample = block->interleaved_stereo[
-                    frame * output_channel_count + channel];
+                const auto sample =
+                    block->interleaved_stereo[frame * output_channel_count + channel];
                 bin.minimum[channel] = std::min(bin.minimum[channel], sample);
                 bin.maximum[channel] = std::max(bin.maximum[channel], sample);
-                bin.absolute_peak[channel] =
-                    std::max(bin.absolute_peak[channel], std::abs(sample));
+                bin.absolute_peak[channel] = std::max(bin.absolute_peak[channel], std::abs(sample));
                 square_sums[bin_index][channel] +=
                     static_cast<double>(sample) * static_cast<double>(sample);
             }
@@ -314,13 +380,20 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
     if (visited_frames != stream_info->output_frame_count) {
         return {.status = waveform_analysis_status_t::decode_failed};
     }
-    for (std::size_t bin_index = 0; bin_index < waveform.bins.size(); ++bin_index) {
-        auto& bin = waveform.bins[bin_index];
-        for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
-            bin.rms[channel] = static_cast<float>(std::sqrt(
-                square_sums[bin_index][channel] / static_cast<double>(bin.frame_count)));
-        }
-    }
+    // Decode and LRU access stay on this call's thread. Workers below touch only
+    // the completed local bin arrays and are joined before cache publication.
+    const auto worker_count = waveform_worker_count(waveform.bins.size(), options);
+    for_each_partition(
+        waveform.bins, worker_count, options.parallel_partition_alignment_bytes,
+        [&waveform, &square_sums](std::size_t begin, std::size_t end) {
+            for (auto bin_index = begin; bin_index < end; ++bin_index) {
+                auto& bin = waveform.bins[bin_index];
+                for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
+                    bin.rms[channel] = static_cast<float>(std::sqrt(
+                        square_sums[bin_index][channel] / static_cast<double>(bin.frame_count)));
+                }
+            }
+        });
 
     const auto* prior_bins = &waveform.bins;
     auto prior_frames_per_bin = static_cast<std::uint64_t>(frames_per_bin);
@@ -332,33 +405,37 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
             .frames_per_bin = prior_frames_per_bin * 2U,
             .bins = std::vector<waveform_bin_t>((prior_bins->size() + 1U) / 2U),
         };
-        for (std::size_t output_index = 0; output_index < level.bins.size();
-             ++output_index) {
-            auto& output = level.bins[output_index];
-            const auto first_index = output_index * 2U;
-            const auto& first = (*prior_bins)[first_index];
-            output = first;
-            if (first_index + 1U == prior_bins->size()) {
-                continue;
-            }
-            const auto& second = (*prior_bins)[first_index + 1U];
-            output.frame_count += second.frame_count;
-            for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
-                output.minimum[channel] = std::min(first.minimum[channel],
-                                                   second.minimum[channel]);
-                output.maximum[channel] = std::max(first.maximum[channel],
-                                                   second.maximum[channel]);
-                output.absolute_peak[channel] = std::max(first.absolute_peak[channel],
-                                                         second.absolute_peak[channel]);
-                const auto weighted_squares =
-                    static_cast<double>(first.rms[channel]) * first.rms[channel] *
-                        static_cast<double>(first.frame_count) +
-                    static_cast<double>(second.rms[channel]) * second.rms[channel] *
-                        static_cast<double>(second.frame_count);
-                output.rms[channel] = static_cast<float>(std::sqrt(
-                    weighted_squares / static_cast<double>(output.frame_count)));
-            }
-        }
+        const auto level_worker_count = waveform_worker_count(level.bins.size(), options);
+        for_each_partition(
+            level.bins, level_worker_count, options.parallel_partition_alignment_bytes,
+            [&level, prior_bins](std::size_t begin, std::size_t end) {
+                for (auto output_index = begin; output_index < end; ++output_index) {
+                    auto& output = level.bins[output_index];
+                    const auto first_index = output_index * 2U;
+                    const auto& first = (*prior_bins)[first_index];
+                    output = first;
+                    if (first_index + 1U == prior_bins->size()) {
+                        continue;
+                    }
+                    const auto& second = (*prior_bins)[first_index + 1U];
+                    output.frame_count += second.frame_count;
+                    for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
+                        output.minimum[channel] =
+                            std::min(first.minimum[channel], second.minimum[channel]);
+                        output.maximum[channel] =
+                            std::max(first.maximum[channel], second.maximum[channel]);
+                        output.absolute_peak[channel] =
+                            std::max(first.absolute_peak[channel], second.absolute_peak[channel]);
+                        const auto weighted_squares =
+                            static_cast<double>(first.rms[channel]) * first.rms[channel] *
+                                static_cast<double>(first.frame_count) +
+                            static_cast<double>(second.rms[channel]) * second.rms[channel] *
+                                static_cast<double>(second.frame_count);
+                        output.rms[channel] = static_cast<float>(
+                            std::sqrt(weighted_squares / static_cast<double>(output.frame_count)));
+                    }
+                }
+            });
         waveform.coarser_levels.push_back(std::move(level));
         prior_bins = &waveform.coarser_levels.back().bins;
         prior_frames_per_bin = waveform.coarser_levels.back().frames_per_bin;
@@ -376,8 +453,7 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
     };
 }
 
-auto waveform_level_for_zoom(const waveform_t& waveform,
-                             double source_frames_per_pixel)
+auto waveform_level_for_zoom(const waveform_t& waveform, double source_frames_per_pixel)
     -> std::optional<waveform_level_view_t> {
     if (!std::isfinite(source_frames_per_pixel) || source_frames_per_pixel <= 0.0 ||
         waveform.bins.empty() || waveform.key.frames_per_bin == 0) {
@@ -387,11 +463,11 @@ auto waveform_level_for_zoom(const waveform_t& waveform,
         .frames_per_bin = waveform.key.frames_per_bin,
         .bins = waveform.bins,
     };
-    auto best_distance = std::abs(std::log(
-        static_cast<double>(best.frames_per_bin) / source_frames_per_pixel));
+    auto best_distance =
+        std::abs(std::log(static_cast<double>(best.frames_per_bin) / source_frames_per_pixel));
     for (const auto& level : waveform.coarser_levels) {
-        const auto distance = std::abs(std::log(
-            static_cast<double>(level.frames_per_bin) / source_frames_per_pixel));
+        const auto distance =
+            std::abs(std::log(static_cast<double>(level.frames_per_bin) / source_frames_per_pixel));
         if (distance < best_distance) {
             best = {.frames_per_bin = level.frames_per_bin, .bins = level.bins};
             best_distance = distance;

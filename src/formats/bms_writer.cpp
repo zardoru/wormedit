@@ -255,6 +255,119 @@ struct channel_line_t {
     std::vector<note_slot_t> notes;
 };
 
+struct branch_tree_analysis_t {
+    bool has_branches{};
+    bool has_branch_metadata{};
+    bool has_branch_measure_ratio{};
+    bool has_branch_bpm{};
+    bool has_root_bpm{};
+    bool has_unmodeled_root_statement{};
+    std::set<std::size_t> branch_source_orders;
+    std::set<std::size_t> root_source_orders;
+    std::set<std::size_t> branch_measure_indices;
+    std::set<std::pair<std::string, std::string>> branch_resource_ids;
+    std::vector<std::pair<std::size_t, std::string>> preserved_lines;
+};
+
+auto is_branch_boundary(bms_control_kind_t kind) -> bool {
+    return kind == bms_control_kind_t::random || kind == bms_control_kind_t::switch_block ||
+           kind == bms_control_kind_t::if_group || kind == bms_control_kind_t::if_branch ||
+           kind == bms_control_kind_t::else_if_branch || kind == bms_control_kind_t::else_branch ||
+           kind == bms_control_kind_t::case_branch || kind == bms_control_kind_t::default_branch;
+}
+
+auto is_measure_length_command(std::string_view token) -> std::optional<std::size_t> {
+    if (token.size() != 5 || token.substr(3) != "02" ||
+        !std::ranges::all_of(token.substr(0, 3),
+                             [](char character) { return character >= '0' && character <= '9'; })) {
+        return std::nullopt;
+    }
+    return static_cast<std::size_t>((token[0] - '0') * 100 + (token[1] - '0') * 10 +
+                                    (token[2] - '0'));
+}
+
+auto analyze_branch_tree(const bms_control_node_t& root) -> branch_tree_analysis_t {
+    branch_tree_analysis_t result;
+    const auto visit = [&](const auto& self, const bms_control_node_t& node,
+                           bool inside_branch) -> void {
+        if (node.kind == bms_control_kind_t::random || node.kind == bms_control_kind_t::if_group ||
+            node.kind == bms_control_kind_t::if_branch ||
+            node.kind == bms_control_kind_t::else_if_branch ||
+            node.kind == bms_control_kind_t::else_branch ||
+            node.kind == bms_control_kind_t::switch_block ||
+            node.kind == bms_control_kind_t::case_branch ||
+            node.kind == bms_control_kind_t::default_branch) {
+            result.has_branches = true;
+        }
+        const bool node_is_branch_scoped = inside_branch;
+        const bool is_synthetic_group =
+            node.kind == bms_control_kind_t::root || node.kind == bms_control_kind_t::if_group;
+        const bool is_control_statement = node.kind != bms_control_kind_t::root &&
+                                          node.kind != bms_control_kind_t::if_group &&
+                                          node.kind != bms_control_kind_t::raw_statement;
+        if (!is_synthetic_group && node.source_order < std::numeric_limits<std::size_t>::max()) {
+            if (node_is_branch_scoped) {
+                result.branch_source_orders.insert(node.source_order);
+            }
+            if (is_control_statement && !node.original_text.empty()) {
+                result.preserved_lines.emplace_back(node.source_order, node.original_text);
+            } else if (node.kind == bms_control_kind_t::raw_statement &&
+                       !node.original_text.empty()) {
+                if (node_is_branch_scoped) {
+                    result.branch_source_orders.insert(node.source_order);
+                    const auto token = ascii_upper(node.command_token);
+                    if (safe_metadata_token(token) &&
+                        (!generated_or_channel_token(token) || token == "PLAYER")) {
+                        result.has_branch_metadata = true;
+                    }
+                    if (const auto measure = is_measure_length_command(token);
+                        measure.has_value()) {
+                        result.has_branch_measure_ratio = true;
+                        result.branch_measure_indices.insert(*measure);
+                    }
+                    if (token == "BPM") {
+                        result.has_branch_bpm = true;
+                    }
+                    if ((token.starts_with("WAV") || token.starts_with("BMP")) &&
+                        token.size() == 5 && base36_digit(token[3]) && base36_digit(token[4])) {
+                        result.branch_resource_ids.emplace(token.substr(0, 3), token.substr(3, 2));
+                    }
+                    result.preserved_lines.emplace_back(node.source_order, node.original_text);
+                } else {
+                    const auto token = ascii_upper(node.command_token);
+                    if (safe_metadata_token(token) || generated_or_channel_token(token) ||
+                        is_measure_length_command(token).has_value()) {
+                        result.root_source_orders.insert(node.source_order);
+                    }
+                    if (token == "BPM") {
+                        result.has_root_bpm = true;
+                    }
+                    if (!safe_metadata_token(token) && !generated_or_channel_token(token)) {
+                        result.has_unmodeled_root_statement = true;
+                    }
+                }
+            }
+        }
+        if (node.close_text.has_value() && node.close_source_order.has_value()) {
+            result.preserved_lines.emplace_back(*node.close_source_order, *node.close_text);
+        }
+
+        const bool descendants_are_branch_scoped =
+            node_is_branch_scoped || is_branch_boundary(node.kind);
+        for (const auto& child : node.children) {
+            self(self, child, descendants_are_branch_scoped);
+        }
+    };
+    visit(visit, root, false);
+    std::ranges::stable_sort(result.preserved_lines, {},
+                             [](const auto& line) { return line.first; });
+    return result;
+}
+
+auto has_bms_source_provenance(const source_provenance_t& provenance) -> bool {
+    return provenance.family == format_family_t::bms && !provenance.source_spelling.empty();
+}
+
 auto fraction_at(const measure_index_t& index, local_position_t position, std::string path)
     -> std::pair<std::uint64_t, std::uint64_t> {
     const auto entry =
@@ -314,59 +427,64 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
              "BMS measure indices are limited to 000 through 999", "$.charts[].measures");
     }
 
-    if (chart.bms_control_tree.has_value()) {
-        const auto& root = *chart.bms_control_tree;
-        const auto has_branch = [&](const auto& self, const bms_control_node_t& node) -> bool {
-            if (node.kind == bms_control_kind_t::random ||
-                node.kind == bms_control_kind_t::set_random ||
-                node.kind == bms_control_kind_t::if_group ||
-                node.kind == bms_control_kind_t::if_branch ||
-                node.kind == bms_control_kind_t::else_if_branch ||
-                node.kind == bms_control_kind_t::else_branch ||
-                node.kind == bms_control_kind_t::switch_block ||
-                node.kind == bms_control_kind_t::set_switch ||
-                node.kind == bms_control_kind_t::case_branch ||
-                node.kind == bms_control_kind_t::default_branch ||
-                node.kind == bms_control_kind_t::skip) {
-                return true;
-            }
-            return std::ranges::any_of(node.children,
-                                       [&](const auto& child) { return self(self, child); });
-        };
-        if (has_branch(has_branch, root) || !chart.active_branch_selection.empty()) {
-            fail(bms_write_diagnostic_code_t::unsupported_feature,
-                 "BMS branch trees require an explicit branch-preserving or flattening policy",
-                 "$.charts[].bms_control_tree");
-        }
-        const auto has_unmodeled_raw = [&](const auto& self,
-                                           const bms_control_node_t& node) -> bool {
-            if (node.kind == bms_control_kind_t::raw_statement && !node.original_text.empty() &&
-                !safe_metadata_token(node.command_token) &&
-                !generated_or_channel_token(node.command_token)) {
-                return true;
-            }
-            return std::ranges::any_of(node.children,
-                                       [&](const auto& child) { return self(self, child); });
-        };
-        if (has_unmodeled_raw(has_unmodeled_raw, root)) {
-            warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
-                 "unmodeled raw source lines were omitted from normalized BMS output",
-                 "$.charts[].bms_control_tree");
-        }
+    const auto branch_tree = chart.bms_control_tree.has_value()
+                                 ? analyze_branch_tree(*chart.bms_control_tree)
+                                 : branch_tree_analysis_t{};
+    if (branch_tree.has_branches && options.branch_policy == bms_branch_policy_t::flatten_active) {
+        fail(bms_write_diagnostic_code_t::unsupported_branch_policy,
+             "active-projection flattening is not implemented; select preserve_tree",
+             "$.charts[].bms_control_tree");
     }
+    if (!chart.active_branch_selection.empty() && !branch_tree.has_branches) {
+        fail(bms_write_diagnostic_code_t::branch_provenance,
+             "active branch selections have no retained source tree to preserve",
+             "$.charts[].active_branch_selection");
+    }
+    if (branch_tree.has_branch_metadata) {
+        fail(bms_write_diagnostic_code_t::branch_provenance,
+             "branch-scoped metadata cannot be safely merged because retained metadata fields "
+             "do not carry source-order or branch provenance",
+             "$.charts[].bms_control_tree");
+    }
+    if (branch_tree.has_branch_measure_ratio) {
+        fail(bms_write_diagnostic_code_t::branch_provenance,
+             "branch-scoped measure ratios cannot be regenerated because measure definitions "
+             "do not retain source-order or branch provenance",
+             "$.charts[].bms_control_tree");
+    }
+    if (branch_tree.has_branch_bpm && branch_tree.has_root_bpm) {
+        fail(bms_write_diagnostic_code_t::branch_provenance,
+             "root and branch BPM statements cannot be safely reordered without per-event timing "
+             "provenance",
+             "$.charts[].bms_control_tree");
+    }
+    if (branch_tree.has_branches) {
+        warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
+             "branch bodies remain source-backed; direct edits to branch-projected objects are "
+             "not applied by this writer slice",
+             "$.charts[].bms_control_tree");
+    }
+    if (branch_tree.has_unmodeled_root_statement) {
+        warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
+             "unmodeled root-level raw source lines were omitted from normalized BMS output",
+             "$.charts[].bms_control_tree");
+    }
+    const auto is_branch_provenance = [&](const source_provenance_t& provenance) {
+        return has_bms_source_provenance(provenance) &&
+               branch_tree.branch_source_orders.contains(provenance.source_order);
+    };
 
-    if (!chart.pauses.empty() || !chart.warps.empty() || !chart.scrolls.empty() ||
-        !chart.speeds.empty() || !chart.kiai.empty() || !chart.timing_anchors.empty() ||
-        !chart.sections.empty() || !chart.sound_channels.empty()) {
+    const auto has_root_timing = [&](const auto& events) {
+        return std::ranges::any_of(
+            events, [&](const auto& event) { return !is_branch_provenance(event.provenance); });
+    };
+    if (has_root_timing(chart.pauses) || has_root_timing(chart.warps) ||
+        has_root_timing(chart.scrolls) || has_root_timing(chart.speeds) ||
+        has_root_timing(chart.kiai) || !chart.timing_anchors.empty() || !chart.sections.empty() ||
+        !chart.sound_channels.empty()) {
         fail(bms_write_diagnostic_code_t::unsupported_feature,
              "chart contains timing or media features outside the normalized writer slice",
              "$.charts[]");
-    }
-    if (std::ranges::any_of(chart.measures,
-                            [](const auto& measure) { return !measure.bgm_events.empty(); }) ||
-        !chart.bga_events.empty()) {
-        fail(bms_write_diagnostic_code_t::unsupported_feature,
-             "BGM and BGA event export is not implemented in this writer slice", "$.charts[]");
     }
     if (!chart.bookmarks.empty()) {
         warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
@@ -400,30 +518,52 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
 
     const auto layout = layout_for_export(chart, options, diagnostics);
     std::map<std::uint64_t, std::string> lane_channels;
+    std::map<std::uint64_t, std::string> long_note_channels;
     std::set<std::string> used_channels;
     for (const auto& lane : layout.lanes) {
-        if (!lane.bms_channels.visible.has_value())
-            continue;
-        auto channel = *lane.bms_channels.visible;
-        for (auto& character : channel) {
-            if (character >= 'a' && character <= 'z') {
-                character = static_cast<char>(character - 'a' + 'A');
+        if (lane.bms_channels.visible.has_value()) {
+            auto channel = *lane.bms_channels.visible;
+            for (auto& character : channel) {
+                if (character >= 'a' && character <= 'z') {
+                    character = static_cast<char>(character - 'a' + 'A');
+                }
             }
+            if (channel.size() != 2 || !base36_digit(channel[0]) || !base36_digit(channel[1]) ||
+                !used_channels.insert(channel).second) {
+                fail(bms_write_diagnostic_code_t::invalid_document,
+                     "lane profile has an invalid or duplicate visible BMS channel",
+                     "$.charts[].lane_layouts");
+            }
+            lane_channels.emplace(lane.id.value, std::move(channel));
         }
-        if (channel.size() != 2 || !base36_digit(channel[0]) || !base36_digit(channel[1]) ||
-            !used_channels.insert(channel).second) {
-            fail(bms_write_diagnostic_code_t::invalid_document,
-                 "lane profile has an invalid or duplicate visible BMS channel",
-                 "$.charts[].lane_layouts");
+        if (lane.bms_channels.long_note.has_value()) {
+            auto channel = *lane.bms_channels.long_note;
+            for (auto& character : channel) {
+                if (character >= 'a' && character <= 'z') {
+                    character = static_cast<char>(character - 'a' + 'A');
+                }
+            }
+            if (channel.size() != 2 || !base36_digit(channel[0]) || !base36_digit(channel[1]) ||
+                (channel[0] != '5' && channel[0] != '6') || !used_channels.insert(channel).second) {
+                fail(bms_write_diagnostic_code_t::invalid_document,
+                     "lane profile has an invalid or duplicate long-note BMS channel",
+                     "$.charts[].lane_layouts");
+            }
+            long_note_channels.emplace(lane.id.value, std::move(channel));
         }
-        lane_channels.emplace(lane.id.value, std::move(channel));
     }
 
     std::map<std::uint64_t, std::string> audio_ids;
     std::map<std::uint64_t, std::string> visual_ids;
     std::map<std::string, std::size_t> next_ids{{"WAV", 1}, {"BMP", 1}};
     std::map<std::string, std::set<std::string>> assigned_ids;
-    std::vector<std::pair<std::string, const resource_entry_t*>> declarations;
+    std::set<std::uint64_t> branch_resource_ids;
+    struct resource_declaration_t {
+        std::string name_space;
+        const resource_entry_t* resource{};
+        bool branch_scoped{};
+    };
+    std::vector<resource_declaration_t> declarations;
     declarations.reserve(song.resources.size());
     for (const auto& resource : song.resources) {
         const auto audio = std::ranges::find(song.audio_assets, resource.asset, &audio_asset_t::id);
@@ -443,11 +583,24 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
                  "resource path must be a valid UTF-8 single-line value without edge whitespace",
                  "$.resources[].name");
         }
+        const bool branch_scoped = is_branch_provenance(resource.provenance);
         auto identifier = bms_identity(resource, name_space);
-        if (!identifier.has_value() || assigned_ids[name_space].contains(*identifier)) {
+        if (branch_scoped) {
+            if (!identifier.has_value() ||
+                !branch_tree.branch_resource_ids.contains({name_space, *identifier}) ||
+                assigned_ids[name_space].contains(*identifier)) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "branch resource IDs must remain stable because their raw branch statements "
+                     "are preserved verbatim",
+                     "$.resources[].target_identities");
+            }
+        } else if (!identifier.has_value() || assigned_ids[name_space].contains(*identifier) ||
+                   branch_tree.branch_resource_ids.contains({name_space, *identifier})) {
             const auto old = identifier;
             auto& next = next_ids[name_space];
-            while (next < 1296 && assigned_ids[name_space].contains(base36_id(next))) {
+            while (next < 1296 &&
+                   (assigned_ids[name_space].contains(base36_id(next)) ||
+                    branch_tree.branch_resource_ids.contains({name_space, base36_id(next)}))) {
                 ++next;
             }
             if (next >= 1296) {
@@ -467,7 +620,9 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
             audio_ids.emplace(resource.id.value, *identifier);
         if (is_visual)
             visual_ids.emplace(resource.id.value, *identifier);
-        declarations.emplace_back(name_space, &resource);
+        if (branch_scoped)
+            branch_resource_ids.insert(resource.id.value);
+        declarations.push_back({name_space, &resource, branch_scoped});
     }
 
     const auto measure_index_result = build_measure_index(chart);
@@ -478,25 +633,48 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     const auto& index = std::get<measure_index_t>(measure_index_result);
 
     std::map<std::pair<std::size_t, std::string>, channel_line_t> channel_lines;
+    std::map<std::pair<std::size_t, std::uint64_t>, channel_line_t> bgm_lines;
+    std::map<std::pair<std::size_t, std::string>, std::size_t> bga_line_order;
+    struct hold_endpoint_t {
+        std::uint64_t row{};
+        std::uint64_t note_id{};
+        bool is_end{};
+        std::string path;
+    };
+    std::map<std::uint64_t, std::vector<hold_endpoint_t>> hold_endpoints;
     for (std::size_t measure = 0; measure < chart.measures.size(); ++measure) {
         for (const auto& note : chart.measures[measure].notes) {
             const auto path = "$.charts[].measures[" + std::to_string(measure) + "].notes[]";
-            if (note.kind != note_kind_t::tap || note.end.has_value()) {
+            if (is_branch_provenance(note.provenance))
+                continue;
+            if ((note.kind != note_kind_t::tap && note.kind != note_kind_t::hold) ||
+                (note.kind == note_kind_t::tap && note.end.has_value())) {
                 fail(bms_write_diagnostic_code_t::unsupported_feature,
-                     "normalized BMS writer currently supports playable tap notes only", path);
+                     "normalized BMS writer supports playable taps and holds only", path);
             }
             if (note.branch.has_value()) {
                 fail(bms_write_diagnostic_code_t::unsupported_feature,
                      "branch-local notes require an explicit branch export policy", path);
             }
-            const auto channel = lane_channels.find(note.lane.value);
-            if (channel == lane_channels.end()) {
-                fail(bms_write_diagnostic_code_t::missing_profile,
-                     "note lane has no visible BMS channel in the selected lane map", path);
+            const auto& selected_channels =
+                note.kind == note_kind_t::hold ? long_note_channels : lane_channels;
+            const auto channel = selected_channels.find(note.lane.value);
+            if (channel == selected_channels.end()) {
+                fail(
+                    bms_write_diagnostic_code_t::missing_profile,
+                    note.kind == note_kind_t::hold
+                        ? "hold lane has no authored long-note BMS channel in the selected lane map"
+                        : "note lane has no visible BMS channel in the selected lane map",
+                    path);
             }
             if (!note.sound.has_value()) {
                 fail(bms_write_diagnostic_code_t::unresolved_resource,
                      "BMS playable taps require a WAV resource binding", path + ".sound");
+            }
+            if (branch_resource_ids.contains(note.sound->value)) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "a root note refers to a resource declared only inside a branch",
+                     path + ".sound");
             }
             const auto wav = audio_ids.find(note.sound->value);
             if (wav == audio_ids.end()) {
@@ -511,7 +689,174 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
                                                                    });
             (void)inserted;
             line->second.notes.push_back({numerator, denominator, wav->second, path});
+
+            const auto absolute_start = absolute_row(index, note.position);
+            if (!absolute_start.has_value()) {
+                fail(bms_write_diagnostic_code_t::invalid_geometry,
+                     "hold endpoint is outside the chart's measure geometry", path);
+            }
+            if (note.kind == note_kind_t::hold) {
+                if (!note.end.has_value()) {
+                    fail(bms_write_diagnostic_code_t::invalid_document,
+                         "hold note has no tail position", path + ".end");
+                }
+                const auto [end_numerator, end_denominator] =
+                    fraction_at(index, *note.end, path + ".end");
+                const auto end_measure =
+                    std::ranges::find(chart.measures, note.end->measure, &measure_chunk_t::id);
+                const auto end_measure_index =
+                    static_cast<std::size_t>(std::distance(chart.measures.begin(), end_measure));
+                auto [end_line, end_inserted] = channel_lines.try_emplace(
+                    std::pair{end_measure_index, channel->second},
+                    channel_line_t{.measure = end_measure_index, .channel = channel->second});
+                (void)end_inserted;
+                end_line->second.notes.push_back(
+                    {end_numerator, end_denominator, wav->second, path + ".end"});
+                const auto absolute_end = absolute_row(index, *note.end);
+                if (!absolute_end.has_value()) {
+                    fail(bms_write_diagnostic_code_t::invalid_geometry,
+                         "hold tail is outside the chart's measure geometry", path + ".end");
+                }
+                hold_endpoints[note.lane.value].push_back(
+                    {*absolute_start, note.id.value, false, path});
+                hold_endpoints[note.lane.value].push_back(
+                    {*absolute_end, note.id.value, true, path + ".end"});
+            }
         }
+
+        for (const auto& event : chart.measures[measure].bgm_events) {
+            const auto path = "$.charts[].measures[" + std::to_string(measure) + "].bgm_events[]";
+            if (is_branch_provenance(event.provenance))
+                continue;
+            if (event.branch.has_value()) {
+                fail(bms_write_diagnostic_code_t::unsupported_feature,
+                     "branch-local BGM events require an explicit branch export policy", path);
+            }
+            const auto source_lane = std::ranges::find(chart.bgm_source_lanes, event.source_lane,
+                                                       &bgm_source_lane_t::id);
+            if (source_lane == chart.bgm_source_lanes.end()) {
+                fail(bms_write_diagnostic_code_t::invalid_document,
+                     "BGM event refers to an unknown source lane", path + ".source_lane");
+            }
+            std::string object_id = "00";
+            if (event.sound.has_value()) {
+                if (branch_resource_ids.contains(event.sound->value)) {
+                    fail(bms_write_diagnostic_code_t::branch_provenance,
+                         "a root BGM event refers to a resource declared only inside a branch",
+                         path + ".sound");
+                }
+                const auto wav = audio_ids.find(event.sound->value);
+                if (wav == audio_ids.end()) {
+                    fail(bms_write_diagnostic_code_t::unresolved_resource,
+                         "BGM event refers to a resource that is not exported as WAV",
+                         path + ".sound");
+                }
+                object_id = wav->second;
+            }
+            const auto [numerator, denominator] =
+                fraction_at(index, event.position, path + ".position");
+            const auto key = std::pair{measure, event.source_lane.value};
+            auto [line, inserted] =
+                bgm_lines.try_emplace(key, channel_line_t{.measure = measure, .channel = "01"});
+            (void)inserted;
+            line->second.notes.push_back({numerator, denominator, std::move(object_id), path});
+        }
+    }
+
+    for (auto& [lane, endpoints] : hold_endpoints) {
+        (void)lane;
+        std::ranges::sort(endpoints, {}, &hold_endpoint_t::row);
+        for (std::size_t endpoint = 0; endpoint < endpoints.size(); endpoint += 2) {
+            if (endpoint + 1 >= endpoints.size() || endpoints[endpoint].is_end ||
+                !endpoints[endpoint + 1].is_end ||
+                endpoints[endpoint].note_id != endpoints[endpoint + 1].note_id) {
+                fail(bms_write_diagnostic_code_t::unsupported_feature,
+                     "overlapping holds on one lane cannot be paired safely by BMS long-note "
+                     "channels",
+                     endpoint < endpoints.size() ? endpoints[endpoint].path
+                                                 : "$.charts[].measures[].notes[]");
+            }
+        }
+    }
+
+    for (const auto& source_lane : chart.bgm_source_lanes) {
+        if (branch_tree.branch_source_orders.contains(source_lane.source_order))
+            continue;
+        if (std::ranges::none_of(bgm_lines, [&](const auto& entry) {
+                return entry.first.second == source_lane.id.value;
+            })) {
+            warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
+                 "empty editor BGM source lanes have no BMS representation and are omitted",
+                 "$.charts[].bgm_source_lanes");
+        }
+    }
+
+    std::map<std::pair<std::size_t, std::uint64_t>, std::size_t> layer_counts;
+    auto sorted_bga_events = chart.bga_events;
+    std::ranges::stable_sort(sorted_bga_events, [](const auto& left, const auto& right) {
+        return std::tie(left.position.measure.value, left.position.row,
+                        left.provenance.source_order,
+                        left.id.value) < std::tie(right.position.measure.value, right.position.row,
+                                                  right.provenance.source_order, right.id.value);
+    });
+    for (const auto& event : sorted_bga_events) {
+        if (is_branch_provenance(event.provenance))
+            continue;
+        const std::string path = "$.charts[].bga_events[]";
+        std::string channel;
+        switch (event.kind) {
+        case visual_event_kind_t::background:
+            channel = "04";
+            break;
+        case visual_event_kind_t::poor:
+            channel = "06";
+            break;
+        case visual_event_kind_t::layer: {
+            const auto absolute = absolute_row(index, event.position);
+            if (!absolute.has_value()) {
+                fail(bms_write_diagnostic_code_t::invalid_geometry,
+                     "BGA event is outside the chart's measure geometry", path + ".position");
+            }
+            auto& count = layer_counts[{event.position.measure.value, *absolute}];
+            if (count >= 2) {
+                fail(bms_write_diagnostic_code_t::duplicate_event,
+                     "more than two layer events share a position; BMS channels 07 and 0A cannot "
+                     "represent the collision",
+                     path);
+            }
+            channel = count++ == 0 ? "07" : "0A";
+            break;
+        }
+        case visual_event_kind_t::video:
+        case visual_event_kind_t::storyboard:
+            fail(bms_write_diagnostic_code_t::unsupported_feature,
+                 "BMS BGA channels cannot represent video or storyboard events", path);
+        }
+        const auto bmp = visual_ids.find(event.resource.value);
+        if (branch_resource_ids.contains(event.resource.value)) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "a root BGA event refers to a resource declared only inside a branch",
+                 path + ".resource");
+        }
+        if (bmp == visual_ids.end()) {
+            fail(bms_write_diagnostic_code_t::unresolved_resource,
+                 "BGA event refers to a resource that is not exported as BMP", path + ".resource");
+        }
+        const auto [numerator, denominator] =
+            fraction_at(index, event.position, path + ".position");
+        const auto key = std::pair{
+            static_cast<std::size_t>(std::distance(
+                chart.measures.begin(),
+                std::ranges::find(chart.measures, event.position.measure, &measure_chunk_t::id))),
+            channel};
+        auto [line, inserted] = channel_lines.try_emplace(
+            key, channel_line_t{.measure = key.first, .channel = channel});
+        (void)inserted;
+        line->second.notes.push_back({numerator, denominator, bmp->second, path});
+        auto [order, order_inserted] =
+            bga_line_order.try_emplace(key, event.provenance.source_order);
+        if (!order_inserted)
+            order->second = std::min(order->second, event.provenance.source_order);
     }
 
     const auto player_value =
@@ -592,23 +937,32 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     if (!artist_emitted && !artist.empty())
         output.emplace_back("#ARTIST " + artist);
 
-    if (!chart.bpms.empty()) {
-        if (chart.bpms.size() != 1 ||
-            absolute_row(index, chart.bpms.front().position) != std::optional<std::uint64_t>{0}) {
-            fail(bms_write_diagnostic_code_t::unsupported_feature,
-                 "this writer slice can export only one direct BPM at chart position zero",
-                 "$.charts[].bpms");
-        }
+    std::vector<const bpm_event_t*> root_bpms;
+    for (const auto& bpm : chart.bpms) {
+        if (!is_branch_provenance(bpm.provenance))
+            root_bpms.push_back(&bpm);
+    }
+    if (root_bpms.size() > 1 ||
+        (!root_bpms.empty() &&
+         absolute_row(index, root_bpms.front()->position) != std::optional<std::uint64_t>{0})) {
+        fail(bms_write_diagnostic_code_t::unsupported_feature,
+             "this writer slice can export only one direct BPM at chart position zero",
+             "$.charts[].bpms");
+    }
+    if (!branch_tree.has_branch_bpm && !root_bpms.empty()) {
         output.emplace_back(
-            "#BPM " + exact_decimal(chart.bpms.front().beats_per_minute, "$.charts[].bpms[0].bpm"));
+            "#BPM " + exact_decimal(root_bpms.front()->beats_per_minute, "$.charts[].bpms[0].bpm"));
     }
 
-    for (const auto& [name_space, resource] : declarations) {
-        const auto& identifiers = name_space == "WAV" ? audio_ids : visual_ids;
-        const auto identity = identifiers.find(resource->id.value);
+    for (const auto& declaration : declarations) {
+        if (declaration.branch_scoped)
+            continue;
+        const auto& identifiers = declaration.name_space == "WAV" ? audio_ids : visual_ids;
+        const auto identity = identifiers.find(declaration.resource->id.value);
         if (identity == identifiers.end())
             continue;
-        output.emplace_back("#" + name_space + identity->second + " " + resource->name);
+        output.emplace_back("#" + declaration.name_space + identity->second + " " +
+                            declaration.resource->name);
     }
 
     bool warned_meter = false;
@@ -632,8 +986,7 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
         }
     }
 
-    for (auto& [key, line] : channel_lines) {
-        (void)key;
+    auto encode_channel_line = [&](const channel_line_t& line) -> std::string {
         std::uint64_t slot_count = 1;
         for (const auto& note : line.notes) {
             const auto slots = checked_lcm(slot_count, note.denominator);
@@ -650,6 +1003,7 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
                  "$.charts[].measures[].notes");
         }
         std::vector<std::string> cells(static_cast<std::size_t>(slot_count), "00");
+        std::vector<bool> occupied(static_cast<std::size_t>(slot_count), false);
         for (const auto& note : line.notes) {
             const auto multiplier = slot_count / note.denominator;
             if (note.numerator > std::numeric_limits<std::uint64_t>::max() / multiplier) {
@@ -657,10 +1011,11 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
                      "note subdivision index overflows the BMS channel grid", note.path);
             }
             const auto slot = note.numerator * multiplier;
-            if (slot >= slot_count || cells[static_cast<std::size_t>(slot)] != "00") {
+            if (slot >= slot_count || occupied[static_cast<std::size_t>(slot)]) {
                 fail(bms_write_diagnostic_code_t::duplicate_event,
-                     "two tap notes occupy the same BMS lane slot", note.path);
+                     "two events occupy the same BMS channel slot", note.path);
             }
+            occupied[static_cast<std::size_t>(slot)] = true;
             cells[static_cast<std::size_t>(slot)] = note.object_id;
         }
         std::string payload;
@@ -670,8 +1025,86 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
         const auto prefix = line.measure < 10    ? std::string("00")
                             : line.measure < 100 ? std::string("0")
                                                  : std::string();
-        output.emplace_back("#" + prefix + std::to_string(line.measure) + line.channel + ":" +
-                            std::move(payload));
+        return "#" + prefix + std::to_string(line.measure) + line.channel + ":" +
+               std::move(payload);
+    };
+
+    std::vector<const channel_line_t*> ordered_channel_lines;
+    ordered_channel_lines.reserve(channel_lines.size());
+    for (const auto& [key, line] : channel_lines) {
+        (void)key;
+        ordered_channel_lines.push_back(&line);
+    }
+    std::ranges::stable_sort(ordered_channel_lines, [&](const auto* left, const auto* right) {
+        const auto left_key = std::pair{left->measure, left->channel};
+        const auto right_key = std::pair{right->measure, right->channel};
+        const auto left_order = bga_line_order.contains(left_key) ? bga_line_order.at(left_key) : 0;
+        const auto right_order =
+            bga_line_order.contains(right_key) ? bga_line_order.at(right_key) : 0;
+        return std::tie(left->measure, left_order, left->channel) <
+               std::tie(right->measure, right_order, right->channel);
+    });
+    for (const auto* line : ordered_channel_lines) {
+        output.push_back(encode_channel_line(*line));
+    }
+
+    std::vector<std::pair<std::pair<std::size_t, std::uint64_t>, const channel_line_t*>>
+        ordered_bgm_lines;
+    ordered_bgm_lines.reserve(bgm_lines.size());
+    for (const auto& [key, line] : bgm_lines) {
+        ordered_bgm_lines.emplace_back(key, &line);
+    }
+    std::ranges::stable_sort(ordered_bgm_lines, [&](const auto& left, const auto& right) {
+        const auto left_lane = std::ranges::find(chart.bgm_source_lanes, left.first.second,
+                                                 [](const auto& lane) { return lane.id.value; });
+        const auto right_lane = std::ranges::find(chart.bgm_source_lanes, right.first.second,
+                                                  [](const auto& lane) { return lane.id.value; });
+        const auto left_order = left_lane == chart.bgm_source_lanes.end()
+                                    ? std::numeric_limits<std::size_t>::max()
+                                    : left_lane->source_order;
+        const auto right_order = right_lane == chart.bgm_source_lanes.end()
+                                     ? std::numeric_limits<std::size_t>::max()
+                                     : right_lane->source_order;
+        return std::tie(left.first.first, left_order, left.first.second) <
+               std::tie(right.first.first, right_order, right.first.second);
+    });
+    for (const auto& [key, line] : ordered_bgm_lines) {
+        (void)key;
+        output.push_back(encode_channel_line(*line));
+    }
+
+    std::vector<std::string> preserved_tree_lines;
+    preserved_tree_lines.reserve(branch_tree.preserved_lines.size());
+    for (const auto& [source_order, line] : branch_tree.preserved_lines) {
+        (void)source_order;
+        if (has_line_break_or_nul(line) || !valid_utf8(line)) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "retained BMS control-tree statements must be valid UTF-8 single lines",
+                 "$.charts[].bms_control_tree");
+        }
+        preserved_tree_lines.push_back(line);
+    }
+    if (branch_tree.has_branches && !preserved_tree_lines.empty()) {
+        const auto [tree_first, tree_last] = std::minmax_element(
+            branch_tree.preserved_lines.begin(), branch_tree.preserved_lines.end(),
+            [](const auto& left, const auto& right) { return left.first < right.first; });
+        bool root_before_tree = true;
+        bool root_after_tree = !branch_tree.root_source_orders.empty();
+        for (const auto source_order : branch_tree.root_source_orders) {
+            root_before_tree = root_before_tree && source_order < tree_first->first;
+            root_after_tree = root_after_tree && source_order > tree_last->first;
+        }
+        if (!branch_tree.root_source_orders.empty() && !root_before_tree && !root_after_tree) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "root semantic statements occur on both sides of retained branch source; this "
+                 "writer cannot interleave normalized lines without changing override order",
+                 "$.charts[].bms_control_tree");
+        }
+        if (root_after_tree) {
+            output.insert(output.begin(), preserved_tree_lines.begin(), preserved_tree_lines.end());
+        } else {
+            output.insert(output.end(), preserved_tree_lines.begin(), preserved_tree_lines.end());
+        }
     }
 
     std::string bytes = "\xef\xbb\xbf";

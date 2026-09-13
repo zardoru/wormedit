@@ -12,6 +12,7 @@ add_executable(wormedit_core_tests
     core/measure_tests.cpp
     core/quantize_tests.cpp
     core/rational_tests.cpp
+    core/task_graph_tests.cpp
     formats/bms_tests.cpp
     formats/bms_writer_tests.cpp
     formats/bmson_tests.cpp

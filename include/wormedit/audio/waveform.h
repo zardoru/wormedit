@@ -74,10 +74,20 @@ struct waveform_cache_stats_t {
     std::uint64_t rejected_stores{};
 };
 
+// The analysis defaults keep short assets on the serial path and cap worker
+// creation for large pyramids. Applications may tune the threshold and worker
+// cap/alignment from platform benchmarks; zero workers disables parallel work.
+// Alignment requests are capped internally at one page (4096 bytes).
+struct waveform_analysis_options_t {
+    std::size_t parallel_minimum_bins{16'384};
+    std::size_t maximum_parallel_workers{4};
+    std::size_t parallel_partition_alignment_bytes{64};
+};
+
 // Waveform peaks are derived analysis and therefore have their own bounded LRU;
 // they do not count against the decoded playback-block budget.
 class waveform_cache_t {
-public:
+  public:
     explicit waveform_cache_t(waveform_cache_limits_t limits = {});
 
     [[nodiscard]] auto find(const waveform_key_t& key) -> std::optional<waveform_t>;
@@ -88,7 +98,7 @@ public:
     [[nodiscard]] auto limits() const noexcept -> waveform_cache_limits_t;
     [[nodiscard]] auto stats() const -> waveform_cache_stats_t;
 
-private:
+  private:
     using entry_list_t = std::list<waveform_t>;
     using entry_iterator_t = entry_list_t::iterator;
 
@@ -123,8 +133,8 @@ struct waveform_analysis_result_t {
 // so analysis of a long source remains bounded by both cache policies.
 [[nodiscard]] auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
                                     waveform_cache_t& waveform_cache,
-                                    audio_source_identity_t source,
-                                    std::uint32_t frames_per_bin)
+                                    audio_source_identity_t source, std::uint32_t frames_per_bin,
+                                    waveform_analysis_options_t options = {})
     -> waveform_analysis_result_t;
 
 // Chooses the cached level closest to one RMS/peak bucket per screen pixel.

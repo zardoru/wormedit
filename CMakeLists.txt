@@ -34,6 +34,7 @@ add_library(wormedit_core
     src/core/measure.cpp
     src/core/quantize.cpp
     src/core/rational.cpp
+    src/core/task_graph.cpp
     src/formats/bms.cpp
     src/formats/bms_writer.cpp
     src/formats/bmson.cpp
@@ -43,6 +44,8 @@ add_library(wormedit::core ALIAS wormedit_core)
 target_include_directories(wormedit_core PUBLIC "${CMAKE_SOURCE_DIR}/include")
 target_compile_features(wormedit_core PUBLIC cxx_std_20)
 target_link_libraries(wormedit_core PRIVATE nlohmann_json::nlohmann_json)
+find_package(Threads REQUIRED)
+target_link_libraries(wormedit_core PUBLIC Threads::Threads)
 
 find_package(Iconv QUIET)
 if(Iconv_FOUND)

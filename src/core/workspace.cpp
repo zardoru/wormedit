@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <functional>
 #include <limits>
 #include <ranges>
 #include <string_view>
 #include <type_traits>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -292,6 +294,323 @@ auto audio_clip_is_valid_for_asset(const audio_clip_t& clip, const audio_asset_t
     return *clip.end_frame >= clip.begin_frame &&
            *clip.end_frame <=
                asset.stream.frame_count.value_or(std::numeric_limits<std::uint64_t>::max());
+}
+
+auto is_branch_choice_control(bms_control_kind_t kind) -> bool {
+    return kind == bms_control_kind_t::random || kind == bms_control_kind_t::switch_block;
+}
+
+auto is_switch_branch(bms_control_kind_t kind) -> bool {
+    return kind == bms_control_kind_t::case_branch || kind == bms_control_kind_t::default_branch;
+}
+
+auto branch_kind_name(bms_control_kind_t kind) -> std::string_view {
+    switch (kind) {
+    case bms_control_kind_t::root:
+        return "BMS program";
+    case bms_control_kind_t::raw_statement:
+        return "Statement";
+    case bms_control_kind_t::random:
+        return "RANDOM";
+    case bms_control_kind_t::set_random:
+        return "SETRANDOM";
+    case bms_control_kind_t::if_group:
+        return "IF group";
+    case bms_control_kind_t::if_branch:
+        return "IF";
+    case bms_control_kind_t::else_if_branch:
+        return "ELSEIF";
+    case bms_control_kind_t::else_branch:
+        return "ELSE";
+    case bms_control_kind_t::switch_block:
+        return "SWITCH";
+    case bms_control_kind_t::set_switch:
+        return "SETSWITCH";
+    case bms_control_kind_t::case_branch:
+        return "CASE";
+    case bms_control_kind_t::default_branch:
+        return "DEFAULT";
+    case bms_control_kind_t::skip:
+        return "SKIP";
+    }
+    return "BMS node";
+}
+
+auto bounded_utf8_prefix(std::string_view text, std::size_t maximum_bytes) -> std::string {
+    auto length = std::min(text.size(), maximum_bytes);
+    if (length < text.size()) {
+        while (length > 0 && length < text.size() &&
+               (static_cast<unsigned char>(text[length]) & 0xc0U) == 0x80U) {
+            --length;
+        }
+    }
+    return std::string(text.substr(0, length));
+}
+
+auto make_branch_outline(const chart_document_t& chart, const workspace_limits_t& limits)
+    -> workspace_bms_branch_outline_t {
+    workspace_bms_branch_outline_t outline;
+    if (!chart.bms_control_tree.has_value()) {
+        return outline;
+    }
+    outline.available = true;
+
+    const auto maximum_diagnostics = limits.maximum_validation_diagnostics;
+    bool diagnostic_cap_reported{};
+    const auto add_diagnostic = [&outline, maximum_diagnostics, &diagnostic_cap_reported](
+                                    diagnostic_code_t code, std::string message) {
+        if (outline.diagnostics.size() < maximum_diagnostics) {
+            outline.diagnostics.push_back({
+                .severity = diagnostic_severity_t::warning,
+                .code = code,
+                .message = std::move(message),
+            });
+        } else if (!diagnostic_cap_reported) {
+            diagnostic_cap_reported = true;
+            outline.diagnostics_truncated = true;
+            if (!outline.diagnostics.empty()) {
+                outline.diagnostics.back() = {
+                    .severity = diagnostic_severity_t::warning,
+                    .code = diagnostic_code_t::invalid_resolution,
+                    .message = "additional BMS branch outline diagnostics were capped",
+                };
+            }
+        }
+    };
+
+    const auto selection_limit = std::max<std::size_t>(limits.maximum_bms_branch_rows, 1);
+    std::unordered_map<std::uint64_t, std::vector<std::size_t>> selections_by_id;
+    const auto indexed_selection_count =
+        std::min(chart.active_branch_selection.size(), selection_limit);
+    selections_by_id.reserve(indexed_selection_count);
+    for (std::size_t index = 0; index < indexed_selection_count; ++index) {
+        const auto& selection = chart.active_branch_selection[index];
+        selections_by_id[selection.branch.value].push_back(index);
+    }
+    if (chart.active_branch_selection.size() > indexed_selection_count) {
+        add_diagnostic(diagnostic_code_t::invalid_resolution,
+                       "BMS branch choice metadata exceeds the outline inspection cap");
+    }
+    std::vector<bool> matched_selections(indexed_selection_count);
+    std::vector<bool> active_selections(indexed_selection_count);
+    std::unordered_set<std::uint64_t> diagnosed_selection_ids;
+    std::unordered_set<std::uint64_t> node_ids;
+    std::size_t stored_text_bytes{};
+    bool row_cap_reported{};
+    bool depth_cap_reported{};
+    bool text_cap_reported{};
+
+    const auto diagnostic_once = [&](bool& reported, diagnostic_code_t code, std::string message) {
+        if (!reported) {
+            reported = true;
+            add_diagnostic(code, std::move(message));
+        }
+    };
+
+    std::function<void(const bms_control_node_t&, std::size_t, bool, std::optional<std::int64_t>,
+                       bool, bool*)>
+        visit;
+    visit = [&](const bms_control_node_t& node, std::size_t depth, bool active,
+                std::optional<std::int64_t> random_value, bool selected, bool* switch_stopped) {
+        if (outline.rows_truncated) {
+            return;
+        }
+        if (depth > limits.maximum_bms_branch_depth) {
+            outline.rows_truncated = true;
+            diagnostic_once(depth_cap_reported, diagnostic_code_t::invalid_resolution,
+                            "BMS branch outline was truncated at the configured depth cap");
+            return;
+        }
+        if (outline.rows.size() >= limits.maximum_bms_branch_rows) {
+            outline.rows_truncated = true;
+            diagnostic_once(row_cap_reported, diagnostic_code_t::invalid_resolution,
+                            "BMS branch outline was truncated at the configured row cap");
+            return;
+        }
+        if (!node.id || !node_ids.insert(node.id.value).second) {
+            add_diagnostic(diagnostic_code_t::invalid_id,
+                           "BMS branch outline contains a zero or duplicate node ID");
+        }
+
+        auto display_source = std::string_view(node.original_text);
+        std::string fallback_display;
+        if (display_source.empty()) {
+            fallback_display = branch_kind_name(node.kind);
+            if (!node.raw_value.empty()) {
+                fallback_display += " ";
+                fallback_display += node.raw_value;
+            }
+            display_source = fallback_display;
+        }
+        const auto available_text_bytes =
+            limits.maximum_bms_branch_display_bytes > stored_text_bytes
+                ? limits.maximum_bms_branch_display_bytes - stored_text_bytes
+                : 0;
+        const auto text_budget =
+            std::min(limits.maximum_bms_branch_text_bytes, available_text_bytes);
+        auto display_text = bounded_utf8_prefix(display_source, text_budget);
+        const bool display_text_truncated = display_text.size() < display_source.size();
+        if (display_text_truncated) {
+            outline.display_text_truncated = true;
+            diagnostic_once(text_cap_reported, diagnostic_code_t::invalid_resolution,
+                            "BMS branch display text was truncated at the configured byte cap");
+        }
+        stored_text_bytes += display_text.size();
+
+        auto source_order = std::optional<std::size_t>{node.source_order};
+        if (node.kind == bms_control_kind_t::root) {
+            source_order.reset();
+        } else if (node.kind == bms_control_kind_t::if_group && !node.children.empty()) {
+            source_order = node.children.front().source_order;
+        }
+
+        auto choice_value = std::optional<std::int64_t>{};
+        auto choice_indices = selections_by_id.find(node.id.value);
+        if (is_branch_choice_control(node.kind) && choice_indices != selections_by_id.end()) {
+            for (const auto index : choice_indices->second) {
+                matched_selections[index] = true;
+                active_selections[index] = active_selections[index] || active;
+            }
+            if (choice_indices->second.size() > 1) {
+                if (diagnosed_selection_ids.insert(node.id.value).second) {
+                    add_diagnostic(diagnostic_code_t::invalid_id,
+                                   "BMS branch control has duplicate selected values");
+                }
+            } else if (active) {
+                choice_value =
+                    chart.active_branch_selection[choice_indices->second.front()].selected_value;
+            }
+        }
+
+        outline.rows.push_back({
+            .kind = node.kind,
+            .id = node.id,
+            .depth = depth,
+            .source_order = source_order,
+            .active = active,
+            .selected = selected,
+            .display_text = std::move(display_text),
+            .display_text_truncated = display_text_truncated,
+        });
+
+        const auto recurse_children = [&](bool child_active,
+                                          std::optional<std::int64_t> child_random_value,
+                                          bool* child_switch_stopped) {
+            for (const auto& child : node.children) {
+                if (outline.rows_truncated) {
+                    break;
+                }
+                const bool effective_active =
+                    child_active && (child_switch_stopped == nullptr || !*child_switch_stopped);
+                visit(child, depth + 1, effective_active, child_random_value, false,
+                      child_switch_stopped);
+            }
+        };
+
+        if (node.kind == bms_control_kind_t::skip) {
+            if (active && switch_stopped != nullptr) {
+                *switch_stopped = true;
+            }
+            return;
+        }
+        if (node.kind == bms_control_kind_t::random) {
+            const bool valid_choice = active && choice_value.has_value() &&
+                                      node.value.has_value() && *choice_value >= 1 &&
+                                      *choice_value <= *node.value;
+            outline.rows.back().selected = valid_choice;
+            if (active && choice_value.has_value() && !valid_choice) {
+                add_diagnostic(diagnostic_code_t::invalid_resolution,
+                               "BMS RANDOM selection is outside the declared range");
+            }
+            if (valid_choice) {
+                const auto indices = selections_by_id.find(node.id.value);
+                if (indices != selections_by_id.end() && indices->second.size() == 1) {
+                    active_selections[indices->second.front()] = true;
+                }
+            }
+            recurse_children(valid_choice, valid_choice ? choice_value : std::nullopt,
+                             switch_stopped);
+            return;
+        }
+        if (node.kind == bms_control_kind_t::if_group) {
+            const bms_control_node_t* selected_branch{};
+            if (active && random_value.has_value()) {
+                for (const auto& child : node.children) {
+                    if ((child.kind == bms_control_kind_t::if_branch ||
+                         child.kind == bms_control_kind_t::else_if_branch) &&
+                        child.value == random_value) {
+                        selected_branch = &child;
+                        break;
+                    }
+                    if (child.kind == bms_control_kind_t::else_branch) {
+                        selected_branch = &child;
+                    }
+                }
+            }
+            outline.rows.back().selected = selected_branch != nullptr;
+            for (const auto& child : node.children) {
+                if (outline.rows_truncated) {
+                    break;
+                }
+                visit(child, depth + 1, active && &child == selected_branch, random_value,
+                      &child == selected_branch, switch_stopped);
+            }
+            return;
+        }
+        if (node.kind == bms_control_kind_t::switch_block) {
+            const bms_control_node_t* selected_branch{};
+            const bms_control_node_t* fallback_branch{};
+            if (active && choice_value.has_value()) {
+                for (const auto& child : node.children) {
+                    if (child.kind == bms_control_kind_t::case_branch &&
+                        child.value == choice_value) {
+                        selected_branch = &child;
+                        break;
+                    }
+                    if (child.kind == bms_control_kind_t::default_branch) {
+                        fallback_branch = &child;
+                    }
+                }
+                if (selected_branch == nullptr) {
+                    selected_branch = fallback_branch;
+                }
+                if (selected_branch == nullptr) {
+                    add_diagnostic(diagnostic_code_t::invalid_resolution,
+                                   "BMS SWITCH selection has no matching CASE or DEFAULT");
+                }
+            }
+            outline.rows.back().selected = selected_branch != nullptr;
+            bool entered{};
+            bool stopped{};
+            for (const auto& child : node.children) {
+                if (outline.rows_truncated) {
+                    break;
+                }
+                if (is_switch_branch(child.kind)) {
+                    entered = entered || &child == selected_branch;
+                }
+                const bool child_active = active && entered && !stopped;
+                visit(child, depth + 1, child_active, random_value, &child == selected_branch,
+                      &stopped);
+            }
+            return;
+        }
+        recurse_children(active, random_value, switch_stopped);
+    };
+
+    visit(*chart.bms_control_tree, 0, true, std::nullopt, false, nullptr);
+    if (!outline.rows_truncated) {
+        for (std::size_t index = 0; index < indexed_selection_count; ++index) {
+            if (!matched_selections[index]) {
+                add_diagnostic(diagnostic_code_t::invalid_id,
+                               "BMS branch choice refers to a missing control node");
+            } else if (!active_selections[index]) {
+                add_diagnostic(diagnostic_code_t::invalid_id,
+                               "BMS branch choice is stored beneath an inactive branch");
+            }
+        }
+    }
+    return outline;
 }
 
 } // namespace
@@ -814,6 +1133,7 @@ auto make_workspace_view(const workspace_controller_t& workspace, const song_doc
             .layout_segment_count = chart->lane_layouts.size(),
             .lane_count = lane_count,
             .layer_count = chart->semantic_layers.size(),
+            .bms_branch_outline = make_branch_outline(*chart, workspace.limits),
         };
         break;
     }

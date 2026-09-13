@@ -17,6 +17,8 @@
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_init.h>
+#include <SDL3/SDL_keycode.h>
+#include <SDL3/SDL_scancode.h>
 #include <SDL3/SDL_timer.h>
 
 #include <algorithm>
@@ -103,6 +105,14 @@ struct flattened_workspace_t {
     std::vector<WormUiComposeHoldView> compose_hold_storage;
     std::vector<WormUiComposeNoteView> compose_note_storage;
     std::optional<WormUiComposeCursorView> compose_cursor_storage;
+    std::array<WormUiComposeBranchRowView, WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY>
+        compose_branch_row_storage{};
+    std::array<std::string, WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY> compose_branch_text_storage;
+    std::array<std::string, WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY>
+        compose_branch_diagnostic_storage;
+    std::array<WormUiComposeLaneKeyBinding, WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY>
+        compose_lane_key_storage{};
+    std::optional<wormedit::editor_interaction_view_model_t> compose_interaction_view_storage;
 };
 
 struct compose_scene_cache_t {
@@ -453,6 +463,43 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                        std::to_string(tab.bookmark_count + tab.section_count));
             } else if constexpr (std::is_same_v<tab_t, wormedit::workspace_compose_view_t>) {
                 result.view.compose.visible = true;
+                const auto& outline = tab.bms_branch_outline;
+                auto& compose = result.view.compose;
+                compose.branch_outline_available = outline.available;
+                compose.branch_rows_truncated = outline.rows_truncated;
+                compose.branch_display_text_truncated = outline.display_text_truncated;
+                compose.branch_diagnostics_truncated = outline.diagnostics_truncated;
+                compose.branch_row_count =
+                    std::min(outline.rows.size(),
+                             static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY));
+                compose.branch_rows_truncated =
+                    compose.branch_rows_truncated || compose.branch_row_count < outline.rows.size();
+                for (std::size_t row_index = 0; row_index < compose.branch_row_count; ++row_index) {
+                    const auto& row = outline.rows[row_index];
+                    result.compose_branch_text_storage[row_index] = row.display_text;
+                    result.compose_branch_row_storage[row_index] = {
+                        .display_text = result.compose_branch_text_storage[row_index].c_str(),
+                        .depth = row.depth,
+                        .active = row.active,
+                        .selected = row.selected,
+                        .display_text_truncated = row.display_text_truncated,
+                        .has_source_order = row.source_order.has_value(),
+                        .source_order = row.source_order.value_or(0),
+                    };
+                }
+                compose.branch_rows = result.compose_branch_row_storage.data();
+                compose.branch_diagnostic_count =
+                    std::min(outline.diagnostics.size(),
+                             static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY));
+                compose.branch_diagnostics_truncated =
+                    compose.branch_diagnostics_truncated ||
+                    compose.branch_diagnostic_count < outline.diagnostics.size();
+                for (std::size_t diagnostic_index = 0;
+                     diagnostic_index < compose.branch_diagnostic_count; ++diagnostic_index) {
+                    auto& diagnostic = result.compose_branch_diagnostic_storage[diagnostic_index];
+                    diagnostic = outline.diagnostics[diagnostic_index].message;
+                    compose.branch_diagnostics[diagnostic_index] = diagnostic.c_str();
+                }
                 append("Measures: " + std::to_string(tab.measure_count));
                 append("Notes: " + std::to_string(tab.note_count));
                 append("Layout segments: " + std::to_string(tab.layout_segment_count));
@@ -500,7 +547,21 @@ auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) 
     }
     const auto content_height =
         window_height > 300 ? static_cast<float>(window_height) - 165.0f - recovery_height : 80.0f;
-    return std::max(64.0, static_cast<double>(content_height - 38.0f));
+    const auto& compose = view.compose;
+    const auto rows_shown = std::min<std::size_t>(compose.branch_row_count, 4);
+    const auto diagnostics_shown = std::min<std::size_t>(compose.branch_diagnostic_count, 2);
+    const bool branch_status_shown =
+        compose.branch_rows_truncated || compose.branch_display_text_truncated ||
+        compose.branch_diagnostics_truncated || compose.branch_row_count > rows_shown ||
+        compose.branch_diagnostic_count > diagnostics_shown;
+    const bool branch_visible = compose.branch_outline_available || compose.branch_row_count != 0 ||
+                                compose.branch_diagnostic_count != 0 || branch_status_shown;
+    const auto branch_height = branch_visible
+                                   ? 23.0f + static_cast<float>(rows_shown + diagnostics_shown +
+                                                                (branch_status_shown ? 1 : 0)) *
+                                                 18.0f
+                                   : 0.0f;
+    return std::max(64.0, static_cast<double>(content_height - 38.0f - 18.0f - branch_height));
 }
 
 auto compose_lane_is_editable(const wormedit::lane_definition_t& lane) -> bool {
@@ -509,17 +570,100 @@ auto compose_lane_is_editable(const wormedit::lane_definition_t& lane) -> bool {
            lane.role != lane_role_t::mine;
 }
 
+auto compose_physical_scancode(wormedit::physical_key_t key) -> std::uint32_t {
+    using wormedit::physical_key_t;
+    switch (key) {
+    case physical_key_t::digit_1:
+        return SDL_SCANCODE_1;
+    case physical_key_t::digit_2:
+        return SDL_SCANCODE_2;
+    case physical_key_t::digit_3:
+        return SDL_SCANCODE_3;
+    case physical_key_t::digit_4:
+        return SDL_SCANCODE_4;
+    case physical_key_t::digit_5:
+        return SDL_SCANCODE_5;
+    case physical_key_t::digit_6:
+        return SDL_SCANCODE_6;
+    case physical_key_t::digit_7:
+        return SDL_SCANCODE_7;
+    case physical_key_t::digit_8:
+        return SDL_SCANCODE_8;
+    case physical_key_t::digit_9:
+        return SDL_SCANCODE_9;
+    case physical_key_t::digit_0:
+        return SDL_SCANCODE_0;
+    case physical_key_t::key_q:
+        return SDL_SCANCODE_Q;
+    case physical_key_t::key_w:
+        return SDL_SCANCODE_W;
+    case physical_key_t::key_e:
+        return SDL_SCANCODE_E;
+    case physical_key_t::key_r:
+        return SDL_SCANCODE_R;
+    case physical_key_t::key_t:
+        return SDL_SCANCODE_T;
+    case physical_key_t::key_y:
+        return SDL_SCANCODE_Y;
+    case physical_key_t::key_u:
+        return SDL_SCANCODE_U;
+    case physical_key_t::key_i:
+        return SDL_SCANCODE_I;
+    case physical_key_t::key_o:
+        return SDL_SCANCODE_O;
+    case physical_key_t::key_p:
+        return SDL_SCANCODE_P;
+    case physical_key_t::key_a:
+        return SDL_SCANCODE_A;
+    case physical_key_t::key_s:
+        return SDL_SCANCODE_S;
+    case physical_key_t::key_d:
+        return SDL_SCANCODE_D;
+    case physical_key_t::key_f:
+        return SDL_SCANCODE_F;
+    case physical_key_t::key_g:
+        return SDL_SCANCODE_G;
+    case physical_key_t::key_h:
+        return SDL_SCANCODE_H;
+    case physical_key_t::key_j:
+        return SDL_SCANCODE_J;
+    case physical_key_t::key_k:
+        return SDL_SCANCODE_K;
+    case physical_key_t::key_l:
+        return SDL_SCANCODE_L;
+    case physical_key_t::key_z:
+        return SDL_SCANCODE_Z;
+    case physical_key_t::key_x:
+        return SDL_SCANCODE_X;
+    case physical_key_t::key_c:
+        return SDL_SCANCODE_C;
+    case physical_key_t::key_v:
+        return SDL_SCANCODE_V;
+    case physical_key_t::key_b:
+        return SDL_SCANCODE_B;
+    case physical_key_t::key_n:
+        return SDL_SCANCODE_N;
+    case physical_key_t::key_m:
+        return SDL_SCANCODE_M;
+    case physical_key_t::unknown:
+        return 0;
+    }
+    return 0;
+}
+
 void populate_compose_view(flattened_workspace_t& flattened,
                            const wormedit::document_history_t& history,
                            const wormedit::workspace_controller_t& workspace,
                            compose_scene_cache_t& cache, int window_width, int window_height,
-                           double pixels_per_measure, double& viewport_scroll_pixels) {
+                           std::optional<wormedit::editor_interaction_state_t>& retained_state) {
     auto& view = flattened.view.compose;
     if (!view.visible)
         return;
     view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
-    view.pixels_per_standard_measure = pixels_per_measure;
+    view.pixels_per_standard_measure = retained_state
+                                           ? retained_state->pixels_per_standard_measure
+                                           : wormedit::default_pixels_per_standard_measure;
     view.status_text = nullptr;
     if (!workspace.selected_chart) {
         flattened.compose_status_storage = "Choose a difficulty to display its chart field.";
@@ -534,6 +678,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
         return;
     }
     const auto& chart = *chart_it;
+    view.chart_id = chart.id.value;
+    view.document_revision = history.document.revision;
     if (!cache.attempted || cache.chart != chart.id ||
         cache.revision != history.document.revision) {
         cache.index.reset();
@@ -571,47 +717,117 @@ void populate_compose_view(flattened_workspace_t& flattened,
         view.status_text = flattened.compose_status_storage.c_str();
         return;
     }
-    std::optional<wormedit::local_position_t> cursor;
-    std::optional<wormedit::lane_id_t> active_lane;
-    std::uint64_t earliest_layout_row = std::numeric_limits<std::uint64_t>::max();
-    for (const auto& segment : chart.lane_layouts) {
-        const auto row = wormedit::absolute_row(std::get<wormedit::measure_index_t>(measure_index),
-                                                segment.position);
-        if (!row || *row >= earliest_layout_row)
-            continue;
-        const auto lane = std::ranges::find_if(segment.layout.lanes, compose_lane_is_editable);
-        if (lane == segment.layout.lanes.end())
-            continue;
-        earliest_layout_row = *row;
-        cursor = segment.position;
-        active_lane = lane->id;
-    }
-    if (!cursor || !active_lane) {
-        flattened.compose_status_storage = "This difficulty has no editable lanes to display.";
-        view.status_text = flattened.compose_status_storage.c_str();
-        return;
+    constexpr std::array<std::uint64_t, 4> snap_denominators{4, 8, 16, 32};
+    if (!retained_state || retained_state->chart != chart.id) {
+        std::optional<wormedit::local_position_t> initial_cursor;
+        std::optional<wormedit::lane_id_t> initial_lane;
+        std::uint64_t earliest_layout_row = std::numeric_limits<std::uint64_t>::max();
+        for (const auto& segment : chart.lane_layouts) {
+            const auto row = wormedit::absolute_row(
+                std::get<wormedit::measure_index_t>(measure_index), segment.position);
+            if (!row || *row >= earliest_layout_row)
+                continue;
+            const auto lane = std::ranges::find_if(segment.layout.lanes, compose_lane_is_editable);
+            if (lane == segment.layout.lanes.end())
+                continue;
+            earliest_layout_row = *row;
+            initial_cursor = segment.position;
+            initial_lane = lane->id;
+        }
+        if (!initial_cursor || !initial_lane) {
+            flattened.compose_status_storage = "This difficulty has no editable lanes to display.";
+            view.status_text = flattened.compose_status_storage.c_str();
+            return;
+        }
+        const auto initial =
+            wormedit::make_editor_interaction(history, chart.id, *initial_lane, *initial_cursor,
+                                              snap_denominators, 4, view.viewport_height_pixels);
+        if (!initial.state || !initial.view) {
+            flattened.compose_status_storage = initial.diagnostics.empty()
+                                                   ? "The chart field view could not be created."
+                                                   : initial.diagnostics.front().message;
+            view.status_text = flattened.compose_status_storage.c_str();
+            return;
+        }
+        retained_state = *initial.state;
     }
 
-    constexpr std::array<std::uint64_t, 4> snap_denominators{4, 8, 16, 32};
-    const auto interaction =
-        wormedit::make_editor_interaction(history, chart.id, *active_lane, *cursor,
-                                          snap_denominators, 4, view.viewport_height_pixels);
+    retained_state->viewport_height_pixels = view.viewport_height_pixels;
+    auto interaction = wormedit::make_editor_interaction(
+        history, chart.id, retained_state->active_lane, retained_state->cursor,
+        retained_state->supported_snap_denominators, retained_state->active_snap_denominator,
+        view.viewport_height_pixels);
     if (!interaction.view) {
-        flattened.compose_status_storage = interaction.diagnostics.empty()
-                                               ? "The chart field view could not be created."
-                                               : interaction.diagnostics.front().message;
+        // Undo, recovery, or an upstream chart edit may invalidate a retained cursor.
+        retained_state.reset();
+        flattened.compose_status_storage = "The retained chart cursor is no longer valid.";
         view.status_text = flattened.compose_status_storage.c_str();
         return;
     }
     auto interaction_view = *interaction.view;
-    interaction_view.pixels_per_standard_measure = pixels_per_measure;
+    interaction_view.pixels_per_standard_measure = retained_state->pixels_per_standard_measure;
+    interaction_view.viewport_scroll_pixels = retained_state->viewport_scroll_pixels;
+    interaction_view.pending_hold = retained_state->pending_hold;
+    interaction_view.pending_note_duration_gesture = retained_state->pending_note_duration_gesture;
+    interaction_view.pending_note_paint_gesture =
+        retained_state->pending_note_paint_gesture
+            ? std::optional{wormedit::note_paint_gesture_preview_t{
+                  .document_revision =
+                      retained_state->pending_note_paint_gesture->document_revision,
+                  .targets = retained_state->pending_note_paint_gesture->targets,
+              }}
+            : std::nullopt;
+    interaction_view.pending_editor_area_selection =
+        retained_state->pending_editor_area_selection
+            ? std::optional{wormedit::editor_area_selection_preview_t{
+                  .document_revision =
+                      retained_state->pending_editor_area_selection->document_revision,
+                  .left_pixels =
+                      std::min(retained_state->pending_editor_area_selection->anchor_x_pixels,
+                               retained_state->pending_editor_area_selection->current_x_pixels),
+                  .top_pixels =
+                      std::min(retained_state->pending_editor_area_selection->anchor_y_pixels,
+                               retained_state->pending_editor_area_selection->current_y_pixels),
+                  .right_pixels =
+                      std::max(retained_state->pending_editor_area_selection->anchor_x_pixels,
+                               retained_state->pending_editor_area_selection->current_x_pixels),
+                  .bottom_pixels =
+                      std::max(retained_state->pending_editor_area_selection->anchor_y_pixels,
+                               retained_state->pending_editor_area_selection->current_y_pixels),
+                  .notes = retained_state->pending_editor_area_selection->notes,
+                  .objects = retained_state->pending_editor_area_selection->objects,
+              }}
+            : std::nullopt;
+    interaction_view.selected_notes = retained_state->selected_notes;
+    interaction_view.selected_objects = retained_state->selected_objects;
     const auto content_height = static_cast<long double>(cache.index->measures.total_rows) *
-                                pixels_per_measure / chart.divisions_per_standard_measure;
+                                interaction_view.pixels_per_standard_measure /
+                                chart.divisions_per_standard_measure;
     const auto maximum_scroll =
         std::max(0.0L, content_height - static_cast<long double>(view.viewport_height_pixels));
-    viewport_scroll_pixels =
-        std::clamp(viewport_scroll_pixels, 0.0, static_cast<double>(maximum_scroll));
-    interaction_view.viewport_scroll_pixels = viewport_scroll_pixels;
+    retained_state->viewport_scroll_pixels = std::clamp(retained_state->viewport_scroll_pixels, 0.0,
+                                                        static_cast<double>(maximum_scroll));
+    interaction_view.viewport_scroll_pixels = retained_state->viewport_scroll_pixels;
+    view.pixels_per_standard_measure = interaction_view.pixels_per_standard_measure;
+    flattened.compose_interaction_view_storage = interaction_view;
+    std::size_t lane_key_binding_count{};
+    bool lane_key_bindings_truncated{};
+    for (const auto& binding : chart.input_profile.bindings) {
+        const auto scancode = compose_physical_scancode(binding.key);
+        if (scancode == 0) {
+            continue;
+        }
+        if (lane_key_binding_count >= flattened.compose_lane_key_storage.size()) {
+            lane_key_bindings_truncated = true;
+            break;
+        }
+        flattened.compose_lane_key_storage[lane_key_binding_count++] = {
+            .scancode = scancode,
+            .lane_id = binding.lane.value,
+        };
+    }
+    view.lane_key_bindings = flattened.compose_lane_key_storage.data();
+    view.lane_key_binding_count = lane_key_binding_count;
 
     const auto composed = wormedit::make_editor_field_scene(
         chart, *cache.index, interaction_view,
@@ -704,9 +920,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
             .lane_id = scene.cursor->lane.value,
         };
     }
-    view.truncated = band_count != bands.size() || lane_count != lanes.size() ||
-                     line_count != lines.size() || difference_count != differences.size() ||
-                     hold_count != holds.size() || endpoint_count != endpoints.size();
+    view.truncated = lane_key_bindings_truncated || band_count != bands.size() ||
+                     lane_count != lanes.size() || line_count != lines.size() ||
+                     difference_count != differences.size() || hold_count != holds.size() ||
+                     endpoint_count != endpoints.size();
     view.bands = flattened.compose_band_storage.data();
     view.band_count = flattened.compose_band_storage.size();
     view.lanes = flattened.compose_lane_storage.data();
@@ -982,6 +1199,335 @@ auto dispatch_metadata_ui_action(const WormUiWorkspaceAction& action,
     return "Invalid metadata edit action.";
 }
 
+auto compose_result_status(const wormedit::editor_interaction_result_t& result,
+                           std::string_view accepted) -> std::string {
+    if (result.accepted) {
+        return std::string(accepted);
+    }
+    return result.diagnostics.empty() ? "Compose action was rejected."
+                                      : result.diagnostics.front().message;
+}
+
+auto compose_view_for_state(const wormedit::document_history_t& history,
+                            const wormedit::editor_interaction_state_t& state)
+    -> std::optional<wormedit::editor_interaction_view_model_t> {
+    const auto setup = wormedit::make_editor_interaction(
+        history, state.chart, state.active_lane, state.cursor, state.supported_snap_denominators,
+        state.active_snap_denominator, state.viewport_height_pixels);
+    if (!setup.view) {
+        return std::nullopt;
+    }
+    auto view = *setup.view;
+    view.pixels_per_standard_measure = state.pixels_per_standard_measure;
+    view.viewport_scroll_pixels = state.viewport_scroll_pixels;
+    view.pending_hold = state.pending_hold;
+    view.selected_notes = state.selected_notes;
+    view.selected_objects = state.selected_objects;
+    return view;
+}
+
+auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
+                                   wormedit::document_history_t& history,
+                                   wormedit::workspace_controller_t& workspace,
+                                   wormedit::editor_interaction_state_t& state) -> std::string {
+    using namespace wormedit;
+    if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
+        workspace.selected_chart->value != ui_action.compose_input_chart_id ||
+        state.chart.value != ui_action.compose_input_chart_id ||
+        history.document.revision != ui_action.compose_input_document_revision ||
+        !std::isfinite(ui_action.compose_input_viewport_width_pixels) ||
+        ui_action.compose_input_viewport_width_pixels <= 0.0) {
+        return "Compose input ignored because the chart or document revision changed.";
+    }
+    if (ui_action.compose_input_count > WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {
+        (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+        return "Compose input batch exceeded its capacity; the active gesture was canceled.";
+    }
+
+    auto status = std::string{};
+    for (std::size_t index = 0; index < ui_action.compose_input_count; ++index) {
+        if (history.document.revision != ui_action.compose_input_document_revision ||
+            workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
+            workspace.selected_chart->value != ui_action.compose_input_chart_id ||
+            state.chart.value != ui_action.compose_input_chart_id) {
+            return "Remaining Compose input was discarded after the document revision changed.";
+        }
+
+        const auto& input = ui_action.compose_inputs[index];
+        editor_interaction_result_t result;
+        std::string_view accepted = "Compose interaction applied.";
+        switch (input.kind) {
+        case WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD:
+            result = dispatch_editor_action(
+                history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
+            accepted = "Edit cursor moved backward.";
+            break;
+        case WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD:
+            result = dispatch_editor_action(
+                history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+            accepted = "Edit cursor moved forward.";
+            break;
+        case WORM_UI_COMPOSE_INPUT_DELETE_NOTES:
+            result = dispatch_editor_action(history, state, delete_editor_notes_action_t{});
+            accepted = result.document_changed ? "Note deleted." : "No note at the cursor.";
+            break;
+        case WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS:
+            if (input.lane_id == 0) {
+                return "Lane-key input did not identify a chart lane.";
+            }
+            if (!state.selected_notes.empty()) {
+                result = dispatch_editor_action(history, state,
+                                                assign_selected_notes_to_lane_action_t{
+                                                    lane_id_t{input.lane_id}, input.successive});
+                accepted = input.successive ? "Next selected note assigned to lane."
+                                            : "Selected notes assigned to lane.";
+            } else {
+                result = dispatch_editor_action(
+                    history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{input.lane_id}});
+                accepted = "Lane hold started; move the edit cursor and release the key to finish.";
+            }
+            break;
+        case WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE:
+            if (state.pending_hold.has_value() &&
+                state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) {
+                result = dispatch_editor_action(history, state,
+                                                release_lane_key_hold_gesture_action_t{});
+                accepted = result.document_changed ? "Lane hold committed." : "Lane hold released.";
+            } else {
+                result.accepted = true;
+                accepted = "Lane key released.";
+            }
+            break;
+        case WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN: {
+            const auto chart =
+                std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+            const auto current_view = compose_view_for_state(history, state);
+            if (chart == history.document.charts.end() || !current_view) {
+                return "The selected chart field is no longer available.";
+            }
+            const auto hit_index = build_editor_hit_test_index(*chart, history.document.revision);
+            if (!std::holds_alternative<editor_hit_test_index_t>(hit_index)) {
+                return "The chart field could not be indexed for hold input.";
+            }
+            const auto target = hit_test_editor(
+                *chart, std::get<editor_hit_test_index_t>(hit_index), *current_view,
+                {.x_pixels = input.x_pixels,
+                 .y_pixels = input.y_pixels,
+                 .field_left_pixels = 0.0,
+                 .field_width_pixels = ui_action.compose_input_viewport_width_pixels});
+            if (!target) {
+                return "Alt/Option-drag must begin over an editable lane.";
+            }
+            if (target->note && target->note_kind &&
+                (*target->note_kind == note_kind_t::tap ||
+                 *target->note_kind == note_kind_t::hold)) {
+                state.active_lane = target->lane;
+                state.cursor = target->position;
+                result = dispatch_editor_action(
+                    history, state, begin_note_duration_gesture_action_t{*target->note});
+                accepted = "Note resize started; drag to change duration and release to finish.";
+            } else if (target->note) {
+                return "Alt/Option-drag resizes tap and hold notes; this note kind is not "
+                       "resizable.";
+            } else {
+                result = dispatch_editor_action(history, state,
+                                                begin_alt_pointer_hold_gesture_action_t{
+                                                    .lane = target->lane,
+                                                    .position = target->position,
+                                                    .alt_or_option_down = true,
+                                                });
+                accepted = "Pointer hold started; release to finish.";
+            }
+            break;
+        }
+        case WORM_UI_COMPOSE_INPUT_ALT_POINTER_UPDATE:
+        case WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE: {
+            const auto chart =
+                std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+            const auto current_view = compose_view_for_state(history, state);
+            if (chart == history.document.charts.end() || !current_view) {
+                (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+                return "The selected chart field is no longer available.";
+            }
+            const auto y = std::clamp(input.y_pixels, 0.0,
+                                      std::max(0.0, current_view->viewport_height_pixels - 0.001));
+            const auto position = editor_position_at_y_pixels(*chart, *current_view, y);
+            if (!position) {
+                (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+                return "Pointer hold input fell outside chart geometry and was canceled.";
+            }
+            if (state.pending_note_duration_gesture) {
+                if (input.kind == WORM_UI_COMPOSE_INPUT_ALT_POINTER_UPDATE) {
+                    result = dispatch_editor_action(
+                        history, state, update_note_duration_gesture_action_t{*position});
+                    accepted = "Note resize preview updated.";
+                } else {
+                    result = dispatch_editor_action(
+                        history, state, release_note_duration_gesture_action_t{*position});
+                    accepted = result.document_changed ? "Note duration committed."
+                                                       : "Note resize released.";
+                }
+            } else if (input.kind == WORM_UI_COMPOSE_INPUT_ALT_POINTER_UPDATE) {
+                result = dispatch_editor_action(history, state,
+                                                update_alt_pointer_hold_gesture_action_t{
+                                                    .position = *position,
+                                                    .alt_or_option_down = true,
+                                                    .pointer_captured = true,
+                                                });
+                accepted = "Pointer hold preview updated.";
+            } else {
+                result = dispatch_editor_action(history, state,
+                                                release_alt_pointer_hold_gesture_action_t{
+                                                    .position = *position,
+                                                    .alt_or_option_down = true,
+                                                    .pointer_captured = true,
+                                                });
+                accepted =
+                    result.document_changed ? "Pointer hold committed." : "Pointer hold released.";
+            }
+            break;
+        }
+        case WORM_UI_COMPOSE_INPUT_POINTER_CLICK: {
+            const auto chart =
+                std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+            auto current_view = compose_view_for_state(history, state);
+            if (chart == history.document.charts.end() || !current_view) {
+                return "The selected chart field is no longer available.";
+            }
+            const auto hit_index = build_editor_hit_test_index(*chart, history.document.revision);
+            if (!std::holds_alternative<editor_hit_test_index_t>(hit_index)) {
+                return "The chart field could not be indexed for pointer input.";
+            }
+            const auto target = hit_test_editor(
+                *chart, std::get<editor_hit_test_index_t>(hit_index), *current_view,
+                {.x_pixels = input.x_pixels,
+                 .y_pixels = input.y_pixels,
+                 .field_left_pixels = 0.0,
+                 .field_width_pixels = ui_action.compose_input_viewport_width_pixels});
+            if (!target) {
+                return "Click inside an editable lane to place or select a note.";
+            }
+            state.active_lane = target->lane;
+            state.cursor = target->position;
+            if (target->note && target->note_kind != note_kind_t::tap) {
+                result = dispatch_editor_action(history, state,
+                                                select_editor_notes_action_t{{*target->note}});
+                accepted = "Note selected.";
+            } else {
+                result =
+                    dispatch_editor_action(history, state, place_tap_action_t{target->position});
+                accepted =
+                    result.document_changed ? "Tap note toggled." : "Tap note was not changed.";
+            }
+            break;
+        }
+        case WORM_UI_COMPOSE_INPUT_UNDO:
+        case WORM_UI_COMPOSE_INPUT_REDO: {
+            (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+            (void)dispatch_editor_action(history, state, select_editor_notes_action_t{});
+            const bool changed = input.kind == WORM_UI_COMPOSE_INPUT_UNDO
+                                     ? undo_document_command(history)
+                                     : redo_document_command(history);
+            status = changed ? (input.kind == WORM_UI_COMPOSE_INPUT_UNDO ? "Undo applied."
+                                                                         : "Redo applied.")
+                             : (input.kind == WORM_UI_COMPOSE_INPUT_UNDO ? "Nothing to undo."
+                                                                         : "Nothing to redo.");
+            if (changed) {
+                const auto rebound = rebind_workspace(workspace, history);
+                if (!rebound) {
+                    return rebound.diagnostics.empty()
+                               ? "History changed, but workspace rebinding failed."
+                               : rebound.diagnostics.front().message;
+                }
+                return status;
+            }
+            continue;
+        }
+        case WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE:
+            result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+            accepted = "Compose gesture canceled.";
+            break;
+        case WORM_UI_COMPOSE_INPUT_NONE:
+        default:
+            continue;
+        }
+        status = compose_result_status(result, accepted);
+        if (result.accepted && result.document_changed) {
+            const auto rebound = rebind_workspace(workspace, history);
+            if (!rebound) {
+                return rebound.diagnostics.empty()
+                           ? "Compose edit applied, but workspace rebinding failed."
+                           : rebound.diagnostics.front().message;
+            }
+        }
+    }
+    return status.empty() ? "Compose input handled." : status;
+}
+
+auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
+                                  wormedit::document_history_t& history,
+                                  wormedit::workspace_controller_t& workspace,
+                                  wormedit::editor_interaction_state_t& state,
+                                  double viewport_height) -> std::string {
+    using namespace wormedit;
+    if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
+        workspace.selected_chart->value != action.compose_input_chart_id ||
+        state.chart.value != action.compose_input_chart_id ||
+        history.document.revision != action.compose_input_document_revision) {
+        return "Compose view action ignored because the chart or document revision changed.";
+    }
+    editor_interaction_result_t result;
+    std::string status;
+    switch (action.compose_action) {
+    case WORM_UI_COMPOSE_ACTION_ZOOM_IN:
+        result = dispatch_editor_action(
+            history, state,
+            adjust_editor_zoom_action_t{.factor = 1.25, .anchor_screen_y_pixels = std::nullopt});
+        status = "Compose field zoomed in.";
+        break;
+    case WORM_UI_COMPOSE_ACTION_ZOOM_OUT:
+        result = dispatch_editor_action(
+            history, state,
+            adjust_editor_zoom_action_t{.factor = 1.0 / 1.25,
+                                        .anchor_screen_y_pixels = std::nullopt});
+        status = "Compose field zoomed out.";
+        break;
+    case WORM_UI_COMPOSE_ACTION_SCROLL_UP:
+    case WORM_UI_COMPOSE_ACTION_SCROLL_DOWN: {
+        const auto direction =
+            action.compose_action == WORM_UI_COMPOSE_ACTION_SCROLL_UP ? -1.0 : 1.0;
+        result = dispatch_editor_action(
+            history, state,
+            scroll_editor_view_action_t{direction * std::max(64.0, viewport_height * 0.75)});
+        status = direction < 0.0 ? "Compose field scrolled up." : "Compose field scrolled down.";
+        break;
+    }
+    case WORM_UI_COMPOSE_ACTION_RESET_VIEW: {
+        const auto factor = default_pixels_per_standard_measure / state.pixels_per_standard_measure;
+        result = dispatch_editor_action(
+            history, state,
+            adjust_editor_zoom_action_t{.factor = factor, .anchor_screen_y_pixels = std::nullopt});
+        if (result) {
+            result = dispatch_editor_action(
+                history, state, scroll_editor_view_action_t{-state.viewport_scroll_pixels});
+        }
+        status = "Compose field view reset.";
+        break;
+    }
+    case WORM_UI_COMPOSE_ACTION_NONE:
+        return {};
+    }
+    return compose_result_status(result, status);
+}
+
+auto editor_interaction_has_pending_gesture(const wormedit::editor_interaction_state_t& state)
+    -> bool {
+    return state.pending_hold.has_value() || state.pending_note_duration_gesture.has_value() ||
+           state.pending_note_paint_gesture.has_value() ||
+           state.pending_editor_area_selection.has_value() ||
+           state.pending_space_range_selection.has_value();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1068,8 +1614,7 @@ int main(int argc, char** argv) {
     const auto scanned_primary_version = startup.primary_version;
 
     compose_scene_cache_t compose_scene_cache;
-    double compose_pixels_per_measure = wormedit::default_pixels_per_standard_measure;
-    double compose_viewport_scroll_pixels = 0.0;
+    std::optional<wormedit::editor_interaction_state_t> compose_interaction_state;
     bool running = true;
     while (running) {
         SDL_Event event;
@@ -1091,6 +1636,37 @@ int main(int argc, char** argv) {
             const auto autosave_text = autosave_status_text(*autosave_result);
             if (!autosave_text.empty())
                 status = autosave_text;
+        }
+
+        if (compose_interaction_state) {
+            const auto& state = *compose_interaction_state;
+            const bool selected_chart_changed =
+                !workspace.selected_chart || *workspace.selected_chart != state.chart;
+            const bool pending_is_stale =
+                (state.pending_hold &&
+                 state.pending_hold->document_revision != history.document.revision) ||
+                (state.pending_note_duration_gesture &&
+                 state.pending_note_duration_gesture->document_revision !=
+                     history.document.revision) ||
+                (state.pending_note_paint_gesture &&
+                 state.pending_note_paint_gesture->document_revision !=
+                     history.document.revision) ||
+                (state.pending_editor_area_selection &&
+                 state.pending_editor_area_selection->document_revision !=
+                     history.document.revision) ||
+                (state.pending_space_range_selection &&
+                 state.pending_space_range_selection->document_revision !=
+                     history.document.revision);
+            const bool compose_inactive =
+                workspace.active_tab != wormedit::workspace_tab_t::compose;
+            if (editor_interaction_has_pending_gesture(state) &&
+                (selected_chart_changed || pending_is_stale || compose_inactive)) {
+                (void)wormedit::dispatch_editor_action(history, *compose_interaction_state,
+                                                       wormedit::cancel_editor_gesture_action_t{});
+            }
+            if (selected_chart_changed) {
+                compose_interaction_state.reset();
+            }
         }
 
         const auto model = wormedit::make_workspace_view(workspace, history.document);
@@ -1119,6 +1695,16 @@ int main(int argc, char** argv) {
                 flattened.view.recovery_diagnostics[diagnostic] =
                     flattened.recovery_diagnostic_storage[diagnostic].c_str();
             }
+            flattened.view.compose.branch_rows = flattened.compose_branch_row_storage.data();
+            for (std::size_t row = 0; row < flattened.view.compose.branch_row_count; ++row) {
+                flattened.compose_branch_row_storage[row].display_text =
+                    flattened.compose_branch_text_storage[row].c_str();
+            }
+            for (std::size_t diagnostic = 0;
+                 diagnostic < flattened.view.compose.branch_diagnostic_count; ++diagnostic) {
+                flattened.view.compose.branch_diagnostics[diagnostic] =
+                    flattened.compose_branch_diagnostic_storage[diagnostic].c_str();
+            }
             if (flattened.view.metadata.visible) {
                 flattened.view.metadata.search_tags =
                     flattened.view.metadata.search_tags_editable
@@ -1138,8 +1724,13 @@ int main(int argc, char** argv) {
             worm_window_get_size(&window, &compose_window_width, &compose_window_height);
             populate_compose_view(flattened, history, workspace, compose_scene_cache,
                                   compose_window_width, compose_window_height,
-                                  compose_pixels_per_measure, compose_viewport_scroll_pixels);
+                                  compose_interaction_state);
             const auto action = worm_ui_frontend_compose(&flattened.view);
+            if (action.kind != WORM_UI_WORKSPACE_ACTION_QUIT && action.compose_input_count != 0 &&
+                compose_interaction_state) {
+                status = dispatch_compose_input_action(action, history, workspace,
+                                                       *compose_interaction_state);
+            }
             if (action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
                 running = false;
             } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB) {
@@ -1154,59 +1745,10 @@ int main(int argc, char** argv) {
             } else if (action.metadata_edit != WORM_UI_METADATA_EDIT_NONE) {
                 status = dispatch_metadata_ui_action(action, history, workspace);
             } else if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
-                using action_t = WormUiComposeActionKind;
-                switch (action.compose_action) {
-                case action_t::WORM_UI_COMPOSE_ACTION_ZOOM_IN:
-                    compose_pixels_per_measure =
-                        std::clamp(compose_pixels_per_measure * 1.25,
-                                   wormedit::minimum_pixels_per_standard_measure,
-                                   wormedit::maximum_pixels_per_standard_measure);
-                    status = "Compose field zoomed in.";
-                    break;
-                case action_t::WORM_UI_COMPOSE_ACTION_ZOOM_OUT:
-                    compose_pixels_per_measure =
-                        std::clamp(compose_pixels_per_measure / 1.25,
-                                   wormedit::minimum_pixels_per_standard_measure,
-                                   wormedit::maximum_pixels_per_standard_measure);
-                    status = "Compose field zoomed out.";
-                    break;
-                case action_t::WORM_UI_COMPOSE_ACTION_SCROLL_UP:
-                case action_t::WORM_UI_COMPOSE_ACTION_SCROLL_DOWN: {
-                    double maximum_scroll = 0.0;
-                    if (workspace.selected_chart && compose_scene_cache.index) {
-                        const auto selected =
-                            std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                              &wormedit::chart_document_t::id);
-                        if (selected != history.document.charts.end()) {
-                            const auto content_height =
-                                static_cast<long double>(
-                                    compose_scene_cache.index->measures.total_rows) *
-                                compose_pixels_per_measure /
-                                selected->divisions_per_standard_measure;
-                            maximum_scroll = static_cast<double>(std::max(
-                                0.0L, content_height -
-                                          static_cast<long double>(
-                                              flattened.view.compose.viewport_height_pixels)));
-                        }
-                    }
-                    const auto step = flattened.view.compose.viewport_height_pixels * 0.75;
-                    compose_viewport_scroll_pixels +=
-                        action.compose_action == action_t::WORM_UI_COMPOSE_ACTION_SCROLL_UP ? -step
-                                                                                            : step;
-                    compose_viewport_scroll_pixels =
-                        std::clamp(compose_viewport_scroll_pixels, 0.0, maximum_scroll);
-                    status = action.compose_action == action_t::WORM_UI_COMPOSE_ACTION_SCROLL_UP
-                                 ? "Compose field scrolled up."
-                                 : "Compose field scrolled down.";
-                    break;
-                }
-                case action_t::WORM_UI_COMPOSE_ACTION_RESET_VIEW:
-                    compose_pixels_per_measure = wormedit::default_pixels_per_standard_measure;
-                    compose_viewport_scroll_pixels = 0.0;
-                    status = "Compose field view reset.";
-                    break;
-                case action_t::WORM_UI_COMPOSE_ACTION_NONE:
-                    break;
+                if (compose_interaction_state) {
+                    status = dispatch_compose_view_action(
+                        action, history, workspace, *compose_interaction_state,
+                        flattened.view.compose.viewport_height_pixels);
                 }
             } else if (action.kind >= WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT &&
                        action.kind <= WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE) {

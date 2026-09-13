@@ -17,6 +17,7 @@
 #include <system_error>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace wormedit {
@@ -24,6 +25,7 @@ namespace {
 
 struct source_line_t {
     std::string_view text;
+    std::string_view raw_text;
     std::string section;
     std::size_t order{};
     std::size_t byte_offset{};
@@ -338,7 +340,7 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
                     fields.push_back(
                         {"osu", "file_format", std::string(version), std::string(trimmed), order});
                 } else {
-                    lines.push_back({trimmed, current_section, order, offset + bom_size});
+                    lines.push_back({trimmed, line, current_section, order, offset + bom_size});
                     if (lines.size() > options.max_lines) {
                         fail(osu_mania_parse_diagnostic_code_t::source_limit,
                              "osu! source exceeds the configured line limit", order,
@@ -506,6 +508,7 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
 
         std::vector<pending_visual_t> visuals;
         std::vector<pending_resource_t> event_resources;
+        std::vector<source_line_t> storyboard_lines;
         for (const auto& line : event_lines) {
             const auto parts = split_csv(line.text);
             if (!parts || parts->empty()) {
@@ -513,9 +516,12 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
                      "malformed comma-separated osu! event", line.order, line.byte_offset);
             }
             const auto& kind = parts->front();
+            const auto indentation = line.raw_text.find_first_not_of(" \t");
+            const bool indented_storyboard_line =
+                indentation != std::string_view::npos && indentation != 0;
             const bool background = kind == "0" || kind == "Background";
             const bool video = kind == "Video" || kind == "1";
-            if ((background || video) && parts->size() >= 3) {
+            if (!indented_storyboard_line && (background || video) && parts->size() >= 3) {
                 long double event_time{};
                 if (!parse_number((*parts)[1], event_time)) {
                     fail(osu_mania_parse_diagnostic_code_t::malformed_field,
@@ -526,10 +532,12 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
                     {event_time, (*parts)[2], video ? asset_kind_t::video : asset_kind_t::image,
                      video ? visual_event_kind_t::video : visual_event_kind_t::background,
                      line.order});
-            } else if ((kind == "Sprite" || kind == "Animation") && parts->size() >= 4) {
+            } else if (!indented_storyboard_line && (kind == "Sprite" || kind == "Animation") &&
+                       parts->size() >= 4) {
                 event_resources.push_back({(*parts)[3], asset_kind_t::storyboard,
                                            resource_role_t::bga, line.order, std::nullopt, false});
-            } else if (kind == "Sample" && parts->size() >= 4) {
+                storyboard_lines.push_back(line);
+            } else if (!indented_storyboard_line && kind == "Sample" && parts->size() >= 4) {
                 long double sample_time{};
                 if (!parse_number((*parts)[1], sample_time)) {
                     fail(osu_mania_parse_diagnostic_code_t::malformed_field,
@@ -537,7 +545,120 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
                 }
                 event_resources.push_back({(*parts)[3], asset_kind_t::audio,
                                            resource_role_t::sample, line.order, sample_time, true});
+            } else {
+                storyboard_lines.push_back(line);
             }
+        }
+
+        std::optional<storyboard_document_model_t> embedded_storyboard;
+        if (!storyboard_lines.empty()) {
+            std::string storyboard_source;
+            std::vector<std::size_t> storyboard_source_orders;
+            storyboard_source_orders.reserve(storyboard_lines.size());
+            for (const auto& line : storyboard_lines) {
+                storyboard_source.append(line.raw_text);
+                storyboard_source.push_back('\n');
+                storyboard_source_orders.push_back(line.order);
+            }
+            const auto storyboard_node_limit = std::min<std::size_t>(options.max_events, 250'000);
+            const auto storyboard_line_limit = std::min<std::size_t>(options.max_lines, 250'000);
+            auto parsed_storyboard =
+                parse_osb(storyboard_source, {.maximum_input_bytes = options.max_source_bytes,
+                                              .maximum_lines = storyboard_line_limit,
+                                              .maximum_nodes = storyboard_node_limit});
+            if (!parsed_storyboard.document) {
+                const auto source_index =
+                    parsed_storyboard.diagnostics.empty() ||
+                            parsed_storyboard.diagnostics.front().line == 0
+                        ? std::size_t{0}
+                        : std::min(parsed_storyboard.diagnostics.front().line - 1,
+                                   storyboard_source_orders.size() - 1);
+                const auto& source_line = storyboard_lines[source_index];
+                const bool bounded_failure = !parsed_storyboard.diagnostics.empty() &&
+                                             (parsed_storyboard.diagnostics.front().code ==
+                                                  storyboard_diagnostic_code_t::input_too_large ||
+                                              parsed_storyboard.diagnostics.front().code ==
+                                                  storyboard_diagnostic_code_t::line_limit ||
+                                              parsed_storyboard.diagnostics.front().code ==
+                                                  storyboard_diagnostic_code_t::node_limit ||
+                                              parsed_storyboard.diagnostics.front().code ==
+                                                  storyboard_diagnostic_code_t::nesting_limit ||
+                                              parsed_storyboard.diagnostics.front().code ==
+                                                  storyboard_diagnostic_code_t::capacity_exceeded);
+                const auto message = parsed_storyboard.diagnostics.empty()
+                                         ? "OSB parser failed without a diagnostic"
+                                         : parsed_storyboard.diagnostics.front().message;
+                fail(bounded_failure ? osu_mania_parse_diagnostic_code_t::storyboard_limit
+                                     : osu_mania_parse_diagnostic_code_t::invalid_storyboard,
+                     "invalid embedded osu! storyboard: " + message,
+                     storyboard_source_orders[source_index], source_line.byte_offset);
+            }
+
+            const auto source_order_for = [&](std::uint64_t local_order) {
+                if (local_order == 0 || local_order > storyboard_source_orders.size())
+                    return std::size_t{};
+                return storyboard_source_orders[static_cast<std::size_t>(local_order - 1)];
+            };
+            auto& model = *parsed_storyboard.document;
+            const auto validate_node_indentation = [&](auto&& self,
+                                                       const std::vector<storyboard_node_t>& nodes,
+                                                       std::size_t expected_indent) -> void {
+                for (const auto& node : nodes) {
+                    const auto& source_line =
+                        storyboard_lines[static_cast<std::size_t>(node.source_order - 1)];
+                    const auto first_content = source_line.raw_text.find_first_not_of(" \t");
+                    const auto indentation = first_content == std::string_view::npos
+                                                 ? source_line.raw_text.size()
+                                                 : first_content;
+                    if (indentation != expected_indent)
+                        fail(osu_mania_parse_diagnostic_code_t::unsupported_storyboard,
+                             "embedded storyboard uses a nested directive block that is not "
+                             "represented by Sprite/loop nodes",
+                             source_line.order, source_line.byte_offset);
+                    if (node.kind == storyboard_node_kind_t::loop)
+                        self(self, node.children, expected_indent + 1);
+                }
+            };
+            for (const auto& sprite : model.sprites)
+                validate_node_indentation(validate_node_indentation, sprite.nodes, 1);
+            for (auto& sprite : model.sprites) {
+                const auto original_order = source_order_for(sprite.source_order);
+                sprite.source_order = original_order;
+                sprite.stable_id = static_cast<std::uint64_t>(original_order) + 1;
+                const auto remap_nodes = [&](auto&& self,
+                                             std::vector<storyboard_node_t>& nodes) -> void {
+                    for (auto& node : nodes) {
+                        const auto node_order = source_order_for(node.source_order);
+                        node.source_order = node_order;
+                        node.command.source_order = node_order;
+                        self(self, node.children);
+                    }
+                };
+                remap_nodes(remap_nodes, sprite.nodes);
+            }
+            for (auto& line : model.retained_top_level_lines)
+                line.source_order = source_order_for(line.source_order);
+            std::size_t storyboard_node_count{};
+            const auto count_nodes = [&](auto&& self,
+                                         const std::vector<storyboard_node_t>& nodes) -> void {
+                for (const auto& node : nodes) {
+                    ++storyboard_node_count;
+                    self(self, node.children);
+                }
+            };
+            for (const auto& sprite : model.sprites)
+                count_nodes(count_nodes, sprite.nodes);
+            auto storyboard_output_line_count =
+                model.sprites.size() + model.retained_top_level_lines.size();
+            if (storyboard_node_count >
+                std::numeric_limits<std::size_t>::max() - storyboard_output_line_count) {
+                fail(osu_mania_parse_diagnostic_code_t::storyboard_limit,
+                     "embedded storyboard output line count overflowed");
+            }
+            storyboard_output_line_count += storyboard_node_count;
+            if (storyboard_output_line_count > storyboard_lines.size())
+                account_events(storyboard_output_line_count - storyboard_lines.size());
+            embedded_storyboard = std::move(model);
         }
 
         std::vector<timing_point_t> effective_points;
@@ -800,6 +921,14 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
         }
         chart.metadata.name = value_or_empty("Metadata", "Version");
         chart.metadata.author = value_or_empty("Metadata", "Creator");
+        if (embedded_storyboard) {
+            auto name = chart.metadata.name;
+            if (name.empty())
+                name = "osu!mania storyboard";
+            song.storyboards.push_back({.id = storyboard_id_t{1},
+                                        .name = std::move(name),
+                                        .model = std::move(embedded_storyboard)});
+        }
         chart.metadata.format_groups.push_back(source_group);
         song.metadata.format_groups.push_back(source_group);
         id_allocator_t object_ids;
@@ -1285,6 +1414,29 @@ struct retained_osu_note_times_t {
     std::optional<std::int64_t> tail;
 };
 
+auto embedded_storyboard_source_orders(const song_document_t& song)
+    -> std::unordered_set<std::uint64_t> {
+    std::unordered_set<std::uint64_t> orders;
+    const auto collect_nodes = [&](auto&& self,
+                                   const std::vector<storyboard_node_t>& nodes) -> void {
+        for (const auto& node : nodes) {
+            orders.insert(node.source_order);
+            self(self, node.children);
+        }
+    };
+    for (const auto& storyboard : song.storyboards) {
+        if (!storyboard.model)
+            continue;
+        for (const auto& sprite : storyboard.model->sprites) {
+            orders.insert(sprite.source_order);
+            collect_nodes(collect_nodes, sprite.nodes);
+        }
+        for (const auto& line : storyboard.model->retained_top_level_lines)
+            orders.insert(line.source_order);
+    }
+    return orders;
+}
+
 auto retained_osu_note_times(const chart_document_t& chart)
     -> std::unordered_map<std::uint64_t, retained_osu_note_times_t> {
     std::unordered_map<std::uint64_t, retained_osu_note_times_t> values;
@@ -1320,6 +1472,7 @@ auto passthrough_fields(const chart_document_t& chart, const song_document_t& so
                         std::vector<osu_mania_write_diagnostic_t>& diagnostics)
     -> std::vector<passthrough_field_t> {
     std::vector<passthrough_field_t> result;
+    const auto storyboard_source_orders = embedded_storyboard_source_orders(song);
     std::vector<const format_metadata_t*> groups;
     for (const auto& group : song.metadata.format_groups)
         if (group.family == format_family_t::osu_mania)
@@ -1370,6 +1523,10 @@ auto passthrough_fields(const chart_document_t& chart, const song_document_t& so
             if (section == "HitObjects" || section == "TimingPoints")
                 continue;
             if (section == "Events") {
+                if (key == "[]" && index < group->ordered_field_source_orders.size() &&
+                    storyboard_source_orders.contains(group->ordered_field_source_orders[index])) {
+                    continue;
+                }
                 if (key != "[]" || !writer_safe_text(value) || value.empty() ||
                     value.front() == '[') {
                     if (key == "[]")
@@ -1459,6 +1616,101 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
             invalid != validation.end()) {
             fail(osu_mania_write_diagnostic_code_t::invalid_document,
                  "document failed core validation: " + invalid->message, "chart");
+        }
+        const storyboard_document_model_t* embedded_storyboard{};
+        for (const auto& storyboard : song.storyboards) {
+            if (!storyboard.retained_source_lines.empty())
+                fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
+                     "osu!mania cannot export storyboard source lines without an unambiguous "
+                     "structured model",
+                     "storyboards");
+            if (!storyboard.model || (storyboard.model->sprites.empty() &&
+                                      storyboard.model->retained_top_level_lines.empty()))
+                continue;
+            if (embedded_storyboard)
+                fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
+                     "osu!mania output cannot combine multiple difficulty storyboard documents",
+                     "storyboards");
+            if (song.charts.size() != 1)
+                fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
+                     "song-level storyboard content has no chart ownership for multi-chart osu! "
+                     "export",
+                     "storyboards");
+            for (const auto& sprite : storyboard.model->sprites)
+                if (!safe_relative_path(sprite.path))
+                    fail(osu_mania_write_diagnostic_code_t::invalid_resource,
+                         "storyboard sprite path must be a safe relative asset path",
+                         "storyboards");
+            const auto is_section_header = [](std::string_view line) {
+                line = trim(line);
+                return line.size() >= 2 && line.front() == '[' && line.back() == ']';
+            };
+            for (const auto& line : storyboard.model->retained_top_level_lines)
+                if (is_section_header(line.text))
+                    fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
+                         "storyboard retained lines cannot inject osu! section headers",
+                         "storyboards");
+                else {
+                    const auto fields = split_csv(line.text);
+                    if (fields && fields->size() >= 4 && fields->front() == "Animation" &&
+                        !safe_relative_path((*fields)[3]))
+                        fail(osu_mania_write_diagnostic_code_t::invalid_resource,
+                             "retained Animation event has an unsafe storyboard asset path",
+                             "storyboards");
+                }
+            const auto validate_retained_nodes =
+                [&](auto&& self, const std::vector<storyboard_node_t>& nodes) -> void {
+                for (const auto& node : nodes) {
+                    if (node.kind == storyboard_node_kind_t::retained_line &&
+                        is_section_header(node.retained_line))
+                        fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
+                             "storyboard retained lines cannot inject osu! section headers",
+                             "storyboards");
+                    self(self, node.children);
+                }
+            };
+            for (const auto& sprite : storyboard.model->sprites)
+                validate_retained_nodes(validate_retained_nodes, sprite.nodes);
+            embedded_storyboard = &*storyboard.model;
+        }
+        std::optional<std::string> storyboard_output;
+        if (embedded_storyboard) {
+            const auto emitted = emit_osb(*embedded_storyboard, options.max_output_bytes);
+            if (!emitted) {
+                const bool bounded_failure =
+                    std::ranges::any_of(emitted.diagnostics, [](const auto& diagnostic) {
+                        return diagnostic.code == storyboard_diagnostic_code_t::capacity_exceeded ||
+                               diagnostic.code == storyboard_diagnostic_code_t::node_limit ||
+                               diagnostic.code == storyboard_diagnostic_code_t::nesting_limit;
+                    });
+                fail(bounded_failure ? osu_mania_write_diagnostic_code_t::output_limit
+                                     : osu_mania_write_diagnostic_code_t::unsupported_feature,
+                     "structured storyboard cannot be emitted within the OSB limits",
+                     "storyboards");
+            }
+            const auto reparsed =
+                parse_osb(*emitted.text,
+                          {.maximum_input_bytes = options.max_output_bytes,
+                           .maximum_lines = options.max_lines,
+                           .maximum_nodes = std::min<std::size_t>(options.max_events, 250'000)});
+            if (!reparsed.document) {
+                const bool bounded_failure =
+                    std::ranges::any_of(reparsed.diagnostics, [](const auto& diagnostic) {
+                        return diagnostic.code == storyboard_diagnostic_code_t::input_too_large ||
+                               diagnostic.code == storyboard_diagnostic_code_t::line_limit ||
+                               diagnostic.code == storyboard_diagnostic_code_t::node_limit ||
+                               diagnostic.code == storyboard_diagnostic_code_t::nesting_limit ||
+                               diagnostic.code == storyboard_diagnostic_code_t::capacity_exceeded;
+                    });
+                fail(bounded_failure ? osu_mania_write_diagnostic_code_t::output_limit
+                                     : osu_mania_write_diagnostic_code_t::unsupported_feature,
+                     "emitted storyboard exceeds the configured re-import bounds", "storyboards");
+            }
+            if (!storyboard_semantically_equal(*embedded_storyboard, *reparsed.document))
+                fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
+                     "structured storyboard does not semantically re-import from emitted OSB",
+                     "storyboards");
+            storyboard_output = *emitted.text;
         }
         if (chart->measures.empty())
             fail(osu_mania_write_diagnostic_code_t::invalid_document,
@@ -2226,11 +2478,26 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
             append_line("Tags:" + tags);
         append_section("Difficulty");
         append_line("CircleSize:" + std::to_string(keys));
+        for (const auto& field : extra_fields)
+            if (field.section == "Events")
+                account_event();
         append_section("Events");
         std::ranges::stable_sort(event_output, [](const auto& left, const auto& right) {
             return std::tuple{left.milliseconds, left.row, left.order, left.serial} <
                    std::tuple{right.milliseconds, right.row, right.order, right.serial};
         });
+        if (storyboard_output) {
+            std::size_t offset{};
+            while (offset < storyboard_output->size()) {
+                const auto newline = storyboard_output->find('\n', offset);
+                const auto end = newline == std::string::npos ? storyboard_output->size() : newline;
+                append_line(std::string_view{*storyboard_output}.substr(offset, end - offset));
+                account_event();
+                if (newline == std::string::npos)
+                    break;
+                offset = newline + 1;
+            }
+        }
         for (const auto& event : event_output)
             append_line(event.line);
         append_section("TimingPoints");

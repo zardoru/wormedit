@@ -40,6 +40,10 @@ struct workspace_limits_t {
     std::size_t maximum_focus_region_bytes{128};
     std::size_t maximum_validation_diagnostics{4'096};
     std::size_t maximum_metadata_text_bytes{32U * 1024U * 1024U};
+    std::size_t maximum_bms_branch_rows{16'384};
+    std::size_t maximum_bms_branch_depth{512};
+    std::size_t maximum_bms_branch_text_bytes{1'024};
+    std::size_t maximum_bms_branch_display_bytes{4U * 1024U * 1024U};
 };
 
 // Focus is logical rather than widget/toolkit-specific. A focus target can be
@@ -200,6 +204,26 @@ struct workspace_timing_view_t {
     std::size_t anchor_count{};
 };
 
+struct workspace_bms_branch_row_t {
+    bms_control_kind_t kind{bms_control_kind_t::raw_statement};
+    branch_id_t id;
+    std::size_t depth{};
+    std::optional<std::size_t> source_order;
+    bool active{};
+    bool selected{};
+    std::string display_text;
+    bool display_text_truncated{};
+};
+
+struct workspace_bms_branch_outline_t {
+    bool available{};
+    bool rows_truncated{};
+    bool display_text_truncated{};
+    bool diagnostics_truncated{};
+    std::vector<workspace_bms_branch_row_t> rows;
+    diagnostic_list_t diagnostics;
+};
+
 struct workspace_compose_view_t {
     chart_id_t chart;
     std::size_t measure_count{};
@@ -207,6 +231,7 @@ struct workspace_compose_view_t {
     std::size_t layout_segment_count{};
     std::size_t lane_count{};
     std::size_t layer_count{};
+    workspace_bms_branch_outline_t bms_branch_outline;
 };
 
 struct workspace_storyboard_view_t {

@@ -56,6 +56,78 @@ static bool g_metadata_format_buffers_valid{};
 static std::vector<char> g_metadata_format_name;
 static std::vector<char> g_metadata_format_value;
 
+struct compose_key_event_t {
+    uint32_t keycode{};
+    uint32_t scancode{};
+    uint16_t modifiers{};
+    bool down{};
+    bool repeat{};
+};
+
+static std::array<compose_key_event_t, 64> g_compose_key_events{};
+static size_t g_compose_key_event_count{};
+static bool g_window_focused{true};
+static bool g_compose_cancel_pending{};
+static bool g_compose_keyboard_focus{};
+static bool g_compose_action_overflowed{};
+static bool g_compose_pointer_hold_active{};
+static bool g_compose_lane_hold_active{};
+static uint32_t g_compose_lane_hold_keycode{};
+static uint64_t g_compose_lane_hold_lane_id{};
+static uint64_t g_last_compose_chart_id{};
+
+static void append_compose_input(WormUiWorkspaceAction* action, WormUiComposeInputKind kind,
+                                 double x_pixels = 0.0, double y_pixels = 0.0, uint64_t lane_id = 0,
+                                 bool successive = false) {
+    if (!action) {
+        return;
+    }
+    if (action->compose_input_count >= WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {
+        action->compose_inputs[WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY - 1] = {
+            .kind = WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE,
+        };
+        action->compose_input_count = WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY;
+        g_compose_cancel_pending = false;
+        g_compose_pointer_hold_active = false;
+        g_compose_lane_hold_active = false;
+        g_compose_keyboard_focus = false;
+        g_compose_lane_hold_keycode = 0;
+        g_compose_lane_hold_lane_id = 0;
+        g_compose_action_overflowed = true;
+        return;
+    }
+    action->compose_inputs[action->compose_input_count++] = {
+        .kind = kind,
+        .lane_id = lane_id,
+        .successive = successive,
+        .x_pixels = x_pixels,
+        .y_pixels = y_pixels,
+    };
+}
+
+static void queue_compose_key_event(const SDL_KeyboardEvent* event, bool down) {
+    if (!event || g_compose_cancel_pending) {
+        return;
+    }
+    if (g_compose_key_event_count == g_compose_key_events.size()) {
+        g_compose_key_event_count = 0;
+        g_compose_cancel_pending = true;
+        g_compose_pointer_hold_active = false;
+        g_compose_lane_hold_active = false;
+        g_compose_keyboard_focus = false;
+        g_compose_lane_hold_keycode = 0;
+        g_compose_lane_hold_lane_id = 0;
+        return;
+    }
+    g_compose_key_events[g_compose_key_event_count++] = {
+        .keycode = static_cast<uint32_t>(event->key),
+        .scancode = static_cast<uint32_t>(event->scancode),
+        .modifiers = static_cast<uint16_t>(event->mod),
+        .down = down,
+        .repeat = event->repeat,
+    };
+}
+
 static int recovery_action_offered(const WormUiRecoveryCandidateView* candidate, size_t action) {
     return candidate && (candidate->action_mask & action) != 0;
 }
@@ -723,6 +795,13 @@ bool worm_ui_frontend_init(SDL_Window* window) {
     }
     g_window = window;
     g_context = context;
+    g_window_focused = true;
+    g_compose_key_event_count = 0;
+    g_compose_cancel_pending = false;
+    g_compose_keyboard_focus = false;
+    g_compose_pointer_hold_active = false;
+    g_compose_lane_hold_active = false;
+    g_last_compose_chart_id = 0;
     return true;
 }
 
@@ -736,6 +815,10 @@ void worm_ui_frontend_shutdown(void) {
     nk_sdl_shutdown();
     g_window = NULL;
     g_context = NULL;
+    g_compose_key_event_count = 0;
+    g_compose_pointer_hold_active = false;
+    g_compose_lane_hold_active = false;
+    g_compose_keyboard_focus = false;
 }
 
 void worm_ui_frontend_begin_input(void) {
@@ -747,6 +830,18 @@ void worm_ui_frontend_begin_input(void) {
 bool worm_ui_frontend_handle_event(const SDL_Event* event) {
     if (!g_context || !event) {
         return false;
+    }
+    if (event->type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+        g_window_focused = false;
+        g_compose_cancel_pending = true;
+        g_compose_key_event_count = 0;
+        g_compose_keyboard_focus = false;
+        g_compose_pointer_hold_active = false;
+        g_compose_lane_hold_active = false;
+    } else if (event->type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
+        g_window_focused = true;
+    } else if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) {
+        queue_compose_key_event(&event->key, event->type == SDL_EVENT_KEY_DOWN);
     }
     SDL_Event mutable_event = *event;
     return nk_sdl_handle_event(&mutable_event) != 0;
@@ -815,7 +910,10 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         view->pixels_per_standard_measure > WORM_UI_COMPOSE_MAX_PIXELS_PER_MEASURE ||
         !std::isfinite(view->viewport_width_pixels) || view->viewport_width_pixels <= 0.0 ||
         view->viewport_width_pixels > 10000000.0 || !std::isfinite(view->viewport_height_pixels) ||
-        view->viewport_height_pixels <= 0.0 || view->viewport_height_pixels > 10000000.0)
+        view->viewport_height_pixels <= 0.0 || view->viewport_height_pixels > 10000000.0 ||
+        view->branch_row_count > WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY ||
+        view->branch_diagnostic_count > WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY ||
+        (view->branch_row_count != 0 && !view->branch_rows))
         return 0;
     for (size_t index = 0; index < view->band_count; ++index) {
         if (!compose_rect_valid(&view->bands[index].bounds))
@@ -842,7 +940,90 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         if (!compose_rect_valid(&view->note_endpoints[index].bounds))
             return 0;
     }
+    for (size_t index = 0; index < view->branch_row_count; ++index) {
+        if (!view->branch_rows[index].display_text || view->branch_rows[index].depth > 512)
+            return 0;
+    }
     return !view->cursor || compose_rect_valid(&view->cursor->bounds);
+}
+
+static bool compose_shortcut_modifier(uint16_t modifiers) {
+    return (modifiers & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0;
+}
+
+static void process_compose_key_events(const WormUiComposeView* view,
+                                       WormUiWorkspaceAction* action) {
+    const bool keyboard_ready =
+        g_window_focused && g_compose_keyboard_focus && view->scene_available && g_context;
+    for (size_t event_index = 0;
+         event_index < g_compose_key_event_count && !g_compose_action_overflowed; ++event_index) {
+        const auto& key_event = g_compose_key_events[event_index];
+        if (g_compose_lane_hold_active && !key_event.down &&
+            key_event.scancode == g_compose_lane_hold_keycode) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 0.0, 0.0,
+                                 g_compose_lane_hold_lane_id);
+            g_compose_lane_hold_active = false;
+            g_compose_lane_hold_keycode = 0;
+            g_compose_lane_hold_lane_id = 0;
+            continue;
+        }
+        if (!keyboard_ready || !g_compose_keyboard_focus || !key_event.down || key_event.repeat) {
+            continue;
+        }
+        const bool shortcut = compose_shortcut_modifier(key_event.modifiers);
+        if (shortcut && key_event.keycode == static_cast<uint32_t>(SDLK_Z)) {
+            append_compose_input(action, (key_event.modifiers & SDL_KMOD_SHIFT) != 0
+                                             ? WORM_UI_COMPOSE_INPUT_REDO
+                                             : WORM_UI_COMPOSE_INPUT_UNDO);
+            continue;
+        }
+        if (shortcut && key_event.keycode == static_cast<uint32_t>(SDLK_Y)) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_REDO);
+            continue;
+        }
+        if (shortcut) {
+            continue;
+        }
+        if (key_event.keycode == static_cast<uint32_t>(SDLK_ESCAPE)) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
+            g_compose_lane_hold_active = false;
+            g_compose_pointer_hold_active = false;
+            continue;
+        }
+        if (key_event.keycode == static_cast<uint32_t>(SDLK_UP)) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD);
+            continue;
+        }
+        if (key_event.keycode == static_cast<uint32_t>(SDLK_DOWN)) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD);
+            continue;
+        }
+        if (key_event.keycode == static_cast<uint32_t>(SDLK_DELETE) ||
+            key_event.keycode == static_cast<uint32_t>(SDLK_BACKSPACE)) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_DELETE_NOTES);
+            continue;
+        }
+        if (g_compose_lane_hold_active ||
+            (key_event.modifiers & (SDL_KMOD_ALT | SDL_KMOD_GUI | SDL_KMOD_CTRL)) != 0) {
+            continue;
+        }
+        for (size_t binding_index = 0; binding_index < view->lane_key_binding_count;
+             ++binding_index) {
+            const auto& binding = view->lane_key_bindings[binding_index];
+            if (binding.scancode != key_event.scancode || binding.lane_id == 0) {
+                continue;
+            }
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 0.0, 0.0,
+                                 binding.lane_id, (key_event.modifiers & SDL_KMOD_SHIFT) != 0);
+            if ((key_event.modifiers & SDL_KMOD_SHIFT) == 0) {
+                g_compose_lane_hold_active = true;
+                g_compose_lane_hold_keycode = key_event.scancode;
+                g_compose_lane_hold_lane_id = binding.lane_id;
+            }
+            break;
+        }
+    }
+    g_compose_key_event_count = 0;
 }
 
 static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceAction* action) {
@@ -878,8 +1059,31 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
     }
     nk_layout_row_end(g_context);
 
+    nk_layout_row_dynamic(g_context, 18, 1);
+    nk_label(g_context,
+             "Click toggles taps · ↑/↓ move · lane key assigns selection (Shift: successive); "
+             "otherwise hold/move/release · Alt/Option-drag · Delete · Ctrl/Cmd+Z/Y · "
+             "single hold key; chords unsupported",
+             NK_TEXT_LEFT);
+
     const auto group_bounds = nk_window_get_content_region(g_context);
-    const auto surface_height = std::max(32.0f, group_bounds.h - 29.0f);
+    const auto branch_rows_shown = std::min<size_t>(view->branch_row_count, 4);
+    const auto branch_diagnostics_shown = std::min<size_t>(view->branch_diagnostic_count, 2);
+    const bool branch_status_shown =
+        view->branch_rows_truncated || view->branch_display_text_truncated ||
+        view->branch_diagnostics_truncated || view->branch_row_count > branch_rows_shown ||
+        view->branch_diagnostic_count > branch_diagnostics_shown;
+    const bool branch_outline_visible = view->branch_outline_available ||
+                                        view->branch_row_count != 0 ||
+                                        view->branch_diagnostic_count != 0 || branch_status_shown;
+    const auto branch_panel_height =
+        branch_outline_visible
+            ? 23.0f + static_cast<float>(branch_rows_shown + branch_diagnostics_shown +
+                                         (branch_status_shown ? 1 : 0)) *
+                          18.0f
+            : 0.0f;
+    const auto surface_height =
+        std::max(32.0f, group_bounds.h - 29.0f - 18.0f - branch_panel_height);
     nk_layout_space_begin(g_context, NK_DYNAMIC, surface_height, 1);
     nk_layout_space_push(g_context, nk_rect(0.0f, 0.0f, 1.0f, 1.0f));
     struct nk_rect viewport{};
@@ -891,6 +1095,52 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
     auto* canvas = nk_window_get_canvas(g_context);
     if (!canvas)
         return;
+
+    const bool pointer_inside = nk_input_is_mouse_hovering_rect(&g_context->input, viewport);
+    const bool pointer_clicked =
+        nk_input_is_mouse_click_in_rect(&g_context->input, NK_BUTTON_LEFT, viewport);
+    const auto& left_button = g_context->input.mouse.buttons[NK_BUTTON_LEFT];
+    const bool pointer_pressed_in_view = left_button.down && left_button.clicked != 0 &&
+                                         left_button.clicked_pos.x >= viewport.x &&
+                                         left_button.clicked_pos.x <= viewport.x + viewport.w &&
+                                         left_button.clicked_pos.y >= viewport.y &&
+                                         left_button.clicked_pos.y <= viewport.y + viewport.h;
+    if (pointer_clicked || pointer_pressed_in_view) {
+        g_compose_keyboard_focus = true;
+    } else if (nk_input_any_mouse_click_in_rect(&g_context->input,
+                                                nk_rect(0.0f, 0.0f, 1000000.0f, 1000000.0f)) &&
+               !pointer_inside) {
+        g_compose_keyboard_focus = false;
+    }
+    process_compose_key_events(view, action);
+
+    const auto pointer_x = (static_cast<double>(g_context->input.mouse.pos.x) - viewport.x) *
+                           view->viewport_width_pixels / viewport.w;
+    const auto pointer_y = (static_cast<double>(g_context->input.mouse.pos.y) - viewport.y) *
+                           view->viewport_height_pixels / viewport.h;
+    const bool alt_down = nk_input_is_key_down(&g_context->input, NK_KEY_ALT) != 0;
+    const bool left_down = g_context->input.mouse.buttons[NK_BUTTON_LEFT].down != 0;
+    if (!g_compose_action_overflowed && view->scene_available && pointer_pressed_in_view &&
+        alt_down && !g_compose_pointer_hold_active && g_window_focused) {
+        append_compose_input(action, WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN, pointer_x, pointer_y);
+        g_compose_pointer_hold_active = true;
+    } else if (!g_compose_action_overflowed && g_compose_pointer_hold_active) {
+        if (!g_window_focused || !alt_down) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
+            g_compose_pointer_hold_active = false;
+        } else if (nk_input_is_mouse_released(&g_context->input, NK_BUTTON_LEFT)) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE, pointer_x,
+                                 pointer_y);
+            g_compose_pointer_hold_active = false;
+        } else if (left_down && nk_input_is_mouse_moved(&g_context->input)) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_ALT_POINTER_UPDATE, pointer_x,
+                                 pointer_y);
+        }
+    } else if (!g_compose_action_overflowed && view->scene_available && pointer_clicked &&
+               g_window_focused) {
+        append_compose_input(action, WORM_UI_COMPOSE_INPUT_POINTER_CLICK, pointer_x, pointer_y);
+    }
+
     const auto parent_clip = canvas->clip;
     nk_push_scissor(canvas, viewport);
     nk_fill_rect(canvas, viewport, 0.0f, nk_rgb(22, 25, 33));
@@ -899,96 +1149,145 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
         nk_draw_text(canvas, viewport, status, static_cast<int>(strlen(status)),
                      g_context->style.font, nk_rgb(22, 25, 33), nk_rgb(190, 196, 207));
         nk_push_scissor(canvas, parent_clip);
-        return;
-    }
-
-    for (size_t band_index = 0; band_index < view->band_count; ++band_index) {
-        const auto& band = view->bands[band_index];
-        const auto color = band.split_stage ? nk_rgb(27, 31, 43) : nk_rgb(25, 29, 39);
-        compose_fill_rect(canvas, &band.bounds, view, viewport, color);
-        const auto top = viewport.y + static_cast<float>(band.bounds.top) * viewport.h /
-                                          static_cast<float>(view->viewport_height_pixels);
-        const auto bottom = viewport.y + static_cast<float>(band.bounds.bottom) * viewport.h /
-                                             static_cast<float>(view->viewport_height_pixels);
-        nk_stroke_line(canvas, viewport.x, top, viewport.x + viewport.w, top, 1.0f,
-                       nk_rgb(80, 91, 112));
-        nk_stroke_line(canvas, viewport.x, bottom, viewport.x + viewport.w, bottom, 1.0f,
-                       nk_rgb(61, 70, 87));
-    }
-    for (size_t lane_index = 0; lane_index < view->lane_count; ++lane_index) {
-        const auto& lane = view->lanes[lane_index];
-        const auto rect = compose_screen_rect(&lane.bounds, view, viewport);
-        if (rect.w <= 0.0f || rect.h <= 0.0f)
-            continue;
-        nk_fill_rect(canvas, rect, 0.0f, compose_lane_color(lane.role, lane.display_order));
-        nk_stroke_line(canvas, rect.x, rect.y, rect.x, rect.y + rect.h, 1.0f, nk_rgb(62, 70, 86));
-        if (rect.w >= 28.0f && rect.h >= 18.0f) {
-            char label[16]{};
-            const auto label_length = snprintf(label, sizeof(label), "%u", lane.display_order + 1U);
-            if (label_length > 0) {
-                const auto label_bounds =
-                    nk_rect(rect.x + 2.0f, rect.y + 2.0f, std::min(28.0f, rect.w - 4.0f), 15.0f);
-                nk_draw_text(canvas, label_bounds, label, static_cast<int>(strlen(label)),
-                             g_context->style.font, nk_rgb(37, 43, 55), nk_rgb(122, 133, 153));
+    } else {
+        for (size_t band_index = 0; band_index < view->band_count; ++band_index) {
+            const auto& band = view->bands[band_index];
+            const auto color = band.split_stage ? nk_rgb(27, 31, 43) : nk_rgb(25, 29, 39);
+            compose_fill_rect(canvas, &band.bounds, view, viewport, color);
+            const auto top = viewport.y + static_cast<float>(band.bounds.top) * viewport.h /
+                                              static_cast<float>(view->viewport_height_pixels);
+            const auto bottom = viewport.y + static_cast<float>(band.bounds.bottom) * viewport.h /
+                                                 static_cast<float>(view->viewport_height_pixels);
+            nk_stroke_line(canvas, viewport.x, top, viewport.x + viewport.w, top, 1.0f,
+                           nk_rgb(80, 91, 112));
+            nk_stroke_line(canvas, viewport.x, bottom, viewport.x + viewport.w, bottom, 1.0f,
+                           nk_rgb(61, 70, 87));
+        }
+        for (size_t lane_index = 0; lane_index < view->lane_count; ++lane_index) {
+            const auto& lane = view->lanes[lane_index];
+            const auto rect = compose_screen_rect(&lane.bounds, view, viewport);
+            if (rect.w <= 0.0f || rect.h <= 0.0f)
+                continue;
+            nk_fill_rect(canvas, rect, 0.0f, compose_lane_color(lane.role, lane.display_order));
+            nk_stroke_line(canvas, rect.x, rect.y, rect.x, rect.y + rect.h, 1.0f,
+                           nk_rgb(62, 70, 86));
+            if (rect.w >= 28.0f && rect.h >= 18.0f) {
+                char label[16]{};
+                const auto label_length =
+                    snprintf(label, sizeof(label), "%u", lane.display_order + 1U);
+                if (label_length > 0) {
+                    const auto label_bounds = nk_rect(rect.x + 2.0f, rect.y + 2.0f,
+                                                      std::min(28.0f, rect.w - 4.0f), 15.0f);
+                    nk_draw_text(canvas, label_bounds, label, static_cast<int>(strlen(label)),
+                                 g_context->style.font, nk_rgb(37, 43, 55), nk_rgb(122, 133, 153));
+                }
+            }
+        }
+        for (size_t index = 0; index < view->difference_count; ++index) {
+            compose_fill_rect(canvas, &view->differences[index].bounds, view, viewport,
+                              nk_rgba(229, 190, 58, 74));
+        }
+        for (size_t index = 0; index < view->grid_line_count; ++index) {
+            const auto& line = view->grid_lines[index];
+            if (!std::isfinite(line.y_pixels) || line.y_pixels < 0.0 ||
+                line.y_pixels > view->viewport_height_pixels)
+                continue;
+            const auto y = viewport.y + static_cast<float>(line.y_pixels) * viewport.h /
+                                            static_cast<float>(view->viewport_height_pixels);
+            struct nk_color color = nk_rgb(42, 49, 63);
+            float thickness = 0.7f;
+            if (line.kind == 3) {
+                color = nk_rgb(95, 107, 128);
+                thickness = 1.2f;
+            } else if (line.kind == 1 || line.kind == 2) {
+                color = nk_rgb(60, 70, 88);
+                thickness = line.emphasis >= 2 ? 1.1f : 0.9f;
+            } else if (line.emphasis >= 2) {
+                color = nk_rgb(52, 61, 78);
+            }
+            nk_stroke_line(canvas, viewport.x, y, viewport.x + viewport.w, y, thickness, color);
+        }
+        for (size_t index = 0; index < view->hold_body_count; ++index) {
+            const auto& hold = view->hold_bodies[index];
+            compose_fill_rect(canvas, &hold.bounds, view, viewport,
+                              hold.selected ? nk_rgb(62, 170, 204) : nk_rgb(48, 111, 151));
+        }
+        for (size_t index = 0; index < view->note_endpoint_count; ++index) {
+            const auto& note = view->note_endpoints[index];
+            auto color = note.selected ? nk_rgb(111, 221, 236) : nk_rgb(133, 182, 222);
+            if (note.kind == 4) {
+                color = nk_rgb(214, 91, 104);
+            } else if (note.kind == 5) {
+                color = nk_rgb(236, 194, 112);
+            } else if (note.tail) {
+                color = nk_rgb(113, 201, 216);
+            }
+            const auto rect = compose_screen_rect(&note.bounds, view, viewport);
+            if (rect.w > 0.0f && rect.h > 0.0f) {
+                nk_fill_rect(canvas, rect, 1.5f, color);
+                nk_stroke_rect(canvas, rect, 1.5f, 1.0f, nk_rgb(17, 24, 34));
+            }
+        }
+        if (view->cursor) {
+            const auto rect = compose_screen_rect(&view->cursor->bounds, view, viewport);
+            if (rect.w > 0.0f && rect.h > 0.0f) {
+                nk_fill_rect(canvas, rect, 0.0f, nk_rgb(248, 226, 115));
+                nk_stroke_line(canvas, rect.x, rect.y, rect.x + rect.w, rect.y, 1.0f,
+                               nk_rgb(255, 243, 174));
+                nk_stroke_line(canvas, rect.x, rect.y + rect.h, rect.x + rect.w, rect.y + rect.h,
+                               1.0f, nk_rgb(255, 243, 174));
             }
         }
     }
-    for (size_t index = 0; index < view->difference_count; ++index) {
-        compose_fill_rect(canvas, &view->differences[index].bounds, view, viewport,
-                          nk_rgba(229, 190, 58, 74));
-    }
-    for (size_t index = 0; index < view->grid_line_count; ++index) {
-        const auto& line = view->grid_lines[index];
-        if (!std::isfinite(line.y_pixels) || line.y_pixels < 0.0 ||
-            line.y_pixels > view->viewport_height_pixels)
-            continue;
-        const auto y = viewport.y + static_cast<float>(line.y_pixels) * viewport.h /
-                                        static_cast<float>(view->viewport_height_pixels);
-        struct nk_color color = nk_rgb(42, 49, 63);
-        float thickness = 0.7f;
-        if (line.kind == 3) {
-            color = nk_rgb(95, 107, 128);
-            thickness = 1.2f;
-        } else if (line.kind == 1 || line.kind == 2) {
-            color = nk_rgb(60, 70, 88);
-            thickness = line.emphasis >= 2 ? 1.1f : 0.9f;
-        } else if (line.emphasis >= 2) {
-            color = nk_rgb(52, 61, 78);
-        }
-        nk_stroke_line(canvas, viewport.x, y, viewport.x + viewport.w, y, thickness, color);
-    }
-    for (size_t index = 0; index < view->hold_body_count; ++index) {
-        const auto& hold = view->hold_bodies[index];
-        compose_fill_rect(canvas, &hold.bounds, view, viewport,
-                          hold.selected ? nk_rgb(62, 170, 204) : nk_rgb(48, 111, 151));
-    }
-    for (size_t index = 0; index < view->note_endpoint_count; ++index) {
-        const auto& note = view->note_endpoints[index];
-        auto color = note.selected ? nk_rgb(111, 221, 236) : nk_rgb(133, 182, 222);
-        if (note.kind == 4) {
-            color = nk_rgb(214, 91, 104);
-        } else if (note.kind == 5) {
-            color = nk_rgb(236, 194, 112);
-        } else if (note.tail) {
-            color = nk_rgb(113, 201, 216);
-        }
-        const auto rect = compose_screen_rect(&note.bounds, view, viewport);
-        if (rect.w > 0.0f && rect.h > 0.0f) {
-            nk_fill_rect(canvas, rect, 1.5f, color);
-            nk_stroke_rect(canvas, rect, 1.5f, 1.0f, nk_rgb(17, 24, 34));
-        }
-    }
-    if (view->cursor) {
-        const auto rect = compose_screen_rect(&view->cursor->bounds, view, viewport);
-        if (rect.w > 0.0f && rect.h > 0.0f) {
-            nk_fill_rect(canvas, rect, 0.0f, nk_rgb(248, 226, 115));
-            nk_stroke_line(canvas, rect.x, rect.y, rect.x + rect.w, rect.y, 1.0f,
-                           nk_rgb(255, 243, 174));
-            nk_stroke_line(canvas, rect.x, rect.y + rect.h, rect.x + rect.w, rect.y + rect.h, 1.0f,
-                           nk_rgb(255, 243, 174));
-        }
-    }
     nk_push_scissor(canvas, parent_clip);
+
+    if (!branch_outline_visible) {
+        return;
+    }
+    nk_layout_row_dynamic(g_context, 20, 1);
+    nk_label(g_context, "BMS branch outline · read-only", NK_TEXT_LEFT);
+    for (size_t index = 0; index < branch_rows_shown; ++index) {
+        const auto& row = view->branch_rows[index];
+        std::string label;
+        label.reserve(std::min<size_t>(row.depth, 32) * 2 + 96 + strlen(row.display_text));
+        const auto indentation = std::min<size_t>(row.depth, 32);
+        label.append(indentation, ' ');
+        label += row.active ? "▶ " : "· ";
+        if (row.selected) {
+            label += "selected · ";
+        } else if (!row.active) {
+            label += "inactive · ";
+        }
+        if (row.has_source_order) {
+            label += "#" + std::to_string(row.source_order) + " ";
+        }
+        label += row.display_text;
+        if (row.display_text_truncated) {
+            label += " …";
+        }
+        const auto color = row.selected ? nk_rgb(252, 221, 128)
+                           : row.active ? nk_rgb(145, 222, 172)
+                                        : nk_rgb(147, 154, 170);
+        nk_style_push_color(g_context, &g_context->style.text.color, color);
+        nk_layout_row_dynamic(g_context, 18, 1);
+        nk_label(g_context, label.c_str(), NK_TEXT_LEFT);
+        nk_style_pop_color(g_context);
+    }
+    if (branch_status_shown) {
+        nk_layout_row_dynamic(g_context, 18, 1);
+        nk_label(
+            g_context,
+            "Additional branch rows, text, or diagnostics were truncated by the workspace cap.",
+            NK_TEXT_LEFT);
+    }
+    for (size_t index = 0; index < branch_diagnostics_shown; ++index) {
+        if (!view->branch_diagnostics[index]) {
+            continue;
+        }
+        nk_layout_row_dynamic(g_context, 18, 1);
+        nk_labelf(g_context, NK_TEXT_LEFT, "Branch diagnostic: %s",
+                  view->branch_diagnostics[index]);
+    }
 }
 
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
@@ -1011,6 +1310,9 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
           view->compose.difference_count > WORM_UI_COMPOSE_DIFFERENCE_CAPACITY ||
           view->compose.hold_body_count > WORM_UI_COMPOSE_HOLD_CAPACITY ||
           view->compose.note_endpoint_count > WORM_UI_COMPOSE_NOTE_CAPACITY ||
+          view->compose.lane_key_binding_count > WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY ||
+          view->compose.branch_row_count > WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY ||
+          view->compose.branch_diagnostic_count > WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY ||
           !std::isfinite(view->compose.viewport_width_pixels) ||
           view->compose.viewport_width_pixels <= 0.0 ||
           !std::isfinite(view->compose.viewport_height_pixels) ||
@@ -1024,6 +1326,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
           (view->compose.difference_count != 0 && !view->compose.differences) ||
           (view->compose.hold_body_count != 0 && !view->compose.hold_bodies) ||
           (view->compose.note_endpoint_count != 0 && !view->compose.note_endpoints) ||
+          (view->compose.lane_key_binding_count != 0 && !view->compose.lane_key_bindings) ||
+          (view->compose.branch_row_count != 0 && !view->compose.branch_rows) ||
           !compose_geometry_valid(&view->compose))) ||
         view->active_tab < WORM_UI_WORKSPACE_TAB_SETUP ||
         view->active_tab > WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE) {
@@ -1034,6 +1338,34 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     int height = 0;
     if (!SDL_GetWindowSize(g_window, &width, &height) || width <= 0 || height <= 0) {
         return action;
+    }
+
+    if (view->active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && view->compose.visible) {
+        g_compose_action_overflowed = false;
+        action.compose_input_chart_id = view->compose.chart_id;
+        action.compose_input_document_revision = view->compose.document_revision;
+        action.compose_input_viewport_width_pixels = view->compose.viewport_width_pixels;
+        if (g_compose_cancel_pending) {
+            append_compose_input(&action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
+            g_compose_cancel_pending = false;
+        }
+        if (g_last_compose_chart_id != view->compose.chart_id) {
+            g_compose_keyboard_focus = false;
+            g_compose_pointer_hold_active = false;
+            g_compose_lane_hold_active = false;
+            g_compose_key_event_count = 0;
+            g_last_compose_chart_id = view->compose.chart_id;
+        }
+    } else {
+        g_compose_cancel_pending = false;
+        g_compose_key_event_count = 0;
+        g_compose_keyboard_focus = false;
+        if (g_compose_pointer_hold_active || g_compose_lane_hold_active) {
+            append_compose_input(&action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
+        }
+        g_compose_pointer_hold_active = false;
+        g_compose_lane_hold_active = false;
+        g_last_compose_chart_id = 0;
     }
 
     if (nk_begin(g_context, "wormedit-workspace", nk_rect(0, 0, (float)width, (float)height),

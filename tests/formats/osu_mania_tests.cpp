@@ -824,6 +824,291 @@ CircleSize:1
     CHECK(negative_tie.text->find(",-1,1,0,") != std::string::npos);
 }
 
+TEST_CASE("osu!mania embeds structured sprites and nested OSB loops beside ordinary events",
+          "[unit][format][osu-mania][storyboard]") {
+    constexpr std::string_view source = R"osu(osu file format v14
+[General]
+AudioFilename: music.ogg
+Mode:3
+[Metadata]
+Version:Storyboard difficulty
+[Difficulty]
+CircleSize:4
+[Events]
+0,0,"background.jpg",0,0
+Video,2000,"preview.mp4",0,0
+Sample,500,0,"clap.wav",100
+Sprite,Foreground,Centre,"sprites/panel.png",320,240
+ L,100,2
+  F,0,0,100,0,1
+  L,25,3
+   M,0,0,50,0,0,10,20
+   _P,0,1,2,H
+   Sample,12,0,"nested.wav",80
+UnknownDirective,keep-me
+Sprite,Foreground,Centre,"sprites/second.png",320,240
+ F,0,200,300,1,0
+[TimingPoints]
+0,500,4,0,0,100,1,0
+[HitObjects]
+256,192,1000,1,0,
+)osu";
+    const auto imported = parse_inline(source);
+    REQUIRE(imported.song.has_value());
+    CHECK_FALSE(imported.has_errors());
+    const auto& song = *imported.song;
+    REQUIRE(song.storyboards.size() == 1);
+    CHECK(song.storyboards.front().name == "Storyboard difficulty");
+    REQUIRE(song.storyboards.front().model.has_value());
+    const auto& model = *song.storyboards.front().model;
+    REQUIRE(model.sprites.size() == 2);
+    REQUIRE(model.sprites.front().nodes.size() == 1);
+    const auto& outer_loop = model.sprites.front().nodes.front();
+    REQUIRE(outer_loop.kind == wormedit::storyboard_node_kind_t::loop);
+    REQUIRE(outer_loop.children.size() == 2);
+    CHECK(outer_loop.children.back().kind == wormedit::storyboard_node_kind_t::loop);
+    CHECK(model.sprites.front().source_order < outer_loop.source_order);
+    const auto retained_directive =
+        std::ranges::find_if(model.retained_top_level_lines, [](const auto& line) {
+            return line.text == "UnknownDirective,keep-me";
+        });
+    REQUIRE(retained_directive != model.retained_top_level_lines.end());
+    CHECK(model.sprites.front().source_order < retained_directive->source_order);
+    CHECK(retained_directive->source_order < model.sprites.back().source_order);
+
+    const auto& chart = song.charts.front();
+    CHECK(std::ranges::count_if(chart.bga_events, [](const auto& event) {
+              return event.kind == wormedit::visual_event_kind_t::background ||
+                     event.kind == wormedit::visual_event_kind_t::video;
+          }) == 2);
+    std::size_t bgm_events{};
+    for (const auto& measure : chart.measures)
+        bgm_events += measure.bgm_events.size();
+    CHECK(bgm_events == 1);
+    CHECK(std::ranges::none_of(song.resources,
+                               [](const auto& resource) { return resource.name == "nested.wav"; }));
+    CHECK(std::ranges::any_of(
+        song.resources, [](const auto& resource) { return resource.name == "sprites/panel.png"; }));
+
+    const auto written = write_inline(song);
+    REQUIRE(written.text.has_value());
+    CHECK_FALSE(written.has_errors());
+    const auto count_text = [](std::string_view text, std::string_view needle) {
+        std::size_t count{};
+        std::size_t offset{};
+        while ((offset = text.find(needle, offset)) != std::string_view::npos) {
+            ++count;
+            offset += needle.size();
+        }
+        return count;
+    };
+    CHECK(count_text(*written.text, "Sprite,Foreground,Centre") == 2);
+    CHECK(count_text(*written.text, " L,100,2") == 1);
+    CHECK(count_text(*written.text, "UnknownDirective,keep-me") == 1);
+    CHECK(count_text(*written.text, "Sample,12,0,\"nested.wav\",80") == 1);
+    CHECK(count_text(*written.text, "[Events]") == 1);
+    CHECK(written.text->find("0,0,\"background.jpg\",0,0") != std::string::npos);
+    CHECK(written.text->find("Video,2000,\"preview.mp4\",0,0") != std::string::npos);
+    CHECK(written.text->find("Sample,500,1,\"clap.wav\",100") != std::string::npos);
+    const auto written_again = write_inline(song);
+    REQUIRE(written_again.text.has_value());
+    CHECK(*written_again.text == *written.text);
+
+    const auto reimported = parse_inline(*written.text);
+    REQUIRE(reimported.song.has_value());
+    CHECK_FALSE(reimported.has_errors());
+    REQUIRE(reimported.song->storyboards.size() == 1);
+    REQUIRE(reimported.song->storyboards.front().model.has_value());
+    CHECK(wormedit::storyboard_semantically_equal(model,
+                                                  *reimported.song->storyboards.front().model));
+    CHECK(std::ranges::count_if(reimported.song->charts.front().bga_events, [](const auto& event) {
+              return event.kind == wormedit::visual_event_kind_t::background ||
+                     event.kind == wormedit::visual_event_kind_t::video;
+          }) == 2);
+
+    auto zero_order_source = *imported.song;
+    zero_order_source.storyboards.front().model->sprites.front().source_order = 0;
+    const auto remove_format_version = [](wormedit::format_metadata_t& group) {
+        const auto found = std::ranges::find_if(group.ordered_fields, [](const auto& field) {
+            return field.first == "osu.file_format";
+        });
+        if (found == group.ordered_fields.end())
+            return;
+        const auto index =
+            static_cast<std::size_t>(std::distance(group.ordered_fields.begin(), found));
+        group.ordered_fields.erase(found);
+        if (index < group.ordered_field_source_orders.size())
+            group.ordered_field_source_orders.erase(group.ordered_field_source_orders.begin() +
+                                                    static_cast<std::ptrdiff_t>(index));
+    };
+    const auto set_sprite_order_zero = [](wormedit::format_metadata_t& group) {
+        bool updated{};
+        for (std::size_t index = 0; index < group.ordered_fields.size(); ++index) {
+            const auto& [identity, value] = group.ordered_fields[index];
+            if (index < group.ordered_field_source_orders.size() && identity == "Events[]" &&
+                value.starts_with("Sprite,Foreground,Centre") && !updated) {
+                group.ordered_field_source_orders[index] = 0;
+                updated = true;
+            }
+        }
+    };
+    remove_format_version(zero_order_source.metadata.format_groups.front());
+    remove_format_version(zero_order_source.charts.front().metadata.format_groups.front());
+    set_sprite_order_zero(zero_order_source.metadata.format_groups.front());
+    set_sprite_order_zero(zero_order_source.charts.front().metadata.format_groups.front());
+    const auto zero_order_written = write_inline(zero_order_source);
+    REQUIRE(zero_order_written.text.has_value());
+    CHECK(count_text(*zero_order_written.text, "Sprite,Foreground,Centre") == 2);
+}
+
+TEST_CASE("osu!mania storyboard import and export reject malformed or out-of-bound content",
+          "[unit][format][osu-mania][storyboard][negative]") {
+    constexpr std::string_view malformed = R"osu(osu file format v14
+[General]
+Mode:3
+[Difficulty]
+CircleSize:1
+[Events]
+Sprite,Foreground,Centre,"broken.png"
+[TimingPoints]
+0,500,4,0,0,100,1,0
+)osu";
+    const auto invalid = parse_inline(malformed);
+    CHECK_FALSE(invalid.song.has_value());
+    CHECK(has_code(invalid, wormedit::osu_mania_parse_diagnostic_code_t::invalid_storyboard));
+
+    constexpr std::string_view unsupported_trigger = R"osu(osu file format v14
+[General]
+Mode:3
+[Difficulty]
+CircleSize:1
+[Events]
+Sprite,Foreground,Centre,"a.png",0,0
+ T,HitSound,0,100
+  F,0,0,100,0,1
+[TimingPoints]
+0,500,4,0,0,100,1,0
+)osu";
+    const auto trigger_block = parse_inline(unsupported_trigger);
+    CHECK_FALSE(trigger_block.song.has_value());
+    CHECK(has_code(trigger_block,
+                   wormedit::osu_mania_parse_diagnostic_code_t::unsupported_storyboard));
+
+    std::string deeply_nested = "osu file format v14\n[General]\nMode:3\n[Difficulty]\n"
+                                "CircleSize:1\n[Events]\nSprite,Foreground,Centre,\"a.png\",0,0\n";
+    for (std::size_t depth = 1; depth <= 130; ++depth) {
+        deeply_nested.append(depth, ' ');
+        deeply_nested += "L,0,2\n";
+    }
+    deeply_nested += " F,0,0,1,0,1\n[TimingPoints]\n0,500,4,0,0,100,1,0\n";
+    const auto bounded = parse_inline(deeply_nested);
+    CHECK_FALSE(bounded.song.has_value());
+    CHECK(has_code(bounded, wormedit::osu_mania_parse_diagnostic_code_t::storyboard_limit));
+
+    constexpr std::string_view expanded_commands = R"osu(osu file format v14
+[General]
+Mode:3
+[Difficulty]
+CircleSize:1
+[Events]
+Sprite,Foreground,Centre,"a.png",0,0
+ M,0,0,100,0,0,10,10,20,20
+[TimingPoints]
+0,500,4,0,0,100,1,0
+)osu";
+    const auto expanded_at_boundary =
+        wormedit::parse_osu_mania_bytes(bytes(expanded_commands), {.max_events = 3});
+    CHECK_FALSE(expanded_at_boundary.song.has_value());
+    CHECK(has_code(expanded_at_boundary, wormedit::osu_mania_parse_diagnostic_code_t::event_limit));
+    const auto expanded_with_room =
+        wormedit::parse_osu_mania_bytes(bytes(expanded_commands), {.max_events = 4});
+    REQUIRE(expanded_with_room.song.has_value());
+    REQUIRE(expanded_with_room.song->storyboards.front().model.has_value());
+    REQUIRE(expanded_with_room.song->storyboards.front().model->sprites.front().nodes.size() == 2);
+
+    constexpr std::string_view valid = R"osu(osu file format v14
+[General]
+Mode:3
+[Difficulty]
+CircleSize:1
+[Events]
+Sprite,Foreground,Centre,"a.png",0,0
+ F,0,0,100,0,1
+[TimingPoints]
+0,500,4,0,0,100,1,0
+)osu";
+    const auto imported = parse_inline(valid);
+    REQUIRE(imported.song.has_value());
+    const auto bounded_write = write_inline(*imported.song, {.max_output_bytes = 64});
+    CHECK_FALSE(bounded_write.text.has_value());
+    CHECK(std::ranges::any_of(bounded_write.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::output_limit;
+    }));
+
+    auto unscoped_storyboard = *imported.song;
+    unscoped_storyboard.metadata.format_groups.clear();
+    unscoped_storyboard.charts.front().metadata.format_groups.clear();
+    auto without_storyboard = unscoped_storyboard;
+    without_storyboard.storyboards.clear();
+    std::size_t baseline_event_budget{};
+    wormedit::osu_mania_write_result_t baseline;
+    for (; baseline_event_budget < 32; ++baseline_event_budget) {
+        baseline = write_inline(without_storyboard, {.max_events = baseline_event_budget});
+        if (baseline.text)
+            break;
+    }
+    REQUIRE(baseline.text.has_value());
+    const auto storyboard_event_limited =
+        write_inline(unscoped_storyboard, {.max_events = baseline_event_budget + 1});
+    CHECK_FALSE(storyboard_event_limited.text.has_value());
+    CHECK(std::ranges::any_of(storyboard_event_limited.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::output_limit;
+    }));
+
+    auto legacy = *imported.song;
+    legacy.storyboards.front().model.reset();
+    legacy.storyboards.front().retained_source_lines = {"Sprite,Foreground,Centre,a.png,0,0"};
+    const auto unsupported = write_inline(legacy);
+    CHECK_FALSE(unsupported.text.has_value());
+    CHECK(std::ranges::any_of(unsupported.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::unsupported_feature;
+    }));
+
+    auto section_injection = *imported.song;
+    section_injection.storyboards.front().model->retained_top_level_lines.push_back(
+        {.source_order = 999, .text = "[Events]"});
+    const auto rejected_section = write_inline(section_injection);
+    CHECK_FALSE(rejected_section.text.has_value());
+    CHECK(std::ranges::any_of(rejected_section.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::unsupported_feature;
+    }));
+
+    auto multi_chart = *imported.song;
+    const auto second_chart_id = wormedit::chart_id_t{50'000};
+    const auto second_measure_id = wormedit::measure_id_t{50'100};
+    multi_chart.charts.push_back({
+        .id = second_chart_id,
+        .metadata = {.name = "Second"},
+        .measures = {{.id = second_measure_id}},
+        .lane_layouts = {{.id = wormedit::object_id_t{50'200},
+                          .position = {second_measure_id, 0},
+                          .layout = {.profile_id = "osu-mania-1k",
+                                     .display_name = "1K",
+                                     .lanes = {{.id = wormedit::lane_id_t{50'300},
+                                                .name = "Key 1"}}}}},
+        .bpms = {{.id = wormedit::object_id_t{50'400},
+                  .position = {second_measure_id, 0},
+                  .beats_per_minute = {120, 1}}},
+    });
+    REQUIRE(wormedit::validate_document(multi_chart).empty());
+    const auto selected_chart_write =
+        write_inline(multi_chart, {.chart = multi_chart.charts.front().id});
+    CHECK_FALSE(selected_chart_write.text.has_value());
+    CHECK(std::ranges::any_of(selected_chart_write.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::unsupported_feature;
+    }));
+}
+
 TEST_CASE("osu!mania writer diagnoses layer loss and rejects unsupported chart state",
           "[unit][format][osu-mania][writer][negative]") {
     const auto imported = parse_inline(rewiring_source);

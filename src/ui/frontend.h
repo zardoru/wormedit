@@ -28,6 +28,10 @@
 #define WORM_UI_COMPOSE_HOLD_CAPACITY 32768
 #define WORM_UI_COMPOSE_NOTE_CAPACITY 32768
 #define WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY 32768
+#define WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY 128
+#define WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY 16
+#define WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY 96
+#define WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY 4
 #define WORM_UI_COMPOSE_MIN_PIXELS_PER_MEASURE 24.0
 #define WORM_UI_COMPOSE_MAX_PIXELS_PER_MEASURE 4096.0
 
@@ -180,6 +184,21 @@ typedef struct WormUiComposeCursorView {
     uint64_t lane_id;
 } WormUiComposeCursorView;
 
+typedef struct WormUiComposeLaneKeyBinding {
+    uint32_t scancode;
+    uint64_t lane_id;
+} WormUiComposeLaneKeyBinding;
+
+typedef struct WormUiComposeBranchRowView {
+    const char* display_text;
+    size_t depth;
+    bool active;
+    bool selected;
+    bool display_text_truncated;
+    bool has_source_order;
+    size_t source_order;
+} WormUiComposeBranchRowView;
+
 // Renderer-neutral field primitives projected into bounded scalar storage.
 // Coordinates are relative to the scene viewport; no chart/core types cross
 // the private frontend boundary.
@@ -187,6 +206,8 @@ typedef struct WormUiComposeView {
     bool visible;
     bool scene_available;
     bool truncated;
+    uint64_t chart_id;
+    uint64_t document_revision;
     double viewport_width_pixels;
     double viewport_height_pixels;
     double pixels_per_standard_measure;
@@ -204,6 +225,16 @@ typedef struct WormUiComposeView {
     const WormUiComposeNoteView* note_endpoints;
     size_t note_endpoint_count;
     const WormUiComposeCursorView* cursor;
+    const WormUiComposeLaneKeyBinding* lane_key_bindings;
+    size_t lane_key_binding_count;
+    bool branch_outline_available;
+    bool branch_rows_truncated;
+    bool branch_display_text_truncated;
+    bool branch_diagnostics_truncated;
+    const WormUiComposeBranchRowView* branch_rows;
+    size_t branch_row_count;
+    const char* branch_diagnostics[WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY];
+    size_t branch_diagnostic_count;
 } WormUiComposeView;
 
 // Private scalar view consumed by the selected frontend adapter. The owning
@@ -244,6 +275,30 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_RESET_VIEW,
 } WormUiComposeActionKind;
 
+typedef enum WormUiComposeInputKind {
+    WORM_UI_COMPOSE_INPUT_NONE = 0,
+    WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD,
+    WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD,
+    WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
+    WORM_UI_COMPOSE_INPUT_DELETE_NOTES,
+    WORM_UI_COMPOSE_INPUT_UNDO,
+    WORM_UI_COMPOSE_INPUT_REDO,
+    WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS,
+    WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE,
+    WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN,
+    WORM_UI_COMPOSE_INPUT_ALT_POINTER_UPDATE,
+    WORM_UI_COMPOSE_INPUT_ALT_POINTER_RELEASE,
+    WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE,
+} WormUiComposeInputKind;
+
+typedef struct WormUiComposeInputAction {
+    WormUiComposeInputKind kind;
+    uint64_t lane_id;
+    bool successive;
+    double x_pixels;
+    double y_pixels;
+} WormUiComposeInputAction;
+
 typedef enum WormUiMetadataEditKind {
     WORM_UI_METADATA_EDIT_NONE = 0,
     WORM_UI_METADATA_EDIT_SONG,
@@ -280,6 +335,11 @@ typedef struct WormUiWorkspaceAction {
     const char* metadata_format_name;
     const char* metadata_format_value;
     WormUiComposeActionKind compose_action;
+    uint64_t compose_input_chart_id;
+    uint64_t compose_input_document_revision;
+    double compose_input_viewport_width_pixels;
+    WormUiComposeInputAction compose_inputs[WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY];
+    size_t compose_input_count;
 } WormUiWorkspaceAction;
 
 // Private application/frontend boundary. Implementations own all widget

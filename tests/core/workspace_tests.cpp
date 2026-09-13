@@ -69,6 +69,99 @@ auto workspace_song() -> song_document_t {
     return song;
 }
 
+auto bms_branch_workspace_song() -> song_document_t {
+    auto song = workspace_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    chart.bms_control_tree = bms_control_node_t{
+        .id = branch_id_t{1000},
+        .kind = bms_control_kind_t::root,
+        .children = {
+            {
+                .id = branch_id_t{1001},
+                .kind = bms_control_kind_t::random,
+                .value = 2,
+                .original_text = "#RANDOM 2",
+                .source_order = 0,
+                .children = {
+                    {
+                        .id = branch_id_t{1002},
+                        .kind = bms_control_kind_t::if_group,
+                        .children = {
+                            {
+                                .id = branch_id_t{1003},
+                                .kind = bms_control_kind_t::if_branch,
+                                .value = 1,
+                                .original_text = "#IF 1",
+                                .source_order = 1,
+                                .children = {{.id = branch_id_t{1004},
+                                              .kind = bms_control_kind_t::raw_statement,
+                                              .original_text = "#TITLE inactive",
+                                              .source_order = 2}},
+                            },
+                            {
+                                .id = branch_id_t{1005},
+                                .kind = bms_control_kind_t::else_branch,
+                                .original_text = "#ELSE",
+                                .source_order = 3,
+                                .children = {
+                                    {.id = branch_id_t{1006},
+                                     .kind = bms_control_kind_t::raw_statement,
+                                     .original_text = "#TITLE selected",
+                                     .source_order = 4},
+                                    {
+                                        .id = branch_id_t{1007},
+                                        .kind = bms_control_kind_t::switch_block,
+                                        .value = 3,
+                                        .original_text = "#SWITCH 3",
+                                        .source_order = 5,
+                                        .children = {
+                                            {.id = branch_id_t{1008},
+                                             .kind = bms_control_kind_t::case_branch,
+                                             .value = 1,
+                                             .original_text = "#CASE 1",
+                                             .source_order = 6,
+                                             .children = {{.id = branch_id_t{1009},
+                                                           .kind = bms_control_kind_t::raw_statement,
+                                                           .original_text = "#BPM 120",
+                                                           .source_order = 7}}},
+                                            {.id = branch_id_t{1010},
+                                             .kind = bms_control_kind_t::case_branch,
+                                             .value = 2,
+                                             .original_text = "#CASE 2",
+                                             .source_order = 8,
+                                             .children = {
+                                                 {.id = branch_id_t{1011},
+                                                  .kind = bms_control_kind_t::raw_statement,
+                                                  .original_text = "#BPM 150",
+                                                  .source_order = 9},
+                                                 {.id = branch_id_t{1012},
+                                                  .kind = bms_control_kind_t::skip,
+                                                  .original_text = "#SKIP",
+                                                  .source_order = 10},
+                                             }},
+                                            {.id = branch_id_t{1013},
+                                             .kind = bms_control_kind_t::default_branch,
+                                             .original_text = "#DEF",
+                                             .source_order = 11,
+                                             .children = {{.id = branch_id_t{1014},
+                                                           .kind = bms_control_kind_t::raw_statement,
+                                                           .original_text = "#BPM 180",
+                                                           .source_order = 12}}},
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    };
+    chart.active_branch_selection = {{branch_id_t{1001}, 2}, {branch_id_t{1007}, 2}};
+    return song;
+}
+
 auto has_code(const diagnostic_list_t& diagnostics, diagnostic_code_t code) -> bool {
     return std::ranges::any_of(diagnostics,
                                [code](const auto& diagnostic) { return diagnostic.code == code; });
@@ -381,4 +474,115 @@ TEST_CASE("transport range and compose summary caps reject partial updates",
     CHECK_FALSE(capped);
     CHECK_FALSE(capped.view.has_value());
     CHECK(has_code(capped.diagnostics, diagnostic_code_t::invalid_resolution));
+}
+
+TEST_CASE("workspace exposes the complete BMS branch outline with current active projection",
+          "[unit][core][workspace][bms-branches]") {
+    const auto song = bms_branch_workspace_song();
+    auto bound = make_workspace_controller(song);
+    REQUIRE(bound);
+    auto& workspace = *bound.workspace;
+    REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::compose}));
+
+    const auto result = make_workspace_view(workspace, song);
+    REQUIRE(result);
+    const auto& compose = std::get<workspace_compose_view_t>(result.view->tab_view);
+    const auto& outline = compose.bms_branch_outline;
+    REQUIRE(outline.available);
+    CHECK_FALSE(outline.rows_truncated);
+    CHECK_FALSE(outline.display_text_truncated);
+    CHECK(outline.diagnostics.empty());
+    CHECK(outline.rows.size() == 15);
+
+    const auto row = [&outline](branch_id_t id) -> const workspace_bms_branch_row_t* {
+        const auto found = std::ranges::find(outline.rows, id, &workspace_bms_branch_row_t::id);
+        return found == outline.rows.end() ? nullptr : &*found;
+    };
+    REQUIRE(row(branch_id_t{1001}) != nullptr);
+    CHECK(row(branch_id_t{1001})->kind == bms_control_kind_t::random);
+    CHECK(row(branch_id_t{1001})->selected);
+    CHECK(row(branch_id_t{1001})->active);
+    REQUIRE(row(branch_id_t{1005}) != nullptr);
+    CHECK(row(branch_id_t{1005})->active);
+    CHECK(row(branch_id_t{1005})->selected);
+    REQUIRE(row(branch_id_t{1004}) != nullptr);
+    CHECK_FALSE(row(branch_id_t{1004})->active);
+    REQUIRE(row(branch_id_t{1010}) != nullptr);
+    CHECK(row(branch_id_t{1010})->active);
+    CHECK(row(branch_id_t{1010})->selected);
+    REQUIRE(row(branch_id_t{1012}) != nullptr);
+    CHECK(row(branch_id_t{1012})->active);
+    REQUIRE(row(branch_id_t{1011}) != nullptr);
+    REQUIRE(row(branch_id_t{1013}) != nullptr);
+    CHECK_FALSE(row(branch_id_t{1013})->active);
+    CHECK(row(branch_id_t{1013})->source_order == std::optional<std::size_t>{11});
+    CHECK(row(branch_id_t{1011})->depth > row(branch_id_t{1001})->depth);
+}
+
+TEST_CASE("BMS branch outline reports bounded rows and display text",
+          "[unit][core][workspace][bms-branches][bounds]") {
+    const auto song = bms_branch_workspace_song();
+    auto row_capped = make_workspace_controller(song, {.maximum_bms_branch_rows = 4});
+    REQUIRE(row_capped);
+    REQUIRE(apply(*row_capped.workspace, song,
+                  workspace_switch_tab_action_t{workspace_tab_t::compose}));
+    auto row_result = make_workspace_view(*row_capped.workspace, song);
+    REQUIRE(row_result);
+    const auto& row_outline =
+        std::get<workspace_compose_view_t>(row_result.view->tab_view).bms_branch_outline;
+    CHECK(row_outline.rows.size() == 4);
+    CHECK(row_outline.rows_truncated);
+    CHECK(has_code(row_outline.diagnostics, diagnostic_code_t::invalid_resolution));
+
+    auto text_capped = make_workspace_controller(
+        song, {.maximum_bms_branch_text_bytes = 5, .maximum_bms_branch_display_bytes = 12});
+    REQUIRE(text_capped);
+    REQUIRE(apply(*text_capped.workspace, song,
+                  workspace_switch_tab_action_t{workspace_tab_t::compose}));
+    auto text_result = make_workspace_view(*text_capped.workspace, song);
+    REQUIRE(text_result);
+    const auto& text_outline =
+        std::get<workspace_compose_view_t>(text_result.view->tab_view).bms_branch_outline;
+    CHECK(text_outline.display_text_truncated);
+    CHECK(has_code(text_outline.diagnostics, diagnostic_code_t::invalid_resolution));
+    CHECK(std::ranges::all_of(text_outline.rows,
+                              [](const auto& item) { return item.display_text.size() <= 5; }));
+
+    auto diagnostics_capped = make_workspace_controller(
+        song, {.maximum_validation_diagnostics = 0, .maximum_bms_branch_rows = 4});
+    REQUIRE(diagnostics_capped);
+    REQUIRE(apply(*diagnostics_capped.workspace, song,
+                  workspace_switch_tab_action_t{workspace_tab_t::compose}));
+    auto diagnostics_result = make_workspace_view(*diagnostics_capped.workspace, song);
+    REQUIRE(diagnostics_result);
+    const auto& diagnostics_outline =
+        std::get<workspace_compose_view_t>(diagnostics_result.view->tab_view).bms_branch_outline;
+    CHECK(diagnostics_outline.rows_truncated);
+    CHECK(diagnostics_outline.diagnostics.empty());
+    CHECK(diagnostics_outline.diagnostics_truncated);
+}
+
+TEST_CASE("BMS branch outline rejects a stale workspace revision and diagnoses stale choices",
+          "[unit][core][workspace][bms-branches][revision]") {
+    auto song = bms_branch_workspace_song();
+    auto bound = make_workspace_controller(song);
+    REQUIRE(bound);
+    auto& workspace = *bound.workspace;
+    REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::compose}));
+
+    auto changed = song;
+    changed.revision = song.revision + 1;
+    const auto stale_view = make_workspace_view(workspace, changed);
+    CHECK_FALSE(stale_view);
+    CHECK(has_code(stale_view.diagnostics, diagnostic_code_t::invalid_id));
+
+    auto stale_choice_song = song;
+    stale_choice_song.charts.front().active_branch_selection.push_back({branch_id_t{9999}, 1});
+    REQUIRE(rebind_workspace(workspace, stale_choice_song));
+    const auto updated = make_workspace_view(workspace, stale_choice_song);
+    REQUIRE(updated);
+    const auto& outline =
+        std::get<workspace_compose_view_t>(updated.view->tab_view).bms_branch_outline;
+    CHECK(has_code(outline.diagnostics, diagnostic_code_t::invalid_id));
+    CHECK_FALSE(outline.rows_truncated);
 }

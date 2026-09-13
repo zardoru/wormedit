@@ -238,6 +238,29 @@ struct scroll_speed_query_result_t {
     }
 };
 
+// Exact extent of one SPEEDS object's interpolation. Row coordinates are
+// absolute and may be fractional; seconds preserve progress during stops,
+// where a seconds-clock transition can advance without moving in row space.
+// The end is clipped at a replacement speed event or chart end.
+struct scroll_speed_transition_span_t {
+    object_id_t source_event;
+    signed_rational_t begin_row;
+    signed_rational_t end_row;
+    signed_rational_t begin_seconds;
+    signed_rational_t end_seconds;
+    bool transition_is_seconds{};
+    bool clipped{};
+};
+
+struct scroll_speed_transition_span_result_t {
+    std::optional<scroll_speed_transition_span_t> span;
+    std::optional<timing_diagnostic_t> error;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return span.has_value();
+    }
+};
+
 [[nodiscard]] auto build_scroll_speed_index(const chart_document_t& chart,
                                             const timing_index_t& timing,
                                             scroll_speed_build_options_t options = {})
@@ -256,6 +279,15 @@ struct scroll_speed_query_result_t {
                                    signed_rational_t absolute_row,
                                    timing_boundary_side_t side = timing_boundary_side_t::event)
     -> scroll_speed_query_result_t;
+
+// Return the exact transition extent for a compiled SPEEDS object. Beat-clock
+// endpoints are measured in musical rows; seconds-clock endpoints use the
+// shared inverse timing evaluator, so stops and warps retain their evaluator
+// semantics. A zero-duration transition has identical begin and end points.
+[[nodiscard]] auto scroll_speed_transition_span(const scroll_speed_index_t& index,
+                                                const timing_index_t& timing,
+                                                object_id_t source_event)
+    -> scroll_speed_transition_span_result_t;
 
 [[nodiscard]] auto
 sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,

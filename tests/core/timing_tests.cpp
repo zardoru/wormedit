@@ -733,6 +733,135 @@ TEST_CASE("beat and second speed transitions use distinct stop and warp clocks",
     CHECK(after_warp.state->scroll_multiplier == signed_rational_t{1, 1});
 }
 
+TEST_CASE("speed transition spans preserve their clock and clip at replacements and chart end",
+          "[unit][core][timing][scroll-speed][span]") {
+    auto beat_chart = base_chart();
+    beat_chart.beat_zero_audio_offset_seconds = {};
+    beat_chart.pauses.push_back({.id = object_id_t{80},
+                                 .position = {measure_id_t{1}, 240},
+                                 .kind = pause_kind_t::stop,
+                                 .duration = {2, 1},
+                                 .source_unit = pause_unit_t::seconds});
+    beat_chart.warps.push_back(
+        {.id = object_id_t{81}, .span = {{measure_id_t{1}, 480}, {measure_id_t{1}, 720}}});
+    beat_chart.speeds.push_back({.id = object_id_t{82},
+                                 .position = {measure_id_t{1}, 0},
+                                 .multiplier = {4, 1},
+                                 .transition_beats = {3, 1}});
+    const auto beat_timing = build_timing_index(beat_chart);
+    REQUIRE(beat_timing);
+    const auto beat_speed = build_scroll_speed_index(beat_chart, *beat_timing.index);
+    REQUIRE(beat_speed);
+    const auto beat_span =
+        scroll_speed_transition_span(*beat_speed.index, *beat_timing.index, object_id_t{82});
+    REQUIRE(beat_span);
+    CHECK(beat_span.span->begin_row == signed_rational_t{0, 1});
+    CHECK(beat_span.span->end_row == signed_rational_t{720, 1});
+    CHECK(beat_span.span->begin_seconds == signed_rational_t{0, 1});
+    CHECK(beat_span.span->end_seconds == signed_rational_t{3, 1});
+    CHECK_FALSE(beat_span.span->transition_is_seconds);
+    CHECK_FALSE(beat_span.span->clipped);
+
+    auto seconds_chart = base_chart();
+    seconds_chart.beat_zero_audio_offset_seconds = {};
+    seconds_chart.pauses.push_back({.id = object_id_t{83},
+                                    .position = {measure_id_t{1}, 240},
+                                    .kind = pause_kind_t::stop,
+                                    .duration = {2, 1},
+                                    .source_unit = pause_unit_t::seconds});
+    seconds_chart.speeds.push_back({.id = object_id_t{84},
+                                    .position = {measure_id_t{1}, 0},
+                                    .multiplier = {3, 1},
+                                    .transition_beats = {2, 1},
+                                    .transition_is_seconds = true});
+    const auto seconds_timing = build_timing_index(seconds_chart);
+    REQUIRE(seconds_timing);
+    const auto seconds_speed = build_scroll_speed_index(seconds_chart, *seconds_timing.index);
+    REQUIRE(seconds_speed);
+    const auto seconds_span =
+        scroll_speed_transition_span(*seconds_speed.index, *seconds_timing.index, object_id_t{84});
+    REQUIRE(seconds_span);
+    CHECK(seconds_span.span->begin_row == signed_rational_t{0, 1});
+    CHECK(seconds_span.span->end_row == signed_rational_t{240, 1});
+    CHECK(seconds_span.span->begin_seconds == signed_rational_t{0, 1});
+    CHECK(seconds_span.span->end_seconds == signed_rational_t{2, 1});
+    CHECK(seconds_span.span->transition_is_seconds);
+    CHECK_FALSE(seconds_span.span->clipped);
+
+    auto reducible_duration_chart = base_chart();
+    reducible_duration_chart.beat_zero_audio_offset_seconds = {};
+    reducible_duration_chart.speeds.push_back({
+        .id = object_id_t{89},
+        .position = {measure_id_t{1}, 0},
+        .multiplier = {3, 1},
+        .transition_beats = {std::numeric_limits<std::uint64_t>::max(),
+                             std::numeric_limits<std::uint64_t>::max()},
+        .transition_is_seconds = true,
+    });
+    const auto reducible_timing = build_timing_index(reducible_duration_chart);
+    REQUIRE(reducible_timing);
+    const auto reducible_speed =
+        build_scroll_speed_index(reducible_duration_chart, *reducible_timing.index);
+    REQUIRE(reducible_speed);
+    const auto reducible_span = scroll_speed_transition_span(
+        *reducible_speed.index, *reducible_timing.index, object_id_t{89});
+    REQUIRE(reducible_span);
+    CHECK(reducible_span.span->end_seconds == signed_rational_t{1, 1});
+    CHECK_FALSE(reducible_span.span->clipped);
+
+    auto replaced_chart = base_chart();
+    replaced_chart.beat_zero_audio_offset_seconds = {};
+    replaced_chart.pauses.push_back({.id = object_id_t{85},
+                                     .position = {measure_id_t{1}, 240},
+                                     .kind = pause_kind_t::delay,
+                                     .duration = {500, 1},
+                                     .source_unit = pause_unit_t::milliseconds});
+    replaced_chart.speeds = {
+        {.id = object_id_t{86},
+         .position = {measure_id_t{1}, 0},
+         .multiplier = {4, 1},
+         .transition_beats = {10, 1},
+         .transition_is_seconds = true},
+        {.id = object_id_t{87},
+         .position = {measure_id_t{1}, 240},
+         .multiplier = {2, 1},
+         .transition_beats = {0, 1}},
+    };
+    const auto replaced_timing = build_timing_index(replaced_chart);
+    REQUIRE(replaced_timing);
+    const auto replaced_speed = build_scroll_speed_index(replaced_chart, *replaced_timing.index);
+    REQUIRE(replaced_speed);
+    const auto clipped_span = scroll_speed_transition_span(*replaced_speed.index,
+                                                           *replaced_timing.index, object_id_t{86});
+    REQUIRE(clipped_span);
+    CHECK(clipped_span.span->end_row == signed_rational_t{240, 1});
+    CHECK(clipped_span.span->end_seconds == signed_rational_t{1, 1});
+    CHECK(clipped_span.span->clipped);
+    const auto zero_span = scroll_speed_transition_span(*replaced_speed.index,
+                                                        *replaced_timing.index, object_id_t{87});
+    REQUIRE(zero_span);
+    CHECK(zero_span.span->begin_row == zero_span.span->end_row);
+    CHECK(zero_span.span->begin_seconds == zero_span.span->end_seconds);
+    CHECK_FALSE(zero_span.span->clipped);
+
+    auto chart_end_chart = base_chart();
+    chart_end_chart.beat_zero_audio_offset_seconds = {};
+    chart_end_chart.speeds.push_back({.id = object_id_t{88},
+                                      .position = {measure_id_t{2}, 480},
+                                      .multiplier = {5, 1},
+                                      .transition_beats = {2, 1}});
+    const auto chart_end_timing = build_timing_index(chart_end_chart);
+    REQUIRE(chart_end_timing);
+    const auto chart_end_speed = build_scroll_speed_index(chart_end_chart, *chart_end_timing.index);
+    REQUIRE(chart_end_speed);
+    const auto chart_end_span = scroll_speed_transition_span(
+        *chart_end_speed.index, *chart_end_timing.index, object_id_t{88});
+    REQUIRE(chart_end_span);
+    CHECK(chart_end_span.span->begin_row == signed_rational_t{1'440, 1});
+    CHECK(chart_end_span.span->end_row == signed_rational_t{1'680, 1});
+    CHECK(chart_end_span.span->clipped);
+}
+
 TEST_CASE("scroll and speed compilation rejects stale malformed and over-cap inputs",
           "[unit][core][timing][scroll-speed][bounds]") {
     auto chart = base_chart();

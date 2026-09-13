@@ -13,6 +13,7 @@
 #include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/recovery_controller.h>
 #include <wormedit/core/startup_session.h>
+#include <wormedit/core/timing.h>
 #include <wormedit/core/viewport_input.h>
 #include <wormedit/core/workspace.h>
 
@@ -99,6 +100,8 @@ struct flattened_workspace_t {
         metadata_format_field_storage{};
     std::array<WormUiMetadataFormatTargetView, WORM_UI_METADATA_FORMAT_TARGET_CAPACITY>
         metadata_format_target_storage{};
+    std::string timing_status_storage;
+    std::vector<WormUiTimingSpeedView> timing_speed_storage;
     std::string compose_status_storage;
     std::vector<WormUiComposeBandView> compose_band_storage;
     std::vector<WormUiComposeLaneView> compose_lane_storage;
@@ -122,6 +125,27 @@ struct compose_scene_cache_t {
     std::uint64_t revision{};
     bool attempted{};
     std::optional<wormedit::editor_field_scene_index_t> index;
+    std::string status;
+};
+
+struct timing_speed_cache_entry_t {
+    std::uint64_t object_id{};
+    long double marker_row{};
+    long double affected_begin_row{};
+    long double affected_end_row{};
+    double multiplier{};
+    double transition_duration{};
+    bool transition_is_seconds{};
+    bool transition_clipped{};
+};
+
+struct timing_scene_cache_t {
+    wormedit::chart_id_t chart;
+    std::uint64_t revision{};
+    bool attempted{};
+    bool truncated{};
+    std::uint64_t total_rows{};
+    std::vector<timing_speed_cache_entry_t> speeds;
     std::string status;
 };
 
@@ -456,6 +480,14 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                            ": " + metadata_value_summary(field.value));
                 }
             } else if constexpr (std::is_same_v<tab_t, wormedit::workspace_timing_view_t>) {
+                result.view.timing.visible = true;
+                result.view.timing.measure_count = tab.measure_count;
+                result.view.timing.bpm_count = tab.bpm_count;
+                result.view.timing.pause_count = tab.pause_count;
+                result.view.timing.warp_count = tab.warp_count;
+                result.view.timing.bookmark_count = tab.bookmark_count;
+                result.view.timing.section_count = tab.section_count;
+                result.view.timing.anchor_count = tab.anchor_count;
                 append("Measures: " + std::to_string(tab.measure_count));
                 append("BPM events: " + std::to_string(tab.bpm_count));
                 append("Stops / delays: " + std::to_string(tab.pause_count));
@@ -564,6 +596,125 @@ auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) 
                                                  18.0f
                                    : 0.0f;
     return std::max(64.0, static_cast<double>(content_height - 38.0f - 18.0f - branch_height));
+}
+
+auto rational_as_long_double(wormedit::signed_rational_t value) -> long double {
+    if (value.denominator == 0) {
+        return 0.0L;
+    }
+    return static_cast<long double>(value.numerator) / static_cast<long double>(value.denominator);
+}
+
+auto rational_as_double(wormedit::rational_t value) -> double {
+    if (value.denominator == 0) {
+        return 0.0;
+    }
+    return static_cast<double>(value.numerator) / static_cast<double>(value.denominator);
+}
+
+void populate_timing_view(flattened_workspace_t& flattened,
+                          const wormedit::document_history_t& history,
+                          const wormedit::workspace_controller_t& workspace,
+                          timing_scene_cache_t& cache, int window_width, int window_height) {
+    auto& view = flattened.view.timing;
+    if (!view.visible) {
+        return;
+    }
+    view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
+    view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
+    if (!workspace.selected_chart) {
+        flattened.timing_status_storage = "Choose a difficulty to display its timing lanes.";
+        view.status_text = flattened.timing_status_storage.c_str();
+        return;
+    }
+    const auto chart_it = std::ranges::find(history.document.charts, *workspace.selected_chart,
+                                            &wormedit::chart_document_t::id);
+    if (chart_it == history.document.charts.end()) {
+        flattened.timing_status_storage = "The selected difficulty is no longer available.";
+        view.status_text = flattened.timing_status_storage.c_str();
+        return;
+    }
+    const auto& chart = *chart_it;
+    view.speed_total_count = chart.speeds.size();
+    if (!cache.attempted || cache.chart != chart.id ||
+        cache.revision != history.document.revision) {
+        cache = {.chart = chart.id, .revision = history.document.revision, .attempted = true};
+        const auto timing = wormedit::build_timing_index(chart);
+        if (!timing.index) {
+            cache.status = timing.diagnostics.empty() ? "The timing index could not be built."
+                                                      : timing.diagnostics.front().message;
+        } else {
+            const auto scroll_speed = wormedit::build_scroll_speed_index(chart, *timing.index);
+            if (!scroll_speed.index) {
+                cache.status = scroll_speed.diagnostics.empty()
+                                   ? "The SPEEDS evaluator could not be built."
+                                   : scroll_speed.diagnostics.front().message;
+            } else {
+                cache.total_rows = scroll_speed.index->total_rows;
+                cache.truncated = scroll_speed.index->speed_segments.size() >
+                                  static_cast<std::size_t>(WORM_UI_TIMING_SPEED_CAPACITY);
+                const auto count =
+                    std::min(scroll_speed.index->speed_segments.size(),
+                             static_cast<std::size_t>(WORM_UI_TIMING_SPEED_CAPACITY));
+                cache.speeds.reserve(count);
+                for (std::size_t index = 0; index < count; ++index) {
+                    const auto& speed = scroll_speed.index->speed_segments[index];
+                    const auto span = wormedit::scroll_speed_transition_span(
+                        *scroll_speed.index, *timing.index, speed.source_event);
+                    if (!span.span) {
+                        cache.status = span.error ? span.error->message
+                                                  : "A SPEEDS transition span could not be built.";
+                        cache.speeds.clear();
+                        break;
+                    }
+                    cache.speeds.push_back({
+                        .object_id = speed.source_event.value,
+                        .marker_row = static_cast<long double>(speed.begin_row),
+                        .affected_begin_row = rational_as_long_double(span.span->begin_row),
+                        .affected_end_row = rational_as_long_double(span.span->end_row),
+                        .multiplier =
+                            static_cast<double>(rational_as_long_double(speed.target_multiplier)),
+                        .transition_duration = rational_as_double(speed.transition_duration),
+                        .transition_is_seconds = speed.transition_is_seconds,
+                        .transition_clipped = span.span->clipped,
+                    });
+                }
+            }
+        }
+    }
+    if (!cache.status.empty()) {
+        flattened.timing_status_storage = cache.status;
+        view.status_text = flattened.timing_status_storage.c_str();
+        return;
+    }
+    if (cache.total_rows == 0) {
+        flattened.timing_status_storage = "This difficulty has no timing rows to display.";
+        view.status_text = flattened.timing_status_storage.c_str();
+        return;
+    }
+
+    const auto row_to_pixels = [&](long double row) {
+        const auto bounded = std::clamp(row, 0.0L, static_cast<long double>(cache.total_rows));
+        return static_cast<double>(bounded / static_cast<long double>(cache.total_rows) *
+                                   view.viewport_height_pixels);
+    };
+    flattened.timing_speed_storage.reserve(cache.speeds.size());
+    for (const auto& speed : cache.speeds) {
+        flattened.timing_speed_storage.push_back({
+            .object_id = speed.object_id,
+            .marker_y_pixels = row_to_pixels(speed.marker_row),
+            .affected_begin_y_pixels = row_to_pixels(speed.affected_begin_row),
+            .affected_end_y_pixels = row_to_pixels(speed.affected_end_row),
+            .multiplier = speed.multiplier,
+            .transition_duration = speed.transition_duration,
+            .transition_is_seconds = speed.transition_is_seconds,
+            .transition_clipped = speed.transition_clipped,
+        });
+    }
+    view.scene_available = true;
+    view.truncated = cache.truncated;
+    view.speeds = flattened.timing_speed_storage.data();
+    view.speed_count = flattened.timing_speed_storage.size();
 }
 
 auto compose_lane_is_editable(const wormedit::lane_definition_t& lane) -> bool {
@@ -1761,6 +1912,7 @@ int main(int argc, char** argv) {
     const auto recovery_scan_configured = startup.recovery_scan_configured;
     const auto scanned_primary_version = startup.primary_version;
 
+    timing_scene_cache_t timing_scene_cache;
     compose_scene_cache_t compose_scene_cache;
     std::optional<wormedit::editor_interaction_state_t> compose_interaction_state;
     wormedit::viewport_input_controller_t compose_viewport_input;
@@ -1871,6 +2023,8 @@ int main(int argc, char** argv) {
             int compose_window_width = 0;
             int compose_window_height = 0;
             worm_window_get_size(&window, &compose_window_width, &compose_window_height);
+            populate_timing_view(flattened, history, workspace, timing_scene_cache,
+                                 compose_window_width, compose_window_height);
             populate_compose_view(flattened, history, workspace, compose_scene_cache,
                                   compose_window_width, compose_window_height,
                                   compose_interaction_state);

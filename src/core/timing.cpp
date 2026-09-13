@@ -1608,6 +1608,156 @@ auto scroll_speed_at(const scroll_speed_index_t& index, const timing_index_t& ti
                                           .render_displacement_beats = render_displacement}};
 }
 
+auto scroll_speed_transition_span(const scroll_speed_index_t& index, const timing_index_t& timing,
+                                  object_id_t source_event)
+    -> scroll_speed_transition_span_result_t {
+    const auto span_error = [&](timing_error_code_t code, std::string message) {
+        return scroll_speed_transition_span_result_t{
+            .error = error(code, std::move(message), source_event)};
+    };
+    if (index.divisions_per_standard_measure != timing.divisions_per_standard_measure ||
+        index.total_rows != timing.total_rows ||
+        index.timing_source_fingerprint != timing.source_fingerprint) {
+        return span_error(timing_error_code_t::invalid_document,
+                          "scroll/speed index does not match the timing index");
+    }
+    const auto segment =
+        std::ranges::find(index.speed_segments, source_event, &speed_curve_segment_t::source_event);
+    if (segment == index.speed_segments.end()) {
+        return span_error(timing_error_code_t::position_out_of_range,
+                          "SPEEDS object is not present in the compiled index");
+    }
+    if (segment->begin_row > segment->end_row || segment->end_row > index.total_rows ||
+        segment->begin_row > maximum_i64_magnitude ||
+        segment->transition_duration.denominator == 0) {
+        return span_error(timing_error_code_t::invalid_document,
+                          "compiled SPEEDS transition span is invalid");
+    }
+
+    const auto begin_row = signed_rational_t{static_cast<std::int64_t>(segment->begin_row), 1};
+    const auto begin_seconds = segment->begin_seconds;
+    auto end_row = begin_row;
+    auto end_seconds = begin_seconds;
+    auto clipped = false;
+    const auto duration = segment->transition_duration;
+    if (duration.numerator == 0) {
+        return {.span = scroll_speed_transition_span_t{.source_event = source_event,
+                                                       .begin_row = begin_row,
+                                                       .end_row = end_row,
+                                                       .begin_seconds = begin_seconds,
+                                                       .end_seconds = end_seconds,
+                                                       .transition_is_seconds =
+                                                           segment->transition_is_seconds,
+                                                       .clipped = false}};
+    }
+
+    const auto next_segment = std::next(segment);
+    const bool replaced = next_segment != index.speed_segments.end();
+    const auto cap_row = signed_rational_t{static_cast<std::int64_t>(segment->end_row), 1};
+    const auto cap_side =
+        replaced ? timing_boundary_side_t::event
+                 : (segment->transition_is_seconds ? timing_boundary_side_t::after_stops
+                                                   : timing_boundary_side_t::before_delays);
+    const auto cap_time = timing_seconds_at_row(timing, cap_row, cap_side);
+    if (!cap_time) {
+        return span_error(cap_time.error->code, cap_time.error->message);
+    }
+
+    if (segment->transition_is_seconds) {
+        const auto available = subtract_exact(*cap_time.seconds, begin_seconds);
+        if (!available || available->numerator < 0) {
+            return span_error(timing_error_code_t::arithmetic_overflow,
+                              "SPEEDS transition end exceeds exact timing bounds");
+        }
+        const auto duration_comparison =
+            compare_positive_fractions(duration.numerator, duration.denominator,
+                                       magnitude(available->numerator), available->denominator);
+        if (duration_comparison >= 0) {
+            clipped = duration_comparison > 0;
+            end_row = cap_row;
+            end_seconds = *cap_time.seconds;
+        } else {
+            auto duration_numerator = duration.numerator;
+            auto duration_denominator = duration.denominator;
+            const auto duration_divisor = std::gcd(duration_numerator, duration_denominator);
+            duration_numerator /= duration_divisor;
+            duration_denominator /= duration_divisor;
+            if (duration_numerator > maximum_i64_magnitude) {
+                return span_error(timing_error_code_t::arithmetic_overflow,
+                                  "SPEEDS transition duration exceeds exact timing bounds");
+            }
+            const auto natural_end = add_exact(
+                begin_seconds,
+                {static_cast<std::int64_t>(duration_numerator), duration_denominator});
+            if (!natural_end) {
+                return span_error(timing_error_code_t::arithmetic_overflow,
+                                  "SPEEDS transition end exceeds exact timing bounds");
+            }
+            const auto position = musical_position_at(timing, *natural_end);
+            if (!position) {
+                return span_error(position.error->code, position.error->message);
+            }
+            end_row = *position.absolute_row;
+            end_seconds = *natural_end;
+        }
+    } else {
+        const auto available_rows = subtract_exact(cap_row, begin_row);
+        const auto available_beats =
+            available_rows && available_rows->numerator >= 0
+                ? positive_fraction(
+                      {magnitude(available_rows->numerator), 4},
+                      {available_rows->denominator, index.divisions_per_standard_measure})
+                : std::nullopt;
+        if (!available_rows || !available_beats) {
+            return span_error(timing_error_code_t::arithmetic_overflow,
+                              "SPEEDS transition span exceeds exact row bounds");
+        }
+        const auto duration_comparison = compare_positive_fractions(
+            duration.numerator, duration.denominator, magnitude(available_beats->numerator),
+            available_beats->denominator);
+        if (duration_comparison > 0) {
+            clipped = true;
+            end_row = cap_row;
+            if (replaced) {
+                end_seconds = *cap_time.seconds;
+            } else {
+                const auto arrival =
+                    timing_seconds_at_row(timing, cap_row, timing_boundary_side_t::before_delays);
+                if (!arrival) {
+                    return span_error(arrival.error->code, arrival.error->message);
+                }
+                end_seconds = *arrival.seconds;
+            }
+        } else {
+            const auto transition_rows =
+                positive_fraction({duration.numerator, index.divisions_per_standard_measure},
+                                  {duration.denominator, 4});
+            const auto natural_end =
+                transition_rows ? add_exact(begin_row, *transition_rows) : std::nullopt;
+            if (!natural_end) {
+                return span_error(timing_error_code_t::arithmetic_overflow,
+                                  "SPEEDS transition end exceeds exact row bounds");
+            }
+            end_row = *natural_end;
+            const auto arrival =
+                timing_seconds_at_row(timing, end_row, timing_boundary_side_t::before_delays);
+            if (!arrival) {
+                return span_error(arrival.error->code, arrival.error->message);
+            }
+            end_seconds = *arrival.seconds;
+        }
+    }
+
+    return {.span = scroll_speed_transition_span_t{.source_event = source_event,
+                                                   .begin_row = begin_row,
+                                                   .end_row = end_row,
+                                                   .begin_seconds = begin_seconds,
+                                                   .end_seconds = end_seconds,
+                                                   .transition_is_seconds =
+                                                       segment->transition_is_seconds,
+                                                   .clipped = clipped}};
+}
+
 auto build_preview_schedule(const chart_document_t& chart, const timing_index_t& timing,
                             preview_schedule_options_t options) -> preview_schedule_result_t {
     preview_schedule_result_t result;

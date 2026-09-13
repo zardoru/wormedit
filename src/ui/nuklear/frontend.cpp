@@ -1154,6 +1154,141 @@ static void process_compose_key_events(const WormUiComposeView* view,
     g_compose_key_event_count = 0;
 }
 
+static int timing_view_valid(const WormUiTimingView* view) {
+    if (!view || view->speed_count > WORM_UI_TIMING_SPEED_CAPACITY ||
+        (view->speed_count != 0 && !view->speeds) || !std::isfinite(view->viewport_width_pixels) ||
+        view->viewport_width_pixels <= 0.0 || !std::isfinite(view->viewport_height_pixels) ||
+        view->viewport_height_pixels <= 0.0) {
+        return 0;
+    }
+    for (size_t index = 0; index < view->speed_count; ++index) {
+        const auto& speed = view->speeds[index];
+        if (!std::isfinite(speed.marker_y_pixels) ||
+            !std::isfinite(speed.affected_begin_y_pixels) ||
+            !std::isfinite(speed.affected_end_y_pixels) || !std::isfinite(speed.multiplier) ||
+            !std::isfinite(speed.transition_duration) || speed.marker_y_pixels < 0.0 ||
+            speed.marker_y_pixels > view->viewport_height_pixels ||
+            speed.affected_begin_y_pixels < 0.0 ||
+            speed.affected_end_y_pixels < speed.affected_begin_y_pixels ||
+            speed.affected_end_y_pixels > view->viewport_height_pixels || speed.multiplier < 0.0 ||
+            speed.transition_duration < 0.0) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static void render_timing_lane(const WormUiTimingView* view) {
+    nk_layout_row_dynamic(g_context, 24, 1);
+    nk_labelf(g_context, NK_TEXT_LEFT,
+              "%zu measures · %zu BPM · %zu stop/delay · %zu warp · %zu SPEEDS",
+              view->measure_count, view->bpm_count, view->pause_count, view->warp_count,
+              view->speed_total_count);
+    nk_layout_row_dynamic(g_context, 18, 1);
+    nk_labelf(g_context, NK_TEXT_LEFT,
+              "%zu bookmarks/sections · %zu anchors · Hover a SPEEDS marker to reveal its exact "
+              "transition span.",
+              view->bookmark_count + view->section_count, view->anchor_count);
+
+    const auto group_bounds = nk_window_get_content_region(g_context);
+    const auto surface_height = std::max(32.0f, group_bounds.h - 48.0f);
+    nk_layout_space_begin(g_context, NK_DYNAMIC, surface_height, 1);
+    nk_layout_space_push(g_context, nk_rect(0.0f, 0.0f, 1.0f, 1.0f));
+    struct nk_rect viewport{};
+    const auto widget_state = nk_widget(&viewport, g_context);
+    nk_layout_space_end(g_context);
+    if (widget_state == NK_WIDGET_INVALID || viewport.w <= 1.0f || viewport.h <= 1.0f) {
+        return;
+    }
+
+    auto* canvas = nk_window_get_canvas(g_context);
+    if (!canvas) {
+        return;
+    }
+    const auto parent_clip = canvas->clip;
+    nk_push_scissor(canvas, viewport);
+    nk_fill_rect(canvas, viewport, 0.0f, nk_rgb(22, 25, 33));
+    if (!view->scene_available) {
+        const auto* status = view->status_text ? view->status_text : "Timing lane is unavailable.";
+        nk_draw_text(canvas, viewport, status, static_cast<int>(strlen(status)),
+                     g_context->style.font, nk_rgb(22, 25, 33), nk_rgb(190, 196, 207));
+        nk_push_scissor(canvas, parent_clip);
+        return;
+    }
+
+    const auto screen_y = [&](double y_pixels) {
+        return viewport.y + static_cast<float>(y_pixels) * viewport.h /
+                                static_cast<float>(view->viewport_height_pixels);
+    };
+    const auto lane =
+        nk_rect(viewport.x + viewport.w * 0.12f, viewport.y, viewport.w * 0.76f, viewport.h);
+    nk_fill_rect(canvas, lane, 0.0f, nk_rgb(31, 37, 49));
+    nk_stroke_line(canvas, lane.x, lane.y, lane.x, lane.y + lane.h, 1.0f, nk_rgb(66, 76, 94));
+    nk_stroke_line(canvas, lane.x + lane.w, lane.y, lane.x + lane.w, lane.y + lane.h, 1.0f,
+                   nk_rgb(66, 76, 94));
+
+    const bool pointer_inside = nk_input_is_mouse_hovering_rect(&g_context->input, viewport);
+    const auto pointer_y = g_context->input.mouse.pos.y;
+    size_t hovered = view->speed_count;
+    auto nearest_distance = std::numeric_limits<float>::max();
+    if (pointer_inside && g_context->input.mouse.pos.x >= lane.x &&
+        g_context->input.mouse.pos.x <= lane.x + lane.w) {
+        for (size_t index = 0; index < view->speed_count; ++index) {
+            const auto distance =
+                std::abs(pointer_y - screen_y(view->speeds[index].marker_y_pixels));
+            // Same-row SPEEDS events are resolved by source order; prefer the
+            // last drawn marker, which is the event-side winner.
+            if (distance <= 7.0f && distance <= nearest_distance) {
+                hovered = index;
+                nearest_distance = distance;
+            }
+        }
+    }
+
+    if (hovered != view->speed_count) {
+        const auto& speed = view->speeds[hovered];
+        auto top = screen_y(speed.affected_begin_y_pixels);
+        auto bottom = screen_y(speed.affected_end_y_pixels);
+        if (bottom - top < 3.0f) {
+            bottom = std::min(viewport.y + viewport.h, top + 3.0f);
+        }
+        nk_fill_rect(canvas, nk_rect(lane.x, top, lane.w, std::max(0.0f, bottom - top)), 0.0f,
+                     nk_rgba(136, 203, 238, 54));
+        nk_stroke_line(canvas, lane.x, top, lane.x + lane.w, top, 1.0f, nk_rgb(137, 207, 239));
+        nk_stroke_line(canvas, lane.x, bottom, lane.x + lane.w, bottom, 1.0f, nk_rgb(91, 145, 177));
+    }
+
+    for (size_t index = 0; index < view->speed_count; ++index) {
+        const auto y = screen_y(view->speeds[index].marker_y_pixels);
+        const auto color = index == hovered ? nk_rgb(191, 232, 248) : nk_rgb(113, 184, 218);
+        nk_fill_rect(canvas, nk_rect(lane.x + 5.0f, y - 2.0f, lane.w - 10.0f, 4.0f), 0.0f, color);
+    }
+    if (hovered != view->speed_count) {
+        const auto& speed = view->speeds[hovered];
+        char label[192]{};
+        const auto count =
+            snprintf(label, sizeof(label), "SPEEDS #%llu  %.4gx over %.4g %s%s",
+                     static_cast<unsigned long long>(speed.object_id), speed.multiplier,
+                     speed.transition_duration, speed.transition_is_seconds ? "seconds" : "beats",
+                     speed.transition_clipped ? " (clipped by next event or chart end)" : "");
+        if (count > 0) {
+            const auto text_bounds = nk_rect(viewport.x + 8.0f, viewport.y + 8.0f,
+                                             std::max(0.0f, viewport.w - 16.0f), 20.0f);
+            nk_draw_text(canvas, text_bounds, label,
+                         static_cast<int>(std::min<size_t>(strlen(label), sizeof(label) - 1)),
+                         g_context->style.font, nk_rgba(22, 25, 33, 220), nk_rgb(207, 232, 244));
+        }
+    }
+    if (view->truncated) {
+        const char* warning = "Additional SPEEDS markers are hidden by the frontend cap.";
+        const auto text_bounds = nk_rect(viewport.x + 8.0f, viewport.y + viewport.h - 24.0f,
+                                         std::max(0.0f, viewport.w - 16.0f), 18.0f);
+        nk_draw_text(canvas, text_bounds, warning, static_cast<int>(strlen(warning)),
+                     g_context->style.font, nk_rgba(22, 25, 33, 220), nk_rgb(224, 184, 103));
+    }
+    nk_push_scissor(canvas, parent_clip);
+}
+
 static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceAction* action) {
     nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 7);
     nk_layout_row_push(g_context, 0.07f);
@@ -1542,6 +1677,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         (view->metadata.visible &&
          (view->metadata.format_field_count > WORM_UI_METADATA_FORMAT_FIELD_CAPACITY ||
           view->metadata.format_target_count > WORM_UI_METADATA_FORMAT_TARGET_CAPACITY)) ||
+        (view->timing.visible && !timing_view_valid(&view->timing)) ||
         (view->compose.visible &&
          (view->compose.band_count > WORM_UI_COMPOSE_BAND_CAPACITY ||
           view->compose.lane_count > WORM_UI_COMPOSE_LANE_CAPACITY ||
@@ -1774,6 +1910,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         if (nk_group_begin(g_context, "workspace-content", NK_WINDOW_BORDER)) {
             if (view->metadata.visible) {
                 render_metadata_editor(&view->metadata, &action);
+            } else if (view->timing.visible) {
+                render_timing_lane(&view->timing);
             } else if (view->compose.visible) {
                 render_compose_field(&view->compose, &action);
             } else {

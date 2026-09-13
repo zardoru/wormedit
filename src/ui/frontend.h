@@ -33,6 +33,7 @@
 #define WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY 16
 #define WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY 96
 #define WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY 4
+#define WORM_UI_TIMING_SPEED_CAPACITY 4096
 #define WORM_UI_COMPOSE_MIN_PIXELS_PER_MEASURE 24.0
 #define WORM_UI_COMPOSE_MAX_PIXELS_PER_MEASURE 4096.0
 
@@ -250,6 +251,38 @@ typedef struct WormUiComposeView {
     size_t branch_diagnostic_count;
 } WormUiComposeView;
 
+typedef struct WormUiTimingSpeedView {
+    uint64_t object_id;
+    double marker_y_pixels;
+    double affected_begin_y_pixels;
+    double affected_end_y_pixels;
+    double multiplier;
+    double transition_duration;
+    bool transition_is_seconds;
+    bool transition_clipped;
+} WormUiTimingSpeedView;
+
+// Renderer-neutral scalar projection of the timing pane. SPEEDS spans are
+// evaluated by the timing core before crossing this private C boundary.
+typedef struct WormUiTimingView {
+    bool visible;
+    bool scene_available;
+    bool truncated;
+    double viewport_width_pixels;
+    double viewport_height_pixels;
+    const char* status_text;
+    size_t measure_count;
+    size_t bpm_count;
+    size_t pause_count;
+    size_t warp_count;
+    size_t bookmark_count;
+    size_t section_count;
+    size_t anchor_count;
+    size_t speed_total_count;
+    const WormUiTimingSpeedView* speeds;
+    size_t speed_count;
+} WormUiTimingView;
+
 // Private scalar view consumed by the selected frontend adapter. The owning
 // application keeps every pointed-to string alive for the duration of compose.
 typedef struct WormUiWorkspaceView {
@@ -276,6 +309,7 @@ typedef struct WormUiWorkspaceView {
     size_t recovery_diagnostic_count;
     const char* recovery_diagnostics[WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY];
     WormUiMetadataView metadata;
+    WormUiTimingView timing;
     WormUiComposeView compose;
 } WormUiWorkspaceView;
 

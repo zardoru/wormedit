@@ -283,7 +283,9 @@ scroll_curve "chorus-rise"
   }
 ```
 
-`values` accepts a built-in curve descriptor or a pure Lua function `function(p, context) -> finite_number`. The context is immutable and contains the interval endpoints, baseline effective scroll at `p`, active measure/timing data, declared parameters, and deterministic seed. The function cannot mutate the document or emit events during sampling.
+`values` accepts a built-in curve descriptor, a pure Lua function `function(p, context) -> finite_number`, or a versioned generator entry point that returns such a function/closure. A returned closure may capture only explicit serializable generator parameters, declared immutable asset handles/data, and values derived from the deterministic seed/context. The durable recipe stores module source or a project-relative source reference, scripting API version, entry-point name, named capture/parameter values, declared input asset identities and content hashes, and seed; it never serializes opaque Lua VM bytecode, registry references, stack state, userdata, ambient globals, wall-clock values, or process state. Preview and export instantiate a fresh sandbox, evaluate the generator once to recreate the closure, and then sample it under the same instruction/memory/cancellation limits. Re-instantiation with identical inputs must produce identical values and diagnostics.
+
+The sampling context is immutable and contains the interval endpoints, baseline effective scroll at `p`, active measure/timing data, declared parameters, and deterministic seed. The sampled function cannot mutate the document, emit events, perform I/O, retain host pointers, or alter its captured state during sampling. Stateful closures whose result depends on call order are rejected: fixed and adaptive samplers may revisit points or evaluate them in a deterministic implementation-defined order, so `f(p, context)` must be referentially transparent for every sample.
 
 Initial built-ins are:
 

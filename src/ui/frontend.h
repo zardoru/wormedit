@@ -36,6 +36,9 @@
 #define WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY 4
 #define WORM_UI_TIMING_SPEED_CAPACITY 4096
 #define WORM_UI_TIMING_MARKER_CAPACITY 16384
+#define WORM_UI_TIMING_RECIPE_POINT_CAPACITY 4096
+#define WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES 64
+#define WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES 32
 #define WORM_UI_COMPOSE_MIN_PIXELS_PER_MEASURE 24.0
 #define WORM_UI_COMPOSE_MAX_PIXELS_PER_MEASURE 4096.0
 
@@ -313,6 +316,79 @@ typedef enum WormUiTimingPauseUnit {
     WORM_UI_TIMING_PAUSE_BEATS,
 } WormUiTimingPauseUnit;
 
+typedef enum WormUiTimingRecipeOutput {
+    WORM_UI_TIMING_RECIPE_OUTPUT_SV = 0,
+    WORM_UI_TIMING_RECIPE_OUTPUT_SCROLLS,
+    WORM_UI_TIMING_RECIPE_OUTPUT_SPEEDS,
+} WormUiTimingRecipeOutput;
+
+typedef enum WormUiTimingRecipeCurve {
+    WORM_UI_TIMING_RECIPE_CURVE_CONSTANT = 0,
+    WORM_UI_TIMING_RECIPE_CURVE_LINEAR,
+    WORM_UI_TIMING_RECIPE_CURVE_EXPONENTIAL,
+    WORM_UI_TIMING_RECIPE_CURVE_BUMP,
+} WormUiTimingRecipeCurve;
+
+typedef enum WormUiTimingRecipeSamplingMode {
+    WORM_UI_TIMING_RECIPE_SAMPLING_FIXED = 0,
+    WORM_UI_TIMING_RECIPE_SAMPLING_ADAPTIVE,
+} WormUiTimingRecipeSamplingMode;
+
+typedef enum WormUiTimingRecipeFixedExtent {
+    WORM_UI_TIMING_RECIPE_FIXED_POINT_COUNT = 0,
+    WORM_UI_TIMING_RECIPE_FIXED_STEP_ROWS,
+} WormUiTimingRecipeFixedExtent;
+
+typedef struct WormUiTimingRecipeRationalText {
+    char numerator[WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES];
+    char denominator[WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES];
+} WormUiTimingRecipeRationalText;
+
+// The frontend uses fractions already normalized by the application. Row
+// fraction runs top-to-bottom through the chart; value fraction maps left-to-
+// right across the Scroll/SV lane. Both coordinates must be finite in [0, 1].
+typedef struct WormUiTimingRecipePoint {
+    double row_fraction;
+    double value_fraction;
+} WormUiTimingRecipePoint;
+
+typedef struct WormUiTimingRecipeForm {
+    WormUiTimingRecipeOutput output;
+    WormUiTimingRecipeCurve curve;
+    WormUiTimingRecipeSamplingMode sampling_mode;
+    WormUiTimingRecipeFixedExtent fixed_extent;
+    WormUiTimingRecipeRationalText value_from;
+    WormUiTimingRecipeRationalText value_to;
+    WormUiTimingRecipeRationalText shape;
+    WormUiTimingRecipeRationalText bump_start;
+    WormUiTimingRecipeRationalText bump_length;
+    WormUiTimingRecipeRationalText bump_x;
+    WormUiTimingRecipeRationalText bump_y;
+    WormUiTimingRecipeRationalText tolerance;
+    WormUiTimingRecipeRationalText transition_duration;
+    bool transition_is_seconds;
+    char fixed_point_count[WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES];
+    char fixed_step_rows[WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES];
+    char adaptive_max_points[WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES];
+} WormUiTimingRecipeForm;
+
+typedef struct WormUiTimingRecipeDraftView {
+    bool selection_armed;
+    bool active;
+    bool valid;
+    uint64_t chart_id;
+    uint64_t document_revision;
+    uint64_t recipe_id;
+    double range_begin_fraction;
+    double range_end_fraction;
+    WormUiTimingRecipeForm form;
+    const WormUiTimingRecipePoint* candidate_points;
+    size_t candidate_point_count;
+    const WormUiTimingRecipePoint* composed_points;
+    size_t composed_point_count;
+    const char* status_text;
+} WormUiTimingRecipeDraftView;
+
 // Renderer-neutral scalar projection of the timing pane. SPEEDS spans are
 // evaluated by the timing core before crossing this private C boundary.
 typedef struct WormUiTimingView {
@@ -337,6 +413,7 @@ typedef struct WormUiTimingView {
     size_t speed_count;
     const WormUiTimingMarkerView* markers;
     size_t marker_count;
+    WormUiTimingRecipeDraftView sv_recipe;
     bool stage_active;
     bool stage_valid;
     uint64_t stage_existing_object_id;
@@ -352,6 +429,28 @@ typedef struct WormUiTimingView {
     char stage_secondary_denominator_text[64];
     const char* stage_status_text;
 } WormUiTimingView;
+
+typedef enum WormUiTimingRecipeActionKind {
+    WORM_UI_TIMING_RECIPE_ACTION_NONE = 0,
+    WORM_UI_TIMING_RECIPE_ACTION_ARM_SELECTION,
+    WORM_UI_TIMING_RECIPE_ACTION_BEGIN,
+    WORM_UI_TIMING_RECIPE_ACTION_UPDATE,
+    WORM_UI_TIMING_RECIPE_ACTION_UPDATE_RANGE,
+    WORM_UI_TIMING_RECIPE_ACTION_APPLY,
+    WORM_UI_TIMING_RECIPE_ACTION_CANCEL,
+} WormUiTimingRecipeActionKind;
+
+// BEGIN and UPDATE_RANGE carry normalized chart-time fractions. The app snaps
+// them to its active exact grid and returns the current preview through the
+// view above. UPDATE carries form data only; Apply is the only durable action.
+typedef struct WormUiTimingRecipeAction {
+    WormUiTimingRecipeActionKind kind;
+    uint64_t chart_id;
+    uint64_t document_revision;
+    double range_begin_fraction;
+    double range_end_fraction;
+    WormUiTimingRecipeForm form;
+} WormUiTimingRecipeAction;
 
 typedef enum WormUiTimingStageAction {
     WORM_UI_TIMING_STAGE_NONE = 0,
@@ -504,6 +603,7 @@ typedef struct WormUiWorkspaceAction {
     char timing_primary_denominator_text[64];
     char timing_secondary_numerator_text[64];
     char timing_secondary_denominator_text[64];
+    WormUiTimingRecipeAction timing_recipe_action;
     WormUiShortcutEvent shortcut_events[WORM_UI_SHORTCUT_EVENT_CAPACITY];
     size_t shortcut_event_count;
     bool shortcut_overflowed;

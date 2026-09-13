@@ -43,8 +43,12 @@ auto valid_bounded_rational(signed_rational_t value, long double maximum) -> boo
     return std::isfinite(number) && std::abs(number) <= maximum;
 }
 
-auto position_at_row(const measure_index_t& index, std::uint64_t row)
+auto position_at_row(const measure_index_t& index, std::uint64_t row, bool allow_chart_end = false)
     -> std::optional<local_position_t> {
+    if (allow_chart_end && row == index.total_rows && !index.entries.empty()) {
+        const auto& last = index.entries.back();
+        return local_position_t{.measure = last.id, .row = last.row_capacity};
+    }
     const auto found = std::ranges::find_if(index.entries, [row](const auto& entry) {
         return row >= entry.absolute_begin_row &&
                row - entry.absolute_begin_row < entry.row_capacity;
@@ -55,16 +59,33 @@ auto position_at_row(const measure_index_t& index, std::uint64_t row)
     return local_position_t{.measure = found->id, .row = row - found->absolute_begin_row};
 }
 
+auto position_row(const measure_index_t& index, local_position_t position,
+                  bool allow_chart_end = false) -> std::optional<std::uint64_t> {
+    if (const auto row = absolute_row(index, position)) {
+        return row;
+    }
+    if (allow_chart_end && !index.entries.empty()) {
+        const auto& last = index.entries.back();
+        if (position.measure == last.id && position.row == last.row_capacity) {
+            return index.total_rows;
+        }
+    }
+    return std::nullopt;
+}
+
 auto snapped_position(const chart_document_t& chart, const measure_index_t& index,
                       local_position_t target, std::uint64_t denominator)
     -> std::optional<local_position_t> {
-    const auto absolute = absolute_row(index, target);
+    const auto absolute = position_row(index, target, true);
     if (!absolute || denominator == 0 || chart.divisions_per_standard_measure % denominator != 0) {
         return std::nullopt;
     }
     const auto step = chart.divisions_per_standard_measure / denominator;
     if (step == 0) {
         return std::nullopt;
+    }
+    if (*absolute == index.total_rows) {
+        return position_at_row(index, index.total_rows, true);
     }
     const auto remainder = *absolute % step;
     auto snapped = *absolute - remainder;
@@ -73,7 +94,16 @@ auto snapped_position(const chart_document_t& chart, const measure_index_t& inde
         distance_up <= std::numeric_limits<std::uint64_t>::max() - *absolute) {
         snapped = *absolute + distance_up;
     }
-    return position_at_row(index, snapped);
+    if (snapped > index.total_rows) {
+        snapped = index.total_rows;
+    }
+    const auto distance_to_snapped =
+        snapped >= *absolute ? snapped - *absolute : *absolute - snapped;
+    const auto distance_to_chart_end = index.total_rows - *absolute;
+    if (distance_to_chart_end < distance_to_snapped) {
+        snapped = index.total_rows;
+    }
+    return position_at_row(index, snapped, true);
 }
 
 auto multiply_divide_exact(std::uint64_t value, std::uint64_t numerator, std::uint64_t denominator)
@@ -138,8 +168,8 @@ auto offset_for_fraction_sum(std::uint64_t span, signed_rational_t left, signed_
 auto recipe_range(const chart_document_t& chart, const sv_recipe_t& recipe,
                   const measure_index_t& index)
     -> std::optional<std::pair<std::uint64_t, std::uint64_t>> {
-    const auto begin = absolute_row(index, recipe.range.begin);
-    const auto end = absolute_row(index, recipe.range.end);
+    const auto begin = position_row(index, recipe.range.begin);
+    const auto end = position_row(index, recipe.range.end, true);
     if (!begin || !end || *end <= *begin) {
         return std::nullopt;
     }
@@ -599,6 +629,18 @@ auto sample_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe)
         return result;
     }
 
+    // The chart boundary is a valid exclusive recipe endpoint even though it
+    // is not an event position. Keep the sampler's mathematical endpoint for
+    // refinement, then emit the final in-chart row instead of inventing an
+    // out-of-chart scroll event.
+    if (range.second == index.total_rows) {
+        sampled.erase(index.total_rows);
+        if (index.total_rows == 0 || !ensure_sample_point(sampled, index.total_rows - 1, recipe,
+                                                          range, result.diagnostics)) {
+            return result;
+        }
+    }
+
     result.points.reserve(sampled.size());
     for (const auto& [row, value] : sampled) {
         const auto position = position_at_row(index, row);
@@ -618,12 +660,27 @@ auto sample_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe)
     return result;
 }
 
-auto compile_sv_recipes(const chart_document_t& chart, sv_recipe_output_t output)
+namespace {
+
+auto compile_sv_recipes_impl(const chart_document_t& chart, sv_recipe_output_t output,
+                             const sv_recipe_t* candidate,
+                             std::optional<recipe_id_t> replacing_recipe)
     -> sv_recipe_compilation_t {
     sv_recipe_compilation_t result{.output = output};
     if (static_cast<unsigned int>(output) > static_cast<unsigned int>(sv_recipe_output_t::speeds)) {
         reject(result.diagnostics, diagnostic_code_t::invalid_id,
                "SV compilation requested an unknown output family");
+        return result;
+    }
+    if (replacing_recipe && candidate == nullptr) {
+        reject(result.diagnostics, diagnostic_code_t::invalid_id,
+               "SV recipe replacement preview has no candidate");
+        return result;
+    }
+    if (replacing_recipe &&
+        std::ranges::count(chart.sv_recipes, *replacing_recipe, &sv_recipe_t::id) != 1) {
+        reject(result.diagnostics, diagnostic_code_t::invalid_id,
+               "SV recipe replacement preview refers to a missing or ambiguous recipe");
         return result;
     }
     const auto index_result = build_measure_index(chart);
@@ -634,19 +691,36 @@ auto compile_sv_recipes(const chart_document_t& chart, sv_recipe_output_t output
     const auto& index = std::get<measure_index_t>(index_result);
     std::vector<const sv_recipe_t*> recipes;
     std::set<std::uint64_t> rows;
-    for (const auto& recipe : chart.sv_recipes) {
-        if (!recipe.enabled || recipe.output != output) {
+    for (const auto& stored_recipe : chart.sv_recipes) {
+        const auto* recipe = &stored_recipe;
+        if (replacing_recipe && stored_recipe.id == *replacing_recipe) {
+            recipe = candidate;
+        }
+        if (!recipe->enabled || recipe->output != output) {
             continue;
         }
-        const auto sample = sample_sv_recipe(chart, recipe);
+        const auto sample = sample_sv_recipe(chart, *recipe);
         if (!sample) {
             result.diagnostics.insert(result.diagnostics.end(), sample.diagnostics.begin(),
                                       sample.diagnostics.end());
             continue;
         }
-        recipes.push_back(&recipe);
+        recipes.push_back(recipe);
         for (const auto& point : sample.points) {
             rows.insert(point.absolute_row);
+        }
+    }
+    if (candidate != nullptr && !replacing_recipe && candidate->enabled &&
+        candidate->output == output) {
+        const auto sample = sample_sv_recipe(chart, *candidate);
+        if (!sample) {
+            result.diagnostics.insert(result.diagnostics.end(), sample.diagnostics.begin(),
+                                      sample.diagnostics.end());
+        } else {
+            recipes.push_back(candidate);
+            for (const auto& point : sample.points) {
+                rows.insert(point.absolute_row);
+            }
         }
     }
     if (!result.diagnostics.empty() || recipes.empty()) {
@@ -721,6 +795,249 @@ auto compile_sv_recipes(const chart_document_t& chart, sv_recipe_output_t output
         result.points.push_back(std::move(point));
     }
     return result;
+}
+
+} // namespace
+
+auto compile_sv_recipes(const chart_document_t& chart, sv_recipe_output_t output)
+    -> sv_recipe_compilation_t {
+    return compile_sv_recipes_impl(chart, output, nullptr, std::nullopt);
+}
+
+namespace {
+
+void reject_draft(sv_recipe_draft_t& draft, diagnostic_code_t code, std::string message,
+                  bool terminal = false) {
+    draft.diagnostics.clear();
+    reject(draft.diagnostics, code, std::move(message));
+    if (terminal) {
+        draft.status = sv_recipe_draft_status_t::rejected;
+    }
+}
+
+auto draft_chart_for(const document_history_t& history, const sv_recipe_draft_t& draft)
+    -> const chart_document_t* {
+    return chart_by_id(history.document, draft.chart);
+}
+
+auto draft_is_current(const document_history_t& history, sv_recipe_draft_t& draft,
+                      bool timing_locked) -> const chart_document_t* {
+    if (draft.status != sv_recipe_draft_status_t::editing) {
+        return nullptr;
+    }
+    if (timing_locked || history.document.revision != draft.document_revision) {
+        reject_draft(draft, diagnostic_code_t::invalid_binding,
+                     timing_locked ? "SV recipe draft was cancelled by timing lock"
+                                   : "SV recipe draft document revision is stale");
+        draft.status = sv_recipe_draft_status_t::cancelled;
+        return nullptr;
+    }
+    const auto* chart = draft_chart_for(history, draft);
+    if (chart == nullptr) {
+        reject_draft(draft, diagnostic_code_t::invalid_id,
+                     "SV recipe draft refers to an unknown chart");
+        draft.status = sv_recipe_draft_status_t::cancelled;
+        return nullptr;
+    }
+    if (draft.existing_recipe &&
+        std::ranges::count(chart->sv_recipes, *draft.existing_recipe, &sv_recipe_t::id) != 1) {
+        reject_draft(draft, diagnostic_code_t::invalid_id,
+                     "SV recipe draft target is missing or ambiguous");
+        draft.status = sv_recipe_draft_status_t::cancelled;
+        return nullptr;
+    }
+    return chart;
+}
+
+auto preview_candidate(const sv_recipe_draft_t& draft) -> sv_recipe_t {
+    auto candidate = draft.candidate;
+    candidate.id = draft.existing_recipe.value_or(recipe_id_t{1});
+    return candidate;
+}
+
+} // namespace
+
+auto begin_sv_recipe_draft(const document_history_t& history, chart_id_t chart_id,
+                           sv_recipe_t candidate, bool timing_locked) -> sv_recipe_draft_t {
+    sv_recipe_draft_t draft{.status = sv_recipe_draft_status_t::editing,
+                            .chart = chart_id,
+                            .candidate = std::move(candidate),
+                            .document_revision = history.document.revision};
+    if (timing_locked) {
+        reject_draft(draft, diagnostic_code_t::invalid_binding,
+                     "SV recipe editing is unavailable while timing is locked", true);
+        return draft;
+    }
+    const auto* chart = chart_by_id(history.document, chart_id);
+    if (chart == nullptr || !chart_id) {
+        reject_draft(draft, diagnostic_code_t::invalid_id,
+                     "SV recipe draft refers to an unknown chart", true);
+        return draft;
+    }
+    if (chart->sv_recipes.size() >= maximum_sv_recipes_per_chart) {
+        reject_draft(draft, diagnostic_code_t::invalid_resolution,
+                     "SV recipe insertion would exceed the per-chart cap", true);
+        return draft;
+    }
+    // Stable IDs are assigned by the insert command only after the draft is
+    // accepted. A caller-provided ID must not make a new draft look like an
+    // update or reserve a durable ID during preview.
+    draft.candidate.id = {};
+    return draft;
+}
+
+auto begin_existing_sv_recipe_draft(const document_history_t& history, chart_id_t chart_id,
+                                    recipe_id_t recipe_id, bool timing_locked)
+    -> sv_recipe_draft_t {
+    sv_recipe_draft_t draft{.status = sv_recipe_draft_status_t::editing,
+                            .chart = chart_id,
+                            .existing_recipe = recipe_id,
+                            .document_revision = history.document.revision};
+    if (timing_locked) {
+        reject_draft(draft, diagnostic_code_t::invalid_binding,
+                     "SV recipe editing is unavailable while timing is locked", true);
+        return draft;
+    }
+    const auto* chart = chart_by_id(history.document, chart_id);
+    if (chart == nullptr || !chart_id || !recipe_id) {
+        reject_draft(draft, diagnostic_code_t::invalid_id,
+                     "SV recipe draft refers to an unknown chart or recipe", true);
+        return draft;
+    }
+    const auto* recipe = recipe_by_id(*chart, recipe_id);
+    if (recipe == nullptr ||
+        std::ranges::count(chart->sv_recipes, recipe_id, &sv_recipe_t::id) != 1) {
+        reject_draft(draft, diagnostic_code_t::invalid_id,
+                     "SV recipe draft target is missing or ambiguous", true);
+        return draft;
+    }
+    draft.candidate = *recipe;
+    return draft;
+}
+
+auto update_sv_recipe_draft(const document_history_t& history, sv_recipe_draft_t& draft,
+                            sv_recipe_t candidate, bool timing_locked) -> bool {
+    if (draft_is_current(history, draft, timing_locked) == nullptr) {
+        return false;
+    }
+    candidate.id = draft.existing_recipe.value_or(recipe_id_t{});
+    draft.candidate = std::move(candidate);
+    draft.diagnostics.clear();
+    return true;
+}
+
+auto set_sv_recipe_draft_range(const document_history_t& history, sv_recipe_draft_t& draft,
+                               local_position_t begin_hit, local_position_t end_hit,
+                               std::uint64_t active_snap_denominator, bool timing_locked) -> bool {
+    const auto* chart = draft_is_current(history, draft, timing_locked);
+    if (chart == nullptr) {
+        return false;
+    }
+    const auto built_index = build_measure_index(*chart);
+    if (!std::holds_alternative<measure_index_t>(built_index)) {
+        draft.diagnostics = std::get<diagnostic_list_t>(built_index);
+        return false;
+    }
+    const auto& index = std::get<measure_index_t>(built_index);
+    const auto snapped_begin = snapped_position(*chart, index, begin_hit, active_snap_denominator);
+    const auto snapped_end = snapped_position(*chart, index, end_hit, active_snap_denominator);
+    const auto begin_row = snapped_begin ? position_row(index, *snapped_begin, true) : std::nullopt;
+    const auto end_row = snapped_end ? position_row(index, *snapped_end, true) : std::nullopt;
+    if (!begin_row || !end_row) {
+        reject_draft(draft, diagnostic_code_t::invalid_resolution,
+                     "SV recipe draft range cannot be represented on the active grid");
+        return false;
+    }
+    if (*begin_row == *end_row) {
+        reject_draft(draft, diagnostic_code_t::invalid_hold,
+                     "SV recipe draft range must have a nonzero width");
+        return false;
+    }
+    const auto first_row = std::min(*begin_row, *end_row);
+    const auto last_row = std::max(*begin_row, *end_row);
+    const auto begin_position = position_at_row(index, first_row);
+    const auto end_position = position_at_row(index, last_row, true);
+    if (!begin_position || !end_position) {
+        reject_draft(draft, diagnostic_code_t::row_out_of_range,
+                     "SV recipe draft range exceeds the chart grid");
+        return false;
+    }
+    draft.candidate.range = {*begin_position, *end_position};
+    draft.diagnostics.clear();
+    return true;
+}
+
+auto preview_sv_recipe_draft(const document_history_t& history, const sv_recipe_draft_t& draft)
+    -> sv_recipe_draft_preview_t {
+    sv_recipe_draft_preview_t preview{.effective_output = {.output = draft.candidate.output}};
+    if (draft.status != sv_recipe_draft_status_t::editing) {
+        preview.diagnostics = draft.diagnostics;
+        if (preview.diagnostics.empty()) {
+            reject(preview.diagnostics, diagnostic_code_t::invalid_binding,
+                   "SV recipe draft is not active");
+        }
+        return preview;
+    }
+    if (history.document.revision != draft.document_revision) {
+        reject(preview.diagnostics, diagnostic_code_t::invalid_binding,
+               "SV recipe draft document revision is stale");
+        return preview;
+    }
+    const auto* chart = draft_chart_for(history, draft);
+    if (chart == nullptr) {
+        reject(preview.diagnostics, diagnostic_code_t::invalid_id,
+               "SV recipe draft refers to an unknown chart");
+        return preview;
+    }
+    if (draft.existing_recipe &&
+        std::ranges::count(chart->sv_recipes, *draft.existing_recipe, &sv_recipe_t::id) != 1) {
+        reject(preview.diagnostics, diagnostic_code_t::invalid_id,
+               "SV recipe draft target is missing or ambiguous");
+        return preview;
+    }
+
+    const auto candidate = preview_candidate(draft);
+    preview.candidate_points = sample_sv_recipe(*chart, candidate);
+    if (!preview.candidate_points) {
+        preview.diagnostics = preview.candidate_points.diagnostics;
+        return preview;
+    }
+    preview.effective_output =
+        compile_sv_recipes_impl(*chart, candidate.output, &candidate, draft.existing_recipe);
+    preview.diagnostics = preview.effective_output.diagnostics;
+    return preview;
+}
+
+auto apply_sv_recipe_draft(document_history_t& history, sv_recipe_draft_t& draft,
+                           bool timing_locked) -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision};
+    if (draft_is_current(history, draft, timing_locked) == nullptr) {
+        result.diagnostics = draft.diagnostics;
+        return result;
+    }
+    auto candidate = draft.candidate;
+    if (draft.existing_recipe) {
+        candidate.id = *draft.existing_recipe;
+        result = apply_sv_recipe_edit(
+            history, draft.document_revision,
+            update_sv_recipe_action_t{draft.chart, *draft.existing_recipe, std::move(candidate)});
+    } else {
+        candidate.id = {};
+        result = apply_sv_recipe_edit(history, draft.document_revision,
+                                      insert_sv_recipe_action_t{draft.chart, std::move(candidate)});
+    }
+    draft.diagnostics = result.diagnostics;
+    if (result.diagnostics.empty()) {
+        draft.status = sv_recipe_draft_status_t::applied;
+    }
+    return result;
+}
+
+void cancel_sv_recipe_draft(sv_recipe_draft_t& draft) noexcept {
+    if (draft.status == sv_recipe_draft_status_t::editing) {
+        draft.status = sv_recipe_draft_status_t::cancelled;
+        draft.diagnostics.clear();
+    }
 }
 
 auto bake_sv_recipes_for_export(const chart_document_t& chart) -> sv_recipe_export_bake_result_t {
@@ -932,10 +1249,10 @@ auto update_sv_recipe_range_drag(const document_history_t& history, sv_recipe_ra
     const auto& index = std::get<measure_index_t>(built_index);
     const auto snapped =
         snapped_position(*chart, index, pointer_position, drag.active_snap_denominator);
-    const auto original_begin = absolute_row(index, drag.original_range.begin);
-    const auto original_end = absolute_row(index, drag.original_range.end);
-    const auto anchor = absolute_row(index, drag.snapped_pointer_anchor);
-    const auto target = snapped ? absolute_row(index, *snapped) : std::nullopt;
+    const auto original_begin = position_row(index, drag.original_range.begin);
+    const auto original_end = position_row(index, drag.original_range.end, true);
+    const auto anchor = position_row(index, drag.snapped_pointer_anchor, true);
+    const auto target = snapped ? position_row(index, *snapped, true) : std::nullopt;
     if (!snapped || !original_begin || !original_end || !anchor || !target) {
         reject_drag(drag, diagnostic_code_t::row_out_of_range,
                     "SV recipe range drag is outside the chart grid");
@@ -975,7 +1292,7 @@ auto update_sv_recipe_range_drag(const document_history_t& history, sv_recipe_ra
         return false;
     }
     const auto begin_position = position_at_row(index, begin);
-    const auto end_position = position_at_row(index, end);
+    const auto end_position = position_at_row(index, end, true);
     if (!begin_position || !end_position) {
         reject_drag(drag, diagnostic_code_t::row_out_of_range,
                     "SV recipe range drag exceeds the chart grid");

@@ -50,6 +50,38 @@ struct sv_recipe_export_bake_result_t {
     }
 };
 
+enum class sv_recipe_draft_status_t {
+    inactive,
+    editing,
+    applied,
+    cancelled,
+    rejected,
+};
+
+// Transient parameter editing is revision-bound. New drafts keep a zero ID
+// until Apply; replacement drafts retain the selected recipe's stable ID.
+struct sv_recipe_draft_t {
+    sv_recipe_draft_status_t status{sv_recipe_draft_status_t::inactive};
+    chart_id_t chart;
+    std::optional<recipe_id_t> existing_recipe;
+    sv_recipe_t candidate;
+    std::uint64_t document_revision{};
+    diagnostic_list_t diagnostics;
+};
+
+// Raw candidate samples and the effective composition preview are both
+// transient. Composition includes the candidate at its stored recipe order,
+// or at the end for a new draft.
+struct sv_recipe_draft_preview_t {
+    sv_recipe_sample_result_t candidate_points;
+    sv_recipe_compilation_t effective_output;
+    diagnostic_list_t diagnostics;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return diagnostics.empty();
+    }
+};
+
 // The same validator is called from whole-document validation and the edit
 // command boundary so invalid durable recipe data cannot enter through either.
 [[nodiscard]] auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe)
@@ -65,6 +97,31 @@ struct sv_recipe_export_bake_result_t {
 // values multiply that baseline in chart vector order.
 [[nodiscard]] auto compile_sv_recipes(const chart_document_t& chart, sv_recipe_output_t output)
     -> sv_recipe_compilation_t;
+
+[[nodiscard]] auto begin_sv_recipe_draft(const document_history_t& history, chart_id_t chart,
+                                         sv_recipe_t candidate, bool timing_locked = false)
+    -> sv_recipe_draft_t;
+[[nodiscard]] auto begin_existing_sv_recipe_draft(const document_history_t& history,
+                                                  chart_id_t chart, recipe_id_t recipe,
+                                                  bool timing_locked = false) -> sv_recipe_draft_t;
+// Replaces only transient candidate data; invalid parameter combinations stay
+// editable and are reported by preview/apply validation.
+[[nodiscard]] auto update_sv_recipe_draft(const document_history_t& history,
+                                          sv_recipe_draft_t& draft, sv_recipe_t candidate,
+                                          bool timing_locked = false) -> bool;
+// Snaps both unsnapped interval endpoints to an exact grid, normalizes drag
+// direction, and updates only the transient candidate range.
+[[nodiscard]] auto set_sv_recipe_draft_range(const document_history_t& history,
+                                             sv_recipe_draft_t& draft, local_position_t begin_hit,
+                                             local_position_t end_hit,
+                                             std::uint64_t active_snap_denominator,
+                                             bool timing_locked = false) -> bool;
+[[nodiscard]] auto preview_sv_recipe_draft(const document_history_t& history,
+                                           const sv_recipe_draft_t& draft)
+    -> sv_recipe_draft_preview_t;
+[[nodiscard]] auto apply_sv_recipe_draft(document_history_t& history, sv_recipe_draft_t& draft,
+                                         bool timing_locked = false) -> document_command_result_t;
+void cancel_sv_recipe_draft(sv_recipe_draft_t& draft) noexcept;
 
 // Builds an export-only chart copy. Generic SV and SCROLLS recipes become
 // ordinary instantaneous scroll events; SPEEDS recipes become ordinary speed

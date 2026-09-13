@@ -442,6 +442,9 @@ struct sv_recipe_sampling_t {
 struct sv_recipe_t {
     recipe_id_t id;
     std::string name;
+    // Half-open interval. The end may be the one-past row of the final
+    // measure, representing the exact exclusive chart boundary; no point
+    // event may otherwise use that sentinel position.
     position_span_t range;
     sv_recipe_output_t output{sv_recipe_output_t::sv};
     sv_recipe_curve_t curve{sv_recipe_curve_t::linear};

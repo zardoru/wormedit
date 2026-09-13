@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 #include <ranges>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -271,6 +272,21 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                                            "field-scene viewport scroll exceeds chart content"));
         return result;
     }
+    if (view.pending_note_paint_gesture.has_value()) {
+        const auto& pending = *view.pending_note_paint_gesture;
+        if (pending.document_revision != index.document_revision) {
+            result.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_hold, "field-scene paint preview is stale"));
+            return result;
+        }
+        if (!pending.targets || pending.targets->empty() ||
+            pending.targets->size() > maximum_note_paint_targets) {
+            result.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_resolution,
+                      "field-scene paint preview target count is invalid"));
+            return result;
+        }
+    }
 
     const auto row_at_pixel = [&](long double pixel) {
         return (pixel + static_cast<long double>(view.viewport_scroll_pixels)) / pixels_per_row;
@@ -386,6 +402,87 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         }
         visible_bands.push_back(std::move(band));
     }
+    const auto visible_band_for_row = [&](std::uint64_t row) -> const visible_band_t* {
+        const auto after =
+            std::ranges::upper_bound(visible_bands, row, {}, &visible_band_t::begin_row);
+        if (after == visible_bands.begin()) {
+            return nullptr;
+        }
+        const auto& candidate = *std::prev(after);
+        return row < candidate.end_row ? &candidate : nullptr;
+    };
+
+    struct visible_paint_target_t {
+        paint_cell_key_t cell;
+        editor_field_rect_t bounds;
+    };
+    std::vector<visible_paint_target_t> visible_paint_targets;
+    std::unordered_set<paint_cell_key_t, paint_cell_hash_t> paint_target_cells;
+    std::unordered_set<paint_cell_key_t, paint_cell_hash_t> visible_paint_cells;
+    std::unordered_set<paint_cell_key_t, paint_cell_hash_t> consumed_paint_cells;
+    std::unordered_set<paint_cell_key_t, paint_cell_hash_t> invalid_paint_cells;
+    std::unordered_map<paint_cell_key_t, std::size_t, paint_cell_hash_t> paint_overlap_counts;
+    std::unordered_map<std::uint64_t, std::vector<std::uint64_t>> visible_paint_rows_by_lane;
+    if (view.pending_note_paint_gesture.has_value()) {
+        const auto& targets = *view.pending_note_paint_gesture->targets;
+        paint_target_cells.reserve(targets.size());
+        visible_paint_cells.reserve(targets.size());
+        consumed_paint_cells.reserve(targets.size());
+        invalid_paint_cells.reserve(targets.size());
+        paint_overlap_counts.reserve(targets.size());
+        visible_paint_targets.reserve(targets.size());
+        for (const auto& target : targets) {
+            if (!operate()) {
+                result.diagnostics.push_back(
+                    error(diagnostic_code_t::invalid_resolution,
+                          "field-scene paint preview exceeds its configured operation cap"));
+                return result;
+            }
+            const auto row = absolute_row(index.measures, target.position);
+            if (!row || *row >= index.measures.total_rows) {
+                result.diagnostics.push_back(
+                    error(diagnostic_code_t::row_out_of_range,
+                          "field-scene paint target is outside chart geometry"));
+                return result;
+            }
+            if (!has_lane(layout_at_row(index, *row), target.lane)) {
+                result.diagnostics.push_back(error(diagnostic_code_t::unknown_lane,
+                                                   "field-scene paint target has no active lane"));
+                return result;
+            }
+            const paint_cell_key_t cell{target.lane, *row};
+            if (!paint_target_cells.insert(cell).second) {
+                result.diagnostics.push_back(error(diagnostic_code_t::collision,
+                                                   "field-scene paint targets must be unique"));
+                return result;
+            }
+            if (static_cast<long double>(*row) < query_low ||
+                static_cast<long double>(*row) > query_high) {
+                continue;
+            }
+            const auto* band = visible_band_for_row(*row);
+            if (band == nullptr) {
+                continue;
+            }
+            const auto* lane = lane_bounds(*band, target.lane);
+            if (lane == nullptr) {
+                continue;
+            }
+            const auto y = y_for_row(*row);
+            const auto half_height = request.note_head_height_pixels / 2.0;
+            const editor_field_rect_t bounds{lane->left, y - half_height, lane->right,
+                                             y + half_height};
+            if (rect_intersects_viewport(bounds, view.viewport_height_pixels)) {
+                visible_paint_cells.insert(cell);
+                visible_paint_rows_by_lane[target.lane.value].push_back(*row);
+                visible_paint_targets.push_back({.cell = cell, .bounds = bounds});
+            }
+        }
+        for (auto& [lane, rows] : visible_paint_rows_by_lane) {
+            (void)lane;
+            std::ranges::sort(rows);
+        }
+    }
 
     std::vector<std::pair<std::uint64_t, local_position_t>> comparison_rows;
     comparison_rows.reserve(request.comparison_difference_rows.size());
@@ -473,20 +570,40 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
     const auto candidate_count =
         static_cast<std::size_t>(std::distance(index.notes.begin(), after_candidates));
     bool failed{};
+    std::vector<std::pair<std::size_t, paint_cell_key_t>> paint_endpoint_cells;
+    paint_endpoint_cells.reserve(visible_paint_cells.size());
     const auto add_note = [&](const editor_field_scene_note_source_t& note) {
         if (static_cast<long double>(note.end_row) < query_low ||
             static_cast<long double>(note.begin_row) > query_high) {
             return;
         }
+        if (const auto target_rows = visible_paint_rows_by_lane.find(note.lane.value);
+            target_rows != visible_paint_rows_by_lane.end()) {
+            const auto first = std::ranges::lower_bound(target_rows->second, note.begin_row);
+            const auto after =
+                std::ranges::upper_bound(first, target_rows->second.end(), note.end_row);
+            for (auto target = first; target != after; ++target) {
+                if (!operate()) {
+                    failed = true;
+                    return;
+                }
+                const auto removable_tap = note.kind == note_kind_t::tap &&
+                                           note.begin_row == note.end_row &&
+                                           note.begin_row == *target;
+                const paint_cell_key_t cell{note.lane, *target};
+                const auto overlap_count = ++paint_overlap_counts[cell];
+                if (!removable_tap || overlap_count > 1) {
+                    invalid_paint_cells.insert(cell);
+                }
+            }
+        }
         const auto note_selected = selected.contains(note.note.value);
         const auto add_endpoint = [&](std::uint64_t row, bool tail) {
-            const auto band_it = std::ranges::find_if(visible_bands, [&](const auto& band) {
-                return row >= band.begin_row && row < band.end_row;
-            });
-            if (band_it == visible_bands.end()) {
+            const auto* band = visible_band_for_row(row);
+            if (band == nullptr) {
                 return;
             }
-            const auto* bounds = lane_bounds(*band_it, note.lane);
+            const auto* bounds = lane_bounds(*band, note.lane);
             if (bounds == nullptr) {
                 return;
             }
@@ -501,12 +618,25 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                 failed = true;
                 return;
             }
+            const paint_cell_key_t cell{note.lane, row};
+            const auto paint_target = !tail && visible_paint_cells.contains(cell);
+            const auto invalid_preview = paint_target && invalid_paint_cells.contains(cell);
+            const auto erase_preview = paint_target && !invalid_preview &&
+                                       note.kind == note_kind_t::tap &&
+                                       note.begin_row == note.end_row;
+            if (paint_target) {
+                consumed_paint_cells.insert(cell);
+                paint_endpoint_cells.emplace_back(scene.note_endpoints.size(), cell);
+            }
             scene.note_endpoints.push_back({.note = note.note,
                                             .lane = note.lane,
                                             .kind = note.kind,
                                             .tail = tail,
                                             .selected = note_selected,
-                                            .bounds = rect});
+                                            .bounds = rect,
+                                            .paint_preview = paint_target,
+                                            .paint_erase_preview = erase_preview,
+                                            .paint_invalid_preview = invalid_preview});
         };
         if (note.end_row > note.begin_row) {
             for (const auto& band : visible_bands) {
@@ -574,14 +704,40 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
             "field-scene note composition exceeds its configured primitive or operation cap"));
         return result;
     }
+    for (const auto& [endpoint_index, cell] : paint_endpoint_cells) {
+        auto& endpoint = scene.note_endpoints[endpoint_index];
+        if (invalid_paint_cells.contains(cell)) {
+            endpoint.paint_erase_preview = false;
+            endpoint.paint_invalid_preview = true;
+        }
+    }
+
+    for (const auto& target : visible_paint_targets) {
+        if (consumed_paint_cells.contains(target.cell)) {
+            continue;
+        }
+        if (!operate() || !consume()) {
+            result.diagnostics.push_back(error(
+                diagnostic_code_t::invalid_resolution,
+                "field-scene paint preview exceeds its configured primitive or operation cap"));
+            return result;
+        }
+        scene.note_endpoints.push_back(
+            {.note = object_id_t{},
+             .lane = target.cell.lane,
+             .kind = note_kind_t::tap,
+             .tail = false,
+             .selected = false,
+             .bounds = target.bounds,
+             .paint_preview = true,
+             .paint_erase_preview = false,
+             .paint_invalid_preview = invalid_paint_cells.contains(target.cell)});
+    }
 
     const auto cursor_row = absolute_row(index.measures, view.cursor);
     if (cursor_row && static_cast<long double>(*cursor_row) >= query_low &&
         static_cast<long double>(*cursor_row) <= query_high) {
-        const auto band = std::ranges::find_if(visible_bands, [&](const auto& candidate) {
-            return *cursor_row >= candidate.begin_row && *cursor_row < candidate.end_row;
-        });
-        if (band != visible_bands.end()) {
+        if (const auto* band = visible_band_for_row(*cursor_row); band != nullptr) {
             if (const auto* bounds = lane_bounds(*band, view.active_lane); bounds != nullptr) {
                 if (!consume()) {
                     result.diagnostics.push_back(

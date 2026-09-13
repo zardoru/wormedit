@@ -134,7 +134,14 @@ struct compose_scene_cache_t {
     std::uint64_t revision{};
     bool attempted{};
     std::optional<wormedit::editor_field_scene_index_t> index;
+    std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
     std::string status;
+};
+
+struct application_command_state_t {
+    bool timing_locked{};
+    bool note_paint_mode_active{};
+    std::optional<wormedit::layer_id_t> semantic_layer_target;
 };
 
 struct timing_speed_cache_entry_t {
@@ -1189,7 +1196,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
                            const wormedit::document_history_t& history,
                            const wormedit::workspace_controller_t& workspace,
                            compose_scene_cache_t& cache, int window_width, int window_height,
-                           std::optional<wormedit::editor_interaction_state_t>& retained_state) {
+                           std::optional<wormedit::editor_interaction_state_t>& retained_state,
+                           const application_command_state_t& application_state) {
     auto& view = flattened.view.compose;
     if (!view.visible)
         return;
@@ -1198,6 +1206,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.pixels_per_standard_measure = retained_state
                                            ? retained_state->pixels_per_standard_measure
                                            : wormedit::default_pixels_per_standard_measure;
+    view.note_paint_mode_active = application_state.note_paint_mode_active;
     view.status_text = nullptr;
     if (!workspace.selected_chart) {
         flattened.compose_status_storage = "Choose a difficulty to display its chart field.";
@@ -1217,6 +1226,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     if (!cache.attempted || cache.chart != chart.id ||
         cache.revision != history.document.revision) {
         cache.index.reset();
+        cache.hit_test_index.reset();
         cache.status.clear();
         cache.chart = chart.id;
         cache.revision = history.document.revision;
@@ -1488,12 +1498,16 @@ void populate_compose_view(flattened_workspace_t& flattened,
     flattened.compose_note_storage.reserve(endpoint_count);
     for (std::size_t index = 0; index < endpoint_count; ++index) {
         const auto& endpoint = endpoints[index];
-        flattened.compose_note_storage.push_back({.bounds = convert_rect(endpoint.bounds),
-                                                  .note_id = endpoint.note.value,
-                                                  .lane_id = endpoint.lane.value,
-                                                  .kind = static_cast<std::uint8_t>(endpoint.kind),
-                                                  .tail = endpoint.tail,
-                                                  .selected = endpoint.selected});
+        flattened.compose_note_storage.push_back(
+            {.bounds = convert_rect(endpoint.bounds),
+             .note_id = endpoint.note.value,
+             .lane_id = endpoint.lane.value,
+             .kind = static_cast<std::uint8_t>(endpoint.kind),
+             .tail = endpoint.tail,
+             .selected = endpoint.selected,
+             .paint_preview = endpoint.paint_preview,
+             .paint_erase_preview = endpoint.paint_erase_preview,
+             .paint_invalid_preview = endpoint.paint_invalid_preview});
     }
     if (scene.cursor) {
         flattened.compose_cursor_storage = WormUiComposeCursorView{
@@ -1811,8 +1825,9 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                                    wormedit::document_history_t& history,
                                    wormedit::workspace_controller_t& workspace,
                                    wormedit::editor_interaction_state_t& state,
-                                   wormedit::viewport_input_controller_t& viewport_input)
-    -> std::string {
+                                   wormedit::viewport_input_controller_t& viewport_input,
+                                   application_command_state_t& application_state,
+                                   compose_scene_cache_t& scene_cache) -> std::string {
     using namespace wormedit;
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != ui_action.compose_input_chart_id ||
@@ -1843,6 +1858,23 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             return wormedit::editor_area_selection_mode_t::toggle;
         }
         return std::nullopt;
+    };
+    const auto hit_target_at = [&](const chart_document_t& chart,
+                                   const editor_interaction_view_model_t& view, double x_pixels,
+                                   double y_pixels) -> std::optional<editor_hit_target_t> {
+        if (!scene_cache.hit_test_index) {
+            auto built = build_editor_hit_test_index(chart, history.document.revision);
+            if (!std::holds_alternative<editor_hit_test_index_t>(built)) {
+                return std::nullopt;
+            }
+            scene_cache.hit_test_index = std::get<editor_hit_test_index_t>(std::move(built));
+        }
+        return hit_test_editor(
+            chart, *scene_cache.hit_test_index, view,
+            {.x_pixels = x_pixels,
+             .y_pixels = y_pixels,
+             .field_left_pixels = 0.0,
+             .field_width_pixels = ui_action.compose_input_viewport_width_pixels});
     };
     for (std::size_t index = 0; index < ui_action.compose_input_count; ++index) {
         if (history.document.revision != ui_action.compose_input_document_revision ||
@@ -1904,16 +1936,8 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             if (chart == history.document.charts.end() || !current_view) {
                 return "The selected chart field is no longer available.";
             }
-            const auto hit_index = build_editor_hit_test_index(*chart, history.document.revision);
-            if (!std::holds_alternative<editor_hit_test_index_t>(hit_index)) {
-                return "The chart field could not be indexed for hold input.";
-            }
-            const auto target = hit_test_editor(
-                *chart, std::get<editor_hit_test_index_t>(hit_index), *current_view,
-                {.x_pixels = input.x_pixels,
-                 .y_pixels = input.y_pixels,
-                 .field_left_pixels = 0.0,
-                 .field_width_pixels = ui_action.compose_input_viewport_width_pixels});
+            const auto target =
+                hit_target_at(*chart, *current_view, input.x_pixels, input.y_pixels);
             if (!target) {
                 return "Alt/Option-drag must begin over an editable lane.";
             }
@@ -1986,6 +2010,63 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             }
             break;
         }
+        case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN:
+        case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE:
+        case WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE: {
+            if (!application_state.note_paint_mode_active) {
+                if (state.pending_note_paint_gesture) {
+                    result =
+                        dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+                    accepted = "Note-paint stroke canceled because paint mode is inactive.";
+                } else {
+                    result.accepted = true;
+                    accepted = "Note-paint input ignored because paint mode is inactive.";
+                }
+                break;
+            }
+            const auto chart =
+                std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+            const auto current_view = compose_view_for_state(history, state);
+            if (chart == history.document.charts.end() || !current_view) {
+                (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+                return "The selected chart field is no longer available.";
+            }
+            const auto target =
+                hit_target_at(*chart, *current_view, input.x_pixels, input.y_pixels);
+            if (!target) {
+                if (input.kind != WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) {
+                    result =
+                        dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+                    accepted = "Note-paint stroke canceled outside editable chart geometry.";
+                    break;
+                }
+                return "Begin note painting over an editable chart lane.";
+            }
+            if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) {
+                result = dispatch_editor_action(
+                    history, state,
+                    begin_note_paint_gesture_action_t{.lane = target->lane,
+                                                      .position = target->position,
+                                                      .pointer_captured = true});
+                accepted = "Note-paint stroke started.";
+            } else if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE) {
+                result = dispatch_editor_action(
+                    history, state,
+                    update_note_paint_gesture_action_t{.lane = target->lane,
+                                                       .position = target->position,
+                                                       .pointer_captured = true});
+                accepted = "Note-paint preview updated.";
+            } else {
+                result = dispatch_editor_action(
+                    history, state,
+                    end_note_paint_gesture_action_t{.lane = target->lane,
+                                                    .position = target->position,
+                                                    .pointer_captured = true});
+                accepted = result.document_changed ? "Note-paint stroke committed."
+                                                   : "Note-paint stroke released.";
+            }
+            break;
+        }
         case WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN:
             if (!selection_mode(input.selection_mode).has_value()) {
                 return "Compose area selection used an unknown selection mode.";
@@ -2032,16 +2113,8 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             if (chart == history.document.charts.end() || !current_view) {
                 return "The selected chart field is no longer available.";
             }
-            const auto hit_index = build_editor_hit_test_index(*chart, history.document.revision);
-            if (!std::holds_alternative<editor_hit_test_index_t>(hit_index)) {
-                return "The chart field could not be indexed for pointer input.";
-            }
-            const auto target = hit_test_editor(
-                *chart, std::get<editor_hit_test_index_t>(hit_index), *current_view,
-                {.x_pixels = input.x_pixels,
-                 .y_pixels = input.y_pixels,
-                 .field_left_pixels = 0.0,
-                 .field_width_pixels = ui_action.compose_input_viewport_width_pixels});
+            const auto target =
+                hit_target_at(*chart, *current_view, input.x_pixels, input.y_pixels);
             if (!target) {
                 return "Click inside an editable lane to place or select a note.";
             }
@@ -2144,11 +2217,15 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
     return status.empty() ? "Compose input handled." : status;
 }
 
+auto editor_interaction_has_pending_gesture(const wormedit::editor_interaction_state_t& state)
+    -> bool;
+
 auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                                   wormedit::document_history_t& history,
                                   wormedit::workspace_controller_t& workspace,
                                   wormedit::editor_interaction_state_t& state,
-                                  double viewport_height) -> std::string {
+                                  double viewport_height,
+                                  application_command_state_t& application_state) -> std::string {
     using namespace wormedit;
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id ||
@@ -2194,6 +2271,17 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         status = "Compose field view reset.";
         break;
     }
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE:
+        if (editor_interaction_has_pending_gesture(state)) {
+            result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+            if (!result.accepted) {
+                return compose_result_status(result, "Compose gesture canceled.");
+            }
+        }
+        application_state.note_paint_mode_active = !application_state.note_paint_mode_active;
+        status = application_state.note_paint_mode_active ? "Note-paint mode enabled."
+                                                          : "Note-paint mode disabled.";
+        return status;
     case WORM_UI_COMPOSE_ACTION_NONE:
         return {};
     }
@@ -2207,11 +2295,6 @@ auto editor_interaction_has_pending_gesture(const wormedit::editor_interaction_s
            state.pending_editor_area_selection.has_value() ||
            state.pending_space_range_selection.has_value();
 }
-
-struct application_command_state_t {
-    bool timing_locked{};
-    std::optional<wormedit::layer_id_t> semantic_layer_target;
-};
 
 auto selected_chart(const wormedit::document_history_t& history,
                     const wormedit::workspace_controller_t& workspace)
@@ -2310,9 +2393,10 @@ auto invoke_application_command(
                                               "Clear Selection requires the active Compose chart.");
         }
         (void)dispatch_editor_action(history, *state, cancel_editor_gesture_action_t{});
+        application_state.note_paint_mode_active = false;
         return accept_editor_command(
             dispatch_editor_action(history, *state, select_editor_notes_action_t{}), status,
-            "Selection and pending Compose gesture cleared.");
+            "Selection, pending Compose gesture, and note-paint mode cleared.");
     }
 
     if (id == "selection.select_all" || id == "selection.invert") {
@@ -2517,7 +2601,8 @@ void refresh_application_command_states(
     set("history.undo", !history.undo.empty());
     set("history.redo", !history.redo.empty());
     set("edit.delete", compose_ready);
-    set("selection.clear", compose_ready && (pending || !compose_state->selected_objects.empty()));
+    set("selection.clear", compose_ready && (pending || !compose_state->selected_objects.empty() ||
+                                             application_state.note_paint_mode_active));
     set("selection.select_all", compose_ready);
     set("selection.invert", compose_ready);
     set("navigation.previous_marker", compose_ready);
@@ -2850,18 +2935,24 @@ int main(int argc, char** argv) {
                                  timing_stage ? &*timing_stage : nullptr);
             populate_compose_view(flattened, history, workspace, compose_scene_cache,
                                   compose_window_width, compose_window_height,
-                                  compose_interaction_state);
+                                  compose_interaction_state, application_command_state);
             const auto action = worm_ui_frontend_compose(&flattened.view);
             const bool shortcut_handled =
                 action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
                 dispatch_application_shortcuts(action, command_registry, history, workspace,
                                                compose_interaction_state, application_command_state,
                                                status);
+            if (shortcut_handled && compose_interaction_state &&
+                editor_interaction_has_pending_gesture(*compose_interaction_state)) {
+                (void)wormedit::dispatch_editor_action(history, *compose_interaction_state,
+                                                       wormedit::cancel_editor_gesture_action_t{});
+            }
             if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
                 (action.compose_input_count != 0 || action.compose_viewport_input_count != 0) &&
                 compose_interaction_state) {
                 status = dispatch_compose_input_action(
-                    action, history, workspace, *compose_interaction_state, compose_viewport_input);
+                    action, history, workspace, *compose_interaction_state, compose_viewport_input,
+                    application_command_state, compose_scene_cache);
             }
             if (action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
                 running = false;
@@ -2954,7 +3045,7 @@ int main(int argc, char** argv) {
                 if (compose_interaction_state) {
                     status = dispatch_compose_view_action(
                         action, history, workspace, *compose_interaction_state,
-                        flattened.view.compose.viewport_height_pixels);
+                        flattened.view.compose.viewport_height_pixels, application_command_state);
                 }
             } else if (action.kind >= WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT &&
                        action.kind <= WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE) {

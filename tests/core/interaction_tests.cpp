@@ -1268,6 +1268,37 @@ TEST_CASE("note paint interpolates snap rows, suppresses duplicates, and commits
     CHECK(note_count(history) == 0);
 }
 
+TEST_CASE("note painting rejects active area and Space range selection gestures",
+          "[unit][core][interaction][paint][selection]") {
+    for (const auto selection_kind : {0, 1}) {
+        auto history = make_document_history(make_song());
+        auto state = make_state(history);
+        state.viewport_height_pixels = 200.0;
+        if (selection_kind == 0) {
+            REQUIRE(dispatch_editor_action(
+                history, state,
+                begin_editor_area_selection_action_t{110.0, 95.0, 100.0, 200.0,
+                                                     editor_area_selection_mode_t::replace, true}));
+            REQUIRE(state.pending_editor_area_selection.has_value());
+        } else {
+            REQUIRE(dispatch_editor_action(
+                history, state,
+                space_range_selection_action_t{editor_area_selection_mode_t::replace}));
+            REQUIRE(state.pending_space_range_selection.has_value());
+        }
+
+        const auto rejected = dispatch_editor_action(
+            history, state,
+            begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true});
+        CHECK_FALSE(rejected);
+        CHECK(has_code(rejected.diagnostics, diagnostic_code_t::invalid_hold));
+        CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+        CHECK(state.pending_editor_area_selection.has_value() == (selection_kind == 0));
+        CHECK(state.pending_space_range_selection.has_value() == (selection_kind == 1));
+        CHECK(note_count(history) == 0);
+    }
+}
+
 TEST_CASE("single-cell paint toggles taps and rejects hold collisions atomically",
           "[unit][core][interaction][paint]") {
     auto history = make_document_history(make_song());

@@ -92,6 +92,9 @@ struct editor_field_note_endpoint_geometry_t {
     bool tail{};
     bool selected{};
     editor_field_rect_t bounds;
+    bool paint_preview{};
+    bool paint_erase_preview{};
+    bool paint_invalid_preview{};
 };
 
 struct editor_field_hold_body_geometry_t {

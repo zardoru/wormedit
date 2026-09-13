@@ -181,6 +181,9 @@ typedef struct WormUiComposeNoteView {
     uint8_t kind;
     bool tail;
     bool selected;
+    bool paint_preview;
+    bool paint_erase_preview;
+    bool paint_invalid_preview;
 } WormUiComposeNoteView;
 
 typedef struct WormUiComposeCursorView {
@@ -231,6 +234,7 @@ typedef struct WormUiComposeView {
     bool visible;
     bool scene_available;
     bool truncated;
+    bool note_paint_mode_active;
     uint64_t chart_id;
     uint64_t document_revision;
     double viewport_width_pixels;
@@ -377,6 +381,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_SCROLL_UP,
     WORM_UI_COMPOSE_ACTION_SCROLL_DOWN,
     WORM_UI_COMPOSE_ACTION_RESET_VIEW,
+    WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE,
 } WormUiComposeActionKind;
 
 typedef enum WormUiComposeInputKind {
@@ -397,6 +402,9 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_AREA_SELECTION_RELEASE,
     WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION,
     WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE,
+    WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
+    WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE,
+    WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE,
 } WormUiComposeInputKind;
 
 typedef struct WormUiComposeInputAction {

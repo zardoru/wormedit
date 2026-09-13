@@ -2522,7 +2522,9 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                             "pointer capture is required to begin note painting")});
         }
         if (state.pending_hold.has_value() || state.pending_note_duration_gesture.has_value() ||
-            state.pending_note_paint_gesture.has_value()) {
+            state.pending_note_paint_gesture.has_value() ||
+            state.pending_editor_area_selection.has_value() ||
+            state.pending_space_range_selection.has_value()) {
             return diagnostic_result(history, state,
                                      {error(diagnostic_code_t::invalid_hold,
                                             "another editor gesture is already active")});

@@ -215,6 +215,150 @@ TEST_CASE("field scene rejects stale indexes and returns no partial geometry at 
     CHECK_FALSE(comparison_capped.scene.has_value());
 }
 
+TEST_CASE("field scene composes visible paint previews across measure and layout boundaries",
+          "[unit][core][editor-scene][paint]") {
+    const auto chart = scene_chart();
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    auto scene_view = view();
+    scene_view.pending_note_paint_gesture = wormedit::note_paint_gesture_preview_t{
+        .document_revision = 7,
+        .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
+            std::vector<wormedit::note_paint_target_t>{
+                {wormedit::lane_id_t{1}, {wormedit::measure_id_t{1}, 720}},
+                {wormedit::lane_id_t{1}, {wormedit::measure_id_t{2}, 240}},
+            }),
+    };
+
+    const auto result = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
+        {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(result);
+    REQUIRE(result.scene->note_endpoints.size() == 4);
+    const auto first = std::ranges::find_if(result.scene->note_endpoints, [](const auto& endpoint) {
+        return endpoint.paint_preview && endpoint.lane == wormedit::lane_id_t{1} &&
+               endpoint.bounds.top == Catch::Approx(43.0);
+    });
+    const auto second =
+        std::ranges::find_if(result.scene->note_endpoints, [](const auto& endpoint) {
+            return endpoint.paint_preview && endpoint.lane == wormedit::lane_id_t{1} &&
+                   endpoint.bounds.top == Catch::Approx(139.0);
+        });
+    REQUIRE(first != result.scene->note_endpoints.end());
+    REQUIRE(second != result.scene->note_endpoints.end());
+    CHECK(first->note == wormedit::object_id_t{});
+    CHECK(second->note == wormedit::object_id_t{});
+    CHECK_FALSE(first->paint_erase_preview);
+    CHECK_FALSE(second->paint_erase_preview);
+    CHECK(first->bounds.left == Catch::Approx(10.0));
+    CHECK(second->bounds.left == Catch::Approx(116.0));
+
+    auto stale_view = scene_view;
+    stale_view.pending_note_paint_gesture->document_revision = 8;
+    const auto stale = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), stale_view,
+        {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    CHECK_FALSE(stale);
+    CHECK_FALSE(stale.scene.has_value());
+    CHECK(has_code(stale.diagnostics, wormedit::diagnostic_code_t::invalid_hold));
+}
+
+TEST_CASE("field scene marks painted taps for erasure and enforces paint scene caps",
+          "[unit][core][editor-scene][paint][bounds]") {
+    const auto chart = scene_chart();
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    const auto& index = std::get<wormedit::editor_field_scene_index_t>(built);
+    auto occupied_view = view();
+    occupied_view.viewport_scroll_pixels = 0.0;
+    occupied_view.pending_note_paint_gesture = wormedit::note_paint_gesture_preview_t{
+        .document_revision = 7,
+        .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
+            std::vector<wormedit::note_paint_target_t>{
+                {wormedit::lane_id_t{1}, {wormedit::measure_id_t{1}, 240}},
+            }),
+    };
+    const auto occupied = wormedit::make_editor_field_scene(
+        chart, index, occupied_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(occupied);
+    const auto erased =
+        std::ranges::find_if(occupied.scene->note_endpoints, [](const auto& endpoint) {
+            return endpoint.note == wormedit::object_id_t{10};
+        });
+    REQUIRE(erased != occupied.scene->note_endpoints.end());
+    CHECK(erased->paint_preview);
+    CHECK(erased->paint_erase_preview);
+    CHECK(std::ranges::count_if(occupied.scene->note_endpoints, [](const auto& endpoint) {
+              return endpoint.paint_preview && endpoint.lane == wormedit::lane_id_t{1} &&
+                     endpoint.bounds.top == Catch::Approx(43.0);
+          }) == 1);
+
+    auto collision_view = view();
+    collision_view.viewport_scroll_pixels = 0.0;
+    collision_view.pending_note_paint_gesture = wormedit::note_paint_gesture_preview_t{
+        .document_revision = 7,
+        .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
+            std::vector<wormedit::note_paint_target_t>{
+                {wormedit::lane_id_t{2}, {wormedit::measure_id_t{1}, 840}},
+            }),
+    };
+    const auto collision = wormedit::make_editor_field_scene(
+        chart, index, collision_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(collision);
+    const auto invalid =
+        std::ranges::find_if(collision.scene->note_endpoints, [](const auto& endpoint) {
+            return endpoint.paint_preview && endpoint.paint_invalid_preview;
+        });
+    REQUIRE(invalid != collision.scene->note_endpoints.end());
+    CHECK_FALSE(invalid->paint_erase_preview);
+    CHECK(invalid->lane == wormedit::lane_id_t{2});
+    CHECK(invalid->bounds.top == Catch::Approx(163.0));
+
+    auto base_view = view();
+    const auto baseline = wormedit::make_editor_field_scene(
+        chart, index, base_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(baseline);
+    const auto base_primitives =
+        baseline.scene->layout_bands.size() + baseline.scene->lanes.size() +
+        baseline.scene->comparison_differences.size() + baseline.scene->grid_lines.size() +
+        baseline.scene->hold_bodies.size() + baseline.scene->note_endpoints.size() +
+        (baseline.scene->cursor.has_value() ? 1U : 0U);
+    auto empty_cell_view = base_view;
+    empty_cell_view.pending_note_paint_gesture = wormedit::note_paint_gesture_preview_t{
+        .document_revision = 7,
+        .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
+            std::vector<wormedit::note_paint_target_t>{
+                {wormedit::lane_id_t{1}, {wormedit::measure_id_t{1}, 720}},
+            }),
+    };
+    const auto primitive_capped =
+        wormedit::make_editor_field_scene(chart, index, empty_cell_view,
+                                          {.field_left_pixels = 10.0,
+                                           .field_width_pixels = 200.0,
+                                           .maximum_scene_primitives = base_primitives});
+    CHECK_FALSE(primitive_capped);
+    CHECK_FALSE(primitive_capped.scene.has_value());
+    CHECK(has_code(primitive_capped.diagnostics, wormedit::diagnostic_code_t::invalid_resolution));
+
+    auto operation_view = base_view;
+    operation_view.pending_note_paint_gesture = wormedit::note_paint_gesture_preview_t{
+        .document_revision = 7,
+        .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
+            std::vector<wormedit::note_paint_target_t>{
+                {wormedit::lane_id_t{1}, {wormedit::measure_id_t{1}, 720}},
+                {wormedit::lane_id_t{1}, {wormedit::measure_id_t{2}, 240}},
+            }),
+    };
+    const auto operation_capped =
+        wormedit::make_editor_field_scene(chart, index, operation_view,
+                                          {.field_left_pixels = 10.0,
+                                           .field_width_pixels = 200.0,
+                                           .maximum_composition_operations = 3});
+    CHECK_FALSE(operation_capped);
+    CHECK_FALSE(operation_capped.scene.has_value());
+    CHECK(has_code(operation_capped.diagnostics, wormedit::diagnostic_code_t::invalid_resolution));
+}
+
 TEST_CASE("field scene interval tree narrows a sparse 50k-note viewport",
           "[unit][core][editor-scene][stress]") {
     auto chart = scene_chart();

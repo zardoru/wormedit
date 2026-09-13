@@ -5,6 +5,7 @@ add_executable(wormedit_core_tests
     core/bga_preview_tests.cpp
     core/command_tests.cpp
     core/document_tests.cpp
+    core/editor_scene_tests.cpp
     core/bms_profile_detection_tests.cpp
     core/fixture_inventory_tests.cpp
     core/grid_tests.cpp

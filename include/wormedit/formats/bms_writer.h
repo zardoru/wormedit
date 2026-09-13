@@ -67,8 +67,9 @@ struct bms_write_result_t {
 // BMS in the requested encoding for metadata, resources, measure lengths, initial
 // BPM, taps, holds, repeated BGM source lanes, and representable BGA events.
 // Unsupported semantic features fail with typed diagnostics. Provenanced branch
-// metadata edits replace only their retained source statement; other branch content
-// remains source-backed.
+// metadata/resource edits, measure-length edits, and direct BPM declaration edits to
+// the active projection replace only their uniquely attributable retained source
+// statements; other branch content remains source-backed.
 [[nodiscard]] auto write_bms(const song_document_t& song, bms_write_options_t options = {})
     -> bms_write_result_t;
 

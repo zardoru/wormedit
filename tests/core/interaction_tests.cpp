@@ -309,6 +309,259 @@ TEST_CASE("overlapping hit records use stable hold-head priority",
     CHECK(first == second);
 }
 
+TEST_CASE("typed object hover is deterministic and supplies a same-object property request",
+          "[unit][core][interaction][hover][double-click]") {
+    auto song = make_song();
+    song.audio_assets = {{.id = asset_id_t{1}}};
+    song.resources = {{.id = resource_id_t{7},
+                       .name = "Verse sample",
+                       .asset = asset_id_t{1},
+                       .roles = {resource_role_t::sample}}};
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 240},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::tap,
+         .sound = resource_id_t{7},
+         .label = "Verse"},
+    };
+    song.charts.front().bpms = {
+        {.id = object_id_t{201}, .position = {measure_id_t{1}, 480}, .beats_per_minute = {180, 1}},
+        {.id = object_id_t{202}, .position = {measure_id_t{1}, 720}, .beats_per_minute = {240, 1}},
+    };
+    song.charts.front().pauses = {
+        {.id = object_id_t{203},
+         .position = {measure_id_t{1}, 720},
+         .kind = pause_kind_t::stop,
+         .duration = {1, 2},
+         .source_unit = pause_unit_t::seconds},
+    };
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{4ULL};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                               {measure_id_t{1}, 0}, snaps, 4, 384.0);
+    REQUIRE(setup);
+    const auto built = build_editor_hit_test_index(history.document.charts.front(), 1);
+    REQUIRE(std::holds_alternative<editor_hit_test_index_t>(built));
+    const auto& index = std::get<editor_hit_test_index_t>(built);
+
+    const auto note_y = editor_position_y_pixels(history.document.charts.front(), *setup.view,
+                                                 {measure_id_t{1}, 240});
+    REQUIRE(note_y.has_value());
+    const auto note_hover = hover_editor_object(history.document.charts.front(), index, *setup.view,
+                                                {.x_pixels = 150.0,
+                                                 .y_pixels = *note_y,
+                                                 .field_left_pixels = 100.0,
+                                                 .field_width_pixels = 200.0,
+                                                 .hit_radius_pixels = 0.0,
+                                                 .scope = {.notes = true}});
+    REQUIRE(note_hover.has_value());
+    CHECK(note_hover->object ==
+          editor_selection_object_t{editor_selection_object_kind_t::note, object_id_t{101}});
+    CHECK(note_hover->editor == editor_inline_editor_kind_t::note_properties);
+    CHECK(note_hover->tooltip.find("Tap") != std::string::npos);
+    CHECK(note_hover->tooltip.find("Verse") != std::string::npos);
+    CHECK(note_hover->tooltip.find("sample 7") != std::string::npos);
+    auto stale_view = *setup.view;
+    ++stale_view.document_revision;
+    CHECK_FALSE(hover_editor_object(history.document.charts.front(), index, stale_view,
+                                    {.x_pixels = 150.0,
+                                     .y_pixels = *note_y,
+                                     .field_left_pixels = 100.0,
+                                     .field_width_pixels = 200.0,
+                                     .hit_radius_pixels = 0.0,
+                                     .scope = {.notes = true}}));
+    CHECK_FALSE(hover_editor_object(history.document.charts.front(), index, *setup.view,
+                                    {.x_pixels = 400.0,
+                                     .y_pixels = *note_y,
+                                     .field_left_pixels = 100.0,
+                                     .field_width_pixels = 200.0,
+                                     .hit_radius_pixels = 0.0,
+                                     .scope = {.notes = true}}));
+
+    editor_double_click_state_t click_state;
+    CHECK_FALSE(register_editor_object_click(click_state, index, *setup.view, note_hover, 150.0,
+                                             *note_y, 100));
+    const auto note_edit = register_editor_object_click(click_state, index, *setup.view, note_hover,
+                                                        151.0, *note_y, 200);
+    REQUIRE(note_edit.has_value());
+    CHECK(note_edit->chart == chart_id_t{1});
+    CHECK(note_edit->document_revision == 1);
+    CHECK(note_edit->object == note_hover->object);
+    CHECK(note_edit->editor == editor_inline_editor_kind_t::note_properties);
+    CHECK_FALSE(click_state.previous_click.has_value());
+    clear_editor_double_click_state(click_state);
+    CHECK_FALSE(click_state.previous_click.has_value());
+
+    const auto bpm_y = editor_position_y_pixels(history.document.charts.front(), *setup.view,
+                                                {measure_id_t{1}, 480});
+    REQUIRE(bpm_y.has_value());
+    const auto bpm_request = editor_object_hover_request_t{
+        .x_pixels = 150.0,
+        .y_pixels = *bpm_y,
+        .field_left_pixels = 100.0,
+        .field_width_pixels = 200.0,
+        .hit_radius_pixels = 0.0,
+        .scope = {.notes = false, .timing = true},
+    };
+    const auto bpm_hover =
+        hover_editor_object(history.document.charts.front(), index, *setup.view, bpm_request);
+    REQUIRE(bpm_hover.has_value());
+    CHECK(bpm_hover->object ==
+          editor_selection_object_t{editor_selection_object_kind_t::bpm_event, object_id_t{201}});
+    CHECK(bpm_hover->editor == editor_inline_editor_kind_t::bpm_event);
+    CHECK(bpm_hover->tooltip.find("BPM 180") != std::string::npos);
+    CHECK(hover_editor_object(history.document.charts.front(), index, *setup.view, bpm_request) ==
+          bpm_hover);
+
+    const auto overlap_y = editor_position_y_pixels(history.document.charts.front(), *setup.view,
+                                                    {measure_id_t{1}, 720});
+    REQUIRE(overlap_y.has_value());
+    auto overlap_request = bpm_request;
+    overlap_request.y_pixels = *overlap_y;
+    const auto overlap =
+        hover_editor_object(history.document.charts.front(), index, *setup.view, overlap_request);
+    REQUIRE(overlap.has_value());
+    CHECK(overlap->object ==
+          editor_selection_object_t{editor_selection_object_kind_t::bpm_event, object_id_t{202}});
+    CHECK(hover_editor_object(history.document.charts.front(), index, *setup.view,
+                              overlap_request) == overlap);
+}
+
+TEST_CASE("typed double-click requests clear across stale revisions, focus, and capture loss",
+          "[unit][core][interaction][double-click][safety]") {
+    auto song = make_song();
+    song.charts.front().bpms = {
+        {.id = object_id_t{201}, .position = {measure_id_t{1}, 240}, .beats_per_minute = {180, 1}},
+    };
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{4ULL};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                               {measure_id_t{1}, 0}, snaps, 4, 384.0);
+    REQUIRE(setup);
+    const auto first_index = build_editor_hit_test_index(history.document.charts.front(), 1);
+    REQUIRE(std::holds_alternative<editor_hit_test_index_t>(first_index));
+    const auto y = editor_position_y_pixels(history.document.charts.front(), *setup.view,
+                                            {measure_id_t{1}, 240});
+    REQUIRE(y.has_value());
+    const auto request = editor_object_hover_request_t{
+        .x_pixels = 150.0,
+        .y_pixels = *y,
+        .field_left_pixels = 100.0,
+        .field_width_pixels = 200.0,
+        .hit_radius_pixels = 0.0,
+        .scope = {.notes = false, .timing = true},
+    };
+    const auto first_hover =
+        hover_editor_object(history.document.charts.front(),
+                            std::get<editor_hit_test_index_t>(first_index), *setup.view, request);
+    REQUIRE(first_hover.has_value());
+
+    editor_double_click_state_t state;
+    CHECK_FALSE(register_editor_object_click(state, std::get<editor_hit_test_index_t>(first_index),
+                                             *setup.view, first_hover, 150.0, *y, 100));
+    auto revised_view = *setup.view;
+    ++revised_view.document_revision;
+    const auto revised_index = build_editor_hit_test_index(history.document.charts.front(), 2);
+    REQUIRE(std::holds_alternative<editor_hit_test_index_t>(revised_index));
+    const auto revised_hover = hover_editor_object(history.document.charts.front(),
+                                                   std::get<editor_hit_test_index_t>(revised_index),
+                                                   revised_view, request);
+    REQUIRE(revised_hover.has_value());
+    CHECK_FALSE(register_editor_object_click(state,
+                                             std::get<editor_hit_test_index_t>(revised_index),
+                                             revised_view, revised_hover, 150.0, *y, 200));
+    REQUIRE(state.previous_click.has_value());
+    CHECK(state.previous_click->document_revision == 2);
+
+    CHECK_FALSE(
+        register_editor_object_click(state, std::get<editor_hit_test_index_t>(revised_index),
+                                     revised_view, revised_hover, 150.0, *y, 250, {}, false, true));
+    CHECK_FALSE(state.previous_click.has_value());
+    CHECK_FALSE(
+        register_editor_object_click(state, std::get<editor_hit_test_index_t>(revised_index),
+                                     revised_view, revised_hover, 150.0, *y, 300, {}, true, false));
+    CHECK_FALSE(state.previous_click.has_value());
+
+    CHECK_FALSE(register_editor_object_click(state,
+                                             std::get<editor_hit_test_index_t>(revised_index),
+                                             revised_view, revised_hover, 150.0, *y, 400));
+    const auto request_after_cancel =
+        register_editor_object_click(state, std::get<editor_hit_test_index_t>(revised_index),
+                                     revised_view, revised_hover, 150.0, *y, 450);
+    REQUIRE(request_after_cancel.has_value());
+    CHECK(request_after_cancel->document_revision == 2);
+    CHECK(request_after_cancel->editor == editor_inline_editor_kind_t::bpm_event);
+}
+
+TEST_CASE("hover lookup stays row-indexed for fifty thousand typed events",
+          "[unit][core][interaction][hover][scale]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    constexpr std::size_t event_count = 50'000;
+    constexpr std::size_t events_per_measure = 960;
+    chart.measures.clear();
+    chart.bpms.clear();
+    const auto measure_count = (event_count + events_per_measure - 1) / events_per_measure;
+    chart.measures.reserve(measure_count);
+    chart.bpms.reserve(event_count);
+    for (std::size_t measure_number = 0; measure_number < measure_count; ++measure_number) {
+        const auto measure_id = measure_id_t{measure_number + 1};
+        chart.measures.push_back({.id = measure_id});
+        const auto count =
+            std::min(events_per_measure, event_count - measure_number * events_per_measure);
+        for (std::size_t row = 0; row < count; ++row) {
+            const auto event_number = measure_number * events_per_measure + row;
+            chart.bpms.push_back({
+                .id = object_id_t{event_number + 1001},
+                .position = {measure_id, row},
+                .beats_per_minute = {120, 1},
+            });
+        }
+    }
+    const auto diagnostics = validate_document(song);
+    INFO("validation diagnostics: "
+         << diagnostics.size() << (diagnostics.empty() ? "" : ": " + diagnostics.front().message));
+    REQUIRE(diagnostics.empty());
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{4ULL};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                               {measure_id_t{1}, 0}, snaps, 4, 384.0);
+    REQUIRE(setup);
+    const auto built = build_editor_hit_test_index(history.document.charts.front(), 1);
+    REQUIRE(std::holds_alternative<editor_hit_test_index_t>(built));
+    const auto& index = std::get<editor_hit_test_index_t>(built);
+    REQUIRE(index.hover_objects_by_id.size() == event_count);
+    REQUIRE(std::ranges::is_sorted(index.selection_spans, [](const auto& left, const auto& right) {
+        if (left.begin_row != right.begin_row)
+            return left.begin_row < right.begin_row;
+        if (left.end_row != right.end_row)
+            return left.end_row < right.end_row;
+        return left.object < right.object;
+    }));
+
+    constexpr std::size_t target_event = event_count - 37;
+    const auto target_measure = target_event / events_per_measure;
+    const auto target_row = target_event % events_per_measure;
+    const auto target_position = local_position_t{measure_id_t{target_measure + 1}, target_row};
+    auto view = *setup.view;
+    view.viewport_scroll_pixels =
+        static_cast<double>(measure_count) * view.pixels_per_standard_measure -
+        view.viewport_height_pixels;
+    const auto y = editor_position_y_pixels(history.document.charts.front(), view, target_position);
+    REQUIRE(y.has_value());
+    const auto hover = hover_editor_object(history.document.charts.front(), index, view,
+                                           {.x_pixels = 150.0,
+                                            .y_pixels = *y,
+                                            .field_left_pixels = 100.0,
+                                            .field_width_pixels = 200.0,
+                                            .hit_radius_pixels = 0.0,
+                                            .scope = {.notes = false, .timing = true}});
+    REQUIRE(hover.has_value());
+    CHECK(hover->object.id == object_id_t{target_event + 1001});
+}
+
 TEST_CASE("area selection normalizes all drag directions and applies replace, add, and toggle",
           "[unit][core][interaction][selection][area]") {
     auto make_selection_history = [] {

@@ -604,8 +604,57 @@ TEST_CASE("BMS writer preserves branches and exact ratios while editing the acti
 
     edited_song.charts.front().measures.front().definition.length = {7, 4};
     const auto edited_branch_ratio = wormedit::write_bms(edited_song, options);
-    CHECK_FALSE(edited_branch_ratio.bytes.has_value());
-    CHECK(has_error(edited_branch_ratio, wormedit::bms_write_diagnostic_code_t::branch_provenance));
+    REQUIRE(edited_branch_ratio.bytes.has_value());
+    CHECK_FALSE(edited_branch_ratio.has_errors());
+    CHECK(occurrences(*edited_branch_ratio.bytes, "#00002:1.75") == 1);
+    CHECK(occurrences(*edited_branch_ratio.bytes, "#00002:1/2") == 1);
+    CHECK(edited_branch_ratio.bytes->find("#00002:3/4") == std::string::npos);
+    const auto ratio_random_order = line_order(*edited_branch_ratio.bytes, "#RANDOM 2");
+    parse_options.branch_choices = {
+        {.control_source_order = ratio_random_order, .selected_value = 1}};
+    const auto edited_first_ratio = parse(*edited_branch_ratio.bytes, parse_options);
+    REQUIRE(edited_first_ratio.song.has_value());
+    CHECK((edited_first_ratio.song->charts.front().measures.front().definition.length ==
+           wormedit::rational_t{7, 4}));
+    parse_options.branch_choices.front().selected_value = 2;
+    const auto untouched_second_ratio = parse(*edited_branch_ratio.bytes, parse_options);
+    REQUIRE(untouched_second_ratio.song.has_value());
+    CHECK((untouched_second_ratio.song->charts.front().measures.front().definition.length ==
+           wormedit::rational_t{1, 2}));
+    parse_options.branch_choices.clear();
+    const auto untouched_root_ratio = parse(*edited_branch_ratio.bytes, parse_options);
+    REQUIRE(untouched_root_ratio.song.has_value());
+    CHECK((untouched_root_ratio.song->charts.front().measures.front().definition.length ==
+           wormedit::rational_t{5, 4}));
+
+    auto ambiguous_ratio_source = *metadata_import.song;
+    ambiguous_ratio_source.charts.front().measures.front().definition.length = {7, 4};
+    const auto sibling_ratio_order = line_order(metadata_source, "#00002:1/2");
+    ambiguous_ratio_source.charts.front().bms_measure_length_projections.front().source_order =
+        sibling_ratio_order;
+    const auto rejected_ambiguous_ratio = wormedit::write_bms(ambiguous_ratio_source, options);
+    CHECK_FALSE(rejected_ambiguous_ratio.bytes.has_value());
+    CHECK(has_error(rejected_ambiguous_ratio,
+                    wormedit::bms_write_diagnostic_code_t::branch_provenance));
+
+    auto changed_retained_ratio = *metadata_import.song;
+    changed_retained_ratio.charts.front().measures.front().definition.length = {7, 4};
+    const auto active_ratio_node = std::ranges::find_if(
+        changed_retained_ratio.charts.front().bms_control_tree->children,
+        [](const auto& node) { return node.kind == wormedit::bms_control_kind_t::random; });
+    REQUIRE(active_ratio_node !=
+            changed_retained_ratio.charts.front().bms_control_tree->children.end());
+    auto& active_ratio_children = active_ratio_node->children.front().children.front().children;
+    const auto changed_line = std::ranges::find_if(active_ratio_children, [](const auto& node) {
+        return node.kind == wormedit::bms_control_kind_t::raw_statement &&
+               node.command_token == "00002";
+    });
+    REQUIRE(changed_line != active_ratio_children.end());
+    changed_line->original_text = "#00002:9/4";
+    const auto rejected_changed_source = wormedit::write_bms(changed_retained_ratio, options);
+    CHECK_FALSE(rejected_changed_source.bytes.has_value());
+    CHECK(has_error(rejected_changed_source,
+                    wormedit::bms_write_diagnostic_code_t::branch_provenance));
 
     auto edited_branch_metadata = *metadata_import.song;
     auto& metadata_fields = edited_branch_metadata.metadata.format_groups.front();
@@ -898,11 +947,40 @@ TEST_CASE("BMS writer preserves mixed root and branch timing statements",
     }));
 
     auto edited_timing = *imported.song;
-    REQUIRE_FALSE(edited_timing.charts.front().bpms.empty());
-    edited_timing.charts.front().bpms.front().beats_per_minute = {181, 1};
-    const auto rejected_bpm = wormedit::write_bms(edited_timing, options);
-    CHECK_FALSE(rejected_bpm.bytes.has_value());
-    CHECK(has_error(rejected_bpm, wormedit::bms_write_diagnostic_code_t::branch_provenance));
+    const auto branch_bpm_order = line_order(source, "#BPM 180");
+    const auto branch_bpm =
+        std::ranges::find_if(edited_timing.charts.front().bpms, [&](const auto& bpm) {
+            return bpm.provenance.source_order == branch_bpm_order;
+        });
+    REQUIRE(branch_bpm != edited_timing.charts.front().bpms.end());
+    branch_bpm->beats_per_minute = {181, 1};
+    const auto edited_bpm = wormedit::write_bms(edited_timing, options);
+    REQUIRE(edited_bpm.bytes.has_value());
+    CHECK_FALSE(edited_bpm.has_errors());
+    CHECK(occurrences(*edited_bpm.bytes, "#BPM 181") == 1);
+    CHECK(occurrences(*edited_bpm.bytes, "#BPM 240") == 1);
+    const auto edited_random_order = line_order(*edited_bpm.bytes, "#RANDOM 2");
+    parse_options.branch_choices = {
+        {.control_source_order = edited_random_order, .selected_value = 1}};
+    const auto edited_branch_bpm = parse(*edited_bpm.bytes, parse_options);
+    REQUIRE(edited_branch_bpm.song.has_value());
+    CHECK(std::ranges::any_of(edited_branch_bpm.song->charts.front().bpms, [](const auto& bpm) {
+        return bpm.beats_per_minute == wormedit::signed_rational_t{181, 1};
+    }));
+    parse_options.branch_choices.front().selected_value = 2;
+    const auto untouched_sibling_bpm = parse(*edited_bpm.bytes, parse_options);
+    REQUIRE(untouched_sibling_bpm.song.has_value());
+    CHECK(std::ranges::any_of(untouched_sibling_bpm.song->charts.front().bpms, [](const auto& bpm) {
+        return bpm.beats_per_minute == wormedit::signed_rational_t{240, 1};
+    }));
+
+    auto edited_root_channel_bpm = *imported.song;
+    REQUIRE_FALSE(edited_root_channel_bpm.charts.front().bpms.empty());
+    edited_root_channel_bpm.charts.front().bpms.front().beats_per_minute = {121, 1};
+    const auto rejected_root_channel_bpm = wormedit::write_bms(edited_root_channel_bpm, options);
+    CHECK_FALSE(rejected_root_channel_bpm.bytes.has_value());
+    CHECK(has_error(rejected_root_channel_bpm,
+                    wormedit::bms_write_diagnostic_code_t::branch_provenance));
 
     auto edited_pause = *imported.song;
     REQUIRE_FALSE(edited_pause.charts.front().pauses.empty());

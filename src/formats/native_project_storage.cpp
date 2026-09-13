@@ -20,9 +20,13 @@
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#if defined(__linux__)
+#include <sys/syscall.h>
+#endif
 #endif
 
 namespace wormedit {
@@ -844,16 +848,22 @@ auto read_file_exact(const std::filesystem::path& path, std::size_t expected_siz
 }
 
 auto replace_destination(const std::filesystem::path& temporary,
-                         const std::filesystem::path& destination, std::string& failure) -> bool {
+                         const std::filesystem::path& destination, bool replace_existing,
+                         std::string& failure) -> bool {
 #ifdef _WIN32
-    if (!MoveFileExW(temporary.c_str(), destination.c_str(),
-                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+    const auto flags = replace_existing ? MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+                                        : MOVEFILE_WRITE_THROUGH;
+    if (!MoveFileExW(temporary.c_str(), destination.c_str(), flags)) {
         failure = "atomic destination replacement failed with Windows error " +
                   std::to_string(GetLastError());
         return false;
     }
 #else
-    if (::rename(temporary.c_str(), destination.c_str()) != 0) {
+    // A same-directory hard-link install is atomic and fails if the target
+    // already exists. The temporary remains owned by its RAII cleanup object.
+    const auto installed = replace_existing ? ::rename(temporary.c_str(), destination.c_str())
+                                            : ::link(temporary.c_str(), destination.c_str());
+    if (installed != 0) {
         failure = "atomic destination replacement failed: " +
                   std::error_code(errno, std::generic_category()).message();
         return false;
@@ -892,10 +902,70 @@ auto sync_directory(const std::filesystem::path& destination, std::string& failu
 #endif
 }
 
+auto move_no_replace(const std::filesystem::path& source, const std::filesystem::path& destination,
+                     std::string& failure) -> bool {
+#ifdef _WIN32
+    if (!MoveFileExW(source.c_str(), destination.c_str(), MOVEFILE_WRITE_THROUGH)) {
+        failure =
+            "could not move recovery artifact with Windows error " + std::to_string(GetLastError());
+        return false;
+    }
+#elif defined(__APPLE__)
+#ifndef RENAME_EXCL
+#define RENAME_EXCL 0x00000004
+#endif
+    if (::renamex_np(source.c_str(), destination.c_str(), RENAME_EXCL) != 0) {
+        failure = "could not move recovery artifact: " +
+                  std::error_code(errno, std::generic_category()).message();
+        return false;
+    }
+#elif defined(__linux__) && defined(SYS_renameat2)
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE (1U << 0U)
+#endif
+    if (::syscall(SYS_renameat2, AT_FDCWD, source.c_str(), AT_FDCWD, destination.c_str(),
+                  RENAME_NOREPLACE) != 0) {
+        if (errno != ENOSYS && errno != EINVAL) {
+            failure = "could not move recovery artifact: " +
+                      std::error_code(errno, std::generic_category()).message();
+            return false;
+        }
+        if (::link(source.c_str(), destination.c_str()) != 0) {
+            failure = "could not stage recovery artifact: " +
+                      std::error_code(errno, std::generic_category()).message();
+            return false;
+        }
+        if (::unlink(source.c_str()) != 0) {
+            const auto saved_error = errno;
+            (void)::unlink(destination.c_str());
+            failure = "could not finish recovery artifact move: " +
+                      std::error_code(saved_error, std::generic_category()).message();
+            return false;
+        }
+    }
+#else
+    // The fallback still refuses an existing target. The caller verifies the
+    // moved content and attempts restoration if the source changed meanwhile.
+    if (::link(source.c_str(), destination.c_str()) != 0) {
+        failure = "could not stage recovery artifact: " +
+                  std::error_code(errno, std::generic_category()).message();
+        return false;
+    }
+    if (::unlink(source.c_str()) != 0) {
+        const auto saved_error = errno;
+        (void)::unlink(destination.c_str());
+        failure = "could not finish recovery artifact move: " +
+                  std::error_code(saved_error, std::generic_category()).message();
+        return false;
+    }
+#endif
+    return true;
+}
+
 template <typename validator_t>
 auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::string_view bytes,
                                 const native_project_storage_options_t& options,
-                                validator_t&& validate_reopened)
+                                validator_t&& validate_reopened, bool replace_existing = true)
     -> native_project_storage_result_t {
     native_project_storage_result_t result;
     if (destination.empty() || destination.filename().empty()) {
@@ -1048,14 +1118,26 @@ auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::s
         return result;
     }
     std::string replace_failure;
-    if (!replace_destination(temporary.path, destination, replace_failure)) {
+    if (!replace_destination(temporary.path, destination, replace_existing, replace_failure)) {
         add_diagnostic(result.diagnostics,
                        native_project_storage_diagnostic_code_t::replacement_failure,
                        std::move(replace_failure), destination);
         return result;
     }
-    temporary.keep = true;
+    temporary.keep = replace_existing;
     result.published = true;
+    if (!replace_existing) {
+        std::error_code cleanup_error;
+        (void)std::filesystem::remove(temporary.path, cleanup_error);
+        if (!cleanup_error) {
+            temporary.path.clear();
+        } else {
+            add_diagnostic(result.diagnostics,
+                           native_project_storage_diagnostic_code_t::write_failure,
+                           "destination was published, but its temporary link could not be removed",
+                           temporary.path, diagnostic_severity_t::warning);
+        }
+    }
 
     std::string directory_failure;
     if (!stage_allowed(options, native_project_storage_stage_t::sync_destination_directory,
@@ -1066,8 +1148,10 @@ auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::s
                 stage_failure(native_project_storage_stage_t::sync_destination_directory);
         }
         add_diagnostic(result.diagnostics, native_project_storage_diagnostic_code_t::write_failure,
-                       "destination was replaced, but " + directory_failure, destination,
-                       diagnostic_severity_t::warning);
+                       std::string(replace_existing ? "destination was replaced, but "
+                                                    : "destination was published, but ") +
+                           directory_failure,
+                       destination, diagnostic_severity_t::warning);
     }
     return result;
 }
@@ -1081,6 +1165,12 @@ auto native_project_storage_result_t::has_errors() const -> bool {
 }
 
 auto native_project_recovery_parse_result_t::has_errors() const -> bool {
+    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
+        return diagnostic.severity == diagnostic_severity_t::error;
+    });
+}
+
+auto native_project_recovery_action_result_t::has_errors() const -> bool {
     return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
         return diagnostic.severity == diagnostic_severity_t::error;
     });
@@ -1312,6 +1402,8 @@ auto scan_native_project_recovery_candidates(const native_project_recovery_scan_
             continue;
         }
         total_bytes_read += byte_count;
+        candidate.scanned_size_bytes = file_size;
+        candidate.scanned_sha256 = sha256(bytes);
 
         std::vector<native_project_storage_diagnostic_t> parse_diagnostics;
         if (spec.kind == native_project_recovery_candidate_kind_t::primary ||
@@ -1438,6 +1530,15 @@ auto scan_native_project_recovery_candidates(const native_project_recovery_scan_
         }
     }
 
+    for (auto& candidate : result.candidates) {
+        if (candidate.quarantine != native_project_recovery_quarantine_t::retain &&
+            std::ranges::find(candidate.available_actions,
+                              native_project_recovery_action_t::quarantine) ==
+                candidate.available_actions.end()) {
+            candidate.available_actions.push_back(native_project_recovery_action_t::quarantine);
+        }
+    }
+
     std::vector<std::size_t> eligible_recoveries;
     for (std::size_t index = 0; index < result.candidates.size(); ++index) {
         const auto& candidate = result.candidates[index];
@@ -1472,6 +1573,184 @@ auto scan_native_project_recovery_candidates(const native_project_recovery_scan_
     }
     return result;
 }
+
+namespace {
+
+auto publish_native_project_create_only(const std::filesystem::path& destination,
+                                        const song_document_t& song, native_project_limits_t limits)
+    -> native_project_storage_result_t {
+    native_project_storage_result_t result;
+    if (destination.empty() || destination.filename().empty()) {
+        add_diagnostic(result.diagnostics,
+                       native_project_storage_diagnostic_code_t::invalid_destination,
+                       "destination must name a file", destination);
+        return result;
+    }
+    auto serialized = write_native_project(song, limits);
+    if (!serialized.bytes.has_value() || serialized.has_errors()) {
+        copy_codec_diagnostics(result.diagnostics, serialized.diagnostics);
+        if (result.diagnostics.empty()) {
+            add_diagnostic(result.diagnostics,
+                           native_project_storage_diagnostic_code_t::serialization_failure,
+                           "native-project serialization did not produce output", destination);
+        }
+        return result;
+    }
+    const expected_document_t expected{.id = song.id, .revision = song.revision};
+    if (!validate_native_payload(*serialized.bytes, expected, limits, result.diagnostics,
+                                 destination)) {
+        return result;
+    }
+    native_project_storage_options_t options{.codec_limits = limits};
+    return publish_prevalidated_bytes(
+        destination, *serialized.bytes, options,
+        [expected, limits](std::string_view reopened, auto& diagnostics, const auto& path) {
+            return validate_native_payload(reopened, expected, limits, diagnostics, path);
+        },
+        false);
+}
+
+auto recovery_action_stage_allowed(const native_project_recovery_action_options_t& options,
+                                   native_project_recovery_action_stage_t stage,
+                                   const std::filesystem::path& path) noexcept -> bool {
+    if (!options.allow_stage) {
+        return true;
+    }
+    try {
+        return options.allow_stage(stage, path);
+    } catch (...) {
+        return false;
+    }
+}
+
+void add_action_error(native_project_recovery_action_result_t& result,
+                      native_project_storage_diagnostic_code_t code, std::string message,
+                      const std::filesystem::path& path = {},
+                      diagnostic_severity_t severity = diagnostic_severity_t::error) {
+    add_diagnostic(result.diagnostics, code, std::move(message), path, severity);
+}
+
+auto read_scanned_artifact(const native_project_recovery_candidate_t& candidate,
+                           std::size_t maximum_file_bytes,
+                           native_project_recovery_action_result_t& result)
+    -> std::optional<std::string> {
+    if (!candidate.scanned_size_bytes.has_value() || candidate.scanned_sha256.size() != 64) {
+        add_action_error(result,
+                         native_project_storage_diagnostic_code_t::recovery_action_unavailable,
+                         "candidate has no complete scanner identity", candidate.path);
+        return std::nullopt;
+    }
+    if (*candidate.scanned_size_bytes > maximum_file_bytes ||
+        *candidate.scanned_size_bytes > absolute_maximum_scan_file_bytes) {
+        add_action_error(result, native_project_storage_diagnostic_code_t::resource_limit,
+                         "recovery candidate exceeds the action byte limit", candidate.path);
+        return std::nullopt;
+    }
+    std::error_code error;
+    const auto status = std::filesystem::symlink_status(candidate.path, error);
+    if (error || !std::filesystem::is_regular_file(status)) {
+        add_action_error(
+            result, native_project_storage_diagnostic_code_t::recovery_candidate_changed,
+            "scanned recovery artifact is missing or is no longer a regular file", candidate.path);
+        return std::nullopt;
+    }
+    const auto current_size = std::filesystem::file_size(candidate.path, error);
+    if (error || current_size != *candidate.scanned_size_bytes) {
+        add_action_error(result,
+                         native_project_storage_diagnostic_code_t::recovery_candidate_changed,
+                         "scanned recovery artifact size changed", candidate.path);
+        return std::nullopt;
+    }
+    const auto byte_count = static_cast<std::size_t>(current_size);
+    std::ifstream stream(candidate.path, std::ios::binary);
+    if (!stream) {
+        add_action_error(result, native_project_storage_diagnostic_code_t::read_failure,
+                         "could not reopen scanned recovery artifact", candidate.path);
+        return std::nullopt;
+    }
+    std::string bytes(byte_count, '\0');
+    if (byte_count != 0) {
+        stream.read(bytes.data(), static_cast<std::streamsize>(byte_count));
+    }
+    if (!stream || static_cast<std::size_t>(stream.gcount()) != byte_count) {
+        add_action_error(result, native_project_storage_diagnostic_code_t::read_failure,
+                         "could not read the complete scanned recovery artifact", candidate.path);
+        return std::nullopt;
+    }
+    error.clear();
+    const auto final_size = std::filesystem::file_size(candidate.path, error);
+    if (error || final_size != current_size || sha256(bytes) != candidate.scanned_sha256) {
+        add_action_error(result,
+                         native_project_storage_diagnostic_code_t::recovery_candidate_changed,
+                         "scanned recovery artifact was replaced or modified", candidate.path);
+        return std::nullopt;
+    }
+    return bytes;
+}
+
+auto parse_scanned_artifact(const native_project_recovery_candidate_t& candidate,
+                            std::string_view bytes, native_project_limits_t limits,
+                            native_project_recovery_action_result_t& result)
+    -> std::optional<song_document_t> {
+    const auto raw_native =
+        candidate.kind == native_project_recovery_candidate_kind_t::primary ||
+        candidate.kind == native_project_recovery_candidate_kind_t::stale_primary_temporary;
+    if (raw_native) {
+        const auto parsed = parse_native_project(bytes, limits);
+        if (parsed.song.has_value() && !parsed.has_errors()) {
+            return parsed.song;
+        }
+        add_action_error(result, native_project_storage_diagnostic_code_t::validation_failure,
+                         "scanned native project no longer validates", candidate.path);
+        return std::nullopt;
+    }
+    std::vector<native_project_storage_diagnostic_t> diagnostics;
+    const auto parsed = parse_recovery_impl(bytes, limits, diagnostics, candidate.path);
+    if (parsed.has_value()) {
+        return parsed->snapshot.song;
+    }
+    if (diagnostics.empty()) {
+        add_action_error(result, native_project_storage_diagnostic_code_t::validation_failure,
+                         "scanned recovery envelope no longer validates", candidate.path);
+    } else {
+        for (auto& diagnostic : diagnostics) {
+            if (result.diagnostics.size() == maximum_diagnostics) {
+                break;
+            }
+            result.diagnostics.push_back(std::move(diagnostic));
+        }
+    }
+    return std::nullopt;
+}
+
+auto same_path_for_action(const std::filesystem::path& left, const std::filesystem::path& right)
+    -> bool {
+    std::error_code left_error;
+    std::error_code right_error;
+    auto left_normalized = std::filesystem::weakly_canonical(left, left_error);
+    auto right_normalized = std::filesystem::weakly_canonical(right, right_error);
+    if (left_error) {
+        left_normalized = std::filesystem::absolute(left, left_error).lexically_normal();
+    }
+    if (right_error) {
+        right_normalized = std::filesystem::absolute(right, right_error).lexically_normal();
+    }
+    return left_normalized == right_normalized ||
+           left.lexically_normal() == right.lexically_normal();
+}
+
+auto new_quarantine_path(const std::filesystem::path& source) -> std::filesystem::path {
+    static std::atomic<std::uint64_t> sequence{1};
+    const auto parent =
+        source.has_parent_path() ? source.parent_path() : std::filesystem::path{"."};
+    auto name = source.filename();
+    name += ".wormedit-quarantine-" + std::to_string(process_id()) + "-" +
+            std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" +
+            std::to_string(sequence.fetch_add(1, std::memory_order_relaxed));
+    return parent / name;
+}
+
+} // namespace
 
 auto publish_native_project_atomic(const std::filesystem::path& destination,
                                    const song_document_t& song,
@@ -1570,6 +1849,309 @@ auto publish_native_project_recovery_atomic(const std::filesystem::path& destina
             const auto parsed = parse_recovery_impl(reopened, limits, diagnostics, path);
             return parsed.has_value() && matches(parsed->snapshot.song, expected);
         });
+}
+
+auto apply_native_project_recovery_action(const native_project_recovery_scan_result_t& scan,
+                                          std::size_t candidate_index,
+                                          native_project_recovery_action_t action,
+                                          native_project_recovery_action_options_t options)
+    -> native_project_recovery_action_result_t {
+    native_project_recovery_action_result_t result;
+    if (candidate_index >= scan.candidates.size()) {
+        add_action_error(result,
+                         native_project_storage_diagnostic_code_t::recovery_action_unavailable,
+                         "recovery candidate index is outside the completed scan");
+        return result;
+    }
+    const auto& candidate = scan.candidates[candidate_index];
+    if (std::ranges::find(candidate.available_actions, action) ==
+        candidate.available_actions.end()) {
+        add_action_error(
+            result, native_project_storage_diagnostic_code_t::recovery_action_unavailable,
+            "requested recovery action is not available for this candidate", candidate.path);
+        return result;
+    }
+    if (candidate.status == native_project_recovery_candidate_status_t::missing ||
+        candidate.status == native_project_recovery_candidate_status_t::unreadable ||
+        candidate.status == native_project_recovery_candidate_status_t::resource_limited) {
+        add_action_error(
+            result, native_project_storage_diagnostic_code_t::recovery_action_unavailable,
+            "candidate was not completely scanned and cannot be acted on", candidate.path);
+        return result;
+    }
+    if (action == native_project_recovery_action_t::recover_into_session &&
+        !options.expected_session.is_set) {
+        add_action_error(result,
+                         native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
+                         "recovering into a session requires its expected identity and revision",
+                         candidate.path);
+        return result;
+    }
+
+    const auto allowed = recovery_action_stage_allowed(
+        options, native_project_recovery_action_stage_t::before_revalidate, candidate.path);
+    if (!allowed) {
+        add_action_error(result, native_project_storage_diagnostic_code_t::read_failure,
+                         "injected recovery-candidate revalidation failure", candidate.path);
+        return result;
+    }
+    auto candidate_bytes =
+        read_scanned_artifact(candidate, options.maximum_candidate_file_bytes, result);
+    if (!candidate_bytes.has_value()) {
+        return result;
+    }
+
+    auto current_document = [&]() -> std::optional<song_document_t> {
+        if (candidate.status != native_project_recovery_candidate_status_t::valid) {
+            return std::nullopt;
+        }
+        auto document =
+            parse_scanned_artifact(candidate, *candidate_bytes, options.codec_limits, result);
+        if (!document.has_value()) {
+            return std::nullopt;
+        }
+        const native_project_document_version_t version{.project_id = document->id,
+                                                        .revision = document->revision};
+        if (!candidate.version.has_value() || *candidate.version != version) {
+            add_action_error(result,
+                             native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
+                             "candidate project identity or revision differs from its scan result",
+                             candidate.path);
+            return std::nullopt;
+        }
+        return document;
+    };
+    auto find_primary = [&]() -> const native_project_recovery_candidate_t* {
+        const auto primary = std::ranges::find_if(scan.candidates, [](const auto& entry) {
+            return entry.kind == native_project_recovery_candidate_kind_t::primary;
+        });
+        return primary == scan.candidates.end() ? nullptr : &*primary;
+    };
+    auto verify_primary_baseline = [&](const native_project_recovery_candidate_t& primary) -> bool {
+        if (primary.status == native_project_recovery_candidate_status_t::missing) {
+            std::error_code error;
+            const auto status = std::filesystem::symlink_status(primary.path, error);
+            if ((!error || error == std::errc::no_such_file_or_directory) &&
+                !std::filesystem::exists(status)) {
+                return true;
+            }
+            add_action_error(result,
+                             native_project_storage_diagnostic_code_t::recovery_candidate_changed,
+                             "primary appeared after the recovery scan", primary.path);
+            return false;
+        }
+        const auto primary_bytes =
+            read_scanned_artifact(primary, options.maximum_candidate_file_bytes, result);
+        if (!primary_bytes.has_value()) {
+            return false;
+        }
+        if (primary.status != native_project_recovery_candidate_status_t::valid) {
+            return true;
+        }
+        auto primary_document =
+            parse_scanned_artifact(primary, *primary_bytes, options.codec_limits, result);
+        if (!primary_document.has_value() || !primary.version.has_value() ||
+            *primary.version !=
+                native_project_document_version_t{.project_id = primary_document->id,
+                                                  .revision = primary_document->revision}) {
+            if (!result.has_errors()) {
+                add_action_error(
+                    result, native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
+                    "primary identity or revision differs from its scan result", primary.path);
+            }
+            return false;
+        }
+        return true;
+    };
+    auto document = current_document();
+    if (candidate.status == native_project_recovery_candidate_status_t::valid &&
+        !document.has_value()) {
+        return result;
+    }
+
+    if (action == native_project_recovery_action_t::inspect_read_only) {
+        result.document = std::move(document);
+        result.version = candidate.version;
+        result.applied = true;
+        return result;
+    }
+
+    if (action == native_project_recovery_action_t::recover_into_session) {
+        const auto* primary = find_primary();
+        if (primary == nullptr) {
+            add_action_error(result,
+                             native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
+                             "scan has no primary baseline for session recovery", candidate.path);
+            return result;
+        }
+        if (!verify_primary_baseline(*primary)) {
+            return result;
+        }
+
+        const auto primary_version =
+            primary->status == native_project_recovery_candidate_status_t::valid
+                ? primary->version
+                : std::optional<native_project_document_version_t>{};
+        if (options.expected_session.version != primary_version) {
+            add_action_error(
+                result, native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
+                "current session no longer matches the scanned primary revision", primary->path);
+            return result;
+        }
+        if (options.expected_session.version.has_value() &&
+            (candidate.version->project_id != options.expected_session.version->project_id ||
+             candidate.version->revision < options.expected_session.version->revision)) {
+            add_action_error(
+                result, native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
+                "recovery candidate belongs to another project or is older than the session",
+                candidate.path);
+            return result;
+        }
+        result.document = std::move(document);
+        result.version = candidate.version;
+        result.applied = true;
+        return result;
+    }
+
+    if (action == native_project_recovery_action_t::save_as_new_project) {
+        const auto destination = options.save_as_destination;
+        if (destination.empty() || destination.filename().empty()) {
+            add_action_error(result, native_project_storage_diagnostic_code_t::invalid_destination,
+                             "save-as destination must name a file", destination);
+            return result;
+        }
+        for (const auto& entry : scan.candidates) {
+            if (entry.kind == native_project_recovery_candidate_kind_t::primary &&
+                same_path_for_action(destination, entry.path)) {
+                add_action_error(result,
+                                 native_project_storage_diagnostic_code_t::invalid_destination,
+                                 "save-as cannot target the primary project", destination);
+                return result;
+            }
+        }
+        if (same_path_for_action(destination, candidate.path)) {
+            add_action_error(result, native_project_storage_diagnostic_code_t::invalid_destination,
+                             "save-as cannot target the scanned recovery artifact", destination);
+            return result;
+        }
+        std::error_code error;
+        const auto destination_status = std::filesystem::symlink_status(destination, error);
+        if (error && error != std::errc::no_such_file_or_directory) {
+            add_action_error(result, native_project_storage_diagnostic_code_t::invalid_destination,
+                             "could not inspect save-as destination: " + error.message(),
+                             destination);
+            return result;
+        }
+        if (!error && std::filesystem::exists(destination_status)) {
+            add_action_error(result,
+                             native_project_storage_diagnostic_code_t::recovery_target_exists,
+                             "save-as destination already exists", destination);
+            return result;
+        }
+        if (!recovery_action_stage_allowed(
+                options, native_project_recovery_action_stage_t::before_save_as_publish,
+                destination)) {
+            add_action_error(result, native_project_storage_diagnostic_code_t::write_failure,
+                             "injected save-as publication failure", destination);
+            return result;
+        }
+        candidate_bytes =
+            read_scanned_artifact(candidate, options.maximum_candidate_file_bytes, result);
+        if (!candidate_bytes.has_value()) {
+            return result;
+        }
+        document = current_document();
+        if (!document.has_value()) {
+            return result;
+        }
+        const auto publication =
+            publish_native_project_create_only(destination, *document, options.codec_limits);
+        result.diagnostics = publication.diagnostics;
+        if (!publication.published || publication.has_errors()) {
+            for (auto& diagnostic : result.diagnostics) {
+                if (diagnostic.code ==
+                    native_project_storage_diagnostic_code_t::replacement_failure) {
+                    diagnostic.code =
+                        native_project_storage_diagnostic_code_t::recovery_target_exists;
+                    diagnostic.message =
+                        "save-as could not claim a destination that appeared concurrently";
+                }
+            }
+            return result;
+        }
+        result.document = std::move(document);
+        result.version = candidate.version;
+        result.applied = true;
+        return result;
+    }
+
+    if (action == native_project_recovery_action_t::discard ||
+        action == native_project_recovery_action_t::quarantine) {
+        if (!recovery_action_stage_allowed(
+                options, native_project_recovery_action_stage_t::before_mutation, candidate.path)) {
+            add_action_error(result,
+                             native_project_storage_diagnostic_code_t::recovery_quarantine_failure,
+                             "injected recovery quarantine failure", candidate.path);
+            return result;
+        }
+        candidate_bytes =
+            read_scanned_artifact(candidate, options.maximum_candidate_file_bytes, result);
+        if (!candidate_bytes.has_value()) {
+            return result;
+        }
+        if (const auto* primary = find_primary();
+            primary != nullptr && !verify_primary_baseline(*primary)) {
+            return result;
+        }
+        const auto destination = new_quarantine_path(candidate.path);
+        std::string move_failure;
+        if (!move_no_replace(candidate.path, destination, move_failure)) {
+            add_action_error(result,
+                             native_project_storage_diagnostic_code_t::recovery_quarantine_failure,
+                             std::move(move_failure), candidate.path);
+            return result;
+        }
+        result.quarantined_path = destination;
+        if (!recovery_action_stage_allowed(
+                options, native_project_recovery_action_stage_t::after_quarantine_move,
+                destination)) {
+            add_action_error(result,
+                             native_project_storage_diagnostic_code_t::recovery_quarantine_failure,
+                             "injected post-move quarantine verification failure", destination);
+        } else {
+            auto moved_candidate = candidate;
+            moved_candidate.path = destination;
+            const auto moved_bytes = read_scanned_artifact(
+                moved_candidate, options.maximum_candidate_file_bytes, result);
+            if (moved_bytes.has_value()) {
+                result.applied = true;
+            }
+        }
+        if (!result.applied) {
+            std::string restore_failure;
+            if (move_no_replace(destination, candidate.path, restore_failure)) {
+                result.quarantined_path.reset();
+            } else {
+                add_action_error(
+                    result, native_project_storage_diagnostic_code_t::recovery_quarantine_failure,
+                    "could not restore the changed artifact after quarantine verification: " +
+                        restore_failure,
+                    destination);
+            }
+            return result;
+        }
+        std::string directory_failure;
+        if (!sync_directory(destination, directory_failure)) {
+            add_action_error(result, native_project_storage_diagnostic_code_t::write_failure,
+                             "recovery artifact was moved, but " + directory_failure, destination,
+                             diagnostic_severity_t::warning);
+        }
+        return result;
+    }
+
+    add_action_error(result, native_project_storage_diagnostic_code_t::recovery_action_unavailable,
+                     "unsupported recovery action", candidate.path);
+    return result;
 }
 
 native_project_autosave_coordinator_t::native_project_autosave_coordinator_t(

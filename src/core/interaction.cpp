@@ -27,6 +27,35 @@ auto error(diagnostic_code_t code, std::string message,
     };
 }
 
+auto rational_label(signed_rational_t value) -> std::string {
+    return std::to_string(value.numerator) +
+           (value.denominator == 1 ? std::string{} : "/" + std::to_string(value.denominator));
+}
+
+auto position_label(local_position_t position) -> std::string {
+    return std::to_string(position.measure.value) + ":" + std::to_string(position.row);
+}
+
+auto note_kind_label(note_kind_t kind) -> std::string_view {
+    switch (kind) {
+    case note_kind_t::tap:
+        return "Tap";
+    case note_kind_t::hold:
+        return "Hold";
+    case note_kind_t::roll:
+        return "Roll";
+    case note_kind_t::invisible:
+        return "Invisible note";
+    case note_kind_t::mine:
+        return "Mine";
+    case note_kind_t::lift:
+        return "Lift";
+    case note_kind_t::fake:
+        return "Fake note";
+    }
+    return "Note";
+}
+
 auto find_chart(const song_document_t& song, chart_id_t id) -> const chart_document_t* {
     const auto found =
         std::ranges::find_if(song.charts, [id](const auto& chart) { return chart.id == id; });
@@ -959,6 +988,27 @@ auto build_editor_hit_test_index(const chart_document_t& chart, std::uint64_t do
         index.available_objects.push_back(object);
         return std::nullopt;
     };
+    const auto add_hover_object = [&](editor_selection_object_kind_t kind, object_id_t id,
+                                      local_position_t position, editor_inline_editor_kind_t editor,
+                                      std::string tooltip,
+                                      std::optional<local_position_t> end_position =
+                                          std::nullopt) -> std::optional<diagnostic_t> {
+        const auto row = absolute_row(index.measures, position);
+        const auto end_row = absolute_row(index.measures, end_position.value_or(position));
+        if (!row.has_value() || !end_row.has_value() || *row > *end_row) {
+            return error(diagnostic_code_t::row_out_of_range,
+                         "hover object position lies outside chart geometry", id);
+        }
+        index.hover_objects_by_id.push_back({
+            .object = {kind, id},
+            .editor = editor,
+            .position = position,
+            .absolute_row = *row,
+            .end_absolute_row = *end_row,
+            .tooltip = std::move(tooltip),
+        });
+        return std::nullopt;
+    };
     std::unordered_map<std::uint64_t, std::size_t> bucket_by_measure;
     bucket_by_measure.reserve(index.measures.entries.size());
     for (std::size_t bucket = 0; bucket < index.measures.entries.size(); ++bucket) {
@@ -1012,6 +1062,21 @@ auto build_editor_hit_test_index(const chart_document_t& chart, std::uint64_t do
                 invalid.has_value()) {
                 return diagnostic_list_t{*invalid};
             }
+            auto tooltip = std::string{note_kind_label(note.kind)};
+            tooltip += " · lane " + std::to_string(note.lane.value);
+            tooltip += " · row " + position_label(note.position);
+            if (note.end.has_value())
+                tooltip += "–" + position_label(*note.end);
+            if (note.label.has_value() && !note.label->empty())
+                tooltip += " · " + *note.label;
+            if (note.sound.has_value())
+                tooltip += " · sample " + std::to_string(note.sound->value);
+            if (const auto invalid = add_hover_object(
+                    editor_selection_object_kind_t::note, note.id, note.position,
+                    editor_inline_editor_kind_t::note_properties, std::move(tooltip), end_position);
+                invalid.has_value()) {
+                return diagnostic_list_t{*invalid};
+            }
         }
         for (const auto& event : measure.bgm_events) {
             if (const auto invalid = add_selection_span(editor_selection_object_kind_t::bgm_event,
@@ -1019,32 +1084,77 @@ auto build_editor_hit_test_index(const chart_document_t& chart, std::uint64_t do
                 invalid.has_value()) {
                 return diagnostic_list_t{*invalid};
             }
+            auto tooltip = std::string{"BGM event · row "} + position_label(event.position);
+            if (event.sound.has_value())
+                tooltip += " · sample " + std::to_string(event.sound->value);
+            if (const auto invalid = add_hover_object(
+                    editor_selection_object_kind_t::bgm_event, event.id, event.position,
+                    editor_inline_editor_kind_t::bgm_event_properties, std::move(tooltip));
+                invalid.has_value()) {
+                return diagnostic_list_t{*invalid};
+            }
         }
     }
     const auto add_points = [&](const auto& events, editor_selection_object_kind_t kind,
-                                auto position_of) -> std::optional<diagnostic_t> {
+                                auto position_of, editor_inline_editor_kind_t editor,
+                                auto tooltip_of) -> std::optional<diagnostic_t> {
         for (const auto& event : events) {
+            const auto position = position_of(event);
+            if (const auto invalid = add_selection_span(kind, event.id, position, position);
+                invalid.has_value()) {
+                return invalid;
+            }
             if (const auto invalid =
-                    add_selection_span(kind, event.id, position_of(event), position_of(event));
+                    add_hover_object(kind, event.id, position, editor, tooltip_of(event));
                 invalid.has_value()) {
                 return invalid;
             }
         }
         return std::nullopt;
     };
-    const auto add_timing =
-        [&](const auto& events,
-            editor_selection_object_kind_t kind) -> std::optional<diagnostic_t> {
-        return add_points(events, kind, [](const auto& event) { return event.position; });
+    const auto add_timing = [&](const auto& events, editor_selection_object_kind_t kind,
+                                editor_inline_editor_kind_t editor,
+                                auto tooltip_of) -> std::optional<diagnostic_t> {
+        return add_points(
+            events, kind, [](const auto& event) { return event.position; }, editor, tooltip_of);
     };
-    if (const auto invalid = add_timing(chart.bpms, editor_selection_object_kind_t::bpm_event);
+    if (const auto invalid = add_timing(chart.bpms, editor_selection_object_kind_t::bpm_event,
+                                        editor_inline_editor_kind_t::bpm_event,
+                                        [](const auto& event) {
+                                            return std::string{"BPM "} +
+                                                   rational_label(event.beats_per_minute) +
+                                                   " · row " + position_label(event.position);
+                                        });
         invalid.has_value())
         return diagnostic_list_t{*invalid};
     for (const auto& event : chart.pauses) {
         const auto kind = event.kind == pause_kind_t::stop
                               ? editor_selection_object_kind_t::stop_event
                               : editor_selection_object_kind_t::delay_event;
+        const auto editor = event.kind == pause_kind_t::stop
+                                ? editor_inline_editor_kind_t::stop_event
+                                : editor_inline_editor_kind_t::delay_event;
+        const auto name = event.kind == pause_kind_t::stop ? "Stop " : "Delay ";
+        const auto unit = [&] {
+            switch (event.source_unit) {
+            case pause_unit_t::seconds:
+                return " seconds";
+            case pause_unit_t::milliseconds:
+                return " ms";
+            case pause_unit_t::bms_stop_ticks:
+                return " BMS ticks";
+            case pause_unit_t::beats:
+                return " beats";
+            }
+            return "";
+        }();
         if (const auto invalid = add_selection_span(kind, event.id, event.position, event.position);
+            invalid.has_value())
+            return diagnostic_list_t{*invalid};
+        if (const auto invalid =
+                add_hover_object(kind, event.id, event.position, editor,
+                                 std::string{name} + rational_label(event.duration) + unit +
+                                     " · row " + position_label(event.position));
             invalid.has_value())
             return diagnostic_list_t{*invalid};
     }
@@ -1053,26 +1163,67 @@ auto build_editor_hit_test_index(const chart_document_t& chart, std::uint64_t do
                                                     event.id, event.span.begin, event.span.end);
             invalid.has_value())
             return diagnostic_list_t{*invalid};
+        if (const auto invalid =
+                add_hover_object(editor_selection_object_kind_t::warp_event, event.id,
+                                 event.span.begin, editor_inline_editor_kind_t::warp_event,
+                                 std::string{"Warp · "} + position_label(event.span.begin) + "–" +
+                                     position_label(event.span.end),
+                                 event.span.end);
+            invalid.has_value())
+            return diagnostic_list_t{*invalid};
     }
+    if (const auto invalid = add_timing(chart.scrolls, editor_selection_object_kind_t::scroll_event,
+                                        editor_inline_editor_kind_t::scroll_event,
+                                        [](const auto& event) {
+                                            return std::string{"Scroll ×"} +
+                                                   rational_label(event.multiplier) + " · row " +
+                                                   position_label(event.position);
+                                        });
+        invalid.has_value())
+        return diagnostic_list_t{*invalid};
     if (const auto invalid =
-            add_timing(chart.scrolls, editor_selection_object_kind_t::scroll_event);
-        invalid.has_value())
-        return diagnostic_list_t{*invalid};
-    if (const auto invalid = add_timing(chart.speeds, editor_selection_object_kind_t::speed_event);
-        invalid.has_value())
-        return diagnostic_list_t{*invalid};
-    if (const auto invalid = add_timing(chart.kiai, editor_selection_object_kind_t::kiai_event);
-        invalid.has_value())
-        return diagnostic_list_t{*invalid};
-    if (const auto invalid =
-            add_points(chart.timing_anchors, editor_selection_object_kind_t::timing_anchor,
-                       [&](const auto& event) {
-                           return local_position_t{event.position.measure, event.position.row};
+            add_timing(chart.speeds, editor_selection_object_kind_t::speed_event,
+                       editor_inline_editor_kind_t::speed_event,
+                       [](const auto& event) {
+                           auto tooltip = std::string{"Speed ×"} + rational_label(event.multiplier);
+                           if (event.transition_beats.numerator != 0)
+                               tooltip += " · transition " +
+                                          std::to_string(event.transition_beats.numerator) + "/" +
+                                          std::to_string(event.transition_beats.denominator) +
+                                          (event.transition_is_seconds ? " seconds" : " beats");
+                           return tooltip + " · row " + position_label(event.position);
                        });
         invalid.has_value())
         return diagnostic_list_t{*invalid};
-    if (const auto invalid =
-            add_timing(chart.bga_events, editor_selection_object_kind_t::bga_event);
+    if (const auto invalid = add_timing(chart.kiai, editor_selection_object_kind_t::kiai_event,
+                                        editor_inline_editor_kind_t::kiai_event,
+                                        [](const auto& event) {
+                                            return std::string{"Kiai "} +
+                                                   (event.enabled ? "on" : "off") + " · row " +
+                                                   position_label(event.position);
+                                        });
+        invalid.has_value())
+        return diagnostic_list_t{*invalid};
+    if (const auto invalid = add_points(
+            chart.timing_anchors, editor_selection_object_kind_t::timing_anchor,
+            [&](const auto& event) {
+                return local_position_t{event.position.measure, event.position.row};
+            },
+            editor_inline_editor_kind_t::timing_anchor,
+            [](const auto& event) {
+                return std::string{"Timing anchor · frame "} +
+                       std::to_string(event.source_sample_frame) +
+                       (event.locked ? " · locked" : "");
+            });
+        invalid.has_value())
+        return diagnostic_list_t{*invalid};
+    if (const auto invalid = add_timing(chart.bga_events, editor_selection_object_kind_t::bga_event,
+                                        editor_inline_editor_kind_t::bga_event,
+                                        [](const auto& event) {
+                                            return std::string{"BGA resource "} +
+                                                   std::to_string(event.resource.value) +
+                                                   " · row " + position_label(event.position);
+                                        });
         invalid.has_value())
         return diagnostic_list_t{*invalid};
     // Audio-time markers have no exact chart row until a timing index projects
@@ -1085,6 +1236,13 @@ auto build_editor_hit_test_index(const chart_document_t& chart, std::uint64_t do
                                        *bookmark.position, *bookmark.position);
                 invalid.has_value())
                 return diagnostic_list_t{*invalid};
+            if (const auto invalid = add_hover_object(
+                    editor_selection_object_kind_t::bookmark, bookmark.id, *bookmark.position,
+                    editor_inline_editor_kind_t::bookmark,
+                    std::string{"Bookmark"} +
+                        (bookmark.label.empty() ? std::string{} : " · " + bookmark.label));
+                invalid.has_value())
+                return diagnostic_list_t{*invalid};
         }
     }
     for (const auto& section : chart.sections) {
@@ -1092,6 +1250,14 @@ auto build_editor_hit_test_index(const chart_document_t& chart, std::uint64_t do
             if (const auto invalid =
                     add_selection_span(editor_selection_object_kind_t::section, section.id,
                                        section.beat_span->begin, section.beat_span->end);
+                invalid.has_value())
+                return diagnostic_list_t{*invalid};
+            if (const auto invalid = add_hover_object(
+                    editor_selection_object_kind_t::section, section.id, section.beat_span->begin,
+                    editor_inline_editor_kind_t::section,
+                    std::string{"Section"} +
+                        (section.label.empty() ? std::string{} : " · " + section.label),
+                    section.beat_span->end);
                 invalid.has_value())
                 return diagnostic_list_t{*invalid};
         }
@@ -1154,6 +1320,7 @@ auto build_editor_hit_test_index(const chart_document_t& chart, std::uint64_t do
     index.available_objects.erase(
         std::unique(index.available_objects.begin(), index.available_objects.end()),
         index.available_objects.end());
+    std::ranges::sort(index.hover_objects_by_id, {}, &editor_hover_index_entry_t::object);
     auto selection_leaf_base = std::size_t{1};
     while (selection_leaf_base < index.selection_spans.size()) {
         if (selection_leaf_base > std::numeric_limits<std::size_t>::max() / 2) {
@@ -1305,6 +1472,167 @@ auto hit_test_editor(const chart_document_t& chart, const editor_hit_test_index_
         }
     }
     return result;
+}
+
+auto hover_editor_object(const chart_document_t& chart, const editor_hit_test_index_t& index,
+                         const editor_interaction_view_model_t& view,
+                         const editor_object_hover_request_t& request)
+    -> std::optional<editor_object_hover_state_t> {
+    if (index.chart != chart.id || view.chart != chart.id ||
+        index.document_revision != view.document_revision || !std::isfinite(request.x_pixels) ||
+        !std::isfinite(request.y_pixels) || !std::isfinite(request.field_left_pixels) ||
+        !std::isfinite(request.field_width_pixels) || request.field_width_pixels <= 0.0 ||
+        !std::isfinite(request.hit_radius_pixels) || request.hit_radius_pixels < 0.0 ||
+        !std::isfinite(request.field_left_pixels + request.field_width_pixels) ||
+        request.x_pixels < request.field_left_pixels ||
+        request.x_pixels >= request.field_left_pixels + request.field_width_pixels ||
+        index.hover_objects_by_id.size() != index.available_objects.size()) {
+        return std::nullopt;
+    }
+    const auto pointer_row =
+        absolute_row_at_y_pixels(chart, index.measures, view, request.y_pixels);
+    if (!pointer_row.has_value())
+        return std::nullopt;
+
+    const editor_hover_index_entry_t* best{};
+    auto best_distance = std::numeric_limits<double>::infinity();
+    if (request.scope.notes) {
+        const auto note_hit =
+            hit_test_editor(chart, index, view,
+                            {.x_pixels = request.x_pixels,
+                             .y_pixels = request.y_pixels,
+                             .field_left_pixels = request.field_left_pixels,
+                             .field_width_pixels = request.field_width_pixels,
+                             .note_hit_radius_pixels = request.hit_radius_pixels});
+        if (note_hit.has_value() && note_hit->note.has_value()) {
+            const auto object =
+                editor_selection_object_t{editor_selection_object_kind_t::note, *note_hit->note};
+            const auto found = std::ranges::lower_bound(index.hover_objects_by_id, object, {},
+                                                        &editor_hover_index_entry_t::object);
+            if (found != index.hover_objects_by_id.end() && found->object == object) {
+                best = &*found;
+                const auto hit_row = absolute_row(index.measures, note_hit->position);
+                const auto y = static_cast<double>(
+                    static_cast<long double>(hit_row.value_or(best->absolute_row)) *
+                        static_cast<long double>(view.pixels_per_standard_measure) /
+                        static_cast<long double>(chart.divisions_per_standard_measure) -
+                    static_cast<long double>(view.viewport_scroll_pixels));
+                best_distance = std::abs(y - request.y_pixels);
+            }
+        }
+    }
+
+    const auto radius_rows = static_cast<long double>(request.hit_radius_pixels) *
+                             static_cast<long double>(chart.divisions_per_standard_measure) /
+                             static_cast<long double>(view.pixels_per_standard_measure);
+    const auto min_row = radius_rows >= static_cast<long double>(*pointer_row)
+                             ? std::uint64_t{0}
+                             : static_cast<std::uint64_t>(std::floor(
+                                   static_cast<long double>(*pointer_row) - radius_rows));
+    const auto max_row =
+        radius_rows >= static_cast<long double>(index.measures.total_rows - 1 - *pointer_row)
+            ? index.measures.total_rows - 1
+            : static_cast<std::uint64_t>(
+                  std::ceil(static_cast<long double>(*pointer_row) + radius_rows));
+    const auto row_objects =
+        editor_objects_in_row_range(chart, index, min_row, max_row, request.scope);
+    if (std::holds_alternative<diagnostic_list_t>(row_objects))
+        return std::nullopt;
+    const auto pointer_chart_row = (static_cast<long double>(request.y_pixels) +
+                                    static_cast<long double>(view.viewport_scroll_pixels)) *
+                                   static_cast<long double>(chart.divisions_per_standard_measure) /
+                                   static_cast<long double>(view.pixels_per_standard_measure);
+    const auto pixels_per_row = static_cast<long double>(view.pixels_per_standard_measure) /
+                                static_cast<long double>(chart.divisions_per_standard_measure);
+    for (const auto& object : std::get<std::vector<editor_selection_object_t>>(row_objects)) {
+        // Notes have lane geometry; their candidate was resolved through the
+        // ordinary lane-aware hit test above.
+        if (object.kind == editor_selection_object_kind_t::note)
+            continue;
+        const auto candidate = std::ranges::lower_bound(index.hover_objects_by_id, object, {},
+                                                        &editor_hover_index_entry_t::object);
+        if (candidate == index.hover_objects_by_id.end() || candidate->object != object)
+            continue;
+        const auto nearest_row =
+            std::clamp(pointer_chart_row, static_cast<long double>(candidate->absolute_row),
+                       static_cast<long double>(candidate->end_absolute_row));
+        const auto distance =
+            static_cast<double>(std::abs(nearest_row - pointer_chart_row) * pixels_per_row);
+        if (distance > request.hit_radius_pixels ||
+            (best != nullptr &&
+             (distance > best_distance || (distance == best_distance && object >= best->object)))) {
+            continue;
+        }
+        best = &*candidate;
+        best_distance = distance;
+    }
+    if (best == nullptr)
+        return std::nullopt;
+    return editor_object_hover_state_t{
+        .object = best->object,
+        .editor = best->editor,
+        .position = best->position,
+        .document_revision = index.document_revision,
+        .tooltip = best->tooltip,
+    };
+}
+
+auto register_editor_object_click(editor_double_click_state_t& state,
+                                  const editor_hit_test_index_t& index,
+                                  const editor_interaction_view_model_t& view,
+                                  const std::optional<editor_object_hover_state_t>& hover,
+                                  double x_pixels, double y_pixels, std::uint64_t time_milliseconds,
+                                  editor_double_click_settings_t settings, bool pointer_captured,
+                                  bool focused) -> std::optional<editor_object_edit_request_t> {
+    const auto clear = [&] { state.previous_click.reset(); };
+    if (!focused || !pointer_captured || !hover.has_value() || view.chart != index.chart ||
+        view.document_revision != index.document_revision ||
+        hover->document_revision != index.document_revision || !std::isfinite(x_pixels) ||
+        !std::isfinite(y_pixels) || !std::isfinite(settings.pointer_slop_pixels) ||
+        settings.pointer_slop_pixels < 0.0 || settings.maximum_interval_milliseconds == 0) {
+        clear();
+        return std::nullopt;
+    }
+    const auto found = std::ranges::lower_bound(index.hover_objects_by_id, hover->object, {},
+                                                &editor_hover_index_entry_t::object);
+    if (found == index.hover_objects_by_id.end() || found->object != hover->object ||
+        found->editor != hover->editor || found->position != hover->position) {
+        clear();
+        return std::nullopt;
+    }
+    if (state.previous_click.has_value()) {
+        const auto& previous = *state.previous_click;
+        const auto dx = x_pixels - previous.x_pixels;
+        const auto dy = y_pixels - previous.y_pixels;
+        const auto slop_squared = settings.pointer_slop_pixels * settings.pointer_slop_pixels;
+        if (previous.object == hover->object &&
+            previous.document_revision == index.document_revision &&
+            time_milliseconds >= previous.time_milliseconds &&
+            time_milliseconds - previous.time_milliseconds <=
+                settings.maximum_interval_milliseconds &&
+            dx * dx + dy * dy <= slop_squared) {
+            const auto request = editor_object_edit_request_t{
+                .chart = index.chart,
+                .document_revision = index.document_revision,
+                .object = found->object,
+                .editor = found->editor,
+            };
+            clear();
+            return request;
+        }
+    }
+    state.previous_click = editor_click_candidate_t{
+        .object = hover->object,
+        .document_revision = index.document_revision,
+        .time_milliseconds = time_milliseconds,
+        .x_pixels = x_pixels,
+        .y_pixels = y_pixels,
+    };
+    return std::nullopt;
+}
+
+auto clear_editor_double_click_state(editor_double_click_state_t& state) -> void {
+    state.previous_click.reset();
 }
 
 auto editor_notes_in_area_selection(const chart_document_t& chart,

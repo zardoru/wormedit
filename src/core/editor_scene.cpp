@@ -1,0 +1,555 @@
+#include <wormedit/core/editor_scene.h>
+
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <ranges>
+#include <unordered_set>
+#include <utility>
+
+namespace wormedit {
+namespace {
+
+auto error(diagnostic_code_t code, std::string message,
+           std::optional<object_id_t> object = std::nullopt) -> diagnostic_t {
+    return {.severity = diagnostic_severity_t::error,
+            .code = code,
+            .message = std::move(message),
+            .object = object};
+}
+
+auto editable_lane(const lane_definition_t& lane) -> bool {
+    return lane.role != lane_role_t::autoplay && lane.role != lane_role_t::invisible &&
+           lane.role != lane_role_t::mine;
+}
+
+auto layout_at_row(const editor_field_scene_index_t& index, std::uint64_t row)
+    -> const editor_field_scene_layout_source_t* {
+    const auto after = std::ranges::upper_bound(index.layouts, row, {},
+                                                &editor_field_scene_layout_source_t::begin_row);
+    if (after == index.layouts.begin()) {
+        return nullptr;
+    }
+    const auto found = std::prev(after);
+    return row < found->end_row ? &*found : nullptr;
+}
+
+auto has_lane(const editor_field_scene_layout_source_t* layout, lane_id_t lane) -> bool {
+    return layout != nullptr && std::ranges::any_of(layout->layout.lanes, [&](const auto& entry) {
+               return entry.id == lane && editable_lane(entry);
+           });
+}
+
+auto finite_nonnegative(double value) -> bool {
+    return std::isfinite(value) && value >= 0.0;
+}
+
+auto rect_intersects_viewport(const editor_field_rect_t& rect, double height) -> bool {
+    return rect.bottom >= 0.0 && rect.top <= height;
+}
+
+struct lane_bounds_t {
+    lane_id_t lane;
+    double left{};
+    double right{};
+};
+
+struct visible_band_t {
+    std::uint64_t begin_row{};
+    std::uint64_t end_row{};
+    long double clipped_begin_row{};
+    long double clipped_end_row{};
+    std::size_t scene_band{};
+    std::vector<lane_bounds_t> lanes;
+};
+
+auto lane_bounds(const visible_band_t& band, lane_id_t lane) -> const lane_bounds_t* {
+    const auto found = std::ranges::find(band.lanes, lane, &lane_bounds_t::lane);
+    return found == band.lanes.end() ? nullptr : &*found;
+}
+
+} // namespace
+
+auto editor_field_scene_result_t::has_errors() const -> bool {
+    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
+        return diagnostic.severity == diagnostic_severity_t::error;
+    });
+}
+
+auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t document_revision,
+                                    editor_field_scene_index_options_t options)
+    -> std::variant<editor_field_scene_index_t, diagnostic_list_t> {
+    diagnostic_list_t diagnostics;
+    if (!chart.id || chart.divisions_per_standard_measure == 0 || options.maximum_notes == 0 ||
+        options.maximum_layout_segments == 0 || options.maximum_lane_definitions == 0) {
+        diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                                    "field-scene index limits and chart identity must be valid"));
+        return diagnostics;
+    }
+    const auto built_measures = build_measure_index(chart);
+    if (const auto* failures = std::get_if<diagnostic_list_t>(&built_measures)) {
+        return *failures;
+    }
+
+    editor_field_scene_index_t index{
+        .chart = chart.id,
+        .document_revision = document_revision,
+        .measures = std::get<measure_index_t>(built_measures),
+    };
+    if (chart.lane_layouts.size() > options.maximum_layout_segments) {
+        diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                                    "field-scene layout count exceeds its configured cap"));
+        return diagnostics;
+    }
+
+    struct positioned_layout_t {
+        std::uint64_t row{};
+        lane_layout_t layout;
+    };
+    std::vector<positioned_layout_t> layouts;
+    layouts.reserve(chart.lane_layouts.size());
+    std::size_t lane_definition_count{};
+    for (const auto& segment : chart.lane_layouts) {
+        if (segment.layout.lanes.size() >
+            options.maximum_lane_definitions - lane_definition_count) {
+            diagnostics.push_back(
+                error(diagnostic_code_t::invalid_resolution,
+                      "field-scene lane definition count exceeds its configured cap", segment.id));
+            return diagnostics;
+        }
+        lane_definition_count += segment.layout.lanes.size();
+        std::unordered_set<std::uint64_t> lane_ids;
+        lane_ids.reserve(segment.layout.lanes.size());
+        for (const auto& lane : segment.layout.lanes) {
+            if (!lane.id || !lane_ids.insert(lane.id.value).second) {
+                diagnostics.push_back(error(
+                    diagnostic_code_t::duplicate_id,
+                    "field-scene layout has a missing or duplicate lane identity", segment.id));
+                break;
+            }
+        }
+        const auto row = absolute_row(index.measures, segment.position);
+        if (!row) {
+            diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
+                                        "field-scene layout starts outside chart geometry",
+                                        segment.id));
+            continue;
+        }
+        layouts.push_back({*row, segment.layout});
+    }
+    std::ranges::stable_sort(layouts, {}, &positioned_layout_t::row);
+    for (std::size_t layout_index = 0; layout_index < layouts.size(); ++layout_index) {
+        if (layout_index != 0 && layouts[layout_index - 1].row == layouts[layout_index].row) {
+            diagnostics.push_back(error(diagnostic_code_t::invalid_measure,
+                                        "field-scene layouts cannot share a start row"));
+            continue;
+        }
+        const auto end = layout_index + 1 < layouts.size() ? layouts[layout_index + 1].row
+                                                           : index.measures.total_rows;
+        index.layouts.push_back({.begin_row = layouts[layout_index].row,
+                                 .end_row = end,
+                                 .layout = std::move(layouts[layout_index].layout)});
+    }
+
+    std::size_t note_count{};
+    for (const auto& measure : chart.measures) {
+        if (measure.notes.size() > options.maximum_notes - note_count) {
+            diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                                        "field-scene note count exceeds its configured cap"));
+            return diagnostics;
+        }
+        note_count += measure.notes.size();
+    }
+    index.notes.reserve(note_count);
+    std::unordered_set<std::uint64_t> note_ids;
+    note_ids.reserve(note_count);
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            const auto begin = absolute_row(index.measures, note.position);
+            const auto end = note.end ? absolute_row(index.measures, *note.end) : begin;
+            if (!note.id || !note_ids.insert(note.id.value).second) {
+                diagnostics.push_back(error(diagnostic_code_t::duplicate_id,
+                                            "field-scene note identity is missing or duplicated",
+                                            note.id));
+                continue;
+            }
+            if (!begin || !end || *end < *begin) {
+                diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
+                                            "field-scene note span is outside chart geometry",
+                                            note.id));
+                continue;
+            }
+            if (note.position.measure != measure.id) {
+                diagnostics.push_back(
+                    error(diagnostic_code_t::invalid_measure,
+                          "field-scene note is stored outside its position's measure", note.id));
+                continue;
+            }
+            if (!has_lane(layout_at_row(index, *begin), note.lane) ||
+                !has_lane(layout_at_row(index, *end), note.lane)) {
+                diagnostics.push_back(error(diagnostic_code_t::unknown_lane,
+                                            "field-scene note endpoint has no active lane",
+                                            note.id));
+                continue;
+            }
+            index.notes.push_back({.note = note.id,
+                                   .lane = note.lane,
+                                   .kind = note.kind,
+                                   .begin_row = *begin,
+                                   .end_row = *end});
+        }
+    }
+    if (!diagnostics.empty()) {
+        return diagnostics;
+    }
+
+    std::ranges::sort(index.notes, [](const auto& left, const auto& right) {
+        return std::tie(left.begin_row, left.end_row, left.note.value) <
+               std::tie(right.begin_row, right.end_row, right.note.value);
+    });
+    while (index.note_tree_leaf_base < index.notes.size()) {
+        if (index.note_tree_leaf_base > std::numeric_limits<std::size_t>::max() / 2) {
+            diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                                        "field-scene note tree exceeds addressable storage"));
+            return diagnostics;
+        }
+        index.note_tree_leaf_base *= 2;
+    }
+    index.note_tree_max_end.assign(index.note_tree_leaf_base * 2, 0);
+    for (std::size_t note = 0; note < index.notes.size(); ++note) {
+        index.note_tree_max_end[index.note_tree_leaf_base + note] = index.notes[note].end_row;
+    }
+    for (auto node = index.note_tree_leaf_base; node-- > 1;) {
+        index.note_tree_max_end[node] =
+            std::max(index.note_tree_max_end[node * 2], index.note_tree_max_end[node * 2 + 1]);
+    }
+    return index;
+}
+
+auto make_editor_field_scene(const chart_document_t& chart, const editor_field_scene_index_t& index,
+                             const editor_interaction_view_model_t& view,
+                             const editor_field_scene_request_t& request)
+    -> editor_field_scene_result_t {
+    editor_field_scene_result_t result;
+    if (chart.id != index.chart || view.chart != chart.id ||
+        view.document_revision != index.document_revision || index.measures.total_rows == 0 ||
+        index.note_tree_leaf_base == 0 || index.note_tree_leaf_base < index.notes.size() ||
+        index.note_tree_leaf_base > std::numeric_limits<std::size_t>::max() / 2 ||
+        index.note_tree_max_end.size() != index.note_tree_leaf_base * 2 ||
+        !finite_nonnegative(request.field_left_pixels) ||
+        !std::isfinite(request.field_width_pixels) || request.field_width_pixels <= 0.0 ||
+        !finite_nonnegative(request.split_stage_gutter_pixels) ||
+        !std::isfinite(request.note_head_height_pixels) || request.note_head_height_pixels <= 0.0 ||
+        !std::isfinite(request.hold_body_width_ratio) || request.hold_body_width_ratio <= 0.0 ||
+        request.hold_body_width_ratio > 1.0 || request.maximum_grid_lines == 0 ||
+        request.maximum_authored_groupings == 0 ||
+        request.authored_groupings.size() > request.maximum_authored_groupings ||
+        request.maximum_scene_primitives == 0 || request.maximum_composition_operations == 0 ||
+        view.selected_notes.size() > index.notes.size() ||
+        !std::isfinite(view.pixels_per_standard_measure) ||
+        view.pixels_per_standard_measure < minimum_pixels_per_standard_measure ||
+        view.pixels_per_standard_measure > maximum_pixels_per_standard_measure ||
+        !finite_nonnegative(view.viewport_scroll_pixels) ||
+        !std::isfinite(view.viewport_height_pixels) || view.viewport_height_pixels <= 0.0) {
+        result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                                           "field-scene index, view, or geometry is invalid"));
+        return result;
+    }
+
+    const auto pixels_per_row = static_cast<long double>(view.pixels_per_standard_measure) /
+                                chart.divisions_per_standard_measure;
+    const auto content_height =
+        static_cast<long double>(index.measures.total_rows) * pixels_per_row;
+    const auto maximum_scroll =
+        std::max(0.0L, content_height - static_cast<long double>(view.viewport_height_pixels));
+    if (static_cast<long double>(view.viewport_scroll_pixels) > maximum_scroll) {
+        result.diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
+                                           "field-scene viewport scroll exceeds chart content"));
+        return result;
+    }
+
+    const auto row_at_pixel = [&](long double pixel) {
+        return (pixel + static_cast<long double>(view.viewport_scroll_pixels)) / pixels_per_row;
+    };
+    const auto visible_low =
+        std::clamp(row_at_pixel(0), 0.0L, static_cast<long double>(index.measures.total_rows));
+    const auto visible_high = std::clamp(row_at_pixel(view.viewport_height_pixels), 0.0L,
+                                         static_cast<long double>(index.measures.total_rows));
+    const auto overscan_rows =
+        static_cast<long double>(request.note_head_height_pixels) / (2.0L * pixels_per_row);
+    const auto query_low = std::max(0.0L, visible_low - overscan_rows);
+    const auto query_high =
+        std::min(static_cast<long double>(index.measures.total_rows), visible_high + overscan_rows);
+    auto visible_begin = static_cast<std::uint64_t>(std::floor(visible_low));
+    auto visible_end = static_cast<std::uint64_t>(std::ceil(visible_high));
+    visible_begin = std::min(visible_begin, index.measures.total_rows - 1);
+    visible_end = std::clamp(visible_end, visible_begin + 1, index.measures.total_rows);
+
+    editor_field_scene_t scene{.visible_begin_row = visible_begin, .visible_end_row = visible_end};
+    std::size_t primitive_count{};
+    std::size_t operations{};
+    const auto consume = [&](std::size_t count = 1) -> bool {
+        if (count > request.maximum_scene_primitives - primitive_count) {
+            return false;
+        }
+        primitive_count += count;
+        return true;
+    };
+    const auto operate = [&]() -> bool {
+        if (operations >= request.maximum_composition_operations) {
+            return false;
+        }
+        ++operations;
+        return true;
+    };
+    const auto y_for_row = [&](long double row) {
+        return static_cast<double>(row * pixels_per_row -
+                                   static_cast<long double>(view.viewport_scroll_pixels));
+    };
+
+    std::vector<visible_band_t> visible_bands;
+    for (const auto& source : index.layouts) {
+        if (static_cast<long double>(source.end_row) <= query_low ||
+            static_cast<long double>(source.begin_row) >= query_high) {
+            continue;
+        }
+        if (!operate()) {
+            result.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_resolution,
+                      "field-scene composition exceeds its configured operation cap"));
+            return result;
+        }
+        std::vector<const lane_definition_t*> lanes;
+        for (const auto& lane : source.layout.lanes) {
+            if (editable_lane(lane)) {
+                lanes.push_back(&lane);
+            }
+        }
+        std::ranges::sort(lanes, [](const auto* left, const auto* right) {
+            return std::tie(left->display_order, left->id.value) <
+                   std::tie(right->display_order, right->id.value);
+        });
+        if (lanes.empty()) {
+            continue;
+        }
+        const auto split =
+            source.layout.split_stage && source.layout.split_after_column
+                ? std::min<std::size_t>(*source.layout.split_after_column, lanes.size())
+                : lanes.size();
+        const auto gutter =
+            split > 0 && split < lanes.size() ? request.split_stage_gutter_pixels : 0.0;
+        if (gutter >= request.field_width_pixels) {
+            result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                                               "split-stage gutter consumes the note field"));
+            return result;
+        }
+        const auto lane_width =
+            (request.field_width_pixels - gutter) / static_cast<double>(lanes.size());
+        const auto clipped_begin = std::max(query_low, static_cast<long double>(source.begin_row));
+        const auto clipped_end = std::min(query_high, static_cast<long double>(source.end_row));
+        if (!consume(1 + lanes.size())) {
+            result.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_resolution,
+                      "field-scene geometry exceeds its configured primitive cap"));
+            return result;
+        }
+        const auto scene_band = scene.layout_bands.size();
+        scene.layout_bands.push_back({.begin_row = source.begin_row,
+                                      .end_row = source.end_row,
+                                      .top_pixels = y_for_row(clipped_begin),
+                                      .bottom_pixels = y_for_row(clipped_end),
+                                      .profile_id = source.layout.profile_id,
+                                      .split_stage = source.layout.split_stage});
+        visible_band_t band{.begin_row = source.begin_row,
+                            .end_row = source.end_row,
+                            .clipped_begin_row = clipped_begin,
+                            .clipped_end_row = clipped_end,
+                            .scene_band = scene_band};
+        band.lanes.reserve(lanes.size());
+        for (std::size_t lane_index = 0; lane_index < lanes.size(); ++lane_index) {
+            const auto left = request.field_left_pixels + lane_width * lane_index +
+                              (lane_index >= split ? gutter : 0.0);
+            const auto right = left + lane_width;
+            band.lanes.push_back({lanes[lane_index]->id, left, right});
+            scene.lanes.push_back(
+                {.layout_band = scene_band,
+                 .lane = lanes[lane_index]->id,
+                 .role = lanes[lane_index]->role,
+                 .stage = lanes[lane_index]->stage,
+                 .glyph = lanes[lane_index]->glyph,
+                 .display_order = lanes[lane_index]->display_order,
+                 .bounds = {left, y_for_row(clipped_begin), right, y_for_row(clipped_end)}});
+        }
+        visible_bands.push_back(std::move(band));
+    }
+
+    const auto grid = make_editor_grid_lines(
+        chart, {.visible_begin_row = visible_begin,
+                .visible_end_row = visible_end,
+                .active_snap_denominator = view.active_snap_denominator,
+                .pixels_per_standard_measure = view.pixels_per_standard_measure,
+                .density = request.grid_density,
+                .authored_groupings = request.authored_groupings,
+                .maximum_line_count = request.maximum_grid_lines});
+    if (!grid) {
+        result.diagnostics = grid.diagnostics;
+        return result;
+    }
+    result.diagnostics = grid.diagnostics;
+    if (!consume(grid.lines.size())) {
+        result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                                           "field-scene grid exceeds its primitive cap"));
+        return result;
+    }
+    scene.grid_lines.reserve(grid.lines.size());
+    for (const auto& line : grid.lines) {
+        const auto row = static_cast<long double>(line.chart_row.whole_rows) +
+                         static_cast<long double>(line.chart_row.fractional_rows.numerator) /
+                             line.chart_row.fractional_rows.denominator;
+        scene.grid_lines.push_back({.y_pixels = y_for_row(row),
+                                    .kind = line.kind,
+                                    .emphasis = line.emphasis,
+                                    .chart_row = line.chart_row});
+    }
+
+    std::unordered_set<std::uint64_t> selected;
+    selected.reserve(view.selected_notes.size());
+    for (const auto note : view.selected_notes) {
+        selected.insert(note.value);
+    }
+    const auto after_candidates = std::ranges::upper_bound(
+        index.notes, query_high,
+        [](long double row, std::uint64_t begin) { return row < static_cast<long double>(begin); },
+        &editor_field_scene_note_source_t::begin_row);
+    const auto candidate_count =
+        static_cast<std::size_t>(std::distance(index.notes.begin(), after_candidates));
+    bool failed{};
+    const auto add_note = [&](const editor_field_scene_note_source_t& note) {
+        if (static_cast<long double>(note.end_row) < query_low ||
+            static_cast<long double>(note.begin_row) > query_high) {
+            return;
+        }
+        const auto note_selected = selected.contains(note.note.value);
+        const auto add_endpoint = [&](std::uint64_t row, bool tail) {
+            const auto band_it = std::ranges::find_if(visible_bands, [&](const auto& band) {
+                return row >= band.begin_row && row < band.end_row;
+            });
+            if (band_it == visible_bands.end()) {
+                return;
+            }
+            const auto* bounds = lane_bounds(*band_it, note.lane);
+            if (bounds == nullptr) {
+                return;
+            }
+            const auto y = y_for_row(row);
+            const auto half_height = request.note_head_height_pixels / 2.0;
+            const editor_field_rect_t rect{bounds->left, y - half_height, bounds->right,
+                                           y + half_height};
+            if (!rect_intersects_viewport(rect, view.viewport_height_pixels)) {
+                return;
+            }
+            if (!consume()) {
+                failed = true;
+                return;
+            }
+            scene.note_endpoints.push_back({.note = note.note,
+                                            .lane = note.lane,
+                                            .kind = note.kind,
+                                            .tail = tail,
+                                            .selected = note_selected,
+                                            .bounds = rect});
+        };
+        if (note.end_row > note.begin_row) {
+            for (const auto& band : visible_bands) {
+                if (!operate()) {
+                    failed = true;
+                    return;
+                }
+                const auto begin =
+                    std::max(static_cast<long double>(note.begin_row), band.clipped_begin_row);
+                const auto end =
+                    std::min(static_cast<long double>(note.end_row), band.clipped_end_row);
+                if (begin >= end) {
+                    continue;
+                }
+                const auto* bounds = lane_bounds(band, note.lane);
+                if (bounds == nullptr) {
+                    continue;
+                }
+                if (!consume()) {
+                    failed = true;
+                    return;
+                }
+                const auto lane_width = bounds->right - bounds->left;
+                const auto body_width = lane_width * request.hold_body_width_ratio;
+                const auto center = (bounds->left + bounds->right) / 2.0;
+                scene.hold_bodies.push_back(
+                    {.note = note.note,
+                     .lane = note.lane,
+                     .selected = note_selected,
+                     .bounds = {center - body_width / 2.0, y_for_row(begin),
+                                center + body_width / 2.0, y_for_row(end)}});
+            }
+        }
+        add_endpoint(note.begin_row, false);
+        if (!failed && note.end_row > note.begin_row) {
+            add_endpoint(note.end_row, true);
+        }
+    };
+    const auto visit = [&](auto&& self, std::size_t node, std::size_t first,
+                           std::size_t last) -> void {
+        if (failed || first >= candidate_count ||
+            static_cast<long double>(index.note_tree_max_end[node]) < query_low) {
+            return;
+        }
+        if (!operate()) {
+            failed = true;
+            return;
+        }
+        if (last - first == 1) {
+            if (first < index.notes.size()) {
+                add_note(index.notes[first]);
+            }
+            return;
+        }
+        const auto middle = first + (last - first) / 2;
+        self(self, node * 2, first, middle);
+        self(self, node * 2 + 1, middle, last);
+    };
+    if (candidate_count != 0) {
+        visit(visit, 1, 0, index.note_tree_leaf_base);
+    }
+    if (failed) {
+        result.diagnostics.push_back(error(
+            diagnostic_code_t::invalid_resolution,
+            "field-scene note composition exceeds its configured primitive or operation cap"));
+        return result;
+    }
+
+    const auto cursor_row = absolute_row(index.measures, view.cursor);
+    if (cursor_row && static_cast<long double>(*cursor_row) >= query_low &&
+        static_cast<long double>(*cursor_row) <= query_high) {
+        const auto band = std::ranges::find_if(visible_bands, [&](const auto& candidate) {
+            return *cursor_row >= candidate.begin_row && *cursor_row < candidate.end_row;
+        });
+        if (band != visible_bands.end()) {
+            if (const auto* bounds = lane_bounds(*band, view.active_lane); bounds != nullptr) {
+                if (!consume()) {
+                    result.diagnostics.push_back(
+                        error(diagnostic_code_t::invalid_resolution,
+                              "field-scene cursor exceeds its configured primitive cap"));
+                    return result;
+                }
+                const auto y = y_for_row(*cursor_row);
+                scene.cursor = editor_field_cursor_geometry_t{
+                    .lane = view.active_lane,
+                    .bounds = {bounds->left, y - 1.0, bounds->right, y + 1.0}};
+            }
+        }
+    }
+
+    result.scene = std::move(scene);
+    return result;
+}
+
+} // namespace wormedit

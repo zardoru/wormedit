@@ -7,11 +7,13 @@
 #include <cctype>
 #include <cerrno>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <map>
 #include <numeric>
 #include <ranges>
 #include <set>
+#include <span>
 #include <string_view>
 #include <tuple>
 #include <utility>
@@ -319,6 +321,21 @@ auto retained_source_bytes(const song_document_t& song, const chart_document_t& 
     return find(song.metadata.format_groups);
 }
 
+auto source_provenance_bytes(const song_document_t& song, const chart_document_t& chart)
+    -> std::shared_ptr<const std::vector<std::byte>> {
+    const auto find = [](const std::vector<format_metadata_t>& groups)
+        -> std::shared_ptr<const std::vector<std::byte>> {
+        const auto group = std::ranges::find_if(groups, [](const auto& candidate) {
+            return candidate.family == format_family_t::bms &&
+                   candidate.encoding.original_bytes != nullptr;
+        });
+        return group == groups.end() ? nullptr : group->encoding.original_bytes;
+    };
+    if (auto bytes = find(chart.metadata.format_groups); bytes)
+        return bytes;
+    return find(song.metadata.format_groups);
+}
+
 auto exact_decimal(std::uint64_t numerator, std::uint64_t denominator, std::string path)
     -> std::string {
     if (numerator == 0 || denominator == 0) {
@@ -398,7 +415,54 @@ struct source_measure_line_t {
     std::size_t source_order{};
     std::size_t measure_index{};
     std::string text;
+    std::string raw_value;
+    bms_source_span_t source_span;
+    bms_line_ending_t line_ending{bms_line_ending_t::none};
 };
+
+auto source_measure_line_matches_bytes(const source_measure_line_t& source,
+                                       std::span<const std::byte> original_bytes) -> bool {
+    if (source.source_span.byte_end <= source.source_span.byte_begin ||
+        source.source_span.byte_end > original_bytes.size() ||
+        !std::ranges::all_of(source.text, [](char character) {
+            return static_cast<unsigned char>(character) <= 0x7fU;
+        })) {
+        return false;
+    }
+    std::string_view ending;
+    switch (source.line_ending) {
+    case bms_line_ending_t::none:
+        ending = "";
+        break;
+    case bms_line_ending_t::lf:
+        ending = "\n";
+        break;
+    case bms_line_ending_t::crlf:
+        ending = "\r\n";
+        break;
+    case bms_line_ending_t::cr:
+        ending = "\r";
+        break;
+    }
+    const auto span_size = source.source_span.byte_end - source.source_span.byte_begin;
+    if (span_size != source.text.size() + ending.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index < source.text.size(); ++index) {
+        if (std::to_integer<unsigned char>(original_bytes[source.source_span.byte_begin + index]) !=
+            static_cast<unsigned char>(source.text[index])) {
+            return false;
+        }
+    }
+    for (std::size_t index = 0; index < ending.size(); ++index) {
+        if (std::to_integer<unsigned char>(
+                original_bytes[source.source_span.byte_begin + source.text.size() + index]) !=
+            static_cast<unsigned char>(ending[index])) {
+            return false;
+        }
+    }
+    return true;
+}
 
 struct branch_tree_analysis_t {
     bool has_branches{};
@@ -413,7 +477,10 @@ struct branch_tree_analysis_t {
     std::map<std::size_t, std::pair<std::string, std::string>> branch_metadata_fields;
     std::map<std::size_t, std::pair<std::string, std::string>> branch_resource_fields;
     std::map<std::size_t, std::string> branch_resource_source_lines;
+    std::map<std::size_t, source_measure_line_t> branch_measure_ratio_lines;
+    std::map<std::size_t, source_measure_line_t> branch_direct_bpm_lines;
     std::vector<source_measure_line_t> root_measure_ratio_lines;
+    std::vector<source_measure_line_t> root_direct_bpm_lines;
     std::vector<std::pair<std::size_t, std::string>> root_timing_lines;
     std::vector<std::pair<std::size_t, std::string>> preserved_lines;
     std::optional<std::size_t> branch_source_begin;
@@ -508,10 +575,27 @@ auto analyze_branch_tree(const bms_control_node_t& root) -> branch_tree_analysis
                     if (const auto measure = is_measure_length_command(token);
                         measure.has_value()) {
                         result.branch_measure_indices.insert(*measure);
+                        result.branch_measure_ratio_lines.emplace(
+                            node.source_order,
+                            source_measure_line_t{.source_order = node.source_order,
+                                                  .measure_index = *measure,
+                                                  .text = node.original_text,
+                                                  .raw_value = node.raw_value,
+                                                  .source_span = node.source_span,
+                                                  .line_ending = node.line_ending});
                     }
                     if (is_timing_command(token)) {
                         result.has_branch_timing = true;
                         result.retained_timing_source_orders.insert(node.source_order);
+                        if (token == "BPM") {
+                            result.branch_direct_bpm_lines.emplace(
+                                node.source_order,
+                                source_measure_line_t{.source_order = node.source_order,
+                                                      .text = node.original_text,
+                                                      .raw_value = node.raw_value,
+                                                      .source_span = node.source_span,
+                                                      .line_ending = node.line_ending});
+                        }
                     }
                     if ((token.starts_with("WAV") || token.starts_with("BMP")) &&
                         token.size() == 5 && base36_digit(token[3]) && base36_digit(token[4])) {
@@ -531,11 +615,20 @@ auto analyze_branch_tree(const bms_control_node_t& root) -> branch_tree_analysis
                     if (const auto measure = is_measure_length_command(token);
                         measure.has_value()) {
                         result.root_measure_ratio_lines.push_back(
-                            {node.source_order, *measure, node.original_text});
+                            {node.source_order, *measure, node.original_text, node.raw_value,
+                             node.source_span, node.line_ending});
                     }
                     if (is_timing_command(token)) {
                         result.root_timing_lines.emplace_back(node.source_order,
                                                               node.original_text);
+                        if (token == "BPM") {
+                            result.root_direct_bpm_lines.push_back(
+                                {.source_order = node.source_order,
+                                 .text = node.original_text,
+                                 .raw_value = node.raw_value,
+                                 .source_span = node.source_span,
+                                 .line_ending = node.line_ending});
+                        }
                     } else if (safe_metadata_token(token) || generated_or_channel_token(token) ||
                                is_measure_length_command(token).has_value()) {
                         result.root_source_orders.insert(node.source_order);
@@ -577,6 +670,144 @@ auto analyze_branch_tree(const bms_control_node_t& root) -> branch_tree_analysis
     }
     std::ranges::stable_sort(result.preserved_lines, {},
                              [](const auto& line) { return line.first; });
+    return result;
+}
+
+auto active_branch_statement_orders(const bms_control_node_t& root,
+                                    const std::vector<branch_selection_t>& selections)
+    -> std::optional<std::set<std::size_t>> {
+    std::map<std::uint64_t, std::int64_t> selected_values;
+    for (const auto& selection : selections) {
+        if (!selection.branch ||
+            !selected_values.emplace(selection.branch.value, selection.selected_value).second) {
+            return std::nullopt;
+        }
+    }
+
+    std::set<std::size_t> active_orders;
+    std::set<std::uint64_t> visited_selections;
+    std::function<void(const bms_control_node_t&, std::optional<std::int64_t>, bool, bool*)> visit;
+    visit = [&](const bms_control_node_t& node, std::optional<std::int64_t> random_value,
+                bool inside_active_branch, bool* switch_stopped) -> void {
+        if (node.kind == bms_control_kind_t::raw_statement) {
+            if (inside_active_branch) {
+                active_orders.insert(node.source_order);
+            }
+            return;
+        }
+        if (node.kind == bms_control_kind_t::skip) {
+            if (switch_stopped != nullptr) {
+                *switch_stopped = true;
+            }
+            return;
+        }
+        if (node.kind == bms_control_kind_t::random) {
+            const auto selected = selected_values.find(node.id.value);
+            if (selected == selected_values.end()) {
+                return;
+            }
+            if (!node.value.has_value() || selected->second < 1 || selected->second > *node.value) {
+                return;
+            }
+            visited_selections.insert(node.id.value);
+            for (const auto& child : node.children) {
+                visit(child, selected->second, true, switch_stopped);
+            }
+            return;
+        }
+        if (node.kind == bms_control_kind_t::if_group) {
+            if (!random_value.has_value()) {
+                return;
+            }
+            const bms_control_node_t* fallback{};
+            const bms_control_node_t* selected{};
+            for (const auto& child : node.children) {
+                if ((child.kind == bms_control_kind_t::if_branch ||
+                     child.kind == bms_control_kind_t::else_if_branch) &&
+                    child.value == random_value) {
+                    selected = &child;
+                    break;
+                }
+                if (child.kind == bms_control_kind_t::else_branch) {
+                    fallback = &child;
+                }
+            }
+            if (selected == nullptr) {
+                selected = fallback;
+            }
+            if (selected != nullptr) {
+                visit(*selected, random_value, true, switch_stopped);
+            }
+            return;
+        }
+        if (node.kind == bms_control_kind_t::switch_block) {
+            const auto choice = selected_values.find(node.id.value);
+            if (choice == selected_values.end()) {
+                return;
+            }
+            visited_selections.insert(node.id.value);
+            const bms_control_node_t* selected{};
+            const bms_control_node_t* fallback{};
+            for (const auto& child : node.children) {
+                if (child.kind == bms_control_kind_t::case_branch &&
+                    child.value == choice->second) {
+                    selected = &child;
+                    break;
+                }
+                if (child.kind == bms_control_kind_t::default_branch) {
+                    fallback = &child;
+                }
+            }
+            if (selected == nullptr) {
+                selected = fallback;
+            }
+            if (selected == nullptr) {
+                return;
+            }
+            bool stopped{};
+            bool entered{};
+            for (const auto& child : node.children) {
+                if (child.kind == bms_control_kind_t::case_branch ||
+                    child.kind == bms_control_kind_t::default_branch) {
+                    entered = entered || &child == selected;
+                    if (entered && !stopped) {
+                        visit(child, random_value, true, &stopped);
+                    }
+                } else if (entered && !stopped) {
+                    visit(child, random_value, true, &stopped);
+                }
+            }
+            return;
+        }
+        const auto branch_scope = inside_active_branch ||
+                                  node.kind == bms_control_kind_t::if_branch ||
+                                  node.kind == bms_control_kind_t::else_if_branch ||
+                                  node.kind == bms_control_kind_t::else_branch ||
+                                  node.kind == bms_control_kind_t::case_branch ||
+                                  node.kind == bms_control_kind_t::default_branch;
+        for (const auto& child : node.children) {
+            visit(child, random_value, branch_scope, switch_stopped);
+        }
+    };
+    visit(root, std::nullopt, false, nullptr);
+    if (visited_selections.size() != selected_values.size()) {
+        return std::nullopt;
+    }
+    return active_orders;
+}
+
+auto replace_retained_measure_length(std::string_view line, std::size_t expected_measure,
+                                     std::string_view expected_value, std::string_view replacement)
+    -> std::optional<std::string> {
+    if (line.size() < 7 || line.front() != '#' || line[6] != ':' ||
+        is_measure_length_command(ascii_upper(std::string(line.substr(1, 5)))) !=
+            std::optional<std::size_t>{expected_measure} ||
+        line.substr(7) != expected_value || has_line_break_or_nul(replacement) ||
+        !valid_utf8(replacement)) {
+        return std::nullopt;
+    }
+    std::string result(line.substr(0, 7));
+    result.append(replacement);
     return result;
 }
 
@@ -669,6 +900,35 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
              "active branch selections have no retained source tree to preserve",
              "$.charts[].active_branch_selection");
     }
+    std::map<std::size_t, std::string> branch_measure_ratio_edits;
+    const auto active_branch_orders =
+        branch_tree.has_branches && options.branch_policy == bms_branch_policy_t::preserve_tree
+            ? active_branch_statement_orders(*chart.bms_control_tree, chart.active_branch_selection)
+            : std::optional<std::set<std::size_t>>{};
+    std::map<std::size_t, std::pair<std::size_t, rational_t>> effective_measure_sources;
+    const auto retain_effective_measure_source = [&](const source_measure_line_t& source,
+                                                     bool active) {
+        if (!active) {
+            return;
+        }
+        const auto parsed = parse_measure_length(source.raw_value);
+        if (!parsed.value.has_value()) {
+            return;
+        }
+        auto& current = effective_measure_sources[source.measure_index];
+        if (current.first <= source.source_order) {
+            current = {source.source_order, *parsed.value};
+        }
+    };
+    for (const auto& source : branch_tree.root_measure_ratio_lines) {
+        retain_effective_measure_source(source, true);
+    }
+    if (active_branch_orders.has_value()) {
+        for (const auto& [source_order, source] : branch_tree.branch_measure_ratio_lines) {
+            retain_effective_measure_source(source, active_branch_orders->contains(source_order));
+        }
+    }
+    const auto branch_source_bytes = source_provenance_bytes(song, chart);
     for (const auto measure_index : branch_tree.branch_measure_indices) {
         if (measure_index >= chart.measures.size()) {
             continue;
@@ -676,17 +936,41 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
         const auto projection =
             std::ranges::find(chart.bms_measure_length_projections, measure_index,
                               &bms_measure_length_projection_t::measure_index);
-        if (projection == chart.bms_measure_length_projections.end() ||
-            chart.measures[measure_index].definition.length != projection->imported_length) {
+        if (projection == chart.bms_measure_length_projections.end()) {
             fail(bms_write_diagnostic_code_t::branch_provenance,
-                 "a branch-controlled measure length is edited or lacks an import baseline; it "
-                 "cannot be written without branch-body editing",
+                 "a branch-controlled measure length has no unique import baseline",
                  "$.charts[].measures[" + std::to_string(measure_index) + "].definition.length");
         }
+        const auto& current_length = chart.measures[measure_index].definition.length;
+        if (current_length == projection->imported_length) {
+            continue;
+        }
+        const auto source = branch_tree.branch_measure_ratio_lines.find(projection->source_order);
+        const auto effective_source = effective_measure_sources.find(measure_index);
+        if (!active_branch_orders.has_value() ||
+            source == branch_tree.branch_measure_ratio_lines.end() ||
+            source->second.measure_index != measure_index ||
+            !active_branch_orders->contains(projection->source_order) ||
+            effective_source == effective_measure_sources.end() ||
+            effective_source->second.first != projection->source_order ||
+            effective_source->second.second != projection->imported_length ||
+            !branch_source_bytes ||
+            !source_measure_line_matches_bytes(source->second, *branch_source_bytes)) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "an edited branch-controlled measure length does not map to one unchanged "
+                 "active source statement",
+                 "$.charts[].measures[" + std::to_string(measure_index) + "].definition.length");
+        }
+        branch_measure_ratio_edits.emplace(
+            projection->source_order,
+            exact_decimal(current_length.numerator, current_length.denominator,
+                          "$.charts[].measures[" + std::to_string(measure_index) +
+                              "].definition.length"));
     }
     if (branch_tree.has_branches) {
         warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
-             "branch events, ratios, and timing remain source-backed; direct edits to those "
+             "branch events, extended timing declarations, and timing channel lines remain "
+             "source-backed; direct edits to those "
              "branch-projected objects are not applied by this writer slice",
              "$.charts[].bms_control_tree");
     }
@@ -713,6 +997,36 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
             group.ordered_field_source_orders[field_index]);
     };
 
+    std::optional<std::pair<std::size_t, signed_rational_t>> effective_direct_bpm_source;
+    const auto retain_effective_direct_bpm_source = [&](const source_measure_line_t& source,
+                                                        bool active) {
+        if (!active) {
+            return;
+        }
+        const auto parsed = parse_measure_length(source.raw_value);
+        if (!parsed.value.has_value() ||
+            parsed.value->numerator >
+                static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+            return;
+        }
+        if (!effective_direct_bpm_source.has_value() ||
+            effective_direct_bpm_source->first <= source.source_order) {
+            effective_direct_bpm_source =
+                std::pair{source.source_order,
+                          signed_rational_t{static_cast<std::int64_t>(parsed.value->numerator),
+                                            parsed.value->denominator}};
+        }
+    };
+    for (const auto& source : branch_tree.root_direct_bpm_lines) {
+        retain_effective_direct_bpm_source(source, true);
+    }
+    if (active_branch_orders.has_value()) {
+        for (const auto& [source_order, source] : branch_tree.branch_direct_bpm_lines) {
+            retain_effective_direct_bpm_source(source,
+                                               active_branch_orders->contains(source_order));
+        }
+    }
+    std::map<std::size_t, std::string> branch_direct_bpm_edits;
     for (const auto& bpm : chart.bpms) {
         if (!is_retained_timing_provenance(bpm.provenance)) {
             continue;
@@ -721,13 +1035,41 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
             std::ranges::find(chart.bms_bpm_projections, bpm.id, &bms_bpm_projection_t::event);
         if (projection == chart.bms_bpm_projections.end() ||
             projection->source_order != bpm.provenance.source_order ||
-            projection->imported_position != bpm.position ||
-            projection->imported_beats_per_minute != bpm.beats_per_minute) {
+            projection->imported_position != bpm.position) {
             fail(bms_write_diagnostic_code_t::branch_provenance,
-                 "source-backed BMS BPM timing was edited or lacks its import baseline; direct "
-                 "branch timing editing is not implemented",
+                 "source-backed BMS BPM timing was edited structurally or lacks its import "
+                 "baseline",
                  "$.charts[].bpms");
         }
+        if (projection->imported_beats_per_minute == bpm.beats_per_minute) {
+            continue;
+        }
+        const auto source = branch_tree.branch_direct_bpm_lines.find(projection->source_order);
+        if (source == branch_tree.branch_direct_bpm_lines.end()) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "edited branch BPM does not map to a retained direct-BPM source statement",
+                 "$.charts[].bpms");
+        }
+        if (!active_branch_orders.has_value() ||
+            !active_branch_orders->contains(projection->source_order) ||
+            !effective_direct_bpm_source.has_value() ||
+            effective_direct_bpm_source->first != projection->source_order ||
+            effective_direct_bpm_source->second != projection->imported_beats_per_minute) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "edited branch BPM is not the unique effective declaration in the active "
+                 "projection",
+                 "$.charts[].bpms");
+        }
+        if (bpm.provenance.source_field != "BPM" ||
+            bpm.provenance.source_spelling != source->second.text || !branch_source_bytes ||
+            !source_measure_line_matches_bytes(source->second, *branch_source_bytes)) {
+            fail(bms_write_diagnostic_code_t::branch_provenance,
+                 "edited branch BPM source provenance does not match the retained source bytes",
+                 "$.charts[].bpms");
+        }
+        branch_direct_bpm_edits.emplace(
+            projection->source_order,
+            exact_decimal(bpm.beats_per_minute, "$.charts[].bpms[].beats_per_minute"));
     }
     for (const auto& pause : chart.pauses) {
         if (!is_retained_timing_provenance(pause.provenance)) {
@@ -1504,6 +1846,8 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     preserved_tree_lines.reserve(branch_tree.preserved_lines.size());
     std::set<std::size_t> emitted_branch_metadata_edits;
     std::set<std::size_t> emitted_branch_resource_edits;
+    std::set<std::size_t> emitted_branch_measure_ratio_edits;
+    std::set<std::size_t> emitted_branch_direct_bpm_edits;
     for (const auto& [source_order, line] : branch_tree.preserved_lines) {
         if (has_line_break_or_nul(line) || !valid_utf8(line)) {
             fail(bms_write_diagnostic_code_t::branch_provenance,
@@ -1512,13 +1856,21 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
         }
         const auto metadata_edit = branch_metadata_edits.find(source_order);
         const auto resource_edit = branch_resource_edits.find(source_order);
+        const auto ratio_edit = branch_measure_ratio_edits.find(source_order);
+        const auto bpm_edit = branch_direct_bpm_edits.find(source_order);
         if (metadata_edit == branch_metadata_edits.end() &&
-            resource_edit == branch_resource_edits.end()) {
+            resource_edit == branch_resource_edits.end() &&
+            ratio_edit == branch_measure_ratio_edits.end() &&
+            bpm_edit == branch_direct_bpm_edits.end()) {
             preserved_tree_lines.push_back(line);
             continue;
         }
-        if (metadata_edit != branch_metadata_edits.end() &&
-            resource_edit != branch_resource_edits.end()) {
+        const auto edit_count =
+            static_cast<unsigned>(metadata_edit != branch_metadata_edits.end()) +
+            static_cast<unsigned>(resource_edit != branch_resource_edits.end()) +
+            static_cast<unsigned>(ratio_edit != branch_measure_ratio_edits.end()) +
+            static_cast<unsigned>(bpm_edit != branch_direct_bpm_edits.end());
+        if (edit_count != 1) {
             fail(bms_write_diagnostic_code_t::branch_provenance,
                  "one retained branch statement is ambiguously claimed by multiple edits",
                  "$.charts[].bms_control_tree");
@@ -1538,6 +1890,44 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
                 fail(bms_write_diagnostic_code_t::branch_provenance,
                      "edited branch metadata does not identify one unambiguous retained source "
                      "statement",
+                     "$.charts[].bms_control_tree");
+            }
+            preserved_tree_lines.push_back(*replaced);
+            continue;
+        }
+        if (bpm_edit != branch_direct_bpm_edits.end()) {
+            const auto source = branch_tree.branch_direct_bpm_lines.find(source_order);
+            if (source == branch_tree.branch_direct_bpm_lines.end()) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "edited branch BPM has no retained source identity",
+                     "$.charts[].bms_control_tree");
+            }
+            const auto replaced = replace_retained_header_value(
+                line, "BPM", source->second.raw_value, bpm_edit->second);
+            if (!replaced.has_value() ||
+                !emitted_branch_direct_bpm_edits.insert(source_order).second) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "edited branch BPM does not identify one unambiguous retained source "
+                     "statement",
+                     "$.charts[].bms_control_tree");
+            }
+            preserved_tree_lines.push_back(*replaced);
+            continue;
+        }
+        if (ratio_edit != branch_measure_ratio_edits.end()) {
+            const auto source = branch_tree.branch_measure_ratio_lines.find(source_order);
+            if (source == branch_tree.branch_measure_ratio_lines.end()) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "edited branch measure length has no retained source identity",
+                     "$.charts[].bms_control_tree");
+            }
+            const auto replaced = replace_retained_measure_length(
+                line, source->second.measure_index, source->second.raw_value, ratio_edit->second);
+            if (!replaced.has_value() ||
+                !emitted_branch_measure_ratio_edits.insert(source_order).second) {
+                fail(bms_write_diagnostic_code_t::branch_provenance,
+                     "edited branch measure length does not identify one unambiguous retained "
+                     "source statement",
                      "$.charts[].bms_control_tree");
             }
             preserved_tree_lines.push_back(*replaced);
@@ -1567,6 +1957,16 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     if (emitted_branch_resource_edits.size() != branch_resource_edits.size()) {
         fail(bms_write_diagnostic_code_t::branch_provenance,
              "one or more edited branch resource statements are absent from the retained tree",
+             "$.charts[].bms_control_tree");
+    }
+    if (emitted_branch_measure_ratio_edits.size() != branch_measure_ratio_edits.size()) {
+        fail(bms_write_diagnostic_code_t::branch_provenance,
+             "one or more edited branch measure lengths are absent from the retained tree",
+             "$.charts[].bms_control_tree");
+    }
+    if (emitted_branch_direct_bpm_edits.size() != branch_direct_bpm_edits.size()) {
+        fail(bms_write_diagnostic_code_t::branch_provenance,
+             "one or more edited branch BPM statements are absent from the retained tree",
              "$.charts[].bms_control_tree");
     }
     if (branch_tree.has_branches && !preserved_tree_lines.empty()) {

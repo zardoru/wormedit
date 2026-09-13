@@ -1,9 +1,9 @@
 # Autosave and crash-recovery design
 
 Status: reviewed planning contract; atomic primary/recovery publication, the
-headless five-minute coordinator, and the bounded read-only startup candidate
-scanner are implemented. Recovery UI/action application, quarantine execution,
-command journaling, and crash-marker backends remain planned.
+headless five-minute coordinator, the bounded startup scanner, and headless
+recovery-action/quarantine execution are implemented. Recovery UI, command
+journaling, and crash-marker backends remain planned.
 
 ## Recovery artifacts
 
@@ -34,11 +34,11 @@ An explicit successful project save records its revision and is flushed/validate
 
 Opening a project and application startup both search for a matching `.bak`, untitled recovery entries, a crash marker, and any command journal. Validate each candidate independently before comparing it with the primary file. Use project ID and revision first and timestamps only as supporting evidence, since clocks can move.
 
-The implemented scanner covers the primary, adjacent `.bak`, caller-supplied recovery entries, and interrupted same-directory primary/recovery temporary files. It validates raw native projects separately from checksummed recovery envelopes, applies bounded candidate/file/total-byte/diagnostic limits, ranks only within one project identity, and reports actions plus quarantine recommendations without moving, deleting, or overwriting an artifact.
+The implemented scanner covers the primary, adjacent `.bak`, caller-supplied recovery entries, and interrupted same-directory primary/recovery temporary files. It validates raw native projects separately from checksummed recovery envelopes, applies bounded candidate/file/total-byte/diagnostic limits, ranks only within one project identity, and attaches a size plus SHA-256 scan ticket to each fully-read artifact. The headless action executor rereads and validates that exact content before returning a read-only/session document or mutating anything. Recover-into-session requires the caller's expected current ID/revision (or an explicitly empty session) and confirms it still matches the scanned primary. Save-as is create-only and cannot target the primary. Discard and recommended quarantine move only the selected artifact to a unique same-directory quarantine name, verify the moved content, and attempt restoration if verification fails; the scanner itself never mutates files.
 
 If a valid backup is newer than the explicit save, show a recovery banner before editing with actions to inspect it read-only, recover it into the session, save it as a new project, or discard it. Never overwrite the primary project merely because a backup exists. Show the saved and backup revisions/times plus a document-level change summary when both can be decoded. If the primary is missing or corrupt and the backup is valid, recommend recovery while retaining the corrupt original for inspection.
 
-If a crash marker exists but the primary save validates and no newer valid backup exists, atomically create the `.bak` from that known-good primary before continuing, as requested. Do not overwrite a newer valid recovery snapshot. Corrupt backups are quarantined with a diagnostic and never loaded or used to replace a primary file. Choosing discard is explicit and removes only the selected recovery generation after the primary state has been identified.
+If a crash marker exists but the primary save validates and no newer valid backup exists, atomically create the `.bak` from that known-good primary before continuing, as requested. Do not overwrite a newer valid recovery snapshot. Corrupt backups are only quarantined after an explicit action and never loaded or used to replace a primary file. Choosing discard is explicit and moves only the selected, scan-ticket-matching recovery generation into quarantine after confirming the primary/session baseline; the original remains recoverable under its quarantine name.
 
 ## Crash handling
 

@@ -27,6 +27,11 @@ enum class native_project_storage_diagnostic_code_t {
     flush_failure,
     read_failure,
     replacement_failure,
+    recovery_action_unavailable,
+    recovery_candidate_changed,
+    recovery_identity_mismatch,
+    recovery_target_exists,
+    recovery_quarantine_failure,
 };
 
 struct native_project_storage_diagnostic_t {
@@ -122,6 +127,7 @@ enum class native_project_recovery_action_t {
     recover_into_session,
     save_as_new_project,
     discard,
+    quarantine,
 };
 
 enum class native_project_recovery_quarantine_t {
@@ -141,6 +147,10 @@ struct native_project_recovery_candidate_t {
     std::optional<native_project_document_version_t> version;
     std::optional<native_project_recovery_metadata_t> recovery_metadata;
     std::optional<song_document_t> document;
+    // Content identity captured by the bounded scanner and required by action
+    // execution. Callers should treat these fields as an opaque scan ticket.
+    std::optional<std::uint64_t> scanned_size_bytes;
+    std::string scanned_sha256;
     std::vector<native_project_recovery_action_t> available_actions;
     std::optional<native_project_recovery_action_t> recommended_action;
     native_project_recovery_quarantine_t quarantine{native_project_recovery_quarantine_t::retain};
@@ -204,6 +214,51 @@ struct native_project_recovery_scan_result_t {
 scan_native_project_recovery_candidates(const native_project_recovery_scan_request_t& request,
                                         native_project_recovery_scan_options_t options = {})
     -> native_project_recovery_scan_result_t;
+
+enum class native_project_recovery_action_stage_t {
+    before_revalidate,
+    before_mutation,
+    after_quarantine_move,
+    before_save_as_publish,
+};
+
+// A recover-into-session request must state what the caller currently has
+// loaded. Set is_set=true with no version for an empty session, or provide the
+// exact current project ID/revision. This prevents a recovery result from
+// silently replacing a session that changed after the scanner ran.
+struct native_project_recovery_session_expectation_t {
+    bool is_set{};
+    std::optional<native_project_document_version_t> version;
+};
+
+struct native_project_recovery_action_options_t {
+    native_project_limits_t codec_limits{};
+    std::size_t maximum_candidate_file_bytes{224U * 1024U * 1024U};
+    native_project_recovery_session_expectation_t expected_session;
+    std::filesystem::path save_as_destination;
+    // Narrow fault-injection seam. Returning false prevents the named stage.
+    std::function<bool(native_project_recovery_action_stage_t, const std::filesystem::path&)>
+        allow_stage;
+};
+
+struct native_project_recovery_action_result_t {
+    bool applied{};
+    std::optional<song_document_t> document;
+    std::optional<native_project_document_version_t> version;
+    std::optional<std::filesystem::path> quarantined_path;
+    std::vector<native_project_storage_diagnostic_t> diagnostics;
+
+    [[nodiscard]] auto has_errors() const -> bool;
+};
+
+// Revalidate a candidate against its scan ticket before returning a read-only
+// or session-recovery document. Save-as uses create-only publication. Discard
+// and quarantine are recoverable same-directory moves of only the scanned
+// artifact; no action writes the primary implicitly.
+[[nodiscard]] auto apply_native_project_recovery_action(
+    const native_project_recovery_scan_result_t& scan, std::size_t candidate_index,
+    native_project_recovery_action_t action, native_project_recovery_action_options_t options = {})
+    -> native_project_recovery_action_result_t;
 
 enum class native_project_autosave_status_t {
     not_due,

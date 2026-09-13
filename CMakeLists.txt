@@ -23,10 +23,23 @@ include(cmake/dependencies/nlohmann_json.cmake)
 option(WORMEDIT_BUILD_APP "Build the existing SDL/OpenGL application scaffold" ON)
 option(WORMEDIT_ENABLE_LUA "Build the pinned Lua runtime adapter" OFF)
 option(WORMEDIT_ENABLE_AUDIO_DECODER "Build the headless MP3/Ogg decoder target" ON)
+set(WORMEDIT_UI_BACKEND "nuklear" CACHE STRING "Editor UI backend (nuklear, imgui, or clay)")
+set_property(CACHE WORMEDIT_UI_BACKEND PROPERTY STRINGS nuklear imgui clay)
+if(NOT WORMEDIT_UI_BACKEND MATCHES "^(nuklear|imgui|clay)$")
+    message(FATAL_ERROR
+        "Unsupported WORMEDIT_UI_BACKEND='${WORMEDIT_UI_BACKEND}'; choose nuklear, imgui, or clay"
+    )
+endif()
+if(WORMEDIT_BUILD_APP AND NOT WORMEDIT_UI_BACKEND STREQUAL "nuklear")
+    message(FATAL_ERROR
+        "WORMEDIT_UI_BACKEND='${WORMEDIT_UI_BACKEND}' has no adapter yet; currently available: nuklear"
+    )
+endif()
 
 add_library(wormedit_core
     src/core/command.cpp
     src/core/document.cpp
+    src/core/editor_scene.cpp
     src/core/bms_profile_detection.cpp
     src/core/bga_preview.cpp
     src/core/grid.cpp
@@ -134,18 +147,25 @@ if(WORMEDIT_BUILD_APP)
     add_library(nuklear_headers INTERFACE)
     target_include_directories(nuklear_headers INTERFACE "${nuklear_SOURCE_DIR}")
 
+    # The application links one private, stable frontend target. Backend types
+    # and dependencies do not enter wormedit_core or its public headers.
+    add_library(wormedit_ui_frontend INTERFACE)
+    add_library(wormedit::ui_frontend ALIAS wormedit_ui_frontend)
+    target_link_libraries(wormedit_ui_frontend INTERFACE nuklear_headers)
+
     add_executable(wormedit
         src/common/chart.cpp
         src/editor/field.cpp
         src/sys/audio.cpp
         src/sys/main.cpp
-        src/sys/vendorimpl.cpp
         src/sys/window.cpp
+        src/ui/nuklear/frontend.cpp
     )
 
     target_include_directories(wormedit
         PRIVATE
             "${CMAKE_SOURCE_DIR}/include"
+            "${CMAKE_SOURCE_DIR}/src"
             "${CMAKE_SOURCE_DIR}/src/vendor"
             "${CMAKE_BINARY_DIR}/generated"
     )
@@ -153,8 +173,8 @@ if(WORMEDIT_BUILD_APP)
     target_link_libraries(wormedit
         PRIVATE
             wormedit::core
+            wormedit::ui_frontend
             SDL3::SDL3
-            nuklear_headers
             otoworm::otoworm
             OpenGL::GL
     )
@@ -169,4 +189,11 @@ endif()
 if(BUILD_TESTING)
     include(cmake/dependencies/catch2.cmake)
     add_subdirectory(tests)
+    add_test(
+        NAME architecture.ui_frontend_boundary
+        COMMAND "${CMAKE_COMMAND}"
+            -DWORMEDIT_SOURCE_ROOT=${CMAKE_SOURCE_DIR}
+            -P "${CMAKE_SOURCE_DIR}/cmake/check_ui_boundary.cmake"
+    )
+    set_tests_properties(architecture.ui_frontend_boundary PROPERTIES LABELS "unit;architecture")
 endif()

@@ -1,7 +1,7 @@
 #include "wormedit/audio.h"
-#include "wormedit/vendorimpl.h"
 #include "wormedit/window.h"
 
+#include "ui/frontend.h"
 #include "wormedit/config.h"
 
 #include <SDL3/SDL_events.h>
@@ -10,8 +10,7 @@
 
 #include <stdio.h>
 
-int main()
-{
+int main() {
     if (!SDL_Init(0)) {
         fprintf(stderr, "SDL init failed\n");
         return 1;
@@ -33,8 +32,7 @@ int main()
         return 1;
     }
 
-    struct nk_context *nk = worm_vendor_nk_init(window.handle);
-    if (!nk) {
+    if (!worm_ui_frontend_init(window.handle)) {
         worm_window_destroy(&window);
         worm_audio_shutdown(&audio);
         SDL_Quit();
@@ -45,46 +43,43 @@ int main()
     while (running) {
         SDL_Event event;
 
-        worm_vendor_nk_begin_input();
+        worm_ui_frontend_begin_input();
         while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_EVENT_QUIT ||
-                event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
+            if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
                 running = false;
             }
 
-            worm_vendor_nk_handle_event(&event);
+            worm_ui_frontend_handle_event(&event);
         }
-        worm_vendor_nk_end_input();
+        worm_ui_frontend_end_input();
 
-        if (nk_begin(nk, "wormedit", nk_rect(20, 20, 360, 190),
-                NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE |
-                    NK_WINDOW_MINIMIZABLE | NK_WINDOW_TITLE)) {
-            nk_layout_row_dynamic(nk, 24, 1);
-            nk_label(nk, "SDL3 + Nuklear scaffold", NK_TEXT_LEFT);
-            nk_label(nk, "Audio import subsystem placeholder ready", NK_TEXT_LEFT);
-            nk_label(nk, "Git hash: " WORMEDIT_GIT_HASH, NK_TEXT_LEFT);
-
-            nk_layout_row_dynamic(nk, 30, 2);
-            if (nk_button_label(nk, "Probe audio")) {
-                const WormAudioImportRequest request = {"placeholder.wav"};
-                printf("audio probe: %s\n", worm_audio_import_probe(&request) ? "ok" : "failed");
-            }
-            if (nk_button_label(nk, "Quit")) {
-                running = false;
-            }
+        const WormUiScaffoldView view = {
+            "Audio import subsystem placeholder ready",
+            WORMEDIT_GIT_HASH,
+        };
+        switch (worm_ui_frontend_compose(&view)) {
+        case WORM_UI_SCAFFOLD_ACTION_PROBE_AUDIO: {
+            const WormAudioImportRequest request = {"placeholder.wav"};
+            printf("audio probe: %s\n", worm_audio_import_probe(&request) ? "ok" : "failed");
+            break;
         }
-        nk_end(nk);
+        case WORM_UI_SCAFFOLD_ACTION_QUIT:
+            running = false;
+            break;
+        case WORM_UI_SCAFFOLD_ACTION_NONE:
+            break;
+        }
 
         int width = 0;
         int height = 0;
         worm_window_get_size(&window, &width, &height);
-        worm_vendor_nk_render(width, height);
+        worm_ui_frontend_render(width, height);
         worm_window_swap(&window);
 
         SDL_Delay(1);
     }
 
-    worm_vendor_nk_shutdown();
+    worm_ui_frontend_shutdown();
     worm_window_destroy(&window);
     worm_audio_shutdown(&audio);
     SDL_Quit();

@@ -862,6 +862,105 @@ TEST_CASE("speed transition spans preserve their clock and clip at replacements 
     CHECK(chart_end_span.span->clipped);
 }
 
+TEST_CASE("bulk SPEEDS transition spans preserve compiled order and report caps",
+          "[unit][core][timing][scroll-speed][span]") {
+    auto chart = base_chart();
+    chart.beat_zero_audio_offset_seconds = {};
+    chart.speeds = {
+        {.id = object_id_t{91},
+         .position = {measure_id_t{1}, 0},
+         .multiplier = {4, 1},
+         .transition_beats = {10, 1},
+         .transition_is_seconds = true},
+        {.id = object_id_t{92},
+         .position = {measure_id_t{1}, 240},
+         .multiplier = {2, 1},
+         .transition_beats = {1, 2}},
+        {.id = object_id_t{93},
+         .position = {measure_id_t{1}, 480},
+         .multiplier = {3, 1},
+         .transition_beats = {0, 1}},
+    };
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+    const auto speed = build_scroll_speed_index(chart, *timing.index);
+    REQUIRE(speed);
+
+    const auto all = scroll_speed_transition_spans(*speed.index, *timing.index);
+    REQUIRE(all);
+    REQUIRE(all.spans.size() == speed.index->speed_segments.size());
+    REQUIRE(all.diagnostics.empty());
+    for (std::size_t i = 0; i < all.spans.size(); ++i) {
+        const auto single = scroll_speed_transition_span(
+            *speed.index, *timing.index, speed.index->speed_segments[i].source_event);
+        REQUIRE(single);
+        CHECK(all.spans[i].source_event == speed.index->speed_segments[i].source_event);
+        CHECK(all.spans[i].begin_row == single.span->begin_row);
+        CHECK(all.spans[i].end_row == single.span->end_row);
+        CHECK(all.spans[i].begin_seconds == single.span->begin_seconds);
+        CHECK(all.spans[i].end_seconds == single.span->end_seconds);
+        CHECK(all.spans[i].transition_is_seconds == single.span->transition_is_seconds);
+        CHECK(all.spans[i].clipped == single.span->clipped);
+    }
+
+    const auto capped =
+        scroll_speed_transition_spans(*speed.index, *timing.index, {.maximum_spans = 1});
+    REQUIRE(capped);
+    REQUIRE(capped.spans.size() == 1);
+    CHECK(capped.truncated);
+    REQUIRE(capped.diagnostics.size() == 1);
+    CHECK(capped.diagnostics[0].severity == diagnostic_severity_t::warning);
+    CHECK(capped.diagnostics[0].code == timing_error_code_t::capacity_exceeded);
+    CHECK(capped.spans[0].source_event == speed.index->speed_segments[0].source_event);
+
+    const auto zero_cap =
+        scroll_speed_transition_spans(*speed.index, *timing.index, {.maximum_spans = 0});
+    REQUIRE(zero_cap);
+    CHECK(zero_cap.spans.empty());
+    CHECK(zero_cap.truncated);
+    REQUIRE(zero_cap.diagnostics.size() == 1);
+    CHECK(zero_cap.diagnostics[0].severity == diagnostic_severity_t::warning);
+
+    auto stale_timing = *timing.index;
+    ++stale_timing.source_fingerprint;
+    const auto stale = scroll_speed_transition_spans(*speed.index, stale_timing);
+    REQUIRE_FALSE(stale);
+    REQUIRE(stale.diagnostics.size() == 1);
+    CHECK(stale.diagnostics[0].code == timing_error_code_t::invalid_document);
+}
+
+TEST_CASE("bulk SPEEDS span evaluation remains bounded for fifty thousand events",
+          "[unit][core][timing][scroll-speed][span][performance]") {
+    constexpr std::size_t speed_count = 50'000;
+    auto chart = base_chart();
+    chart.beat_zero_audio_offset_seconds = {};
+    chart.speeds.reserve(speed_count);
+    for (std::size_t i = 0; i < speed_count; ++i) {
+        chart.speeds.push_back({.id = object_id_t{static_cast<std::uint64_t>(1'000 + i)},
+                                .position = {measure_id_t{1}, i % 960},
+                                .multiplier = {2, 1}});
+    }
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+    const auto speed = build_scroll_speed_index(chart, *timing.index);
+    REQUIRE(speed);
+    REQUIRE(speed.index->speed_segments.size() == speed_count);
+
+    const auto start = std::chrono::steady_clock::now();
+    const auto spans =
+        scroll_speed_transition_spans(*speed.index, *timing.index, {.maximum_spans = speed_count});
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+
+    REQUIRE(spans);
+    CHECK_FALSE(spans.truncated);
+    CHECK(spans.diagnostics.empty());
+    REQUIRE(spans.spans.size() == speed_count);
+    for (std::size_t i = 0; i < speed_count; ++i) {
+        CHECK(spans.spans[i].source_event == speed.index->speed_segments[i].source_event);
+    }
+    CHECK(elapsed < std::chrono::milliseconds{125});
+}
+
 TEST_CASE("scroll and speed compilation rejects stale malformed and over-cap inputs",
           "[unit][core][timing][scroll-speed][bounds]") {
     auto chart = base_chart();

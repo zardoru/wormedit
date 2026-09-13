@@ -1608,25 +1608,17 @@ auto scroll_speed_at(const scroll_speed_index_t& index, const timing_index_t& ti
                                           .render_displacement_beats = render_displacement}};
 }
 
-auto scroll_speed_transition_span(const scroll_speed_index_t& index, const timing_index_t& timing,
-                                  object_id_t source_event)
+namespace {
+
+auto scroll_speed_transition_span_at(const scroll_speed_index_t& index,
+                                     const timing_index_t& timing,
+                                     std::vector<speed_curve_segment_t>::const_iterator segment)
     -> scroll_speed_transition_span_result_t {
+    const auto source_event = segment->source_event;
     const auto span_error = [&](timing_error_code_t code, std::string message) {
         return scroll_speed_transition_span_result_t{
             .error = error(code, std::move(message), source_event)};
     };
-    if (index.divisions_per_standard_measure != timing.divisions_per_standard_measure ||
-        index.total_rows != timing.total_rows ||
-        index.timing_source_fingerprint != timing.source_fingerprint) {
-        return span_error(timing_error_code_t::invalid_document,
-                          "scroll/speed index does not match the timing index");
-    }
-    const auto segment =
-        std::ranges::find(index.speed_segments, source_event, &speed_curve_segment_t::source_event);
-    if (segment == index.speed_segments.end()) {
-        return span_error(timing_error_code_t::position_out_of_range,
-                          "SPEEDS object is not present in the compiled index");
-    }
     if (segment->begin_row > segment->end_row || segment->end_row > index.total_rows ||
         segment->begin_row > maximum_i64_magnitude ||
         segment->transition_duration.denominator == 0) {
@@ -1686,9 +1678,9 @@ auto scroll_speed_transition_span(const scroll_speed_index_t& index, const timin
                 return span_error(timing_error_code_t::arithmetic_overflow,
                                   "SPEEDS transition duration exceeds exact timing bounds");
             }
-            const auto natural_end = add_exact(
-                begin_seconds,
-                {static_cast<std::int64_t>(duration_numerator), duration_denominator});
+            const auto natural_end =
+                add_exact(begin_seconds,
+                          {static_cast<std::int64_t>(duration_numerator), duration_denominator});
             if (!natural_end) {
                 return span_error(timing_error_code_t::arithmetic_overflow,
                                   "SPEEDS transition end exceeds exact timing bounds");
@@ -1756,6 +1748,68 @@ auto scroll_speed_transition_span(const scroll_speed_index_t& index, const timin
                                                    .transition_is_seconds =
                                                        segment->transition_is_seconds,
                                                    .clipped = clipped}};
+}
+
+auto scroll_speed_span_index_matches(const scroll_speed_index_t& index,
+                                     const timing_index_t& timing) -> bool {
+    return index.divisions_per_standard_measure == timing.divisions_per_standard_measure &&
+           index.total_rows == timing.total_rows &&
+           index.timing_source_fingerprint == timing.source_fingerprint;
+}
+
+} // namespace
+
+auto scroll_speed_transition_span(const scroll_speed_index_t& index, const timing_index_t& timing,
+                                  object_id_t source_event)
+    -> scroll_speed_transition_span_result_t {
+    const auto span_error = [&](timing_error_code_t code, std::string message) {
+        return scroll_speed_transition_span_result_t{
+            .error = error(code, std::move(message), source_event)};
+    };
+    if (!scroll_speed_span_index_matches(index, timing)) {
+        return span_error(timing_error_code_t::invalid_document,
+                          "scroll/speed index does not match the timing index");
+    }
+    const auto segment =
+        std::ranges::find(index.speed_segments, source_event, &speed_curve_segment_t::source_event);
+    if (segment == index.speed_segments.end()) {
+        return span_error(timing_error_code_t::position_out_of_range,
+                          "SPEEDS object is not present in the compiled index");
+    }
+    return scroll_speed_transition_span_at(index, timing, segment);
+}
+
+auto scroll_speed_transition_spans(const scroll_speed_index_t& index, const timing_index_t& timing,
+                                   scroll_speed_transition_spans_options_t options)
+    -> scroll_speed_transition_spans_result_t {
+    scroll_speed_transition_spans_result_t result;
+    if (!scroll_speed_span_index_matches(index, timing)) {
+        result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
+                                           "scroll/speed index does not match the timing index"));
+        return result;
+    }
+
+    const auto count = std::min(index.speed_segments.size(), options.maximum_spans);
+    result.truncated = count < index.speed_segments.size();
+    result.spans.reserve(count);
+    const auto first = index.speed_segments.cbegin();
+    for (std::size_t position = 0; position < count; ++position) {
+        const auto span = scroll_speed_transition_span_at(
+            index, timing, first + static_cast<std::ptrdiff_t>(position));
+        if (!span.span) {
+            result.diagnostics.push_back(
+                span.error.value_or(error(timing_error_code_t::invalid_document,
+                                          "SPEEDS transition span could not be built")));
+            break;
+        }
+        result.spans.push_back(*span.span);
+    }
+    if (result.truncated) {
+        result.diagnostics.push_back(
+            warning(timing_error_code_t::capacity_exceeded,
+                    "SPEEDS transition spans were truncated at the configured cap"));
+    }
+    return result;
 }
 
 auto build_preview_schedule(const chart_document_t& chart, const timing_index_t& timing,

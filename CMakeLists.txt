@@ -62,6 +62,7 @@ add_library(wormedit_core
     src/core/recovery_controller.cpp
     src/core/scroll_speed_editor.cpp
     src/core/semantic_layer_editor.cpp
+    src/core/shortcut_profile_storage.cpp
     src/core/storyboard.cpp
     src/core/sv_recipe.cpp
     src/core/startup_session.cpp
@@ -182,6 +183,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/audio.cpp
         src/sys/main.cpp
         src/sys/platform_recovery.cpp
+        src/sys/platform_shortcut_profile.cpp
         src/sys/window.cpp
         src/ui/nuklear/frontend.cpp
     )

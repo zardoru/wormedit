@@ -14,6 +14,7 @@
 #include <wormedit/core/recovery_controller.h>
 #include <wormedit/core/startup_session.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/timing_lane_controller.h>
 #include <wormedit/core/viewport_input.h>
 #include <wormedit/core/workspace.h>
 
@@ -25,7 +26,9 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -102,6 +105,7 @@ struct flattened_workspace_t {
         metadata_format_target_storage{};
     std::string timing_status_storage;
     std::vector<WormUiTimingSpeedView> timing_speed_storage;
+    std::vector<WormUiTimingMarkerView> timing_marker_storage;
     std::string compose_status_storage;
     std::vector<WormUiComposeBandView> compose_band_storage;
     std::vector<WormUiComposeLaneView> compose_lane_storage;
@@ -612,10 +616,269 @@ auto rational_as_double(wormedit::rational_t value) -> double {
     return static_cast<double>(value.numerator) / static_cast<double>(value.denominator);
 }
 
+auto timing_position_at_row(const wormedit::measure_index_t& measures, std::uint64_t row)
+    -> std::optional<wormedit::local_position_t> {
+    const auto found = std::ranges::find_if(measures.entries, [row](const auto& entry) {
+        return row >= entry.absolute_begin_row &&
+               row - entry.absolute_begin_row < entry.row_capacity;
+    });
+    if (found == measures.entries.end()) {
+        return std::nullopt;
+    }
+    return wormedit::local_position_t{.measure = found->id, .row = row - found->absolute_begin_row};
+}
+
+auto timing_stage_grid_step(const wormedit::chart_document_t& chart) -> std::uint64_t {
+    return chart.divisions_per_standard_measure % 4 == 0 ? chart.divisions_per_standard_measure / 4
+                                                         : chart.divisions_per_standard_measure;
+}
+
+auto timing_lane_kind_from_ui(WormUiTimingLaneKind lane)
+    -> std::optional<wormedit::timing_lane_kind_t> {
+    using kind_t = wormedit::timing_lane_kind_t;
+    switch (lane) {
+    case WORM_UI_TIMING_LANE_BPM:
+        return kind_t::bpm;
+    case WORM_UI_TIMING_LANE_SCROLL:
+        return kind_t::scroll;
+    case WORM_UI_TIMING_LANE_SPEED:
+        return kind_t::speed;
+    case WORM_UI_TIMING_LANE_STOP:
+        return kind_t::stop;
+    case WORM_UI_TIMING_LANE_DELAY:
+        return kind_t::delay;
+    case WORM_UI_TIMING_LANE_WARP:
+        return kind_t::warp;
+    }
+    return std::nullopt;
+}
+
+auto timing_lane_kind_to_ui(wormedit::timing_lane_kind_t lane) -> WormUiTimingLaneKind {
+    using kind_t = wormedit::timing_lane_kind_t;
+    switch (lane) {
+    case kind_t::bpm:
+        return WORM_UI_TIMING_LANE_BPM;
+    case kind_t::scroll:
+        return WORM_UI_TIMING_LANE_SCROLL;
+    case kind_t::speed:
+        return WORM_UI_TIMING_LANE_SPEED;
+    case kind_t::stop:
+        return WORM_UI_TIMING_LANE_STOP;
+    case kind_t::delay:
+        return WORM_UI_TIMING_LANE_DELAY;
+    case kind_t::warp:
+        return WORM_UI_TIMING_LANE_WARP;
+    case kind_t::kiai:
+    case kind_t::anchor:
+        return WORM_UI_TIMING_LANE_BPM;
+    }
+    return WORM_UI_TIMING_LANE_BPM;
+}
+
+auto begin_timing_stage(const WormUiWorkspaceAction& action,
+                        const wormedit::document_history_t& history,
+                        const wormedit::workspace_controller_t& workspace)
+    -> wormedit::timing_lane_pseudonote_preview_t {
+    using namespace wormedit;
+    timing_lane_pseudonote_preview_t rejected{};
+    if (workspace.active_tab != workspace_tab_t::timing || !workspace.selected_chart ||
+        action.timing_chart_id == 0 || workspace.selected_chart->value != action.timing_chart_id ||
+        history.document.revision != action.timing_document_revision ||
+        !std::isfinite(action.timing_target_y_fraction) || action.timing_target_y_fraction < 0.0 ||
+        action.timing_target_y_fraction >= 1.0) {
+        return rejected;
+    }
+    const auto requested_kind = timing_lane_kind_from_ui(action.timing_lane);
+    if (!requested_kind) {
+        return rejected;
+    }
+    const auto found = std::ranges::find(history.document.charts,
+                                         chart_id_t{action.timing_chart_id}, &chart_document_t::id);
+    if (found == history.document.charts.end()) {
+        return rejected;
+    }
+    const auto measures_result = build_measure_index(*found);
+    const auto* measures = std::get_if<measure_index_t>(&measures_result);
+    if (!measures || measures->total_rows == 0) {
+        return rejected;
+    }
+    const auto step = timing_stage_grid_step(*found);
+    const auto raw_row_value =
+        std::min(std::floor(static_cast<long double>(action.timing_target_y_fraction) *
+                            measures->total_rows),
+                 static_cast<long double>(measures->total_rows - 1));
+    const auto raw_row = static_cast<std::uint64_t>(raw_row_value);
+    const auto remainder = raw_row % step;
+    auto snapped_row = raw_row - remainder;
+    if (remainder >= step - remainder &&
+        snapped_row <= std::numeric_limits<std::uint64_t>::max() - step) {
+        snapped_row += step;
+    }
+    const auto last_valid_row = measures->total_rows - 1;
+    if (snapped_row > last_valid_row) {
+        snapped_row = last_valid_row - last_valid_row % step;
+    }
+    const auto position = timing_position_at_row(*measures, snapped_row);
+    if (!position) {
+        return rejected;
+    }
+
+    const auto kind = *requested_kind;
+    timing_lane_value_t initial{timing_bpm_value_t{}};
+    switch (kind) {
+    case timing_lane_kind_t::bpm:
+        initial = timing_bpm_value_t{{120, 1}};
+        break;
+    case timing_lane_kind_t::scroll:
+        initial = timing_scroll_value_t{{1, 1}};
+        break;
+    case timing_lane_kind_t::speed:
+        initial = timing_speed_value_t{{1, 1}, {0, 1}, false};
+        break;
+    case timing_lane_kind_t::stop:
+    case timing_lane_kind_t::delay:
+        initial = timing_pause_value_t{{1, 1}, pause_unit_t::seconds};
+        break;
+    case timing_lane_kind_t::warp: {
+        if (step > std::numeric_limits<std::uint64_t>::max() - snapped_row ||
+            snapped_row + step >= measures->total_rows) {
+            return rejected;
+        }
+        const auto end = timing_position_at_row(*measures, snapped_row + step);
+        if (!end) {
+            return rejected;
+        }
+        initial = timing_warp_value_t{*end, warp_provenance_t::native};
+        break;
+    }
+    case timing_lane_kind_t::kiai:
+    case timing_lane_kind_t::anchor:
+        return rejected;
+    }
+    return begin_timing_lane_pseudonote(
+        history, chart_id_t{action.timing_chart_id}, kind, *position, std::move(initial),
+        timing_lane_initial_value_source_t::explicit_default, false);
+}
+
+auto parse_timing_signed(const char* text) -> std::optional<std::int64_t> {
+    if (!text || text[0] == '\0') {
+        return std::nullopt;
+    }
+    const auto* end = text + std::strlen(text);
+    std::int64_t value{};
+    const auto parsed = std::from_chars(text, end, value);
+    return parsed.ec == std::errc{} && parsed.ptr == end ? std::optional{value} : std::nullopt;
+}
+
+auto parse_timing_unsigned(const char* text) -> std::optional<std::uint64_t> {
+    if (!text || text[0] == '\0') {
+        return std::nullopt;
+    }
+    const auto* end = text + std::strlen(text);
+    std::uint64_t value{};
+    const auto parsed = std::from_chars(text, end, value);
+    return parsed.ec == std::errc{} && parsed.ptr == end ? std::optional{value} : std::nullopt;
+}
+
+auto timing_ratio_in_bounds(std::int64_t numerator, std::uint64_t denominator, long double minimum,
+                            long double maximum) -> bool {
+    if (denominator == 0) {
+        return false;
+    }
+    const auto value = static_cast<long double>(numerator) / denominator;
+    return value >= minimum && value <= maximum;
+}
+
+auto timing_unsigned_ratio_in_bounds(std::uint64_t numerator, std::uint64_t denominator,
+                                     long double maximum) -> bool {
+    if (denominator == 0) {
+        return false;
+    }
+    return static_cast<long double>(numerator) / denominator <= maximum;
+}
+
+auto timing_stage_value(const wormedit::timing_lane_pseudonote_preview_t& preview,
+                        const wormedit::chart_document_t& chart,
+                        const WormUiWorkspaceAction& action)
+    -> std::optional<wormedit::timing_lane_value_t> {
+    using namespace wormedit;
+    const auto primary_numerator = parse_timing_signed(action.timing_primary_numerator_text);
+    const auto primary_denominator = parse_timing_unsigned(action.timing_primary_denominator_text);
+    const auto secondary_numerator = parse_timing_signed(action.timing_secondary_numerator_text);
+    const auto secondary_denominator =
+        parse_timing_unsigned(action.timing_secondary_denominator_text);
+    switch (preview.kind) {
+    case timing_lane_kind_t::bpm: {
+        if (!primary_numerator || !primary_denominator ||
+            !timing_ratio_in_bounds(*primary_numerator, *primary_denominator, 1.0L, 1000.0L))
+            return std::nullopt;
+        return timing_lane_value_t{timing_bpm_value_t{{*primary_numerator, *primary_denominator}}};
+    }
+    case timing_lane_kind_t::scroll: {
+        if (!primary_numerator || !primary_denominator ||
+            !timing_ratio_in_bounds(*primary_numerator, *primary_denominator, -1000.0L, 1000.0L))
+            return std::nullopt;
+        return timing_lane_value_t{
+            timing_scroll_value_t{{*primary_numerator, *primary_denominator}}};
+    }
+    case timing_lane_kind_t::speed: {
+        if (!primary_numerator || !primary_denominator || !secondary_numerator ||
+            *secondary_numerator < 0 || !secondary_denominator ||
+            !timing_ratio_in_bounds(*primary_numerator, *primary_denominator, 0.0L, 1000.0L) ||
+            !timing_unsigned_ratio_in_bounds(static_cast<std::uint64_t>(*secondary_numerator),
+                                             *secondary_denominator, 10000.0L)) {
+            return std::nullopt;
+        }
+        return timing_lane_value_t{timing_speed_value_t{
+            {*primary_numerator, *primary_denominator},
+            {static_cast<std::uint64_t>(*secondary_numerator), *secondary_denominator},
+            action.timing_transition_is_seconds}};
+    }
+    case timing_lane_kind_t::stop:
+    case timing_lane_kind_t::delay: {
+        if (!primary_numerator || !primary_denominator || *primary_numerator < 0 ||
+            !timing_unsigned_ratio_in_bounds(static_cast<std::uint64_t>(*primary_numerator),
+                                             *primary_denominator, 86400.0L)) {
+            return std::nullopt;
+        }
+        return timing_lane_value_t{timing_pause_value_t{{*primary_numerator, *primary_denominator},
+                                                        pause_unit_t::seconds}};
+    }
+    case timing_lane_kind_t::warp: {
+        if (!secondary_numerator || *secondary_numerator < 1 || !secondary_denominator ||
+            *secondary_denominator != 1 || *secondary_numerator > 1000000) {
+            return std::nullopt;
+        }
+        const auto units = static_cast<std::uint64_t>(*secondary_numerator);
+        const auto measures = build_measure_index(chart);
+        const auto* index = std::get_if<measure_index_t>(&measures);
+        const auto start = index ? absolute_row(*index, preview.position) : std::nullopt;
+        const auto step = timing_stage_grid_step(chart);
+        if (!index || !start ||
+            units > (std::numeric_limits<std::uint64_t>::max() - *start) / step) {
+            return std::nullopt;
+        }
+        const auto end_row = *start + units * step;
+        if (end_row >= index->total_rows) {
+            return std::nullopt;
+        }
+        const auto end = timing_position_at_row(*index, end_row);
+        return end ? std::optional<timing_lane_value_t>{timing_warp_value_t{
+                         *end, warp_provenance_t::native}}
+                   : std::nullopt;
+    }
+    case timing_lane_kind_t::kiai:
+    case timing_lane_kind_t::anchor:
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
 void populate_timing_view(flattened_workspace_t& flattened,
                           const wormedit::document_history_t& history,
                           const wormedit::workspace_controller_t& workspace,
-                          timing_scene_cache_t& cache, int window_width, int window_height) {
+                          timing_scene_cache_t& cache, int window_width, int window_height,
+                          const wormedit::timing_lane_pseudonote_preview_t* stage) {
     auto& view = flattened.view.timing;
     if (!view.visible) {
         return;
@@ -635,6 +898,8 @@ void populate_timing_view(flattened_workspace_t& flattened,
         return;
     }
     const auto& chart = *chart_it;
+    view.chart_id = chart.id.value;
+    view.document_revision = history.document.revision;
     view.speed_total_count = chart.speeds.size();
     if (!cache.attempted || cache.chart != chart.id ||
         cache.revision != history.document.revision) {
@@ -651,32 +916,29 @@ void populate_timing_view(flattened_workspace_t& flattened,
                                    : scroll_speed.diagnostics.front().message;
             } else {
                 cache.total_rows = scroll_speed.index->total_rows;
-                cache.truncated = scroll_speed.index->speed_segments.size() >
-                                  static_cast<std::size_t>(WORM_UI_TIMING_SPEED_CAPACITY);
-                const auto count =
-                    std::min(scroll_speed.index->speed_segments.size(),
-                             static_cast<std::size_t>(WORM_UI_TIMING_SPEED_CAPACITY));
-                cache.speeds.reserve(count);
-                for (std::size_t index = 0; index < count; ++index) {
+                const auto spans = wormedit::scroll_speed_transition_spans(
+                    *scroll_speed.index, *timing.index,
+                    {.maximum_spans = WORM_UI_TIMING_SPEED_CAPACITY});
+                if (!spans) {
+                    cache.status = spans.diagnostics.empty()
+                                       ? "The SPEEDS transition spans could not be built."
+                                       : spans.diagnostics.front().message;
+                }
+                cache.truncated = spans.truncated;
+                cache.speeds.reserve(spans.spans.size());
+                for (std::size_t index = 0; index < spans.spans.size(); ++index) {
                     const auto& speed = scroll_speed.index->speed_segments[index];
-                    const auto span = wormedit::scroll_speed_transition_span(
-                        *scroll_speed.index, *timing.index, speed.source_event);
-                    if (!span.span) {
-                        cache.status = span.error ? span.error->message
-                                                  : "A SPEEDS transition span could not be built.";
-                        cache.speeds.clear();
-                        break;
-                    }
+                    const auto& span = spans.spans[index];
                     cache.speeds.push_back({
                         .object_id = speed.source_event.value,
                         .marker_row = static_cast<long double>(speed.begin_row),
-                        .affected_begin_row = rational_as_long_double(span.span->begin_row),
-                        .affected_end_row = rational_as_long_double(span.span->end_row),
+                        .affected_begin_row = rational_as_long_double(span.begin_row),
+                        .affected_end_row = rational_as_long_double(span.end_row),
                         .multiplier =
                             static_cast<double>(rational_as_long_double(speed.target_multiplier)),
                         .transition_duration = rational_as_double(speed.transition_duration),
                         .transition_is_seconds = speed.transition_is_seconds,
-                        .transition_clipped = span.span->clipped,
+                        .transition_clipped = span.clipped,
                     });
                 }
             }
@@ -692,6 +954,7 @@ void populate_timing_view(flattened_workspace_t& flattened,
         view.status_text = flattened.timing_status_storage.c_str();
         return;
     }
+    view.total_rows = cache.total_rows;
 
     const auto row_to_pixels = [&](long double row) {
         const auto bounded = std::clamp(row, 0.0L, static_cast<long double>(cache.total_rows));
@@ -711,10 +974,123 @@ void populate_timing_view(flattened_workspace_t& flattened,
             .transition_clipped = speed.transition_clipped,
         });
     }
+    flattened.timing_marker_storage.clear();
+    const auto measure_result = wormedit::build_measure_index(chart);
+    const auto* measures = std::get_if<wormedit::measure_index_t>(&measure_result);
+    std::size_t marker_reserve = 0;
+    for (const auto count :
+         {chart.bpms.size(), chart.scrolls.size(), chart.pauses.size(), chart.warps.size()}) {
+        marker_reserve +=
+            std::min<std::size_t>(count, WORM_UI_TIMING_MARKER_CAPACITY - marker_reserve);
+    }
+    flattened.timing_marker_storage.reserve(marker_reserve);
+    if (measures) {
+        const auto append_marker = [&](wormedit::local_position_t position, std::uint64_t id,
+                                       WormUiTimingLaneKind lane) {
+            if (flattened.timing_marker_storage.size() >= WORM_UI_TIMING_MARKER_CAPACITY) {
+                view.truncated = true;
+                return;
+            }
+            const auto row = wormedit::absolute_row(*measures, position);
+            if (!row) {
+                return;
+            }
+            flattened.timing_marker_storage.push_back({
+                .object_id = id,
+                .marker_y_pixels = row_to_pixels(static_cast<long double>(*row)),
+                .lane = lane,
+            });
+        };
+        for (const auto& event : chart.bpms)
+            append_marker(event.position, event.id.value, WORM_UI_TIMING_LANE_BPM);
+        for (const auto& event : chart.scrolls)
+            append_marker(event.position, event.id.value, WORM_UI_TIMING_LANE_SCROLL);
+        for (const auto& event : chart.pauses)
+            append_marker(event.position, event.id.value,
+                          event.kind == wormedit::pause_kind_t::stop ? WORM_UI_TIMING_LANE_STOP
+                                                                     : WORM_UI_TIMING_LANE_DELAY);
+        for (const auto& event : chart.warps)
+            append_marker(event.span.begin, event.id.value, WORM_UI_TIMING_LANE_WARP);
+    }
     view.scene_available = true;
-    view.truncated = cache.truncated;
+    view.truncated = view.truncated || cache.truncated;
     view.speeds = flattened.timing_speed_storage.data();
     view.speed_count = flattened.timing_speed_storage.size();
+    view.markers = flattened.timing_marker_storage.data();
+    view.marker_count = flattened.timing_marker_storage.size();
+    if (stage && stage->status == wormedit::timing_lane_pseudonote_status_t::editing &&
+        stage->chart == chart.id && stage->document_revision == history.document.revision) {
+        view.stage_active = true;
+        view.stage_valid = stage->valid;
+        view.stage_lane = timing_lane_kind_to_ui(stage->kind);
+        const auto stage_row =
+            measures ? wormedit::absolute_row(*measures, stage->position) : std::nullopt;
+        view.stage_marker_y_pixels =
+            stage_row ? row_to_pixels(static_cast<long double>(*stage_row)) : 0.0;
+        view.stage_transition_is_seconds = false;
+        std::visit(
+            [&](const auto& value) {
+                using value_t = std::decay_t<decltype(value)>;
+                const auto set_primary = [&](std::int64_t numerator, std::uint64_t denominator) {
+                    (void)std::snprintf(view.stage_primary_numerator_text,
+                                        sizeof(view.stage_primary_numerator_text), "%lld",
+                                        static_cast<long long>(numerator));
+                    (void)std::snprintf(view.stage_primary_denominator_text,
+                                        sizeof(view.stage_primary_denominator_text), "%llu",
+                                        static_cast<unsigned long long>(denominator));
+                };
+                const auto set_secondary = [&](std::uint64_t numerator, std::uint64_t denominator) {
+                    (void)std::snprintf(view.stage_secondary_numerator_text,
+                                        sizeof(view.stage_secondary_numerator_text), "%llu",
+                                        static_cast<unsigned long long>(numerator));
+                    (void)std::snprintf(view.stage_secondary_denominator_text,
+                                        sizeof(view.stage_secondary_denominator_text), "%llu",
+                                        static_cast<unsigned long long>(denominator));
+                };
+                if constexpr (std::is_same_v<value_t, wormedit::timing_bpm_value_t>) {
+                    view.stage_value =
+                        static_cast<double>(rational_as_long_double(value.beats_per_minute));
+                    set_primary(value.beats_per_minute.numerator,
+                                value.beats_per_minute.denominator);
+                } else if constexpr (std::is_same_v<value_t, wormedit::timing_scroll_value_t>) {
+                    view.stage_value =
+                        static_cast<double>(rational_as_long_double(value.multiplier));
+                    set_primary(value.multiplier.numerator, value.multiplier.denominator);
+                } else if constexpr (std::is_same_v<value_t, wormedit::timing_speed_value_t>) {
+                    view.stage_value =
+                        static_cast<double>(rational_as_long_double(value.multiplier));
+                    view.stage_secondary_value = rational_as_double(value.transition_beats);
+                    view.stage_transition_is_seconds = value.transition_is_seconds;
+                    set_primary(value.multiplier.numerator, value.multiplier.denominator);
+                    set_secondary(value.transition_beats.numerator,
+                                  value.transition_beats.denominator);
+                } else if constexpr (std::is_same_v<value_t, wormedit::timing_pause_value_t>) {
+                    view.stage_value = static_cast<double>(rational_as_long_double(value.duration));
+                    set_primary(value.duration.numerator, value.duration.denominator);
+                } else if constexpr (std::is_same_v<value_t, wormedit::timing_warp_value_t>) {
+                    const auto end_row =
+                        measures ? wormedit::absolute_row(*measures, value.end) : std::nullopt;
+                    const auto start_row = stage_row;
+                    const auto step = timing_stage_grid_step(chart);
+                    const auto length_steps =
+                        end_row && start_row && *end_row > *start_row
+                            ? static_cast<long double>(*end_row - *start_row) /
+                                  static_cast<long double>(step)
+                            : 1.0L;
+                    view.stage_secondary_value = static_cast<double>(length_steps);
+                    (void)std::snprintf(view.stage_secondary_numerator_text,
+                                        sizeof(view.stage_secondary_numerator_text), "%.0Lf",
+                                        length_steps);
+                    (void)std::snprintf(view.stage_secondary_denominator_text,
+                                        sizeof(view.stage_secondary_denominator_text), "1");
+                }
+            },
+            stage->value);
+        if (!stage->diagnostics.empty()) {
+            flattened.timing_status_storage = stage->diagnostics.front().message;
+            view.stage_status_text = flattened.timing_status_storage.c_str();
+        }
+    }
 }
 
 auto compose_lane_is_editable(const wormedit::lane_definition_t& lane) -> bool {
@@ -1913,6 +2289,7 @@ int main(int argc, char** argv) {
     const auto scanned_primary_version = startup.primary_version;
 
     timing_scene_cache_t timing_scene_cache;
+    std::optional<wormedit::timing_lane_pseudonote_preview_t> timing_stage;
     compose_scene_cache_t compose_scene_cache;
     std::optional<wormedit::editor_interaction_state_t> compose_interaction_state;
     wormedit::viewport_input_controller_t compose_viewport_input;
@@ -1971,6 +2348,13 @@ int main(int argc, char** argv) {
         }
 
         const auto model = wormedit::make_workspace_view(workspace, history.document);
+        if (timing_stage &&
+            (timing_stage->document_revision != history.document.revision ||
+             workspace.active_tab != wormedit::workspace_tab_t::timing ||
+             !workspace.selected_chart || *workspace.selected_chart != timing_stage->chart)) {
+            wormedit::cancel_timing_lane_pseudonote(*timing_stage);
+            timing_stage.reset();
+        }
         if (!model) {
             status = model.diagnostics.empty() ? "Workspace view unavailable"
                                                : model.diagnostics.front().message;
@@ -2024,7 +2408,8 @@ int main(int argc, char** argv) {
             int compose_window_height = 0;
             worm_window_get_size(&window, &compose_window_width, &compose_window_height);
             populate_timing_view(flattened, history, workspace, timing_scene_cache,
-                                 compose_window_width, compose_window_height);
+                                 compose_window_width, compose_window_height,
+                                 timing_stage ? &*timing_stage : nullptr);
             populate_compose_view(flattened, history, workspace, compose_scene_cache,
                                   compose_window_width, compose_window_height,
                                   compose_interaction_state);
@@ -2048,6 +2433,74 @@ int main(int argc, char** argv) {
                                                             : applied.diagnostics.front().message);
             } else if (action.metadata_edit != WORM_UI_METADATA_EDIT_NONE) {
                 status = dispatch_metadata_ui_action(action, history, workspace);
+            } else if (action.timing_stage_action != WORM_UI_TIMING_STAGE_NONE) {
+                using status_t = wormedit::timing_lane_pseudonote_status_t;
+                if (action.timing_stage_action == WORM_UI_TIMING_STAGE_BEGIN) {
+                    if (!timing_stage) {
+                        auto candidate = begin_timing_stage(action, history, workspace);
+                        if (candidate.status == status_t::editing) {
+                            timing_stage = std::move(candidate);
+                            status = "Timing event staged; confirm to insert it.";
+                        } else if (!candidate.diagnostics.empty()) {
+                            status = candidate.diagnostics.front().message;
+                        } else {
+                            status = "Timing event could not be staged at that row.";
+                        }
+                    }
+                } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CANCEL) {
+                    if (timing_stage) {
+                        wormedit::cancel_timing_lane_pseudonote(*timing_stage);
+                        timing_stage.reset();
+                        status = "Timing event staging cancelled.";
+                    }
+                } else if (timing_stage) {
+                    const bool stage_matches =
+                        workspace.active_tab == wormedit::workspace_tab_t::timing &&
+                        workspace.selected_chart &&
+                        workspace.selected_chart->value == action.timing_chart_id &&
+                        timing_stage->chart.value == action.timing_chart_id &&
+                        timing_stage->document_revision == action.timing_document_revision &&
+                        history.document.revision == action.timing_document_revision;
+                    if (!stage_matches) {
+                        wormedit::cancel_timing_lane_pseudonote(*timing_stage);
+                        timing_stage.reset();
+                        status =
+                            "Timing event staging expired because its chart or revision changed.";
+                    } else {
+                        const auto chart =
+                            std::ranges::find(history.document.charts, timing_stage->chart,
+                                              &wormedit::chart_document_t::id);
+                        const auto value = chart == history.document.charts.end()
+                                               ? std::optional<wormedit::timing_lane_value_t>{}
+                                               : timing_stage_value(*timing_stage, *chart, action);
+                        if (!value) {
+                            timing_stage->valid = false;
+                            timing_stage->diagnostics = {{
+                                .severity = wormedit::diagnostic_severity_t::error,
+                                .code = wormedit::diagnostic_code_t::invalid_rational,
+                                .message = "Enter a bounded exact rational for this timing value.",
+                            }};
+                            status = "Timing value is outside its supported bounds.";
+                        } else {
+                            const bool valid = wormedit::update_timing_lane_pseudonote(
+                                history, *timing_stage, *value, false);
+                            if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CONFIRM &&
+                                valid) {
+                                const auto result = wormedit::confirm_timing_lane_pseudonote(
+                                    history, *timing_stage, false);
+                                status = result ? "Timing event inserted."
+                                                : (result.diagnostics.empty()
+                                                       ? "Timing event insertion was rejected."
+                                                       : result.diagnostics.front().message);
+                                timing_stage.reset();
+                            } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CONFIRM) {
+                                status = timing_stage->diagnostics.empty()
+                                             ? "Timing event values are invalid."
+                                             : timing_stage->diagnostics.front().message;
+                            }
+                        }
+                    }
+                }
             } else if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
                 if (compose_interaction_state) {
                     status = dispatch_compose_view_action(

@@ -34,6 +34,7 @@
 #define WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY 96
 #define WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY 4
 #define WORM_UI_TIMING_SPEED_CAPACITY 4096
+#define WORM_UI_TIMING_MARKER_CAPACITY 16384
 #define WORM_UI_COMPOSE_MIN_PIXELS_PER_MEASURE 24.0
 #define WORM_UI_COMPOSE_MAX_PIXELS_PER_MEASURE 4096.0
 
@@ -262,6 +263,21 @@ typedef struct WormUiTimingSpeedView {
     bool transition_clipped;
 } WormUiTimingSpeedView;
 
+typedef enum WormUiTimingLaneKind {
+    WORM_UI_TIMING_LANE_BPM = 0,
+    WORM_UI_TIMING_LANE_SCROLL,
+    WORM_UI_TIMING_LANE_SPEED,
+    WORM_UI_TIMING_LANE_STOP,
+    WORM_UI_TIMING_LANE_DELAY,
+    WORM_UI_TIMING_LANE_WARP,
+} WormUiTimingLaneKind;
+
+typedef struct WormUiTimingMarkerView {
+    uint64_t object_id;
+    double marker_y_pixels;
+    WormUiTimingLaneKind lane;
+} WormUiTimingMarkerView;
+
 // Renderer-neutral scalar projection of the timing pane. SPEEDS spans are
 // evaluated by the timing core before crossing this private C boundary.
 typedef struct WormUiTimingView {
@@ -270,6 +286,9 @@ typedef struct WormUiTimingView {
     bool truncated;
     double viewport_width_pixels;
     double viewport_height_pixels;
+    uint64_t chart_id;
+    uint64_t document_revision;
+    uint64_t total_rows;
     const char* status_text;
     size_t measure_count;
     size_t bpm_count;
@@ -281,7 +300,29 @@ typedef struct WormUiTimingView {
     size_t speed_total_count;
     const WormUiTimingSpeedView* speeds;
     size_t speed_count;
+    const WormUiTimingMarkerView* markers;
+    size_t marker_count;
+    bool stage_active;
+    bool stage_valid;
+    WormUiTimingLaneKind stage_lane;
+    double stage_marker_y_pixels;
+    double stage_value;
+    double stage_secondary_value;
+    bool stage_transition_is_seconds;
+    char stage_primary_numerator_text[64];
+    char stage_primary_denominator_text[64];
+    char stage_secondary_numerator_text[64];
+    char stage_secondary_denominator_text[64];
+    const char* stage_status_text;
 } WormUiTimingView;
+
+typedef enum WormUiTimingStageAction {
+    WORM_UI_TIMING_STAGE_NONE = 0,
+    WORM_UI_TIMING_STAGE_BEGIN,
+    WORM_UI_TIMING_STAGE_UPDATE,
+    WORM_UI_TIMING_STAGE_CONFIRM,
+    WORM_UI_TIMING_STAGE_CANCEL,
+} WormUiTimingStageAction;
 
 // Private scalar view consumed by the selected frontend adapter. The owning
 // application keeps every pointed-to string alive for the duration of compose.
@@ -408,6 +449,18 @@ typedef struct WormUiWorkspaceAction {
     size_t compose_input_count;
     WormUiComposeViewportInput compose_viewport_inputs[WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY];
     size_t compose_viewport_input_count;
+    WormUiTimingStageAction timing_stage_action;
+    uint64_t timing_chart_id;
+    uint64_t timing_document_revision;
+    WormUiTimingLaneKind timing_lane;
+    double timing_target_y_fraction;
+    double timing_value;
+    double timing_secondary_value;
+    bool timing_transition_is_seconds;
+    char timing_primary_numerator_text[64];
+    char timing_primary_denominator_text[64];
+    char timing_secondary_numerator_text[64];
+    char timing_secondary_denominator_text[64];
 } WormUiWorkspaceAction;
 
 // Private application/frontend boundary. Implementations own all widget

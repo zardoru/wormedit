@@ -261,6 +261,27 @@ struct scroll_speed_transition_span_result_t {
     }
 };
 
+struct scroll_speed_transition_spans_options_t {
+    // Bulk callers must choose a finite upper bound. The default is large
+    // enough for normal charts while keeping accidental projections bounded.
+    std::size_t maximum_spans{100'000};
+};
+
+struct scroll_speed_transition_spans_result_t {
+    // Successful spans are returned in compiled SPEEDS order. If an exact
+    // evaluation fails, prior spans are retained and an error diagnostic is
+    // included. A cap warning is reported separately through diagnostics.
+    std::vector<scroll_speed_transition_span_t> spans;
+    std::vector<timing_diagnostic_t> diagnostics;
+    bool truncated{};
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return std::ranges::none_of(diagnostics, [](const auto& diagnostic) {
+            return diagnostic.severity == diagnostic_severity_t::error;
+        });
+    }
+};
+
 [[nodiscard]] auto build_scroll_speed_index(const chart_document_t& chart,
                                             const timing_index_t& timing,
                                             scroll_speed_build_options_t options = {})
@@ -288,6 +309,14 @@ struct scroll_speed_transition_span_result_t {
                                                 const timing_index_t& timing,
                                                 object_id_t source_event)
     -> scroll_speed_transition_span_result_t;
+
+// Return exact spans for the first maximum_spans compiled SPEEDS objects.
+// The result preserves compiled order and reports both per-object errors and
+// explicit truncation when the configured cap omits later spans.
+[[nodiscard]] auto
+scroll_speed_transition_spans(const scroll_speed_index_t& index, const timing_index_t& timing,
+                              scroll_speed_transition_spans_options_t options = {})
+    -> scroll_speed_transition_spans_result_t;
 
 [[nodiscard]] auto
 sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,

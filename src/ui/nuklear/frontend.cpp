@@ -1825,6 +1825,48 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
         g_timing_stage_buffers_lane = view->stage_lane;
         g_timing_stage_buffers_y = view->stage_marker_y_pixels;
     }
+    const bool can_change_grid = !view->stage_active && !view->sv_recipe.active &&
+                                 !view->sv_recipe.selection_armed && view->scene_available &&
+                                 view->supported_snap_denominator_count > 0;
+    nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 3);
+    nk_layout_row_push(g_context, 0.42f);
+    nk_labelf(g_context, NK_TEXT_LEFT, "Active grid: 1/%llu%s",
+              static_cast<unsigned long long>(view->active_snap_denominator),
+              view->active_snap_denominator == 0 ? " (unavailable)" : "");
+    nk_layout_row_push(g_context, 0.29f);
+    if (!can_change_grid) {
+        nk_widget_disable_begin(g_context);
+    }
+    const auto previous_grid_clicked = nk_button_label(g_context, "Previous grid");
+    if (!can_change_grid) {
+        nk_widget_disable_end(g_context);
+    }
+    nk_layout_row_push(g_context, 0.29f);
+    if (!can_change_grid) {
+        nk_widget_disable_begin(g_context);
+    }
+    const auto next_grid_clicked = nk_button_label(g_context, "Next grid");
+    if (!can_change_grid) {
+        nk_widget_disable_end(g_context);
+    }
+    nk_layout_row_end(g_context);
+    if (action && action->timing_grid_action == WORM_UI_TIMING_GRID_ACTION_NONE &&
+        (previous_grid_clicked || next_grid_clicked)) {
+        size_t current = 0;
+        while (current < view->supported_snap_denominator_count &&
+               view->supported_snap_denominators[current] != view->active_snap_denominator) {
+            ++current;
+        }
+        if (current < view->supported_snap_denominator_count) {
+            const auto count = view->supported_snap_denominator_count;
+            const auto next = previous_grid_clicked ? (current + count - 1) % count
+                                                    : (current + 1) % count;
+            action->timing_grid_action = WORM_UI_TIMING_GRID_ACTION_SELECT;
+            action->timing_grid_chart_id = view->chart_id;
+            action->timing_grid_document_revision = view->document_revision;
+            action->timing_grid_denominator = view->supported_snap_denominators[next];
+        }
+    }
     nk_layout_row_dynamic(g_context, 24, 1);
     nk_labelf(g_context, NK_TEXT_LEFT,
               "%zu measures · %zu BPM · %zu stop/delay · %zu warp · %zu SPEEDS",
@@ -1834,7 +1876,7 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
     nk_labelf(g_context, NK_TEXT_LEFT,
               "%zu bookmarks/sections · %zu anchors · Hover a SPEEDS marker for its exact span; "
               "Double-click a marker to edit its exact value, or an empty row to insert on the "
-              "current fixed timing grid. Coincident markers split left-to-right by source order.",
+              "current active timing grid. Coincident markers split left-to-right by source order.",
               view->bookmark_count + view->section_count, view->anchor_count);
 
     nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 2);
@@ -1879,7 +1921,7 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
 
     const auto group_bounds = nk_window_get_content_region(g_context);
     const auto reserved_panel_height =
-        72.0f + (view->stage_active ? 212.0f : 0.0f) + (view->sv_recipe.active ? 300.0f : 0.0f);
+        96.0f + (view->stage_active ? 212.0f : 0.0f) + (view->sv_recipe.active ? 300.0f : 0.0f);
     const auto surface_height = std::max(32.0f, group_bounds.h - reserved_panel_height);
     nk_layout_space_begin(g_context, NK_DYNAMIC, surface_height, 1);
     nk_layout_space_push(g_context, nk_rect(0.0f, 0.0f, 1.0f, 1.0f));

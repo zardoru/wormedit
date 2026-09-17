@@ -400,6 +400,9 @@ typedef struct WormUiTimingView {
     uint64_t chart_id;
     uint64_t document_revision;
     uint64_t total_rows;
+    uint64_t active_snap_denominator;
+    const uint64_t* supported_snap_denominators;
+    size_t supported_snap_denominator_count;
     const char* status_text;
     size_t measure_count;
     size_t bpm_count;
@@ -463,6 +466,11 @@ typedef enum WormUiTimingStageAction {
     WORM_UI_TIMING_STAGE_CANCEL,
     WORM_UI_TIMING_STAGE_DELETE,
 } WormUiTimingStageAction;
+
+typedef enum WormUiTimingGridAction {
+    WORM_UI_TIMING_GRID_ACTION_NONE = 0,
+    WORM_UI_TIMING_GRID_ACTION_SELECT,
+} WormUiTimingGridAction;
 
 // Private scalar view consumed by the selected frontend adapter. The owning
 // application keeps every pointed-to string alive for the duration of compose.
@@ -593,6 +601,10 @@ typedef struct WormUiWorkspaceAction {
     size_t compose_input_count;
     WormUiComposeViewportInput compose_viewport_inputs[WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY];
     size_t compose_viewport_input_count;
+    WormUiTimingGridAction timing_grid_action;
+    uint64_t timing_grid_chart_id;
+    uint64_t timing_grid_document_revision;
+    uint64_t timing_grid_denominator;
     WormUiTimingStageAction timing_stage_action;
     uint64_t timing_chart_id;
     uint64_t timing_document_revision;

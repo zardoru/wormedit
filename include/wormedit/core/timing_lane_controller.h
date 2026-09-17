@@ -120,12 +120,29 @@ begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart
                                                  timing_lane_value_t value, bool timing_locked)
     -> bool;
 
+// Moves an open existing marker through the same transient revision-checked
+// preview. The caller supplies an already-snapped exact position; confirmation
+// remains one typed update command and preserves the marker's stable ID and
+// source provenance. New pseudo-notes keep their insertion row fixed.
+[[nodiscard]] auto move_existing_timing_lane_pseudonote(
+    const document_history_t& history, timing_lane_pseudonote_preview_t& preview,
+    local_position_t exact_snapped_position, bool timing_locked) -> bool;
+
 // Confirmation makes exactly one call to the existing revision-checked timing
 // command API, using an update command for an existing event. No playable note
 // is ever created by this controller.
 [[nodiscard]] auto confirm_timing_lane_pseudonote(document_history_t& history,
                                                   timing_lane_pseudonote_preview_t& preview,
                                                   bool timing_locked) -> document_command_result_t;
+
+// Deletes an existing marker through its typed editor command. The event kind,
+// identity, lock, and expected revision are all checked before history changes.
+[[nodiscard]] auto delete_existing_timing_lane_event(document_history_t& history,
+                                                      chart_id_t chart, timing_lane_kind_t kind,
+                                                      object_id_t event,
+                                                      std::uint64_t expected_revision,
+                                                      bool timing_locked)
+    -> document_command_result_t;
 
 void cancel_timing_lane_pseudonote(timing_lane_pseudonote_preview_t& preview) noexcept;
 

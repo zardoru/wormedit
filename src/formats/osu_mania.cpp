@@ -1377,7 +1377,15 @@ auto writer_round_ms(long double value) -> std::optional<std::int64_t> {
         value < static_cast<long double>(std::numeric_limits<std::int64_t>::min()) + 1.0L ||
         value > static_cast<long double>(std::numeric_limits<std::int64_t>::max()) - 1.0L)
         return std::nullopt;
-    const auto rounded = std::round(value); // half ties move away from zero
+    // Values are assembled from rational chart rows but represented here for
+    // osu!'s decimal writer.  A mathematical half can land one long-double
+    // ULP toward zero (for example 4 / 4000 * 60000 / 120).  Move one ULP
+    // outward before rounding so its documented away-from-zero tie rule stays
+    // stable across host libm implementations.
+    const auto outward = std::nextafter(
+        value, value < 0.0L ? -std::numeric_limits<long double>::infinity()
+                            : std::numeric_limits<long double>::infinity());
+    const auto rounded = std::round(outward); // half ties move away from zero
     if (rounded < static_cast<long double>(std::numeric_limits<std::int64_t>::min()) ||
         rounded > static_cast<long double>(std::numeric_limits<std::int64_t>::max()))
         return std::nullopt;

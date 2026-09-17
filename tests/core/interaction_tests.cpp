@@ -2,8 +2,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <limits>
 #include <ranges>
 
@@ -48,7 +50,7 @@ auto make_song() -> song_document_t {
 }
 
 auto make_state(document_history_t& history) -> editor_interaction_state_t {
-    constexpr std::array snaps{4ULL, 8ULL, 6ULL};
+    constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}, std::uint64_t{6}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 840}, snaps, 4);
     REQUIRE(setup);
@@ -84,7 +86,7 @@ TEST_CASE(
     "[unit][core][interaction]") {
     auto history = make_document_history(make_song());
     auto state = make_state(history);
-    constexpr std::array snaps{4ULL, 8ULL, 6ULL};
+    constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}, std::uint64_t{6}};
     const auto initial = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                                  {measure_id_t{1}, 840}, snaps, 4);
     REQUIRE(initial);
@@ -172,7 +174,7 @@ TEST_CASE(
 TEST_CASE("editor y mapping preserves exact rows through zoom and scroll",
           "[unit][core][interaction][mapping]") {
     auto history = make_document_history(make_song());
-    constexpr std::array snaps{4ULL};
+    constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 4, 192.0);
     REQUIRE(setup);
@@ -220,7 +222,7 @@ TEST_CASE("hit testing returns lane, note, hold head, and cross-measure tail tar
     };
     REQUIRE(validate_document(song).empty());
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{4ULL};
+    constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                                {measure_id_t{1}, 0}, snaps, 4, 384.0);
     REQUIRE(setup);
@@ -286,7 +288,7 @@ TEST_CASE("overlapping hit records use stable hold-head priority",
          .end = local_position_t{measure_id_t{1}, 480}},
     };
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{4ULL};
+    constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                                {measure_id_t{1}, 0}, snaps, 4, 192.0);
     REQUIRE(setup);
@@ -343,7 +345,7 @@ TEST_CASE("typed object hover is deterministic and supplies a same-object proper
     };
     REQUIRE(validate_document(song).empty());
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{4ULL};
+    constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                                {measure_id_t{1}, 0}, snaps, 4, 384.0);
     REQUIRE(setup);
@@ -441,7 +443,7 @@ TEST_CASE("typed double-click requests clear across stale revisions, focus, and 
         {.id = object_id_t{201}, .position = {measure_id_t{1}, 240}, .beats_per_minute = {180, 1}},
     };
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{4ULL};
+    constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                                {measure_id_t{1}, 0}, snaps, 4, 384.0);
     REQUIRE(setup);
@@ -530,7 +532,7 @@ TEST_CASE("hover lookup stays row-indexed for fifty thousand typed events",
          << diagnostics.size() << (diagnostics.empty() ? "" : ": " + diagnostics.front().message));
     REQUIRE(diagnostics.empty());
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{4ULL};
+    constexpr std::array snaps{std::uint64_t{4}};
     const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                                {measure_id_t{1}, 0}, snaps, 4, 384.0);
     REQUIRE(setup);
@@ -582,7 +584,7 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
         REQUIRE(validate_document(song).empty());
         return make_document_history(std::move(song));
     };
-    constexpr std::array snaps{4ULL};
+    constexpr std::array snaps{std::uint64_t{4}};
     const std::array drag_corners{
         std::array{110.0, 45.0, 290.0, 100.0},
         std::array{290.0, 45.0, 110.0, 100.0},
@@ -674,7 +676,7 @@ TEST_CASE("Space range selection previews inclusive cross-measure heads, tails, 
     };
     REQUIRE(validate_document(song).empty());
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{4ULL};
+    constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 480}, snaps, 4, 300.0);
     REQUIRE(setup);
@@ -803,7 +805,7 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
     REQUIRE(validate_document(song).empty());
 
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{4ULL};
+    constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 240}, snaps, 4, 300.0);
     REQUIRE(setup);
@@ -972,7 +974,7 @@ TEST_CASE("Space range selection supports add and toggle and cancels safely",
         {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
     };
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{4ULL, 8ULL};
+    constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 240}, snaps, 4, 192.0);
     REQUIRE(setup);
@@ -1061,7 +1063,7 @@ TEST_CASE("Space range selection uses span indexes for a sparse 50k-note chart",
     }
     REQUIRE(validate_document(song).empty());
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{4ULL};
+    constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
                                          {measure_id_t{1}, 24'000}, snaps, 4, 1200.0);
     REQUIRE(setup);
@@ -1087,7 +1089,7 @@ TEST_CASE("area selection maps through zoom and scroll and intersects cross-meas
     };
     REQUIRE(validate_document(song).empty());
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{4ULL};
+    constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 4, 300.0);
     REQUIRE(setup);
@@ -1138,7 +1140,7 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
         {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
     };
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{4ULL};
+    constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 4, 192.0);
     REQUIRE(setup);
@@ -1206,7 +1208,7 @@ TEST_CASE("area selection narrows a 50k-note query to a sparse row interval",
     }
     REQUIRE(validate_document(song).empty());
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{4ULL};
+    constexpr std::array snaps{std::uint64_t{4}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 4, 1200.0);
     REQUIRE(setup);
@@ -1355,7 +1357,7 @@ TEST_CASE("paint gestures cancel on capture loss and leave previews intact on ca
     auto song = make_song();
     song.charts.front().divisions_per_standard_measure = 100'001;
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{100'001ULL};
+    constexpr std::array snaps{std::uint64_t{100001}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 100'001);
     REQUIRE(setup);
@@ -1428,7 +1430,7 @@ TEST_CASE("hit-test buckets handle dense measures and 50k notes within a discret
     });
     REQUIRE(validate_document(song).empty());
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{100'000ULL};
+    constexpr std::array snaps{std::uint64_t{100000}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 100'000, 200.0);
     REQUIRE(setup);
@@ -1512,7 +1514,7 @@ TEST_CASE("interaction rejects invalid targets and occupied non-tap notes atomic
 TEST_CASE("interaction setup rejects unavailable lanes and falls back to supported exact snaps",
           "[unit][core][interaction]") {
     auto history = make_document_history(make_song());
-    constexpr std::array snaps{7ULL, 6ULL, 8ULL};
+    constexpr std::array snaps{std::uint64_t{7}, std::uint64_t{6}, std::uint64_t{8}};
 
     const auto fallback = make_editor_interaction(history, chart_id_t{1}, lane_id_t{2},
                                                   {measure_id_t{1}, 0}, snaps, 7);
@@ -1637,7 +1639,7 @@ TEST_CASE("exact cursor jumps reject stale and out-of-chart targets without chan
 TEST_CASE("pointer zoom anchors chart rows and viewport scrolling clamps to content",
           "[unit][core][interaction][viewport]") {
     auto history = make_document_history(make_song());
-    constexpr std::array snaps{4ULL, 8ULL, 6ULL};
+    constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}, std::uint64_t{6}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 4, 400.0);
     REQUIRE(setup);
@@ -2007,7 +2009,7 @@ TEST_CASE("duration gesture previews scale to fifty thousand selected notes",
     }
     REQUIRE(validate_document(song).empty());
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{100'000ULL};
+    constexpr std::array snaps{std::uint64_t{100000}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 100'000);
     REQUIRE(setup);
@@ -2241,7 +2243,7 @@ TEST_CASE("lane assignment remains bounded for fifty thousand selected notes",
     }
     REQUIRE(validate_document(song).empty());
     auto history = make_document_history(std::move(song));
-    constexpr std::array snaps{100'000ULL};
+    constexpr std::array snaps{std::uint64_t{100000}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 100'000);
     REQUIRE(setup);

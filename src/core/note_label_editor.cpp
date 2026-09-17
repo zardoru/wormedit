@@ -1,5 +1,6 @@
 #include <wormedit/core/note_label_editor.h>
 
+#include <algorithm>
 #include <ranges>
 #include <string_view>
 #include <unordered_map>

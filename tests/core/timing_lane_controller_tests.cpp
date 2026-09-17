@@ -705,3 +705,46 @@ TEST_CASE("existing timing pseudo-note targets are exact, revision-bound, and no
     CHECK(history.document.charts.front().bpms.front().beats_per_minute ==
           signed_rational_t{140, 1});
 }
+
+TEST_CASE("existing timing markers move as transient previews and delete through typed history",
+          "[unit][core][timing-lane-controller][move][delete]") {
+    auto history = make_document_history(timing_edit_song());
+    const auto original_revision = history.document.revision;
+
+    auto bpm = begin_existing_timing_lane_pseudonote(history, chart_id_t{2},
+                                                      timing_lane_kind_t::bpm, object_id_t{10}, false);
+    REQUIRE(bpm.status == timing_lane_pseudonote_status_t::editing);
+    REQUIRE(move_existing_timing_lane_pseudonote(history, bpm, pos(720), false));
+    CHECK(bpm.position == pos(720));
+    CHECK(history.document.revision == original_revision);
+    const auto moved = confirm_timing_lane_pseudonote(history, bpm, false);
+    REQUIRE(moved);
+    CHECK(history.document.charts.front().bpms.front().id == object_id_t{10});
+    CHECK(history.document.charts.front().bpms.front().position == pos(720));
+    CHECK(history.document.charts.front().bpms.front().provenance.source_order == 3);
+
+    auto warp = begin_existing_timing_lane_pseudonote(history, chart_id_t{2},
+                                                       timing_lane_kind_t::warp, object_id_t{50}, false);
+    REQUIRE(warp.status == timing_lane_pseudonote_status_t::editing);
+    CHECK_FALSE(move_existing_timing_lane_pseudonote(history, warp, pos(420), false));
+    CHECK(has_code(warp, diagnostic_code_t::invalid_hold));
+    CHECK(warp.status == timing_lane_pseudonote_status_t::editing);
+
+    const auto before_delete = history.document.revision;
+    const auto deleted = delete_existing_timing_lane_event(
+        history, chart_id_t{2}, timing_lane_kind_t::stop, object_id_t{40}, before_delete, false);
+    REQUIRE(deleted);
+    CHECK(history.document.charts.front().pauses.size() == 1);
+    CHECK(history.document.charts.front().pauses.front().id == object_id_t{41});
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().pauses.size() == 2);
+
+    const auto stale = delete_existing_timing_lane_event(
+        history, chart_id_t{2}, timing_lane_kind_t::stop, object_id_t{40}, original_revision, false);
+    CHECK_FALSE(stale);
+    CHECK(has_code(stale, diagnostic_code_t::invalid_id));
+    const auto locked = delete_existing_timing_lane_event(
+        history, chart_id_t{2}, timing_lane_kind_t::stop, object_id_t{40}, history.document.revision, true);
+    CHECK_FALSE(locked);
+    CHECK(has_code(locked, diagnostic_code_t::unsupported_feature));
+}

@@ -1600,7 +1600,12 @@ auto hover_editor_object(const chart_document_t& chart, const editor_hit_test_in
                        static_cast<long double>(candidate->end_absolute_row));
         const auto distance =
             static_cast<double>(std::abs(nearest_row - pointer_chart_row) * pixels_per_row);
-        if (distance > request.hit_radius_pixels ||
+        // `pointer_chart_row` is recovered from pixel coordinates while a
+        // marker's row is an exact integer.  Permit only the accumulated
+        // floating-point round-trip noise so a zero-radius hover still finds
+        // the marker used to produce those pixels.
+        constexpr auto pixel_round_trip_epsilon = 1.0e-9;
+        if (distance > request.hit_radius_pixels + pixel_round_trip_epsilon ||
             (best != nullptr &&
              (distance > best_distance || (distance == best_distance && object >= best->object)))) {
             continue;

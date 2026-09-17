@@ -149,6 +149,13 @@ if(WORMEDIT_BUILD_APP)
         add_subdirectory("${CMAKE_SOURCE_DIR}/../libotoworm" "${CMAKE_BINARY_DIR}/_deps/libotoworm-build")
     endif()
 
+    # libotoworm's conversion bridge selects iconv through its legacy LINUX
+    # preprocessor symbol.  Define it at the dependency boundary on Linux so
+    # its already-required Iconv target and its headers agree.
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+        target_compile_definitions(otoworm PRIVATE LINUX)
+    endif()
+
     set(WORMEDIT_GIT_HASH "nogit")
     if(Git_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
         execute_process(

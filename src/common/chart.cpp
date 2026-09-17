@@ -5,21 +5,13 @@
 #include "Chart.h"
 
 #include <algorithm>
-#include <cctype>
+#include <exception>
 #include <memory>
 
-#include <note_loader_7k.h>
 #include <ChartGroup.h>
+#include <note_loader.h>
 
 namespace {
-std::string LowerExtension(std::filesystem::path filename)
-{
-    auto ext = filename.extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    return ext;
-}
-
 void StoreNote(Chart& chart, uint8_t lane, const otoworm::NoteData& note)
 {
     if (lane >= MAX_CHANNELS) {
@@ -56,29 +48,14 @@ ChartClass ChartClassFromTimingInfo(const otoworm::ChartTransient& data)
 
 bool LoadChartFromFile(const std::filesystem::path& filename, Chart& out)
 {
-    auto song = std::make_shared<otoworm::ChartGroup>();
-    song->path = filename.parent_path();
-
-    const auto ext = LowerExtension(filename);
-    if (ext == ".bms" || ext == ".bme" || ext == ".bml" || ext == ".pms") {
-        NoteLoaderBMS::load_chart_from_file(filename, song.get());
-    } else if (ext == ".bmson") {
-        NoteLoaderBMSON::load_bmson_file(filename, song.get());
-    } else if (ext == ".osu") {
-        NoteLoaderOM::LoadObjectsFromFile(filename, song.get());
-    } else if (ext == ".sm") {
-        NoteLoaderSM::LoadObjectsFromFile(filename, song.get());
-    } else if (ext == ".ssc") {
-        NoteLoaderSSC::LoadObjectsFromFile(filename, song.get());
-    } else if (ext == ".ft2") {
-        NoteLoaderFTB::load_charts_from_file(filename, song.get());
-    } else if (ext == ".ojn") {
-        NoteLoaderOJN::LoadObjectsFromFile(filename, song.get());
-    } else {
+    std::shared_ptr<otoworm::ChartGroup> song;
+    try {
+        song = otoworm::load_song_from_file(filename);
+    } catch (const std::exception&) {
         return false;
     }
 
-    if (song->charts.empty() || !song->charts.front() || !song->charts.front()->transient) {
+    if (!song || song->charts.empty() || !song->charts.front() || !song->charts.front()->transient) {
         return false;
     }
 

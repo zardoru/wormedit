@@ -456,8 +456,12 @@ typedef enum WormUiTimingStageAction {
     WORM_UI_TIMING_STAGE_NONE = 0,
     WORM_UI_TIMING_STAGE_BEGIN,
     WORM_UI_TIMING_STAGE_UPDATE,
+    // MOVE carries a normalized target row for an already-open existing
+    // marker. The application snaps it to the active exact timing grid.
+    WORM_UI_TIMING_STAGE_MOVE,
     WORM_UI_TIMING_STAGE_CONFIRM,
     WORM_UI_TIMING_STAGE_CANCEL,
+    WORM_UI_TIMING_STAGE_DELETE,
 } WormUiTimingStageAction;
 
 // Private scalar view consumed by the selected frontend adapter. The owning
@@ -594,6 +598,7 @@ typedef struct WormUiWorkspaceAction {
     uint64_t timing_document_revision;
     uint64_t timing_object_id;
     WormUiTimingLaneKind timing_lane;
+    bool timing_has_target_y;
     double timing_target_y_fraction;
     double timing_value;
     double timing_secondary_value;

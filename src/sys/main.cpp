@@ -151,9 +151,9 @@ struct application_command_state_t {
     bool timing_locked{};
     bool note_paint_mode_active{};
     std::optional<wormedit::layer_id_t> semantic_layer_target;
-    // UI-only preference: Timing gestures use this exact denominator but no
-    // chart changes until a staged edit is explicitly confirmed.
-    std::uint64_t requested_timing_snap_denominator{4};
+    // UI-only, chart-scoped preferences. Changing a snap never changes chart
+    // data; an active gesture keeps its captured snap until it is resolved.
+    std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;
 };
 
 struct timing_grid_state_t {
@@ -185,6 +185,9 @@ struct timing_scene_cache_t {
     std::vector<timing_speed_cache_entry_t> speeds;
     std::string status;
 };
+
+auto editor_interaction_has_pending_gesture(
+    const wormedit::editor_interaction_state_t& state) -> bool;
 
 auto recovery_status_name(wormedit::native_project_recovery_candidate_status_t status)
     -> std::string_view {
@@ -661,14 +664,27 @@ auto timing_position_at_row(const wormedit::measure_index_t& measures, std::uint
     return wormedit::local_position_t{.measure = found->id, .row = row - found->absolute_begin_row};
 }
 
-constexpr std::array<std::uint64_t, 10> timing_snap_preferences{4, 8, 6, 12, 16,
-                                                                  24, 32, 48, 64, 96};
+constexpr std::array<std::uint64_t, 10> chart_snap_preferences{4, 8, 6, 12, 16,
+                                                                 24, 32, 48, 64, 96};
+
+auto requested_snap_denominator(const application_command_state_t& application_state,
+                                wormedit::chart_id_t chart) -> std::uint64_t {
+    const auto found = application_state.requested_snap_denominators.find(chart.value);
+    return found == application_state.requested_snap_denominators.end() ? 4 : found->second;
+}
+
+void remember_snap_denominator(application_command_state_t& application_state,
+                               wormedit::chart_id_t chart, std::uint64_t denominator) {
+    if (chart.value != 0 && denominator != 0) {
+        application_state.requested_snap_denominators.insert_or_assign(chart.value, denominator);
+    }
+}
 
 auto refresh_timing_grid(const wormedit::chart_document_t& chart,
                          application_command_state_t& application_state) -> timing_grid_state_t {
     const auto snap = wormedit::filter_snap_denominators(
-        chart.divisions_per_standard_measure, timing_snap_preferences,
-        application_state.requested_timing_snap_denominator);
+        chart.divisions_per_standard_measure, chart_snap_preferences,
+        requested_snap_denominator(application_state, chart.id));
     timing_grid_state_t state{.chart = chart.id,
                               .supported_denominators = snap.supported_denominators,
                               .active_denominator = snap.active_denominator,
@@ -676,7 +692,7 @@ auto refresh_timing_grid(const wormedit::chart_document_t& chart,
     // Preserve a selected valid denominator across timing gestures, while an
     // incompatible chart safely uses the exact one-row fallback.
     if (snap && !snap.inserted_resolution_fallback) {
-        application_state.requested_timing_snap_denominator = snap.active_denominator;
+        remember_snap_denominator(application_state, chart.id, snap.active_denominator);
     }
     return state;
 }
@@ -2071,7 +2087,6 @@ void populate_compose_view(flattened_workspace_t& flattened,
         view.status_text = flattened.compose_status_storage.c_str();
         return;
     }
-    constexpr std::array<std::uint64_t, 4> snap_denominators{4, 8, 16, 32};
     if (!retained_state || retained_state->chart != chart.id) {
         std::optional<wormedit::local_position_t> initial_cursor;
         std::optional<wormedit::lane_id_t> initial_lane;
@@ -2095,7 +2110,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
         }
         const auto initial =
             wormedit::make_editor_interaction(history, chart.id, *initial_lane, *initial_cursor,
-                                              snap_denominators, 4, view.viewport_height_pixels);
+                                              chart_snap_preferences,
+                                              requested_snap_denominator(application_state, chart.id),
+                                              view.viewport_height_pixels);
         if (!initial.state || !initial.view) {
             flattened.compose_status_storage = initial.diagnostics.empty()
                                                    ? "The chart field view could not be created."
@@ -2104,6 +2121,23 @@ void populate_compose_view(flattened_workspace_t& flattened,
             return;
         }
         retained_state = *initial.state;
+    }
+
+    // Compose and Timing consume the same chart-scoped snap preference. Do
+    // not replace a gesture's captured grid mid-drag: the next idle frame
+    // applies a Timing selection or a Compose snap-cycle uniformly.
+    if (!editor_interaction_has_pending_gesture(*retained_state)) {
+        const auto snap = wormedit::filter_snap_denominators(
+            chart.divisions_per_standard_measure, chart_snap_preferences,
+            requested_snap_denominator(application_state, chart.id));
+        if (!snap) {
+            flattened.compose_status_storage = "The chart snap configuration is invalid.";
+            view.status_text = flattened.compose_status_storage.c_str();
+            return;
+        }
+        retained_state->supported_snap_denominators = snap.supported_denominators;
+        retained_state->active_snap_denominator = snap.active_denominator;
+        retained_state->active_snap_was_fallback = snap.active_was_fallback;
     }
 
     retained_state->viewport_height_pixels = view.viewport_height_pixels;
@@ -3246,10 +3280,16 @@ auto invoke_application_command(
         }
         const auto direction = id == "navigation.previous_snap" ? interaction_direction_t::backward
                                                                 : interaction_direction_t::forward;
-        return accept_editor_command(
-            dispatch_editor_action(history, *state, cycle_edit_snap_action_t{direction}), status,
-            direction == interaction_direction_t::backward ? "Previous snap selected."
-                                                           : "Next snap selected.");
+        const auto result =
+            dispatch_editor_action(history, *state, cycle_edit_snap_action_t{direction});
+        if (result.accepted) {
+            remember_snap_denominator(application_state, state->chart,
+                                      state->active_snap_denominator);
+        }
+        return accept_editor_command(result, status,
+                                     direction == interaction_direction_t::backward
+                                         ? "Previous snap selected."
+                                         : "Next snap selected.");
     }
 
     if (id == "navigation.previous_marker" || id == "navigation.next_marker") {
@@ -3878,8 +3918,9 @@ int main(int argc, char** argv) {
                     supported == timing_grid.supported_denominators.end()) {
                     status = "Timing grid selection expired or cannot change during a staged edit.";
                 } else {
-                    application_command_state.requested_timing_snap_denominator =
-                        action.timing_grid_denominator;
+                    remember_snap_denominator(application_command_state,
+                                              wormedit::chart_id_t{action.timing_grid_chart_id},
+                                              action.timing_grid_denominator);
                     const auto chart = std::ranges::find(history.document.charts,
                                                          *workspace.selected_chart,
                                                          &wormedit::chart_document_t::id);

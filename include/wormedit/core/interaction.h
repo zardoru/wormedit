@@ -28,6 +28,14 @@ struct move_edit_cursor_action_t {
     interaction_direction_t direction{interaction_direction_t::forward};
 };
 
+// Pages by whole measure-index entries, retaining the cursor's fractional
+// source-measure row. Differing target capacities use nearest-row rounding,
+// with a halfway value resolving toward the target measure's beginning.
+struct page_edit_cursor_action_t {
+    interaction_direction_t direction{interaction_direction_t::forward};
+    std::uint64_t measure_count{1};
+};
+
 // Moves directly to an exact chart position without applying the active snap.
 // The source revision lets callers safely consume positions returned by a
 // revision-bound query such as marker navigation.
@@ -281,7 +289,8 @@ struct scroll_editor_view_action_t {
 };
 
 using editor_ui_action_t =
-    std::variant<move_edit_cursor_action_t, jump_edit_cursor_action_t, cycle_edit_snap_action_t,
+    std::variant<move_edit_cursor_action_t, page_edit_cursor_action_t,
+                 jump_edit_cursor_action_t, cycle_edit_snap_action_t,
                  place_tap_action_t, begin_hold_action_t, update_hold_preview_action_t,
                  commit_hold_action_t, cancel_hold_action_t, begin_lane_key_hold_gesture_action_t,
                  release_lane_key_hold_gesture_action_t, begin_alt_pointer_hold_gesture_action_t,

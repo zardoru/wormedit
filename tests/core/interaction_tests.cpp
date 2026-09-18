@@ -171,6 +171,55 @@ TEST_CASE(
     CHECK(history.document.revision == 2);
 }
 
+TEST_CASE("cursor paging preserves fractional measure rows and keeps the cursor visible",
+          "[unit][core][interaction][navigation]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.measures = {
+        {.id = measure_id_t{1}, .definition = {{1, 1}, meter_t{4, 4}}},
+        {.id = measure_id_t{2}, .definition = {{3, 2}, meter_t{3, 2}}},
+        {.id = measure_id_t{3}, .definition = {{1, 2}, meter_t{1, 2}}},
+    };
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                         {measure_id_t{1}, 320}, snaps, 4, 192.0);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+
+    const auto first_page = dispatch_editor_action(
+        history, state, page_edit_cursor_action_t{interaction_direction_t::forward, 1});
+    REQUIRE(first_page);
+    REQUIRE(first_page.view.has_value());
+    CHECK(first_page.view->cursor == local_position_t{measure_id_t{2}, 480});
+    CHECK(first_page.view->viewport_scroll_pixels > 0.0);
+    const auto second_page = dispatch_editor_action(
+        history, state, page_edit_cursor_action_t{interaction_direction_t::forward, 1});
+    REQUIRE(second_page);
+    CHECK(second_page.view->cursor == local_position_t{measure_id_t{3}, 160});
+    const auto back = dispatch_editor_action(
+        history, state, page_edit_cursor_action_t{interaction_direction_t::backward, 1});
+    REQUIRE(back);
+    CHECK(back.view->cursor == local_position_t{measure_id_t{2}, 480});
+
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        jump_edit_cursor_action_t{{measure_id_t{1}, 1}, history.document.revision}));
+    const auto tie_earlier = dispatch_editor_action(
+        history, state, page_edit_cursor_action_t{interaction_direction_t::forward, 2});
+    REQUIRE(tie_earlier);
+    CHECK(tie_earlier.view->cursor == local_position_t{measure_id_t{3}, 0});
+    const auto clamped = dispatch_editor_action(
+        history, state, page_edit_cursor_action_t{interaction_direction_t::forward, 99});
+    REQUIRE(clamped);
+    CHECK(clamped.view->cursor == local_position_t{measure_id_t{3}, 0});
+    const auto invalid = dispatch_editor_action(
+        history, state, page_edit_cursor_action_t{interaction_direction_t::forward, 0});
+    CHECK_FALSE(invalid);
+    CHECK(has_code(invalid.diagnostics, diagnostic_code_t::invalid_resolution));
+}
+
 TEST_CASE("editor y mapping preserves exact rows through zoom and scroll",
           "[unit][core][interaction][mapping]") {
     auto history = make_document_history(make_song());

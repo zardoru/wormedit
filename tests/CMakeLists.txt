@@ -10,6 +10,7 @@ add_executable(wormedit_core_tests
     core/command_tests.cpp
     core/command_registry_tests.cpp
     core/document_tests.cpp
+    core/editor_navigation_input_tests.cpp
     core/editor_scene_tests.cpp
     core/bms_profile_detection_tests.cpp
     core/fixture_inventory_tests.cpp

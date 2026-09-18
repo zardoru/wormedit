@@ -2378,6 +2378,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         const auto keyboard_action =
             source == hold_gesture_source_t::keyboard_lane &&
             (std::holds_alternative<move_edit_cursor_action_t>(action) ||
+             std::holds_alternative<page_edit_cursor_action_t>(action) ||
              std::holds_alternative<release_lane_key_hold_gesture_action_t>(action));
         const auto pointer_action =
             source == hold_gesture_source_t::alt_pointer &&
@@ -2423,6 +2424,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
     if (state.pending_space_range_selection.has_value() &&
         !std::holds_alternative<space_range_selection_action_t>(action) &&
         !std::holds_alternative<move_edit_cursor_action_t>(action) &&
+        !std::holds_alternative<page_edit_cursor_action_t>(action) &&
         !std::holds_alternative<jump_edit_cursor_action_t>(action) &&
         !std::holds_alternative<cycle_edit_snap_action_t>(action) &&
         !std::holds_alternative<adjust_editor_zoom_action_t>(action) &&
@@ -2440,6 +2442,26 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
     const auto built_index = build_measure_index(*chart);
     const auto& index = std::get<measure_index_t>(built_index);
     const auto absolute = *absolute_row(index, state.cursor);
+    const auto keep_cursor_visible = [&](editor_interaction_state_t& candidate) {
+        const auto cursor_row = absolute_row(index, candidate.cursor);
+        const auto maximum_scroll = maximum_viewport_scroll(
+            *chart, index, candidate.pixels_per_standard_measure, candidate.viewport_height_pixels);
+        if (!cursor_row || !maximum_scroll) {
+            return false;
+        }
+        const auto pixels_per_row = candidate.pixels_per_standard_measure /
+                                    static_cast<double>(chart->divisions_per_standard_measure);
+        const auto cursor_top = static_cast<double>(*cursor_row) * pixels_per_row;
+        const auto cursor_bottom = cursor_top + pixels_per_row;
+        if (cursor_top < candidate.viewport_scroll_pixels) {
+            candidate.viewport_scroll_pixels = cursor_top;
+        } else if (cursor_bottom > candidate.viewport_scroll_pixels + candidate.viewport_height_pixels) {
+            candidate.viewport_scroll_pixels = cursor_bottom - candidate.viewport_height_pixels;
+        }
+        candidate.viewport_scroll_pixels =
+            std::clamp(candidate.viewport_scroll_pixels, 0.0, *maximum_scroll);
+        return std::isfinite(candidate.viewport_scroll_pixels);
+    };
 
     const auto make_duration_plan = [&](std::vector<object_id_t> targets, object_id_t reference,
                                         local_position_t end, bool exact_end = false) {
@@ -3429,10 +3451,92 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                 }
                 auto proposed_state = state;
                 proposed_state.cursor = *next;
+                if (!keep_cursor_visible(proposed_state)) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::invalid_resolution,
+                                                    "cursor movement cannot keep the viewport valid")});
+                }
                 auto next_view = make_view(history, proposed_state);
                 if (std::holds_alternative<diagnostic_list_t>(next_view)) {
                     const auto replacement =
                         transition_lane(*chart, index, state.cursor, *next, state.active_lane);
+                    if (replacement.has_value()) {
+                        proposed_state.active_lane = *replacement;
+                        next_view = make_view(history, proposed_state);
+                    }
+                }
+                if (std::holds_alternative<diagnostic_list_t>(next_view)) {
+                    return diagnostic_result(history, state,
+                                             std::get<diagnostic_list_t>(next_view));
+                }
+                state = std::move(proposed_state);
+                return {
+                    .accepted = true,
+                    .view = std::get<editor_interaction_view_model_t>(next_view),
+                };
+            } else if constexpr (std::is_same_v<action_t, page_edit_cursor_action_t>) {
+                if (typed_action.direction != interaction_direction_t::backward &&
+                    typed_action.direction != interaction_direction_t::forward) {
+                    return diagnostic_result(
+                        history, state,
+                        {error(diagnostic_code_t::invalid_id, "unknown cursor page direction")});
+                }
+                if (typed_action.measure_count == 0 || index.entries.empty()) {
+                    return diagnostic_result(
+                        history, state,
+                        {error(diagnostic_code_t::invalid_resolution,
+                               "cursor paging requires a positive measure count")});
+                }
+                const auto source = std::ranges::find(index.entries, state.cursor.measure,
+                                                      &measure_index_entry_t::id);
+                if (source == index.entries.end() || source->row_capacity == 0 ||
+                    state.cursor.row >= source->row_capacity) {
+                    return diagnostic_result(
+                        history, state,
+                        {error(diagnostic_code_t::row_out_of_range,
+                               "cursor page source lies outside measure geometry")});
+                }
+                const auto source_index = static_cast<std::size_t>(
+                    std::distance(index.entries.begin(), source));
+                const auto last_index = index.entries.size() - 1;
+                const auto available = typed_action.direction == interaction_direction_t::backward
+                                           ? source_index
+                                           : last_index - source_index;
+                const auto offset = static_cast<std::size_t>(
+                    std::min<std::uint64_t>(typed_action.measure_count, available));
+                const auto target_index = typed_action.direction == interaction_direction_t::backward
+                                              ? source_index - offset
+                                              : source_index + offset;
+                const auto& target_measure = index.entries[target_index];
+                const auto scaled = static_cast<unsigned __int128>(state.cursor.row) *
+                                    target_measure.row_capacity;
+                const auto quotient = scaled / source->row_capacity;
+                const auto remainder = scaled % source->row_capacity;
+                const auto rounded = quotient +
+                                     (remainder > source->row_capacity - remainder ? 1U : 0U);
+                if (rounded >= target_measure.row_capacity) {
+                    return diagnostic_result(
+                        history, state,
+                        {error(diagnostic_code_t::row_out_of_range,
+                               "cursor page target cannot represent its fractional row")});
+                }
+                const auto target = local_position_t{
+                    target_measure.id, static_cast<std::uint64_t>(rounded)};
+                if (state.pending_hold.has_value() &&
+                    state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) {
+                    return update_hold_gesture(hold_gesture_source_t::keyboard_lane, target);
+                }
+                auto proposed_state = state;
+                proposed_state.cursor = target;
+                if (!keep_cursor_visible(proposed_state)) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::invalid_resolution,
+                                                    "cursor paging cannot keep the viewport valid")});
+                }
+                auto next_view = make_view(history, proposed_state);
+                if (std::holds_alternative<diagnostic_list_t>(next_view)) {
+                    const auto replacement = transition_lane(*chart, index, state.cursor, target,
+                                                             state.active_lane);
                     if (replacement.has_value()) {
                         proposed_state.active_lane = *replacement;
                         next_view = make_view(history, proposed_state);
@@ -3463,6 +3567,11 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
 
                 auto proposed_state = state;
                 proposed_state.cursor = typed_action.position;
+                if (!keep_cursor_visible(proposed_state)) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::invalid_resolution,
+                                                    "cursor jump cannot keep the viewport valid")});
+                }
                 auto next_view = make_view(history, proposed_state);
                 if (std::holds_alternative<diagnostic_list_t>(next_view)) {
                     const auto replacement = transition_lane(

@@ -165,6 +165,10 @@ static float g_compose_area_selection_anchor_screen_y{};
 static WormUiComposeSelectionMode g_compose_area_selection_mode{WORM_UI_COMPOSE_SELECTION_REPLACE};
 static uint32_t g_compose_lane_hold_keycode{};
 static uint64_t g_compose_lane_hold_lane_id{};
+static bool g_compose_navigation_key_active{};
+static uint32_t g_compose_navigation_keycode{};
+static WormUiComposeNavigationAction g_compose_navigation_action{
+    WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD};
 static uint64_t g_last_compose_chart_id{};
 static uint64_t g_last_compose_document_revision{};
 static uint64_t g_compose_label_chart_id{std::numeric_limits<uint64_t>::max()};
@@ -174,13 +178,20 @@ static std::array<char, WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1> g_compose_note_lab
 static void append_compose_input(
     WormUiWorkspaceAction* action, WormUiComposeInputKind kind, double x_pixels = 0.0,
     double y_pixels = 0.0, uint64_t lane_id = 0, bool successive = false,
-    WormUiComposeSelectionMode selection_mode = WORM_UI_COMPOSE_SELECTION_REPLACE) {
+    WormUiComposeSelectionMode selection_mode = WORM_UI_COMPOSE_SELECTION_REPLACE,
+    WormUiComposeNavigationAction navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD) {
     if (!action) {
         return;
     }
     if (action->compose_input_count >= WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {
         action->compose_inputs[WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY - 1] = {
             .kind = WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE,
+            .lane_id = 0,
+            .successive = false,
+            .selection_mode = WORM_UI_COMPOSE_SELECTION_REPLACE,
+            .navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+            .x_pixels = 0.0,
+            .y_pixels = 0.0,
         };
         action->compose_input_count = WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY;
         g_compose_cancel_pending = false;
@@ -204,9 +215,46 @@ static void append_compose_input(
         .lane_id = lane_id,
         .successive = successive,
         .selection_mode = selection_mode,
+        .navigation_action = navigation_action,
         .x_pixels = x_pixels,
         .y_pixels = y_pixels,
     };
+}
+
+static bool compose_navigation_action_for_key(uint32_t keycode, [[maybe_unused]] uint16_t modifiers,
+                                              WormUiComposeNavigationAction* action) {
+    if (!action) {
+        return false;
+    }
+    if (keycode == static_cast<uint32_t>(SDLK_UP)) {
+#if defined(__APPLE__)
+        if ((modifiers & SDL_KMOD_ALT) != 0) {
+            *action = WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD;
+            return true;
+        }
+#endif
+        *action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD;
+        return true;
+    }
+    if (keycode == static_cast<uint32_t>(SDLK_DOWN)) {
+#if defined(__APPLE__)
+        if ((modifiers & SDL_KMOD_ALT) != 0) {
+            *action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+            return true;
+        }
+#endif
+        *action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD;
+        return true;
+    }
+    if (keycode == static_cast<uint32_t>(SDLK_PAGEUP)) {
+        *action = WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD;
+        return true;
+    }
+    if (keycode == static_cast<uint32_t>(SDLK_PAGEDOWN)) {
+        *action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+        return true;
+    }
+    return false;
 }
 
 static bool compose_action_has_cancel(const WormUiWorkspaceAction* action) {
@@ -1390,6 +1438,16 @@ static void process_compose_key_events(const WormUiComposeView* view,
     for (size_t event_index = 0;
          event_index < g_compose_key_event_count && !g_compose_action_overflowed; ++event_index) {
         const auto& key_event = g_compose_key_events[event_index];
+        WormUiComposeNavigationAction navigation_action{};
+        if (!key_event.down && g_compose_navigation_key_active &&
+            key_event.scancode == g_compose_navigation_keycode) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0.0, 0.0, 0,
+                                 false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 g_compose_navigation_action);
+            g_compose_navigation_key_active = false;
+            g_compose_navigation_keycode = 0;
+            continue;
+        }
         if (g_compose_lane_hold_active && !key_event.down &&
             key_event.scancode == g_compose_lane_hold_keycode) {
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 0.0, 0.0,
@@ -1437,17 +1495,51 @@ static void process_compose_key_events(const WormUiComposeView* view,
             continue;
         }
         if (key_event.keycode == static_cast<uint32_t>(SDLK_UP)) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD);
+            if (!compose_navigation_action_for_key(key_event.keycode, key_event.modifiers,
+                                                   &navigation_action)) {
+                continue;
+            }
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0.0, 0.0, 0,
+                                 false, WORM_UI_COMPOSE_SELECTION_REPLACE, navigation_action);
+            g_compose_navigation_key_active = !g_compose_action_overflowed;
+            g_compose_navigation_keycode = key_event.scancode;
+            g_compose_navigation_action = navigation_action;
             if (!g_compose_action_overflowed && g_compose_space_range_hold_active) {
                 g_compose_space_range_hold_moved = true;
             }
             continue;
         }
         if (key_event.keycode == static_cast<uint32_t>(SDLK_DOWN)) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD);
+            if (!compose_navigation_action_for_key(key_event.keycode, key_event.modifiers,
+                                                   &navigation_action)) {
+                continue;
+            }
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0.0, 0.0, 0,
+                                 false, WORM_UI_COMPOSE_SELECTION_REPLACE, navigation_action);
+            g_compose_navigation_key_active = !g_compose_action_overflowed;
+            g_compose_navigation_keycode = key_event.scancode;
+            g_compose_navigation_action = navigation_action;
             if (!g_compose_action_overflowed && g_compose_space_range_hold_active) {
                 g_compose_space_range_hold_moved = true;
             }
+            continue;
+        }
+        if (key_event.keycode == static_cast<uint32_t>(SDLK_PAGEUP)) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0.0, 0.0, 0,
+                                 false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD);
+            g_compose_navigation_key_active = !g_compose_action_overflowed;
+            g_compose_navigation_keycode = key_event.scancode;
+            g_compose_navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD;
+            continue;
+        }
+        if (key_event.keycode == static_cast<uint32_t>(SDLK_PAGEDOWN)) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0.0, 0.0, 0,
+                                 false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD);
+            g_compose_navigation_key_active = !g_compose_action_overflowed;
+            g_compose_navigation_keycode = key_event.scancode;
+            g_compose_navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
             continue;
         }
         if (note_paint_mode_active) {
@@ -2829,8 +2921,9 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
              NK_TEXT_LEFT);
     nk_layout_row_dynamic(g_context, 18, 1);
     nk_label(g_context,
-             "Click toggles taps · drag selected notes moves · empty drag selects (Shift add, Ctrl/Cmd toggle) · hold Space + "
-             "↑/↓ then release selects; tap Space twice selects cursor range · lane keys assign/hold · "
+             "↑/↓ move (hold to repeat) · Page Up/Down page measures · Click toggles taps · "
+             "drag selected notes moves · empty drag selects (Shift add, Ctrl/Cmd toggle) · "
+             "hold Space + ↑/↓ then release selects; tap Space twice selects cursor range · lane keys assign/hold · "
              "Alt/Option-drag · Delete · "
              "Ctrl/Cmd+Z/Y",
              NK_TEXT_LEFT);
@@ -2880,6 +2973,7 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                                                 nk_rect(0.0f, 0.0f, 1000000.0f, 1000000.0f)) &&
                !pointer_inside) {
         g_compose_keyboard_focus = false;
+        append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL);
         if (g_compose_space_range_hold_active) {
             append_compose_cancel_once(action);
             g_compose_space_range_hold_active = false;

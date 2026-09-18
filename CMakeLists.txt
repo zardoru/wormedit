@@ -44,6 +44,7 @@ add_library(wormedit_core
     src/core/command.cpp
     src/core/command_registry.cpp
     src/core/document.cpp
+    src/core/editor_navigation_input.cpp
     src/core/editor_scene.cpp
     src/core/bms_profile_detection.cpp
     src/core/bga_preview.cpp

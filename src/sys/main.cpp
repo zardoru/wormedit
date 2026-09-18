@@ -10,6 +10,7 @@
 #include <wormedit/core/command.h>
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/editor_scene.h>
+#include <wormedit/core/editor_navigation_input.h>
 #include <wormedit/core/grid.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/lane_profiles.h>
@@ -2680,11 +2681,66 @@ auto compose_view_for_state(const wormedit::document_history_t& history,
     return view;
 }
 
+auto compose_navigation_action(WormUiComposeNavigationAction action)
+    -> std::optional<wormedit::editor_navigation_action_t> {
+    using namespace wormedit;
+    switch (action) {
+    case WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD:
+        return editor_navigation_action_t::cursor_backward;
+    case WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD:
+        return editor_navigation_action_t::cursor_forward;
+    case WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD:
+        return editor_navigation_action_t::page_backward;
+    case WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD:
+        return editor_navigation_action_t::page_forward;
+    }
+    return std::nullopt;
+}
+
+auto dispatch_compose_navigation_actions(
+    const wormedit::editor_navigation_action_batch_t& actions,
+    wormedit::document_history_t& history, wormedit::editor_interaction_state_t& state)
+    -> std::string {
+    using namespace wormedit;
+    auto status = std::string{};
+    for (std::size_t index = 0; index < actions.count; ++index) {
+        editor_interaction_result_t result;
+        std::string_view accepted;
+        switch (actions[index]) {
+        case editor_navigation_action_t::cursor_backward:
+            result = dispatch_editor_action(
+                history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
+            accepted = "Edit cursor moved backward.";
+            break;
+        case editor_navigation_action_t::cursor_forward:
+            result = dispatch_editor_action(
+                history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+            accepted = "Edit cursor moved forward.";
+            break;
+        case editor_navigation_action_t::page_backward:
+            result = dispatch_editor_action(
+                history, state, page_edit_cursor_action_t{interaction_direction_t::backward, 1});
+            accepted = "Edit cursor paged backward by one measure.";
+            break;
+        case editor_navigation_action_t::page_forward:
+            result = dispatch_editor_action(
+                history, state, page_edit_cursor_action_t{interaction_direction_t::forward, 1});
+            accepted = "Edit cursor paged forward by one measure.";
+            break;
+        }
+        status = compose_result_status(result, accepted);
+        if (!result.accepted)
+            break;
+    }
+    return status;
+}
+
 auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                                    wormedit::document_history_t& history,
                                    wormedit::workspace_controller_t& workspace,
                                    wormedit::editor_interaction_state_t& state,
                                    wormedit::viewport_input_controller_t& viewport_input,
+                                   wormedit::editor_navigation_input_controller_t& navigation_input,
                                    application_command_state_t& application_state,
                                    compose_scene_cache_t& scene_cache) -> std::string {
     using namespace wormedit;
@@ -2747,6 +2803,29 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
         editor_interaction_result_t result;
         std::string_view accepted = "Compose interaction applied.";
         switch (input.kind) {
+        case WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS: {
+            const auto navigation = compose_navigation_action(input.navigation_action);
+            if (!navigation) {
+                return "Compose navigation input used an unknown action.";
+            }
+            status = dispatch_compose_navigation_actions(
+                navigation_input.press(*navigation, static_cast<std::uint64_t>(SDL_GetTicks())),
+                history, state);
+            continue;
+        }
+        case WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE: {
+            const auto navigation = compose_navigation_action(input.navigation_action);
+            if (!navigation) {
+                return "Compose navigation release used an unknown action.";
+            }
+            navigation_input.release(*navigation);
+            status = "Compose navigation key released.";
+            continue;
+        }
+        case WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL:
+            navigation_input.cancel();
+            status = "Compose navigation canceled.";
+            continue;
         case WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD:
             result = dispatch_editor_action(
                 history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
@@ -3058,6 +3137,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             continue;
         }
         case WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE:
+            navigation_input.cancel();
             result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
             accepted = "Compose gesture canceled.";
             break;
@@ -3747,6 +3827,7 @@ int main(int argc, char** argv) {
     compose_scene_cache_t compose_scene_cache;
     std::optional<wormedit::editor_interaction_state_t> compose_interaction_state;
     wormedit::viewport_input_controller_t compose_viewport_input;
+    wormedit::editor_navigation_input_controller_t compose_navigation_input;
     application_command_state_t application_command_state;
     timing_grid_state_t timing_grid;
     auto command_registry = wormedit::make_default_editor_command_registry(
@@ -3927,7 +4008,18 @@ int main(int argc, char** argv) {
                 compose_interaction_state) {
                 status = dispatch_compose_input_action(
                     action, history, workspace, *compose_interaction_state, compose_viewport_input,
-                    application_command_state, compose_scene_cache);
+                    compose_navigation_input, application_command_state, compose_scene_cache);
+            }
+            if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
+                compose_interaction_state && workspace.active_tab == wormedit::workspace_tab_t::compose) {
+                const auto repeated = dispatch_compose_navigation_actions(
+                    compose_navigation_input.advance(static_cast<std::uint64_t>(SDL_GetTicks())),
+                    history, *compose_interaction_state);
+                if (!repeated.empty()) {
+                    status = repeated;
+                }
+            } else if (workspace.active_tab != wormedit::workspace_tab_t::compose) {
+                compose_navigation_input.cancel();
             }
             if (action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
                 running = false;

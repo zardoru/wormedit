@@ -29,6 +29,7 @@
 #define WORM_UI_COMPOSE_NOTE_CAPACITY 32768
 #define WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY 32768
 #define WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY 128
+#define WORM_UI_COMPOSE_NOTE_LABEL_BYTES 4096
 #define WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY 16
 #define WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY 16
 #define WORM_UI_SHORTCUT_EVENT_CAPACITY 64
@@ -243,6 +244,7 @@ typedef struct WormUiComposeView {
     bool scene_available;
     bool truncated;
     bool note_paint_mode_active;
+    size_t selected_note_count;
     uint64_t chart_id;
     uint64_t document_revision;
     double viewport_width_pixels;
@@ -535,6 +537,8 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_SCROLL_DOWN,
     WORM_UI_COMPOSE_ACTION_RESET_VIEW,
     WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE,
+    WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL,
+    WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL,
 } WormUiComposeActionKind;
 
 typedef enum WormUiComposeInputKind {
@@ -622,6 +626,7 @@ typedef struct WormUiWorkspaceAction {
     uint64_t compose_input_chart_id;
     uint64_t compose_input_document_revision;
     double compose_input_viewport_width_pixels;
+    char compose_note_label[WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1];
     WormUiComposeInputAction compose_inputs[WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY];
     size_t compose_input_count;
     WormUiComposeViewportInput compose_viewport_inputs[WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY];

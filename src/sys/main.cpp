@@ -16,6 +16,7 @@
 #include <wormedit/core/marker_navigation.h>
 #include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/measure_editor.h>
+#include <wormedit/core/note_label_editor.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/recovery_controller.h>
 #include <wormedit/core/semantic_layer_editor.h>
@@ -2033,6 +2034,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                            ? retained_state->pixels_per_standard_measure
                                            : wormedit::default_pixels_per_standard_measure;
     view.note_paint_mode_active = application_state.note_paint_mode_active;
+    view.selected_note_count = 0;
     view.status_text = nullptr;
     if (!workspace.selected_chart) {
         flattened.compose_status_storage = "Choose a difficulty to display its chart field.";
@@ -2188,6 +2190,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
             : std::nullopt;
     interaction_view.selected_notes = retained_state->selected_notes;
     interaction_view.selected_objects = retained_state->selected_objects;
+    view.selected_note_count = retained_state->selected_notes.size();
     const auto content_height = static_cast<long double>(cache.index->measures.total_rows) *
                                 interaction_view.pixels_per_standard_measure /
                                 chart.divisions_per_standard_measure;
@@ -3137,6 +3140,35 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         status = application_state.note_paint_mode_active ? "Note-paint mode enabled."
                                                           : "Note-paint mode disabled.";
         return status;
+    case WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL:
+    case WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before editing note labels.";
+        }
+        if (state.selected_notes.empty()) {
+            return "Select one or more notes before editing their label.";
+        }
+        const auto label = action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL
+                               ? std::optional<std::string>{action.compose_note_label}
+                               : std::optional<std::string>{};
+        const auto applied = apply_note_label_edit(
+            history, action.compose_input_document_revision,
+            {.chart = state.chart, .notes = state.selected_notes, .label = label});
+        if (!applied.diagnostics.empty()) {
+            return applied.diagnostics.front().message;
+        }
+        if (!applied.applied) {
+            return label ? "Selected notes already have that label."
+                         : "Selected notes already have no label.";
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty()
+                       ? "Note label changed, but workspace rebinding failed."
+                       : rebound.diagnostics.front().message;
+        }
+        return label ? "Note label applied." : "Note labels cleared.";
+    }
     case WORM_UI_COMPOSE_ACTION_NONE:
         return {};
     }

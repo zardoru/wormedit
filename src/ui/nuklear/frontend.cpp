@@ -161,6 +161,9 @@ static uint32_t g_compose_lane_hold_keycode{};
 static uint64_t g_compose_lane_hold_lane_id{};
 static uint64_t g_last_compose_chart_id{};
 static uint64_t g_last_compose_document_revision{};
+static uint64_t g_compose_label_chart_id{std::numeric_limits<uint64_t>::max()};
+static uint64_t g_compose_label_document_revision{std::numeric_limits<uint64_t>::max()};
+static std::array<char, WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1> g_compose_note_label{};
 
 static void append_compose_input(
     WormUiWorkspaceAction* action, WormUiComposeInputKind kind, double x_pixels = 0.0,
@@ -2693,6 +2696,12 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
 }
 
 static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceAction* action) {
+    if (g_compose_label_chart_id != view->chart_id ||
+        g_compose_label_document_revision != view->document_revision) {
+        g_compose_note_label.fill('\0');
+        g_compose_label_chart_id = view->chart_id;
+        g_compose_label_document_revision = view->document_revision;
+    }
     nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 8);
     nk_layout_row_push(g_context, 0.07f);
     if (nk_button_label(g_context, "Zoom -") &&
@@ -2737,6 +2746,32 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
     }
     nk_layout_row_end(g_context);
 
+    nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 4);
+    nk_layout_row_push(g_context, 0.13f);
+    nk_labelf(g_context, NK_TEXT_LEFT, "Label (%zu)", view->selected_note_count);
+    nk_layout_row_push(g_context, 0.53f);
+    if (!view->scene_available || view->selected_note_count == 0) {
+        nk_widget_disable_begin(g_context);
+    }
+    (void)nk_edit_string_zero_terminated(g_context, NK_EDIT_FIELD, g_compose_note_label.data(),
+                                         g_compose_note_label.size(), nk_filter_default);
+    nk_layout_row_push(g_context, 0.17f);
+    if (nk_button_label(g_context, "Apply") &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        memcpy(action->compose_note_label, g_compose_note_label.data(),
+               sizeof(action->compose_note_label));
+        action->compose_action = WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL;
+    }
+    nk_layout_row_push(g_context, 0.17f);
+    if (nk_button_label(g_context, "Clear") &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->compose_action = WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL;
+    }
+    if (!view->scene_available || view->selected_note_count == 0) {
+        nk_widget_disable_end(g_context);
+    }
+    nk_layout_row_end(g_context);
+
     nk_layout_row_dynamic(g_context, 18, 1);
     nk_label(g_context,
              view->note_paint_mode_active
@@ -2769,7 +2804,7 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                           18.0f
             : 0.0f;
     const auto surface_height =
-        std::max(32.0f, group_bounds.h - 29.0f - 36.0f - branch_panel_height);
+        std::max(32.0f, group_bounds.h - 54.0f - 36.0f - branch_panel_height);
     nk_layout_space_begin(g_context, NK_DYNAMIC, surface_height, 1);
     nk_layout_space_push(g_context, nk_rect(0.0f, 0.0f, 1.0f, 1.0f));
     struct nk_rect viewport{};

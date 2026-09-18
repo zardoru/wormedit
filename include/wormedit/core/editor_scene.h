@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -40,6 +41,7 @@ struct editor_field_scene_index_t {
     std::uint64_t document_revision{};
     measure_index_t measures;
     std::vector<editor_field_scene_note_source_t> notes;
+    std::unordered_map<std::uint64_t, std::size_t> note_indices_by_id;
     std::size_t note_tree_leaf_base{1};
     std::vector<std::uint64_t> note_tree_max_end;
     std::vector<editor_field_scene_layout_source_t> layouts;
@@ -91,6 +93,8 @@ struct editor_field_note_endpoint_geometry_t {
     note_kind_t kind{note_kind_t::tap};
     bool tail{};
     bool selected{};
+    bool proposal_origin{};
+    bool proposal_ghost{};
     editor_field_rect_t bounds;
     bool paint_preview{};
     bool paint_erase_preview{};
@@ -101,6 +105,8 @@ struct editor_field_hold_body_geometry_t {
     object_id_t note;
     lane_id_t lane;
     bool selected{};
+    bool proposal_origin{};
+    bool proposal_ghost{};
     editor_field_rect_t bounds;
 };
 

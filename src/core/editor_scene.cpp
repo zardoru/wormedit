@@ -208,6 +208,15 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
         return std::tie(left.begin_row, left.end_row, left.note.value) <
                std::tie(right.begin_row, right.end_row, right.note.value);
     });
+    index.note_indices_by_id.reserve(index.notes.size());
+    for (std::size_t note = 0; note < index.notes.size(); ++note) {
+        if (!index.note_indices_by_id.emplace(index.notes[note].note.value, note).second) {
+            diagnostics.push_back(error(diagnostic_code_t::duplicate_id,
+                                        "field-scene note index has duplicate identities",
+                                        index.notes[note].note));
+            return diagnostics;
+        }
+    }
     while (index.note_tree_leaf_base < index.notes.size()) {
         if (index.note_tree_leaf_base > std::numeric_limits<std::size_t>::max() / 2) {
             diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
@@ -237,6 +246,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         index.note_tree_leaf_base == 0 || index.note_tree_leaf_base < index.notes.size() ||
         index.note_tree_leaf_base > std::numeric_limits<std::size_t>::max() / 2 ||
         index.note_tree_max_end.size() != index.note_tree_leaf_base * 2 ||
+        index.note_indices_by_id.size() != index.notes.size() ||
         !finite_nonnegative(request.field_left_pixels) ||
         !std::isfinite(request.field_width_pixels) || request.field_width_pixels <= 0.0 ||
         !finite_nonnegative(request.split_stage_gutter_pixels) ||
@@ -563,6 +573,82 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
     for (const auto note : view.selected_notes) {
         selected.insert(note.value);
     }
+    struct duration_proposal_t {
+        const editor_field_scene_note_source_t* source{};
+        const note_duration_preview_t* preview{};
+        std::optional<std::uint64_t> end_row;
+    };
+    std::vector<duration_proposal_t> duration_proposals;
+    std::unordered_set<std::uint64_t> duration_origin_notes;
+    if (view.pending_note_duration_gesture.has_value()) {
+        const auto& pending = *view.pending_note_duration_gesture;
+        if (pending.document_revision != index.document_revision || pending.notes.empty() ||
+            pending.notes.size() != pending.preview.size() || pending.notes.size() > index.notes.size()) {
+            result.diagnostics.push_back(error(
+                diagnostic_code_t::invalid_hold, "field-scene duration preview is malformed or stale"));
+            return result;
+        }
+        std::unordered_set<std::uint64_t> expected;
+        expected.reserve(pending.notes.size());
+        for (const auto note : pending.notes) {
+            if (note.value == 0 || !expected.insert(note.value).second) {
+                result.diagnostics.push_back(
+                    error(diagnostic_code_t::invalid_id,
+                          "field-scene duration preview contains duplicate note identities"));
+                return result;
+            }
+        }
+        duration_proposals.reserve(pending.preview.size());
+        duration_origin_notes.reserve(pending.preview.size());
+        for (const auto& preview : pending.preview) {
+            if (!operate() || preview.note.value == 0 || !expected.erase(preview.note.value)) {
+                result.diagnostics.push_back(
+                    error(diagnostic_code_t::invalid_id,
+                          "field-scene duration preview does not match its selected notes"));
+                return result;
+            }
+            const auto found = index.note_indices_by_id.find(preview.note.value);
+            if (found == index.note_indices_by_id.end() ||
+                (preview.kind != note_kind_t::tap && preview.kind != note_kind_t::hold)) {
+                result.diagnostics.push_back(
+                    error(diagnostic_code_t::invalid_hold,
+                          "field-scene duration preview refers to an invalid note proposal"));
+                return result;
+            }
+            std::optional<std::uint64_t> end_row;
+            if (preview.kind == note_kind_t::tap) {
+                if (preview.end.has_value()) {
+                    result.diagnostics.push_back(
+                        error(diagnostic_code_t::invalid_hold,
+                              "field-scene tap duration preview must not carry a tail"));
+                    return result;
+                }
+            } else {
+                if (!preview.end.has_value()) {
+                    result.diagnostics.push_back(
+                        error(diagnostic_code_t::invalid_hold,
+                              "field-scene hold duration preview is missing its tail"));
+                    return result;
+                }
+                end_row = absolute_row(index.measures, *preview.end);
+                if (!end_row || *end_row <= index.notes[found->second].begin_row) {
+                    result.diagnostics.push_back(
+                        error(diagnostic_code_t::invalid_hold,
+                              "field-scene hold duration preview has an invalid tail"));
+                    return result;
+                }
+            }
+            duration_origin_notes.insert(preview.note.value);
+            duration_proposals.push_back({.source = &index.notes[found->second], .preview = &preview,
+                                          .end_row = end_row});
+        }
+        if (!expected.empty()) {
+            result.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_id,
+                      "field-scene duration preview omitted a selected note proposal"));
+            return result;
+        }
+    }
     const auto after_candidates = std::ranges::upper_bound(
         index.notes, query_high,
         [](long double row, std::uint64_t begin) { return row < static_cast<long double>(begin); },
@@ -598,6 +684,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
             }
         }
         const auto note_selected = selected.contains(note.note.value);
+        const auto proposal_origin = duration_origin_notes.contains(note.note.value);
         const auto add_endpoint = [&](std::uint64_t row, bool tail) {
             const auto* band = visible_band_for_row(row);
             if (band == nullptr) {
@@ -633,6 +720,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                                             .kind = note.kind,
                                             .tail = tail,
                                             .selected = note_selected,
+                                            .proposal_origin = proposal_origin,
                                             .bounds = rect,
                                             .paint_preview = paint_target,
                                             .paint_erase_preview = erase_preview,
@@ -666,6 +754,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                     {.note = note.note,
                      .lane = note.lane,
                      .selected = note_selected,
+                     .proposal_origin = proposal_origin,
                      .bounds = {center - body_width / 2.0, y_for_row(begin),
                                 center + body_width / 2.0, y_for_row(end)}});
             }
@@ -731,7 +820,120 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
              .bounds = target.bounds,
              .paint_preview = true,
              .paint_erase_preview = false,
-             .paint_invalid_preview = invalid_paint_cells.contains(target.cell)});
+            .paint_invalid_preview = invalid_paint_cells.contains(target.cell)});
+    }
+
+    bool proposal_failed{};
+    const auto append_proposal_geometry = [&](object_id_t note, lane_id_t lane, note_kind_t kind,
+                                              std::uint64_t begin_row,
+                                              std::optional<std::uint64_t> end_row,
+                                              bool selected_note) {
+        if (kind == note_kind_t::hold && end_row.has_value() && *end_row > begin_row) {
+            for (const auto& band : visible_bands) {
+                if (!operate()) {
+                    proposal_failed = true;
+                    return;
+                }
+                const auto begin =
+                    std::max(static_cast<long double>(begin_row), band.clipped_begin_row);
+                const auto end =
+                    std::min(static_cast<long double>(*end_row), band.clipped_end_row);
+                if (begin >= end) {
+                    continue;
+                }
+                const auto* bounds = lane_bounds(band, lane);
+                if (bounds == nullptr) {
+                    continue;
+                }
+                if (!consume()) {
+                    proposal_failed = true;
+                    return;
+                }
+                const auto lane_width = bounds->right - bounds->left;
+                const auto body_width = lane_width * request.hold_body_width_ratio;
+                const auto center = (bounds->left + bounds->right) / 2.0;
+                scene.hold_bodies.push_back(
+                    {.note = note,
+                     .lane = lane,
+                     .selected = selected_note,
+                     .proposal_ghost = true,
+                     .bounds = {center - body_width / 2.0, y_for_row(begin),
+                                center + body_width / 2.0, y_for_row(end)}});
+            }
+        }
+        const auto add_endpoint = [&](std::uint64_t row, bool tail) {
+            const auto* band = visible_band_for_row(row);
+            if (band == nullptr) {
+                return;
+            }
+            const auto* bounds = lane_bounds(*band, lane);
+            if (bounds == nullptr) {
+                return;
+            }
+            const auto y = y_for_row(row);
+            const auto half_height = request.note_head_height_pixels / 2.0;
+            const editor_field_rect_t rect{bounds->left, y - half_height, bounds->right,
+                                           y + half_height};
+            if (!rect_intersects_viewport(rect, view.viewport_height_pixels)) {
+                return;
+            }
+            if (!consume()) {
+                proposal_failed = true;
+                return;
+            }
+            scene.note_endpoints.push_back({.note = note,
+                                            .lane = lane,
+                                            .kind = kind,
+                                            .tail = tail,
+                                            .selected = selected_note,
+                                            .proposal_ghost = true,
+                                            .bounds = rect});
+        };
+        add_endpoint(begin_row, false);
+        if (!proposal_failed && kind == note_kind_t::hold && end_row.has_value()) {
+            add_endpoint(*end_row, true);
+        }
+    };
+    for (const auto& proposal : duration_proposals) {
+        append_proposal_geometry(proposal.source->note, proposal.source->lane,
+                                 proposal.preview->kind, proposal.source->begin_row,
+                                 proposal.end_row, selected.contains(proposal.source->note.value));
+        if (proposal_failed) {
+            result.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_resolution,
+                      "field-scene duration preview exceeds a composition cap"));
+            return result;
+        }
+    }
+    if (view.pending_hold.has_value()) {
+        const auto& pending = *view.pending_hold;
+        const auto begin_row = absolute_row(index.measures, pending.position);
+        if (pending.document_revision != index.document_revision || !begin_row ||
+            !has_lane(layout_at_row(index, *begin_row), pending.lane)) {
+            result.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_hold, "field-scene hold preview is stale or invalid"));
+            return result;
+        }
+        std::optional<std::uint64_t> end_row;
+        if (pending.preview_end.has_value()) {
+            end_row = absolute_row(index.measures, *pending.preview_end);
+            if (!end_row || *end_row < *begin_row ||
+                !has_lane(layout_at_row(index, *end_row), pending.lane)) {
+                result.diagnostics.push_back(
+                    error(diagnostic_code_t::invalid_hold,
+                          "field-scene hold preview has an invalid proposed tail"));
+                return result;
+            }
+        }
+        const auto kind = end_row.has_value() && *end_row > *begin_row ? note_kind_t::hold
+                                                                         : note_kind_t::tap;
+        append_proposal_geometry(object_id_t{}, pending.lane, kind, *begin_row, end_row, false);
+        if (proposal_failed) {
+            result.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_resolution,
+                      "field-scene hold preview exceeds a composition cap"));
+            return result;
+        }
     }
 
     const auto cursor_row = absolute_row(index.measures, view.cursor);

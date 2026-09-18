@@ -263,6 +263,94 @@ TEST_CASE("field scene composes visible paint previews across measure and layout
     CHECK(has_code(stale.diagnostics, wormedit::diagnostic_code_t::invalid_hold));
 }
 
+TEST_CASE("field scene renders exact hold and duration proposal ghosts",
+          "[unit][core][editor-scene][proposal]") {
+    const auto chart = scene_chart();
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    const auto& index = std::get<wormedit::editor_field_scene_index_t>(built);
+
+    auto duration_view = view();
+    duration_view.pending_note_duration_gesture = wormedit::pending_note_duration_gesture_t{
+        .reference_note = wormedit::object_id_t{11},
+        .document_revision = 7,
+        .notes = {wormedit::object_id_t{11}},
+        .preview_end = {wormedit::measure_id_t{2}, 0},
+        .preview = {{wormedit::object_id_t{11}, wormedit::note_kind_t::hold,
+                     wormedit::local_position_t{wormedit::measure_id_t{2}, 0}}},
+    };
+    const auto duration = wormedit::make_editor_field_scene(
+        chart, index, duration_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(duration);
+    CHECK(std::ranges::count_if(duration.scene->note_endpoints, [](const auto& endpoint) {
+              return endpoint.note == wormedit::object_id_t{11} && endpoint.proposal_origin;
+          }) == 2);
+    CHECK(std::ranges::count_if(duration.scene->note_endpoints, [](const auto& endpoint) {
+              return endpoint.note == wormedit::object_id_t{11} && endpoint.proposal_ghost;
+          }) == 2);
+    const auto proposed_tail =
+        std::ranges::find_if(duration.scene->note_endpoints, [](const auto& endpoint) {
+            return endpoint.note == wormedit::object_id_t{11} && endpoint.proposal_ghost &&
+                   endpoint.tail;
+        });
+    REQUIRE(proposed_tail != duration.scene->note_endpoints.end());
+    CHECK(proposed_tail->bounds.top == Catch::Approx(91.0));
+    CHECK(std::ranges::count_if(duration.scene->hold_bodies, [](const auto& body) {
+              return body.note == wormedit::object_id_t{11} && body.proposal_origin;
+          }) == 2);
+    CHECK(std::ranges::count_if(duration.scene->hold_bodies, [](const auto& body) {
+              return body.note == wormedit::object_id_t{11} && body.proposal_ghost;
+          }) == 1);
+
+    auto hold_view = view();
+    hold_view.pending_hold = wormedit::pending_hold_t{
+        .position = {wormedit::measure_id_t{2}, 0},
+        .lane = wormedit::lane_id_t{1},
+        .document_revision = 7,
+        .preview_end = wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
+    };
+    const auto hold = wormedit::make_editor_field_scene(
+        chart, index, hold_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(hold);
+    CHECK(std::ranges::count_if(hold.scene->note_endpoints, [](const auto& endpoint) {
+              return endpoint.note == wormedit::object_id_t{} && endpoint.proposal_ghost;
+          }) == 2);
+    CHECK(std::ranges::count_if(hold.scene->hold_bodies, [](const auto& body) {
+              return body.note == wormedit::object_id_t{} && body.proposal_ghost;
+          }) == 1);
+
+    auto stale_view = duration_view;
+    stale_view.pending_note_duration_gesture->document_revision = 8;
+    const auto stale = wormedit::make_editor_field_scene(
+        chart, index, stale_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    CHECK_FALSE(stale);
+    CHECK_FALSE(stale.scene.has_value());
+    CHECK(has_code(stale.diagnostics, wormedit::diagnostic_code_t::invalid_hold));
+
+    const auto baseline = wormedit::make_editor_field_scene(
+        chart, index, view(), {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(baseline);
+    const auto baseline_primitives =
+        baseline.scene->layout_bands.size() + baseline.scene->lanes.size() +
+        baseline.scene->comparison_differences.size() + baseline.scene->grid_lines.size() +
+        baseline.scene->hold_bodies.size() + baseline.scene->note_endpoints.size() +
+        (baseline.scene->cursor.has_value() ? 1U : 0U);
+    auto capped_view = view();
+    capped_view.pending_hold = wormedit::pending_hold_t{
+        .position = {wormedit::measure_id_t{2}, 0},
+        .lane = wormedit::lane_id_t{1},
+        .document_revision = 7,
+    };
+    const auto capped = wormedit::make_editor_field_scene(
+        chart, index, capped_view,
+        {.field_left_pixels = 10.0,
+         .field_width_pixels = 200.0,
+         .maximum_scene_primitives = baseline_primitives});
+    CHECK_FALSE(capped);
+    CHECK_FALSE(capped.scene.has_value());
+    CHECK(has_code(capped.diagnostics, wormedit::diagnostic_code_t::invalid_resolution));
+}
+
 TEST_CASE("field scene marks painted taps for erasure and enforces paint scene caps",
           "[unit][core][editor-scene][paint][bounds]") {
     const auto chart = scene_chart();

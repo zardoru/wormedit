@@ -1283,6 +1283,9 @@ static bool compose_point_hits_note(const WormUiComposeView* view, double x, dou
         return false;
     }
     for (size_t index = 0; index < view->note_endpoint_count; ++index) {
+        if (view->note_endpoints[index].proposal_ghost) {
+            continue;
+        }
         const auto& rect = view->note_endpoints[index].bounds;
         const auto center_y = (rect.top + rect.bottom) / 2.0;
         if (x >= rect.left && x <= rect.right && std::abs(y - center_y) <= 8.0) {
@@ -1291,6 +1294,9 @@ static bool compose_point_hits_note(const WormUiComposeView* view, double x, dou
     }
     for (size_t index = 0; index < view->hold_body_count; ++index) {
         const auto& rect = view->hold_bodies[index].bounds;
+        if (view->hold_bodies[index].proposal_ghost) {
+            continue;
+        }
         if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
             return true;
         }
@@ -3032,15 +3038,33 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
         }
         for (size_t index = 0; index < view->hold_body_count; ++index) {
             const auto& hold = view->hold_bodies[index];
-            compose_fill_rect(canvas, &hold.bounds, view, viewport,
-                              hold.selected ? nk_rgb(62, 170, 204) : nk_rgb(48, 111, 151));
+            const auto rect = compose_screen_rect(&hold.bounds, view, viewport);
+            if (rect.w <= 0.0f || rect.h <= 0.0f) {
+                continue;
+            }
+            if (hold.proposal_ghost) {
+                nk_fill_rect(canvas, rect, 0.0f, nk_rgba(240, 171, 71, 74));
+                nk_stroke_rect(canvas, rect, 0.0f, 1.4f, nk_rgb(255, 224, 156));
+            } else {
+                const auto color = hold.proposal_origin
+                                       ? nk_rgb(51, 82, 100)
+                                       : (hold.selected ? nk_rgb(62, 170, 204)
+                                                        : nk_rgb(48, 111, 151));
+                nk_fill_rect(canvas, rect, 0.0f, color);
+            }
         }
         for (size_t index = 0; index < view->note_endpoint_count; ++index) {
             const auto& note = view->note_endpoints[index];
-            auto color = note.selected ? nk_rgb(111, 221, 236) : nk_rgb(133, 182, 222);
+            auto color = note.proposal_origin
+                             ? nk_rgb(73, 101, 120)
+                             : (note.selected ? nk_rgb(111, 221, 236) : nk_rgb(133, 182, 222));
             auto border = nk_rgb(17, 24, 34);
             auto border_width = 1.0f;
-            if (note.paint_invalid_preview) {
+            if (note.proposal_ghost) {
+                color = nk_rgba(240, 171, 71, 132);
+                border = nk_rgb(255, 224, 156);
+                border_width = 2.0f;
+            } else if (note.paint_invalid_preview) {
                 color = nk_rgba(245, 178, 65, 210);
                 border = nk_rgb(255, 229, 166);
                 border_width = 2.0f;

@@ -2341,7 +2341,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
         flattened.compose_hold_storage.push_back({.bounds = convert_rect(hold.bounds),
                                                   .note_id = hold.note.value,
                                                   .lane_id = hold.lane.value,
-                                                  .selected = hold.selected});
+                                                  .selected = hold.selected,
+                                                  .proposal_origin = hold.proposal_origin,
+                                                  .proposal_ghost = hold.proposal_ghost});
     }
     const auto& endpoints = scene.note_endpoints;
     const auto endpoint_count =
@@ -2356,6 +2358,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
              .kind = static_cast<std::uint8_t>(endpoint.kind),
              .tail = endpoint.tail,
              .selected = endpoint.selected,
+             .proposal_origin = endpoint.proposal_origin,
+             .proposal_ghost = endpoint.proposal_ghost,
              .paint_preview = endpoint.paint_preview,
              .paint_erase_preview = endpoint.paint_erase_preview,
              .paint_invalid_preview = endpoint.paint_invalid_preview});

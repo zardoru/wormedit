@@ -176,6 +176,8 @@ typedef struct WormUiComposeHoldView {
     uint64_t note_id;
     uint64_t lane_id;
     bool selected;
+    bool proposal_origin;
+    bool proposal_ghost;
 } WormUiComposeHoldView;
 
 typedef struct WormUiComposeNoteView {
@@ -185,6 +187,8 @@ typedef struct WormUiComposeNoteView {
     uint8_t kind;
     bool tail;
     bool selected;
+    bool proposal_origin;
+    bool proposal_ghost;
     bool paint_preview;
     bool paint_erase_preview;
     bool paint_invalid_preview;

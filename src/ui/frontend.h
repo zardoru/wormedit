@@ -251,6 +251,9 @@ typedef struct WormUiComposeView {
     double viewport_height_pixels;
     double pixels_per_standard_measure;
     const char* status_text;
+    bool hover_note_visible;
+    uint64_t hover_note_id;
+    const char* hover_tooltip;
     const WormUiComposeBandView* bands;
     size_t band_count;
     const WormUiComposeLaneView* lanes;
@@ -640,6 +643,9 @@ typedef struct WormUiWorkspaceAction {
     uint64_t compose_input_chart_id;
     uint64_t compose_input_document_revision;
     double compose_input_viewport_width_pixels;
+    bool compose_has_pointer_hover;
+    double compose_pointer_hover_x_pixels;
+    double compose_pointer_hover_y_pixels;
     char compose_note_label[WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1];
     WormUiComposeInputAction compose_inputs[WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY];
     size_t compose_input_count;

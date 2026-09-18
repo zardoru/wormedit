@@ -123,6 +123,7 @@ struct flattened_workspace_t {
     std::vector<WormUiTimingRecipePoint> timing_recipe_candidate_storage;
     std::vector<WormUiTimingRecipePoint> timing_recipe_composed_storage;
     std::string compose_status_storage;
+    std::string compose_hover_tooltip_storage;
     std::vector<WormUiComposeBandView> compose_band_storage;
     std::vector<WormUiComposeLaneView> compose_lane_storage;
     std::vector<WormUiComposeGridLineView> compose_grid_storage;
@@ -146,6 +147,8 @@ struct compose_scene_cache_t {
     bool attempted{};
     std::optional<wormedit::editor_field_scene_index_t> index;
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
+    std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
+    std::optional<wormedit::editor_object_hover_state_t> hover;
     std::string status;
 };
 
@@ -2020,8 +2023,11 @@ void populate_compose_view(flattened_workspace_t& flattened,
                            std::optional<wormedit::editor_interaction_state_t>& retained_state,
                            const application_command_state_t& application_state) {
     auto& view = flattened.view.compose;
-    if (!view.visible)
+    if (!view.visible) {
+        cache.interaction_view.reset();
+        cache.hover.reset();
         return;
+    }
     view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
     view.pixels_per_standard_measure = retained_state
@@ -2030,6 +2036,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.note_paint_mode_active = application_state.note_paint_mode_active;
     view.selected_note_count = 0;
     view.status_text = nullptr;
+    view.hover_note_visible = false;
+    view.hover_note_id = 0;
+    view.hover_tooltip = nullptr;
+    flattened.compose_hover_tooltip_storage.clear();
     if (!workspace.selected_chart) {
         flattened.compose_status_storage = "Choose a difficulty to display its chart field.";
         view.status_text = flattened.compose_status_storage.c_str();
@@ -2049,6 +2059,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
         cache.revision != history.document.revision) {
         cache.index.reset();
         cache.hit_test_index.reset();
+        cache.interaction_view.reset();
+        cache.hover.reset();
         cache.status.clear();
         cache.chart = chart.id;
         cache.revision = history.document.revision;
@@ -2193,6 +2205,21 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                                         static_cast<double>(maximum_scroll));
     interaction_view.viewport_scroll_pixels = retained_state->viewport_scroll_pixels;
     view.pixels_per_standard_measure = interaction_view.pixels_per_standard_measure;
+    cache.interaction_view = interaction_view;
+    const auto hover_gesture_active = retained_state->pending_hold.has_value() ||
+                                      retained_state->pending_note_duration_gesture.has_value() ||
+                                      retained_state->pending_note_move_gesture.has_value() ||
+                                      retained_state->pending_note_paint_gesture.has_value() ||
+                                      retained_state->pending_editor_area_selection.has_value() ||
+                                      retained_state->pending_space_range_selection.has_value();
+    if (!hover_gesture_active && cache.hover &&
+        cache.hover->document_revision == history.document.revision &&
+        cache.hover->object.kind == wormedit::editor_selection_object_kind_t::note) {
+        view.hover_note_visible = true;
+        view.hover_note_id = cache.hover->object.id.value;
+        flattened.compose_hover_tooltip_storage = cache.hover->tooltip;
+        view.hover_tooltip = flattened.compose_hover_tooltip_storage.c_str();
+    }
     const auto scalar_selection_mode = [](wormedit::editor_area_selection_mode_t mode) {
         switch (mode) {
         case wormedit::editor_area_selection_mode_t::replace:
@@ -2782,6 +2809,36 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
              .field_left_pixels = 0.0,
              .field_width_pixels = ui_action.compose_input_viewport_width_pixels});
     };
+    const auto chart = std::ranges::find(history.document.charts, state.chart,
+                                         &chart_document_t::id);
+    const auto gesture_active = state.pending_hold.has_value() ||
+                                state.pending_note_duration_gesture.has_value() ||
+                                state.pending_note_move_gesture.has_value() ||
+                                state.pending_note_paint_gesture.has_value() ||
+                                state.pending_editor_area_selection.has_value() ||
+                                state.pending_space_range_selection.has_value();
+    if (!ui_action.compose_has_pointer_hover || gesture_active ||
+        chart == history.document.charts.end() || !scene_cache.interaction_view) {
+        scene_cache.hover.reset();
+    } else {
+        if (!scene_cache.hit_test_index) {
+            auto built = build_editor_hit_test_index(*chart, history.document.revision);
+            if (std::holds_alternative<editor_hit_test_index_t>(built)) {
+                scene_cache.hit_test_index =
+                    std::get<editor_hit_test_index_t>(std::move(built));
+            }
+        }
+        if (scene_cache.hit_test_index) {
+            scene_cache.hover = hover_editor_object(
+                *chart, *scene_cache.hit_test_index, *scene_cache.interaction_view,
+                {.x_pixels = ui_action.compose_pointer_hover_x_pixels,
+                 .y_pixels = ui_action.compose_pointer_hover_y_pixels,
+                 .field_left_pixels = 0.0,
+                 .field_width_pixels = ui_action.compose_input_viewport_width_pixels,
+                 .hit_radius_pixels = 8.0,
+                 .scope = {.notes = true, .bgm = false, .timing = false, .bga = false}});
+        }
+    }
     for (std::size_t index = 0; index < ui_action.compose_input_count; ++index) {
         if (history.document.revision != ui_action.compose_input_document_revision ||
             workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
@@ -3192,7 +3249,12 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             }
         }
     }
-    return status.empty() ? "Compose input handled." : status;
+    if (!status.empty()) {
+        return status;
+    }
+    return ui_action.compose_input_count != 0 || ui_action.compose_viewport_input_count != 0
+               ? "Compose input handled."
+               : std::string{};
 }
 
 auto editor_interaction_has_pending_gesture(const wormedit::editor_interaction_state_t& state)
@@ -3997,7 +4059,10 @@ int main(int argc, char** argv) {
                                                        wormedit::cancel_editor_gesture_action_t{});
             }
             if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
-                (action.compose_input_count != 0 || action.compose_viewport_input_count != 0) &&
+                (action.compose_input_count != 0 || action.compose_viewport_input_count != 0 ||
+                 action.compose_has_pointer_hover ||
+                 (workspace.active_tab == wormedit::workspace_tab_t::compose &&
+                  action.compose_input_chart_id != 0)) &&
                 compose_interaction_state) {
                 status = dispatch_compose_input_action(
                     action, history, workspace, *compose_interaction_state, compose_viewport_input,

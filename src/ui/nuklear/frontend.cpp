@@ -1387,6 +1387,10 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         if (!compose_rect_valid(&view->note_endpoints[index].bounds))
             return 0;
     }
+    if (view->hover_note_visible &&
+        (!view->hover_tooltip || view->hover_note_id == 0)) {
+        return 0;
+    }
     for (size_t index = 0; index < view->branch_row_count; ++index) {
         if (!view->branch_rows[index].display_text || view->branch_rows[index].depth > 512)
             return 0;
@@ -3119,6 +3123,17 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                       view->viewport_height_pixels / viewport.h);
     const auto paint_pointer_x = clamp_paint_x(pointer_x);
     const auto paint_pointer_y = clamp_paint_y(pointer_y);
+    const auto compose_pointer_captured =
+        g_compose_note_paint_pointer_active || g_compose_pointer_hold_active ||
+        g_compose_lane_hold_active || g_compose_note_move_active ||
+        g_compose_area_selection_active;
+    action->compose_has_pointer_hover =
+        !g_compose_action_overflowed && g_window_focused && view->scene_available &&
+        pointer_inside && !compose_pointer_captured;
+    if (action->compose_has_pointer_hover) {
+        action->compose_pointer_hover_x_pixels = pointer_x;
+        action->compose_pointer_hover_y_pixels = pointer_y;
+    }
     bool paint_pointer_consumed =
         g_compose_note_paint_pointer_active || compose_action_has_cancel(action);
     if (!g_compose_action_overflowed && g_compose_note_paint_pointer_active) {
@@ -3358,6 +3373,9 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                                        : (hold.selected ? nk_rgb(62, 170, 204)
                                                         : nk_rgb(48, 111, 151));
                 nk_fill_rect(canvas, rect, 0.0f, color);
+                if (view->hover_note_visible && hold.note_id == view->hover_note_id) {
+                    nk_stroke_rect(canvas, rect, 0.0f, 2.0f, nk_rgb(255, 235, 148));
+                }
             }
         }
         for (size_t index = 0; index < view->note_endpoint_count; ++index) {
@@ -3370,6 +3388,10 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
             if (note.proposal_ghost) {
                 color = nk_rgba(240, 171, 71, 132);
                 border = nk_rgb(255, 224, 156);
+                border_width = 2.0f;
+            } else if (view->hover_note_visible && note.note_id == view->hover_note_id) {
+                color = nk_rgb(255, 226, 127);
+                border = nk_rgb(255, 247, 190);
                 border_width = 2.0f;
             } else if (note.paint_invalid_preview) {
                 color = nk_rgba(245, 178, 65, 210);
@@ -3453,6 +3475,16 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
         if (view->area_selection_preview_visible) {
             draw_selection_preview(view->area_selection_preview_bounds,
                                    view->area_selection_preview_mode);
+        }
+        if (view->hover_note_visible && view->hover_tooltip && view->hover_tooltip[0] != '\0') {
+            const auto tooltip_width = std::min(420.0f, std::max(120.0f, viewport.w - 16.0f));
+            const auto tooltip_bounds =
+                nk_rect(viewport.x + 8.0f, viewport.y + 8.0f, tooltip_width, 24.0f);
+            nk_fill_rect(canvas, tooltip_bounds, 3.0f, nk_rgba(12, 16, 24, 235));
+            nk_stroke_rect(canvas, tooltip_bounds, 3.0f, 1.0f, nk_rgb(255, 235, 148));
+            nk_draw_text(canvas, tooltip_bounds, view->hover_tooltip,
+                         static_cast<int>(strlen(view->hover_tooltip)), g_context->style.font,
+                         nk_rgb(12, 16, 24), nk_rgb(255, 244, 192));
         }
     }
     nk_push_scissor(canvas, parent_clip);

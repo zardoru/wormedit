@@ -283,11 +283,29 @@ using editor_ui_action_t =
                  select_editor_lane_action_t, assign_selected_notes_to_lane_action_t,
                  adjust_editor_zoom_action_t, scroll_editor_view_action_t>;
 
+// Exact, revision-bound result that a pending hold would publish. The source
+// anchor/moving endpoint stay on pending_hold_t so controllers can update the
+// gesture, while renderers use this normalized result for destructive merge
+// previews without reimplementing collision policy.
+struct pending_hold_placement_preview_t {
+    local_position_t head;
+    std::optional<local_position_t> tail;
+    std::shared_ptr<const std::vector<object_id_t>> removals;
+    bool adds_note{};
+
+    auto operator==(const pending_hold_placement_preview_t& other) const -> bool {
+        return head == other.head && tail == other.tail && adds_note == other.adds_note &&
+               ((!removals && !other.removals) ||
+                (removals && other.removals && *removals == *other.removals));
+    }
+};
+
 struct pending_hold_t {
     local_position_t position;
     lane_id_t lane;
     std::uint64_t document_revision{};
     std::optional<local_position_t> preview_end;
+    std::optional<pending_hold_placement_preview_t> placement_preview;
     std::optional<hold_gesture_source_t> gesture_source;
 
     auto operator==(const pending_hold_t&) const -> bool = default;

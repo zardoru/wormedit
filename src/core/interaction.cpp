@@ -441,6 +441,14 @@ struct hold_placement_plan_t {
     bool adds_note{};
 };
 
+auto hold_placement_preview(const hold_placement_plan_t& plan)
+    -> pending_hold_placement_preview_t {
+    return {.head = plan.head,
+            .tail = plan.tail,
+            .removals = std::make_shared<const std::vector<object_id_t>>(plan.removals),
+            .adds_note = plan.adds_note};
+}
+
 auto is_plain_editable_note(const note_t& note) -> bool {
     const auto plain_kind = (note.kind == note_kind_t::tap && !note.end.has_value()) ||
                             (note.kind == note_kind_t::hold && note.end.has_value());
@@ -3261,9 +3269,9 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                         {error(diagnostic_code_t::unknown_lane,
                                "active editor lane is unavailable at the hold start")});
                 }
-                if (const auto plan =
-                        plan_hold_placement(*chart, index, state.active_lane, *snapped, *snapped);
-                    std::holds_alternative<diagnostic_list_t>(plan)) {
+                const auto plan =
+                    plan_hold_placement(*chart, index, state.active_lane, *snapped, *snapped);
+                if (std::holds_alternative<diagnostic_list_t>(plan)) {
                     return diagnostic_result(history, state,
                                              std::get<diagnostic_list_t>(plan));
                 }
@@ -3271,6 +3279,8 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                     .position = *snapped,
                     .lane = state.active_lane,
                     .document_revision = history.document.revision,
+                    .placement_preview =
+                        hold_placement_preview(std::get<hold_placement_plan_t>(plan)),
                 };
                 state.cursor = *snapped;
                 const auto next_view = make_view(history, state);
@@ -3321,6 +3331,8 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                 state.pending_hold->preview_end =
                     *snapped == pending.position ? std::optional<local_position_t>{}
                                                  : std::optional{*snapped};
+                state.pending_hold->placement_preview =
+                    hold_placement_preview(std::get<hold_placement_plan_t>(plan));
                 state.cursor = *snapped;
                 state.active_lane = pending.lane;
                 const auto next_view = make_view(history, state);

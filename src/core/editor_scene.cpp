@@ -573,6 +573,12 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
     for (const auto note : view.selected_notes) {
         selected.insert(note.value);
     }
+    if (view.pending_hold.has_value() && view.pending_note_duration_gesture.has_value()) {
+        result.diagnostics.push_back(error(
+            diagnostic_code_t::invalid_hold,
+            "field-scene cannot compose simultaneous hold-placement and duration previews"));
+        return result;
+    }
     struct duration_proposal_t {
         const editor_field_scene_note_source_t* source{};
         const note_duration_preview_t* preview{};
@@ -649,6 +655,92 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
             return result;
         }
     }
+    struct hold_proposal_t {
+        lane_id_t lane;
+        std::uint64_t head_row{};
+        std::optional<std::uint64_t> tail_row;
+        bool adds_note{};
+    };
+    std::optional<hold_proposal_t> hold_proposal;
+    std::unordered_set<std::uint64_t> hold_origin_notes;
+    if (view.pending_hold.has_value()) {
+        const auto& pending = *view.pending_hold;
+        const auto anchor_row = absolute_row(index.measures, pending.position);
+        if (pending.document_revision != index.document_revision || !anchor_row ||
+            !has_lane(layout_at_row(index, *anchor_row), pending.lane)) {
+            result.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_hold, "field-scene hold preview is stale or invalid"));
+            return result;
+        }
+        std::optional<std::uint64_t> moving_row;
+        if (pending.preview_end.has_value()) {
+            moving_row = absolute_row(index.measures, *pending.preview_end);
+            if (!moving_row || !has_lane(layout_at_row(index, *moving_row), pending.lane)) {
+                result.diagnostics.push_back(
+                    error(diagnostic_code_t::invalid_hold,
+                          "field-scene hold preview has an invalid proposed endpoint"));
+                return result;
+            }
+        }
+        if (!pending.placement_preview.has_value()) {
+            const auto head_row = moving_row ? std::min(*anchor_row, *moving_row) : *anchor_row;
+            const auto tail_row = moving_row ? std::max(*anchor_row, *moving_row) : *anchor_row;
+            hold_proposal = {.lane = pending.lane,
+                             .head_row = head_row,
+                             .tail_row = head_row == tail_row
+                                             ? std::optional<std::uint64_t>{}
+                                             : std::optional{tail_row},
+                             .adds_note = true};
+        } else {
+            const auto& preview = *pending.placement_preview;
+            const auto head_row = absolute_row(index.measures, preview.head);
+            const auto tail_row = preview.tail ? absolute_row(index.measures, *preview.tail)
+                                               : std::optional<std::uint64_t>{};
+            const auto final_tail = tail_row.value_or(head_row.value_or(0));
+            if (!head_row || (tail_row && *tail_row <= *head_row) ||
+                *anchor_row < *head_row || *anchor_row > final_tail ||
+                (moving_row && (*moving_row < *head_row || *moving_row > final_tail)) ||
+                !preview.removals ||
+                (!preview.adds_note &&
+                 (preview.tail.has_value() || preview.removals->empty())) ||
+                (preview.adds_note && !preview.tail.has_value() &&
+                 !preview.removals->empty())) {
+                result.diagnostics.push_back(error(
+                    diagnostic_code_t::invalid_hold,
+                    "field-scene hold placement preview is malformed or does not cover its gesture"));
+                return result;
+            }
+            hold_origin_notes.reserve(preview.removals->size());
+            for (const auto note : *preview.removals) {
+                if (!operate() || note.value == 0 || !hold_origin_notes.insert(note.value).second) {
+                    result.diagnostics.push_back(error(
+                        diagnostic_code_t::invalid_id,
+                        "field-scene hold placement preview contains duplicate note identities"));
+                    return result;
+                }
+                const auto found = index.note_indices_by_id.find(note.value);
+                if (found == index.note_indices_by_id.end()) {
+                    result.diagnostics.push_back(error(
+                        diagnostic_code_t::invalid_id,
+                        "field-scene hold placement preview refers to an unknown note"));
+                    return result;
+                }
+                const auto& source = index.notes[found->second];
+                if ((source.kind != note_kind_t::tap && source.kind != note_kind_t::hold) ||
+                    source.lane != pending.lane || source.begin_row > final_tail ||
+                    source.end_row < *head_row) {
+                    result.diagnostics.push_back(error(
+                        diagnostic_code_t::invalid_hold,
+                        "field-scene hold placement preview removes an unrelated note", note));
+                    return result;
+                }
+            }
+            hold_proposal = {.lane = pending.lane,
+                             .head_row = *head_row,
+                             .tail_row = tail_row,
+                             .adds_note = preview.adds_note};
+        }
+    }
     const auto after_candidates = std::ranges::upper_bound(
         index.notes, query_high,
         [](long double row, std::uint64_t begin) { return row < static_cast<long double>(begin); },
@@ -684,7 +776,8 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
             }
         }
         const auto note_selected = selected.contains(note.note.value);
-        const auto proposal_origin = duration_origin_notes.contains(note.note.value);
+        const auto proposal_origin = duration_origin_notes.contains(note.note.value) ||
+                                     hold_origin_notes.contains(note.note.value);
         const auto add_endpoint = [&](std::uint64_t row, bool tail) {
             const auto* band = visible_band_for_row(row);
             if (band == nullptr) {
@@ -905,33 +998,10 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
             return result;
         }
     }
-    if (view.pending_hold.has_value()) {
-        const auto& pending = *view.pending_hold;
-        const auto begin_row = absolute_row(index.measures, pending.position);
-        if (pending.document_revision != index.document_revision || !begin_row ||
-            !has_lane(layout_at_row(index, *begin_row), pending.lane)) {
-            result.diagnostics.push_back(
-                error(diagnostic_code_t::invalid_hold, "field-scene hold preview is stale or invalid"));
-            return result;
-        }
-        std::optional<std::uint64_t> moving_row;
-        if (pending.preview_end.has_value()) {
-            moving_row = absolute_row(index.measures, *pending.preview_end);
-            if (!moving_row || !has_lane(layout_at_row(index, *moving_row), pending.lane)) {
-                result.diagnostics.push_back(
-                    error(diagnostic_code_t::invalid_hold,
-                          "field-scene hold preview has an invalid proposed endpoint"));
-                return result;
-            }
-        }
-        const auto head_row = moving_row ? std::min(*begin_row, *moving_row) : *begin_row;
-        const auto tail_row = moving_row ? std::max(*begin_row, *moving_row) : *begin_row;
-        const auto kind = head_row != tail_row ? note_kind_t::hold : note_kind_t::tap;
-        append_proposal_geometry(object_id_t{}, pending.lane, kind, head_row,
-                                 kind == note_kind_t::hold
-                                     ? std::optional<std::uint64_t>{tail_row}
-                                     : std::optional<std::uint64_t>{},
-                                 false);
+    if (hold_proposal.has_value() && hold_proposal->adds_note) {
+        const auto kind = hold_proposal->tail_row ? note_kind_t::hold : note_kind_t::tap;
+        append_proposal_geometry(object_id_t{}, hold_proposal->lane, kind, hold_proposal->head_row,
+                                 hold_proposal->tail_row, false);
         if (proposal_failed) {
             result.diagnostics.push_back(
                 error(diagnostic_code_t::invalid_resolution,

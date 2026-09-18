@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <ranges>
 #include <variant>
 
@@ -331,6 +332,36 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
     CHECK(std::ranges::count_if(reverse_hold.scene->hold_bodies, [](const auto& body) {
               return body.note == wormedit::object_id_t{} && body.proposal_ghost;
           }) == 1);
+
+    auto merged_hold_view = view();
+    merged_hold_view.pending_hold = wormedit::pending_hold_t{
+        .position = {wormedit::measure_id_t{1}, 480},
+        .lane = wormedit::lane_id_t{2},
+        .document_revision = 7,
+        .preview_end = wormedit::local_position_t{wormedit::measure_id_t{1}, 720},
+        .placement_preview = wormedit::pending_hold_placement_preview_t{
+            .head = {wormedit::measure_id_t{1}, 480},
+            .tail = wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
+            .removals = std::make_shared<const std::vector<wormedit::object_id_t>>(
+                std::vector<wormedit::object_id_t>{wormedit::object_id_t{11}}),
+            .adds_note = true,
+        },
+    };
+    const auto merged_hold = wormedit::make_editor_field_scene(
+        chart, index, merged_hold_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(merged_hold);
+    CHECK(std::ranges::count_if(merged_hold.scene->note_endpoints, [](const auto& endpoint) {
+              return endpoint.note == wormedit::object_id_t{11} && endpoint.proposal_origin;
+          }) == 2);
+    CHECK(std::ranges::count_if(merged_hold.scene->hold_bodies, [](const auto& body) {
+              return body.note == wormedit::object_id_t{11} && body.proposal_origin;
+          }) == 2);
+    CHECK(std::ranges::count_if(merged_hold.scene->note_endpoints, [](const auto& endpoint) {
+              return endpoint.note == wormedit::object_id_t{} && endpoint.proposal_ghost;
+          }) == 2);
+    CHECK(std::ranges::count_if(merged_hold.scene->hold_bodies, [](const auto& body) {
+              return body.note == wormedit::object_id_t{} && body.proposal_ghost;
+          }) == 2);
 
     auto stale_view = duration_view;
     stale_view.pending_note_duration_gesture->document_revision = 8;

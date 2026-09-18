@@ -1750,6 +1750,11 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
     REQUIRE(reverse_preview.view->pending_hold->preview_end.has_value());
     CHECK(*reverse_preview.view->pending_hold->preview_end ==
           local_position_t{measure_id_t{1}, 480});
+    REQUIRE(reverse_preview.view->pending_hold->placement_preview.has_value());
+    CHECK(reverse_preview.view->pending_hold->placement_preview->head ==
+          local_position_t{measure_id_t{1}, 480});
+    CHECK(reverse_preview.view->pending_hold->placement_preview->tail ==
+          local_position_t{measure_id_t{1}, 720});
     const auto reverse_commit =
         dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{1}, 480}});
     REQUIRE(reverse_commit);
@@ -1776,6 +1781,17 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
     auto union_state = make_state(union_history);
     REQUIRE(dispatch_editor_action(union_history, union_state,
                                    begin_hold_action_t{{measure_id_t{1}, 240}}));
+    const auto union_preview = dispatch_editor_action(
+        union_history, union_state, update_hold_preview_action_t{{measure_id_t{1}, 720}});
+    REQUIRE(union_preview);
+    REQUIRE(union_preview.view->pending_hold->placement_preview.has_value());
+    const auto& placement = *union_preview.view->pending_hold->placement_preview;
+    CHECK(placement.adds_note);
+    CHECK(placement.head == local_position_t{measure_id_t{1}, 0});
+    CHECK(placement.tail == local_position_t{measure_id_t{2}, 0});
+    REQUIRE(placement.removals);
+    CHECK(*placement.removals ==
+          std::vector<object_id_t>{object_id_t{101}, object_id_t{102}, object_id_t{103}});
     const auto union_commit = dispatch_editor_action(
         union_history, union_state, commit_hold_action_t{{measure_id_t{1}, 720}});
     REQUIRE(union_commit);

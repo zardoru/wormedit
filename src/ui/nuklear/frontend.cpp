@@ -169,6 +169,9 @@ static bool g_compose_navigation_key_active{};
 static uint32_t g_compose_navigation_keycode{};
 static WormUiComposeNavigationAction g_compose_navigation_action{
     WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD};
+static bool g_compose_pointer_navigation_active{};
+static WormUiComposeNavigationAction g_compose_pointer_navigation_action{
+    WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD};
 static uint64_t g_last_compose_chart_id{};
 static uint64_t g_last_compose_document_revision{};
 static uint64_t g_compose_label_chart_id{std::numeric_limits<uint64_t>::max()};
@@ -204,6 +207,9 @@ static void append_compose_input(
         g_compose_note_move_active = false;
         g_compose_area_selection_candidate_active = false;
         g_compose_area_selection_active = false;
+        g_compose_navigation_key_active = false;
+        g_compose_navigation_keycode = 0;
+        g_compose_pointer_navigation_active = false;
         g_compose_keyboard_focus = false;
         g_compose_lane_hold_keycode = 0;
         g_compose_lane_hold_lane_id = 0;
@@ -219,6 +225,43 @@ static void append_compose_input(
         .x_pixels = x_pixels,
         .y_pixels = y_pixels,
     };
+}
+
+static void update_compose_pointer_navigation(
+    WormUiWorkspaceAction* action,
+    std::optional<WormUiComposeNavigationAction> desired_action) {
+    if (!action) {
+        return;
+    }
+    if (g_compose_pointer_navigation_active &&
+        (!desired_action || *desired_action != g_compose_pointer_navigation_action)) {
+        append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0.0, 0.0, 0,
+                             false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                             g_compose_pointer_navigation_action);
+        g_compose_pointer_navigation_active = false;
+    }
+    if (desired_action && !g_compose_pointer_navigation_active) {
+        if (g_compose_navigation_key_active) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0.0, 0.0, 0,
+                                 false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 g_compose_navigation_action);
+            g_compose_navigation_key_active = false;
+            g_compose_navigation_keycode = 0;
+        }
+        append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0.0, 0.0, 0, false,
+                             WORM_UI_COMPOSE_SELECTION_REPLACE, *desired_action);
+        g_compose_pointer_navigation_active = !g_compose_action_overflowed;
+        g_compose_pointer_navigation_action = *desired_action;
+    }
+}
+
+static void cancel_compose_navigation(WormUiWorkspaceAction* action) {
+    if (action && (g_compose_navigation_key_active || g_compose_pointer_navigation_active)) {
+        append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL);
+    }
+    g_compose_navigation_key_active = false;
+    g_compose_navigation_keycode = 0;
+    g_compose_pointer_navigation_active = false;
 }
 
 static bool compose_navigation_action_for_key(uint32_t keycode, [[maybe_unused]] uint16_t modifiers,
@@ -1153,6 +1196,9 @@ void worm_ui_frontend_shutdown(void) {
     g_compose_lane_hold_active = false;
     g_compose_area_selection_candidate_active = false;
     g_compose_area_selection_active = false;
+    g_compose_navigation_key_active = false;
+    g_compose_navigation_keycode = 0;
+    g_compose_pointer_navigation_active = false;
     g_compose_keyboard_focus = false;
     g_last_compose_chart_id = 0;
     g_last_compose_document_revision = 0;
@@ -1195,6 +1241,9 @@ bool worm_ui_frontend_handle_event(const SDL_Event* event) {
         g_compose_note_move_active = false;
         g_compose_area_selection_candidate_active = false;
         g_compose_area_selection_active = false;
+        g_compose_navigation_key_active = false;
+        g_compose_navigation_keycode = 0;
+        g_compose_pointer_navigation_active = false;
     } else if (event->type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
         g_window_focused = true;
     } else if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) {
@@ -1417,6 +1466,11 @@ static void process_compose_key_events(const WormUiComposeView* view,
     const bool note_paint_mode_active =
         view->note_paint_mode_active ||
         action->compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
+    if (g_ime_composition_active) {
+        cancel_compose_navigation(action);
+        g_compose_key_event_count = 0;
+        return;
+    }
     if (note_paint_mode_active && g_compose_lane_hold_active) {
         append_compose_cancel_once(action);
         g_compose_lane_hold_active = false;
@@ -1499,6 +1553,7 @@ static void process_compose_key_events(const WormUiComposeView* view,
                                                    &navigation_action)) {
                 continue;
             }
+            update_compose_pointer_navigation(action, std::nullopt);
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0.0, 0.0, 0,
                                  false, WORM_UI_COMPOSE_SELECTION_REPLACE, navigation_action);
             g_compose_navigation_key_active = !g_compose_action_overflowed;
@@ -1514,6 +1569,7 @@ static void process_compose_key_events(const WormUiComposeView* view,
                                                    &navigation_action)) {
                 continue;
             }
+            update_compose_pointer_navigation(action, std::nullopt);
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0.0, 0.0, 0,
                                  false, WORM_UI_COMPOSE_SELECTION_REPLACE, navigation_action);
             g_compose_navigation_key_active = !g_compose_action_overflowed;
@@ -1525,6 +1581,7 @@ static void process_compose_key_events(const WormUiComposeView* view,
             continue;
         }
         if (key_event.keycode == static_cast<uint32_t>(SDLK_PAGEUP)) {
+            update_compose_pointer_navigation(action, std::nullopt);
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0.0, 0.0, 0,
                                  false, WORM_UI_COMPOSE_SELECTION_REPLACE,
                                  WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD);
@@ -1534,6 +1591,7 @@ static void process_compose_key_events(const WormUiComposeView* view,
             continue;
         }
         if (key_event.keycode == static_cast<uint32_t>(SDLK_PAGEDOWN)) {
+            update_compose_pointer_navigation(action, std::nullopt);
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0.0, 0.0, 0,
                                  false, WORM_UI_COMPOSE_SELECTION_REPLACE,
                                  WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD);
@@ -2842,28 +2900,54 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
         g_compose_label_chart_id = view->chart_id;
         g_compose_label_document_revision = view->document_revision;
     }
-    nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 8);
-    nk_layout_row_push(g_context, 0.07f);
+    nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 10);
+    nk_layout_row_push(g_context, 0.06f);
     if (nk_button_label(g_context, "Zoom -") &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_OUT;
-    nk_layout_row_push(g_context, 0.07f);
+    nk_layout_row_push(g_context, 0.06f);
     if (nk_button_label(g_context, "Zoom +") &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_IN;
-    nk_layout_row_push(g_context, 0.10f);
-    if (nk_button_label(g_context, "Page up") &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_SCROLL_UP;
-    nk_layout_row_push(g_context, 0.10f);
-    if (nk_button_label(g_context, "Page down") &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
-        action->compose_action = WORM_UI_COMPOSE_ACTION_SCROLL_DOWN;
+    std::optional<WormUiComposeNavigationAction> pointer_navigation;
+    const auto& navigation_left_button = g_context->input.mouse.buttons[NK_BUTTON_LEFT];
+    const auto pointer_down =
+        g_window_focused && view->scene_available && navigation_left_button.down != 0;
+    const auto pointer_started = pointer_down && navigation_left_button.clicked != 0;
+    if (g_compose_pointer_navigation_active && pointer_down) {
+        pointer_navigation = g_compose_pointer_navigation_action;
+    }
+    const auto navigation_button = [&](const char* label, WormUiComposeNavigationAction action) {
+        const auto bounds = nk_widget_bounds(g_context);
+        if (!view->scene_available) {
+            nk_widget_disable_begin(g_context);
+        }
+        (void)nk_button_label(g_context, label);
+        if (!view->scene_available) {
+            nk_widget_disable_end(g_context);
+        }
+        if (!g_compose_pointer_navigation_active && pointer_started &&
+            navigation_left_button.clicked_pos.x >= bounds.x &&
+            navigation_left_button.clicked_pos.x <= bounds.x + bounds.w &&
+            navigation_left_button.clicked_pos.y >= bounds.y &&
+            navigation_left_button.clicked_pos.y <= bounds.y + bounds.h) {
+            pointer_navigation = action;
+        }
+    };
+    nk_layout_row_push(g_context, 0.07f);
+    navigation_button("Step up", WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD);
+    nk_layout_row_push(g_context, 0.07f);
+    navigation_button("Step down", WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD);
     nk_layout_row_push(g_context, 0.08f);
+    navigation_button("Page up", WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD);
+    nk_layout_row_push(g_context, 0.08f);
+    navigation_button("Page down", WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD);
+    update_compose_pointer_navigation(action, pointer_navigation);
+    nk_layout_row_push(g_context, 0.07f);
     if (nk_button_label(g_context, "Reset") &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW;
-    nk_layout_row_push(g_context, 0.12f);
+    nk_layout_row_push(g_context, 0.15f);
     nk_labelf(g_context, NK_TEXT_LEFT, "Zoom %.0f px/measure", view->pixels_per_standard_measure);
     nk_layout_row_push(g_context, 0.15f);
     if (!view->scene_available) {
@@ -2973,7 +3057,9 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                                                 nk_rect(0.0f, 0.0f, 1000000.0f, 1000000.0f)) &&
                !pointer_inside) {
         g_compose_keyboard_focus = false;
-        append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL);
+        if (!g_compose_pointer_navigation_active) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL);
+        }
         if (g_compose_space_range_hold_active) {
             append_compose_cancel_once(action);
             g_compose_space_range_hold_active = false;
@@ -3504,6 +3590,9 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         action.compose_input_chart_id = view->compose.chart_id;
         action.compose_input_document_revision = view->compose.document_revision;
         action.compose_input_viewport_width_pixels = view->compose.viewport_width_pixels;
+        if (!view->compose.scene_available) {
+            cancel_compose_navigation(&action);
+        }
         if (g_compose_cancel_pending) {
             append_compose_input(&action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
             g_compose_cancel_pending = false;
@@ -3532,6 +3621,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
             g_compose_area_selection_active = false;
             g_compose_lane_hold_keycode = 0;
             g_compose_lane_hold_lane_id = 0;
+            cancel_compose_navigation(&action);
         }
         if (chart_changed) {
             // Events received before the first frame for another chart still
@@ -3568,6 +3658,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         g_compose_space_range_hold_moved = false;
         g_compose_area_selection_candidate_active = false;
         g_compose_area_selection_active = false;
+        cancel_compose_navigation(&action);
         g_last_compose_chart_id = 0;
         g_last_compose_document_revision = 0;
     }

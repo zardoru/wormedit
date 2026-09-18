@@ -914,20 +914,24 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                 error(diagnostic_code_t::invalid_hold, "field-scene hold preview is stale or invalid"));
             return result;
         }
-        std::optional<std::uint64_t> end_row;
+        std::optional<std::uint64_t> moving_row;
         if (pending.preview_end.has_value()) {
-            end_row = absolute_row(index.measures, *pending.preview_end);
-            if (!end_row || *end_row < *begin_row ||
-                !has_lane(layout_at_row(index, *end_row), pending.lane)) {
+            moving_row = absolute_row(index.measures, *pending.preview_end);
+            if (!moving_row || !has_lane(layout_at_row(index, *moving_row), pending.lane)) {
                 result.diagnostics.push_back(
                     error(diagnostic_code_t::invalid_hold,
-                          "field-scene hold preview has an invalid proposed tail"));
+                          "field-scene hold preview has an invalid proposed endpoint"));
                 return result;
             }
         }
-        const auto kind = end_row.has_value() && *end_row > *begin_row ? note_kind_t::hold
-                                                                         : note_kind_t::tap;
-        append_proposal_geometry(object_id_t{}, pending.lane, kind, *begin_row, end_row, false);
+        const auto head_row = moving_row ? std::min(*begin_row, *moving_row) : *begin_row;
+        const auto tail_row = moving_row ? std::max(*begin_row, *moving_row) : *begin_row;
+        const auto kind = head_row != tail_row ? note_kind_t::hold : note_kind_t::tap;
+        append_proposal_geometry(object_id_t{}, pending.lane, kind, head_row,
+                                 kind == note_kind_t::hold
+                                     ? std::optional<std::uint64_t>{tail_row}
+                                     : std::optional<std::uint64_t>{},
+                                 false);
         if (proposal_failed) {
             result.diagnostics.push_back(
                 error(diagnostic_code_t::invalid_resolution,

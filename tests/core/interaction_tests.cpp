@@ -1715,24 +1715,115 @@ TEST_CASE("two-step hold placement previews, commits across measures, and cancel
     const auto second_begin =
         dispatch_editor_action(history, state, begin_hold_action_t{{measure_id_t{1}, 0}});
     REQUIRE(second_begin);
-    const auto collision =
+    const auto merged =
         dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{2}, 0}});
-    CHECK_FALSE(collision);
-    CHECK(has_code(collision.diagnostics, diagnostic_code_t::collision));
-    CHECK(state.pending_hold.has_value());
-    CHECK(history.document.revision == 2);
+    REQUIRE(merged);
+    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK(history.document.revision == 3);
     CHECK(note_count(history) == 1);
+    const auto* merged_note = find_note(history, object_id_t{102});
+    REQUIRE(merged_note != nullptr);
+    CHECK(merged_note->position == local_position_t{measure_id_t{1}, 0});
+    CHECK(merged_note->end == local_position_t{measure_id_t{2}, 240});
 
     const auto cancelled = dispatch_editor_action(history, state, cancel_hold_action_t{});
     REQUIRE(cancelled);
     CHECK_FALSE(state.pending_hold.has_value());
     CHECK_FALSE(cancelled.document_changed);
-    CHECK(history.document.revision == 2);
+    CHECK(history.document.revision == 3);
 
     const auto no_start =
         dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{2}, 480}});
     CHECK_FALSE(no_start);
     CHECK(has_code(no_start.diagnostics, diagnostic_code_t::invalid_hold));
+}
+
+TEST_CASE("hold placement moves its head before the fixed anchor and normalizes collisions",
+          "[unit][core][interaction][hold][union]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+
+    REQUIRE(dispatch_editor_action(history, state, begin_hold_action_t{{measure_id_t{1}, 720}}));
+    const auto reverse_preview = dispatch_editor_action(
+        history, state, update_hold_preview_action_t{{measure_id_t{1}, 480}});
+    REQUIRE(reverse_preview);
+    REQUIRE(reverse_preview.view->pending_hold->preview_end.has_value());
+    CHECK(*reverse_preview.view->pending_hold->preview_end ==
+          local_position_t{measure_id_t{1}, 480});
+    const auto reverse_commit =
+        dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{1}, 480}});
+    REQUIRE(reverse_commit);
+    const auto* reverse_hold = find_note(history, object_id_t{101});
+    REQUIRE(reverse_hold != nullptr);
+    CHECK(reverse_hold->position == local_position_t{measure_id_t{1}, 480});
+    CHECK(reverse_hold->end == local_position_t{measure_id_t{1}, 720});
+
+    auto union_song = make_song();
+    union_song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 0},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, 240}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}},
+        {.id = object_id_t{103},
+         .position = {measure_id_t{1}, 720},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{2}, 0}},
+    };
+    auto union_history = make_document_history(std::move(union_song));
+    auto union_state = make_state(union_history);
+    REQUIRE(dispatch_editor_action(union_history, union_state,
+                                   begin_hold_action_t{{measure_id_t{1}, 240}}));
+    const auto union_commit = dispatch_editor_action(
+        union_history, union_state, commit_hold_action_t{{measure_id_t{1}, 720}});
+    REQUIRE(union_commit);
+    REQUIRE(note_count(union_history) == 1);
+    const auto* union_hold = find_note(union_history, object_id_t{104});
+    REQUIRE(union_hold != nullptr);
+    CHECK(union_hold->position == local_position_t{measure_id_t{1}, 0});
+    CHECK(union_hold->end == local_position_t{measure_id_t{2}, 0});
+    REQUIRE(undo_document_command(union_history));
+    CHECK(note_count(union_history) == 3);
+    CHECK(find_note(union_history, object_id_t{101}) != nullptr);
+    CHECK(find_note(union_history, object_id_t{102}) != nullptr);
+    CHECK(find_note(union_history, object_id_t{103}) != nullptr);
+
+    auto conflicting_song = make_song();
+    conflicting_song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 480},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::mine},
+    };
+    auto conflicting_history = make_document_history(std::move(conflicting_song));
+    auto conflicting_state = make_state(conflicting_history);
+    REQUIRE(dispatch_editor_action(conflicting_history, conflicting_state,
+                                   begin_hold_action_t{{measure_id_t{1}, 0}}));
+    const auto conflict = dispatch_editor_action(
+        conflicting_history, conflicting_state, commit_hold_action_t{{measure_id_t{1}, 480}});
+    CHECK_FALSE(conflict);
+    CHECK(has_code(conflict.diagnostics, diagnostic_code_t::collision));
+    CHECK(conflicting_state.pending_hold.has_value());
+    CHECK(conflicting_history.document.revision == 1);
+    CHECK(note_count(conflicting_history) == 1);
+
+    auto metadata_song = make_song();
+    metadata_song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 480},
+         .lane = lane_id_t{1},
+         .label = std::string{"keep this label"}},
+    };
+    auto metadata_history = make_document_history(std::move(metadata_song));
+    auto metadata_state = make_state(metadata_history);
+    const auto metadata_conflict = dispatch_editor_action(
+        metadata_history, metadata_state, begin_hold_action_t{{measure_id_t{1}, 480}});
+    CHECK_FALSE(metadata_conflict);
+    CHECK(has_code(metadata_conflict.diagnostics, diagnostic_code_t::collision));
+    CHECK_FALSE(metadata_state.pending_hold.has_value());
+    CHECK(metadata_history.document.revision == 1);
 }
 
 TEST_CASE("releasing a pending hold at its head places a tap", "[unit][core][interaction][hold]") {
@@ -1807,6 +1898,48 @@ TEST_CASE("lane-key hold gestures snap, extend, contract to a tap, and undo atom
     CHECK(find_note(history, object_id_t{101})->end == local_position_t{measure_id_t{2}, 240});
     REQUIRE(undo_document_command(history));
     CHECK(note_count(history) == 0);
+
+    REQUIRE(
+        dispatch_editor_action(history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}}));
+    REQUIRE(dispatch_editor_action(history, state,
+                                   move_edit_cursor_action_t{interaction_direction_t::backward}));
+    REQUIRE(dispatch_editor_action(history, state,
+                                   move_edit_cursor_action_t{interaction_direction_t::backward}));
+    REQUIRE(dispatch_editor_action(history, state,
+                                   move_edit_cursor_action_t{interaction_direction_t::backward}));
+    const auto backward_hold =
+        dispatch_editor_action(history, state, release_lane_key_hold_gesture_action_t{});
+    REQUIRE(backward_hold);
+    const auto* moved_head = find_note(history, object_id_t{101});
+    REQUIRE(moved_head != nullptr);
+    CHECK(moved_head->position == local_position_t{measure_id_t{1}, 480});
+    CHECK(moved_head->end == local_position_t{measure_id_t{2}, 240});
+}
+
+TEST_CASE("lane-key press removes an occupied ordinary tap or hold", "[unit][core][interaction][hold]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 480},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, 720}},
+    };
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    state.cursor = {measure_id_t{1}, 480};
+
+    const auto pressed =
+        dispatch_editor_action(history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    REQUIRE(pressed);
+    CHECK(pressed.document_changed);
+    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK(note_count(history) == 0);
+    const auto released = dispatch_editor_action(history, state, release_lane_key_hold_gesture_action_t{});
+    REQUIRE(released);
+    CHECK_FALSE(released.document_changed);
+    REQUIRE(undo_document_command(history));
+    CHECK(find_note(history, object_id_t{101}) != nullptr);
 }
 
 TEST_CASE("Alt pointer hold gestures cancel on modifier release or capture loss",

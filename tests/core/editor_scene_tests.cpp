@@ -319,6 +319,19 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
               return body.note == wormedit::object_id_t{} && body.proposal_ghost;
           }) == 1);
 
+    auto reverse_hold_view = hold_view;
+    reverse_hold_view.pending_hold->preview_end =
+        wormedit::local_position_t{wormedit::measure_id_t{1}, 720};
+    const auto reverse_hold = wormedit::make_editor_field_scene(
+        chart, index, reverse_hold_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(reverse_hold);
+    CHECK(std::ranges::count_if(reverse_hold.scene->note_endpoints, [](const auto& endpoint) {
+              return endpoint.note == wormedit::object_id_t{} && endpoint.proposal_ghost;
+          }) == 2);
+    CHECK(std::ranges::count_if(reverse_hold.scene->hold_bodies, [](const auto& body) {
+              return body.note == wormedit::object_id_t{} && body.proposal_ghost;
+          }) == 1);
+
     auto stale_view = duration_view;
     stale_view.pending_note_duration_gesture->document_revision = 8;
     const auto stale = wormedit::make_editor_field_scene(

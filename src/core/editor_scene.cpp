@@ -573,10 +573,13 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
     for (const auto note : view.selected_notes) {
         selected.insert(note.value);
     }
-    if (view.pending_hold.has_value() && view.pending_note_duration_gesture.has_value()) {
+    const auto preview_gesture_count = static_cast<unsigned>(view.pending_hold.has_value()) +
+                                       static_cast<unsigned>(view.pending_note_duration_gesture.has_value()) +
+                                       static_cast<unsigned>(view.pending_note_move_gesture.has_value());
+    if (preview_gesture_count > 1) {
         result.diagnostics.push_back(error(
             diagnostic_code_t::invalid_hold,
-            "field-scene cannot compose simultaneous hold-placement and duration previews"));
+            "field-scene cannot compose simultaneous note-transform previews"));
         return result;
     }
     struct duration_proposal_t {
@@ -652,6 +655,89 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
             result.diagnostics.push_back(
                 error(diagnostic_code_t::invalid_id,
                       "field-scene duration preview omitted a selected note proposal"));
+            return result;
+        }
+    }
+    struct move_proposal_t {
+        const editor_field_scene_note_source_t* source{};
+        const note_move_preview_t* preview{};
+        std::uint64_t begin_row{};
+        std::optional<std::uint64_t> end_row;
+    };
+    std::vector<move_proposal_t> move_proposals;
+    std::unordered_set<std::uint64_t> move_origin_notes;
+    if (view.pending_note_move_gesture.has_value()) {
+        const auto& pending = *view.pending_note_move_gesture;
+        if (pending.document_revision != index.document_revision || pending.notes.empty() ||
+            pending.notes.size() != pending.preview.size() || pending.notes.size() > index.notes.size()) {
+            result.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_hold, "field-scene note move preview is malformed or stale"));
+            return result;
+        }
+        std::unordered_set<std::uint64_t> expected;
+        expected.reserve(pending.notes.size());
+        for (const auto note : pending.notes) {
+            if (note.value == 0 || !expected.insert(note.value).second) {
+                result.diagnostics.push_back(error(
+                    diagnostic_code_t::invalid_id,
+                    "field-scene note move preview contains duplicate note identities"));
+                return result;
+            }
+        }
+        move_proposals.reserve(pending.preview.size());
+        move_origin_notes.reserve(pending.preview.size());
+        for (const auto& preview : pending.preview) {
+            if (!operate() || preview.note.value == 0 || !expected.erase(preview.note.value)) {
+                result.diagnostics.push_back(error(
+                    diagnostic_code_t::invalid_id,
+                    "field-scene note move preview does not match its selected notes"));
+                return result;
+            }
+            const auto found = index.note_indices_by_id.find(preview.note.value);
+            const auto begin_row = absolute_row(index.measures, preview.position);
+            if (found == index.note_indices_by_id.end() || !begin_row) {
+                result.diagnostics.push_back(error(
+                    diagnostic_code_t::invalid_id,
+                    "field-scene note move preview refers to an invalid note proposal"));
+                return result;
+            }
+            const auto& source = index.notes[found->second];
+            std::optional<std::uint64_t> end_row;
+            if (source.kind == note_kind_t::tap) {
+                if (preview.end.has_value()) {
+                    result.diagnostics.push_back(error(
+                        diagnostic_code_t::invalid_hold,
+                        "field-scene moved tap preview must not carry a tail"));
+                    return result;
+                }
+            } else if (source.kind == note_kind_t::hold) {
+                if (!preview.end.has_value()) {
+                    result.diagnostics.push_back(error(
+                        diagnostic_code_t::invalid_hold,
+                        "field-scene moved hold preview is missing its tail"));
+                    return result;
+                }
+                end_row = absolute_row(index.measures, *preview.end);
+                if (!end_row || *end_row <= *begin_row) {
+                    result.diagnostics.push_back(error(
+                        diagnostic_code_t::invalid_hold,
+                        "field-scene moved hold preview has an invalid tail"));
+                    return result;
+                }
+            } else {
+                result.diagnostics.push_back(error(
+                    diagnostic_code_t::invalid_hold,
+                    "field-scene note move only supports tap and hold proposals"));
+                return result;
+            }
+            move_origin_notes.insert(preview.note.value);
+            move_proposals.push_back(
+                {.source = &source, .preview = &preview, .begin_row = *begin_row, .end_row = end_row});
+        }
+        if (!expected.empty()) {
+            result.diagnostics.push_back(error(
+                diagnostic_code_t::invalid_id,
+                "field-scene note move preview omitted a selected note proposal"));
             return result;
         }
     }
@@ -777,6 +863,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         }
         const auto note_selected = selected.contains(note.note.value);
         const auto proposal_origin = duration_origin_notes.contains(note.note.value) ||
+                                     move_origin_notes.contains(note.note.value) ||
                                      hold_origin_notes.contains(note.note.value);
         const auto add_endpoint = [&](std::uint64_t row, bool tail) {
             const auto* band = visible_band_for_row(row);
@@ -995,6 +1082,17 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
             result.diagnostics.push_back(
                 error(diagnostic_code_t::invalid_resolution,
                       "field-scene duration preview exceeds a composition cap"));
+            return result;
+        }
+    }
+    for (const auto& proposal : move_proposals) {
+        append_proposal_geometry(proposal.source->note, proposal.source->lane, proposal.source->kind,
+                                 proposal.begin_row, proposal.end_row,
+                                 selected.contains(proposal.source->note.value));
+        if (proposal_failed) {
+            result.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_resolution,
+                      "field-scene note move preview exceeds a composition cap"));
             return result;
         }
     }

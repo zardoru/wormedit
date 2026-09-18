@@ -2138,6 +2138,80 @@ TEST_CASE("duration gestures reject collisions and stale revisions without parti
     CHECK_FALSE(state.pending_note_duration_gesture.has_value());
 }
 
+TEST_CASE("selected note moves preview and commit one snapped translation",
+          "[unit][core][interaction][gesture][selection][move]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 240},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, 480}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
+    };
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
+    REQUIRE(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
+
+    const auto preview = dispatch_editor_action(
+        history, state, update_note_move_gesture_action_t{{measure_id_t{2}, 0}});
+    REQUIRE(preview);
+    REQUIRE(preview.view->pending_note_move_gesture.has_value());
+    const auto& moved = preview.view->pending_note_move_gesture->preview;
+    REQUIRE(moved.size() == 2);
+    CHECK(moved[0].position == local_position_t{measure_id_t{2}, 0});
+    CHECK(moved[0].end == local_position_t{measure_id_t{2}, 240});
+    CHECK(moved[1].position == local_position_t{measure_id_t{2}, 240});
+    CHECK_FALSE(moved[1].end.has_value());
+    CHECK(history.document.revision == 1);
+
+    const auto committed = dispatch_editor_action(
+        history, state, release_note_move_gesture_action_t{{measure_id_t{2}, 0}});
+    REQUIRE(committed);
+    CHECK(committed.document_changed);
+    CHECK_FALSE(state.pending_note_move_gesture.has_value());
+    CHECK(find_note(history, object_id_t{101})->position == local_position_t{measure_id_t{2}, 0});
+    CHECK(find_note(history, object_id_t{101})->end == local_position_t{measure_id_t{2}, 240});
+    CHECK(find_note(history, object_id_t{102})->position == local_position_t{measure_id_t{2}, 240});
+    REQUIRE(undo_document_command(history));
+    CHECK(find_note(history, object_id_t{101})->position == local_position_t{measure_id_t{1}, 240});
+    CHECK(find_note(history, object_id_t{102})->position == local_position_t{measure_id_t{1}, 480});
+}
+
+TEST_CASE("note move gestures reject collisions and stale revisions without partial edits",
+          "[unit][core][interaction][gesture][move][collision]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1}},
+    };
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
+    const auto collision = dispatch_editor_action(
+        history, state, update_note_move_gesture_action_t{{measure_id_t{1}, 720}});
+    CHECK_FALSE(collision);
+    CHECK(has_code(collision.diagnostics, diagnostic_code_t::collision));
+    CHECK(state.pending_note_move_gesture.has_value());
+    CHECK(find_note(history, object_id_t{101})->position == local_position_t{measure_id_t{1}, 240});
+
+    auto proposed = history.document;
+    proposed.metadata.title = "revision changed during move";
+    REQUIRE(commit_document_command(history, std::move(proposed), "Rename song"));
+    const auto stale = dispatch_editor_action(
+        history, state, update_note_move_gesture_action_t{{measure_id_t{1}, 480}});
+    CHECK_FALSE(stale);
+    CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
+    CHECK(state.pending_note_move_gesture.has_value());
+    REQUIRE(dispatch_editor_action(
+        history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost}));
+    CHECK_FALSE(state.pending_note_move_gesture.has_value());
+}
+
 TEST_CASE("duration gesture previews scale to fifty thousand selected notes",
           "[unit][core][interaction][gesture][stress]") {
     auto song = make_song();

@@ -345,6 +345,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .viewport_height_pixels = state.viewport_height_pixels,
         .pending_hold = state.pending_hold,
         .pending_note_duration_gesture = state.pending_note_duration_gesture,
+        .pending_note_move_gesture = state.pending_note_move_gesture,
         .pending_note_paint_gesture =
             state.pending_note_paint_gesture
                 ? std::optional{note_paint_gesture_preview_t{
@@ -929,6 +930,196 @@ auto duration_previews(const duration_resize_plan_t& plan) -> std::vector<note_d
     for (const auto& note : plan.resized) {
         result.push_back(
             {note.id, note.end_position ? note_kind_t::hold : note_kind_t::tap, note.end_position});
+    }
+    return result;
+}
+
+struct moved_note_t {
+    object_id_t id;
+    lane_id_t lane;
+    std::uint64_t begin{};
+    std::uint64_t end{};
+    local_position_t position;
+    std::optional<local_position_t> end_position;
+};
+
+struct note_move_plan_t {
+    object_id_t reference_note;
+    lane_id_t reference_lane;
+    local_position_t reference_position;
+    std::vector<object_id_t> notes;
+    std::vector<moved_note_t> moved;
+};
+
+auto plan_note_move(const chart_document_t& chart, const measure_index_t& index,
+                    std::vector<object_id_t> targets, object_id_t reference_id,
+                    local_position_t reference_position, std::uint64_t snap_denominator,
+                    bool reference_position_is_exact = false)
+    -> std::variant<note_move_plan_t, diagnostic_list_t> {
+    const auto* reference = find_note(chart, reference_id);
+    if (reference == nullptr ||
+        (reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold)) {
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
+                                       "note move requires a tap or hold reference note",
+                                       reference_id)};
+    }
+    const auto snapped =
+        reference_position_is_exact
+            ? (absolute_row(index, reference_position).has_value()
+                   ? std::optional{reference_position}
+                   : std::nullopt)
+            : snapped_position(chart, index, reference_position, snap_denominator);
+    const auto reference_begin = absolute_row(index, reference->position);
+    const auto reference_target = snapped ? absolute_row(index, *snapped) : std::nullopt;
+    if (!snapped || !reference_begin || !reference_target) {
+        return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
+                                       "note move reference cannot be snapped inside chart",
+                                       reference_id)};
+    }
+    if (std::ranges::find(targets, reference_id) == targets.end()) {
+        targets = {reference_id};
+    }
+    std::unordered_set<std::uint64_t> target_ids;
+    target_ids.reserve(targets.size());
+    for (const auto id : targets) {
+        if (id.value == 0 || !target_ids.insert(id.value).second) {
+            return diagnostic_list_t{error(diagnostic_code_t::duplicate_id,
+                                           "note move contains an invalid or duplicate note ID", id)};
+        }
+    }
+    const auto forward = *reference_target >= *reference_begin;
+    const auto delta = forward ? *reference_target - *reference_begin
+                               : *reference_begin - *reference_target;
+    auto note_count = std::size_t{};
+    for (const auto& measure : chart.measures) {
+        note_count += measure.notes.size();
+    }
+    std::unordered_map<std::uint64_t, const note_t*> targets_by_id;
+    targets_by_id.reserve(targets.size());
+    std::vector<duration_collision_interval_t> collision_intervals;
+    collision_intervals.reserve(note_count);
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            if (target_ids.contains(note.id.value)) {
+                targets_by_id.emplace(note.id.value, &note);
+                continue;
+            }
+            const auto begin = absolute_row(index, note.position);
+            const auto end = note.end ? absolute_row(index, *note.end) : begin;
+            if (!begin || !end) {
+                return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
+                                               "existing note lies outside chart geometry", note.id)};
+            }
+            collision_intervals.push_back({note.lane, *begin, *end, note.id, false});
+        }
+    }
+    note_move_plan_t plan{
+        .reference_note = reference_id,
+        .reference_lane = reference->lane,
+        .reference_position = *snapped,
+        .notes = std::move(targets),
+    };
+    plan.moved.reserve(plan.notes.size());
+    const auto lane_available_across = [&](std::uint64_t begin, std::uint64_t end,
+                                           lane_id_t lane) {
+        const auto first = position_at(index, begin);
+        const auto last = position_at(index, end);
+        if (!first || !last || find_active_lane(chart, index, *first, lane) == nullptr ||
+            find_active_lane(chart, index, *last, lane) == nullptr) {
+            return false;
+        }
+        for (const auto& layout : chart.lane_layouts) {
+            const auto row = absolute_row(index, layout.position);
+            if (row && *row > begin && *row <= end &&
+                find_active_lane(chart, index, layout.position, lane) == nullptr) {
+                return false;
+            }
+        }
+        return true;
+    };
+    for (const auto id : plan.notes) {
+        const auto found = targets_by_id.find(id.value);
+        const auto* note = found == targets_by_id.end() ? nullptr : found->second;
+        if (note == nullptr ||
+            (note->kind != note_kind_t::tap && note->kind != note_kind_t::hold)) {
+            return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
+                                           "selected note move contains a non-tap/hold note", id)};
+        }
+        const auto begin = absolute_row(index, note->position);
+        const auto end = note->end ? absolute_row(index, *note->end) : begin;
+        if (!begin || !end || (!forward && delta > *begin) ||
+            (forward && (delta > index.total_rows - 1 - *end))) {
+            return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
+                                           "selected note move would leave chart geometry", id)};
+        }
+        const auto moved_begin = forward ? *begin + delta : *begin - delta;
+        const auto moved_end = forward ? *end + delta : *end - delta;
+        const auto position = position_at(index, moved_begin);
+        const auto end_position = note->end ? position_at(index, moved_end)
+                                            : std::optional<local_position_t>{};
+        if (!position || (note->end && !end_position) ||
+            !lane_available_across(moved_begin, moved_end, note->lane)) {
+            return diagnostic_list_t{error(diagnostic_code_t::unknown_lane,
+                                           "selected note lane is unavailable at its moved position", id)};
+        }
+        plan.moved.push_back({id, note->lane, moved_begin, moved_end, *position, end_position});
+        collision_intervals.push_back({note->lane, moved_begin, moved_end, id, true});
+    }
+    std::ranges::sort(collision_intervals, [](const auto& left, const auto& right) {
+        if (left.lane != right.lane)
+            return left.lane.value < right.lane.value;
+        if (left.begin != right.begin)
+            return left.begin < right.begin;
+        if (left.end != right.end)
+            return left.end < right.end;
+        return left.resizing < right.resizing;
+    });
+    using active_collision_queue_t =
+        std::priority_queue<active_duration_collision_t, std::vector<active_duration_collision_t>,
+                            earliest_duration_collision_t>;
+    auto active_moved = active_collision_queue_t{};
+    auto active_existing = active_collision_queue_t{};
+    auto active_lane = lane_id_t{};
+    auto has_active_lane = false;
+    for (const auto& interval : collision_intervals) {
+        if (!has_active_lane || interval.lane != active_lane) {
+            active_moved = active_collision_queue_t{};
+            active_existing = active_collision_queue_t{};
+            active_lane = interval.lane;
+            has_active_lane = true;
+        }
+        while (!active_moved.empty() && active_moved.top().end < interval.begin)
+            active_moved.pop();
+        while (!active_existing.empty() && active_existing.top().end < interval.begin)
+            active_existing.pop();
+        if (interval.resizing) {
+            if (!active_moved.empty()) {
+                return diagnostic_list_t{error(diagnostic_code_t::collision,
+                                               "moved selected notes overlap on one lane", interval.note)};
+            }
+            if (!active_existing.empty()) {
+                return diagnostic_list_t{error(diagnostic_code_t::collision,
+                                               "moved note overlaps an unselected same-lane note",
+                                               active_existing.top().note)};
+            }
+            active_moved.push({interval.end, interval.note});
+        } else {
+            if (!active_moved.empty()) {
+                return diagnostic_list_t{error(diagnostic_code_t::collision,
+                                               "moved note overlaps an unselected same-lane note",
+                                               interval.note)};
+            }
+            active_existing.push({interval.end, interval.note});
+        }
+    }
+    return plan;
+}
+
+auto move_previews(const note_move_plan_t& plan) -> std::vector<note_move_preview_t> {
+    std::vector<note_move_preview_t> result;
+    result.reserve(plan.moved.size());
+    for (const auto& note : plan.moved) {
+        result.push_back({note.id, note.position, note.end_position});
     }
     return result;
 }
@@ -2135,6 +2326,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         }
         state.pending_hold.reset();
         state.pending_note_duration_gesture.reset();
+        state.pending_note_move_gesture.reset();
         state.pending_note_paint_gesture.reset();
         state.pending_editor_area_selection.reset();
         state.pending_space_range_selection.reset();
@@ -2206,6 +2398,13 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
             {error(diagnostic_code_t::invalid_hold,
                    "finish or cancel the active note duration gesture first")});
     }
+    if (state.pending_note_move_gesture.has_value() &&
+        !std::holds_alternative<update_note_move_gesture_action_t>(action) &&
+        !std::holds_alternative<release_note_move_gesture_action_t>(action)) {
+        return diagnostic_result(history, state,
+                                 {error(diagnostic_code_t::invalid_hold,
+                                        "finish or cancel the active note move gesture first")});
+    }
     if (state.pending_note_paint_gesture.has_value() &&
         !std::holds_alternative<update_note_paint_gesture_action_t>(action) &&
         !std::holds_alternative<end_note_paint_gesture_action_t>(action)) {
@@ -2247,6 +2446,11 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         return plan_duration_resize(*chart, index, std::move(targets), reference, end,
                                     state.active_snap_denominator, exact_end);
     };
+    const auto make_move_plan = [&](std::vector<object_id_t> targets, object_id_t reference,
+                                    local_position_t position, bool exact_position = false) {
+        return plan_note_move(*chart, index, std::move(targets), reference, position,
+                              state.active_snap_denominator, exact_position);
+    };
     const auto apply_duration_plan = [&](const duration_resize_plan_t& plan) {
         auto proposed = history.document;
         auto* proposed_chart = find_chart(proposed, state.chart);
@@ -2282,10 +2486,84 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                : diagnostic_list_t{},
         };
     };
+    const auto apply_move_plan = [&](const note_move_plan_t& plan) {
+        auto proposed = history.document;
+        auto* proposed_chart = find_chart(proposed, state.chart);
+        auto changed = false;
+        for (const auto& candidate : plan.moved) {
+            const auto* note = find_note(*proposed_chart, candidate.id);
+            changed = changed || note == nullptr || note->position != candidate.position ||
+                      note->end != candidate.end_position;
+        }
+        if (!changed) {
+            state.pending_note_move_gesture.reset();
+            set_selected_notes(state, plan.notes);
+            state.active_lane = plan.reference_lane;
+            state.cursor = plan.reference_position;
+            const auto next_view = make_view(history, state);
+            return editor_interaction_result_t{
+                .accepted = true,
+                .view = std::holds_alternative<editor_interaction_view_model_t>(next_view)
+                            ? std::optional{std::get<editor_interaction_view_model_t>(next_view)}
+                            : std::nullopt,
+                .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
+                                   ? std::get<diagnostic_list_t>(next_view)
+                                   : diagnostic_list_t{},
+            };
+        }
+        for (const auto& candidate : plan.moved) {
+            auto source = proposed_chart->measures.end();
+            auto found = std::vector<note_t>::iterator{};
+            for (auto measure = proposed_chart->measures.begin();
+                 measure != proposed_chart->measures.end(); ++measure) {
+                const auto candidate_note =
+                    std::ranges::find(measure->notes, candidate.id, &note_t::id);
+                if (candidate_note != measure->notes.end()) {
+                    source = measure;
+                    found = candidate_note;
+                    break;
+                }
+            }
+            auto destination = std::ranges::find(proposed_chart->measures,
+                                                  candidate.position.measure, &measure_chunk_t::id);
+            if (source == proposed_chart->measures.end() || destination == proposed_chart->measures.end()) {
+                return diagnostic_result(history, state,
+                                         {error(diagnostic_code_t::invalid_id,
+                                                "note move could not relocate a planned note", candidate.id)});
+            }
+            auto moved = std::move(*found);
+            source->notes.erase(found);
+            moved.position = candidate.position;
+            moved.end = candidate.end_position;
+            destination->notes.push_back(std::move(moved));
+        }
+        auto command = commit_document_command(
+            history, std::move(proposed),
+            plan.notes.size() == 1 ? "Move note" : "Move selected notes");
+        if (!command) {
+            return diagnostic_result(history, state, std::move(command.diagnostics));
+        }
+        state.pending_note_move_gesture.reset();
+        set_selected_notes(state, plan.notes);
+        state.active_lane = plan.reference_lane;
+        state.cursor = plan.reference_position;
+        const auto next_view = make_view(history, state);
+        return editor_interaction_result_t{
+            .accepted = true,
+            .document_changed = true,
+            .view = std::holds_alternative<editor_interaction_view_model_t>(next_view)
+                        ? std::optional{std::get<editor_interaction_view_model_t>(next_view)}
+                        : std::nullopt,
+            .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
+                               ? std::get<diagnostic_list_t>(next_view)
+                               : diagnostic_list_t{},
+        };
+    };
 
     const auto begin_hold_gesture = [&](lane_id_t lane, local_position_t position,
                                         hold_gesture_source_t source) {
-        if (state.pending_hold.has_value() || state.pending_note_duration_gesture.has_value()) {
+        if (state.pending_hold.has_value() || state.pending_note_duration_gesture.has_value() ||
+            state.pending_note_move_gesture.has_value()) {
             return diagnostic_result(history, state,
                                      {error(diagnostic_code_t::invalid_hold,
                                             "another editor gesture is already active")});
@@ -2412,7 +2690,8 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         return result;
     };
     const auto begin_duration_gesture = [&](object_id_t reference_id) {
-        if (state.pending_hold.has_value() || state.pending_note_duration_gesture.has_value()) {
+        if (state.pending_hold.has_value() || state.pending_note_duration_gesture.has_value() ||
+            state.pending_note_move_gesture.has_value()) {
             return diagnostic_result(history, state,
                                      {error(diagnostic_code_t::invalid_hold,
                                             "another editor gesture is already active")});
@@ -2521,6 +2800,93 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                      std::get<diagnostic_list_t>(std::move(planned)));
         }
         return apply_duration_plan(std::get<duration_resize_plan_t>(planned));
+    };
+
+    const auto begin_move_gesture = [&](object_id_t reference_id) {
+        if (state.pending_hold || state.pending_note_duration_gesture ||
+            state.pending_note_move_gesture || state.pending_note_paint_gesture ||
+            state.pending_editor_area_selection || state.pending_space_range_selection) {
+            return diagnostic_result(history, state,
+                                     {error(diagnostic_code_t::invalid_hold,
+                                            "another editor gesture is already active")});
+        }
+        const auto* reference = find_note(*chart, reference_id);
+        if (reference == nullptr ||
+            (reference->kind != note_kind_t::tap && reference->kind != note_kind_t::hold)) {
+            return diagnostic_result(history, state,
+                                     {error(diagnostic_code_t::invalid_id,
+                                            "note move gesture requires a tap or hold reference note",
+                                            reference_id)});
+        }
+        auto targets = state.selected_notes;
+        if (std::ranges::find(targets, reference_id) == targets.end()) {
+            targets = {reference_id};
+        }
+        auto planned = make_move_plan(targets, reference_id, reference->position, true);
+        if (std::holds_alternative<diagnostic_list_t>(planned)) {
+            return diagnostic_result(history, state, std::get<diagnostic_list_t>(std::move(planned)));
+        }
+        const auto& plan = std::get<note_move_plan_t>(planned);
+        state.pending_note_move_gesture = pending_note_move_gesture_t{
+            .reference_note = reference_id,
+            .document_revision = history.document.revision,
+            .notes = plan.notes,
+            .preview_position = plan.reference_position,
+            .preview = move_previews(plan),
+        };
+        const auto view = make_view(history, state);
+        return editor_interaction_result_t{
+            .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
+            .view = std::holds_alternative<editor_interaction_view_model_t>(view)
+                        ? std::optional{std::get<editor_interaction_view_model_t>(view)}
+                        : std::nullopt,
+            .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
+                               ? std::get<diagnostic_list_t>(view)
+                               : diagnostic_list_t{},
+        };
+    };
+    const auto update_move_gesture = [&](local_position_t requested_position) {
+        if (!state.pending_note_move_gesture) {
+            return diagnostic_result(history, state,
+                                     {error(diagnostic_code_t::invalid_hold,
+                                            "note move update requires an active gesture")});
+        }
+        const auto pending = *state.pending_note_move_gesture;
+        if (pending.document_revision != history.document.revision) {
+            return diagnostic_result(history, state,
+                                     {error(diagnostic_code_t::invalid_hold,
+                                            "note move gesture is stale after a document edit")});
+        }
+        auto planned = make_move_plan(pending.notes, pending.reference_note, requested_position);
+        if (std::holds_alternative<diagnostic_list_t>(planned)) {
+            return diagnostic_result(history, state, std::get<diagnostic_list_t>(std::move(planned)));
+        }
+        const auto& plan = std::get<note_move_plan_t>(planned);
+        state.pending_note_move_gesture->preview_position = plan.reference_position;
+        state.pending_note_move_gesture->preview = move_previews(plan);
+        const auto view = make_view(history, state);
+        return editor_interaction_result_t{
+            .accepted = std::holds_alternative<editor_interaction_view_model_t>(view),
+            .view = std::holds_alternative<editor_interaction_view_model_t>(view)
+                        ? std::optional{std::get<editor_interaction_view_model_t>(view)}
+                        : std::nullopt,
+            .diagnostics = std::holds_alternative<diagnostic_list_t>(view)
+                               ? std::get<diagnostic_list_t>(view)
+                               : diagnostic_list_t{},
+        };
+    };
+    const auto release_move_gesture = [&](local_position_t requested_position) {
+        const auto updated = update_move_gesture(requested_position);
+        if (!updated) {
+            return updated;
+        }
+        const auto pending = *state.pending_note_move_gesture;
+        auto planned = make_move_plan(pending.notes, pending.reference_note,
+                                      pending.preview_position, true);
+        if (std::holds_alternative<diagnostic_list_t>(planned)) {
+            return diagnostic_result(history, state, std::get<diagnostic_list_t>(std::move(planned)));
+        }
+        return apply_move_plan(std::get<note_move_plan_t>(planned));
     };
 
     const auto append_paint_target = [&](lane_id_t lane, local_position_t position,
@@ -2637,6 +3003,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                             "pointer capture is required to begin note painting")});
         }
         if (state.pending_hold.has_value() || state.pending_note_duration_gesture.has_value() ||
+            state.pending_note_move_gesture.has_value() ||
             state.pending_note_paint_gesture.has_value() ||
             state.pending_editor_area_selection.has_value() ||
             state.pending_space_range_selection.has_value()) {
@@ -2846,6 +3213,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                        "pointer capture is required to begin area selection")});
         }
         if (state.pending_hold.has_value() || state.pending_note_duration_gesture.has_value() ||
+            state.pending_note_move_gesture.has_value() ||
             state.pending_note_paint_gesture.has_value() ||
             state.pending_editor_area_selection.has_value()) {
             return diagnostic_result(history, state,
@@ -3504,6 +3872,12 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                 return update_duration_gesture(typed_action.reference_end);
             } else if constexpr (std::is_same_v<action_t, release_note_duration_gesture_action_t>) {
                 return release_duration_gesture(typed_action.reference_end);
+            } else if constexpr (std::is_same_v<action_t, begin_note_move_gesture_action_t>) {
+                return begin_move_gesture(typed_action.reference_note);
+            } else if constexpr (std::is_same_v<action_t, update_note_move_gesture_action_t>) {
+                return update_move_gesture(typed_action.reference_position);
+            } else if constexpr (std::is_same_v<action_t, release_note_move_gesture_action_t>) {
+                return release_move_gesture(typed_action.reference_position);
             } else if constexpr (std::is_same_v<action_t, begin_note_paint_gesture_action_t>) {
                 return begin_paint_gesture(typed_action.lane, typed_action.position,
                                            typed_action.pointer_captured);

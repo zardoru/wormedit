@@ -303,6 +303,32 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
               return body.note == wormedit::object_id_t{11} && body.proposal_ghost;
           }) == 1);
 
+    auto move_view = view();
+    move_view.pending_note_move_gesture = wormedit::pending_note_move_gesture_t{
+        .reference_note = wormedit::object_id_t{11},
+        .document_revision = 7,
+        .notes = {wormedit::object_id_t{11}},
+        .preview_position = {wormedit::measure_id_t{2}, 240},
+        .preview = {{wormedit::object_id_t{11},
+                     wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
+                     wormedit::local_position_t{wormedit::measure_id_t{2}, 720}}},
+    };
+    const auto moved = wormedit::make_editor_field_scene(
+        chart, index, move_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(moved);
+    CHECK(std::ranges::count_if(moved.scene->note_endpoints, [](const auto& endpoint) {
+              return endpoint.note == wormedit::object_id_t{11} && endpoint.proposal_origin;
+          }) == 2);
+    CHECK(std::ranges::count_if(moved.scene->hold_bodies, [](const auto& body) {
+              return body.note == wormedit::object_id_t{11} && body.proposal_origin;
+          }) == 2);
+    CHECK(std::ranges::count_if(moved.scene->note_endpoints, [](const auto& endpoint) {
+              return endpoint.note == wormedit::object_id_t{11} && endpoint.proposal_ghost;
+          }) == 1);
+    CHECK(std::ranges::count_if(moved.scene->hold_bodies, [](const auto& body) {
+              return body.note == wormedit::object_id_t{11} && body.proposal_ghost;
+          }) == 1);
+
     auto hold_view = view();
     hold_view.pending_hold = wormedit::pending_hold_t{
         .position = {wormedit::measure_id_t{2}, 0},

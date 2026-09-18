@@ -2159,6 +2159,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     interaction_view.viewport_scroll_pixels = retained_state->viewport_scroll_pixels;
     interaction_view.pending_hold = retained_state->pending_hold;
     interaction_view.pending_note_duration_gesture = retained_state->pending_note_duration_gesture;
+    interaction_view.pending_note_move_gesture = retained_state->pending_note_move_gesture;
     interaction_view.pending_note_paint_gesture =
         retained_state->pending_note_paint_gesture
             ? std::optional{wormedit::note_paint_gesture_preview_t{
@@ -2925,6 +2926,50 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             }
             break;
         }
+        case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN:
+        case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE:
+        case WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE: {
+            const auto chart =
+                std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+            const auto current_view = compose_view_for_state(history, state);
+            if (chart == history.document.charts.end() || !current_view) {
+                (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+                return "The selected chart field is no longer available.";
+            }
+            if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN) {
+                const auto target =
+                    hit_target_at(*chart, *current_view, input.x_pixels, input.y_pixels);
+                if (!target || !target->note ||
+                    std::ranges::find(state.selected_notes, *target->note) ==
+                        state.selected_notes.end()) {
+                    return "Begin a note move by dragging a selected playable note.";
+                }
+                state.active_lane = target->lane;
+                state.cursor = target->position;
+                result = dispatch_editor_action(history, state,
+                                                begin_note_move_gesture_action_t{*target->note});
+                accepted = "Selected-note move started.";
+            } else {
+                const auto y = std::clamp(input.y_pixels, 0.0,
+                                          std::max(0.0, current_view->viewport_height_pixels - 0.001));
+                const auto position = editor_position_at_y_pixels(*chart, *current_view, y);
+                if (!position) {
+                    (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+                    return "Note move input fell outside chart geometry and was canceled.";
+                }
+                if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE) {
+                    result = dispatch_editor_action(history, state,
+                                                    update_note_move_gesture_action_t{*position});
+                    accepted = "Selected-note move preview updated.";
+                } else {
+                    result = dispatch_editor_action(history, state,
+                                                    release_note_move_gesture_action_t{*position});
+                    accepted = result.document_changed ? "Selected notes moved."
+                                                       : "Selected-note move released.";
+                }
+            }
+            break;
+        }
         case WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN:
             if (!selection_mode(input.selection_mode).has_value()) {
                 return "Compose area selection used an unknown selection mode.";
@@ -3178,6 +3223,7 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
 auto editor_interaction_has_pending_gesture(const wormedit::editor_interaction_state_t& state)
     -> bool {
     return state.pending_hold.has_value() || state.pending_note_duration_gesture.has_value() ||
+           state.pending_note_move_gesture.has_value() ||
            state.pending_note_paint_gesture.has_value() ||
            state.pending_editor_area_selection.has_value() ||
            state.pending_space_range_selection.has_value();
@@ -3745,6 +3791,9 @@ int main(int argc, char** argv) {
                  state.pending_hold->document_revision != history.document.revision) ||
                 (state.pending_note_duration_gesture &&
                  state.pending_note_duration_gesture->document_revision !=
+                     history.document.revision) ||
+                (state.pending_note_move_gesture &&
+                 state.pending_note_move_gesture->document_revision !=
                      history.document.revision) ||
                 (state.pending_note_paint_gesture &&
                  state.pending_note_paint_gesture->document_revision !=

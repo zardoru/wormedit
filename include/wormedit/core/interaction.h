@@ -104,6 +104,20 @@ struct release_note_duration_gesture_action_t {
     local_position_t reference_end;
 };
 
+// Translate the selected playable notes by the snapped delta between the
+// reference head and this position. Lanes and note durations stay unchanged.
+struct begin_note_move_gesture_action_t {
+    object_id_t reference_note;
+};
+
+struct update_note_move_gesture_action_t {
+    local_position_t reference_position;
+};
+
+struct release_note_move_gesture_action_t {
+    local_position_t reference_position;
+};
+
 struct note_paint_target_t {
     lane_id_t lane;
     local_position_t position;
@@ -274,6 +288,8 @@ using editor_ui_action_t =
                  update_alt_pointer_hold_gesture_action_t,
                  release_alt_pointer_hold_gesture_action_t, begin_note_duration_gesture_action_t,
                  update_note_duration_gesture_action_t, release_note_duration_gesture_action_t,
+                 begin_note_move_gesture_action_t, update_note_move_gesture_action_t,
+                 release_note_move_gesture_action_t,
                  begin_note_paint_gesture_action_t, update_note_paint_gesture_action_t,
                  end_note_paint_gesture_action_t, begin_editor_area_selection_action_t,
                  update_editor_area_selection_action_t, commit_editor_area_selection_action_t,
@@ -327,6 +343,24 @@ struct pending_note_duration_gesture_t {
     std::vector<note_duration_preview_t> preview;
 
     auto operator==(const pending_note_duration_gesture_t&) const -> bool = default;
+};
+
+struct note_move_preview_t {
+    object_id_t note;
+    local_position_t position;
+    std::optional<local_position_t> end;
+
+    auto operator==(const note_move_preview_t&) const -> bool = default;
+};
+
+struct pending_note_move_gesture_t {
+    object_id_t reference_note;
+    std::uint64_t document_revision{};
+    std::vector<object_id_t> notes;
+    local_position_t preview_position;
+    std::vector<note_move_preview_t> preview;
+
+    auto operator==(const pending_note_move_gesture_t&) const -> bool = default;
 };
 
 struct pending_note_paint_gesture_t {
@@ -400,6 +434,7 @@ struct editor_interaction_state_t {
     double viewport_height_pixels{1.0};
     std::optional<pending_hold_t> pending_hold;
     std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
+    std::optional<pending_note_move_gesture_t> pending_note_move_gesture;
     std::optional<pending_note_paint_gesture_t> pending_note_paint_gesture;
     std::optional<pending_editor_area_selection_t> pending_editor_area_selection;
     std::optional<pending_space_range_selection_t> pending_space_range_selection;
@@ -420,6 +455,7 @@ struct editor_interaction_view_model_t {
     double viewport_height_pixels{1.0};
     std::optional<pending_hold_t> pending_hold;
     std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
+    std::optional<pending_note_move_gesture_t> pending_note_move_gesture;
     std::optional<note_paint_gesture_preview_t> pending_note_paint_gesture;
     std::optional<editor_area_selection_preview_t> pending_editor_area_selection;
     std::optional<space_range_selection_preview_t> pending_space_range_selection;

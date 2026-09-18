@@ -309,7 +309,7 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
         .document_revision = 7,
         .notes = {wormedit::object_id_t{11}},
         .preview_position = {wormedit::measure_id_t{2}, 240},
-        .preview = {{wormedit::object_id_t{11},
+        .preview = {{wormedit::object_id_t{11}, wormedit::lane_id_t{2},
                      wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
                      wormedit::local_position_t{wormedit::measure_id_t{2}, 720}}},
     };
@@ -323,7 +323,8 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
               return body.note == wormedit::object_id_t{11} && body.proposal_origin;
           }) == 2);
     CHECK(std::ranges::count_if(moved.scene->note_endpoints, [](const auto& endpoint) {
-              return endpoint.note == wormedit::object_id_t{11} && endpoint.proposal_ghost;
+              return endpoint.note == wormedit::object_id_t{11} && endpoint.proposal_ghost &&
+                     endpoint.lane == wormedit::lane_id_t{2};
           }) == 1);
     CHECK(std::ranges::count_if(moved.scene->hold_bodies, [](const auto& body) {
               return body.note == wormedit::object_id_t{11} && body.proposal_ghost;
@@ -365,13 +366,14 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
         .lane = wormedit::lane_id_t{2},
         .document_revision = 7,
         .preview_end = wormedit::local_position_t{wormedit::measure_id_t{1}, 720},
-        .placement_preview = wormedit::pending_hold_placement_preview_t{
-            .head = {wormedit::measure_id_t{1}, 480},
-            .tail = wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
-            .removals = std::make_shared<const std::vector<wormedit::object_id_t>>(
-                std::vector<wormedit::object_id_t>{wormedit::object_id_t{11}}),
-            .adds_note = true,
-        },
+        .placement_preview =
+            wormedit::pending_hold_placement_preview_t{
+                .head = {wormedit::measure_id_t{1}, 480},
+                .tail = wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
+                .removals = std::make_shared<const std::vector<wormedit::object_id_t>>(
+                    std::vector<wormedit::object_id_t>{wormedit::object_id_t{11}}),
+                .adds_note = true,
+            },
     };
     const auto merged_hold = wormedit::make_editor_field_scene(
         chart, index, merged_hold_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
@@ -411,11 +413,11 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
         .lane = wormedit::lane_id_t{1},
         .document_revision = 7,
     };
-    const auto capped = wormedit::make_editor_field_scene(
-        chart, index, capped_view,
-        {.field_left_pixels = 10.0,
-         .field_width_pixels = 200.0,
-         .maximum_scene_primitives = baseline_primitives});
+    const auto capped =
+        wormedit::make_editor_field_scene(chart, index, capped_view,
+                                          {.field_left_pixels = 10.0,
+                                           .field_width_pixels = 200.0,
+                                           .maximum_scene_primitives = baseline_primitives});
     CHECK_FALSE(capped);
     CHECK_FALSE(capped.scene.has_value());
     CHECK(has_code(capped.diagnostics, wormedit::diagnostic_code_t::invalid_resolution));

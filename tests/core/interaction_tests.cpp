@@ -1841,8 +1841,8 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
     REQUIRE(placement.removals);
     CHECK(*placement.removals ==
           std::vector<object_id_t>{object_id_t{101}, object_id_t{102}, object_id_t{103}});
-    const auto union_commit = dispatch_editor_action(
-        union_history, union_state, commit_hold_action_t{{measure_id_t{1}, 720}});
+    const auto union_commit = dispatch_editor_action(union_history, union_state,
+                                                     commit_hold_action_t{{measure_id_t{1}, 720}});
     REQUIRE(union_commit);
     REQUIRE(note_count(union_history) == 1);
     const auto* union_hold = find_note(union_history, object_id_t{104});
@@ -1866,8 +1866,8 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
     auto conflicting_state = make_state(conflicting_history);
     REQUIRE(dispatch_editor_action(conflicting_history, conflicting_state,
                                    begin_hold_action_t{{measure_id_t{1}, 0}}));
-    const auto conflict = dispatch_editor_action(
-        conflicting_history, conflicting_state, commit_hold_action_t{{measure_id_t{1}, 480}});
+    const auto conflict = dispatch_editor_action(conflicting_history, conflicting_state,
+                                                 commit_hold_action_t{{measure_id_t{1}, 480}});
     CHECK_FALSE(conflict);
     CHECK(has_code(conflict.diagnostics, diagnostic_code_t::collision));
     CHECK(conflicting_state.pending_hold.has_value());
@@ -1981,7 +1981,8 @@ TEST_CASE("lane-key hold gestures snap, extend, contract to a tap, and undo atom
     CHECK(moved_head->end == local_position_t{measure_id_t{2}, 240});
 }
 
-TEST_CASE("lane-key press removes an occupied ordinary tap or hold", "[unit][core][interaction][hold]") {
+TEST_CASE("lane-key press removes an occupied ordinary tap or hold",
+          "[unit][core][interaction][hold]") {
     auto song = make_song();
     song.charts.front().measures.front().notes = {
         {.id = object_id_t{101},
@@ -2000,7 +2001,8 @@ TEST_CASE("lane-key press removes an occupied ordinary tap or hold", "[unit][cor
     CHECK(pressed.document_changed);
     CHECK_FALSE(state.pending_hold.has_value());
     CHECK(note_count(history) == 0);
-    const auto released = dispatch_editor_action(history, state, release_lane_key_hold_gesture_action_t{});
+    const auto released =
+        dispatch_editor_action(history, state, release_lane_key_hold_gesture_action_t{});
     REQUIRE(released);
     CHECK_FALSE(released.document_changed);
     REQUIRE(undo_document_command(history));
@@ -2203,7 +2205,8 @@ TEST_CASE("selected note moves preview and commit one snapped translation",
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(
         history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
-    REQUIRE(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
+    REQUIRE(
+        dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
 
     const auto preview = dispatch_editor_action(
         history, state, update_note_move_gesture_action_t{{measure_id_t{2}, 0}});
@@ -2240,7 +2243,8 @@ TEST_CASE("note move gestures reject collisions and stale revisions without part
     REQUIRE(validate_document(song).empty());
     auto history = make_document_history(std::move(song));
     auto state = make_state(history);
-    REQUIRE(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
+    REQUIRE(
+        dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
     const auto collision = dispatch_editor_action(
         history, state, update_note_move_gesture_action_t{{measure_id_t{1}, 720}});
     CHECK_FALSE(collision);
@@ -2257,8 +2261,113 @@ TEST_CASE("note move gestures reject collisions and stale revisions without part
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     CHECK(state.pending_note_move_gesture.has_value());
     REQUIRE(dispatch_editor_action(
-        history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost}));
+        history, state,
+        cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost}));
     CHECK_FALSE(state.pending_note_move_gesture.has_value());
+}
+
+TEST_CASE("selected note moves translate playable lane columns atomically",
+          "[unit][core][interaction][gesture][move][lane]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout.lanes[1].display_order = 1;
+    chart.lane_layouts.front().layout.lanes.push_back(
+        {.id = lane_id_t{3}, .name = "Key 3", .display_order = 2});
+    chart.measures.front().notes = {
+        {.id = object_id_t{101},
+         .position = {measure_id_t{1}, 240},
+         .lane = lane_id_t{1},
+         .kind = note_kind_t::hold,
+         .end = local_position_t{measure_id_t{1}, 480}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
+    };
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
+    REQUIRE(
+        dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
+
+    const auto preview = dispatch_editor_action(
+        history, state, update_note_move_gesture_action_t{{measure_id_t{2}, 0}, lane_id_t{2}});
+    REQUIRE(preview);
+    REQUIRE(preview.view->pending_note_move_gesture.has_value());
+    const auto& moved = preview.view->pending_note_move_gesture->preview;
+    REQUIRE(moved.size() == 2);
+    CHECK(moved[0].lane == lane_id_t{2});
+    CHECK(moved[1].lane == lane_id_t{3});
+
+    const auto committed = dispatch_editor_action(
+        history, state, release_note_move_gesture_action_t{{measure_id_t{2}, 0}, lane_id_t{2}});
+    REQUIRE(committed);
+    CHECK(find_note(history, object_id_t{101})->lane == lane_id_t{2});
+    CHECK(find_note(history, object_id_t{102})->lane == lane_id_t{3});
+    REQUIRE(undo_document_command(history));
+    CHECK(find_note(history, object_id_t{101})->lane == lane_id_t{1});
+    CHECK(find_note(history, object_id_t{102})->lane == lane_id_t{2});
+}
+
+TEST_CASE("selected note lane moves reject unavailable columns and destination collisions",
+          "[unit][core][interaction][gesture][move][lane][collision]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout.lanes[1].display_order = 1;
+    chart.measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
+    };
+    chart.measures[1].notes = {
+        {.id = object_id_t{102}, .position = {measure_id_t{2}, 0}, .lane = lane_id_t{2}},
+    };
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(
+        dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
+    const auto collision = dispatch_editor_action(
+        history, state, update_note_move_gesture_action_t{{measure_id_t{2}, 0}, lane_id_t{2}});
+    CHECK_FALSE(collision);
+    CHECK(has_code(collision.diagnostics, diagnostic_code_t::collision));
+    CHECK(find_note(history, object_id_t{101})->lane == lane_id_t{1});
+
+    const auto unavailable = dispatch_editor_action(
+        history, state, update_note_move_gesture_action_t{{measure_id_t{2}, 240}, lane_id_t{3}});
+    CHECK_FALSE(unavailable);
+    CHECK(has_code(unavailable.diagnostics, diagnostic_code_t::unknown_lane));
+    CHECK(state.pending_note_move_gesture.has_value());
+}
+
+TEST_CASE("selected note lane moves validate every target lane across layout boundaries",
+          "[unit][core][interaction][gesture][move][lane][layout]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout.lanes[1].display_order = 1;
+    chart.lane_layouts.front().layout.lanes.push_back(
+        {.id = lane_id_t{3}, .name = "Key 3", .display_order = 2});
+    auto reduced_layout = chart.lane_layouts.front().layout;
+    reduced_layout.lanes.pop_back();
+    chart.lane_layouts.push_back({.id = object_id_t{103},
+                                  .position = {measure_id_t{1}, 600},
+                                  .layout = std::move(reduced_layout)});
+    chart.measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
+    };
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state, select_editor_notes_action_t{{object_id_t{101}, object_id_t{102}}}));
+    REQUIRE(
+        dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
+
+    const auto unavailable = dispatch_editor_action(
+        history, state, update_note_move_gesture_action_t{{measure_id_t{1}, 480}, lane_id_t{2}});
+    CHECK_FALSE(unavailable);
+    CHECK(has_code(unavailable.diagnostics, diagnostic_code_t::unknown_lane));
+    CHECK(find_note(history, object_id_t{101})->lane == lane_id_t{1});
+    CHECK(find_note(history, object_id_t{102})->lane == lane_id_t{2});
+    CHECK(state.pending_note_move_gesture.has_value());
 }
 
 TEST_CASE("duration gesture previews scale to fifty thousand selected notes",

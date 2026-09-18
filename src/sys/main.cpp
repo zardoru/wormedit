@@ -2242,6 +2242,13 @@ void populate_compose_view(flattened_workspace_t& flattened,
                 view.viewport_width_pixels,
                 std::clamp(bottom, 0.0, view.viewport_height_pixels),
             };
+            const auto row_center = [&](std::uint64_t row) {
+                return std::clamp((static_cast<double>(row) + 0.5) * pixels_per_row -
+                                      interaction_view.viewport_scroll_pixels,
+                                  0.0, view.viewport_height_pixels);
+            };
+            view.space_range_anchor_y_pixels = row_center(*anchor_row);
+            view.space_range_tail_y_pixels = row_center(*cursor_row);
         }
     }
     flattened.compose_interaction_view_storage = interaction_view;

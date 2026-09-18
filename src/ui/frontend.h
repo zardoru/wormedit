@@ -264,6 +264,8 @@ typedef struct WormUiComposeView {
     bool space_range_preview_visible;
     WormUiComposeRect space_range_preview_bounds;
     WormUiComposeSelectionMode space_range_preview_mode;
+    double space_range_anchor_y_pixels;
+    double space_range_tail_y_pixels;
     const WormUiComposeLaneKeyBinding* lane_key_bindings;
     size_t lane_key_binding_count;
     bool branch_outline_available;

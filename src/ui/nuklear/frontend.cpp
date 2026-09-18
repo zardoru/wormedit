@@ -12,6 +12,7 @@
 #include "nuklear_sdl_gl3_sdl3.h"
 
 #include <SDL3/SDL_keyboard.h>
+#include <SDL3/SDL_timer.h>
 
 #include <algorithm>
 #include <array>
@@ -1237,7 +1238,13 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
           !compose_selection_mode_valid(view->area_selection_preview_mode))) ||
         (view->space_range_preview_visible &&
          (!compose_rect_valid(&view->space_range_preview_bounds) ||
-          !compose_selection_mode_valid(view->space_range_preview_mode))))
+          !compose_selection_mode_valid(view->space_range_preview_mode) ||
+          !std::isfinite(view->space_range_anchor_y_pixels) ||
+          !std::isfinite(view->space_range_tail_y_pixels) ||
+          view->space_range_anchor_y_pixels < 0.0 ||
+          view->space_range_anchor_y_pixels > view->viewport_height_pixels ||
+          view->space_range_tail_y_pixels < 0.0 ||
+          view->space_range_tail_y_pixels > view->viewport_height_pixels)))
         return 0;
     for (size_t index = 0; index < view->band_count; ++index) {
         if (!compose_rect_valid(&view->bands[index].bounds))
@@ -3092,6 +3099,25 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
         if (view->space_range_preview_visible) {
             draw_selection_preview(view->space_range_preview_bounds,
                                    view->space_range_preview_mode);
+            const auto anchor_bright = (SDL_GetTicks() / 350U) % 2U == 0U;
+            const auto draw_space_range_row = [&](double y_pixels, struct nk_color color) {
+                const auto y = viewport.y + static_cast<float>(y_pixels) * viewport.h /
+                                                static_cast<float>(view->viewport_height_pixels);
+                nk_stroke_line(canvas, viewport.x, y, viewport.x + viewport.w, y, 2.4f, color);
+            };
+            if (std::abs(view->space_range_anchor_y_pixels - view->space_range_tail_y_pixels) <
+                0.01) {
+                draw_space_range_row(view->space_range_anchor_y_pixels,
+                                     anchor_bright ? nk_rgb(255, 224, 122)
+                                                   : nk_rgb(185, 142, 72));
+            } else {
+                draw_space_range_row(view->space_range_anchor_y_pixels,
+                                     anchor_bright ? nk_rgb(255, 224, 122)
+                                                   : nk_rgb(185, 142, 72));
+                draw_space_range_row(view->space_range_tail_y_pixels,
+                                     anchor_bright ? nk_rgb(97, 201, 255)
+                                                   : nk_rgb(63, 125, 176));
+            }
         }
         if (view->area_selection_preview_visible) {
             draw_selection_preview(view->area_selection_preview_bounds,

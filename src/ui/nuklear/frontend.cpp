@@ -1410,6 +1410,17 @@ static int timing_view_valid(const WormUiTimingView* view) {
             return 0;
         }
     }
+    if (view->grid_line_count > WORM_UI_TIMING_GRID_CAPACITY ||
+        (view->grid_line_count != 0 && !view->grid_lines)) {
+        return 0;
+    }
+    for (size_t index = 0; index < view->grid_line_count; ++index) {
+        const auto& line = view->grid_lines[index];
+        if (!std::isfinite(line.y_pixels) || line.y_pixels < 0.0 ||
+            line.y_pixels > view->viewport_height_pixels || line.kind > 3 || line.emphasis > 3) {
+            return 0;
+        }
+    }
     const auto& recipe = view->sv_recipe;
     if (recipe.candidate_point_count > WORM_UI_TIMING_RECIPE_POINT_CAPACITY ||
         (recipe.candidate_point_count != 0 && !recipe.candidate_points) ||
@@ -2012,7 +2023,7 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
         nk_rgb(244, 116, 174), nk_rgb(130, 219, 206)};
     const auto lane_left = viewport.x + viewport.w * 0.025f;
     const auto lane_width = viewport.w * 0.95f / static_cast<float>(lane_kinds.size());
-    std::array<struct nk_rect, 6> lanes{};
+    std::array<struct nk_rect, 8> lanes{};
     for (size_t index = 0; index < lanes.size(); ++index) {
         lanes[index] = nk_rect(lane_left + lane_width * static_cast<float>(index) + 2.0f,
                                viewport.y, std::max(1.0f, lane_width - 4.0f), viewport.h);
@@ -2027,6 +2038,22 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
         nk_draw_text(canvas, title, lane_labels[index],
                      static_cast<int>(strlen(lane_labels[index])), g_context->style.font,
                      nk_rgba(22, 25, 33, 190), lane_colors[index]);
+    }
+    for (size_t index = 0; index < view->grid_line_count; ++index) {
+        const auto& line = view->grid_lines[index];
+        const auto y = screen_y(line.y_pixels);
+        auto color = nk_rgb(42, 49, 63);
+        float thickness = 0.7f;
+        if (line.kind == 3) {
+            color = nk_rgb(95, 107, 128);
+            thickness = 1.2f;
+        } else if (line.kind == 1 || line.kind == 2) {
+            color = nk_rgb(60, 70, 88);
+            thickness = line.emphasis >= 2 ? 1.1f : 0.9f;
+        } else if (line.emphasis >= 2) {
+            color = nk_rgb(52, 61, 78);
+        }
+        nk_stroke_line(canvas, viewport.x, y, viewport.x + viewport.w, y, thickness, color);
     }
     const auto recipe_lane_index =
         view->sv_recipe.active && view->sv_recipe.form.output == WORM_UI_TIMING_RECIPE_OUTPUT_SPEEDS

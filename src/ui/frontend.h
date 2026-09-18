@@ -36,6 +36,7 @@
 #define WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY 4
 #define WORM_UI_TIMING_SPEED_CAPACITY 4096
 #define WORM_UI_TIMING_MARKER_CAPACITY 16384
+#define WORM_UI_TIMING_GRID_CAPACITY 16384
 #define WORM_UI_TIMING_RECIPE_POINT_CAPACITY 4096
 #define WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES 64
 #define WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES 32
@@ -311,6 +312,14 @@ typedef struct WormUiTimingMarkerView {
     WormUiTimingLaneKind lane;
 } WormUiTimingMarkerView;
 
+// Same numeric kind ordering as editor_grid_line_kind_t, kept scalar across
+// the frontend boundary: active snap, beat, group, then measure.
+typedef struct WormUiTimingGridLineView {
+    double y_pixels;
+    uint8_t kind;
+    uint8_t emphasis;
+} WormUiTimingGridLineView;
+
 typedef enum WormUiTimingPauseUnit {
     WORM_UI_TIMING_PAUSE_SECONDS = 0,
     WORM_UI_TIMING_PAUSE_MILLISECONDS,
@@ -418,6 +427,8 @@ typedef struct WormUiTimingView {
     size_t speed_count;
     const WormUiTimingMarkerView* markers;
     size_t marker_count;
+    const WormUiTimingGridLineView* grid_lines;
+    size_t grid_line_count;
     WormUiTimingRecipeDraftView sv_recipe;
     bool stage_active;
     bool stage_valid;

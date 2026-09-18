@@ -10,6 +10,7 @@
 #include <wormedit/core/command.h>
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/editor_scene.h>
+#include <wormedit/core/grid.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/marker_navigation.h>
@@ -116,6 +117,7 @@ struct flattened_workspace_t {
     std::string timing_recipe_status_storage;
     std::vector<WormUiTimingSpeedView> timing_speed_storage;
     std::vector<WormUiTimingMarkerView> timing_marker_storage;
+    std::vector<WormUiTimingGridLineView> timing_grid_storage;
     std::vector<WormUiTimingRecipePoint> timing_recipe_candidate_storage;
     std::vector<WormUiTimingRecipePoint> timing_recipe_composed_storage;
     std::string compose_status_storage;
@@ -1463,6 +1465,34 @@ void populate_timing_view(flattened_workspace_t& flattened,
         return static_cast<double>(bounded / static_cast<long double>(cache.total_rows) *
                                    view.viewport_height_pixels);
     };
+    flattened.timing_grid_storage.clear();
+    const auto grid = wormedit::make_editor_grid_lines(
+        chart,
+        {.visible_begin_row = 0,
+         .visible_end_row = cache.total_rows,
+         .active_snap_denominator = timing_grid.active_denominator,
+         .pixels_per_standard_measure =
+             view.viewport_height_pixels *
+             static_cast<double>(chart.divisions_per_standard_measure) /
+             static_cast<double>(cache.total_rows),
+         .maximum_line_count = WORM_UI_TIMING_GRID_CAPACITY});
+    if (!grid) {
+        flattened.timing_status_storage = grid.diagnostics.empty()
+                                              ? "The timing grid could not be composed."
+                                              : grid.diagnostics.front().message;
+        view.status_text = flattened.timing_status_storage.c_str();
+        return;
+    }
+    flattened.timing_grid_storage.reserve(grid.lines.size());
+    for (const auto& line : grid.lines) {
+        const auto row = static_cast<long double>(line.chart_row.whole_rows) +
+                         static_cast<long double>(line.chart_row.fractional_rows.numerator) /
+                             line.chart_row.fractional_rows.denominator;
+        flattened.timing_grid_storage.push_back(
+            {.y_pixels = row_to_pixels(row),
+             .kind = static_cast<std::uint8_t>(line.kind),
+             .emphasis = static_cast<std::uint8_t>(line.emphasis)});
+    }
     flattened.timing_speed_storage.reserve(cache.speeds.size());
     for (const auto& speed : cache.speeds) {
         flattened.timing_speed_storage.push_back({
@@ -1600,6 +1630,8 @@ void populate_timing_view(flattened_workspace_t& flattened,
     view.speed_count = flattened.timing_speed_storage.size();
     view.markers = flattened.timing_marker_storage.data();
     view.marker_count = flattened.timing_marker_storage.size();
+    view.grid_lines = flattened.timing_grid_storage.data();
+    view.grid_line_count = flattened.timing_grid_storage.size();
     populate_timing_recipe_view(flattened, chart, measures, recipe_draft, recipe_preview,
                                 recipe_selection_armed);
     if (stage && stage->status == wormedit::timing_lane_pseudonote_status_t::editing &&

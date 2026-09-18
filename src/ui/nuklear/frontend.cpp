@@ -84,6 +84,9 @@ struct compose_wheel_event_t {
 static std::array<compose_wheel_event_t, WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY>
     g_compose_wheel_events{};
 static size_t g_compose_wheel_event_count{};
+static bool g_compose_middle_click_pending{};
+static float g_compose_middle_click_x{};
+static float g_compose_middle_click_y{};
 struct timing_double_click_t {
     float x{};
     float y{};
@@ -1154,6 +1157,7 @@ bool worm_ui_frontend_init(SDL_Window* window) {
     g_compose_area_selection_candidate_active = false;
     g_compose_area_selection_active = false;
     g_compose_wheel_event_count = 0;
+    g_compose_middle_click_pending = false;
     g_timing_double_click_count = 0;
     g_timing_stage_buffers_active = false;
     g_timing_recipe_buffers_active = false;
@@ -1183,6 +1187,7 @@ void worm_ui_frontend_shutdown(void) {
     g_ime_composition_active = false;
     g_compose_key_event_count = 0;
     g_compose_wheel_event_count = 0;
+    g_compose_middle_click_pending = false;
     g_timing_double_click_count = 0;
     g_timing_stage_buffers_active = false;
     g_timing_recipe_buffers_active = false;
@@ -1224,6 +1229,7 @@ bool worm_ui_frontend_handle_event(const SDL_Event* event) {
         g_compose_key_event_count = 0;
         g_shortcut_event_count = 0;
         g_compose_wheel_event_count = 0;
+        g_compose_middle_click_pending = false;
         g_timing_double_click_count = 0;
         g_timing_recipe_cancel_pending = true;
         cancel_timing_recipe_range_drag();
@@ -1264,6 +1270,14 @@ bool worm_ui_frontend_handle_event(const SDL_Event* event) {
         g_ime_composition_active = false;
     } else if (event->type == SDL_EVENT_MOUSE_WHEEL) {
         queue_compose_wheel_event(&event->wheel);
+    } else if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.down &&
+               event->button.button == SDL_BUTTON_MIDDLE && g_window_focused && g_window &&
+               (event->button.windowID == 0 ||
+                event->button.windowID == SDL_GetWindowID(g_window)) &&
+               std::isfinite(event->button.x) && std::isfinite(event->button.y)) {
+        g_compose_middle_click_pending = true;
+        g_compose_middle_click_x = event->button.x;
+        g_compose_middle_click_y = event->button.y;
     } else if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN && event->button.down &&
                event->button.button == SDL_BUTTON_LEFT && event->button.clicks >= 2 &&
                g_window_focused && g_window &&
@@ -3091,6 +3105,25 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                            view->viewport_width_pixels / viewport.w;
     const auto pointer_y = (static_cast<double>(g_context->input.mouse.pos.y) - viewport.y) *
                            view->viewport_height_pixels / viewport.h;
+    if (!g_compose_action_overflowed && g_window_focused && view->scene_available) {
+        action->compose_viewport_pointer_valid = true;
+        action->compose_viewport_pointer_x_pixels = pointer_x;
+        action->compose_viewport_pointer_y_pixels = pointer_y;
+        if (g_compose_middle_click_pending &&
+            g_compose_middle_click_x >= viewport.x &&
+            g_compose_middle_click_x <= viewport.x + viewport.w &&
+            g_compose_middle_click_y >= viewport.y &&
+            g_compose_middle_click_y <= viewport.y + viewport.h) {
+            action->compose_viewport_middle_click = true;
+            action->compose_viewport_middle_click_x_pixels =
+                (static_cast<double>(g_compose_middle_click_x) - viewport.x) *
+                view->viewport_width_pixels / viewport.w;
+            action->compose_viewport_middle_click_y_pixels =
+                (static_cast<double>(g_compose_middle_click_y) - viewport.y) *
+                view->viewport_height_pixels / viewport.h;
+        }
+    }
+    g_compose_middle_click_pending = false;
     if (!g_compose_action_overflowed && view->scene_available && g_window_focused) {
         for (size_t index = 0; index < g_compose_wheel_event_count; ++index) {
             const auto& wheel = g_compose_wheel_events[index];
@@ -3511,6 +3544,32 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
             draw_selection_preview(view->area_selection_preview_bounds,
                                    view->area_selection_preview_mode);
         }
+        if (view->viewport_autoscroll_active &&
+            std::isfinite(view->viewport_autoscroll_anchor_x_pixels) &&
+            std::isfinite(view->viewport_autoscroll_anchor_y_pixels)) {
+            const auto anchor_x = viewport.x +
+                                  static_cast<float>(std::clamp(
+                                      view->viewport_autoscroll_anchor_x_pixels, 0.0,
+                                      view->viewport_width_pixels) *
+                                      viewport.w / view->viewport_width_pixels);
+            const auto anchor_y = viewport.y +
+                                  static_cast<float>(std::clamp(
+                                      view->viewport_autoscroll_anchor_y_pixels, 0.0,
+                                      view->viewport_height_pixels) *
+                                      viewport.h / view->viewport_height_pixels);
+            nk_stroke_line(canvas, anchor_x - 9.0f, anchor_y, anchor_x + 9.0f, anchor_y, 2.0f,
+                           nk_rgb(255, 211, 103));
+            nk_stroke_line(canvas, anchor_x, anchor_y - 9.0f, anchor_x, anchor_y + 9.0f, 2.0f,
+                           nk_rgb(255, 211, 103));
+            const auto indicator = nk_rect(viewport.x + 8.0f, viewport.y + viewport.h - 26.0f,
+                                           std::min(250.0f, std::max(150.0f, viewport.w - 16.0f)),
+                                           18.0f);
+            nk_fill_rect(canvas, indicator, 3.0f, nk_rgba(12, 16, 24, 235));
+            constexpr const char* indicator_text = "Auto-scroll latched - middle-click to cancel";
+            nk_draw_text(canvas, indicator, indicator_text,
+                         static_cast<int>(strlen(indicator_text)), g_context->style.font,
+                         nk_rgb(12, 16, 24), nk_rgb(255, 231, 157));
+        }
         if (view->hover_note_visible && view->hover_tooltip && view->hover_tooltip[0] != '\0') {
             const auto tooltip_width = std::min(420.0f, std::max(120.0f, viewport.w - 16.0f));
             const auto tooltip_bounds =
@@ -3622,6 +3681,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         view->active_tab < WORM_UI_WORKSPACE_TAB_SETUP ||
         view->active_tab > WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE) {
         g_compose_wheel_event_count = 0;
+        g_compose_middle_click_pending = false;
         cancel_timing_recipe_range_drag();
         expose_shortcut_input(&action);
         return action;
@@ -3631,6 +3691,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     int height = 0;
     if (!SDL_GetWindowSize(g_window, &width, &height) || width <= 0 || height <= 0) {
         g_compose_wheel_event_count = 0;
+        g_compose_middle_click_pending = false;
         cancel_timing_recipe_range_drag();
         expose_shortcut_input(&action);
         return action;
@@ -3696,6 +3757,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
             // document edit already belong to the current frame/revision.
             g_compose_key_event_count = 0;
             g_compose_wheel_event_count = 0;
+            g_compose_middle_click_pending = false;
             g_compose_keyboard_focus = false;
         }
         if (chart_changed || revision_changed) {
@@ -3712,6 +3774,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         g_compose_cancel_pending = false;
         g_compose_key_event_count = 0;
         g_compose_wheel_event_count = 0;
+        g_compose_middle_click_pending = false;
         g_compose_keyboard_focus = false;
         if (g_compose_pointer_hold_active || g_compose_lane_hold_active ||
             g_compose_note_paint_pointer_active || g_compose_space_range_hold_active ||

@@ -151,6 +151,11 @@ struct compose_scene_cache_t {
     std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
     std::optional<wormedit::editor_object_hover_state_t> hover;
     bool focus_note_label_editor{};
+    bool viewport_autoscroll_active{};
+    double viewport_autoscroll_anchor_x_pixels{};
+    double viewport_autoscroll_anchor_y_pixels{};
+    double viewport_autoscroll_pointer_x_pixels{};
+    double viewport_autoscroll_pointer_y_pixels{};
     std::string status;
 };
 
@@ -2029,6 +2034,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
         cache.interaction_view.reset();
         cache.hover.reset();
         cache.focus_note_label_editor = false;
+        cache.viewport_autoscroll_active = false;
         return;
     }
     view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
@@ -2045,6 +2051,11 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.hover_note_visible = false;
     view.hover_note_id = 0;
     view.hover_tooltip = nullptr;
+    view.viewport_autoscroll_active = cache.viewport_autoscroll_active;
+    view.viewport_autoscroll_anchor_x_pixels = cache.viewport_autoscroll_anchor_x_pixels;
+    view.viewport_autoscroll_anchor_y_pixels = cache.viewport_autoscroll_anchor_y_pixels;
+    view.viewport_autoscroll_pointer_x_pixels = cache.viewport_autoscroll_pointer_x_pixels;
+    view.viewport_autoscroll_pointer_y_pixels = cache.viewport_autoscroll_pointer_y_pixels;
     flattened.compose_hover_tooltip_storage.clear();
     flattened.compose_selected_note_label_storage.clear();
     if (!workspace.selected_chart) {
@@ -2069,6 +2080,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
         cache.interaction_view.reset();
         cache.hover.reset();
         cache.focus_note_label_editor = false;
+        cache.viewport_autoscroll_active = false;
         cache.status.clear();
         cache.chart = chart.id;
         cache.revision = history.document.revision;
@@ -2787,7 +2799,8 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                                    wormedit::viewport_input_controller_t& viewport_input,
                                    wormedit::editor_navigation_input_controller_t& navigation_input,
                                    application_command_state_t& application_state,
-                                   compose_scene_cache_t& scene_cache) -> std::string {
+                                   compose_scene_cache_t& scene_cache,
+                                   double viewport_delta_seconds) -> std::string {
     using namespace wormedit;
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != ui_action.compose_input_chart_id ||
@@ -2804,6 +2817,37 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
     if (ui_action.compose_viewport_input_count > WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY) {
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         return "Compose viewport input exceeded its capacity; the active gesture was canceled.";
+    }
+
+    if (!ui_action.shortcut_window_focused) {
+        viewport_input.focus_lost();
+        scene_cache.viewport_autoscroll_active = false;
+    } else {
+        if (ui_action.compose_viewport_middle_click) {
+            viewport_input.middle_click(
+                viewport_pane_t::chart, ui_action.compose_viewport_middle_click_x_pixels,
+                ui_action.compose_viewport_middle_click_y_pixels);
+            scene_cache.viewport_autoscroll_active = viewport_input.autoscroll_active();
+            if (scene_cache.viewport_autoscroll_active) {
+                scene_cache.viewport_autoscroll_anchor_x_pixels =
+                    ui_action.compose_viewport_middle_click_x_pixels;
+                scene_cache.viewport_autoscroll_anchor_y_pixels =
+                    ui_action.compose_viewport_middle_click_y_pixels;
+            }
+        }
+        if (ui_action.compose_viewport_pointer_valid) {
+            viewport_input.update_autoscroll_pointer(ui_action.compose_viewport_pointer_x_pixels,
+                                                     ui_action.compose_viewport_pointer_y_pixels);
+            scene_cache.viewport_autoscroll_pointer_x_pixels =
+                ui_action.compose_viewport_pointer_x_pixels;
+            scene_cache.viewport_autoscroll_pointer_y_pixels =
+                ui_action.compose_viewport_pointer_y_pixels;
+        }
+    }
+    if (ui_action.compose_input_count != 0 && !ui_action.compose_viewport_middle_click) {
+        if (viewport_input.normal_edit_press()) {
+            scene_cache.viewport_autoscroll_active = false;
+        }
     }
 
     auto status = std::string{};
@@ -3275,26 +3319,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
         scene_cache.focus_note_label_editor = false;
     }
 
-    for (std::size_t index = 0; index < ui_action.compose_viewport_input_count; ++index) {
-        if (history.document.revision != ui_action.compose_input_document_revision ||
-            workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
-            workspace.selected_chart->value != ui_action.compose_input_chart_id ||
-            state.chart.value != ui_action.compose_input_chart_id) {
-            return "Remaining Compose viewport input was discarded after the chart or document "
-                   "changed.";
-        }
-        const auto& input = ui_action.compose_viewport_inputs[index];
-        const auto actions = viewport_input.handle_wheel({
-            .pane = viewport_pane_t::chart,
-            .kind = input.kind == WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL
-                        ? viewport_wheel_kind_t::coarse_steps
-                        : viewport_wheel_kind_t::smooth_pixels,
-            .delta_x = input.delta_x,
-            .delta_y = input.delta_y,
-            .zoom_modifier = input.zoom_modifier,
-            .cursor_x_pixels = input.cursor_x_pixels,
-            .cursor_y_pixels = input.cursor_y_pixels,
-        });
+    const auto apply_viewport_actions = [&](const viewport_action_batch_t& actions) {
         for (std::size_t action_index = 0; action_index < actions.count; ++action_index) {
             const auto& viewport_action = actions[action_index];
             if (const auto* scroll = std::get_if<viewport_scroll_action_t>(&viewport_action)) {
@@ -3315,6 +3340,41 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 status = compose_result_status(result, "Compose field zoomed at the pointer.");
             }
         }
+    };
+    for (std::size_t index = 0; index < ui_action.compose_viewport_input_count; ++index) {
+        if (history.document.revision != ui_action.compose_input_document_revision ||
+            workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
+            workspace.selected_chart->value != ui_action.compose_input_chart_id ||
+            state.chart.value != ui_action.compose_input_chart_id) {
+            return "Remaining Compose viewport input was discarded after the chart or document "
+                   "changed.";
+        }
+        const auto& input = ui_action.compose_viewport_inputs[index];
+        apply_viewport_actions(viewport_input.handle_wheel({
+            .pane = viewport_pane_t::chart,
+            .kind = input.kind == WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL
+                        ? viewport_wheel_kind_t::coarse_steps
+                        : viewport_wheel_kind_t::smooth_pixels,
+            .delta_x = input.delta_x,
+            .delta_y = input.delta_y,
+            .zoom_modifier = input.zoom_modifier,
+            .cursor_x_pixels = input.cursor_x_pixels,
+            .cursor_y_pixels = input.cursor_y_pixels,
+        }));
+    }
+    if (std::isfinite(viewport_delta_seconds) && viewport_delta_seconds > 0.0 &&
+        history.document.revision == ui_action.compose_input_document_revision &&
+        workspace.active_tab == workspace_tab_t::compose && workspace.selected_chart &&
+        workspace.selected_chart->value == ui_action.compose_input_chart_id &&
+        state.chart.value == ui_action.compose_input_chart_id) {
+        apply_viewport_actions(viewport_input.advance(viewport_delta_seconds));
+    }
+    scene_cache.viewport_autoscroll_active = viewport_input.autoscroll_active();
+    if (!scene_cache.viewport_autoscroll_active) {
+        scene_cache.viewport_autoscroll_anchor_x_pixels = 0.0;
+        scene_cache.viewport_autoscroll_anchor_y_pixels = 0.0;
+        scene_cache.viewport_autoscroll_pointer_x_pixels = 0.0;
+        scene_cache.viewport_autoscroll_pointer_y_pixels = 0.0;
     }
     if (!status.empty()) {
         return status;
@@ -3965,6 +4025,7 @@ int main(int argc, char** argv) {
         status += " " + shortcut_startup.diagnostics.front().message;
     }
     bool running = true;
+    auto compose_viewport_last_ticks = static_cast<std::uint64_t>(SDL_GetTicks());
     while (running) {
         SDL_Event event;
         worm_ui_frontend_begin_input();
@@ -3975,6 +4036,13 @@ int main(int argc, char** argv) {
             worm_ui_frontend_handle_event(&event);
         }
         worm_ui_frontend_end_input();
+        const auto compose_viewport_now_ticks = static_cast<std::uint64_t>(SDL_GetTicks());
+        const auto compose_viewport_delta_seconds =
+            compose_viewport_now_ticks >= compose_viewport_last_ticks
+                ? static_cast<double>(compose_viewport_now_ticks - compose_viewport_last_ticks) /
+                      1000.0
+                : 0.0;
+        compose_viewport_last_ticks = compose_viewport_now_ticks;
 
         const auto autosave_target = wormedit::make_native_project_autosave_target(
             history.document.id, startup.loaded_primary, requested_primary_path,
@@ -4133,7 +4201,12 @@ int main(int argc, char** argv) {
                 compose_interaction_state) {
                 status = dispatch_compose_input_action(
                     action, history, workspace, *compose_interaction_state, compose_viewport_input,
-                    compose_navigation_input, application_command_state, compose_scene_cache);
+                    compose_navigation_input, application_command_state, compose_scene_cache,
+                    compose_viewport_delta_seconds);
+            }
+            if (workspace.active_tab != wormedit::workspace_tab_t::compose) {
+                compose_viewport_input.escape();
+                compose_scene_cache.viewport_autoscroll_active = false;
             }
             if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
                 compose_interaction_state &&

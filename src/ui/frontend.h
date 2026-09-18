@@ -257,6 +257,11 @@ typedef struct WormUiComposeView {
     bool hover_note_visible;
     uint64_t hover_note_id;
     const char* hover_tooltip;
+    bool viewport_autoscroll_active;
+    double viewport_autoscroll_anchor_x_pixels;
+    double viewport_autoscroll_anchor_y_pixels;
+    double viewport_autoscroll_pointer_x_pixels;
+    double viewport_autoscroll_pointer_y_pixels;
     const WormUiComposeBandView* bands;
     size_t band_count;
     const WormUiComposeLaneView* lanes;
@@ -650,6 +655,12 @@ typedef struct WormUiWorkspaceAction {
     bool compose_has_pointer_hover;
     double compose_pointer_hover_x_pixels;
     double compose_pointer_hover_y_pixels;
+    bool compose_viewport_pointer_valid;
+    double compose_viewport_pointer_x_pixels;
+    double compose_viewport_pointer_y_pixels;
+    bool compose_viewport_middle_click;
+    double compose_viewport_middle_click_x_pixels;
+    double compose_viewport_middle_click_y_pixels;
     bool compose_note_label_focus_consumed;
     char compose_note_label[WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1];
     WormUiComposeInputAction compose_inputs[WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY];

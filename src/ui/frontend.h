@@ -297,6 +297,8 @@ typedef enum WormUiTimingLaneKind {
     WORM_UI_TIMING_LANE_STOP,
     WORM_UI_TIMING_LANE_DELAY,
     WORM_UI_TIMING_LANE_WARP,
+    WORM_UI_TIMING_LANE_KIAI,
+    WORM_UI_TIMING_LANE_ANCHOR,
 } WormUiTimingLaneKind;
 
 typedef struct WormUiTimingMarkerView {
@@ -425,6 +427,7 @@ typedef struct WormUiTimingView {
     double stage_value;
     double stage_secondary_value;
     bool stage_transition_is_seconds;
+    bool stage_toggle_primary;
     WormUiTimingPauseUnit stage_pause_unit;
     char stage_primary_numerator_text[64];
     char stage_primary_denominator_text[64];
@@ -615,6 +618,7 @@ typedef struct WormUiWorkspaceAction {
     double timing_value;
     double timing_secondary_value;
     bool timing_transition_is_seconds;
+    bool timing_toggle_primary;
     WormUiTimingPauseUnit timing_pause_unit;
     char timing_primary_numerator_text[64];
     char timing_primary_denominator_text[64];

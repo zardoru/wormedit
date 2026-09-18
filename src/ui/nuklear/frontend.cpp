@@ -1403,7 +1403,7 @@ static int timing_view_valid(const WormUiTimingView* view) {
             !std::isfinite(marker.marker_right_fraction) || marker.marker_left_fraction < 0.0 ||
             marker.marker_right_fraction <= marker.marker_left_fraction ||
             marker.marker_right_fraction > 1.0 || marker.lane < WORM_UI_TIMING_LANE_BPM ||
-            marker.lane > WORM_UI_TIMING_LANE_WARP) {
+            marker.lane > WORM_UI_TIMING_LANE_ANCHOR) {
             return 0;
         }
     }
@@ -1479,7 +1479,7 @@ static int timing_view_valid(const WormUiTimingView* view) {
         (!std::isfinite(view->stage_marker_y_pixels) || view->stage_marker_y_pixels < 0.0 ||
          view->stage_marker_y_pixels > view->viewport_height_pixels ||
          view->stage_lane < WORM_UI_TIMING_LANE_BPM ||
-         view->stage_lane > WORM_UI_TIMING_LANE_WARP ||
+         view->stage_lane > WORM_UI_TIMING_LANE_ANCHOR ||
          view->stage_pause_unit < WORM_UI_TIMING_PAUSE_SECONDS ||
          view->stage_pause_unit > WORM_UI_TIMING_PAUSE_BEATS || !std::isfinite(view->stage_value) ||
          !std::isfinite(view->stage_secondary_value))) {
@@ -1501,6 +1501,7 @@ static void set_timing_action(WormUiWorkspaceAction* action, const WormUiTimingV
     action->timing_value = primary;
     action->timing_secondary_value = secondary;
     action->timing_transition_is_seconds = transition_is_seconds;
+    action->timing_toggle_primary = view->stage_toggle_primary;
     action->timing_pause_unit = view->stage_pause_unit;
 }
 
@@ -1954,14 +1955,16 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
         return viewport.y + static_cast<float>(y_pixels) * viewport.h /
                                 static_cast<float>(view->viewport_height_pixels);
     };
-    constexpr std::array<WormUiTimingLaneKind, 6> lane_kinds{
+    constexpr std::array<WormUiTimingLaneKind, 8> lane_kinds{
         WORM_UI_TIMING_LANE_BPM,  WORM_UI_TIMING_LANE_SCROLL, WORM_UI_TIMING_LANE_SPEED,
-        WORM_UI_TIMING_LANE_STOP, WORM_UI_TIMING_LANE_DELAY,  WORM_UI_TIMING_LANE_WARP};
-    constexpr std::array<const char*, 6> lane_labels{"BPM",  "Scroll / SV", "SPEEDS",
-                                                     "Stop", "Delay",       "Warp"};
-    const std::array<struct nk_color, 6> lane_colors{nk_rgb(242, 190, 102), nk_rgb(177, 206, 129),
-                                                     nk_rgb(113, 184, 218), nk_rgb(224, 132, 119),
-                                                     nk_rgb(207, 153, 104), nk_rgb(176, 142, 218)};
+        WORM_UI_TIMING_LANE_STOP, WORM_UI_TIMING_LANE_DELAY,  WORM_UI_TIMING_LANE_WARP,
+        WORM_UI_TIMING_LANE_KIAI, WORM_UI_TIMING_LANE_ANCHOR};
+    constexpr std::array<const char*, 8> lane_labels{"BPM",  "Scroll / SV", "SPEEDS", "Stop",
+                                                     "Delay", "Warp", "Kiai",   "Anchor"};
+    const std::array<struct nk_color, 8> lane_colors{
+        nk_rgb(242, 190, 102), nk_rgb(177, 206, 129), nk_rgb(113, 184, 218),
+        nk_rgb(224, 132, 119), nk_rgb(207, 153, 104), nk_rgb(176, 142, 218),
+        nk_rgb(244, 116, 174), nk_rgb(130, 219, 206)};
     const auto lane_left = viewport.x + viewport.w * 0.025f;
     const auto lane_width = viewport.w * 0.95f / static_cast<float>(lane_kinds.size());
     std::array<struct nk_rect, 6> lanes{};
@@ -2400,6 +2403,7 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
 
     if (view->stage_active) {
         nk_bool seconds = view->stage_transition_is_seconds ? 1 : 0;
+        nk_bool toggle_primary = view->stage_toggle_primary ? 1 : 0;
         bool changed = false;
         const char* primary_label = "Value";
         const char* pause_unit_label = "seconds";
@@ -2426,6 +2430,8 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
         } else if (view->stage_lane == WORM_UI_TIMING_LANE_STOP ||
                    view->stage_lane == WORM_UI_TIMING_LANE_DELAY) {
             primary_label = "Duration";
+        } else if (view->stage_lane == WORM_UI_TIMING_LANE_ANCHOR) {
+            primary_label = "Source sample frame";
         }
         nk_layout_row_dynamic(g_context, 22, 1);
         if (view->stage_existing_object_id != 0) {
@@ -2436,22 +2442,40 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
             nk_label(g_context, "Staged timing event — nothing is written until Confirm.",
                      NK_TEXT_LEFT);
         }
-        nk_layout_row_dynamic(g_context, 20, 1);
-        nk_label(g_context, "Exact rational value: numerator / denominator", NK_TEXT_LEFT);
-        nk_layout_row_begin(g_context, NK_DYNAMIC, 28, 4);
-        nk_layout_row_push(g_context, 0.24f);
-        nk_label(g_context, primary_label, NK_TEXT_LEFT);
-        nk_layout_row_push(g_context, 0.30f);
-        changed |= nk_edit_string_zero_terminated(
-                       g_context, NK_EDIT_FIELD, g_timing_primary_numerator.data(),
-                       g_timing_primary_numerator.size(), nk_filter_float) != 0;
-        nk_layout_row_push(g_context, 0.05f);
-        nk_label(g_context, "/", NK_TEXT_CENTERED);
-        nk_layout_row_push(g_context, 0.30f);
-        changed |= nk_edit_string_zero_terminated(
-                       g_context, NK_EDIT_FIELD, g_timing_primary_denominator.data(),
-                       g_timing_primary_denominator.size(), nk_filter_decimal) != 0;
-        nk_layout_row_end(g_context);
+        if (view->stage_lane == WORM_UI_TIMING_LANE_KIAI) {
+            nk_layout_row_dynamic(g_context, 24, 1);
+            changed |= nk_checkbox_label(g_context, "Kiai enabled", &toggle_primary) != 0;
+        } else if (view->stage_lane == WORM_UI_TIMING_LANE_ANCHOR) {
+            nk_layout_row_dynamic(g_context, 20, 1);
+            nk_label(g_context, "Exact source sample frame", NK_TEXT_LEFT);
+            nk_layout_row_begin(g_context, NK_DYNAMIC, 28, 2);
+            nk_layout_row_push(g_context, 0.38f);
+            nk_label(g_context, primary_label, NK_TEXT_LEFT);
+            nk_layout_row_push(g_context, 0.62f);
+            changed |= nk_edit_string_zero_terminated(
+                           g_context, NK_EDIT_FIELD, g_timing_primary_numerator.data(),
+                           g_timing_primary_numerator.size(), nk_filter_decimal) != 0;
+            nk_layout_row_end(g_context);
+            nk_layout_row_dynamic(g_context, 24, 1);
+            changed |= nk_checkbox_label(g_context, "Lock anchor", &toggle_primary) != 0;
+        } else {
+            nk_layout_row_dynamic(g_context, 20, 1);
+            nk_label(g_context, "Exact rational value: numerator / denominator", NK_TEXT_LEFT);
+            nk_layout_row_begin(g_context, NK_DYNAMIC, 28, 4);
+            nk_layout_row_push(g_context, 0.24f);
+            nk_label(g_context, primary_label, NK_TEXT_LEFT);
+            nk_layout_row_push(g_context, 0.30f);
+            changed |= nk_edit_string_zero_terminated(
+                           g_context, NK_EDIT_FIELD, g_timing_primary_numerator.data(),
+                           g_timing_primary_numerator.size(), nk_filter_float) != 0;
+            nk_layout_row_push(g_context, 0.05f);
+            nk_label(g_context, "/", NK_TEXT_CENTERED);
+            nk_layout_row_push(g_context, 0.30f);
+            changed |= nk_edit_string_zero_terminated(
+                           g_context, NK_EDIT_FIELD, g_timing_primary_denominator.data(),
+                           g_timing_primary_denominator.size(), nk_filter_decimal) != 0;
+            nk_layout_row_end(g_context);
+        }
         if (view->stage_lane == WORM_UI_TIMING_LANE_SPEED) {
             nk_layout_row_begin(g_context, NK_DYNAMIC, 28, 4);
             nk_layout_row_push(g_context, 0.24f);
@@ -2516,6 +2540,7 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
         }
         if (action && action->timing_stage_action != WORM_UI_TIMING_STAGE_NONE) {
             action->timing_transition_is_seconds = seconds != 0;
+            action->timing_toggle_primary = toggle_primary != 0;
             copy_timing_form_to_action(action);
         }
         if (action && delete_clicked) {
@@ -2530,6 +2555,9 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
             set_timing_action(action, view, WORM_UI_TIMING_STAGE_CONFIRM, view->stage_value,
                               view->stage_secondary_value, seconds != 0);
             copy_timing_form_to_action(action);
+        }
+        if (action && action->timing_stage_action != WORM_UI_TIMING_STAGE_NONE) {
+            action->timing_toggle_primary = toggle_primary != 0;
         }
     }
     render_timing_recipe_form(view, action);

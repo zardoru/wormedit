@@ -99,6 +99,9 @@ static std::array<char, 64> g_timing_primary_numerator{};
 static std::array<char, 64> g_timing_primary_denominator{};
 static std::array<char, 64> g_timing_secondary_numerator{};
 static std::array<char, 64> g_timing_secondary_denominator{};
+static std::array<char, 32> g_timing_meter_measure{'1'};
+static std::array<char, 32> g_timing_meter_numerator{'4'};
+static std::array<char, 32> g_timing_meter_denominator{'4'};
 static bool g_timing_recipe_buffers_active{};
 static uint64_t g_timing_recipe_buffers_chart{};
 static uint64_t g_timing_recipe_buffers_revision{};
@@ -1868,6 +1871,48 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
             action->timing_grid_denominator = view->supported_snap_denominators[next];
         }
     }
+    const bool can_apply_meter = !view->stage_active && !view->sv_recipe.active &&
+                                 !view->sv_recipe.selection_armed && view->scene_available &&
+                                 view->measure_count != 0;
+    nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 5);
+    nk_layout_row_push(g_context, 0.23f);
+    nk_label(g_context, "Meter at measure", NK_TEXT_LEFT);
+    nk_layout_row_push(g_context, 0.18f);
+    if (!can_apply_meter) nk_widget_disable_begin(g_context);
+    (void)nk_edit_string_zero_terminated(g_context, NK_EDIT_FIELD, g_timing_meter_measure.data(),
+                                         g_timing_meter_measure.size(), nk_filter_decimal);
+    if (!can_apply_meter) nk_widget_disable_end(g_context);
+    nk_layout_row_push(g_context, 0.16f);
+    if (!can_apply_meter) nk_widget_disable_begin(g_context);
+    (void)nk_edit_string_zero_terminated(g_context, NK_EDIT_FIELD,
+                                         g_timing_meter_numerator.data(),
+                                         g_timing_meter_numerator.size(), nk_filter_decimal);
+    if (!can_apply_meter) nk_widget_disable_end(g_context);
+    nk_layout_row_push(g_context, 0.16f);
+    if (!can_apply_meter) nk_widget_disable_begin(g_context);
+    (void)nk_edit_string_zero_terminated(g_context, NK_EDIT_FIELD,
+                                         g_timing_meter_denominator.data(),
+                                         g_timing_meter_denominator.size(), nk_filter_decimal);
+    if (!can_apply_meter) nk_widget_disable_end(g_context);
+    nk_layout_row_push(g_context, 0.27f);
+    if (!can_apply_meter) nk_widget_disable_begin(g_context);
+    const auto apply_meter_clicked = nk_button_label(g_context, "Apply meter");
+    if (!can_apply_meter) nk_widget_disable_end(g_context);
+    nk_layout_row_end(g_context);
+    if (action && action->timing_meter_action == WORM_UI_TIMING_METER_ACTION_NONE &&
+        apply_meter_clicked) {
+        action->timing_meter_action = WORM_UI_TIMING_METER_ACTION_APPLY;
+        action->timing_meter_chart_id = view->chart_id;
+        action->timing_meter_document_revision = view->document_revision;
+        copy_timing_text(action->timing_meter_measure_text,
+                         sizeof(action->timing_meter_measure_text), g_timing_meter_measure.data());
+        copy_timing_text(action->timing_meter_numerator_text,
+                         sizeof(action->timing_meter_numerator_text),
+                         g_timing_meter_numerator.data());
+        copy_timing_text(action->timing_meter_denominator_text,
+                         sizeof(action->timing_meter_denominator_text),
+                         g_timing_meter_denominator.data());
+    }
     nk_layout_row_dynamic(g_context, 24, 1);
     nk_labelf(g_context, NK_TEXT_LEFT,
               "%zu measures · %zu BPM · %zu stop/delay · %zu warp · %zu SPEEDS",
@@ -1922,7 +1967,7 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
 
     const auto group_bounds = nk_window_get_content_region(g_context);
     const auto reserved_panel_height =
-        96.0f + (view->stage_active ? 212.0f : 0.0f) + (view->sv_recipe.active ? 300.0f : 0.0f);
+        120.0f + (view->stage_active ? 212.0f : 0.0f) + (view->sv_recipe.active ? 300.0f : 0.0f);
     const auto surface_height = std::max(32.0f, group_bounds.h - reserved_panel_height);
     nk_layout_space_begin(g_context, NK_DYNAMIC, surface_height, 1);
     nk_layout_space_push(g_context, nk_rect(0.0f, 0.0f, 1.0f, 1.0f));

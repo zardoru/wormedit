@@ -475,6 +475,11 @@ typedef enum WormUiTimingGridAction {
     WORM_UI_TIMING_GRID_ACTION_SELECT,
 } WormUiTimingGridAction;
 
+typedef enum WormUiTimingMeterAction {
+    WORM_UI_TIMING_METER_ACTION_NONE = 0,
+    WORM_UI_TIMING_METER_ACTION_APPLY,
+} WormUiTimingMeterAction;
+
 // Private scalar view consumed by the selected frontend adapter. The owning
 // application keeps every pointed-to string alive for the duration of compose.
 typedef struct WormUiWorkspaceView {
@@ -608,6 +613,12 @@ typedef struct WormUiWorkspaceAction {
     uint64_t timing_grid_chart_id;
     uint64_t timing_grid_document_revision;
     uint64_t timing_grid_denominator;
+    WormUiTimingMeterAction timing_meter_action;
+    uint64_t timing_meter_chart_id;
+    uint64_t timing_meter_document_revision;
+    char timing_meter_measure_text[32];
+    char timing_meter_numerator_text[32];
+    char timing_meter_denominator_text[32];
     WormUiTimingStageAction timing_stage_action;
     uint64_t timing_chart_id;
     uint64_t timing_document_revision;

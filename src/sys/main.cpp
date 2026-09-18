@@ -14,6 +14,7 @@
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/marker_navigation.h>
 #include <wormedit/core/metadata_editor.h>
+#include <wormedit/core/measure_editor.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/recovery_controller.h>
 #include <wormedit/core/semantic_layer_editor.h>
@@ -3780,6 +3781,56 @@ int main(int argc, char** argv) {
                                                             : applied.diagnostics.front().message);
             } else if (action.metadata_edit != WORM_UI_METADATA_EDIT_NONE) {
                 status = dispatch_metadata_ui_action(action, history, workspace);
+            } else if (action.timing_meter_action != WORM_UI_TIMING_METER_ACTION_NONE) {
+                const bool binding_matches =
+                    action.timing_meter_action == WORM_UI_TIMING_METER_ACTION_APPLY &&
+                    workspace.active_tab == wormedit::workspace_tab_t::timing &&
+                    workspace.selected_chart &&
+                    workspace.selected_chart->value == action.timing_meter_chart_id &&
+                    history.document.revision == action.timing_meter_document_revision;
+                const auto measure_number = parse_timing_unsigned(action.timing_meter_measure_text);
+                const auto numerator = parse_timing_unsigned(action.timing_meter_numerator_text);
+                const auto denominator =
+                    parse_timing_unsigned(action.timing_meter_denominator_text);
+                const auto chart = workspace.selected_chart
+                                       ? std::ranges::find(history.document.charts,
+                                                           *workspace.selected_chart,
+                                                           &wormedit::chart_document_t::id)
+                                       : history.document.charts.end();
+                if (!binding_matches || application_command_state.timing_locked || timing_stage ||
+                    timing_recipe_draft ||
+                    timing_recipe_selection_binding || !measure_number || *measure_number == 0 ||
+                    !numerator || !denominator || *numerator == 0 || *denominator == 0 ||
+                    *numerator > std::numeric_limits<std::uint32_t>::max() ||
+                    *denominator > std::numeric_limits<std::uint32_t>::max() ||
+                    chart == history.document.charts.end() ||
+                    *measure_number > chart->measures.size()) {
+                    status = "Meter change needs a current Timing chart, measure number, and bounded signature.";
+                } else {
+                    const auto& target = chart->measures[static_cast<std::size_t>(*measure_number - 1)];
+                    const auto result = wormedit::apply_measure_edit(
+                        history, action.timing_meter_document_revision,
+                        wormedit::update_measure_definition_action_t{
+                            .chart = chart->id,
+                            .measure = target.id,
+                            .definition = {.length = {*numerator, *denominator},
+                                           .meter = wormedit::meter_t{
+                                               static_cast<std::uint32_t>(*numerator),
+                                               static_cast<std::uint32_t>(*denominator)}}});
+                    status = result
+                                 ? "Meter updated."
+                                 : result.diagnostics.empty()
+                                       ? "Meter was unchanged."
+                                       : result.diagnostics.front().message;
+                    if (result) {
+                        const auto rebound = wormedit::rebind_workspace(workspace, history);
+                        if (!rebound) {
+                            status = rebound.diagnostics.empty()
+                                         ? "Meter updated, but workspace rebinding failed."
+                                         : rebound.diagnostics.front().message;
+                        }
+                    }
+                }
             } else if (action.timing_grid_action != WORM_UI_TIMING_GRID_ACTION_NONE) {
                 const bool binding_matches =
                     action.timing_grid_action == WORM_UI_TIMING_GRID_ACTION_SELECT &&

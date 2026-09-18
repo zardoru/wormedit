@@ -251,6 +251,9 @@ typedef struct WormUiComposeView {
     double viewport_height_pixels;
     double pixels_per_standard_measure;
     const char* status_text;
+    const char* selected_note_label;
+    uint64_t selected_note_label_note_id;
+    bool focus_note_label_editor;
     bool hover_note_visible;
     uint64_t hover_note_id;
     const char* hover_tooltip;
@@ -549,6 +552,7 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD,
     WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD,
     WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
+    WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK,
     WORM_UI_COMPOSE_INPUT_DELETE_NOTES,
     WORM_UI_COMPOSE_INPUT_UNDO,
     WORM_UI_COMPOSE_INPUT_REDO,
@@ -646,6 +650,7 @@ typedef struct WormUiWorkspaceAction {
     bool compose_has_pointer_hover;
     double compose_pointer_hover_x_pixels;
     double compose_pointer_hover_y_pixels;
+    bool compose_note_label_focus_consumed;
     char compose_note_label[WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1];
     WormUiComposeInputAction compose_inputs[WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY];
     size_t compose_input_count;

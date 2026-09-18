@@ -124,6 +124,7 @@ struct flattened_workspace_t {
     std::vector<WormUiTimingRecipePoint> timing_recipe_composed_storage;
     std::string compose_status_storage;
     std::string compose_hover_tooltip_storage;
+    std::string compose_selected_note_label_storage;
     std::vector<WormUiComposeBandView> compose_band_storage;
     std::vector<WormUiComposeLaneView> compose_lane_storage;
     std::vector<WormUiComposeGridLineView> compose_grid_storage;
@@ -149,6 +150,7 @@ struct compose_scene_cache_t {
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
     std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
     std::optional<wormedit::editor_object_hover_state_t> hover;
+    bool focus_note_label_editor{};
     std::string status;
 };
 
@@ -2026,6 +2028,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     if (!view.visible) {
         cache.interaction_view.reset();
         cache.hover.reset();
+        cache.focus_note_label_editor = false;
         return;
     }
     view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
@@ -2036,10 +2039,14 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.note_paint_mode_active = application_state.note_paint_mode_active;
     view.selected_note_count = 0;
     view.status_text = nullptr;
+    view.selected_note_label = nullptr;
+    view.selected_note_label_note_id = 0;
+    view.focus_note_label_editor = false;
     view.hover_note_visible = false;
     view.hover_note_id = 0;
     view.hover_tooltip = nullptr;
     flattened.compose_hover_tooltip_storage.clear();
+    flattened.compose_selected_note_label_storage.clear();
     if (!workspace.selected_chart) {
         flattened.compose_status_storage = "Choose a difficulty to display its chart field.";
         view.status_text = flattened.compose_status_storage.c_str();
@@ -2061,6 +2068,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
         cache.hit_test_index.reset();
         cache.interaction_view.reset();
         cache.hover.reset();
+        cache.focus_note_label_editor = false;
         cache.status.clear();
         cache.chart = chart.id;
         cache.revision = history.document.revision;
@@ -2196,6 +2204,21 @@ void populate_compose_view(flattened_workspace_t& flattened,
     interaction_view.selected_notes = retained_state->selected_notes;
     interaction_view.selected_objects = retained_state->selected_objects;
     view.selected_note_count = retained_state->selected_notes.size();
+    if (retained_state->selected_notes.size() == 1) {
+        const auto note_id = retained_state->selected_notes.front();
+        for (const auto& measure : chart.measures) {
+            const auto note = std::ranges::find(measure.notes, note_id, &wormedit::note_t::id);
+            if (note == measure.notes.end()) {
+                continue;
+            }
+            if (note->label.has_value()) {
+                flattened.compose_selected_note_label_storage = *note->label;
+            }
+            view.selected_note_label = flattened.compose_selected_note_label_storage.c_str();
+            view.selected_note_label_note_id = note_id.value;
+            break;
+        }
+    }
     const auto content_height = static_cast<long double>(cache.index->measures.total_rows) *
                                 interaction_view.pixels_per_standard_measure /
                                 chart.divisions_per_standard_measure;
@@ -2219,6 +2242,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
         view.hover_note_id = cache.hover->object.id.value;
         flattened.compose_hover_tooltip_storage = cache.hover->tooltip;
         view.hover_tooltip = flattened.compose_hover_tooltip_storage.c_str();
+    }
+    if (!hover_gesture_active && cache.focus_note_label_editor &&
+        retained_state->selected_notes.size() == 1) {
+        view.focus_note_label_editor = true;
     }
     const auto scalar_selection_mode = [](wormedit::editor_area_selection_mode_t mode) {
         switch (mode) {
@@ -3140,6 +3167,43 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                            ? "Space range selection started; move the cursor and press Space again."
                            : "Space range selection committed.";
             break;
+        case WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK: {
+            const auto chart =
+                std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+            auto current_view = compose_view_for_state(history, state);
+            if (chart == history.document.charts.end() || !current_view) {
+                return "The selected chart field is no longer available.";
+            }
+            if (!scene_cache.hit_test_index) {
+                auto built = build_editor_hit_test_index(*chart, history.document.revision);
+                if (std::holds_alternative<editor_hit_test_index_t>(built)) {
+                    scene_cache.hit_test_index =
+                        std::get<editor_hit_test_index_t>(std::move(built));
+                }
+            }
+            if (!scene_cache.hit_test_index || !scene_cache.interaction_view) {
+                return "The chart field hover index is unavailable.";
+            }
+            const auto hover = hover_editor_object(
+                *chart, *scene_cache.hit_test_index, *scene_cache.interaction_view,
+                {.x_pixels = input.x_pixels,
+                 .y_pixels = input.y_pixels,
+                 .field_left_pixels = 0.0,
+                 .field_width_pixels = ui_action.compose_input_viewport_width_pixels,
+                 .hit_radius_pixels = 8.0,
+                 .scope = {.notes = true, .bgm = false, .timing = false, .bga = false}});
+            if (!hover || hover->object.kind != editor_selection_object_kind_t::note) {
+                return "Double-click a note to edit its label.";
+            }
+            result = dispatch_editor_action(history, state,
+                                            select_editor_notes_action_t{{hover->object.id}});
+            if (!result) {
+                return compose_result_status(result, "Note label editor could not be focused.");
+            }
+            scene_cache.focus_note_label_editor = true;
+            accepted = "Note label editor focused.";
+            break;
+        }
         case WORM_UI_COMPOSE_INPUT_POINTER_CLICK: {
             const auto chart =
                 std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
@@ -3206,6 +3270,9 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                            : rebound.diagnostics.front().message;
             }
         }
+    }
+    if (ui_action.compose_note_label_focus_consumed) {
+        scene_cache.focus_note_label_editor = false;
     }
 
     for (std::size_t index = 0; index < ui_action.compose_viewport_input_count; ++index) {

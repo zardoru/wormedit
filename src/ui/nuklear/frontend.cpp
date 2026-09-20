@@ -9,6 +9,7 @@
 #include "ui/nuklear/compose_markers.h"
 #include "ui/nuklear/metadata_state.h"
 #include "ui/nuklear/player_preview.h"
+#include "ui/nuklear/timing_state.h"
 
 #include "wormedit/nuklear_config.h"
 
@@ -79,61 +80,13 @@ static size_t g_compose_wheel_event_count{};
 static bool g_compose_middle_click_pending{};
 static float g_compose_middle_click_x{};
 static float g_compose_middle_click_y{};
-struct timing_double_click_t {
+struct frontend_double_click_t {
     float x{};
     float y{};
 };
-static std::array<timing_double_click_t, 16> g_timing_double_clicks{};
-static size_t g_timing_double_click_count{};
-static bool g_timing_stage_buffers_active{};
-static uint64_t g_timing_stage_buffers_chart{};
-static uint64_t g_timing_stage_buffers_revision{};
-static uint64_t g_timing_stage_buffers_object{};
-static WormUiTimingLaneKind g_timing_stage_buffers_lane{WORM_UI_TIMING_LANE_BPM};
-static double g_timing_stage_buffers_y{};
-static std::array<char, 64> g_timing_bpm_decimal{};
-static bool g_timing_bpm_decimal_edited{};
-static bool g_timing_bpm_advanced_fraction{};
-static std::array<char, 64> g_timing_primary_numerator{};
-static std::array<char, 64> g_timing_primary_denominator{};
-static std::array<char, 64> g_timing_view_primary_numerator{};
-static std::array<char, 64> g_timing_view_primary_denominator{};
-static std::array<char, 64> g_timing_secondary_numerator{};
-static std::array<char, 64> g_timing_secondary_denominator{};
-static std::array<char, 32> g_timing_meter_measure{'1'};
-static std::array<char, 32> g_timing_meter_numerator{'4'};
-static std::array<char, 32> g_timing_meter_denominator{'4'};
-static bool g_timing_recipe_buffers_active{};
-static uint64_t g_timing_recipe_buffers_chart{};
-static uint64_t g_timing_recipe_buffers_revision{};
-static uint64_t g_timing_recipe_buffers_id{};
-static WormUiTimingRecipeForm g_timing_recipe_form{};
-static bool g_timing_recipe_range_drag_active{};
-enum class timing_recipe_range_drag_mode_t {
-    new_range,
-    begin_handle,
-    end_handle,
-    whole_span,
-};
-static timing_recipe_range_drag_mode_t g_timing_recipe_range_drag_mode{
-    timing_recipe_range_drag_mode_t::new_range};
-static uint64_t g_timing_recipe_drag_chart{};
-static uint64_t g_timing_recipe_drag_revision{};
-static double g_timing_recipe_drag_anchor_fraction{};
-static double g_timing_recipe_drag_current_fraction{};
-static double g_timing_recipe_drag_original_begin{};
-static double g_timing_recipe_drag_original_end{};
-static float g_timing_recipe_drag_anchor_screen_y{};
-static bool g_timing_recipe_drag_moved{};
-static bool g_timing_recipe_cancel_pending{};
-static bool g_timing_marker_drag_active{};
-static bool g_timing_marker_drag_moved{};
-static bool g_timing_marker_drag_cancel_pending{};
-static uint64_t g_timing_marker_drag_chart{};
-static uint64_t g_timing_marker_drag_revision{};
-static uint64_t g_timing_marker_drag_object{};
-static WormUiTimingLaneKind g_timing_marker_drag_lane{WORM_UI_TIMING_LANE_BPM};
-static float g_timing_marker_drag_anchor_screen_y{};
+static std::array<frontend_double_click_t, 16> g_double_clicks{};
+static size_t g_double_click_count{};
+static auto& g_timing = worm_ui_nuklear_timing_state();
 static bool g_window_focused{true};
 static std::array<WormUiShortcutEvent, WORM_UI_SHORTCUT_EVENT_CAPACITY> g_shortcut_events{};
 static size_t g_shortcut_event_count{};
@@ -1276,6 +1229,7 @@ bool worm_ui_frontend_init(SDL_Window* window) {
         return false;
     }
     worm_ui_nuklear_reset_metadata_state();
+    worm_ui_nuklear_reset_timing_state();
 
     struct nk_context* context = nk_sdl_init(window);
     if (!context) {
@@ -1318,15 +1272,7 @@ bool worm_ui_frontend_init(SDL_Window* window) {
     g_compose_area_selection_active = false;
     g_compose_wheel_event_count = 0;
     g_compose_middle_click_pending = false;
-    g_timing_double_click_count = 0;
-    g_timing_stage_buffers_active = false;
-    g_timing_recipe_buffers_active = false;
-    g_timing_recipe_range_drag_active = false;
-    g_timing_recipe_drag_moved = false;
-    g_timing_recipe_cancel_pending = false;
-    g_timing_marker_drag_active = false;
-    g_timing_marker_drag_moved = false;
-    g_timing_marker_drag_cancel_pending = false;
+    g_double_click_count = 0;
     g_last_compose_chart_id = 0;
     g_last_compose_document_revision = 0;
     return true;
@@ -1335,6 +1281,7 @@ bool worm_ui_frontend_init(SDL_Window* window) {
 void worm_ui_frontend_shutdown(void) {
     if (!g_context) {
         worm_ui_nuklear_reset_metadata_state();
+        worm_ui_nuklear_reset_timing_state();
         return;
     }
     if (g_window) {
@@ -1350,15 +1297,7 @@ void worm_ui_frontend_shutdown(void) {
     g_compose_key_event_count = 0;
     g_compose_wheel_event_count = 0;
     g_compose_middle_click_pending = false;
-    g_timing_double_click_count = 0;
-    g_timing_stage_buffers_active = false;
-    g_timing_recipe_buffers_active = false;
-    g_timing_recipe_range_drag_active = false;
-    g_timing_recipe_drag_moved = false;
-    g_timing_recipe_cancel_pending = false;
-    g_timing_marker_drag_active = false;
-    g_timing_marker_drag_moved = false;
-    g_timing_marker_drag_cancel_pending = false;
+    g_double_click_count = 0;
     g_compose_pointer_hold_active = false;
     g_compose_note_paint_pointer_active = false;
     g_compose_semantic_layer_paint_pointer_active = false;
@@ -1375,6 +1314,7 @@ void worm_ui_frontend_shutdown(void) {
     g_last_compose_chart_id = 0;
     g_last_compose_document_revision = 0;
     worm_ui_nuklear_reset_metadata_state();
+    worm_ui_nuklear_reset_timing_state();
 }
 
 void worm_ui_frontend_begin_input(void) {
@@ -1382,7 +1322,7 @@ void worm_ui_frontend_begin_input(void) {
         nk_input_begin(g_context);
         g_shortcut_event_count = 0;
         g_shortcut_events_overflowed = false;
-        g_timing_double_click_count = 0;
+        g_double_click_count = 0;
     }
 }
 
@@ -1398,11 +1338,11 @@ bool worm_ui_frontend_handle_event(const SDL_Event* event) {
         g_shortcut_event_count = 0;
         g_compose_wheel_event_count = 0;
         g_compose_middle_click_pending = false;
-        g_timing_double_click_count = 0;
-        g_timing_recipe_cancel_pending = true;
+        g_double_click_count = 0;
+        g_timing.recipe_cancel_pending = true;
         cancel_timing_recipe_range_drag();
-        if (g_timing_marker_drag_active) {
-            g_timing_marker_drag_cancel_pending = true;
+        if (g_timing.marker_drag_active) {
+            g_timing.marker_drag_cancel_pending = true;
         }
         cancel_timing_marker_drag();
         g_ime_composition_active = false;
@@ -1452,8 +1392,8 @@ bool worm_ui_frontend_handle_event(const SDL_Event* event) {
                (event->button.windowID == 0 ||
                 event->button.windowID == SDL_GetWindowID(g_window)) &&
                std::isfinite(event->button.x) && std::isfinite(event->button.y) &&
-               g_timing_double_click_count < g_timing_double_clicks.size()) {
-        g_timing_double_clicks[g_timing_double_click_count++] = {event->button.x, event->button.y};
+               g_double_click_count < g_double_clicks.size()) {
+        g_double_clicks[g_double_click_count++] = {event->button.x, event->button.y};
     }
     SDL_Event mutable_event = *event;
     return nk_sdl_handle_event(&mutable_event) != 0;
@@ -2185,20 +2125,20 @@ static void copy_timing_form_to_action(WormUiWorkspaceAction* action) {
         return;
     }
     copy_timing_text(action->timing_bpm_decimal_text, sizeof(action->timing_bpm_decimal_text),
-                     g_timing_bpm_decimal.data());
-    action->timing_bpm_decimal_edited = g_timing_bpm_decimal_edited;
+                     g_timing.bpm_decimal.data());
+    action->timing_bpm_decimal_edited = g_timing.bpm_decimal_edited;
     copy_timing_text(action->timing_primary_numerator_text,
                      sizeof(action->timing_primary_numerator_text),
-                     g_timing_primary_numerator.data());
+                     g_timing.primary_numerator.data());
     copy_timing_text(action->timing_primary_denominator_text,
                      sizeof(action->timing_primary_denominator_text),
-                     g_timing_primary_denominator.data());
+                     g_timing.primary_denominator.data());
     copy_timing_text(action->timing_secondary_numerator_text,
                      sizeof(action->timing_secondary_numerator_text),
-                     g_timing_secondary_numerator.data());
+                     g_timing.secondary_numerator.data());
     copy_timing_text(action->timing_secondary_denominator_text,
                      sizeof(action->timing_secondary_denominator_text),
-                     g_timing_secondary_denominator.data());
+                     g_timing.secondary_denominator.data());
 }
 
 static void set_timing_recipe_action(WormUiWorkspaceAction* action,
@@ -2214,63 +2154,64 @@ static void set_timing_recipe_action(WormUiWorkspaceAction* action,
     recipe_action.document_revision = view->document_revision;
     recipe_action.range_begin_fraction = range_begin;
     recipe_action.range_end_fraction = range_end;
-    recipe_action.form = g_timing_recipe_buffers_active ? g_timing_recipe_form : view->form;
+    recipe_action.form = g_timing.recipe_buffers_active ? g_timing.recipe_form : view->form;
 }
 
 static void cancel_timing_recipe_range_drag() {
-    g_timing_recipe_range_drag_active = false;
-    g_timing_recipe_range_drag_mode = timing_recipe_range_drag_mode_t::new_range;
-    g_timing_recipe_drag_moved = false;
+    g_timing.recipe_range_drag_active = false;
+    g_timing.recipe_range_drag_mode = worm_ui_nuklear_timing_recipe_range_drag_mode_t::new_range;
+    g_timing.recipe_drag_moved = false;
 }
 
 static void cancel_timing_marker_drag() {
-    g_timing_marker_drag_active = false;
-    g_timing_marker_drag_moved = false;
-    g_timing_marker_drag_chart = 0;
-    g_timing_marker_drag_revision = 0;
-    g_timing_marker_drag_object = 0;
+    g_timing.marker_drag_active = false;
+    g_timing.marker_drag_moved = false;
+    g_timing.marker_drag_chart = 0;
+    g_timing.marker_drag_revision = 0;
+    g_timing.marker_drag_object = 0;
 }
 
 static auto timing_marker_drag_context_matches(const WormUiWorkspaceView* view) -> bool {
-    if (!g_timing_marker_drag_active) {
+    if (!g_timing.marker_drag_active) {
         return true;
     }
     return view && view->active_tab == WORM_UI_WORKSPACE_TAB_TIMING && g_window_focused &&
            view->timing.visible && view->timing.scene_available &&
-           view->timing.chart_id == g_timing_marker_drag_chart &&
-           view->timing.document_revision == g_timing_marker_drag_revision;
+           view->timing.chart_id == g_timing.marker_drag_chart &&
+           view->timing.document_revision == g_timing.marker_drag_revision;
 }
 
 static auto timing_recipe_range_drag_context_matches(const WormUiWorkspaceView* view) -> bool {
-    if (!g_timing_recipe_range_drag_active) {
+    if (!g_timing.recipe_range_drag_active) {
         return true;
     }
     if (!view || view->active_tab != WORM_UI_WORKSPACE_TAB_TIMING || !g_window_focused ||
         !view->timing.visible || !view->timing.scene_available || view->timing.stage_active ||
-        view->timing.chart_id != g_timing_recipe_drag_chart ||
-        view->timing.document_revision != g_timing_recipe_drag_revision) {
+        view->timing.chart_id != g_timing.recipe_drag_chart ||
+        view->timing.document_revision != g_timing.recipe_drag_revision) {
         return false;
     }
-    return g_timing_recipe_range_drag_mode == timing_recipe_range_drag_mode_t::new_range
+    return g_timing.recipe_range_drag_mode ==
+                   worm_ui_nuklear_timing_recipe_range_drag_mode_t::new_range
                ? view->timing.sv_recipe.selection_armed
                : view->timing.sv_recipe.active;
 }
 
 static void ensure_timing_recipe_buffers(const WormUiTimingRecipeDraftView* view) {
     if (!view || !view->active) {
-        g_timing_recipe_buffers_active = false;
+        g_timing.recipe_buffers_active = false;
         return;
     }
-    if (g_timing_recipe_buffers_active && g_timing_recipe_buffers_chart == view->chart_id &&
-        g_timing_recipe_buffers_revision == view->document_revision &&
-        g_timing_recipe_buffers_id == view->recipe_id) {
+    if (g_timing.recipe_buffers_active && g_timing.recipe_buffers_chart == view->chart_id &&
+        g_timing.recipe_buffers_revision == view->document_revision &&
+        g_timing.recipe_buffers_id == view->recipe_id) {
         return;
     }
-    g_timing_recipe_form = view->form;
-    g_timing_recipe_buffers_active = true;
-    g_timing_recipe_buffers_chart = view->chart_id;
-    g_timing_recipe_buffers_revision = view->document_revision;
-    g_timing_recipe_buffers_id = view->recipe_id;
+    g_timing.recipe_form = view->form;
+    g_timing.recipe_buffers_active = true;
+    g_timing.recipe_buffers_chart = view->chart_id;
+    g_timing.recipe_buffers_revision = view->document_revision;
+    g_timing.recipe_buffers_id = view->recipe_id;
 }
 
 static auto timing_recipe_output_label(WormUiTimingRecipeOutput output) -> const char* {
@@ -2328,7 +2269,7 @@ static void render_timing_recipe_form(const WormUiTimingView* view, WormUiWorksp
         return;
     }
     bool changed = false;
-    auto& form = g_timing_recipe_form;
+    auto& form = g_timing.recipe_form;
 
     nk_layout_row_dynamic(g_context, 22, 1);
     nk_labelf(g_context, NK_TEXT_LEFT, "SV recipe draft · range %.4f to %.4f",
@@ -2471,55 +2412,55 @@ static void render_timing_recipe_form(const WormUiTimingView* view, WormUiWorksp
 
 static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceAction* action) {
     if (!view->stage_active) {
-        g_timing_stage_buffers_active = false;
-    } else if (!g_timing_stage_buffers_active || g_timing_stage_buffers_chart != view->chart_id ||
-               g_timing_stage_buffers_revision != view->document_revision ||
-               g_timing_stage_buffers_object != view->stage_existing_object_id ||
-               g_timing_stage_buffers_lane != view->stage_lane ||
-               g_timing_stage_buffers_y != view->stage_marker_y_pixels) {
-        copy_timing_text(g_timing_bpm_decimal.data(), g_timing_bpm_decimal.size(),
+        g_timing.stage_buffers_active = false;
+    } else if (!g_timing.stage_buffers_active || g_timing.stage_buffers_chart != view->chart_id ||
+               g_timing.stage_buffers_revision != view->document_revision ||
+               g_timing.stage_buffers_object != view->stage_existing_object_id ||
+               g_timing.stage_buffers_lane != view->stage_lane ||
+               g_timing.stage_buffers_y != view->stage_marker_y_pixels) {
+        copy_timing_text(g_timing.bpm_decimal.data(), g_timing.bpm_decimal.size(),
                          view->stage_primary_decimal_text);
-        copy_timing_text(g_timing_primary_numerator.data(), g_timing_primary_numerator.size(),
+        copy_timing_text(g_timing.primary_numerator.data(), g_timing.primary_numerator.size(),
                          view->stage_primary_numerator_text);
-        copy_timing_text(g_timing_primary_denominator.data(), g_timing_primary_denominator.size(),
+        copy_timing_text(g_timing.primary_denominator.data(), g_timing.primary_denominator.size(),
                          view->stage_primary_denominator_text);
-        copy_timing_text(g_timing_secondary_numerator.data(), g_timing_secondary_numerator.size(),
+        copy_timing_text(g_timing.secondary_numerator.data(), g_timing.secondary_numerator.size(),
                          view->stage_secondary_numerator_text);
-        copy_timing_text(g_timing_secondary_denominator.data(),
-                         g_timing_secondary_denominator.size(),
+        copy_timing_text(g_timing.secondary_denominator.data(),
+                         g_timing.secondary_denominator.size(),
                          view->stage_secondary_denominator_text);
-        copy_timing_text(g_timing_view_primary_numerator.data(),
-                         g_timing_view_primary_numerator.size(),
+        copy_timing_text(g_timing.view_primary_numerator.data(),
+                         g_timing.view_primary_numerator.size(),
                          view->stage_primary_numerator_text);
-        copy_timing_text(g_timing_view_primary_denominator.data(),
-                         g_timing_view_primary_denominator.size(),
+        copy_timing_text(g_timing.view_primary_denominator.data(),
+                         g_timing.view_primary_denominator.size(),
                          view->stage_primary_denominator_text);
-        g_timing_bpm_decimal_edited = false;
-        g_timing_bpm_advanced_fraction = false;
-        g_timing_stage_buffers_active = true;
-        g_timing_stage_buffers_chart = view->chart_id;
-        g_timing_stage_buffers_revision = view->document_revision;
-        g_timing_stage_buffers_object = view->stage_existing_object_id;
-        g_timing_stage_buffers_lane = view->stage_lane;
-        g_timing_stage_buffers_y = view->stage_marker_y_pixels;
+        g_timing.bpm_decimal_edited = false;
+        g_timing.bpm_advanced_fraction = false;
+        g_timing.stage_buffers_active = true;
+        g_timing.stage_buffers_chart = view->chart_id;
+        g_timing.stage_buffers_revision = view->document_revision;
+        g_timing.stage_buffers_object = view->stage_existing_object_id;
+        g_timing.stage_buffers_lane = view->stage_lane;
+        g_timing.stage_buffers_y = view->stage_marker_y_pixels;
     }
     if (view->stage_active &&
-        (strcmp(g_timing_view_primary_numerator.data(), view->stage_primary_numerator_text) != 0 ||
-         strcmp(g_timing_view_primary_denominator.data(), view->stage_primary_denominator_text) !=
+        (strcmp(g_timing.view_primary_numerator.data(), view->stage_primary_numerator_text) != 0 ||
+         strcmp(g_timing.view_primary_denominator.data(), view->stage_primary_denominator_text) !=
              0)) {
-        copy_timing_text(g_timing_bpm_decimal.data(), g_timing_bpm_decimal.size(),
+        copy_timing_text(g_timing.bpm_decimal.data(), g_timing.bpm_decimal.size(),
                          view->stage_primary_decimal_text);
-        copy_timing_text(g_timing_primary_numerator.data(), g_timing_primary_numerator.size(),
+        copy_timing_text(g_timing.primary_numerator.data(), g_timing.primary_numerator.size(),
                          view->stage_primary_numerator_text);
-        copy_timing_text(g_timing_primary_denominator.data(), g_timing_primary_denominator.size(),
+        copy_timing_text(g_timing.primary_denominator.data(), g_timing.primary_denominator.size(),
                          view->stage_primary_denominator_text);
-        copy_timing_text(g_timing_view_primary_numerator.data(),
-                         g_timing_view_primary_numerator.size(),
+        copy_timing_text(g_timing.view_primary_numerator.data(),
+                         g_timing.view_primary_numerator.size(),
                          view->stage_primary_numerator_text);
-        copy_timing_text(g_timing_view_primary_denominator.data(),
-                         g_timing_view_primary_denominator.size(),
+        copy_timing_text(g_timing.view_primary_denominator.data(),
+                         g_timing.view_primary_denominator.size(),
                          view->stage_primary_denominator_text);
-        g_timing_bpm_decimal_edited = false;
+        g_timing.bpm_decimal_edited = false;
     }
     const bool can_change_grid = !view->stage_active && !view->sv_recipe.active &&
                                  !view->sv_recipe.selection_armed && view->scene_available &&
@@ -2572,23 +2513,23 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
     nk_layout_row_push(g_context, 0.18f);
     if (!can_apply_meter)
         nk_widget_disable_begin(g_context);
-    (void)nk_edit_string_zero_terminated(g_context, NK_EDIT_FIELD, g_timing_meter_measure.data(),
-                                         g_timing_meter_measure.size(), nk_filter_decimal);
+    (void)nk_edit_string_zero_terminated(g_context, NK_EDIT_FIELD, g_timing.meter_measure.data(),
+                                         g_timing.meter_measure.size(), nk_filter_decimal);
     if (!can_apply_meter)
         nk_widget_disable_end(g_context);
     nk_layout_row_push(g_context, 0.16f);
     if (!can_apply_meter)
         nk_widget_disable_begin(g_context);
-    (void)nk_edit_string_zero_terminated(g_context, NK_EDIT_FIELD, g_timing_meter_numerator.data(),
-                                         g_timing_meter_numerator.size(), nk_filter_decimal);
+    (void)nk_edit_string_zero_terminated(g_context, NK_EDIT_FIELD, g_timing.meter_numerator.data(),
+                                         g_timing.meter_numerator.size(), nk_filter_decimal);
     if (!can_apply_meter)
         nk_widget_disable_end(g_context);
     nk_layout_row_push(g_context, 0.16f);
     if (!can_apply_meter)
         nk_widget_disable_begin(g_context);
     (void)nk_edit_string_zero_terminated(g_context, NK_EDIT_FIELD,
-                                         g_timing_meter_denominator.data(),
-                                         g_timing_meter_denominator.size(), nk_filter_decimal);
+                                         g_timing.meter_denominator.data(),
+                                         g_timing.meter_denominator.size(), nk_filter_decimal);
     if (!can_apply_meter)
         nk_widget_disable_end(g_context);
     nk_layout_row_push(g_context, 0.27f);
@@ -2604,13 +2545,13 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
         action->timing_meter_chart_id = view->chart_id;
         action->timing_meter_document_revision = view->document_revision;
         copy_timing_text(action->timing_meter_measure_text,
-                         sizeof(action->timing_meter_measure_text), g_timing_meter_measure.data());
+                         sizeof(action->timing_meter_measure_text), g_timing.meter_measure.data());
         copy_timing_text(action->timing_meter_numerator_text,
                          sizeof(action->timing_meter_numerator_text),
-                         g_timing_meter_numerator.data());
+                         g_timing.meter_numerator.data());
         copy_timing_text(action->timing_meter_denominator_text,
                          sizeof(action->timing_meter_denominator_text),
-                         g_timing_meter_denominator.data());
+                         g_timing.meter_denominator.data());
     }
     nk_layout_row_dynamic(g_context, 24, 1);
     nk_labelf(g_context, NK_TEXT_LEFT,
@@ -2766,24 +2707,24 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
                           0.0, 1.0);
     };
     const auto current_recipe_drag_range = [&]() -> std::pair<double, double> {
-        const auto current = g_timing_recipe_drag_current_fraction;
-        switch (g_timing_recipe_range_drag_mode) {
-        case timing_recipe_range_drag_mode_t::new_range:
-            return std::pair{std::min(g_timing_recipe_drag_anchor_fraction, current),
-                             std::max(g_timing_recipe_drag_anchor_fraction, current)};
-        case timing_recipe_range_drag_mode_t::begin_handle:
-            return std::pair{std::min(current, g_timing_recipe_drag_original_end),
-                             std::max(current, g_timing_recipe_drag_original_end)};
-        case timing_recipe_range_drag_mode_t::end_handle:
-            return std::pair{std::min(g_timing_recipe_drag_original_begin, current),
-                             std::max(g_timing_recipe_drag_original_begin, current)};
-        case timing_recipe_range_drag_mode_t::whole_span: {
-            const auto minimum_delta = -g_timing_recipe_drag_original_begin;
-            const auto maximum_delta = 1.0 - g_timing_recipe_drag_original_end;
-            const auto delta = std::clamp(current - g_timing_recipe_drag_anchor_fraction,
+        const auto current = g_timing.recipe_drag_current_fraction;
+        switch (g_timing.recipe_range_drag_mode) {
+        case worm_ui_nuklear_timing_recipe_range_drag_mode_t::new_range:
+            return std::pair{std::min(g_timing.recipe_drag_anchor_fraction, current),
+                             std::max(g_timing.recipe_drag_anchor_fraction, current)};
+        case worm_ui_nuklear_timing_recipe_range_drag_mode_t::begin_handle:
+            return std::pair{std::min(current, g_timing.recipe_drag_original_end),
+                             std::max(current, g_timing.recipe_drag_original_end)};
+        case worm_ui_nuklear_timing_recipe_range_drag_mode_t::end_handle:
+            return std::pair{std::min(g_timing.recipe_drag_original_begin, current),
+                             std::max(g_timing.recipe_drag_original_begin, current)};
+        case worm_ui_nuklear_timing_recipe_range_drag_mode_t::whole_span: {
+            const auto minimum_delta = -g_timing.recipe_drag_original_begin;
+            const auto maximum_delta = 1.0 - g_timing.recipe_drag_original_end;
+            const auto delta = std::clamp(current - g_timing.recipe_drag_anchor_fraction,
                                           minimum_delta, maximum_delta);
-            return std::pair{g_timing_recipe_drag_original_begin + delta,
-                             g_timing_recipe_drag_original_end + delta};
+            return std::pair{g_timing.recipe_drag_original_begin + delta,
+                             g_timing.recipe_drag_original_end + delta};
         }
         }
         return std::pair{0.0, 0.0};
@@ -2838,22 +2779,22 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
         }
         return std::nullopt;
     };
-    if (!g_timing_marker_drag_active && !view->stage_active && !view->sv_recipe.active &&
+    if (!g_timing.marker_drag_active && !view->stage_active && !view->sv_recipe.active &&
         !view->sv_recipe.selection_armed && g_window_focused && pointer_started_in_view) {
         if (const auto marker =
                 marker_at_pointer(left_button.clicked_pos.x, left_button.clicked_pos.y)) {
-            g_timing_marker_drag_active = true;
-            g_timing_marker_drag_moved = false;
-            g_timing_marker_drag_chart = view->chart_id;
-            g_timing_marker_drag_revision = view->document_revision;
-            g_timing_marker_drag_lane = marker->first;
-            g_timing_marker_drag_object = marker->second;
-            g_timing_marker_drag_anchor_screen_y = left_button.clicked_pos.y;
+            g_timing.marker_drag_active = true;
+            g_timing.marker_drag_moved = false;
+            g_timing.marker_drag_chart = view->chart_id;
+            g_timing.marker_drag_revision = view->document_revision;
+            g_timing.marker_drag_lane = marker->first;
+            g_timing.marker_drag_object = marker->second;
+            g_timing.marker_drag_anchor_screen_y = left_button.clicked_pos.y;
         }
     }
-    if (!g_timing_recipe_range_drag_active && !view->stage_active && action &&
+    if (!g_timing.recipe_range_drag_active && !view->stage_active && action &&
         action->timing_recipe_action.kind == WORM_UI_TIMING_RECIPE_ACTION_NONE &&
-        !g_timing_marker_drag_active && g_window_focused && pointer_started_in_recipe_lane) {
+        !g_timing.marker_drag_active && g_window_focused && pointer_started_in_recipe_lane) {
         const bool armed_selection = view->sv_recipe.selection_armed && !view->sv_recipe.active;
         const auto clicked_fraction = normalized_y_fraction(left_button.clicked_pos.y);
         const auto selected_begin = view->sv_recipe.range_begin_fraction;
@@ -2862,43 +2803,47 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
                                            clicked_fraction >= selected_begin - 0.01 &&
                                            clicked_fraction <= selected_end + 0.01;
         if (armed_selection || hit_selected_interval) {
-            g_timing_recipe_range_drag_active = true;
-            g_timing_recipe_drag_original_begin = selected_begin;
-            g_timing_recipe_drag_original_end = selected_end;
+            g_timing.recipe_range_drag_active = true;
+            g_timing.recipe_drag_original_begin = selected_begin;
+            g_timing.recipe_drag_original_end = selected_end;
             if (armed_selection) {
-                g_timing_recipe_range_drag_mode = timing_recipe_range_drag_mode_t::new_range;
+                g_timing.recipe_range_drag_mode =
+                    worm_ui_nuklear_timing_recipe_range_drag_mode_t::new_range;
             } else {
                 const auto handle_tolerance =
                     std::max(0.005, 6.0 / static_cast<double>(viewport.h));
                 if (std::abs(clicked_fraction - selected_begin) <= handle_tolerance) {
-                    g_timing_recipe_range_drag_mode = timing_recipe_range_drag_mode_t::begin_handle;
+                    g_timing.recipe_range_drag_mode =
+                        worm_ui_nuklear_timing_recipe_range_drag_mode_t::begin_handle;
                 } else if (std::abs(clicked_fraction - selected_end) <= handle_tolerance) {
-                    g_timing_recipe_range_drag_mode = timing_recipe_range_drag_mode_t::end_handle;
+                    g_timing.recipe_range_drag_mode =
+                        worm_ui_nuklear_timing_recipe_range_drag_mode_t::end_handle;
                 } else {
-                    g_timing_recipe_range_drag_mode = timing_recipe_range_drag_mode_t::whole_span;
+                    g_timing.recipe_range_drag_mode =
+                        worm_ui_nuklear_timing_recipe_range_drag_mode_t::whole_span;
                 }
             }
-            g_timing_recipe_drag_chart = view->chart_id;
-            g_timing_recipe_drag_revision = view->document_revision;
-            g_timing_recipe_drag_anchor_fraction = clicked_fraction;
-            g_timing_recipe_drag_current_fraction = clicked_fraction;
-            g_timing_recipe_drag_anchor_screen_y = left_button.clicked_pos.y;
-            g_timing_recipe_drag_moved = false;
+            g_timing.recipe_drag_chart = view->chart_id;
+            g_timing.recipe_drag_revision = view->document_revision;
+            g_timing.recipe_drag_anchor_fraction = clicked_fraction;
+            g_timing.recipe_drag_current_fraction = clicked_fraction;
+            g_timing.recipe_drag_anchor_screen_y = left_button.clicked_pos.y;
+            g_timing.recipe_drag_moved = false;
         }
     }
     const bool left_down = left_button.down != 0;
     const bool left_released = nk_input_is_mouse_released(&g_context->input, NK_BUTTON_LEFT);
-    if (g_timing_marker_drag_active) {
-        const bool matches_drag = g_timing_marker_drag_chart == view->chart_id &&
-                                  g_timing_marker_drag_revision == view->document_revision;
+    if (g_timing.marker_drag_active) {
+        const bool matches_drag = g_timing.marker_drag_chart == view->chart_id &&
+                                  g_timing.marker_drag_revision == view->document_revision;
         if (!g_window_focused || !view->scene_available || !matches_drag ||
             (!left_down && !left_released)) {
             cancel_timing_marker_drag();
         } else {
             const auto distance =
-                std::abs(g_context->input.mouse.pos.y - g_timing_marker_drag_anchor_screen_y);
-            g_timing_marker_drag_moved = g_timing_marker_drag_moved || distance >= 4.0f;
-            if (g_timing_marker_drag_moved && action &&
+                std::abs(g_context->input.mouse.pos.y - g_timing.marker_drag_anchor_screen_y);
+            g_timing.marker_drag_moved = g_timing.marker_drag_moved || distance >= 4.0f;
+            if (g_timing.marker_drag_moved && action &&
                 action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE &&
                 action->timing_recipe_action.kind == WORM_UI_TIMING_RECIPE_ACTION_NONE) {
                 const auto target = std::min(normalized_y_fraction(g_context->input.mouse.pos.y),
@@ -2906,10 +2851,10 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
                 set_timing_action(action, view,
                                   view->stage_active ? WORM_UI_TIMING_STAGE_MOVE
                                                      : WORM_UI_TIMING_STAGE_BEGIN);
-                action->timing_chart_id = g_timing_marker_drag_chart;
-                action->timing_document_revision = g_timing_marker_drag_revision;
-                action->timing_lane = g_timing_marker_drag_lane;
-                action->timing_object_id = g_timing_marker_drag_object;
+                action->timing_chart_id = g_timing.marker_drag_chart;
+                action->timing_document_revision = g_timing.marker_drag_revision;
+                action->timing_lane = g_timing.marker_drag_lane;
+                action->timing_object_id = g_timing.marker_drag_object;
                 action->timing_has_target_y = true;
                 action->timing_target_y_fraction = target;
             }
@@ -2918,30 +2863,32 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
             }
         }
     }
-    if (g_timing_recipe_range_drag_active) {
+    if (g_timing.recipe_range_drag_active) {
         const bool view_matches_drag =
-            g_timing_recipe_drag_chart == view->chart_id &&
-            g_timing_recipe_drag_revision == view->document_revision &&
-            (g_timing_recipe_range_drag_mode == timing_recipe_range_drag_mode_t::new_range
+            g_timing.recipe_drag_chart == view->chart_id &&
+            g_timing.recipe_drag_revision == view->document_revision &&
+            (g_timing.recipe_range_drag_mode ==
+                     worm_ui_nuklear_timing_recipe_range_drag_mode_t::new_range
                  ? view->sv_recipe.selection_armed
                  : view->sv_recipe.active);
         if (!g_window_focused || !view->scene_available || view->stage_active ||
             !view_matches_drag || (!left_down && !left_released)) {
             cancel_timing_recipe_range_drag();
         } else {
-            g_timing_recipe_drag_current_fraction =
+            g_timing.recipe_drag_current_fraction =
                 normalized_y_fraction(g_context->input.mouse.pos.y);
             const auto distance =
-                std::abs(g_context->input.mouse.pos.y - g_timing_recipe_drag_anchor_screen_y);
-            g_timing_recipe_drag_moved = g_timing_recipe_drag_moved || distance >= 4.0f;
+                std::abs(g_context->input.mouse.pos.y - g_timing.recipe_drag_anchor_screen_y);
+            g_timing.recipe_drag_moved = g_timing.recipe_drag_moved || distance >= 4.0f;
             if (left_released) {
-                if (g_timing_recipe_drag_moved && action &&
+                if (g_timing.recipe_drag_moved && action &&
                     action->timing_recipe_action.kind == WORM_UI_TIMING_RECIPE_ACTION_NONE) {
                     const auto [begin, end] = current_recipe_drag_range();
-                    const auto kind = g_timing_recipe_range_drag_mode ==
-                                              timing_recipe_range_drag_mode_t::new_range
-                                          ? WORM_UI_TIMING_RECIPE_ACTION_BEGIN
-                                          : WORM_UI_TIMING_RECIPE_ACTION_UPDATE_RANGE;
+                    const auto kind =
+                        g_timing.recipe_range_drag_mode ==
+                                worm_ui_nuklear_timing_recipe_range_drag_mode_t::new_range
+                            ? WORM_UI_TIMING_RECIPE_ACTION_BEGIN
+                            : WORM_UI_TIMING_RECIPE_ACTION_UPDATE_RANGE;
                     set_timing_recipe_action(action, &view->sv_recipe, kind, begin, end);
                 }
                 cancel_timing_recipe_range_drag();
@@ -3001,10 +2948,10 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
 
     double selected_begin = view->sv_recipe.range_begin_fraction;
     double selected_end = view->sv_recipe.range_end_fraction;
-    if (g_timing_recipe_range_drag_active) {
+    if (g_timing.recipe_range_drag_active) {
         std::tie(selected_begin, selected_end) = current_recipe_drag_range();
     }
-    if ((view->sv_recipe.active || g_timing_recipe_range_drag_active) &&
+    if ((view->sv_recipe.active || g_timing.recipe_range_drag_active) &&
         selected_end > selected_begin) {
         const auto top = viewport.y + static_cast<float>(selected_begin) * viewport.h;
         const auto bottom = viewport.y + static_cast<float>(selected_end) * viewport.h;
@@ -3098,8 +3045,8 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
 
     if (!view->stage_active && action && action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE &&
         action->timing_recipe_action.kind == WORM_UI_TIMING_RECIPE_ACTION_NONE) {
-        for (size_t click = 0; click < g_timing_double_click_count; ++click) {
-            const auto& pointer = g_timing_double_clicks[click];
+        for (size_t click = 0; click < g_double_click_count; ++click) {
+            const auto& pointer = g_double_clicks[click];
             if (pointer.x < viewport.x || pointer.x >= viewport.x + viewport.w ||
                 pointer.y < viewport.y || pointer.y >= viewport.y + viewport.h) {
                 continue;
@@ -3212,8 +3159,8 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
             nk_label(g_context, primary_label, NK_TEXT_LEFT);
             nk_layout_row_push(g_context, 0.62f);
             changed |= nk_edit_string_zero_terminated(
-                           g_context, NK_EDIT_FIELD, g_timing_primary_numerator.data(),
-                           g_timing_primary_numerator.size(), nk_filter_decimal) != 0;
+                           g_context, NK_EDIT_FIELD, g_timing.primary_numerator.data(),
+                           g_timing.primary_numerator.size(), nk_filter_decimal) != 0;
             nk_layout_row_end(g_context);
             nk_layout_row_dynamic(g_context, 24, 1);
             changed |= nk_checkbox_label(g_context, "Lock anchor", &toggle_primary) != 0;
@@ -3229,8 +3176,8 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
             nk_label(g_context, primary_label, NK_TEXT_LEFT);
             nk_layout_row_push(g_context, 0.56f);
             const bool decimal_changed = nk_edit_string_zero_terminated(
-                                             g_context, NK_EDIT_FIELD, g_timing_bpm_decimal.data(),
-                                             g_timing_bpm_decimal.size(), nk_filter_float) != 0;
+                                             g_context, NK_EDIT_FIELD, g_timing.bpm_decimal.data(),
+                                             g_timing.bpm_decimal.size(), nk_filter_float) != 0;
             nk_layout_row_push(g_context, 0.13f);
             if (nk_button_label(g_context, "-1")) {
                 bpm_step = -1;
@@ -3241,40 +3188,40 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
             }
             nk_layout_row_end(g_context);
             if (decimal_changed) {
-                g_timing_bpm_decimal_edited = true;
+                g_timing.bpm_decimal_edited = true;
                 changed = true;
             }
             changed = changed || bpm_step != 0;
-            nk_bool advanced_fraction = g_timing_bpm_advanced_fraction ? 1 : 0;
+            nk_bool advanced_fraction = g_timing.bpm_advanced_fraction ? 1 : 0;
             nk_layout_row_dynamic(g_context, 24, 1);
             if (nk_checkbox_label(g_context, "Advanced exact fraction", &advanced_fraction) != 0) {
-                g_timing_bpm_advanced_fraction = advanced_fraction != 0;
+                g_timing.bpm_advanced_fraction = advanced_fraction != 0;
             }
-            if (g_timing_bpm_advanced_fraction) {
+            if (g_timing.bpm_advanced_fraction) {
                 nk_layout_row_begin(g_context, NK_DYNAMIC, 28, 4);
                 nk_layout_row_push(g_context, 0.24f);
                 nk_label(g_context, "Exact BPM", NK_TEXT_LEFT);
                 nk_layout_row_push(g_context, 0.30f);
                 const bool numerator_changed =
                     nk_edit_string_zero_terminated(
-                        g_context, NK_EDIT_FIELD, g_timing_primary_numerator.data(),
-                        g_timing_primary_numerator.size(), nk_filter_float) != 0;
+                        g_context, NK_EDIT_FIELD, g_timing.primary_numerator.data(),
+                        g_timing.primary_numerator.size(), nk_filter_float) != 0;
                 nk_layout_row_push(g_context, 0.05f);
                 nk_label(g_context, "/", NK_TEXT_CENTERED);
                 nk_layout_row_push(g_context, 0.30f);
                 const bool denominator_changed =
                     nk_edit_string_zero_terminated(
-                        g_context, NK_EDIT_FIELD, g_timing_primary_denominator.data(),
-                        g_timing_primary_denominator.size(), nk_filter_decimal) != 0;
+                        g_context, NK_EDIT_FIELD, g_timing.primary_denominator.data(),
+                        g_timing.primary_denominator.size(), nk_filter_decimal) != 0;
                 nk_layout_row_end(g_context);
                 if (numerator_changed || denominator_changed) {
-                    g_timing_bpm_decimal_edited = false;
+                    g_timing.bpm_decimal_edited = false;
                     changed = true;
                 }
             } else {
                 nk_layout_row_dynamic(g_context, 18, 1);
                 nk_labelf(g_context, NK_TEXT_LEFT, "Exact value: %s / %s",
-                          g_timing_primary_numerator.data(), g_timing_primary_denominator.data());
+                          g_timing.primary_numerator.data(), g_timing.primary_denominator.data());
             }
         } else {
             nk_layout_row_dynamic(g_context, 20, 1);
@@ -3284,14 +3231,14 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
             nk_label(g_context, primary_label, NK_TEXT_LEFT);
             nk_layout_row_push(g_context, 0.30f);
             changed |= nk_edit_string_zero_terminated(
-                           g_context, NK_EDIT_FIELD, g_timing_primary_numerator.data(),
-                           g_timing_primary_numerator.size(), nk_filter_float) != 0;
+                           g_context, NK_EDIT_FIELD, g_timing.primary_numerator.data(),
+                           g_timing.primary_numerator.size(), nk_filter_float) != 0;
             nk_layout_row_push(g_context, 0.05f);
             nk_label(g_context, "/", NK_TEXT_CENTERED);
             nk_layout_row_push(g_context, 0.30f);
             changed |= nk_edit_string_zero_terminated(
-                           g_context, NK_EDIT_FIELD, g_timing_primary_denominator.data(),
-                           g_timing_primary_denominator.size(), nk_filter_decimal) != 0;
+                           g_context, NK_EDIT_FIELD, g_timing.primary_denominator.data(),
+                           g_timing.primary_denominator.size(), nk_filter_decimal) != 0;
             nk_layout_row_end(g_context);
         }
         if (view->stage_lane == WORM_UI_TIMING_LANE_SPEED) {
@@ -3300,14 +3247,14 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
             nk_label(g_context, "Transition", NK_TEXT_LEFT);
             nk_layout_row_push(g_context, 0.30f);
             changed |= nk_edit_string_zero_terminated(
-                           g_context, NK_EDIT_FIELD, g_timing_secondary_numerator.data(),
-                           g_timing_secondary_numerator.size(), nk_filter_decimal) != 0;
+                           g_context, NK_EDIT_FIELD, g_timing.secondary_numerator.data(),
+                           g_timing.secondary_numerator.size(), nk_filter_decimal) != 0;
             nk_layout_row_push(g_context, 0.05f);
             nk_label(g_context, "/", NK_TEXT_CENTERED);
             nk_layout_row_push(g_context, 0.30f);
             changed |= nk_edit_string_zero_terminated(
-                           g_context, NK_EDIT_FIELD, g_timing_secondary_denominator.data(),
-                           g_timing_secondary_denominator.size(), nk_filter_decimal) != 0;
+                           g_context, NK_EDIT_FIELD, g_timing.secondary_denominator.data(),
+                           g_timing.secondary_denominator.size(), nk_filter_decimal) != 0;
             nk_layout_row_end(g_context);
             nk_layout_row_dynamic(g_context, 22, 1);
             changed |= nk_checkbox_label(g_context, "Seconds", &seconds) != 0;
@@ -3320,8 +3267,8 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
                      NK_TEXT_LEFT);
             nk_layout_row_push(g_context, 0.34f);
             changed |= nk_edit_string_zero_terminated(
-                           g_context, NK_EDIT_FIELD, g_timing_secondary_numerator.data(),
-                           g_timing_secondary_numerator.size(), nk_filter_decimal) != 0;
+                           g_context, NK_EDIT_FIELD, g_timing.secondary_numerator.data(),
+                           g_timing.secondary_numerator.size(), nk_filter_decimal) != 0;
             nk_layout_row_push(g_context, 0.28f);
             nk_label(g_context,
                      view->stage_existing_object_id != 0 ? "rows (denominator 1)"
@@ -4010,8 +3957,8 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
     }
     bool compose_note_double_click_in_view = false;
     if (!compose_pointer_captured && g_window_focused && view->scene_available) {
-        for (size_t click = 0; click < g_timing_double_click_count; ++click) {
-            const auto& pointer = g_timing_double_clicks[click];
+        for (size_t click = 0; click < g_double_click_count; ++click) {
+            const auto& pointer = g_double_clicks[click];
             if (pointer.x < viewport.x || pointer.x >= viewport.x + viewport.w ||
                 pointer.y < viewport.y || pointer.y >= viewport.y + viewport.h) {
                 continue;
@@ -4830,20 +4777,20 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         return action;
     }
 
-    if (g_timing_recipe_cancel_pending) {
+    if (g_timing.recipe_cancel_pending) {
         if (view->active_tab == WORM_UI_WORKSPACE_TAB_TIMING && view->timing.visible &&
             (view->timing.sv_recipe.active || view->timing.sv_recipe.selection_armed)) {
             set_timing_recipe_action(&action, &view->timing.sv_recipe,
                                      WORM_UI_TIMING_RECIPE_ACTION_CANCEL);
         }
-        g_timing_recipe_cancel_pending = false;
+        g_timing.recipe_cancel_pending = false;
     }
-    if (g_timing_marker_drag_cancel_pending) {
+    if (g_timing.marker_drag_cancel_pending) {
         if (view->active_tab == WORM_UI_WORKSPACE_TAB_TIMING && view->timing.visible &&
             view->timing.stage_active && view->timing.stage_existing_object_id != 0) {
             set_timing_action(&action, &view->timing, WORM_UI_TIMING_STAGE_CANCEL);
         }
-        g_timing_marker_drag_cancel_pending = false;
+        g_timing.marker_drag_cancel_pending = false;
     }
 
     if (view->active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && view->compose.visible) {

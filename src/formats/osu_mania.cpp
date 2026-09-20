@@ -535,8 +535,8 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
                      line.order});
             } else if (!indented_storyboard_line && (kind == "Sprite" || kind == "Animation") &&
                        parts->size() >= 4) {
-                event_resources.push_back({(*parts)[3], asset_kind_t::storyboard,
-                                           resource_role_t::bga, line.order, std::nullopt, false});
+                event_resources.push_back({(*parts)[3], asset_kind_t::image, resource_role_t::bga,
+                                           line.order, std::nullopt, false});
                 storyboard_lines.push_back(line);
             } else if (!indented_storyboard_line && kind == "Sample" && parts->size() >= 4) {
                 long double sample_time{};
@@ -1382,9 +1382,9 @@ auto writer_round_ms(long double value) -> std::optional<std::int64_t> {
     // ULP toward zero (for example 4 / 4000 * 60000 / 120).  Move one ULP
     // outward before rounding so its documented away-from-zero tie rule stays
     // stable across host libm implementations.
-    const auto outward = std::nextafter(
-        value, value < 0.0L ? -std::numeric_limits<long double>::infinity()
-                            : std::numeric_limits<long double>::infinity());
+    const auto outward =
+        std::nextafter(value, value < 0.0L ? -std::numeric_limits<long double>::infinity()
+                                           : std::numeric_limits<long double>::infinity());
     const auto rounded = std::round(outward); // half ties move away from zero
     if (rounded < static_cast<long double>(std::numeric_limits<std::int64_t>::min()) ||
         rounded > static_cast<long double>(std::numeric_limits<std::int64_t>::max()))

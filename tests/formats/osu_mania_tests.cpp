@@ -889,6 +889,13 @@ Sprite,Foreground,Centre,"sprites/second.png",320,240
                                [](const auto& resource) { return resource.name == "nested.wav"; }));
     CHECK(std::ranges::any_of(
         song.resources, [](const auto& resource) { return resource.name == "sprites/panel.png"; }));
+    const auto panel_resource =
+        std::ranges::find(song.resources, "sprites/panel.png", &wormedit::resource_entry_t::name);
+    REQUIRE(panel_resource != song.resources.end());
+    const auto panel_asset =
+        std::ranges::find(song.visual_assets, panel_resource->asset, &wormedit::visual_asset_t::id);
+    REQUIRE(panel_asset != song.visual_assets.end());
+    CHECK(panel_asset->kind == wormedit::asset_kind_t::image);
 
     const auto written = write_inline(song);
     REQUIRE(written.text.has_value());

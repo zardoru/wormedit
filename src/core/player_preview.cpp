@@ -74,6 +74,15 @@ auto valid_visual_layers(const bga_layer_state_t& layers, std::uint64_t sample_f
            valid_visual_layer(layers.storyboard, visual_event_kind_t::storyboard, sample_frame);
 }
 
+auto valid_storyboard_instance(const storyboard_draw_instance_t& instance) -> bool {
+    return instance.stable_id != 0 && !instance.layer.empty() && !instance.origin.empty() &&
+           !instance.path.empty() && std::isfinite(instance.x) && std::isfinite(instance.y) &&
+           std::isfinite(instance.scale_x) && std::isfinite(instance.scale_y) &&
+           std::isfinite(instance.rotation_radians) && std::isfinite(instance.opacity) &&
+           std::isfinite(instance.red) && std::isfinite(instance.green) &&
+           std::isfinite(instance.blue);
+}
+
 auto append_tree(const std::vector<player_preview_note_source_t>& notes, std::size_t leaf_base)
     -> std::vector<double> {
     std::vector<double> tree(leaf_base * 2, -std::numeric_limits<double>::infinity());
@@ -120,8 +129,8 @@ auto build_player_preview_index(const chart_document_t& chart, std::uint64_t doc
     -> player_preview_index_result_t {
     player_preview_index_result_t result;
     if (!chart.id || document_revision == 0 || options.maximum_notes == 0 ||
-        options.maximum_bgm_events == 0 ||
-        options.maximum_layout_segments == 0 || options.maximum_lane_definitions == 0) {
+        options.maximum_bgm_events == 0 || options.maximum_layout_segments == 0 ||
+        options.maximum_lane_definitions == 0) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_resolution,
                   "player-preview index requires a chart, revision, and positive bounded limits"));
@@ -241,6 +250,9 @@ auto make_player_preview_scene(const player_preview_index_t& index,
         request.split_stage_gutter_pixels < 0.0 || !std::isfinite(request.hold_body_width_ratio) ||
         request.hold_body_width_ratio <= 0.0 || request.hold_body_width_ratio > 1.0 ||
         request.maximum_visible_notes == 0 || request.maximum_composition_operations == 0 ||
+        request.maximum_storyboard_instances == 0 ||
+        request.storyboard_instances.size() > request.maximum_storyboard_instances ||
+        !std::ranges::all_of(request.storyboard_instances, valid_storyboard_instance) ||
         !valid_skin(request.skin) || !valid_direction(request.direction) ||
         !valid_visual_fit_policy(request.visual_fit) || index.layouts.empty() ||
         !valid_visual_layers(request.visual_layers, request.sample_frame) ||
@@ -287,9 +299,9 @@ auto make_player_preview_scene(const player_preview_index_t& index,
         pre_zero ? index.layouts.begin()
                  : (layout == index.layouts.begin() ? index.layouts.begin() : std::prev(layout));
     if (active_layout == index.layouts.end() ||
-        (pre_zero ? active_layout->begin_row != 0
-                  : current_row < active_layout->begin_row ||
-                        current_row > active_layout->end_row)) {
+        (pre_zero
+             ? active_layout->begin_row != 0
+             : current_row < active_layout->begin_row || current_row > active_layout->end_row)) {
         result.diagnostics.push_back(error(diagnostic_code_t::unknown_lane,
                                            "player-preview clock has no active lane layout"));
         return result;
@@ -320,6 +332,8 @@ auto make_player_preview_scene(const player_preview_index_t& index,
                                  .pre_zero = pre_zero,
                                  .split_stage = active_layout->layout.split_stage,
                                  .visual_layers = request.visual_layers,
+                                 .storyboard_instances = {request.storyboard_instances.begin(),
+                                                          request.storyboard_instances.end()},
                                  .composition_operations = 0,
                                  .visible_note_count = 0,
                                  .lanes = {},

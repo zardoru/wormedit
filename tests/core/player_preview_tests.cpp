@@ -187,6 +187,44 @@ TEST_CASE("player preview carries validated visual layers in the deterministic s
     CHECK_FALSE(make_player_preview_scene(*built.index, invalid_fit));
 }
 
+TEST_CASE("player preview carries bounded evaluated storyboard instances",
+          "[unit][core][player-preview][storyboard]") {
+    const auto built = build_player_preview_index(preview_chart(), 9);
+    REQUIRE(built);
+    const std::array sprites{
+        storyboard_draw_instance_t{.stable_id = 2,
+                                   .source_order = 3,
+                                   .layer = "Background",
+                                   .origin = "Centre",
+                                   .path = "back.png",
+                                   .x = 320.0,
+                                   .y = 240.0},
+        storyboard_draw_instance_t{.stable_id = 4,
+                                   .source_order = 5,
+                                   .layer = "Foreground",
+                                   .origin = "TopLeft",
+                                   .path = "front.png",
+                                   .x = 10.0,
+                                   .y = 20.0,
+                                   .rotation_radians = 0.25,
+                                   .opacity = 0.75},
+    };
+    auto scene_request = request(100);
+    scene_request.storyboard_instances = sprites;
+    const auto scene = make_player_preview_scene(*built.index, scene_request);
+    REQUIRE(scene);
+    CHECK(scene.scene->storyboard_instances ==
+          std::vector<storyboard_draw_instance_t>{sprites.begin(), sprites.end()});
+
+    scene_request.maximum_storyboard_instances = 1;
+    CHECK_FALSE(make_player_preview_scene(*built.index, scene_request));
+    scene_request.maximum_storyboard_instances = 2;
+    auto invalid = sprites;
+    invalid.front().stable_id = 0;
+    scene_request.storyboard_instances = invalid;
+    CHECK_FALSE(make_player_preview_scene(*built.index, scene_request));
+}
+
 TEST_CASE("player preview uses scroll displacement and remains still through a stop",
           "[unit][core][player-preview][timing]") {
     auto chart = preview_chart();
@@ -231,8 +269,9 @@ TEST_CASE("player preview uses scroll displacement and remains still through a s
     CHECK(at_event.scene->hold_bodies == during_stop.scene->hold_bodies);
 }
 
-TEST_CASE("player preview extrapolates count-in and rejects bounded composition overflow atomically",
-          "[unit][core][player-preview][count-in][negative]") {
+TEST_CASE(
+    "player preview extrapolates count-in and rejects bounded composition overflow atomically",
+    "[unit][core][player-preview][count-in][negative]") {
     auto chart = preview_chart();
     chart.beat_zero_audio_offset_seconds = {1, 1};
     const auto built = build_player_preview_index(chart, 11);

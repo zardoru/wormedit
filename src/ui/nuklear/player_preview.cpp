@@ -69,11 +69,13 @@ int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* vie
         view->hold_body_count > WORM_UI_PLAYER_PREVIEW_HOLD_CAPACITY ||
         view->note_endpoint_count > WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY ||
         view->visual_layer_count > WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY ||
+        view->storyboard_sprite_count > WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY ||
         (view->lane_count != 0 && !view->lanes) ||
         (view->receptor_count != 0 && !view->receptors) ||
         (view->hold_body_count != 0 && !view->hold_bodies) ||
         (view->note_endpoint_count != 0 && !view->note_endpoints) ||
         (view->visual_layer_count != 0 && !view->visual_layers) ||
+        (view->storyboard_sprite_count != 0 && !view->storyboard_sprites) ||
         (!view->scene_available && !view->status_text) ||
         (view->scene_available && (view->project_id == 0 || view->document_revision == 0))) {
         return 0;
@@ -120,6 +122,29 @@ int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* vie
             return 0;
         }
     }
+    for (std::size_t index = 0; index < view->storyboard_sprite_count; ++index) {
+        const auto& sprite = view->storyboard_sprites[index];
+        if (sprite.stable_id == 0 || !std::isfinite(sprite.x) || !std::isfinite(sprite.y) ||
+            !std::isfinite(sprite.origin_x) || sprite.origin_x < 0.0 || sprite.origin_x > 1.0 ||
+            !std::isfinite(sprite.origin_y) || sprite.origin_y < 0.0 || sprite.origin_y > 1.0 ||
+            !std::isfinite(sprite.scale_x) || !std::isfinite(sprite.scale_y) ||
+            !std::isfinite(sprite.rotation_radians) || !std::isfinite(sprite.opacity) ||
+            !std::isfinite(sprite.red) || !std::isfinite(sprite.green) ||
+            !std::isfinite(sprite.blue) ||
+            (sprite.image_ready &&
+             (sprite.resource_id == 0 || sprite.image_pending || sprite.image_width == 0 ||
+              sprite.image_height == 0 ||
+              sprite.image_width > WORM_UI_PLAYER_PREVIEW_IMAGE_MAX_DIMENSION ||
+              sprite.image_height > WORM_UI_PLAYER_PREVIEW_IMAGE_MAX_DIMENSION ||
+              !sprite.rgba_pixels || sprite.image_width > SIZE_MAX / sprite.image_height / 4U ||
+              sprite.rgba_byte_count !=
+                  static_cast<std::size_t>(sprite.image_width) * sprite.image_height * 4U)) ||
+            (!sprite.image_ready &&
+             (sprite.image_width != 0 || sprite.image_height != 0 ||
+              sprite.rgba_pixels != nullptr || sprite.rgba_byte_count != 0))) {
+            return 0;
+        }
+    }
     return 1;
 }
 
@@ -160,9 +185,10 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
             nk_label(context, view->status_text ? view->status_text : "Preview unavailable",
                      NK_TEXT_LEFT);
         } else {
-            nk_labelf(context, NK_TEXT_LEFT, "Frame %llu · %zu notes%s%s",
+            nk_labelf(context, NK_TEXT_LEFT, "Frame %llu · %zu notes · %zu sprites%s%s",
                       static_cast<unsigned long long>(view->sample_frame),
-                      view->note_endpoint_count, view->pre_zero ? " · count-in" : "",
+                      view->note_endpoint_count, view->storyboard_sprite_count,
+                      view->pre_zero ? " · count-in" : "",
                       view->split_stage ? " · split stage" : "");
         }
         for (std::size_t index = 0; index < view->visual_layer_count; ++index) {
@@ -204,9 +230,8 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                 nk_push_scissor(canvas, viewport);
                 nk_fill_rect(canvas, viewport, 2.0f, nk_rgb(14, 17, 24));
                 if (view->scene_available) {
-                    const auto visual_result =
-                        worm_ui_nuklear_draw_player_preview_visual_layers(canvas, viewport,
-                                                                          renderer, view);
+                    const auto visual_result = worm_ui_nuklear_draw_player_preview_visual_layers(
+                        canvas, viewport, renderer, view);
                     for (std::size_t index = 0; index < view->lane_count; ++index) {
                         const auto rect = screen_rect(&view->lanes[index].bounds, view, viewport);
                         const auto alternate = (view->lanes[index].display_order & 1U) != 0;

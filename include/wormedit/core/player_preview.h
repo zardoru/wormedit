@@ -2,6 +2,7 @@
 
 #include <wormedit/core/bga_preview.h>
 #include <wormedit/core/editor_scene.h>
+#include <wormedit/core/storyboard_preview.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/visual_layout.h>
 
@@ -126,6 +127,7 @@ struct player_preview_scene_t {
     bool pre_zero{};
     bool split_stage{};
     bga_layer_state_t visual_layers;
+    std::vector<storyboard_draw_instance_t> storyboard_instances;
     std::size_t composition_operations{};
     std::size_t visible_note_count{};
     std::vector<player_preview_lane_geometry_t> lanes;
@@ -153,7 +155,9 @@ struct player_preview_scene_request_t {
     // Resolved from the immutable visual schedule at this same sample frame.
     // Asset decoding and texture ownership remain renderer responsibilities.
     bga_layer_state_t visual_layers;
+    std::span<const storyboard_draw_instance_t> storyboard_instances;
     std::size_t maximum_visible_notes{4'096};
+    std::size_t maximum_storyboard_instances{4'096};
     std::size_t maximum_composition_operations{100'000};
 };
 

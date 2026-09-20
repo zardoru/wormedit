@@ -57,6 +57,7 @@
 #define WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY 4096
 #define WORM_UI_PLAYER_PREVIEW_HOLD_CAPACITY 4096
 #define WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY 5
+#define WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY 27
 #define WORM_UI_PLAYER_PREVIEW_IMAGE_MAX_DIMENSION 16384
 #define WORM_UI_COMPOSE_MIN_PIXELS_PER_MEASURE 24.0
 #define WORM_UI_COMPOSE_MAX_PIXELS_PER_MEASURE 4096.0
@@ -793,6 +794,29 @@ typedef struct WormUiPlayerPreviewVisualLayerView {
     size_t rgba_byte_count;
 } WormUiPlayerPreviewVisualLayerView;
 
+typedef struct WormUiPlayerPreviewStoryboardSpriteView {
+    uint64_t stable_id;
+    uint64_t resource_id;
+    size_t source_order;
+    double x;
+    double y;
+    double origin_x;
+    double origin_y;
+    double scale_x;
+    double scale_y;
+    double rotation_radians;
+    double opacity;
+    double red;
+    double green;
+    double blue;
+    bool image_ready;
+    bool image_pending;
+    uint32_t image_width;
+    uint32_t image_height;
+    const uint8_t* rgba_pixels;
+    size_t rgba_byte_count;
+} WormUiPlayerPreviewStoryboardSpriteView;
+
 typedef struct WormUiPlayerPreviewView {
     bool visible;
     bool scene_available;
@@ -818,6 +842,8 @@ typedef struct WormUiPlayerPreviewView {
     size_t note_endpoint_count;
     const WormUiPlayerPreviewVisualLayerView* visual_layers;
     size_t visual_layer_count;
+    const WormUiPlayerPreviewStoryboardSpriteView* storyboard_sprites;
+    size_t storyboard_sprite_count;
 } WormUiPlayerPreviewView;
 
 // Private scalar view consumed by the selected frontend adapter. The owning

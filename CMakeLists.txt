@@ -213,6 +213,7 @@ if(WORMEDIT_BUILD_APP)
         src/editor/field.cpp
         src/sys/audio.cpp
         src/sys/main.cpp
+        src/sys/player_preview_presenter.cpp
         src/sys/platform_recovery.cpp
         src/sys/platform_shortcut_profile.cpp
         src/sys/window.cpp

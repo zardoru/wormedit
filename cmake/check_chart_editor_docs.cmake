@@ -12,6 +12,7 @@ set(plan_slices
     docs/chart-editor-plan/editing/interactions.md
     docs/chart-editor-plan/editing/metadata-interop.md
     docs/chart-editor-plan/playback-audio.md
+    docs/chart-editor-plan/playback/player-preview.md
     docs/chart-editor-plan/formats-persistence.md
     docs/chart-editor-plan/testing.md
     docs/chart-editor-plan/stages.md

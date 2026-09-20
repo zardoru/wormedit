@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -80,8 +81,9 @@ void evict_texture() {
     erase_texture(static_cast<std::size_t>(oldest - textures.begin()));
 }
 
+template <typename ImageView>
 auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
-                 const WormUiPlayerPreviewVisualLayerView& layer) -> texture_result_t {
+                 const ImageView& layer) -> texture_result_t {
     if (!renderer || !layer.image_ready || view.project_id == 0 || view.document_revision == 0 ||
         layer.resource_id == 0 || layer.rgba_byte_count == 0 || !layer.rgba_pixels ||
         layer.rgba_byte_count > maximum_texture_bytes) {
@@ -158,6 +160,10 @@ auto visual_fit_policy(WormUiVisualFitPolicy fit) -> wormedit::visual_fit_policy
     return wormedit::visual_fit_policy_t::contain;
 }
 
+auto color_byte(double value) -> nk_byte {
+    return static_cast<nk_byte>(std::clamp(value, 0.0, 255.0));
+}
+
 } // namespace
 
 const char* worm_ui_nuklear_preview_visual_failure_message(
@@ -183,11 +189,9 @@ const char* worm_ui_nuklear_preview_visual_failure_message(
     return "unknown renderer failure";
 }
 
-worm_ui_nuklear_preview_visual_result_t
-worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer* canvas,
-                                                  struct nk_rect viewport,
-                                                  struct SDL_Renderer* renderer,
-                                                  const WormUiPlayerPreviewView* view) {
+worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_visual_layers(
+    struct nk_command_buffer* canvas, struct nk_rect viewport, struct SDL_Renderer* renderer,
+    const WormUiPlayerPreviewView* view) {
     worm_ui_nuklear_preview_visual_result_t result;
     if (!canvas || !view) {
         return result;
@@ -256,6 +260,41 @@ worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer* canv
                                          static_cast<float>(layout->destination.width),
                                          static_cast<float>(layout->destination.height));
         nk_draw_image(canvas, destination, &image, nk_rgba(255, 255, 255, 255));
+        result.drew_image = true;
+    }
+    constexpr float storyboard_width = 640.0F;
+    constexpr float storyboard_height = 480.0F;
+    const auto storyboard_scale =
+        std::min(viewport.w / storyboard_width, viewport.h / storyboard_height);
+    const auto storyboard_left =
+        viewport.x + (viewport.w - storyboard_width * storyboard_scale) * 0.5F;
+    const auto storyboard_top =
+        viewport.y + (viewport.h - storyboard_height * storyboard_scale) * 0.5F;
+    for (std::size_t index = 0; index < view->storyboard_sprite_count; ++index) {
+        const auto& sprite = view->storyboard_sprites[index];
+        if (!sprite.image_ready || sprite.opacity <= 0.0 || sprite.scale_x == 0.0 ||
+            sprite.scale_y == 0.0) {
+            continue;
+        }
+        const auto uploaded = texture_for(renderer, *view, sprite);
+        if (uploaded.failure != worm_ui_nuklear_preview_visual_failure_t::none) {
+            record_failure(sprite.resource_id, uploaded.failure);
+            continue;
+        }
+        const auto width =
+            static_cast<float>(sprite.image_width * std::abs(sprite.scale_x)) * storyboard_scale;
+        const auto height =
+            static_cast<float>(sprite.image_height * std::abs(sprite.scale_y)) * storyboard_scale;
+        const auto destination =
+            nk_rect(storyboard_left + static_cast<float>(sprite.x) * storyboard_scale -
+                        width * static_cast<float>(sprite.origin_x),
+                    storyboard_top + static_cast<float>(sprite.y) * storyboard_scale -
+                        height * static_cast<float>(sprite.origin_y),
+                    width, height);
+        const auto image = nk_image_ptr(uploaded.texture);
+        nk_draw_image(canvas, destination, &image,
+                      nk_rgba(color_byte(sprite.red), color_byte(sprite.green),
+                              color_byte(sprite.blue), color_byte(sprite.opacity * 255.0)));
         result.drew_image = true;
     }
     return result;

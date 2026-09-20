@@ -54,6 +54,8 @@ struct storyboard_draw_instance_t {
     double red{255.0};
     double green{255.0};
     double blue{255.0};
+
+    auto operator==(const storyboard_draw_instance_t&) const -> bool = default;
 };
 
 struct storyboard_frame_options_t {

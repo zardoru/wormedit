@@ -70,6 +70,7 @@ catch_discover_tests(wormedit_core_tests
 
 if(WORMEDIT_ENABLE_AUDIO_DECODER)
     add_executable(wormedit_audio_tests
+        core/audio_audition_bridge_tests.cpp
         core/audio_block_cache_tests.cpp
         core/audio_decoder_tests.cpp
         core/audio_preview_bridge_tests.cpp

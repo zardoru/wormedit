@@ -29,6 +29,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
                                            bool window_focused, WormUiWorkspaceAction* action);
 
 void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const WormUiComposeView* view,
+                                          const WormUiTimingView* timing_view,
                                           WormUiWorkspaceAction* action, bool window_focused,
                                           bool ime_composition_active,
                                           const worm_ui_nuklear_pointer_click_t* double_clicks,

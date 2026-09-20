@@ -1204,7 +1204,9 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
     -> wormedit::timing_lane_pseudonote_preview_t {
     using namespace wormedit;
     timing_lane_pseudonote_preview_t rejected{};
-    if (workspace.active_tab != workspace_tab_t::timing || !workspace.selected_chart ||
+    if ((workspace.active_tab != workspace_tab_t::timing &&
+         workspace.active_tab != workspace_tab_t::compose) ||
+        !workspace.selected_chart ||
         action.timing_chart_id == 0 || workspace.selected_chart->value != action.timing_chart_id ||
         history.document.revision != action.timing_document_revision) {
         return rejected;
@@ -2427,7 +2429,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
                            const wormedit::workspace_controller_t& workspace,
                            compose_scene_cache_t& cache, int window_width, int window_height,
                            std::optional<wormedit::editor_interaction_state_t>& retained_state,
-                           application_command_state_t& application_state) {
+                           application_command_state_t& application_state,
+                           const wormedit::timing_lane_pseudonote_preview_t* timing_stage) {
     auto& view = flattened.view.compose;
     if (!view.visible) {
         cache.interaction_view.reset();
@@ -2440,12 +2443,18 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
     view.playable_field_left_pixels = compose_measure_rail_width_pixels;
     view.playable_field_right_pixels = view.viewport_width_pixels;
+    view.timing_document_begin_fraction = 0.0;
+    view.timing_document_end_fraction = 1.0;
     view.truncated = false;
     view.pixels_per_standard_measure = retained_state
                                            ? retained_state->pixels_per_standard_measure
                                            : wormedit::default_pixels_per_standard_measure;
     view.note_paint_mode_active = application_state.note_paint_mode_active;
     view.semantic_layer_paint_mode_active = application_state.semantic_layer_paint_mode_active;
+    view.timing_stage_active = false;
+    view.timing_stage_valid = false;
+    view.timing_stage_lane = WORM_UI_TIMING_LANE_BPM;
+    view.timing_stage_y_pixels = 0.0;
     view.selected_note_count = 0;
     view.beat_marker_navigation_available = false;
     view.audio_marker_navigation_available = false;
@@ -3094,6 +3103,15 @@ void populate_compose_view(flattened_workspace_t& flattened,
     flattened.compose_timing_marker_storage.clear();
     const auto pixels_per_row = interaction_view.pixels_per_standard_measure /
                                 static_cast<double>(chart.divisions_per_standard_measure);
+    if (cache.index->measures.total_rows != 0 && pixels_per_row > 0.0) {
+        const auto total_rows = static_cast<double>(cache.index->measures.total_rows);
+        view.timing_document_begin_fraction = std::clamp(
+            interaction_view.viewport_scroll_pixels / pixels_per_row / total_rows, 0.0, 1.0);
+        view.timing_document_end_fraction = std::clamp(
+            (interaction_view.viewport_scroll_pixels + view.viewport_height_pixels) /
+                pixels_per_row / total_rows,
+            view.timing_document_begin_fraction, 1.0);
+    }
     const auto append_timing_marker = [&](wormedit::local_position_t position, std::uint64_t id,
                                           std::size_t source_order, std::size_t storage_order,
                                           WormUiTimingLaneKind lane) {
@@ -3177,6 +3195,22 @@ void populate_compose_view(flattened_workspace_t& flattened,
     }
     view.timing_markers = flattened.compose_timing_marker_storage.data();
     view.timing_marker_count = flattened.compose_timing_marker_storage.size();
+    if (timing_stage &&
+        timing_stage->status == wormedit::timing_lane_pseudonote_status_t::editing &&
+        timing_stage->chart == chart.id &&
+        timing_stage->document_revision == history.document.revision) {
+        const auto stage_row = wormedit::absolute_row(cache.index->measures, timing_stage->position);
+        if (stage_row) {
+            const auto y = static_cast<double>(*stage_row) * pixels_per_row -
+                           interaction_view.viewport_scroll_pixels;
+            if (std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels) {
+                view.timing_stage_active = true;
+                view.timing_stage_valid = timing_stage->valid;
+                view.timing_stage_lane = timing_lane_kind_to_ui(timing_stage->kind);
+                view.timing_stage_y_pixels = y;
+            }
+        }
+    }
     const auto maximum_bgm_scroll = std::max(
         0.0, static_cast<double>(chart.bgm_source_lanes.size()) * compose_bgm_lane_width_pixels -
                  bgm_pane_width);
@@ -6573,7 +6607,8 @@ int main(int argc, char** argv) {
         const auto model = wormedit::make_workspace_view(workspace, history.document);
         if (timing_stage &&
             (timing_stage->document_revision != history.document.revision ||
-             workspace.active_tab != wormedit::workspace_tab_t::timing ||
+             (workspace.active_tab != wormedit::workspace_tab_t::timing &&
+              workspace.active_tab != wormedit::workspace_tab_t::compose) ||
              !workspace.selected_chart || *workspace.selected_chart != timing_stage->chart)) {
             wormedit::cancel_timing_lane_pseudonote(*timing_stage);
             timing_stage.reset();
@@ -6794,15 +6829,23 @@ int main(int argc, char** argv) {
                 }
             }
 #endif
+            const bool timing_for_compose = flattened.view.compose.visible;
+            if (timing_for_compose) {
+                flattened.view.timing.visible = true;
+            }
             populate_timing_view(flattened, history, workspace, timing_scene_cache,
                                  compose_window_width, compose_window_height, timing_grid,
                                  timing_stage ? &*timing_stage : nullptr,
                                  timing_recipe_draft ? &*timing_recipe_draft : nullptr,
                                  timing_recipe_preview ? &*timing_recipe_preview : nullptr,
                                  timing_recipe_selection_binding.has_value());
+            if (timing_for_compose) {
+                flattened.view.timing.visible = false;
+            }
             populate_compose_view(flattened, history, workspace, compose_scene_cache,
                                   compose_window_width, compose_window_height,
-                                  compose_interaction_state, application_command_state);
+                                  compose_interaction_state, application_command_state,
+                                  timing_stage ? &*timing_stage : nullptr);
             const auto action = worm_ui_frontend_compose(&flattened.view);
             std::optional<std::uint32_t> selected_waveform_sample_rate;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -7096,7 +7139,8 @@ int main(int argc, char** argv) {
                     }
                 } else if (timing_stage) {
                     const bool stage_matches =
-                        workspace.active_tab == wormedit::workspace_tab_t::timing &&
+                        (workspace.active_tab == wormedit::workspace_tab_t::timing ||
+                         workspace.active_tab == wormedit::workspace_tab_t::compose) &&
                         workspace.selected_chart &&
                         workspace.selected_chart->value == action.timing_chart_id &&
                         timing_stage->chart.value == action.timing_chart_id &&

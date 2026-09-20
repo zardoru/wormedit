@@ -159,6 +159,7 @@ static void set_timing_action(WormUiWorkspaceAction* action, const WormUiTimingV
     action->timing_chart_id = view->chart_id;
     action->timing_document_revision = view->document_revision;
     action->timing_object_id = view->stage_existing_object_id;
+    action->timing_lane = view->stage_lane;
     action->timing_value = primary;
     action->timing_secondary_value = secondary;
     action->timing_transition_is_seconds = transition_is_seconds;
@@ -496,14 +497,7 @@ static void render_timing_recipe_form(struct nk_context* context, const WormUiTi
     }
 }
 
-void worm_ui_nuklear_render_timing_panel(struct nk_context* context, const WormUiTimingView* view,
-                                         WormUiWorkspaceAction* action, bool window_focused,
-                                         const worm_ui_nuklear_pointer_click_t* double_clicks,
-                                         std::size_t double_click_count) {
-    if (!context || !view || !action || !view->visible ||
-        (double_click_count != 0 && !double_clicks)) {
-        return;
-    }
+static void synchronize_timing_stage_editor(const WormUiTimingView* view) {
     if (!view->stage_active) {
         state.stage_buffers_active = false;
     } else if (!state.stage_buffers_active || state.stage_buffers_chart != view->chart_id ||
@@ -552,6 +546,243 @@ void worm_ui_nuklear_render_timing_panel(struct nk_context* context, const WormU
                          view->stage_primary_denominator_text);
         state.bpm_decimal_edited = false;
     }
+}
+
+void worm_ui_nuklear_render_timing_stage_editor(struct nk_context* context,
+                                                const WormUiTimingView* view,
+                                                WormUiWorkspaceAction* action) {
+    if (!context || !view || !action) {
+        return;
+    }
+    synchronize_timing_stage_editor(view);
+    if (view->stage_active) {
+        nk_bool seconds = view->stage_transition_is_seconds ? 1 : 0;
+        nk_bool toggle_primary = view->stage_toggle_primary ? 1 : 0;
+        bool changed = false;
+        int bpm_step = 0;
+        const char* primary_label = "Value";
+        const char* pause_unit_label = "seconds";
+        switch (view->stage_pause_unit) {
+        case WORM_UI_TIMING_PAUSE_SECONDS:
+            pause_unit_label = "seconds";
+            break;
+        case WORM_UI_TIMING_PAUSE_MILLISECONDS:
+            pause_unit_label = "milliseconds";
+            break;
+        case WORM_UI_TIMING_PAUSE_BMS_STOP_TICKS:
+            pause_unit_label = "BMS STOP ticks";
+            break;
+        case WORM_UI_TIMING_PAUSE_BEATS:
+            pause_unit_label = "beats";
+            break;
+        }
+        if (view->stage_lane == WORM_UI_TIMING_LANE_BPM) {
+            primary_label = "BPM";
+        } else if (view->stage_lane == WORM_UI_TIMING_LANE_SCROLL) {
+            primary_label = "Scroll multiplier";
+        } else if (view->stage_lane == WORM_UI_TIMING_LANE_SPEED) {
+            primary_label = "SPEEDS multiplier";
+        } else if (view->stage_lane == WORM_UI_TIMING_LANE_STOP ||
+                   view->stage_lane == WORM_UI_TIMING_LANE_DELAY) {
+            primary_label = "Duration";
+        } else if (view->stage_lane == WORM_UI_TIMING_LANE_ANCHOR) {
+            primary_label = "Source sample frame";
+        }
+        nk_layout_row_dynamic(context, 22, 1);
+        if (view->stage_existing_object_id != 0) {
+            nk_labelf(context, NK_TEXT_LEFT,
+                      "Editing timing event #%llu — drag its row to move the staged preview.",
+                      static_cast<unsigned long long>(view->stage_existing_object_id));
+        } else {
+            nk_label(context, "Staged timing event — confirm to write.", NK_TEXT_LEFT);
+        }
+        if (view->stage_lane == WORM_UI_TIMING_LANE_KIAI) {
+            nk_layout_row_dynamic(context, 24, 1);
+            changed |= nk_checkbox_label(context, "Kiai enabled", &toggle_primary) != 0;
+        } else if (view->stage_lane == WORM_UI_TIMING_LANE_ANCHOR) {
+            nk_layout_row_dynamic(context, 20, 1);
+            nk_label(context, "Exact source sample frame", NK_TEXT_LEFT);
+            nk_layout_row_begin(context, NK_DYNAMIC, 28, 2);
+            nk_layout_row_push(context, 0.38f);
+            nk_label(context, primary_label, NK_TEXT_LEFT);
+            nk_layout_row_push(context, 0.62f);
+            changed |= nk_edit_string_zero_terminated(
+                           context, NK_EDIT_FIELD, state.primary_numerator.data(),
+                           state.primary_numerator.size(), nk_filter_decimal) != 0;
+            nk_layout_row_end(context);
+            nk_layout_row_dynamic(context, 24, 1);
+            changed |= nk_checkbox_label(context, "Lock anchor", &toggle_primary) != 0;
+        } else if (view->stage_lane == WORM_UI_TIMING_LANE_BPM) {
+            nk_layout_row_dynamic(context, 20, 1);
+            nk_label(context,
+                     view->stage_primary_decimal_exact
+                         ? "Decimal BPM (exact)"
+                         : "Decimal BPM (approximate display; exact fraction retained)",
+                     NK_TEXT_LEFT);
+            nk_layout_row_begin(context, NK_DYNAMIC, 28, 4);
+            nk_layout_row_push(context, 0.18f);
+            nk_label(context, primary_label, NK_TEXT_LEFT);
+            nk_layout_row_push(context, 0.56f);
+            const bool decimal_changed =
+                nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.bpm_decimal.data(),
+                                               state.bpm_decimal.size(), nk_filter_float) != 0;
+            nk_layout_row_push(context, 0.13f);
+            if (nk_button_label(context, "-1")) {
+                bpm_step = -1;
+            }
+            nk_layout_row_push(context, 0.13f);
+            if (nk_button_label(context, "+1")) {
+                bpm_step = 1;
+            }
+            nk_layout_row_end(context);
+            if (decimal_changed) {
+                state.bpm_decimal_edited = true;
+                changed = true;
+            }
+            changed = changed || bpm_step != 0;
+            nk_bool advanced_fraction = state.bpm_advanced_fraction ? 1 : 0;
+            nk_layout_row_dynamic(context, 24, 1);
+            if (nk_checkbox_label(context, "Advanced exact fraction", &advanced_fraction) != 0) {
+                state.bpm_advanced_fraction = advanced_fraction != 0;
+            }
+            if (state.bpm_advanced_fraction) {
+                nk_layout_row_begin(context, NK_DYNAMIC, 28, 4);
+                nk_layout_row_push(context, 0.24f);
+                nk_label(context, "Exact BPM", NK_TEXT_LEFT);
+                nk_layout_row_push(context, 0.30f);
+                const bool numerator_changed =
+                    nk_edit_string_zero_terminated(
+                        context, NK_EDIT_FIELD, state.primary_numerator.data(),
+                        state.primary_numerator.size(), nk_filter_float) != 0;
+                nk_layout_row_push(context, 0.05f);
+                nk_label(context, "/", NK_TEXT_CENTERED);
+                nk_layout_row_push(context, 0.30f);
+                const bool denominator_changed =
+                    nk_edit_string_zero_terminated(
+                        context, NK_EDIT_FIELD, state.primary_denominator.data(),
+                        state.primary_denominator.size(), nk_filter_decimal) != 0;
+                nk_layout_row_end(context);
+                if (numerator_changed || denominator_changed) {
+                    state.bpm_decimal_edited = false;
+                    changed = true;
+                }
+            } else {
+                nk_layout_row_dynamic(context, 18, 1);
+                nk_labelf(context, NK_TEXT_LEFT, "Exact value: %s / %s",
+                          state.primary_numerator.data(), state.primary_denominator.data());
+            }
+        } else {
+            nk_layout_row_dynamic(context, 20, 1);
+            nk_label(context, "Exact value: numerator / denominator", NK_TEXT_LEFT);
+            nk_layout_row_begin(context, NK_DYNAMIC, 28, 4);
+            nk_layout_row_push(context, 0.24f);
+            nk_label(context, primary_label, NK_TEXT_LEFT);
+            nk_layout_row_push(context, 0.30f);
+            changed |= nk_edit_string_zero_terminated(
+                           context, NK_EDIT_FIELD, state.primary_numerator.data(),
+                           state.primary_numerator.size(), nk_filter_float) != 0;
+            nk_layout_row_push(context, 0.05f);
+            nk_label(context, "/", NK_TEXT_CENTERED);
+            nk_layout_row_push(context, 0.30f);
+            changed |= nk_edit_string_zero_terminated(
+                           context, NK_EDIT_FIELD, state.primary_denominator.data(),
+                           state.primary_denominator.size(), nk_filter_decimal) != 0;
+            nk_layout_row_end(context);
+        }
+        if (view->stage_lane == WORM_UI_TIMING_LANE_SPEED) {
+            nk_layout_row_begin(context, NK_DYNAMIC, 28, 4);
+            nk_layout_row_push(context, 0.24f);
+            nk_label(context, "Transition", NK_TEXT_LEFT);
+            nk_layout_row_push(context, 0.30f);
+            changed |= nk_edit_string_zero_terminated(
+                           context, NK_EDIT_FIELD, state.secondary_numerator.data(),
+                           state.secondary_numerator.size(), nk_filter_decimal) != 0;
+            nk_layout_row_push(context, 0.05f);
+            nk_label(context, "/", NK_TEXT_CENTERED);
+            nk_layout_row_push(context, 0.30f);
+            changed |= nk_edit_string_zero_terminated(
+                           context, NK_EDIT_FIELD, state.secondary_denominator.data(),
+                           state.secondary_denominator.size(), nk_filter_decimal) != 0;
+            nk_layout_row_end(context);
+            nk_layout_row_dynamic(context, 22, 1);
+            changed |= nk_checkbox_label(context, "Seconds", &seconds) != 0;
+        } else if (view->stage_lane == WORM_UI_TIMING_LANE_WARP) {
+            nk_layout_row_begin(context, NK_DYNAMIC, 28, 3);
+            nk_layout_row_push(context, 0.38f);
+            nk_label(context,
+                     view->stage_existing_object_id != 0 ? "Length in exact chart rows"
+                                                         : "Length in current grid steps",
+                     NK_TEXT_LEFT);
+            nk_layout_row_push(context, 0.34f);
+            changed |= nk_edit_string_zero_terminated(
+                           context, NK_EDIT_FIELD, state.secondary_numerator.data(),
+                           state.secondary_numerator.size(), nk_filter_decimal) != 0;
+            nk_layout_row_push(context, 0.28f);
+            nk_label(context,
+                     view->stage_existing_object_id != 0 ? "rows (denominator 1)"
+                                                         : "steps (denominator 1)",
+                     NK_TEXT_LEFT);
+            nk_layout_row_end(context);
+        } else if (view->stage_lane == WORM_UI_TIMING_LANE_STOP ||
+                   view->stage_lane == WORM_UI_TIMING_LANE_DELAY) {
+            nk_layout_row_dynamic(context, 18, 1);
+            nk_labelf(context, NK_TEXT_LEFT, "Pause duration uses its authored unit: %s.",
+                      pause_unit_label);
+        }
+        if (view->stage_status_text && view->stage_status_text[0]) {
+            nk_layout_row_dynamic(context, 20, 1);
+            nk_label(context, view->stage_status_text, NK_TEXT_LEFT);
+        }
+        nk_layout_row_begin(context, NK_DYNAMIC, 28, view->stage_existing_object_id != 0 ? 3 : 2);
+        nk_layout_row_push(context, view->stage_existing_object_id != 0 ? 0.40f : 0.50f);
+        const auto confirm_clicked = nk_button_label(
+            context, view->stage_existing_object_id != 0 ? "Apply timing edit" : "Confirm event");
+        nk_layout_row_push(context, view->stage_existing_object_id != 0 ? 0.30f : 0.50f);
+        const auto cancel_clicked = nk_button_label(context, "Cancel");
+        bool delete_clicked = false;
+        if (view->stage_existing_object_id != 0) {
+            nk_layout_row_push(context, 0.30f);
+            delete_clicked = nk_button_label(context, "Delete event");
+        }
+        nk_layout_row_end(context);
+        if (action && action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE && changed) {
+            set_timing_action(action, view, WORM_UI_TIMING_STAGE_UPDATE, view->stage_value,
+                              view->stage_secondary_value, seconds != 0);
+        }
+        if (action && action->timing_stage_action != WORM_UI_TIMING_STAGE_NONE) {
+            action->timing_transition_is_seconds = seconds != 0;
+            action->timing_toggle_primary = toggle_primary != 0;
+            copy_timing_form_to_action(action);
+            action->timing_bpm_step = bpm_step;
+        }
+        if (action && delete_clicked) {
+            set_timing_action(action, view, WORM_UI_TIMING_STAGE_DELETE, view->stage_value,
+                              view->stage_secondary_value, seconds != 0);
+            copy_timing_form_to_action(action);
+        } else if (action && cancel_clicked) {
+            set_timing_action(action, view, WORM_UI_TIMING_STAGE_CANCEL, view->stage_value,
+                              view->stage_secondary_value, seconds != 0);
+            copy_timing_form_to_action(action);
+        } else if (action && confirm_clicked) {
+            set_timing_action(action, view, WORM_UI_TIMING_STAGE_CONFIRM, view->stage_value,
+                              view->stage_secondary_value, seconds != 0);
+            copy_timing_form_to_action(action);
+        }
+        if (action && action->timing_stage_action != WORM_UI_TIMING_STAGE_NONE) {
+            action->timing_toggle_primary = toggle_primary != 0;
+        }
+    }
+}
+
+void worm_ui_nuklear_render_timing_panel(struct nk_context* context, const WormUiTimingView* view,
+                                         WormUiWorkspaceAction* action, bool window_focused,
+                                         const worm_ui_nuklear_pointer_click_t* double_clicks,
+                                         std::size_t double_click_count) {
+    if (!context || !view || !action || !view->visible ||
+        (double_click_count != 0 && !double_clicks)) {
+        return;
+    }
+    synchronize_timing_stage_editor(view);
     const bool can_change_grid = !view->stage_active && !view->sv_recipe.active &&
                                  !view->sv_recipe.selection_armed && view->scene_available &&
                                  view->supported_snap_denominator_count > 0;
@@ -1192,224 +1423,6 @@ void worm_ui_nuklear_render_timing_panel(struct nk_context* context, const WormU
         }
     }
 
-    if (view->stage_active) {
-        nk_bool seconds = view->stage_transition_is_seconds ? 1 : 0;
-        nk_bool toggle_primary = view->stage_toggle_primary ? 1 : 0;
-        bool changed = false;
-        int bpm_step = 0;
-        const char* primary_label = "Value";
-        const char* pause_unit_label = "seconds";
-        switch (view->stage_pause_unit) {
-        case WORM_UI_TIMING_PAUSE_SECONDS:
-            pause_unit_label = "seconds";
-            break;
-        case WORM_UI_TIMING_PAUSE_MILLISECONDS:
-            pause_unit_label = "milliseconds";
-            break;
-        case WORM_UI_TIMING_PAUSE_BMS_STOP_TICKS:
-            pause_unit_label = "BMS STOP ticks";
-            break;
-        case WORM_UI_TIMING_PAUSE_BEATS:
-            pause_unit_label = "beats";
-            break;
-        }
-        if (view->stage_lane == WORM_UI_TIMING_LANE_BPM) {
-            primary_label = "BPM";
-        } else if (view->stage_lane == WORM_UI_TIMING_LANE_SCROLL) {
-            primary_label = "Scroll multiplier";
-        } else if (view->stage_lane == WORM_UI_TIMING_LANE_SPEED) {
-            primary_label = "SPEEDS multiplier";
-        } else if (view->stage_lane == WORM_UI_TIMING_LANE_STOP ||
-                   view->stage_lane == WORM_UI_TIMING_LANE_DELAY) {
-            primary_label = "Duration";
-        } else if (view->stage_lane == WORM_UI_TIMING_LANE_ANCHOR) {
-            primary_label = "Source sample frame";
-        }
-        nk_layout_row_dynamic(context, 22, 1);
-        if (view->stage_existing_object_id != 0) {
-            nk_labelf(context, NK_TEXT_LEFT,
-                      "Editing timing event #%llu — drag its row to move the staged preview.",
-                      static_cast<unsigned long long>(view->stage_existing_object_id));
-        } else {
-            nk_label(context, "Staged timing event — nothing is written until Confirm.",
-                     NK_TEXT_LEFT);
-        }
-        if (view->stage_lane == WORM_UI_TIMING_LANE_KIAI) {
-            nk_layout_row_dynamic(context, 24, 1);
-            changed |= nk_checkbox_label(context, "Kiai enabled", &toggle_primary) != 0;
-        } else if (view->stage_lane == WORM_UI_TIMING_LANE_ANCHOR) {
-            nk_layout_row_dynamic(context, 20, 1);
-            nk_label(context, "Exact source sample frame", NK_TEXT_LEFT);
-            nk_layout_row_begin(context, NK_DYNAMIC, 28, 2);
-            nk_layout_row_push(context, 0.38f);
-            nk_label(context, primary_label, NK_TEXT_LEFT);
-            nk_layout_row_push(context, 0.62f);
-            changed |= nk_edit_string_zero_terminated(
-                           context, NK_EDIT_FIELD, state.primary_numerator.data(),
-                           state.primary_numerator.size(), nk_filter_decimal) != 0;
-            nk_layout_row_end(context);
-            nk_layout_row_dynamic(context, 24, 1);
-            changed |= nk_checkbox_label(context, "Lock anchor", &toggle_primary) != 0;
-        } else if (view->stage_lane == WORM_UI_TIMING_LANE_BPM) {
-            nk_layout_row_dynamic(context, 20, 1);
-            nk_label(context,
-                     view->stage_primary_decimal_exact
-                         ? "Decimal BPM (exact)"
-                         : "Decimal BPM (approximate display; exact fraction retained)",
-                     NK_TEXT_LEFT);
-            nk_layout_row_begin(context, NK_DYNAMIC, 28, 4);
-            nk_layout_row_push(context, 0.18f);
-            nk_label(context, primary_label, NK_TEXT_LEFT);
-            nk_layout_row_push(context, 0.56f);
-            const bool decimal_changed =
-                nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.bpm_decimal.data(),
-                                               state.bpm_decimal.size(), nk_filter_float) != 0;
-            nk_layout_row_push(context, 0.13f);
-            if (nk_button_label(context, "-1")) {
-                bpm_step = -1;
-            }
-            nk_layout_row_push(context, 0.13f);
-            if (nk_button_label(context, "+1")) {
-                bpm_step = 1;
-            }
-            nk_layout_row_end(context);
-            if (decimal_changed) {
-                state.bpm_decimal_edited = true;
-                changed = true;
-            }
-            changed = changed || bpm_step != 0;
-            nk_bool advanced_fraction = state.bpm_advanced_fraction ? 1 : 0;
-            nk_layout_row_dynamic(context, 24, 1);
-            if (nk_checkbox_label(context, "Advanced exact fraction", &advanced_fraction) != 0) {
-                state.bpm_advanced_fraction = advanced_fraction != 0;
-            }
-            if (state.bpm_advanced_fraction) {
-                nk_layout_row_begin(context, NK_DYNAMIC, 28, 4);
-                nk_layout_row_push(context, 0.24f);
-                nk_label(context, "Exact BPM", NK_TEXT_LEFT);
-                nk_layout_row_push(context, 0.30f);
-                const bool numerator_changed =
-                    nk_edit_string_zero_terminated(
-                        context, NK_EDIT_FIELD, state.primary_numerator.data(),
-                        state.primary_numerator.size(), nk_filter_float) != 0;
-                nk_layout_row_push(context, 0.05f);
-                nk_label(context, "/", NK_TEXT_CENTERED);
-                nk_layout_row_push(context, 0.30f);
-                const bool denominator_changed =
-                    nk_edit_string_zero_terminated(
-                        context, NK_EDIT_FIELD, state.primary_denominator.data(),
-                        state.primary_denominator.size(), nk_filter_decimal) != 0;
-                nk_layout_row_end(context);
-                if (numerator_changed || denominator_changed) {
-                    state.bpm_decimal_edited = false;
-                    changed = true;
-                }
-            } else {
-                nk_layout_row_dynamic(context, 18, 1);
-                nk_labelf(context, NK_TEXT_LEFT, "Exact value: %s / %s",
-                          state.primary_numerator.data(), state.primary_denominator.data());
-            }
-        } else {
-            nk_layout_row_dynamic(context, 20, 1);
-            nk_label(context, "Exact rational value: numerator / denominator", NK_TEXT_LEFT);
-            nk_layout_row_begin(context, NK_DYNAMIC, 28, 4);
-            nk_layout_row_push(context, 0.24f);
-            nk_label(context, primary_label, NK_TEXT_LEFT);
-            nk_layout_row_push(context, 0.30f);
-            changed |= nk_edit_string_zero_terminated(
-                           context, NK_EDIT_FIELD, state.primary_numerator.data(),
-                           state.primary_numerator.size(), nk_filter_float) != 0;
-            nk_layout_row_push(context, 0.05f);
-            nk_label(context, "/", NK_TEXT_CENTERED);
-            nk_layout_row_push(context, 0.30f);
-            changed |= nk_edit_string_zero_terminated(
-                           context, NK_EDIT_FIELD, state.primary_denominator.data(),
-                           state.primary_denominator.size(), nk_filter_decimal) != 0;
-            nk_layout_row_end(context);
-        }
-        if (view->stage_lane == WORM_UI_TIMING_LANE_SPEED) {
-            nk_layout_row_begin(context, NK_DYNAMIC, 28, 4);
-            nk_layout_row_push(context, 0.24f);
-            nk_label(context, "Transition", NK_TEXT_LEFT);
-            nk_layout_row_push(context, 0.30f);
-            changed |= nk_edit_string_zero_terminated(
-                           context, NK_EDIT_FIELD, state.secondary_numerator.data(),
-                           state.secondary_numerator.size(), nk_filter_decimal) != 0;
-            nk_layout_row_push(context, 0.05f);
-            nk_label(context, "/", NK_TEXT_CENTERED);
-            nk_layout_row_push(context, 0.30f);
-            changed |= nk_edit_string_zero_terminated(
-                           context, NK_EDIT_FIELD, state.secondary_denominator.data(),
-                           state.secondary_denominator.size(), nk_filter_decimal) != 0;
-            nk_layout_row_end(context);
-            nk_layout_row_dynamic(context, 22, 1);
-            changed |= nk_checkbox_label(context, "Seconds", &seconds) != 0;
-        } else if (view->stage_lane == WORM_UI_TIMING_LANE_WARP) {
-            nk_layout_row_begin(context, NK_DYNAMIC, 28, 3);
-            nk_layout_row_push(context, 0.38f);
-            nk_label(context,
-                     view->stage_existing_object_id != 0 ? "Length in exact chart rows"
-                                                         : "Length in current grid steps",
-                     NK_TEXT_LEFT);
-            nk_layout_row_push(context, 0.34f);
-            changed |= nk_edit_string_zero_terminated(
-                           context, NK_EDIT_FIELD, state.secondary_numerator.data(),
-                           state.secondary_numerator.size(), nk_filter_decimal) != 0;
-            nk_layout_row_push(context, 0.28f);
-            nk_label(context,
-                     view->stage_existing_object_id != 0 ? "rows (denominator 1)"
-                                                         : "steps (denominator 1)",
-                     NK_TEXT_LEFT);
-            nk_layout_row_end(context);
-        } else if (view->stage_lane == WORM_UI_TIMING_LANE_STOP ||
-                   view->stage_lane == WORM_UI_TIMING_LANE_DELAY) {
-            nk_layout_row_dynamic(context, 18, 1);
-            nk_labelf(context, NK_TEXT_LEFT, "Pause duration uses its authored unit: %s.",
-                      pause_unit_label);
-        }
-        if (view->stage_status_text && view->stage_status_text[0]) {
-            nk_layout_row_dynamic(context, 20, 1);
-            nk_label(context, view->stage_status_text, NK_TEXT_LEFT);
-        }
-        nk_layout_row_begin(context, NK_DYNAMIC, 28, view->stage_existing_object_id != 0 ? 3 : 2);
-        nk_layout_row_push(context, view->stage_existing_object_id != 0 ? 0.40f : 0.50f);
-        const auto confirm_clicked =
-            nk_button_label(context, view->stage_existing_object_id != 0 ? "Apply timing edit"
-                                                                         : "Confirm timing event");
-        nk_layout_row_push(context, view->stage_existing_object_id != 0 ? 0.30f : 0.50f);
-        const auto cancel_clicked = nk_button_label(context, "Cancel");
-        bool delete_clicked = false;
-        if (view->stage_existing_object_id != 0) {
-            nk_layout_row_push(context, 0.30f);
-            delete_clicked = nk_button_label(context, "Delete timing event");
-        }
-        nk_layout_row_end(context);
-        if (action && action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE && changed) {
-            set_timing_action(action, view, WORM_UI_TIMING_STAGE_UPDATE, view->stage_value,
-                              view->stage_secondary_value, seconds != 0);
-        }
-        if (action && action->timing_stage_action != WORM_UI_TIMING_STAGE_NONE) {
-            action->timing_transition_is_seconds = seconds != 0;
-            action->timing_toggle_primary = toggle_primary != 0;
-            copy_timing_form_to_action(action);
-            action->timing_bpm_step = bpm_step;
-        }
-        if (action && delete_clicked) {
-            set_timing_action(action, view, WORM_UI_TIMING_STAGE_DELETE, view->stage_value,
-                              view->stage_secondary_value, seconds != 0);
-            copy_timing_form_to_action(action);
-        } else if (action && cancel_clicked) {
-            set_timing_action(action, view, WORM_UI_TIMING_STAGE_CANCEL, view->stage_value,
-                              view->stage_secondary_value, seconds != 0);
-            copy_timing_form_to_action(action);
-        } else if (action && confirm_clicked) {
-            set_timing_action(action, view, WORM_UI_TIMING_STAGE_CONFIRM, view->stage_value,
-                              view->stage_secondary_value, seconds != 0);
-            copy_timing_form_to_action(action);
-        }
-        if (action && action->timing_stage_action != WORM_UI_TIMING_STAGE_NONE) {
-            action->timing_toggle_primary = toggle_primary != 0;
-        }
-    }
+    worm_ui_nuklear_render_timing_stage_editor(context, view, action);
     render_timing_recipe_form(context, view, action);
 }

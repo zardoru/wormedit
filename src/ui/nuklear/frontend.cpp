@@ -350,7 +350,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
             view->metadata.audio_waveform_total_frames == 0 ||
             view->metadata.audio_waveform_sample_rate == 0 ||
             !view->metadata.audio_waveform_has_selected_asset)))) ||
-        (view->timing.visible && !worm_ui_nuklear_timing_view_valid(&view->timing)) ||
+        ((view->timing.visible || view->compose.visible) &&
+         !worm_ui_nuklear_timing_view_valid(&view->timing)) ||
         (view->audio_slices.visible &&
          !worm_ui_nuklear_audio_slices_view_valid(&view->audio_slices)) ||
         !worm_ui_nuklear_player_preview_view_valid(&view->player_preview) ||
@@ -593,8 +594,9 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
                                                     g_double_click_count);
             } else if (view->compose.visible) {
                 worm_ui_nuklear_render_compose_panel(
-                    g_context, &view->compose, &action, g_window_focused, g_ime_composition_active,
-                    g_double_clicks.data(), g_double_click_count, g_shortcut_event_count);
+                    g_context, &view->compose, &view->timing, &action, g_window_focused,
+                    g_ime_composition_active, g_double_clicks.data(), g_double_click_count,
+                    g_shortcut_event_count);
             } else if (view->audio_slices.visible) {
                 worm_ui_nuklear_render_audio_slices(g_context, &view->audio_slices, &action, true,
                                                     g_window_focused);

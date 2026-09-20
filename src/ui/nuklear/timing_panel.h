@@ -21,3 +21,7 @@ void worm_ui_nuklear_render_timing_panel(struct nk_context* context, const WormU
                                          WormUiWorkspaceAction* action, bool window_focused,
                                          const worm_ui_nuklear_pointer_click_t* double_clicks,
                                          std::size_t double_click_count);
+
+void worm_ui_nuklear_render_timing_stage_editor(struct nk_context* context,
+                                                const WormUiTimingView* view,
+                                                WormUiWorkspaceAction* action);

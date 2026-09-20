@@ -537,6 +537,8 @@ typedef struct WormUiComposeView {
     double viewport_height_pixels;
     double playable_field_left_pixels;
     double playable_field_right_pixels;
+    double timing_document_begin_fraction;
+    double timing_document_end_fraction;
     double pixels_per_standard_measure;
     bool playhead_visible;
     double playhead_y_pixels;
@@ -560,6 +562,10 @@ typedef struct WormUiComposeView {
     size_t grid_line_count;
     const WormUiTimingMarkerView* timing_markers;
     size_t timing_marker_count;
+    bool timing_stage_active;
+    bool timing_stage_valid;
+    WormUiTimingLaneKind timing_stage_lane;
+    double timing_stage_y_pixels;
     const WormUiComposeResourceView* resources;
     size_t resource_count;
     size_t resource_total_count;

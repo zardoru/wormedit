@@ -3,6 +3,7 @@
 #include "ui/nuklear/compose_markers.h"
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/timing_panel.h"
 
 #include "wormedit/nuklear_config.h"
 
@@ -15,6 +16,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -331,6 +333,16 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         view->playable_field_left_pixels > view->playable_field_right_pixels ||
         view->playable_field_right_pixels < 0.0 ||
         view->playable_field_right_pixels > view->viewport_width_pixels ||
+        !std::isfinite(view->timing_document_begin_fraction) ||
+        !std::isfinite(view->timing_document_end_fraction) ||
+        view->timing_document_begin_fraction < 0.0 ||
+        view->timing_document_end_fraction < view->timing_document_begin_fraction ||
+        view->timing_document_end_fraction > 1.0 ||
+        (view->timing_stage_active &&
+         (!std::isfinite(view->timing_stage_y_pixels) || view->timing_stage_y_pixels < 0.0 ||
+          view->timing_stage_y_pixels > view->viewport_height_pixels ||
+          view->timing_stage_lane < WORM_UI_TIMING_LANE_BPM ||
+          view->timing_stage_lane > WORM_UI_TIMING_LANE_ANCHOR)) ||
         (view->playhead_visible &&
          (!std::isfinite(view->playhead_y_pixels) || view->playhead_y_pixels < 0.0 ||
           view->playhead_y_pixels > view->viewport_height_pixels)) ||
@@ -905,12 +917,13 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
 }
 
 void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const WormUiComposeView* view,
+                                          const WormUiTimingView* timing_view,
                                           WormUiWorkspaceAction* action, bool window_focused,
                                           bool ime_composition_active,
                                           const worm_ui_nuklear_pointer_click_t* double_clicks,
                                           std::size_t double_click_count,
                                           std::size_t shortcut_event_count) {
-    if (!context || !view || !action || !view->visible ||
+    if (!context || !view || !timing_view || !action || !view->visible ||
         (double_click_count != 0 && !double_clicks)) {
         return;
     }
@@ -1013,6 +1026,12 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         nk_layout_space_push(context, nk_rect(editor_width + inspector_gap, 0.0f, inspector_width,
                                               compose_body_height));
         if (nk_group_begin(context, "Compose inspector", NK_WINDOW_BORDER)) {
+
+    if (timing_view->stage_active &&
+        nk_tree_push(context, NK_TREE_TAB, "Timing event", NK_MAXIMIZED)) {
+        worm_ui_nuklear_render_timing_stage_editor(context, timing_view, action);
+        nk_tree_pop(context);
+    }
 
     worm_ui_nuklear_render_compose_resources(context, view, action, &state.resource_filter);
 
@@ -1559,6 +1578,59 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             }
             const auto click_x = (static_cast<double>(pointer.x) - viewport.x) *
                                  view->viewport_width_pixels / viewport.w;
+            const auto click_y = (static_cast<double>(pointer.y) - viewport.y) *
+                                 view->viewport_height_pixels / viewport.h;
+            constexpr double measure_rail_width = 42.0;
+            constexpr std::size_t timing_lane_count = 8;
+            if (!timing_view->stage_active && click_x >= measure_rail_width &&
+                click_x < note_field_left &&
+                action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE) {
+                const auto lane_width =
+                    (note_field_left - measure_rail_width) / timing_lane_count;
+                if (lane_width > 0.0) {
+                    const auto lane_index = std::min(
+                        static_cast<std::size_t>((click_x - measure_rail_width) / lane_width),
+                        timing_lane_count - 1);
+                    uint64_t existing_object_id = 0;
+                    auto nearest_distance = std::numeric_limits<double>::max();
+                    const auto lane_left = measure_rail_width + lane_width * lane_index;
+                    const auto marker_inner_left = lane_left + 2.0;
+                    const auto marker_inner_width = std::max(0.0, lane_width - 4.0);
+                    const auto hit_tolerance = 7.0 * view->viewport_height_pixels / viewport.h;
+                    for (size_t marker_index = 0; marker_index < view->timing_marker_count;
+                         ++marker_index) {
+                        const auto& marker = view->timing_markers[marker_index];
+                        if (static_cast<std::size_t>(marker.lane) != lane_index) {
+                            continue;
+                        }
+                        const auto marker_left =
+                            marker_inner_left + marker_inner_width * marker.marker_left_fraction;
+                        const auto marker_right =
+                            marker_inner_left + marker_inner_width * marker.marker_right_fraction;
+                        const auto distance = std::abs(click_y - marker.marker_y_pixels);
+                        if (click_x >= marker_left && click_x <= marker_right &&
+                            distance <= hit_tolerance && distance <= nearest_distance) {
+                            existing_object_id = marker.object_id;
+                            nearest_distance = distance;
+                        }
+                    }
+                    action->timing_stage_action = WORM_UI_TIMING_STAGE_BEGIN;
+                    action->timing_chart_id = timing_view->chart_id;
+                    action->timing_document_revision = timing_view->document_revision;
+                    action->timing_lane = static_cast<WormUiTimingLaneKind>(lane_index);
+                    action->timing_object_id = existing_object_id;
+                    if (existing_object_id == 0) {
+                        action->timing_has_target_y = true;
+                        const auto viewport_fraction =
+                            std::clamp(click_y / view->viewport_height_pixels, 0.0, 1.0);
+                        action->timing_target_y_fraction =
+                            view->timing_document_begin_fraction +
+                            viewport_fraction * (view->timing_document_end_fraction -
+                                                 view->timing_document_begin_fraction);
+                    }
+                    continue;
+                }
+            }
             if (click_x < note_field_left || click_x >= note_field_right)
                 continue;
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK, click_x,
@@ -1901,6 +1973,21 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                             static_cast<float>(view->viewport_height_pixels);
             nk_fill_rect(canvas, nk_rect(left, y - 2.5f, std::max(1.0f, right - left), 5.0f),
                          0.0f, timing_colors[lane_index]);
+        }
+        if (view->timing_stage_active) {
+            const auto lane_index = static_cast<size_t>(view->timing_stage_lane);
+            if (lane_index < timing_lanes.size()) {
+                const auto& lane = timing_lanes[lane_index];
+                const auto y = viewport.y +
+                               static_cast<float>(view->timing_stage_y_pixels) * viewport.h /
+                                   static_cast<float>(view->viewport_height_pixels);
+                const auto bounds = nk_rect(lane.x + 2.0f, y - 5.0f,
+                                            std::max(1.0f, lane.w - 4.0f), 10.0f);
+                const auto color = view->timing_stage_valid ? nk_rgb(255, 221, 108)
+                                                            : nk_rgb(238, 96, 88);
+                nk_fill_rect(canvas, bounds, 1.0f, nk_rgba(color.r, color.g, color.b, 105));
+                nk_stroke_rect(canvas, bounds, 1.0f, 2.0f, color);
+            }
         }
         const auto projected_screen_y = [&](double y_pixels) {
             return viewport.y + static_cast<float>(y_pixels) * viewport.h /

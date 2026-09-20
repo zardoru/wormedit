@@ -3110,6 +3110,7 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
     view.skin = static_cast<WormUiPlayerPreviewSkin>(application_state.player_preview_skin);
     view.viewport_width_pixels = 300.0;
     view.viewport_height_pixels = 420.0;
+    view.project_id = history.document.id.value;
     view.lanes = flattened.player_preview_lane_storage.data();
     view.receptors = flattened.player_preview_receptor_storage.data();
     view.hold_bodies = flattened.player_preview_hold_storage.data();

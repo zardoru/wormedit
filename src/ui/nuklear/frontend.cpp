@@ -1364,6 +1364,7 @@ void worm_ui_frontend_shutdown(void) {
     if (g_window) {
         SDL_StopTextInput(g_window);
     }
+    worm_ui_nuklear_shutdown_player_preview();
     nk_sdl_shutdown();
     g_window = NULL;
     g_context = NULL;

@@ -11,3 +11,6 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                                            const WormUiPlayerPreviewView* view,
                                            WormUiWorkspaceAction* action, int window_width,
                                            int window_height);
+
+// Releases backend-owned textures while the frontend's GL context is current.
+void worm_ui_nuklear_shutdown_player_preview(void);

@@ -1,4 +1,5 @@
 #include "ui/nuklear/player_preview.h"
+#include "ui/nuklear/player_preview_texture.h"
 
 #include "wormedit/nuklear_config.h"
 
@@ -69,7 +70,8 @@ int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* vie
         (view->hold_body_count != 0 && !view->hold_bodies) ||
         (view->note_endpoint_count != 0 && !view->note_endpoints) ||
         (view->visual_layer_count != 0 && !view->visual_layers) ||
-        (!view->scene_available && !view->status_text)) {
+        (!view->scene_available && !view->status_text) ||
+        (view->scene_available && (view->project_id == 0 || view->document_revision == 0))) {
         return 0;
     }
     for (std::size_t index = 0; index < view->lane_count; ++index) {
@@ -195,11 +197,15 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                 nk_push_scissor(canvas, viewport);
                 nk_fill_rect(canvas, viewport, 2.0f, nk_rgb(14, 17, 24));
                 if (view->scene_available) {
+                    const auto visual_composed =
+                        worm_ui_nuklear_draw_player_preview_visual_layers(canvas, viewport, view);
                     for (std::size_t index = 0; index < view->lane_count; ++index) {
                         const auto rect = screen_rect(&view->lanes[index].bounds, view, viewport);
                         const auto alternate = (view->lanes[index].display_order & 1U) != 0;
+                        const auto alpha = static_cast<nk_byte>(visual_composed ? 196 : 255);
                         nk_fill_rect(canvas, rect, 0.0f,
-                                     alternate ? nk_rgb(34, 40, 54) : nk_rgb(28, 34, 47));
+                                     alternate ? nk_rgba(34, 40, 54, alpha)
+                                               : nk_rgba(28, 34, 47, alpha));
                         nk_stroke_rect(canvas, rect, 0.0f, 1.0f, nk_rgb(67, 76, 96));
                     }
                     for (std::size_t index = 0; index < view->hold_body_count; ++index) {
@@ -234,4 +240,8 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
         }
     }
     nk_end(context);
+}
+
+void worm_ui_nuklear_shutdown_player_preview(void) {
+    worm_ui_nuklear_shutdown_player_preview_textures();
 }

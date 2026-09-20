@@ -218,6 +218,7 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/compose_markers.cpp
         src/ui/nuklear/frontend.cpp
         src/ui/nuklear/player_preview.cpp
+        src/ui/nuklear/player_preview_texture.cpp
     )
 
     target_include_directories(wormedit

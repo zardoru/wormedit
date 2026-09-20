@@ -42,6 +42,7 @@ add_executable(wormedit_core_tests
     core/timing_anchor_editor_tests.cpp
     core/timing_lane_controller_tests.cpp
     core/viewport_input_tests.cpp
+    core/video_preview_tests.cpp
     core/visual_layout_tests.cpp
     core/workspace_tests.cpp
     formats/bms_tests.cpp

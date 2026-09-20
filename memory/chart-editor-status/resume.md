@@ -4,7 +4,7 @@
 
 ## Immediate work
 
-1. Add richer profile-specific discontinuity ordering and concrete video evaluation. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
+1. Add richer profile-specific discontinuity ordering and an optional bounded video decoder/frame-delivery adapter driven by the exact player-preview media clock. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
 2. Capture BMSE/iBMSC clipboard samples with tool/version provenance, then broaden BMS dialect/profile and exact branch-editing fixtures.
 3. Expand SM/SSC and osu!mania implementation-profile/version fixtures while retaining explicit format limits and loss diagnostics.
 

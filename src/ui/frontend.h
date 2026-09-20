@@ -785,6 +785,10 @@ typedef struct WormUiPlayerPreviewVisualLayerView {
     WormUiPlayerPreviewVisualKind kind;
     size_t draw_order;
     size_t source_order;
+    bool video_clock_ready;
+    uint64_t video_elapsed_sample_frames;
+    uint64_t video_time_numerator;
+    uint32_t video_time_denominator;
     bool static_image;
     bool image_ready;
     bool image_pending;

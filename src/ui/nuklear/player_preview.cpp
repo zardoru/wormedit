@@ -109,6 +109,13 @@ int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* vie
             layer.event_sample_frame > view->sample_frame ||
             layer.kind < WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND ||
             layer.kind > WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD ||
+            (layer.video_clock_ready &&
+             (layer.kind != WORM_UI_PLAYER_PREVIEW_VISUAL_VIDEO ||
+              layer.video_time_denominator == 0 ||
+              layer.video_elapsed_sample_frames != view->sample_frame - layer.event_sample_frame)) ||
+            (!layer.video_clock_ready &&
+             (layer.video_elapsed_sample_frames != 0 || layer.video_time_numerator != 0 ||
+              layer.video_time_denominator != 0)) ||
             (layer.image_ready &&
              (!layer.static_image || layer.image_pending || layer.image_width == 0 ||
               layer.image_height == 0 ||
@@ -216,8 +223,15 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                                       : layer.image_pending ? " · loading"
                                       : layer.static_image  ? " · unavailable"
                                                             : "";
-            nk_labelf(context, NK_TEXT_LEFT, "%s resource %llu%s", label,
-                      static_cast<unsigned long long>(layer.resource_id), image_state);
+            if (layer.video_clock_ready) {
+                nk_labelf(context, NK_TEXT_LEFT, "%s resource %llu · t=%llu/%u s", label,
+                          static_cast<unsigned long long>(layer.resource_id),
+                          static_cast<unsigned long long>(layer.video_time_numerator),
+                          layer.video_time_denominator);
+            } else {
+                nk_labelf(context, NK_TEXT_LEFT, "%s resource %llu%s", label,
+                          static_cast<unsigned long long>(layer.resource_id), image_state);
+            }
         }
         struct nk_rect viewport{};
         const auto visual_label_height = static_cast<float>(view->visual_layer_count) * 18.0f;

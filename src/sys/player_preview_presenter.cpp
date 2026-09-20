@@ -376,6 +376,15 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
         layer.kind = static_cast<WormUiPlayerPreviewVisualKind>(event->kind);
         layer.draw_order = event->draw_order;
         layer.source_order = event->source_order;
+        if (event->kind == visual_event_kind_t::video && scene.scene->video_clock &&
+            scene.scene->video_clock->event == event->object &&
+            scene.scene->video_clock->resource == event->resource) {
+            layer.video_clock_ready = true;
+            layer.video_elapsed_sample_frames =
+                scene.scene->video_clock->elapsed_sample_frames;
+            layer.video_time_numerator = scene.scene->video_clock->media_time_numerator;
+            layer.video_time_denominator = scene.scene->video_clock->media_time_denominator;
+        }
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
         const auto resolved =
             visual::resolve_visual_asset(history.document, event->resource, project_directory);

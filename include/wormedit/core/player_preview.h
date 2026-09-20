@@ -4,6 +4,7 @@
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/storyboard_preview.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/video_preview.h>
 #include <wormedit/core/visual_layout.h>
 
 #include <cstddef>
@@ -127,6 +128,7 @@ struct player_preview_scene_t {
     bool pre_zero{};
     bool split_stage{};
     bga_layer_state_t visual_layers;
+    std::optional<video_preview_clock_t> video_clock;
     std::vector<storyboard_draw_instance_t> storyboard_instances;
     std::size_t composition_operations{};
     std::size_t visible_note_count{};

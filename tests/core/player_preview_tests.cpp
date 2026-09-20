@@ -166,6 +166,11 @@ TEST_CASE("player preview carries validated visual layers in the deterministic s
     const auto scene = make_player_preview_scene(*built.index, visual_request);
     REQUIRE(scene);
     CHECK(scene.scene->visual_layers == visual_request.visual_layers);
+    REQUIRE(scene.scene->video_clock.has_value());
+    CHECK(scene.scene->video_clock->event == object_id_t{81});
+    CHECK(scene.scene->video_clock->elapsed_sample_frames == 0);
+    CHECK(scene.scene->video_clock->media_time_numerator == 0);
+    CHECK(scene.scene->video_clock->media_time_denominator == 1);
     CHECK(scene.scene->visual_fit == visual_fit_policy_t::contain);
 
     auto covered = visual_request;

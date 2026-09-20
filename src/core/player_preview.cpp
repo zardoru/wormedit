@@ -269,6 +269,14 @@ auto make_player_preview_scene(const player_preview_index_t& index,
                   "player-preview sample frame exceeds exact time bounds"));
         return result;
     }
+    const auto video_clock = evaluate_video_preview_clock(
+        request.visual_layers.video, request.sample_frame, request.sample_rate);
+    if (video_clock.status != video_preview_clock_status_t::ready &&
+        video_clock.status != video_preview_clock_status_t::inactive) {
+        result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                                           "player-preview video clock is invalid"));
+        return result;
+    }
     const auto position = musical_position_at(
         index.timing, {static_cast<std::int64_t>(request.sample_frame), request.sample_rate},
         {.extrapolate_before_chart = true});
@@ -332,6 +340,7 @@ auto make_player_preview_scene(const player_preview_index_t& index,
                                  .pre_zero = pre_zero,
                                  .split_stage = active_layout->layout.split_stage,
                                  .visual_layers = request.visual_layers,
+                                 .video_clock = video_clock.clock,
                                  .storyboard_instances = {request.storyboard_instances.begin(),
                                                           request.storyboard_instances.end()},
                                  .composition_operations = 0,

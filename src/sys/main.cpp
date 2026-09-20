@@ -169,6 +169,8 @@ struct application_command_state_t {
     bool semantic_layer_paint_mode_active{};
     bool semantic_layer_solo_active{};
     std::optional<wormedit::layer_id_t> semantic_layer_target;
+    std::vector<wormedit::layer_id_t> required_semantic_layer_filters;
+    std::vector<wormedit::layer_id_t> excluded_semantic_layer_filters;
     // UI-only, chart-scoped preferences. Changing a snap never changes chart
     // data; an active gesture keeps its captured snap until it is resolved.
     std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;
@@ -2398,6 +2400,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
          .solo_semantic_layer = application_state.semantic_layer_solo_active
                                     ? application_state.semantic_layer_target
                                     : std::nullopt,
+         .required_semantic_layers = application_state.required_semantic_layer_filters,
+         .excluded_semantic_layers = application_state.excluded_semantic_layer_filters,
          .maximum_grid_lines = WORM_UI_COMPOSE_GRID_CAPACITY,
          .maximum_scene_primitives = WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY});
     if (!composed.scene || composed.has_errors()) {
@@ -3864,6 +3868,30 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         return rebound ? (was_visible ? "Semantic layer hidden." : "Semantic layer shown.")
                        : (rebound.diagnostics.empty() ? "Semantic-layer visibility changed, but workspace rebinding failed."
                                                       : rebound.diagnostics.front().message);
+    }
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER:
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER: {
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart || !application_state.semantic_layer_target ||
+            !visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target)) {
+            return "Choose a visible semantic layer before filtering by it.";
+        }
+        const auto require = action.compose_action ==
+                             WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER;
+        auto& enabled = require ? application_state.required_semantic_layer_filters
+                                : application_state.excluded_semantic_layer_filters;
+        auto& opposite = require ? application_state.excluded_semantic_layer_filters
+                                 : application_state.required_semantic_layer_filters;
+        const auto target = *application_state.semantic_layer_target;
+        if (const auto found = std::ranges::find(enabled, target); found != enabled.end()) {
+            enabled.erase(found);
+            return require ? "Required semantic-layer filter removed."
+                           : "Excluded semantic-layer filter removed.";
+        }
+        opposite.erase(std::remove(opposite.begin(), opposite.end(), target), opposite.end());
+        enabled.push_back(target);
+        return require ? "Semantic layer required in the view filter."
+                       : "Semantic layer excluded from the view filter.";
     }
     case WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER:
         application_state.semantic_layer_target.reset();

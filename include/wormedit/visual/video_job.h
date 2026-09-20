@@ -128,6 +128,10 @@ class video_frame_job_t {
     std::uint64_t next_generation_{};
     std::uint64_t current_generation_{};
     std::vector<worker_t> workers_;
+    std::mutex session_mutex_;
+    std::unique_ptr<video_decoder_session_t> session_;
+    song_id_t session_project_;
+    std::uint64_t session_document_revision_{};
 };
 
 } // namespace wormedit::visual

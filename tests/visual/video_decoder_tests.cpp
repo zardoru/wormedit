@@ -61,6 +61,32 @@ TEST_CASE("video decoder selects frames from the exact preview media clock",
     CHECK(first_pixel(*blue.frame, 2) > 240);
 }
 
+TEST_CASE("video decoder session retains forward state and seeks backward exactly",
+          "[unit][visual][video][session]") {
+    auto opened = open_video_decoder_session(video_source());
+    REQUIRE(opened);
+
+    const auto red = opened.session->decode(video_clock(1, 2));
+    REQUIRE(red);
+    REQUIRE(red.frame->next_presentation_timestamp);
+    CHECK(video_frame_covers_clock(*red.frame, video_clock(3, 4)));
+    CHECK_FALSE(video_frame_covers_clock(*red.frame, video_clock(1)));
+
+    const auto green = opened.session->decode(video_clock(3, 2));
+    REQUIRE(green);
+    CHECK(first_pixel(*green.frame, 1) > 240);
+    CHECK(video_frame_covers_clock(*green.frame, video_clock(7, 4)));
+
+    const auto rewound = opened.session->decode(video_clock(1, 2));
+    REQUIRE(rewound);
+    CHECK(first_pixel(*rewound.frame, 0) > 240);
+
+    const auto blue = opened.session->decode(video_clock(5, 2));
+    REQUIRE(blue);
+    CHECK_FALSE(blue.frame->next_presentation_timestamp.has_value());
+    CHECK(video_frame_covers_clock(*blue.frame, video_clock(100)));
+}
+
 TEST_CASE("video decoder reports invalid sources clocks and files",
           "[unit][visual][video][negative]") {
     CHECK(decode_video_frame_rgba(video_source(asset_kind_t::image), video_clock(0)).status ==

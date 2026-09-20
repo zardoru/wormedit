@@ -161,7 +161,36 @@ auto video_frame_job_t::request(song_id_t project, std::uint64_t document_revisi
                 result.status = video_frame_status_t::ready;
                 result.frame = std::move(cached);
             } else {
-                auto decoded = decode_video_frame_rgba(source, clock, limits, stop);
+                std::unique_lock session_lock(session_mutex_);
+                if (!session_ || session_project_ != project ||
+                    session_document_revision_ != document_revision ||
+                    !same_source(session_->source(), source)) {
+                    session_.reset();
+                    session_project_ = {};
+                    session_document_revision_ = 0;
+                    auto opened = open_video_decoder_session(source, stop);
+                    if (!opened) {
+                        result.status = opened.status;
+                        result.message = std::move(opened.message);
+                    } else {
+                        session_ = std::move(opened.session);
+                        session_project_ = project;
+                        session_document_revision_ = document_revision;
+                    }
+                }
+                auto decoded =
+                    session_ ? session_->decode(clock, limits, stop)
+                             : video_frame_decode_result_t{.status = result.status,
+                                                           .frame = std::nullopt,
+                                                           .message = std::move(result.message)};
+                if (!decoded && session_) {
+                    // Interrupted demux/codec calls are not guaranteed to leave a reusable
+                    // FFmpeg context. Reopen on the next generation instead of publishing from
+                    // potentially poisoned state.
+                    session_.reset();
+                    session_project_ = {};
+                    session_document_revision_ = 0;
+                }
                 result.status = decoded.status;
                 result.message = std::move(decoded.message);
                 if (decoded) {

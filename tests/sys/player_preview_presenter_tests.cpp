@@ -91,8 +91,21 @@ TEST_CASE("player preview asynchronously publishes and replaces exact video fram
     CHECK(view.visual_layers[0].rgba_pixels[2] < 16);
     const auto red_content_id = view.visual_layers[0].image_content_id;
 
+    presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania, 36'000,
+                       48'000, std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "video", image_job,
+                       video_job);
+    REQUIRE(view.visual_layers[0].image_ready);
+    CHECK(view.visual_layers[0].image_content_id == red_content_id);
+    CHECK_FALSE(video_job.busy());
+
     REQUIRE(wait_for_frame(presenter, view, history, image_job, video_job, 72'000, red_content_id));
     CHECK(view.visual_layers[0].rgba_pixels[0] < 16);
     CHECK(view.visual_layers[0].rgba_pixels[1] > 240);
     CHECK(view.visual_layers[0].rgba_pixels[2] < 16);
+    const auto green_content_id = view.visual_layers[0].image_content_id;
+
+    REQUIRE(
+        wait_for_frame(presenter, view, history, image_job, video_job, 24'000, green_content_id));
+    CHECK(view.visual_layers[0].rgba_pixels[0] > 240);
+    CHECK(view.visual_layers[0].rgba_pixels[1] < 16);
 }

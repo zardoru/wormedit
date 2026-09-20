@@ -444,8 +444,8 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
             layer.video_frame = true;
             if (state.decoded_video && state.decoded_video->source.resource == event->resource &&
                 state.decoded_video->clock.event == scene.scene->video_clock->event &&
-                state.decoded_video->clock.elapsed_sample_frames <=
-                    scene.scene->video_clock->elapsed_sample_frames) {
+                visual::video_frame_covers_clock(*state.decoded_video->frame,
+                                                 *scene.scene->video_clock)) {
                 layer.image_ready = true;
                 layer.image_content_id = state.decoded_video_content_id;
                 layer.image_width = state.decoded_video->frame->width;
@@ -565,7 +565,11 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
         if (switched_event) {
             state.failed_video_event.reset();
         }
-        if (!video_job.busy() && state.failed_video_event != clock.event &&
+        const auto decoded_covers_clock =
+            state.decoded_video && state.decoded_video->source.resource == clock.resource &&
+            state.decoded_video->clock.event == clock.event &&
+            visual::video_frame_covers_clock(*state.decoded_video->frame, clock);
+        if (!video_job.busy() && state.failed_video_event != clock.event && !decoded_covers_clock &&
             (!state.requested_video_clock || *state.requested_video_clock != clock)) {
             const auto resolved =
                 visual::resolve_visual_asset(history.document, clock.resource, project_directory);

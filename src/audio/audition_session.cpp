@@ -37,15 +37,23 @@ auto audition_session_t::start(std::span<const audition_clip_t> clips)
 }
 
 auto audition_session_t::pump(audition_pump_options_t options) -> audition_pump_result_t {
-    const std::scoped_lock lock(mutex_);
-    if (!token_.has_value()) {
+    std::optional<session_token_t> token;
+    std::vector<audition_clip_t> clips;
+    std::uint64_t timeline_frame{};
+    {
+        const std::scoped_lock lock(mutex_);
+        token = token_;
+        clips = clips_;
+        timeline_frame = timeline_frame_;
+    }
+    if (!token.has_value()) {
         return {.status = audition_pump_status_t::stale_generation,
                 .requested_blocks = 0,
                 .decoded_blocks = 0,
                 .cached_blocks = 0,
                 .failure = std::nullopt};
     }
-    return pump_audition_lookahead(sources_, transport_, *token_, clips_, timeline_frame_, options);
+    return pump_audition_lookahead(sources_, transport_, *token, clips, timeline_frame, options);
 }
 
 auto audition_session_t::render(std::span<float> interleaved_stereo)

@@ -95,6 +95,28 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         PROPERTIES LABELS "unit;audio"
         DISCOVERY_MODE PRE_TEST
     )
+
+    if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
+        add_executable(wormedit_sdl_audio_tests
+            sys/sdl_audition_output_tests.cpp
+            ../src/sys/sdl_audition_output.cpp
+        )
+        target_compile_definitions(wormedit_sdl_audio_tests
+            PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+        )
+        target_include_directories(wormedit_sdl_audio_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+        target_link_libraries(wormedit_sdl_audio_tests
+            PRIVATE
+                wormedit::audio_decoder
+                SDL3::SDL3
+                Catch2::Catch2WithMain
+        )
+        catch_discover_tests(wormedit_sdl_audio_tests
+            TEST_PREFIX "sdl-audio."
+            PROPERTIES LABELS "integration;audio;sdl"
+            DISCOVERY_MODE PRE_TEST
+        )
+    endif()
 endif()
 
 if(WORMEDIT_ENABLE_LUA)

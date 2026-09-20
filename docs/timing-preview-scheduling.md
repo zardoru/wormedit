@@ -85,7 +85,8 @@ fingerprints cover both the timing index and authored scroll/speed tracks.
 
 Current bounds are deliberate: the timing index requires a positive BPM at row
 zero. Richer profile-specific boundary rules, concrete image/video/storyboard
-rendering, and SDL device integration remain subsequent timing-engine slices. The
+rendering, and full chart-play SDL device integration remain subsequent timing-engine slices;
+one-shot object audition has a separate bounded SDL output adapter. The
 timing source fingerprint continues to reject stale preview schedules after timing
 or measure edits; callers still use document generation guards when publishing
 asynchronous work.

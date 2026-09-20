@@ -29,6 +29,8 @@
 #include <wormedit/core/workspace.h>
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+#include "sys/sdl_audition_output.h"
+
 #include <wormedit/audio/object_audition.h>
 #include <wormedit/audio/source_registry.h>
 #endif
@@ -4803,6 +4805,9 @@ int main(int argc, char** argv) {
     wormedit::audio::transport_t audition_transport{audition_cache};
     wormedit::audio::audition_transport_bridge_t audition_bridge{audition_transport};
     wormedit::audio::object_audition_controller_t object_audition{audition_bridge};
+    wormedit::audio::audition_session_t audition_session{
+        audition_sources, audition_transport, audition_bridge};
+    wormedit::sys::sdl_audition_output_t audition_output{audition_session};
     const auto asset_base = startup.loaded_primary
                                 ? requested_primary_path.parent_path()
                                 : std::filesystem::path{};
@@ -4830,6 +4835,10 @@ int main(int argc, char** argv) {
     if (unavailable_audio_assets != 0) {
         status += " " + std::to_string(unavailable_audio_assets) +
                   " audio asset(s) are unavailable for preview.";
+    }
+    std::string audition_output_error;
+    if (!audition_output.open(&audition_output_error)) {
+        status += " Audio output unavailable: " + audition_output_error;
     }
 #endif
     wormedit::native_project_recovery_controller_t recovery_controller;
@@ -4889,6 +4898,23 @@ int main(int argc, char** argv) {
             if (!autosave_text.empty())
                 status = autosave_text;
         }
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        if (const auto serviced = audition_output.service(); serviced && !*serviced) {
+            static_cast<void>(audition_output.stop());
+            if (serviced->status == wormedit::sys::sdl_audition_service_status_t::device_failed) {
+                status = "Audio preview stopped after an output-device failure.";
+            } else if (serviced->status ==
+                       wormedit::sys::sdl_audition_service_status_t::render_failed) {
+                status = "Audio preview stopped after a realtime cache underrun.";
+            } else if (serviced->pump &&
+                       serviced->pump->status ==
+                           wormedit::audio::audition_pump_status_t::source_unavailable) {
+                status = "Audio preview stopped because its decoded source is unavailable.";
+            } else {
+                status = "Audio preview stopped after a bounded lookahead failure.";
+            }
+        }
+#endif
 
         if (compose_interaction_state) {
             const auto& state = *compose_interaction_state;
@@ -5056,7 +5082,11 @@ int main(int argc, char** argv) {
                             {request->document_revision, request->chart, request->object.id},
                             bindings);
                         if (prepared) {
-                            status = "Audio preview prepared; device playback is not connected yet.";
+                            const auto started = audition_output.start(prepared.prepared->clips);
+                            status = started ? "Audio preview started."
+                                             : started.message.empty()
+                                                 ? "Audio preview could not start."
+                                                 : started.message;
                         } else if (!prepared.diagnostics.empty()) {
                             status = prepared.diagnostics.front().message;
                         } else if (prepared.status ==
@@ -5346,6 +5376,9 @@ int main(int argc, char** argv) {
         SDL_Delay(1);
     }
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    audition_output.close();
+#endif
     worm_ui_frontend_shutdown();
     worm_window_destroy(&window);
     worm_audio_shutdown(&audio);

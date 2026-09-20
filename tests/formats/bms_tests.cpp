@@ -45,6 +45,12 @@ auto fixture(std::string_view relative, wormedit::bms_parse_options_t options = 
     return wormedit::parse_bms_bytes(bytes, std::move(options));
 }
 
+auto has_detection_evidence(const wormedit::bms_profile_detection_result_t& detection,
+                            wormedit::bms_detection_evidence_source_t source) -> bool {
+    return std::ranges::any_of(detection.evidence,
+                               [source](const auto& item) { return item.source == source; });
+}
+
 auto find_kind(const wormedit::bms_control_node_t& node, wormedit::bms_control_kind_t kind)
     -> std::vector<const wormedit::bms_control_node_t*> {
     std::vector<const wormedit::bms_control_node_t*> matches;
@@ -347,6 +353,15 @@ TEST_CASE("every built-in BMS lane profile imports its fixture-backed visible ch
         auto result = fixture("bms/profiles/" + std::string(test.file), std::move(options));
         REQUIRE(result.song.has_value());
         CHECK_FALSE(result.has_errors());
+        REQUIRE(result.lane_profile_detection.has_value());
+        CHECK(result.lane_profile_detection->status ==
+              wormedit::bms_profile_detection_status_t::selected);
+        REQUIRE(result.lane_profile_detection->selected_profile.has_value());
+        CHECK(result.lane_profile_detection->selected_profile->layout.profile_id ==
+              test.profile_id);
+        CHECK(result.lane_profile_detection->confidence == 1.0);
+        CHECK(has_detection_evidence(*result.lane_profile_detection,
+                                     wormedit::bms_detection_evidence_source_t::explicit_profile));
         REQUIRE(result.song->charts.size() == 1);
         const auto& chart = result.song->charts.front();
         REQUIRE(chart.lane_layouts.size() == 1);
@@ -374,6 +389,67 @@ TEST_CASE("every built-in BMS lane profile imports its fixture-backed visible ch
             CHECK(imported_lane->stage == expected_lane.stage);
         }
     }
+}
+
+TEST_CASE("BMS import forwards extension and active headers into conservative profile detection",
+          "[unit][format][bms][events][profile][detection][fixture]") {
+    wormedit::bms_parse_options_t pms_options;
+    pms_options.file_extension = ".pms";
+    auto pms = fixture("bms/profiles/pms-bme-18button.pms", pms_options);
+    REQUIRE(pms.song.has_value());
+    REQUIRE(pms.lane_profile_detection.has_value());
+    CHECK(pms.lane_profile_detection->status == wormedit::bms_profile_detection_status_t::selected);
+    REQUIRE(pms.lane_profile_detection->selected_profile.has_value());
+    CHECK(pms.lane_profile_detection->selected_profile->layout.profile_id ==
+          "pms-bme-style-18button");
+    CHECK(has_detection_evidence(*pms.lane_profile_detection,
+                                 wormedit::bms_detection_evidence_source_t::file_extension));
+    CHECK(has_detection_evidence(*pms.lane_profile_detection,
+                                 wormedit::bms_detection_evidence_source_t::player_header));
+    REQUIRE(pms.song->charts.front().lane_layouts.size() == 1);
+    CHECK(pms.song->charts.front().measures.front().notes.size() == 18);
+
+    wormedit::bms_parse_options_t octave_options;
+    octave_options.file_extension = "bms";
+    auto octave = fixture("bms/profiles/octave-foot-pedal.bms", octave_options);
+    REQUIRE(octave.song.has_value());
+    REQUIRE(octave.lane_profile_detection.has_value());
+    CHECK(octave.lane_profile_detection->status ==
+          wormedit::bms_profile_detection_status_t::selected);
+    REQUIRE(octave.lane_profile_detection->selected_profile.has_value());
+    CHECK(octave.lane_profile_detection->selected_profile->layout.profile_id ==
+          "bms-octave-foot-pedal");
+    CHECK(has_detection_evidence(*octave.lane_profile_detection,
+                                 wormedit::bms_detection_evidence_source_t::octave_fp_header));
+    REQUIRE(octave.song->charts.front().lane_layouts.size() == 1);
+    CHECK(octave.song->charts.front().measures.front().notes.size() == 16);
+
+    wormedit::bms_parse_options_t ambiguous_options;
+    ambiguous_options.file_extension = ".bms";
+    auto ambiguous = fixture("bms/profiles/bms-5k-free-zone.bms", ambiguous_options);
+    REQUIRE(ambiguous.song.has_value());
+    REQUIRE(ambiguous.lane_profile_detection.has_value());
+    CHECK(ambiguous.lane_profile_detection->status ==
+          wormedit::bms_profile_detection_status_t::ambiguous);
+    CHECK_FALSE(ambiguous.lane_profile_detection->selected_profile.has_value());
+    CHECK(ambiguous.lane_profile_detection->custom_fallback.channels.size() == 7);
+    CHECK(ambiguous.song->charts.front().lane_layouts.empty());
+    CHECK(ambiguous.song->charts.front().measures.front().notes.empty());
+    CHECK_FALSE(ambiguous.has_errors());
+
+    wormedit::bms_parse_options_t contradictory_options;
+    contradictory_options.file_extension = ".pms";
+    contradictory_options.lane_profile_id = "project2dx-7k";
+    auto contradictory = fixture("bms/profiles/pms-bme-18button.pms", contradictory_options);
+    REQUIRE(contradictory.song.has_value());
+    REQUIRE(contradictory.lane_profile_detection.has_value());
+    CHECK(contradictory.lane_profile_detection->status ==
+          wormedit::bms_profile_detection_status_t::custom_required);
+    CHECK_FALSE(contradictory.lane_profile_detection->selected_profile.has_value());
+    CHECK(has_detection_evidence(*contradictory.lane_profile_detection,
+                                 wormedit::bms_detection_evidence_source_t::explicit_profile));
+    CHECK(contradictory.song->charts.front().lane_layouts.empty());
+    CHECK(contradictory.song->charts.front().measures.front().notes.empty());
 }
 
 TEST_CASE("BMS long-note channel endpoints pair across lines and measures",

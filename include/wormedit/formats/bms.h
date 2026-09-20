@@ -1,5 +1,6 @@
 #pragma once
 
+#include <wormedit/core/bms_profile_detection.h>
 #include <wormedit/core/document.h>
 
 #include <optional>
@@ -35,6 +36,9 @@ struct bms_parse_diagnostic_t {
 struct bms_parse_options_t {
     // Non-ASCII input without a UTF-8 BOM is intentionally ambiguous. Select its codec here.
     std::optional<text_encoding_t> encoding_override;
+    // Optional filename extension (with or without a leading dot) used only
+    // as evidence for conservative automatic lane-profile detection.
+    std::string file_extension;
     std::size_t max_source_bytes{16U * 1024U * 1024U};
     std::size_t max_line_bytes{1024U * 1024U};
     std::size_t max_nesting_depth{256};
@@ -58,6 +62,9 @@ struct bms_parse_options_t {
 struct bms_parse_result_t {
     std::optional<song_document_t> song;
     encoding_provenance_t encoding;
+    // Present once channel/header evidence has been evaluated. Ambiguous and
+    // custom-required results retain candidates and exact raw channel order for UI review.
+    std::optional<bms_profile_detection_result_t> lane_profile_detection;
     std::vector<bms_parse_diagnostic_t> diagnostics;
 
     [[nodiscard]] auto has_errors() const -> bool;

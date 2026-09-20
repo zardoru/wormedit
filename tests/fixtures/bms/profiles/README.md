@@ -27,6 +27,8 @@ BME-style fixtures deliberately overlap BME channel families while retaining but
 | `octave-foot-pedal.bms` | `bms-octave-foot-pedal` | 16 |
 | `project2dx-7k.bms` | `project2dx-7k` | 8 |
 
-These fixtures prove explicit semantic import through Wormedit's supported profile catalog. They
-do not claim automatic detection from filename extension and headers alone; ambiguous inputs must
-remain lossless until a profile is chosen.
+These fixtures prove explicit semantic import through Wormedit's supported profile catalog. The
+PMS 18-button case also pins automatic selection from `.pms` plus `#PLAYER 3`, and the octave case
+pins `#OCT/FP`; the parser exposes the full detection result in both cases. Other combinations do
+not thereby claim automatic detection: ambiguous inputs such as the raw-identical 5K free-zone and
+foot-pedal maps remain lossless until a profile is chosen.

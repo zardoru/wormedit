@@ -1565,16 +1565,29 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
     std::optional<std::pair<const bms_control_node_t*, signed_rational_t>> initial_bpm;
     std::vector<root_channel_line_t> channel_lines;
     std::vector<std::string> used_playable_channels;
+    std::optional<unsigned int> player_header;
+    bool octave_fp_header = false;
 
     for (const auto* node : active_statements) {
         const auto token = upper_ascii(node->command_token);
         const auto value = trim_ascii(node->raw_value);
 
+        if (token == "OCT/FP") {
+            octave_fp_header = true;
+            continue;
+        }
         if (is_bms_metadata_command(token)) {
             if (token == "TITLE") {
                 song.metadata.title = std::string(value);
             } else if (token == "ARTIST") {
                 song.metadata.artist = std::string(value);
+            } else if (token == "PLAYER") {
+                const auto parsed_player = parse_integer(value);
+                if (parsed_player.has_value() && *parsed_player >= 0 &&
+                    static_cast<std::uint64_t>(*parsed_player) <=
+                        std::numeric_limits<unsigned int>::max()) {
+                    player_header = static_cast<unsigned int>(*parsed_player);
+                }
             }
             ordered_metadata_fields.emplace_back(token, node->raw_value);
             ordered_metadata_source_orders.push_back(node->source_order);
@@ -1763,18 +1776,21 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
     }
 
     std::optional<lane_input_profile_t> selected_profile;
-    if (options.lane_profile_id.has_value()) {
-        auto detection = detect_bms_lane_profile({
+    if (!used_playable_channels.empty() || options.lane_profile_id.has_value()) {
+        result.lane_profile_detection = detect_bms_lane_profile({
+            .file_extension = options.file_extension,
+            .player_header = player_header,
+            .octave_fp_header = octave_fp_header,
             .used_channels = used_playable_channels,
             .explicit_profile_id = options.lane_profile_id,
         });
-        selected_profile = detection.selected_profile;
-        if (!selected_profile.has_value()) {
+        selected_profile = result.lane_profile_detection->selected_profile;
+        if (options.lane_profile_id.has_value() && !selected_profile.has_value()) {
             std::string message = "selected BMS lane profile is unknown or does not map every "
                                   "recognized playable channel; channel payloads remain raw";
-            if (!detection.evidence.empty()) {
+            if (!result.lane_profile_detection->evidence.empty()) {
                 message += ": ";
-                message += detection.evidence.front().message;
+                message += result.lane_profile_detection->evidence.front().message;
             }
             const auto first_playable = std::ranges::find_if(
                 channel_lines, [](const auto& line) { return is_playable_channel(line.channel); });
@@ -1791,7 +1807,8 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                     .column = 1,
                 });
             }
-        } else {
+        }
+        if (selected_profile.has_value()) {
             chart.input_profile = selected_profile->input;
             chart.lane_layouts.push_back({
                 .id = new_id<object_id_t>(ids),

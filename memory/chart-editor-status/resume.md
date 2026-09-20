@@ -4,7 +4,7 @@
 
 ## Immediate work
 
-1. Capture BMSE/iBMSC clipboard samples with tool/version provenance, then broaden automatic BMS dialect detection around the fixture-backed fifteen-profile registry and add exact branch-editing coverage.
+1. Capture BMSE/iBMSC clipboard samples with tool/version provenance, then broaden conservative automatic BMS dialect-detection fixtures beyond the pinned PMS 18-button/OCT-FP cases and add exact branch-editing coverage.
 2. Broaden StepMania player/version evidence beyond the bounded SSC 0.83 profile and extend version-specific osu!mania metadata evidence while retaining explicit format limits and loss diagnostics.
 3. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
 

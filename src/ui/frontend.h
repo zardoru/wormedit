@@ -32,6 +32,8 @@
 #define WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY 32768
 #define WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY 128
 #define WORM_UI_COMPOSE_NOTE_LABEL_BYTES 4096
+#define WORM_UI_COMPOSE_BOOKMARK_CAPACITY 64
+#define WORM_UI_COMPOSE_MARKER_LABEL_BYTES 4096
 #define WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY 16
 #define WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY 16
 #define WORM_UI_SHORTCUT_EVENT_CAPACITY 64
@@ -309,6 +311,13 @@ typedef struct WormUiComposeSemanticLayerView {
     bool selected;
 } WormUiComposeSemanticLayerView;
 
+typedef struct WormUiComposeBookmarkView {
+    uint64_t bookmark_id;
+    const char* label;
+    uint64_t measure_number;
+    uint64_t row;
+} WormUiComposeBookmarkView;
+
 typedef enum WormUiComposeSelectionMode {
     WORM_UI_COMPOSE_SELECTION_REPLACE = 0,
     WORM_UI_COMPOSE_SELECTION_ADD,
@@ -356,6 +365,9 @@ typedef struct WormUiComposeView {
     bool semantic_layer_paint_mode_active;
     size_t selected_note_count;
     bool beat_marker_navigation_available;
+    const WormUiComposeBookmarkView* beat_bookmarks;
+    size_t beat_bookmark_count;
+    bool beat_bookmarks_truncated;
     const WormUiComposeSemanticLayerView* semantic_layers;
     size_t semantic_layer_count;
     size_t semantic_layer_total_count;
@@ -688,6 +700,9 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE,
     WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL,
+    WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK,
+    WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK,
+    WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK,
     WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER,
@@ -837,6 +852,8 @@ typedef struct WormUiWorkspaceAction {
     double compose_viewport_middle_click_y_pixels;
     bool compose_note_label_focus_consumed;
     char compose_note_label[WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1];
+    uint64_t compose_bookmark_id;
+    char compose_marker_label[WORM_UI_COMPOSE_MARKER_LABEL_BYTES + 1];
     uint64_t compose_semantic_layer_id;
     char compose_semantic_layer_name[WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY];
     uint8_t compose_semantic_layer_red;

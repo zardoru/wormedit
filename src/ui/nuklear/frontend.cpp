@@ -203,6 +203,10 @@ static uint64_t g_compose_label_chart_id{std::numeric_limits<uint64_t>::max()};
 static uint64_t g_compose_label_document_revision{std::numeric_limits<uint64_t>::max()};
 static uint64_t g_compose_label_note_id{std::numeric_limits<uint64_t>::max()};
 static std::array<char, WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1> g_compose_note_label{};
+static uint64_t g_compose_bookmark_chart_id{std::numeric_limits<uint64_t>::max()};
+static uint64_t g_compose_bookmark_document_revision{std::numeric_limits<uint64_t>::max()};
+static uint64_t g_compose_bookmark_id{};
+static std::array<char, WORM_UI_COMPOSE_MARKER_LABEL_BYTES + 1> g_compose_marker_label{};
 static std::array<char, WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY>
     g_compose_semantic_layer_name{};
 static uint64_t g_compose_semantic_layer_name_id{};
@@ -1311,6 +1315,10 @@ bool worm_ui_frontend_init(SDL_Window* window) {
     g_compose_semantic_layer_name_revision = std::numeric_limits<uint64_t>::max();
     g_compose_semantic_layer_color_id = 0;
     g_compose_semantic_layer_color_editor_visible = false;
+    g_compose_bookmark_chart_id = std::numeric_limits<uint64_t>::max();
+    g_compose_bookmark_document_revision = std::numeric_limits<uint64_t>::max();
+    g_compose_bookmark_id = 0;
+    g_compose_marker_label.fill('\0');
     g_compose_lane_hold_active = false;
     g_compose_space_range_hold_active = false;
     g_compose_space_range_hold_moved = false;
@@ -1364,6 +1372,10 @@ void worm_ui_frontend_shutdown(void) {
     g_compose_semantic_layer_paint_pointer_active = false;
     g_compose_semantic_layer_color_id = 0;
     g_compose_semantic_layer_color_editor_visible = false;
+    g_compose_bookmark_chart_id = std::numeric_limits<uint64_t>::max();
+    g_compose_bookmark_document_revision = std::numeric_limits<uint64_t>::max();
+    g_compose_bookmark_id = 0;
+    g_compose_marker_label.fill('\0');
     g_compose_lane_hold_active = false;
     g_compose_area_selection_candidate_active = false;
     g_compose_area_selection_active = false;
@@ -1535,6 +1547,7 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         view->branch_row_count > WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY ||
         view->branch_diagnostic_count > WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY ||
         view->semantic_layer_count > WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY ||
+        view->beat_bookmark_count > WORM_UI_COMPOSE_BOOKMARK_CAPACITY ||
         (view->semantic_layer_page_count == 0
              ? view->semantic_layer_page != 0 || view->semantic_layer_total_count != 0 ||
                    view->semantic_layer_count != 0
@@ -1548,7 +1561,8 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
                                 view->semantic_layer_total_count -
                                     view->semantic_layer_page *
                                         WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY)) ||
-        (view->branch_row_count != 0 && !view->branch_rows))
+        (view->branch_row_count != 0 && !view->branch_rows) ||
+        (view->beat_bookmark_count != 0 && !view->beat_bookmarks))
         return 0;
     if ((view->area_selection_preview_visible &&
          (!compose_rect_valid(&view->area_selection_preview_bounds) ||
@@ -1601,6 +1615,12 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
     for (size_t index = 0; index < view->semantic_layer_count; ++index) {
         if (!view->semantic_layers || view->semantic_layers[index].layer_id == 0 ||
             !view->semantic_layers[index].name) {
+            return 0;
+        }
+    }
+    for (size_t index = 0; index < view->beat_bookmark_count; ++index) {
+        if (view->beat_bookmarks[index].bookmark_id == 0 || !view->beat_bookmarks[index].label ||
+            view->beat_bookmarks[index].measure_number == 0) {
             return 0;
         }
     }
@@ -3328,6 +3348,27 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
         g_compose_label_document_revision = view->document_revision;
         g_compose_label_note_id = view->selected_note_label_note_id;
     }
+    if (g_compose_bookmark_chart_id != view->chart_id ||
+        g_compose_bookmark_document_revision != view->document_revision) {
+        const WormUiComposeBookmarkView* selected_bookmark = nullptr;
+        for (size_t index = 0; index < view->beat_bookmark_count; ++index) {
+            if (view->beat_bookmarks[index].bookmark_id == g_compose_bookmark_id) {
+                selected_bookmark = &view->beat_bookmarks[index];
+                break;
+            }
+        }
+        g_compose_marker_label.fill('\0');
+        if (selected_bookmark) {
+            const auto length =
+                std::min(strlen(selected_bookmark->label), g_compose_marker_label.size() - 1);
+            memcpy(g_compose_marker_label.data(), selected_bookmark->label, length);
+            g_compose_marker_label[length] = '\0';
+        } else {
+            g_compose_bookmark_id = 0;
+        }
+        g_compose_bookmark_chart_id = view->chart_id;
+        g_compose_bookmark_document_revision = view->document_revision;
+    }
     nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 10);
     nk_layout_row_push(g_context, 0.06f);
     if (nk_button_label(g_context, "Zoom -") &&
@@ -3421,6 +3462,81 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
             action->kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER;
         } else if (next_marker_clicked) {
             action->kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER;
+        }
+    }
+
+    const WormUiComposeBookmarkView* selected_bookmark = nullptr;
+    for (size_t index = 0; index < view->beat_bookmark_count; ++index) {
+        if (view->beat_bookmarks[index].bookmark_id == g_compose_bookmark_id) {
+            selected_bookmark = &view->beat_bookmarks[index];
+            break;
+        }
+    }
+    char bookmark_header[384]{};
+    if (selected_bookmark) {
+        snprintf(bookmark_header, sizeof(bookmark_header), "M%llu:%llu  %.280s",
+                 static_cast<unsigned long long>(selected_bookmark->measure_number),
+                 static_cast<unsigned long long>(selected_bookmark->row), selected_bookmark->label);
+    } else {
+        snprintf(bookmark_header, sizeof(bookmark_header), "New bookmark at cursor%s",
+                 view->beat_bookmarks_truncated ? " (first 64 shown)" : "");
+    }
+    nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 4);
+    nk_layout_row_push(g_context, 0.31f);
+    if (nk_combo_begin_label(g_context, bookmark_header, nk_vec2(440.0f, 280.0f))) {
+        nk_layout_row_dynamic(g_context, 22, 1);
+        if (nk_combo_item_label(g_context, "New bookmark at cursor", NK_TEXT_LEFT)) {
+            g_compose_bookmark_id = 0;
+            g_compose_marker_label.fill('\0');
+        }
+        for (size_t index = 0; index < view->beat_bookmark_count; ++index) {
+            const auto& bookmark = view->beat_bookmarks[index];
+            char item[384]{};
+            snprintf(item, sizeof(item), "M%llu:%llu  %.280s",
+                     static_cast<unsigned long long>(bookmark.measure_number),
+                     static_cast<unsigned long long>(bookmark.row), bookmark.label);
+            if (nk_combo_item_label(g_context, item, NK_TEXT_LEFT)) {
+                g_compose_bookmark_id = bookmark.bookmark_id;
+                g_compose_marker_label.fill('\0');
+                const auto length =
+                    std::min(strlen(bookmark.label), g_compose_marker_label.size() - 1);
+                memcpy(g_compose_marker_label.data(), bookmark.label, length);
+                g_compose_marker_label[length] = '\0';
+            }
+        }
+        nk_combo_end(g_context);
+    }
+    nk_layout_row_push(g_context, 0.39f);
+    if (!view->scene_available) {
+        nk_widget_disable_begin(g_context);
+    }
+    (void)nk_edit_string_zero_terminated(g_context, NK_EDIT_FIELD, g_compose_marker_label.data(),
+                                         g_compose_marker_label.size(), nk_filter_default);
+    nk_layout_row_push(g_context, 0.17f);
+    const auto bookmark_apply_clicked =
+        nk_button_label(g_context, selected_bookmark ? "Apply rename" : "Add at cursor");
+    if (!view->scene_available) {
+        nk_widget_disable_end(g_context);
+    }
+    nk_layout_row_push(g_context, 0.13f);
+    if (!view->scene_available || !selected_bookmark) {
+        nk_widget_disable_begin(g_context);
+    }
+    const auto bookmark_delete_clicked = nk_button_label(g_context, "Delete");
+    if (!view->scene_available || !selected_bookmark) {
+        nk_widget_disable_end(g_context);
+    }
+    nk_layout_row_end(g_context);
+    if (action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        if (bookmark_apply_clicked) {
+            action->compose_bookmark_id = g_compose_bookmark_id;
+            memcpy(action->compose_marker_label, g_compose_marker_label.data(),
+                   sizeof(action->compose_marker_label));
+            action->compose_action = selected_bookmark ? WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK
+                                                       : WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK;
+        } else if (bookmark_delete_clicked && selected_bookmark) {
+            action->compose_bookmark_id = selected_bookmark->bookmark_id;
+            action->compose_action = WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK;
         }
     }
 

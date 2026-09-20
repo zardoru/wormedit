@@ -16,6 +16,7 @@
 #include <wormedit/core/grid.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/marker_editor.h>
 #include <wormedit/core/marker_navigation.h>
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/metadata_editor.h>
@@ -138,6 +139,9 @@ struct flattened_workspace_t {
     std::string compose_status_storage;
     std::string compose_hover_tooltip_storage;
     std::string compose_selected_note_label_storage;
+    std::array<WormUiComposeBookmarkView, WORM_UI_COMPOSE_BOOKMARK_CAPACITY>
+        compose_bookmark_storage{};
+    std::array<std::string, WORM_UI_COMPOSE_BOOKMARK_CAPACITY> compose_bookmark_label_storage;
     std::vector<WormUiComposeBandView> compose_band_storage;
     std::vector<WormUiComposeLaneView> compose_lane_storage;
     std::vector<WormUiComposeGridLineView> compose_grid_storage;
@@ -2166,6 +2170,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.semantic_layer_paint_mode_active = application_state.semantic_layer_paint_mode_active;
     view.selected_note_count = 0;
     view.beat_marker_navigation_available = false;
+    view.beat_bookmarks = flattened.compose_bookmark_storage.data();
+    view.beat_bookmark_count = 0;
+    view.beat_bookmarks_truncated = false;
     view.semantic_layers = flattened.compose_semantic_layer_storage.data();
     view.semantic_layer_count = 0;
     view.semantic_layer_total_count = 0;
@@ -2330,6 +2337,39 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                                : diagnostics.front().message;
         view.status_text = flattened.compose_status_storage.c_str();
         return;
+    }
+    const auto& measures = std::get<wormedit::measure_index_t>(measure_index);
+    for (const auto& bookmark : chart.bookmarks) {
+        if (bookmark.anchor != wormedit::marker_anchor_t::beat) {
+            continue;
+        }
+        if (!bookmark.position) {
+            flattened.compose_status_storage =
+                "A beat-anchored bookmark has no valid chart position.";
+            view.status_text = flattened.compose_status_storage.c_str();
+            return;
+        }
+        if (view.beat_bookmark_count >= WORM_UI_COMPOSE_BOOKMARK_CAPACITY) {
+            view.beat_bookmarks_truncated = true;
+            continue;
+        }
+        const auto measure = std::ranges::find(measures.entries, bookmark.position->measure,
+                                               &wormedit::measure_index_entry_t::id);
+        if (measure == measures.entries.end() || bookmark.position->row >= measure->row_capacity) {
+            flattened.compose_status_storage =
+                "A beat-anchored bookmark is outside the chart measure geometry.";
+            view.status_text = flattened.compose_status_storage.c_str();
+            return;
+        }
+        const auto index = view.beat_bookmark_count++;
+        flattened.compose_bookmark_label_storage[index] = bookmark.label;
+        flattened.compose_bookmark_storage[index] = {
+            .bookmark_id = bookmark.id.value,
+            .label = flattened.compose_bookmark_label_storage[index].c_str(),
+            .measure_number =
+                static_cast<std::uint64_t>(std::distance(measures.entries.begin(), measure) + 1),
+            .row = bookmark.position->row,
+        };
     }
     if (!retained_state || retained_state->chart != chart.id) {
         std::optional<wormedit::local_position_t> initial_cursor;
@@ -4008,6 +4048,70 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                        : rebound.diagnostics.front().message;
         }
         return label ? "Note label applied." : "Note labels cleared.";
+    }
+    case WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK:
+    case WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK:
+    case WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before editing bookmarks.";
+        }
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart) {
+            return "Choose a chart before editing bookmarks.";
+        }
+        marker_edit_action_t edit;
+        if (action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK) {
+            edit = insert_bookmark_action_t{
+                .chart = state.chart,
+                .label = action.compose_marker_label,
+                .anchor = marker_anchor_t::beat,
+                .position = state.cursor,
+                .audio_milliseconds = std::nullopt,
+            };
+        } else {
+            if (action.compose_bookmark_id == 0) {
+                return "Choose a beat-anchored bookmark before editing it.";
+            }
+            const auto bookmark = std::ranges::find(
+                chart->bookmarks, object_id_t{action.compose_bookmark_id}, &bookmark_t::id);
+            if (bookmark == chart->bookmarks.end() || bookmark->anchor != marker_anchor_t::beat ||
+                !bookmark->position) {
+                return "That beat-anchored bookmark is no longer available.";
+            }
+            if (action.compose_action == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK) {
+                edit = update_bookmark_action_t{
+                    .chart = state.chart,
+                    .bookmark = bookmark->id,
+                    .label = action.compose_marker_label,
+                    .anchor = marker_anchor_t::beat,
+                    .position = bookmark->position,
+                    .audio_milliseconds = std::nullopt,
+                };
+            } else {
+                edit = delete_bookmark_action_t{.chart = state.chart, .bookmark = bookmark->id};
+            }
+        }
+        const auto applied =
+            apply_marker_edit(history, action.compose_input_document_revision, std::move(edit));
+        if (!applied.applied) {
+            if (!applied.diagnostics.empty()) {
+                return applied.diagnostics.front().message;
+            }
+            return action.compose_action == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK
+                       ? "Bookmark label was unchanged."
+                       : "Bookmark edit made no changes.";
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty() ? "Bookmark changed, but workspace rebinding failed."
+                                               : rebound.diagnostics.front().message;
+        }
+        if (action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK) {
+            return "Bookmark added at the Compose cursor.";
+        }
+        return action.compose_action == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK
+                   ? "Bookmark renamed."
+                   : "Bookmark deleted.";
     }
     case WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER: {
         const auto* chart = selected_chart(history, workspace);

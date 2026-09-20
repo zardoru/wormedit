@@ -10,7 +10,7 @@
 - Prefer `std::` facilities. Boost is allowed for specific justified gaps, remains narrowly linked, and stays behind project-owned types and interfaces.
 - Use `snake_case` for project code and `<type>_t` for project-defined types; prefer scoped `enum class` types. Methods on structs are welcome when they express behavior local to that data.
 - Keep views, controllers, commands/policies, core data, format codecs, and platform backends as separate dependency layers. Avoid manager singletons and routine class hierarchies.
-- Treat Nuklear as a replaceable initial frontend: controllers own semantic view state/actions, frontend adapters own widget-library types/composition, and performance-critical editor surfaces use shared renderer-neutral draw/hit-test data. Permit ImGui or Clay replacement through one CMake/frontend boundary.
+- Treat Nuklear as a replaceable initial frontend: controllers own semantic view state/actions, frontend adapters own widget-library types/composition, and performance-critical editor surfaces use shared renderer-neutral draw/hit-test data. Permit a future wxWidgets, ImGui, or Clay frontend through one CMake/frontend boundary; wxWidgets is not a completion criterion. Split the growing Nuklear adapter into frontend-private pane and shared-widget units after the Stage 3 surfaces stabilize, without moving controller state into those units.
 - Express closed conversion strategies as policy values plus tables/free functions or variant visitors. Reserve virtual interfaces for open runtime backends such as decoders and encoders.
 - Keep file adapters outside the UI layer.
 - Use ordered, independently editable measures as the chart's primary event containers; do not use a monolithic chart-wide event buffer.

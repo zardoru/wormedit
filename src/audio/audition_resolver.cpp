@@ -162,6 +162,7 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
         if (asset == assets.end() || source == sources.end() ||
             source->second->source.asset_identity.empty() ||
             source->second->source.source_identity.empty() ||
+            source->second->source_sample_rate == 0 ||
             source->second->output_frame_count == 0) {
             result.diagnostics.push_back(error(audition_resolve_code_t::missing_source_binding,
                                                "audio asset has no decoded audition binding", layer.id));
@@ -197,16 +198,17 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
             result.clips.clear();
             return result;
         }
-        if (asset->second->stream.sample_rate == 0) {
+        if (asset->second->stream.sample_rate != 0 &&
+            asset->second->stream.sample_rate != source->second->source_sample_rate) {
             result.diagnostics.push_back(error(audition_resolve_code_t::invalid_source_geometry,
-                                               "linked audition requires the decoded source rate",
+                                               "stored and decoded source sample rates disagree",
                                                layer.id));
             result.clips.clear();
             return result;
         }
         const auto slices = derive_sound_channel_slices(
-            chart, *owner, asset->second->stream.sample_rate,
-            asset->second->stream.frame_count,
+            chart, *owner, source->second->source_sample_rate,
+            source->second->source_frame_count,
             {.maximum_events = options.maximum_channel_events, .rounding = options.rounding});
         const auto* slice = slices ? find_sound_slice(slices, retained->id) : nullptr;
         if (slice == nullptr) {
@@ -228,10 +230,10 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
         }
         if (!emitted_slices.emplace(owner->id.value, slice->absolute_row).second) continue;
         const auto begin = output_frame(slice->source_begin_frame,
-                                        asset->second->stream.sample_rate, options.rounding);
+                                        source->second->source_sample_rate, options.rounding);
         auto end = slice->source_end_frame
                        ? output_frame(*slice->source_end_frame,
-                                      asset->second->stream.sample_rate, options.rounding)
+                                      source->second->source_sample_rate, options.rounding)
                        : std::optional<std::uint64_t>{source->second->output_frame_count};
         if (end.has_value()) end = std::min(*end, source->second->output_frame_count);
         if (!begin || !end || *begin >= *end) {

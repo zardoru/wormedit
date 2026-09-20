@@ -4384,6 +4384,15 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                    object.id)});
                     }
                 }
+                if (typed_action.request_audition &&
+                    (selected.size() != 1 ||
+                     (selected.front().kind != editor_selection_object_kind_t::note &&
+                      selected.front().kind != editor_selection_object_kind_t::bgm_event))) {
+                    return diagnostic_result(
+                        history, state,
+                        {error(diagnostic_code_t::invalid_id,
+                               "audition selection requires exactly one note or BGM event")});
+                }
                 auto combined = combine_area_selection(selected, typed_action.mode,
                                                        std::get<editor_hit_test_index_t>(built));
                 if (std::holds_alternative<diagnostic_list_t>(combined)) {
@@ -4402,6 +4411,10 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                     .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
                                        ? std::get<diagnostic_list_t>(next_view)
                                        : diagnostic_list_t{},
+                    .audition = typed_action.request_audition
+                                    ? std::optional{editor_object_audition_request_t{
+                                          history.document.revision, state.chart, selected.front()}}
+                                    : std::nullopt,
                 };
             } else if constexpr (std::is_same_v<action_t, delete_editor_notes_action_t>) {
                 std::unordered_set<std::uint64_t> selected_ids;
@@ -4824,12 +4837,13 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                     }
                 }
 
-                std::optional<editor_interaction_result_t::note_audition_t> audition;
+                std::optional<editor_object_audition_request_t> audition;
                 if (typed_action.successive) {
-                    audition = editor_interaction_result_t::note_audition_t{
-                        .note = candidates.front().note->id,
-                        .sound = candidates.front().note->sound,
-                    };
+                    audition = editor_object_audition_request_t{
+                        .document_revision = history.document.revision,
+                        .chart = state.chart,
+                        .object = {editor_selection_object_kind_t::note,
+                                   candidates.front().note->id}};
                 }
 
                 auto proposed = history.document;
@@ -4862,8 +4876,12 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                     }
                 }
 
+                if (audition.has_value()) {
+                    audition->document_revision = history.document.revision;
+                }
+
                 if (typed_action.successive) {
-                    const auto assigned = audition->note;
+                    const auto assigned = audition->object.id;
                     std::erase(state.selected_notes, assigned);
                     std::erase_if(state.selected_objects, [&](const auto& object) {
                         return object.kind == editor_selection_object_kind_t::note &&

@@ -898,7 +898,7 @@ Exit condition: a chart can be authored and recovered after restart without expo
 
 ### 4. Audio clips and BMSON authoring
 
-- Build an asset browser and sound-channel waveform view that displays specification-derived slice boundaries and provides audition controls.
+- Build an asset browser and sound-channel waveform view that displays specification-derived slice boundaries and provides audition controls. The headless path now carries revision-bound note/BGM activation intent through Compose, resolves exact BMSON event links against authoritative decoded-source geometry, and prepares bounded transport clips without replacing a live audition on stale or resolution-failed requests; runtime source-binding ownership, SDL output, the browser, and waveform controls remain.
 - Add the multi-marker razor mode over the timing-aligned channel waveform. Snap clicks to the active divisor, default to continuation, use Shift-click for restart, preview all edits, and commit/cancel the marker set atomically.
 - Assign BMS keysounds and BMSON sound-channel events to playable notes or BGM events.
 - Edit BMSON restart/continuation state and event positions, recomputing derived slices as timing changes.

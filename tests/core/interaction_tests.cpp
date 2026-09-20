@@ -996,8 +996,14 @@ TEST_CASE("typed object selection validates BGM events and synchronizes note sel
     const auto bgm_selected = dispatch_editor_action(
         history, state,
         select_editor_objects_action_t{
-            {{editor_selection_object_kind_t::bgm_event, object_id_t{201}}}});
+            {{editor_selection_object_kind_t::bgm_event, object_id_t{201}}},
+            editor_area_selection_mode_t::replace, true});
     REQUIRE(bgm_selected);
+    REQUIRE(bgm_selected.audition.has_value());
+    CHECK(*bgm_selected.audition ==
+          editor_object_audition_request_t{
+              history.document.revision, chart_id_t{1},
+              {editor_selection_object_kind_t::bgm_event, object_id_t{201}}});
     CHECK(state.selected_objects ==
           std::vector<editor_selection_object_t>{
               {editor_selection_object_kind_t::bgm_event, object_id_t{201}}});
@@ -1008,14 +1014,16 @@ TEST_CASE("typed object selection validates BGM events and synchronizes note sel
         select_editor_objects_action_t{
             {{editor_selection_object_kind_t::note, object_id_t{101}}}});
     REQUIRE(note_selected);
+    CHECK_FALSE(note_selected.audition.has_value());
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
     const auto bgm_added = dispatch_editor_action(
         history, state,
         select_editor_objects_action_t{
             {{editor_selection_object_kind_t::bgm_event, object_id_t{201}}},
-            editor_area_selection_mode_t::add});
+            editor_area_selection_mode_t::add, true});
     REQUIRE(bgm_added);
+    REQUIRE(bgm_added.audition.has_value());
     CHECK(state.selected_objects ==
           std::vector<editor_selection_object_t>{
               {editor_selection_object_kind_t::note, object_id_t{101}},
@@ -1026,8 +1034,12 @@ TEST_CASE("typed object selection validates BGM events and synchronizes note sel
         history, state,
         select_editor_objects_action_t{
             {{editor_selection_object_kind_t::bgm_event, object_id_t{201}}},
-            editor_area_selection_mode_t::toggle});
+            editor_area_selection_mode_t::toggle, true});
     REQUIRE(bgm_toggled);
+    REQUIRE(bgm_toggled.audition.has_value());
+    CHECK(bgm_toggled.audition->object ==
+          editor_selection_object_t{editor_selection_object_kind_t::bgm_event,
+                                    object_id_t{201}});
     CHECK(state.selected_objects ==
           std::vector<editor_selection_object_t>{
               {editor_selection_object_kind_t::note, object_id_t{101}}});
@@ -1038,7 +1050,19 @@ TEST_CASE("typed object selection validates BGM events and synchronizes note sel
         select_editor_objects_action_t{
             {{editor_selection_object_kind_t::bgm_event, object_id_t{999}}}});
     CHECK_FALSE(unknown);
+    CHECK_FALSE(unknown.audition.has_value());
     CHECK(has_code(unknown.diagnostics, diagnostic_code_t::invalid_id));
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+
+    const auto multiple_audition = dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{
+            {{editor_selection_object_kind_t::note, object_id_t{101}},
+             {editor_selection_object_kind_t::bgm_event, object_id_t{201}}},
+            editor_area_selection_mode_t::replace, true});
+    CHECK_FALSE(multiple_audition);
+    CHECK_FALSE(multiple_audition.audition.has_value());
+    CHECK(has_code(multiple_audition.diagnostics, diagnostic_code_t::invalid_id));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 }
 
@@ -2706,8 +2730,9 @@ TEST_CASE("Shift lane assignment consumes deterministic selected notes and reque
     REQUIRE(first);
     CHECK(first.document_changed);
     REQUIRE(first.audition.has_value());
-    CHECK(first.audition->note == object_id_t{102});
-    CHECK_FALSE(first.audition->sound.has_value());
+    CHECK(first.audition->object ==
+          editor_selection_object_t{editor_selection_object_kind_t::note, object_id_t{102}});
+    CHECK(first.audition->document_revision == history.document.revision);
     CHECK(first.view->selected_notes ==
           std::vector<object_id_t>{object_id_t{101}, object_id_t{103}});
     CHECK(find_note(history, object_id_t{102})->lane == lane_id_t{2});
@@ -2716,7 +2741,8 @@ TEST_CASE("Shift lane assignment consumes deterministic selected notes and reque
         history, state, assign_selected_notes_to_lane_action_t{lane_id_t{2}, true});
     REQUIRE(second);
     REQUIRE(second.audition.has_value());
-    CHECK(second.audition->note == object_id_t{103});
+    CHECK(second.audition->object ==
+          editor_selection_object_t{editor_selection_object_kind_t::note, object_id_t{103}});
     CHECK(second.view->selected_notes == std::vector<object_id_t>{object_id_t{101}});
     CHECK(find_note(history, object_id_t{103})->lane == lane_id_t{2});
 }

@@ -11,6 +11,8 @@ namespace wormedit::audio {
 struct audition_source_binding_t {
     asset_id_t asset;
     audio_source_identity_t source;
+    std::uint32_t source_sample_rate{};
+    std::optional<std::uint64_t> source_frame_count;
     std::uint64_t output_frame_count{};
 };
 

@@ -180,6 +180,17 @@ struct editor_selection_object_t {
     auto operator<=>(const editor_selection_object_t&) const = default;
 };
 
+// A validated, revision-bound intent to audition one semantic sound object.
+// Runtime audio resolves resources, BMSON slices, and fused layers from this
+// identity rather than relying on a lossy resource-only hint.
+struct editor_object_audition_request_t {
+    std::uint64_t document_revision{};
+    chart_id_t chart;
+    editor_selection_object_t object;
+
+    auto operator==(const editor_object_audition_request_t&) const -> bool = default;
+};
+
 // The mode is captured on the first Space press and applied atomically when
 // Space is pressed again.
 struct space_range_selection_action_t {
@@ -283,6 +294,7 @@ struct select_editor_notes_action_t {
 struct select_editor_objects_action_t {
     std::vector<editor_selection_object_t> objects;
     editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
+    bool request_audition{};
 };
 
 struct delete_editor_notes_action_t {};
@@ -529,18 +541,11 @@ struct editor_interaction_setup_t {
 };
 
 struct editor_interaction_result_t {
-    struct note_audition_t {
-        object_id_t note;
-        std::optional<resource_id_t> sound;
-
-        auto operator==(const note_audition_t&) const -> bool = default;
-    };
-
     bool accepted{};
     bool document_changed{};
     std::optional<editor_interaction_view_model_t> view;
     diagnostic_list_t diagnostics;
-    std::optional<note_audition_t> audition;
+    std::optional<editor_object_audition_request_t> audition;
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return accepted;

@@ -156,6 +156,7 @@ struct compose_scene_cache_t {
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
     std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
     std::optional<wormedit::editor_object_hover_state_t> hover;
+    std::optional<wormedit::editor_object_audition_request_t> audition_request;
     bool focus_note_label_editor{};
     bool viewport_autoscroll_active{};
     double viewport_autoscroll_anchor_x_pixels{};
@@ -3001,6 +3002,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                                    compose_scene_cache_t& scene_cache,
                                    double viewport_delta_seconds) -> std::string {
     using namespace wormedit;
+    scene_cache.audition_request.reset();
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != ui_action.compose_input_chart_id ||
         state.chart.value != ui_action.compose_input_chart_id ||
@@ -3548,7 +3550,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 history, state,
                 select_editor_objects_action_t{{{editor_selection_object_kind_t::bgm_event,
                                                   object_id_t{input.object_id}}},
-                                               *selection_mode(input.selection_mode)});
+                                               *selection_mode(input.selection_mode), true});
             accepted = "BGM event selected.";
             break;
         case WORM_UI_COMPOSE_INPUT_POINTER_CLICK: {
@@ -3566,8 +3568,11 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             state.active_lane = target->lane;
             state.cursor = target->position;
             if (target->note && target->note_kind != note_kind_t::tap) {
-                result = dispatch_editor_action(history, state,
-                                                select_editor_notes_action_t{{*target->note}});
+                result = dispatch_editor_action(
+                    history, state,
+                    select_editor_objects_action_t{
+                        {{editor_selection_object_kind_t::note, *target->note}},
+                        editor_area_selection_mode_t::replace, true});
                 accepted = "Note selected.";
             } else {
                 result =
@@ -3609,6 +3614,12 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             continue;
         }
         status = compose_result_status(result, accepted);
+        if (result.accepted && result.audition.has_value()) {
+            // Last accepted sound click in the bounded input batch wins. The
+            // runtime audio layer consumes this revision-bound request once it
+            // owns decoded source bindings and an SDL output stream.
+            scene_cache.audition_request = result.audition;
+        }
         if (result.accepted && result.document_changed) {
             const auto rebound = rebind_workspace(workspace, history);
             if (!rebound) {

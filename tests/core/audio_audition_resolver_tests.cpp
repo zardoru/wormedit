@@ -31,6 +31,8 @@ auto runtime_binding(wormedit::asset_id_t asset, std::uint64_t frames = 200'000)
     -> wormedit::audio::audition_source_binding_t {
     return {.asset = asset,
             .source = {"fixture:vox", "decoded:v1"},
+            .source_sample_rate = 48'000,
+            .source_frame_count = std::nullopt,
             .output_frame_count = frames};
 }
 
@@ -136,6 +138,16 @@ TEST_CASE("audition resolver isolates BGM slices and falls back to whole unlinke
     REQUIRE(duplicate.diagnostics.size() == 1);
     CHECK(duplicate.diagnostics.front().code ==
           wormedit::audio::audition_resolve_code_t::duplicate_source_binding);
+
+    auto mismatched = bindings.front();
+    mismatched.source_sample_rate = 44'100;
+    const std::array mismatched_bindings{mismatched};
+    const auto invalid_geometry = wormedit::audio::resolve_object_audition(
+        song, chart.id, bgm_measure->bgm_events.front().id, mismatched_bindings);
+    CHECK_FALSE(invalid_geometry);
+    REQUIRE(invalid_geometry.diagnostics.size() == 1);
+    CHECK(invalid_geometry.diagnostics.front().code ==
+          wormedit::audio::audition_resolve_code_t::invalid_source_geometry);
 }
 
 TEST_CASE("audition resolver layers fused BMSON channels and enforces its layer bound",
@@ -153,6 +165,8 @@ TEST_CASE("audition resolver layers fused BMSON channels and enforces its layer 
     for (std::size_t index = 0; index < song.audio_assets.size(); ++index) {
         bindings.push_back({.asset = song.audio_assets[index].id,
                             .source = {"asset:" + std::to_string(index), "decoded:v1"},
+                            .source_sample_rate = 48'000,
+                            .source_frame_count = std::nullopt,
                             .output_frame_count = 200'000});
     }
 

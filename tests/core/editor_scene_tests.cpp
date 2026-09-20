@@ -309,6 +309,13 @@ TEST_CASE("field scene rejects stale indexes and returns no partial geometry at 
     CHECK(has_code(std::get<wormedit::diagnostic_list_t>(too_small),
                    wormedit::diagnostic_code_t::invalid_resolution));
 
+    const auto no_bgm_capacity = wormedit::build_editor_field_scene_index(
+        chart, 7, {.maximum_notes = 2, .maximum_bgm_events = 0,
+                   .maximum_layout_segments = 2});
+    REQUIRE(std::holds_alternative<wormedit::diagnostic_list_t>(no_bgm_capacity));
+    CHECK(has_code(std::get<wormedit::diagnostic_list_t>(no_bgm_capacity),
+                   wormedit::diagnostic_code_t::invalid_resolution));
+
     const auto built = wormedit::build_editor_field_scene_index(chart, 7);
     REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
     const auto& index = std::get<wormedit::editor_field_scene_index_t>(built);

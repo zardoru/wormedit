@@ -1,9 +1,5 @@
 #define NK_IMPLEMENTATION
-#define NK_SDL_GL3_IMPLEMENTATION
-#define GL_SILENCE_DEPRECATION
-#if defined(__linux__)
-#define GL_GLEXT_PROTOTYPES
-#endif
+#define NK_SDL3_RENDERER_IMPLEMENTATION
 
 #include "ui/frontend.h"
 #include "ui/nuklear/audio_panel.h"
@@ -17,7 +13,8 @@
 
 #include "wormedit/nuklear_config.h"
 
-#include "nuklear_sdl_gl3_sdl3.h"
+#include <SDL3/SDL.h>
+#include <demo/sdl3_renderer/nuklear_sdl3_renderer.h>
 
 #include <SDL3/SDL_keyboard.h>
 
@@ -28,10 +25,8 @@
 #include <cstring>
 #include <stddef.h>
 
-#define WORMEDIT_MAX_VERTEX_MEMORY (512 * 1024)
-#define WORMEDIT_MAX_ELEMENT_MEMORY (128 * 1024)
-
 static SDL_Window* g_window;
+static SDL_Renderer* g_renderer;
 static struct nk_context* g_context;
 static char g_recovery_save_as_destination[WORM_UI_RECOVERY_DESTINATION_CAPACITY];
 static auto& g_audio = worm_ui_nuklear_audio_state();
@@ -163,8 +158,8 @@ static void set_recovery_action(WormUiWorkspaceAction* action,
     }
 }
 
-bool worm_ui_frontend_init(SDL_Window* window) {
-    if (!window || g_context) {
+bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer) {
+    if (!window || !renderer || g_context) {
         return false;
     }
     worm_ui_nuklear_reset_metadata_state();
@@ -172,20 +167,20 @@ bool worm_ui_frontend_init(SDL_Window* window) {
     worm_ui_nuklear_reset_audio_state();
     worm_ui_nuklear_reset_compose_panel();
 
-    struct nk_context* context = nk_sdl_init(window);
+    struct nk_context* context = nk_sdl_init(window, renderer, nk_sdl_allocator());
     if (!context) {
         return false;
     }
-    struct nk_font_atlas* atlas = NULL;
-    nk_sdl_font_stash_begin(&atlas);
+    struct nk_font_atlas* atlas = nk_sdl_font_stash_begin(context);
     (void)atlas;
-    nk_sdl_font_stash_end();
+    nk_sdl_font_stash_end(context);
 
     if (!SDL_StartTextInput(window)) {
-        nk_sdl_shutdown();
+        nk_sdl_shutdown(context);
         return false;
     }
     g_window = window;
+    g_renderer = renderer;
     g_context = context;
     g_window_focused = true;
     g_shortcut_event_count = 0;
@@ -207,8 +202,9 @@ void worm_ui_frontend_shutdown(void) {
         SDL_StopTextInput(g_window);
     }
     worm_ui_nuklear_shutdown_player_preview();
-    nk_sdl_shutdown();
+    nk_sdl_shutdown(g_context);
     g_window = NULL;
+    g_renderer = NULL;
     g_context = NULL;
     g_shortcut_event_count = 0;
     g_shortcut_events_overflowed = false;
@@ -283,13 +279,12 @@ bool worm_ui_frontend_handle_event(const SDL_Event* event) {
         g_double_clicks[g_double_click_count++] = {event->button.x, event->button.y};
     }
     SDL_Event mutable_event = *event;
-    return nk_sdl_handle_event(&mutable_event) != 0;
+    return nk_sdl_handle_event(g_context, &mutable_event) != 0;
 }
 
 void worm_ui_frontend_end_input(void) {
     if (g_context) {
         nk_input_end(g_context);
-        nk_sdl_handle_grab();
     }
 }
 
@@ -599,7 +594,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         nk_layout_row_end(g_context);
     }
     nk_end(g_context);
-    worm_ui_nuklear_render_player_preview(g_context, &view->player_preview, &action, width, height);
+    worm_ui_nuklear_render_player_preview(g_context, g_renderer, &view->player_preview, &action,
+                                          width, height);
     const bool compose_lane_focused =
         worm_ui_nuklear_compose_lane_focused(&view->compose, compose_tab_active, g_window_focused);
     expose_shortcut_input(&action, compose_lane_focused,
@@ -611,7 +607,9 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
 void worm_ui_frontend_render(int window_width, int window_height) {
     (void)window_width;
     (void)window_height;
-    if (g_context) {
-        nk_sdl_render(NK_ANTI_ALIASING_ON, WORMEDIT_MAX_VERTEX_MEMORY, WORMEDIT_MAX_ELEMENT_MEMORY);
+    if (g_context && g_renderer) {
+        SDL_SetRenderDrawColor(g_renderer, 18, 20, 26, 255);
+        SDL_RenderClear(g_renderer);
+        nk_sdl_render(g_context, NK_ANTI_ALIASING_ON);
     }
 }

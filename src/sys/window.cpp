@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_init.h>
+#include <SDL3/SDL_render.h>
 #include <SDL3/SDL_video.h>
 
 #include <stdio.h>
@@ -19,39 +20,38 @@ bool worm_window_create(WormWindow *window, const WormWindowDesc *desc)
         return false;
     }
 
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
-
-#if defined(__APPLE__)
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
-#endif
-
     window->handle = SDL_CreateWindow(
         desc->title,
         desc->width,
         desc->height,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+        SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
     if (!window->handle) {
         fprintf(stderr, "SDL window creation failed: %s\n", SDL_GetError());
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         return false;
     }
 
-    window->gl = SDL_GL_CreateContext(window->handle);
-    if (!window->gl) {
-        fprintf(stderr, "SDL GL context creation failed: %s\n", SDL_GetError());
+    // Request SDL's renderer backed by the SDL_GPU API. Using an explicit
+    // driver name prevents a silent fallback to another rendering API.
+    window->renderer = SDL_CreateRenderer(window->handle, "gpu");
+    if (!window->renderer) {
+        fprintf(stderr, "SDL GPU renderer creation failed: %s\n", SDL_GetError());
         SDL_DestroyWindow(window->handle);
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         *window = WormWindow{};
         return false;
     }
-
-    SDL_GL_MakeCurrent(window->handle, window->gl);
-    SDL_GL_SetSwapInterval(1);
+    if (!SDL_GetGPURendererDevice(window->renderer)) {
+        fprintf(stderr, "SDL renderer did not expose a GPU device: %s\n", SDL_GetError());
+        SDL_DestroyRenderer(window->renderer);
+        SDL_DestroyWindow(window->handle);
+        SDL_QuitSubSystem(SDL_INIT_VIDEO);
+        *window = WormWindow{};
+        return false;
+    }
+    if (!SDL_SetRenderVSync(window->renderer, 1)) {
+        fprintf(stderr, "SDL GPU renderer VSync setup failed: %s\n", SDL_GetError());
+    }
 
     window->width = desc->width;
     window->height = desc->height;
@@ -64,8 +64,8 @@ void worm_window_destroy(WormWindow *window)
         return;
     }
 
-    if (window->gl) {
-        SDL_GL_DestroyContext(window->gl);
+    if (window->renderer) {
+        SDL_DestroyRenderer(window->renderer);
     }
 
     if (window->handle) {
@@ -78,8 +78,8 @@ void worm_window_destroy(WormWindow *window)
 
 void worm_window_swap(WormWindow *window)
 {
-    if (window && window->handle) {
-        SDL_GL_SwapWindow(window->handle);
+    if (window && window->renderer) {
+        SDL_RenderPresent(window->renderer);
     }
 }
 

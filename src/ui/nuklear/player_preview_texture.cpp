@@ -4,17 +4,15 @@
 
 #include <wormedit/core/visual_layout.h>
 
-#if defined(__APPLE__)
-#include <OpenGL/gl3.h>
-#else
-#include <SDL3/SDL_opengl.h>
-#endif
+#include <SDL3/SDL_error.h>
+#include <SDL3/SDL_pixels.h>
+#include <SDL3/SDL_render.h>
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
+#include <cstring>
 
 namespace {
 
@@ -28,7 +26,7 @@ struct preview_texture_t {
     std::uint32_t width{};
     std::uint32_t height{};
     std::size_t rgba_bytes{};
-    GLuint texture{};
+    SDL_Texture* texture{};
     std::uint64_t last_use{};
 };
 
@@ -38,7 +36,7 @@ std::size_t texture_bytes{};
 std::uint64_t texture_use_sequence{};
 
 struct texture_result_t {
-    GLuint texture{};
+    SDL_Texture* texture{};
     worm_ui_nuklear_preview_visual_failure_t failure{
         worm_ui_nuklear_preview_visual_failure_t::none};
 };
@@ -59,8 +57,8 @@ void erase_texture(std::size_t index) {
         return;
     }
     auto& entry = textures[index];
-    if (entry.texture != 0) {
-        glDeleteTextures(1, &entry.texture);
+    if (entry.texture) {
+        SDL_DestroyTexture(entry.texture);
     }
     texture_bytes -= entry.rgba_bytes;
     std::move(textures.begin() + static_cast<std::ptrdiff_t>(index + 1),
@@ -82,9 +80,9 @@ void evict_texture() {
     erase_texture(static_cast<std::size_t>(oldest - textures.begin()));
 }
 
-auto texture_for(const WormUiPlayerPreviewView& view,
+auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
                  const WormUiPlayerPreviewVisualLayerView& layer) -> texture_result_t {
-    if (!layer.image_ready || view.project_id == 0 || view.document_revision == 0 ||
+    if (!renderer || !layer.image_ready || view.project_id == 0 || view.document_revision == 0 ||
         layer.resource_id == 0 || layer.rgba_byte_count == 0 || !layer.rgba_pixels ||
         layer.rgba_byte_count > maximum_texture_bytes) {
         return {.failure = worm_ui_nuklear_preview_visual_failure_t::invalid_image};
@@ -105,43 +103,34 @@ auto texture_for(const WormUiPlayerPreviewView& view,
         evict_texture();
     }
 
-    GLuint texture{};
-    glGenTextures(1, &texture);
-    if (texture == 0) {
-        return {.failure = worm_ui_nuklear_preview_visual_failure_t::texture_allocation};
+    SDL_ClearError();
+    auto* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_STATIC,
+                                      static_cast<int>(layer.image_width),
+                                      static_cast<int>(layer.image_height));
+    if (!texture) {
+        const auto* error = SDL_GetError();
+        const auto out_of_memory = error && std::strstr(error, "Out of memory");
+        return {.failure = out_of_memory
+                               ? worm_ui_nuklear_preview_visual_failure_t::upload_out_of_memory
+                               : worm_ui_nuklear_preview_visual_failure_t::texture_allocation};
     }
-    for (std::size_t stale_error = 0; stale_error < 16 && glGetError() != GL_NO_ERROR;
-         ++stale_error) {
-    }
-    GLint previous_texture{};
-    GLint previous_unpack_alignment{};
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &previous_texture);
-    glGetIntegerv(GL_UNPACK_ALIGNMENT, &previous_unpack_alignment);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, static_cast<GLsizei>(layer.image_width),
-                 static_cast<GLsizei>(layer.image_height), 0, GL_RGBA, GL_UNSIGNED_BYTE,
-                 layer.rgba_pixels);
-    GLint uploaded_width{};
-    GLint uploaded_height{};
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &uploaded_width);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &uploaded_height);
-    const auto upload_error = glGetError();
-    glPixelStorei(GL_UNPACK_ALIGNMENT, previous_unpack_alignment);
-    glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previous_texture));
-    if (upload_error != GL_NO_ERROR) {
-        glDeleteTextures(1, &texture);
-        return {.failure = upload_error == GL_OUT_OF_MEMORY
+    if (!SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_LINEAR) ||
+        !SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND) ||
+        !SDL_UpdateTexture(texture, nullptr, layer.rgba_pixels,
+                           static_cast<int>(layer.image_width * 4U))) {
+        const auto* error = SDL_GetError();
+        const auto out_of_memory = error && std::strstr(error, "Out of memory");
+        SDL_DestroyTexture(texture);
+        return {.failure = out_of_memory
                                ? worm_ui_nuklear_preview_visual_failure_t::upload_out_of_memory
                                : worm_ui_nuklear_preview_visual_failure_t::upload_rejected};
     }
-    if (uploaded_width != static_cast<GLint>(layer.image_width) ||
-        uploaded_height != static_cast<GLint>(layer.image_height)) {
-        glDeleteTextures(1, &texture);
+    float uploaded_width{};
+    float uploaded_height{};
+    if (!SDL_GetTextureSize(texture, &uploaded_width, &uploaded_height) ||
+        uploaded_width != static_cast<float>(layer.image_width) ||
+        uploaded_height != static_cast<float>(layer.image_height)) {
+        SDL_DestroyTexture(texture);
         return {.failure = worm_ui_nuklear_preview_visual_failure_t::upload_size_mismatch};
     }
 
@@ -197,6 +186,7 @@ const char* worm_ui_nuklear_preview_visual_failure_message(
 worm_ui_nuklear_preview_visual_result_t
 worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer* canvas,
                                                   struct nk_rect viewport,
+                                                  struct SDL_Renderer* renderer,
                                                   const WormUiPlayerPreviewView* view) {
     worm_ui_nuklear_preview_visual_result_t result;
     if (!canvas || !view) {
@@ -230,15 +220,9 @@ worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer* canv
         }
     };
     for (std::size_t index = 0; index < count; ++index) {
-        const auto uploaded = texture_for(*view, *ordered[index]);
+        const auto uploaded = texture_for(renderer, *view, *ordered[index]);
         if (uploaded.failure != worm_ui_nuklear_preview_visual_failure_t::none) {
             record_failure(ordered[index]->resource_id, uploaded.failure);
-            continue;
-        }
-        if (uploaded.texture > static_cast<GLuint>(std::numeric_limits<int>::max())) {
-            record_failure(
-                ordered[index]->resource_id,
-                worm_ui_nuklear_preview_visual_failure_t::texture_identifier_unsupported);
             continue;
         }
         const auto& layer = *ordered[index];
@@ -261,9 +245,9 @@ worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer* canv
                                  source.height == layer.image_height;
         const auto image =
             full_source
-                ? nk_image_id(static_cast<int>(uploaded.texture))
-                : nk_subimage_id(
-                      static_cast<int>(uploaded.texture), static_cast<nk_ushort>(layer.image_width),
+                ? nk_image_ptr(uploaded.texture)
+                : nk_subimage_ptr(
+                      uploaded.texture, static_cast<nk_ushort>(layer.image_width),
                       static_cast<nk_ushort>(layer.image_height),
                       nk_rect(static_cast<float>(source.left), static_cast<float>(source.top),
                               static_cast<float>(source.width), static_cast<float>(source.height)));

@@ -7,6 +7,7 @@
 
 struct nk_command_buffer;
 struct nk_rect;
+struct SDL_Renderer;
 
 enum class worm_ui_nuklear_preview_visual_failure_t : std::uint8_t {
     none,
@@ -28,11 +29,12 @@ struct worm_ui_nuklear_preview_visual_result_t {
 };
 
 // Backend-private upload/composition boundary. It consumes borrowed scalar
-// RGBA views immediately, retains only OpenGL texture identities, and reports
+// RGBA views immediately, retains only SDL renderer texture identities, and reports
 // bounded renderer failures without changing document or decode state.
 [[nodiscard]] worm_ui_nuklear_preview_visual_result_t
 worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer* canvas,
                                                   struct nk_rect viewport,
+                                                  struct SDL_Renderer* renderer,
                                                   const WormUiPlayerPreviewView* view);
 
 [[nodiscard]] const char* worm_ui_nuklear_preview_visual_failure_message(

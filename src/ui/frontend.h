@@ -1,6 +1,7 @@
 #pragma once
 
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_render.h>
 #include <SDL3/SDL_video.h>
 
 #include <stdbool.h>
@@ -1091,7 +1092,7 @@ typedef struct WormUiWorkspaceAction {
 
 // Private application/frontend boundary. Implementations own all widget
 // toolkit state and translate semantic views into typed actions.
-bool worm_ui_frontend_init(SDL_Window* window);
+bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer);
 void worm_ui_frontend_shutdown(void);
 void worm_ui_frontend_begin_input(void);
 bool worm_ui_frontend_handle_event(const SDL_Event* event);

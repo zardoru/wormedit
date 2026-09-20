@@ -6012,7 +6012,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    if (!worm_ui_frontend_init(window.handle)) {
+    if (!worm_ui_frontend_init(window.handle, window.renderer)) {
         worm_window_destroy(&window);
         worm_audio_shutdown(&audio);
         SDL_Quit();

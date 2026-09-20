@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 
+#include <SDL3/SDL_render.h>
 #include <SDL3/SDL_video.h>
 
 typedef struct WormWindowDesc {
@@ -13,7 +14,7 @@ typedef struct WormWindowDesc {
 
 typedef struct WormWindow {
     SDL_Window *handle;
-    SDL_GLContext gl;
+    SDL_Renderer *renderer;
     int width;
     int height;
 } WormWindow;

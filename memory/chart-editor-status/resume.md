@@ -4,10 +4,9 @@
 
 ## Immediate work
 
-1. Establish the planned SDL3 GPU path without moving decode, layout, schedule, or document policy into the frontend; preserve the typed per-resource composition diagnostics when replacing the temporary OpenGL uploader.
-2. Add richer profile-specific discontinuity ordering plus video/storyboard evaluation to the preview. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
-3. Capture BMSE/iBMSC clipboard samples with tool/version provenance, then broaden BMS dialect/profile and exact branch-editing fixtures.
-4. Expand SM/SSC and osu!mania implementation-profile/version fixtures while retaining explicit format limits and loss diagnostics.
+1. Add richer profile-specific discontinuity ordering plus video/storyboard evaluation to the preview. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
+2. Capture BMSE/iBMSC clipboard samples with tool/version provenance, then broaden BMS dialect/profile and exact branch-editing fixtures.
+3. Expand SM/SSC and osu!mania implementation-profile/version fixtures while retaining explicit format limits and loss diagnostics.
 
 ## Handoff rule
 

@@ -124,6 +124,7 @@ int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* vie
 }
 
 void worm_ui_nuklear_render_player_preview(struct nk_context* context,
+                                           struct SDL_Renderer* renderer,
                                            const WormUiPlayerPreviewView* view,
                                            WormUiWorkspaceAction* action, int window_width,
                                            int window_height) {
@@ -204,7 +205,8 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                 nk_fill_rect(canvas, viewport, 2.0f, nk_rgb(14, 17, 24));
                 if (view->scene_available) {
                     const auto visual_result =
-                        worm_ui_nuklear_draw_player_preview_visual_layers(canvas, viewport, view);
+                        worm_ui_nuklear_draw_player_preview_visual_layers(canvas, viewport,
+                                                                          renderer, view);
                     for (std::size_t index = 0; index < view->lane_count; ++index) {
                         const auto rect = screen_rect(&view->lanes[index].bounds, view, viewport);
                         const auto alternate = (view->lanes[index].display_order & 1U) != 0;

@@ -20,7 +20,7 @@ set(FETCHCONTENT_UPDATES_DISCONNECTED ON)
 
 include(cmake/dependencies/nlohmann_json.cmake)
 
-option(WORMEDIT_BUILD_APP "Build the existing SDL/OpenGL application scaffold" ON)
+option(WORMEDIT_BUILD_APP "Build the SDL3 GPU application" ON)
 option(WORMEDIT_ENABLE_LUA "Build the pinned Lua runtime adapter" OFF)
 option(WORMEDIT_ENABLE_AUDIO_DECODER "Build the headless MP3/Ogg decoder target" ON)
 option(WORMEDIT_ENABLE_IMAGE_DECODER "Build the headless bounded static-image decoder target" ON)
@@ -165,7 +165,6 @@ if(WORMEDIT_BUILD_APP)
 
     FetchContent_MakeAvailable(SDL3 nuklear)
 
-    find_package(OpenGL REQUIRED)
     find_package(Git QUIET)
 
     if(NOT TARGET otoworm::otoworm)
@@ -244,7 +243,6 @@ if(WORMEDIT_BUILD_APP)
             wormedit::ui_frontend
             SDL3::SDL3
             otoworm::otoworm
-            OpenGL::GL
     )
 
     if(WORMEDIT_ENABLE_IMAGE_DECODER)
@@ -278,6 +276,13 @@ if(BUILD_TESTING)
             -P "${CMAKE_SOURCE_DIR}/cmake/check_ui_boundary.cmake"
     )
     set_tests_properties(architecture.ui_frontend_boundary PROPERTIES LABELS "unit;architecture")
+    add_test(
+        NAME architecture.sdl_gpu_backend
+        COMMAND "${CMAKE_COMMAND}"
+            -DWORMEDIT_SOURCE_ROOT=${CMAKE_SOURCE_DIR}
+            -P "${CMAKE_SOURCE_DIR}/cmake/check_sdl_gpu_backend.cmake"
+    )
+    set_tests_properties(architecture.sdl_gpu_backend PROPERTIES LABELS "unit;architecture")
     add_test(
         NAME documentation.chart_editor_state
         COMMAND "${CMAKE_COMMAND}"

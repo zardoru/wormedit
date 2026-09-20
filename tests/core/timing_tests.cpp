@@ -337,6 +337,37 @@ TEST_CASE("metronome count-in extrapolates exact signed times from row zero",
     CHECK(clicks[4].accent == metronome_accent_t::measure);
 }
 
+TEST_CASE("preview schedule canonicalizes fused linked notes without merging ordinary polyphony",
+          "[unit][core][timing][preview][bmson][layers]") {
+    auto chart = base_chart();
+    chart.measures.front().notes = {
+        {.id = object_id_t{50},
+         .position = {measure_id_t{1}, 240},
+         .lane = lane_id_t{1},
+         .sound = resource_id_t{5},
+         .sound_channel_event = object_id_t{500}},
+        {.id = object_id_t{51},
+         .position = {measure_id_t{1}, 240},
+         .lane = lane_id_t{1},
+         .sound = resource_id_t{6},
+         .sound_channel_event = object_id_t{501}},
+        {.id = object_id_t{52},
+         .position = {measure_id_t{1}, 240},
+         .lane = lane_id_t{1},
+         .sound = resource_id_t{7}},
+    };
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+
+    const auto built = build_preview_schedule(chart, *timing.index,
+                                              {.sample_rate = 48'000, .include_metronome = false});
+    REQUIRE(built);
+    REQUIRE(built.schedule->playable.size() == 2);
+    CHECK(built.schedule->playable[0].object == object_id_t{50});
+    CHECK(built.schedule->playable[1].object == object_id_t{52});
+    CHECK(built.schedule->playable[0].sample_frame == built.schedule->playable[1].sample_frame);
+}
+
 TEST_CASE("count-in accents retain compound meter grouping across negative pulses",
           "[unit][core][timing][preview][count-in][meter]") {
     auto chart = base_chart();

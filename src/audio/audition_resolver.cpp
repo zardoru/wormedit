@@ -11,8 +11,7 @@ namespace wormedit::audio {
 namespace {
 
 auto error(audition_resolve_code_t code, std::string message,
-           std::optional<object_id_t> object = std::nullopt)
-    -> audition_resolve_diagnostic_t {
+           std::optional<object_id_t> object = std::nullopt) -> audition_resolve_diagnostic_t {
     return {.severity = diagnostic_severity_t::error,
             .code = code,
             .message = std::move(message),
@@ -24,15 +23,16 @@ struct semantic_sound_t {
     resource_id_t resource;
     object_id_t linked_event;
     bool playable{};
+    note_kind_t kind{note_kind_t::tap};
     local_position_t position;
     lane_id_t lane;
     std::optional<local_position_t> end;
 };
 
-auto output_frame(std::uint64_t source_frame, std::uint32_t source_rate,
-                  sample_rounding_t rounding) -> std::optional<std::uint64_t> {
-    if (source_rate == 0 || source_frame >
-                                static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+auto output_frame(std::uint64_t source_frame, std::uint32_t source_rate, sample_rounding_t rounding)
+    -> std::optional<std::uint64_t> {
+    if (source_rate == 0 ||
+        source_frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
         return std::nullopt;
     }
     return sample_frame_at({static_cast<std::int64_t>(source_frame), source_rate},
@@ -42,17 +42,14 @@ auto output_frame(std::uint64_t source_frame, std::uint32_t source_rate,
 
 } // namespace
 
-auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
-                             object_id_t object,
+auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id, object_id_t object,
                              std::span<const audition_source_binding_t> bindings,
-                             audition_resolve_options_t options)
-    -> audition_resolve_result_t {
-    audition_resolve_result_t result{
-        .document_revision = song.revision,
-        .chart = chart_id,
-        .object = object,
-        .clips = {},
-        .diagnostics = {}};
+                             audition_resolve_options_t options) -> audition_resolve_result_t {
+    audition_resolve_result_t result{.document_revision = song.revision,
+                                     .chart = chart_id,
+                                     .object = object,
+                                     .clips = {},
+                                     .diagnostics = {}};
     const auto chart_it = std::ranges::find(song.charts, chart_id, &chart_document_t::id);
     if (chart_it == song.charts.end()) {
         result.diagnostics.push_back(
@@ -64,26 +61,31 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
     std::optional<semantic_sound_t> selected;
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
-            if (note.id != object) continue;
+            if (note.id != object)
+                continue;
             if (!note.sound.has_value()) {
                 result.diagnostics.push_back(error(audition_resolve_code_t::missing_resource,
                                                    "selected note has no sound resource", object));
                 return result;
             }
-            selected = semantic_sound_t{note.id, *note.sound,
-                                        note.sound_channel_event.value_or(object_id_t{}), true,
-                                        note.position, note.lane, note.end};
+            selected = semantic_sound_t{
+                note.id,   *note.sound, note.sound_channel_event.value_or(object_id_t{}),
+                true,      note.kind,   note.position,
+                note.lane, note.end};
         }
         for (const auto& event : measure.bgm_events) {
-            if (event.id != object) continue;
+            if (event.id != object)
+                continue;
             if (!event.sound.has_value()) {
                 result.diagnostics.push_back(error(audition_resolve_code_t::missing_resource,
-                                                   "selected BGM event has no sound resource", object));
+                                                   "selected BGM event has no sound resource",
+                                                   object));
                 return result;
             }
-            selected = semantic_sound_t{event.id, *event.sound,
-                                        event.sound_channel_event.value_or(object_id_t{}), false,
-                                        event.position, lane_id_t{}, std::nullopt};
+            selected = semantic_sound_t{
+                event.id,    *event.sound,     event.sound_channel_event.value_or(object_id_t{}),
+                false,       note_kind_t::tap, event.position,
+                lane_id_t{}, std::nullopt};
         }
     }
     if (!selected.has_value()) {
@@ -93,9 +95,11 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
     }
 
     std::unordered_map<std::uint64_t, const resource_entry_t*> resources;
-    for (const auto& resource : song.resources) resources.emplace(resource.id.value, &resource);
+    for (const auto& resource : song.resources)
+        resources.emplace(resource.id.value, &resource);
     std::unordered_map<std::uint64_t, const audio_asset_t*> assets;
-    for (const auto& asset : song.audio_assets) assets.emplace(asset.id.value, &asset);
+    for (const auto& asset : song.audio_assets)
+        assets.emplace(asset.id.value, &asset);
     std::unordered_map<std::uint64_t, const audition_source_binding_t*> sources;
     std::set<std::uint64_t> duplicate_sources;
     for (const auto& binding : bindings) {
@@ -109,11 +113,11 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
         for (const auto& measure : chart.measures) {
             for (const auto& note : measure.notes) {
                 if (note.id == object || !note.sound || !note.sound_channel_event ||
-                    note.position != selected->position || note.lane != selected->lane ||
-                    note.end != selected->end) {
+                    note.kind != selected->kind || note.position != selected->position ||
+                    note.lane != selected->lane || note.end != selected->end) {
                     continue;
                 }
-                layers.push_back({note.id, *note.sound, *note.sound_channel_event, true,
+                layers.push_back({note.id, *note.sound, *note.sound_channel_event, true, note.kind,
                                   note.position, note.lane, note.end});
             }
         }
@@ -127,11 +131,10 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
         for (std::size_t channel_index = 0; channel_index < chart.sound_channels.size();
              ++channel_index) {
             const auto& channel = chart.sound_channels[channel_index];
-            const auto found = std::ranges::find(channel.events, layer.linked_event,
-                                                 &sound_channel_event_t::id);
+            const auto found =
+                std::ranges::find(channel.events, layer.linked_event, &sound_channel_event_t::id);
             if (found != channel.events.end()) {
-                return std::tuple{channel_index, found->provenance.source_order,
-                                  found->id.value};
+                return std::tuple{channel_index, found->provenance.source_order, found->id.value};
             }
         }
         return std::tuple{std::numeric_limits<std::size_t>::max(),
@@ -153,9 +156,9 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
         const auto asset = assets.find(resource->second->asset.value);
         const auto source = sources.find(resource->second->asset.value);
         if (duplicate_sources.contains(resource->second->asset.value)) {
-            result.diagnostics.push_back(error(
-                audition_resolve_code_t::duplicate_source_binding,
-                "audio asset has more than one runtime audition binding", layer.id));
+            result.diagnostics.push_back(
+                error(audition_resolve_code_t::duplicate_source_binding,
+                      "audio asset has more than one runtime audition binding", layer.id));
             result.clips.clear();
             return result;
         }
@@ -163,7 +166,8 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
             source->second->source.asset_identity.empty() ||
             source->second->source.source_identity.empty()) {
             result.diagnostics.push_back(error(audition_resolve_code_t::missing_source_binding,
-                                               "audio asset has no decoded audition binding", layer.id));
+                                               "audio asset has no decoded audition binding",
+                                               layer.id));
             result.clips.clear();
             return result;
         }
@@ -178,17 +182,18 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
         }
 
         if (!layer.linked_event) {
-            result.clips.push_back({source->second->source, 0,
-                                    source->second->output_frame_count, 1.0F});
+            result.clips.push_back(
+                {source->second->source, 0, source->second->output_frame_count, 1.0F});
             continue;
         }
 
         const sound_channel_t* owner{};
         const sound_channel_event_t* retained{};
         for (const auto& channel : chart.sound_channels) {
-            const auto found = std::ranges::find(channel.events, layer.linked_event,
-                                                 &sound_channel_event_t::id);
-            if (found == channel.events.end()) continue;
+            const auto found =
+                std::ranges::find(channel.events, layer.linked_event, &sound_channel_event_t::id);
+            if (found == channel.events.end())
+                continue;
             if (owner != nullptr) {
                 result.diagnostics.push_back(error(audition_resolve_code_t::invalid_link,
                                                    "audition sound link is ambiguous", layer.id));
@@ -201,7 +206,8 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
         if (owner == nullptr || retained->playable != layer.playable ||
             owner->source_clip.source != resource->second->asset) {
             result.diagnostics.push_back(error(audition_resolve_code_t::invalid_link,
-                                               "audition sound link is stale or mismatched", layer.id));
+                                               "audition sound link is stale or mismatched",
+                                               layer.id));
             result.clips.clear();
             return result;
         }
@@ -223,8 +229,7 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
             return result;
         }
         const auto slices = derive_sound_channel_slices(
-            chart, *owner, source->second->source_sample_rate,
-            source->second->source_frame_count,
+            chart, *owner, source->second->source_sample_rate, source->second->source_frame_count,
             {.maximum_events = options.maximum_channel_events, .rounding = options.rounding});
         const auto* slice = slices ? find_sound_slice(slices, retained->id) : nullptr;
         if (slice == nullptr) {
@@ -239,27 +244,29 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
                             sound_slice_error_code_t::invalid_source_range)) {
                 code = audition_resolve_code_t::invalid_source_geometry;
             }
-            result.diagnostics.push_back(error(code,
-                                               "linked audition slice could not be derived", layer.id));
+            result.diagnostics.push_back(
+                error(code, "linked audition slice could not be derived", layer.id));
             result.clips.clear();
             return result;
         }
-        if (!emitted_slices.emplace(owner->id.value, slice->absolute_row).second) continue;
+        if (!emitted_slices.emplace(owner->id.value, slice->absolute_row).second)
+            continue;
         const auto begin = output_frame(slice->source_begin_frame,
                                         source->second->source_sample_rate, options.rounding);
         auto end = slice->source_end_frame
-                       ? output_frame(*slice->source_end_frame,
-                                      source->second->source_sample_rate, options.rounding)
+                       ? output_frame(*slice->source_end_frame, source->second->source_sample_rate,
+                                      options.rounding)
                        : std::optional<std::uint64_t>{source->second->output_frame_count};
-        if (end.has_value()) end = std::min(*end, source->second->output_frame_count);
+        if (end.has_value())
+            end = std::min(*end, source->second->output_frame_count);
         if (!begin || !end || *begin >= *end) {
             result.diagnostics.push_back(error(audition_resolve_code_t::empty_range,
-                                               "audition slice has no decoded output frames", layer.id));
+                                               "audition slice has no decoded output frames",
+                                               layer.id));
             result.clips.clear();
             return result;
         }
-        result.clips.push_back(
-            {source->second->source, *begin, *end - *begin, 1.0F});
+        result.clips.push_back({source->second->source, *begin, *end - *begin, 1.0F});
     }
     return result;
 }

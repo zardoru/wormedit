@@ -9,6 +9,7 @@
 #include <set>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace wormedit {
@@ -1844,10 +1845,30 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
     auto bgm_candidates = std::size_t{};
     auto playable_overflow = false;
     auto bgm_overflow = false;
+    using linked_playable_group_t = std::tuple<std::uint64_t, std::uint64_t, std::uint64_t,
+                                               note_kind_t, bool, std::uint64_t, std::uint64_t>;
+    std::set<linked_playable_group_t> linked_playable_groups;
+    std::unordered_set<std::uint64_t> canonical_linked_playable_ids;
+    const auto linked_group_for = [](const note_t& note) -> linked_playable_group_t {
+        return {note.position.measure.value,
+                note.position.row,
+                note.lane.value,
+                note.kind,
+                note.end.has_value(),
+                note.end ? note.end->measure.value : 0,
+                note.end ? note.end->row : 0};
+    };
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
             if (note.sound && (note.kind == note_kind_t::tap || note.kind == note_kind_t::hold ||
                                note.kind == note_kind_t::roll)) {
+                if (note.sound_channel_event &&
+                    !linked_playable_groups.insert(linked_group_for(note)).second) {
+                    continue;
+                }
+                if (note.sound_channel_event) {
+                    canonical_linked_playable_ids.insert(note.id.value);
+                }
                 if (playable_candidates < options.maximum_playable_events) {
                     ++playable_candidates;
                 } else {
@@ -1898,8 +1919,11 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
 
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
-            if (!note.sound || (note.kind != note_kind_t::tap && note.kind != note_kind_t::hold &&
-                                note.kind != note_kind_t::roll)) {
+            if (!note.sound ||
+                (note.kind != note_kind_t::tap && note.kind != note_kind_t::hold &&
+                 note.kind != note_kind_t::roll) ||
+                (note.sound_channel_event &&
+                 !canonical_linked_playable_ids.contains(note.id.value))) {
                 continue;
             }
             const auto frame = position_frame(timing, row_for(note.position), options,

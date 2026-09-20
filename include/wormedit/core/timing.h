@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/timing_discontinuity.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -67,6 +68,8 @@ struct timing_index_t {
     // Detects accidental reuse after timing/measure edits. UI publication still
     // uses the document generation guard because a hash is not a session token.
     std::uint64_t source_fingerprint{};
+    timing_discontinuity_profile_t discontinuity_profile{
+        timing_discontinuity_profile_t::canonical};
     std::vector<timing_row_state_t> rows;
     std::vector<timing_segment_t> segments;
 };
@@ -74,6 +77,7 @@ struct timing_index_t {
 struct timing_build_options_t {
     std::size_t maximum_boundaries{100'000};
     std::size_t maximum_timing_events{200'000};
+    std::optional<timing_discontinuity_profile_t> discontinuity_profile;
 };
 
 struct timing_build_result_t {
@@ -363,12 +367,27 @@ struct preview_metronome_event_t {
     metronome_accent_t accent{metronome_accent_t::regular};
 };
 
+struct preview_discontinuity_event_t {
+    std::uint64_t sample_frame{};
+    preview_discontinuity_kind_t kind{preview_discontinuity_kind_t::playable};
+    object_id_t object;
+    std::size_t source_order{};
+    // Index in the corresponding immutable family queue. Timing objects use
+    // their stable object ID and leave this at zero.
+    std::size_t family_index{};
+
+    auto operator==(const preview_discontinuity_event_t&) const -> bool = default;
+};
+
 struct preview_schedule_t {
     std::uint32_t sample_rate{};
+    timing_discontinuity_profile_t discontinuity_profile{
+        timing_discontinuity_profile_t::canonical};
     std::vector<preview_audio_event_t> playable;
     std::vector<preview_audio_event_t> bgm;
     std::vector<preview_visual_event_t> bga;
     std::vector<preview_metronome_event_t> metronome;
+    std::vector<preview_discontinuity_event_t> discontinuities;
 };
 
 struct preview_schedule_options_t {
@@ -378,6 +397,8 @@ struct preview_schedule_options_t {
     std::size_t maximum_bgm_events{100'000};
     std::size_t maximum_bga_events{100'000};
     std::size_t maximum_metronome_events{100'000};
+    // Covers all four 100k presentation queues plus the 200k timing-event cap.
+    std::size_t maximum_discontinuity_events{600'000};
     bool include_metronome{true};
     // Number of first-measure metronome pulses to schedule before row zero.
     // They use the row-zero BPM and meter, and are included only when their

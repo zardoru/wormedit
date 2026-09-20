@@ -75,6 +75,7 @@ add_library(wormedit_core
     src/core/startup_session.cpp
     src/core/task_graph.cpp
     src/core/timing.cpp
+    src/core/timing_discontinuity.cpp
     src/core/timing_anchor_editor.cpp
     src/core/timing_lane_controller.cpp
     src/core/viewport_input.cpp

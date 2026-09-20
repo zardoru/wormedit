@@ -15,7 +15,7 @@ Preview audio modes include music-only and full chart autoplay. Full autoplay sc
 The first headless implementation of this contract is documented in
 [`timing-preview-scheduling.md`](../timing-preview-scheduling.md). It fixes the shared
 delay/event/stop boundary vocabulary, exact sample rounding, half-open canonical
-warp behavior, stable family ordering, bounded schedule construction, and
+warp behavior, profile-resolved cross-family discontinuity ordering, bounded schedule construction, and
 binary-search/head-handle queue API before a frontend or SDL callback consumes it.
 
 Stopping transport is a hard audio stop. It synchronously marks the current `transport_session_id_t` cancelled, prevents queued/decode-completion work from submitting more voices, clears all scheduled events and decoder/ring buffers, and stops every active music, autoplay, playable-note, and click-preview voice. The mixer must output silence for that session by the next audio callback/buffer; no keysound tail, release envelope, or stale asynchronous job may continue after Stop. Starting again creates a new session ID so an old callback cannot resurrect playback. Closing a document or audio device uses the same stop path.

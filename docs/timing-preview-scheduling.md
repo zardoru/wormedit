@@ -15,6 +15,15 @@ at that row controls the following segment. One BMS STOP tick is treated as 1/19
 of a whole note, or 1/48 quarter beat. Seconds, milliseconds, beats, and BMS ticks
 remain distinguishable inputs.
 
+The timing index also resolves one discontinuity-order profile, automatically from
+the chart source family or from a validated caller override. Canonical editor timing
+orders BPM, delay, presentation activation, then stop. BMSON 1.0 instead preserves
+its specified same-pulse Note/BGA activation, BPM, then stop order (with non-native
+editor delays remaining an earlier phase). The preview schedule materializes these
+choices into one bounded cross-family discontinuity stream containing stable object
+IDs and family-queue indexes. Live preview, slicing, and later offline renderers can
+therefore consume the same order instead of reconstructing it independently.
+
 Canonical warp spans are half-open `[begin, end)`. They consume no elapsed time,
 events inside them are absent from preview queues, and BPM changes within them still
 determine the effective BPM after the warp. Stops and delays inside a warp are
@@ -38,7 +47,8 @@ beat-zero offset places them inside the chart's timing range; queries beyond eit
 end return a typed `position_out_of_range` diagnostic.
 
 `build_preview_schedule` creates separate contiguous arrays for playable sounds,
-BGM, BGA, and meter-aware metronome pulses. Simultaneous playable events retain
+BGM, BGA, and meter-aware metronome pulses, plus the bounded ordered discontinuity
+stream over those arrays and effective BPM/delay/stop objects. Simultaneous playable events retain
 source order, BGM retains source-lane then event order, and BGA retains draw-kind
 then source order. Each family has an independent event cap. Queue cursors use a
 binary search on seek and only advance a small head index during ordinary playback;
@@ -84,8 +94,8 @@ effective multiplier and visual position without replaying earlier events. Sourc
 fingerprints cover both the timing index and authored scroll/speed tracks.
 
 Current bounds are deliberate: the timing index requires a positive BPM at row
-zero. Richer profile-specific boundary rules, concrete image/video/storyboard
-rendering, and full chart-play SDL device integration remain subsequent timing-engine slices;
+zero. Additional fixture-backed BMS and StepMania implementation profiles, video
+frame decoding, and full chart-play SDL device integration remain subsequent timing-engine slices;
 one-shot object audition has a separate bounded SDL output adapter. The
 timing source fingerprint continues to reject stale preview schedules after timing
 or measure edits; callers still use document generation guards when publishing

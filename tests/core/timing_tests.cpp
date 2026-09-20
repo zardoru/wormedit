@@ -341,6 +341,75 @@ TEST_CASE("metronome count-in extrapolates exact signed times from row zero",
     CHECK(clicks[4].accent == metronome_accent_t::measure);
 }
 
+TEST_CASE("preview schedule materializes BMSON same-pulse discontinuity order",
+          "[unit][core][timing][preview][discontinuity][bmson]") {
+    auto chart = base_chart();
+    chart.source_family = format_family_t::bmson;
+    chart.beat_zero_audio_offset_seconds = {};
+    chart.bpms.push_back({.id = object_id_t{12},
+                          .position = {measure_id_t{1}, 240},
+                          .beats_per_minute = {60, 1},
+                          .provenance = {.source_order = 90}});
+    chart.pauses.push_back({.id = object_id_t{22},
+                            .position = {measure_id_t{1}, 240},
+                            .kind = pause_kind_t::stop,
+                            .duration = {1, 4},
+                            .source_unit = pause_unit_t::seconds,
+                            .provenance = {.source_order = 100}});
+    chart.measures.front().notes.push_back({.id = object_id_t{52},
+                                            .position = {measure_id_t{1}, 240},
+                                            .lane = lane_id_t{1},
+                                            .sound = resource_id_t{7},
+                                            .provenance = {.source_order = 20}});
+    chart.bga_events.push_back({.id = object_id_t{72},
+                                .position = {measure_id_t{1}, 240},
+                                .resource = resource_id_t{9},
+                                .provenance = {.source_order = 10}});
+
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+    CHECK(timing.index->discontinuity_profile == timing_discontinuity_profile_t::bmson_1_0);
+    const auto built = build_preview_schedule(
+        chart, *timing.index, {.sample_rate = 48'000, .include_metronome = false});
+    REQUIRE(built);
+    CHECK(built.schedule->discontinuity_profile == timing_discontinuity_profile_t::bmson_1_0);
+
+    std::vector<preview_discontinuity_kind_t> at_pulse;
+    for (const auto& event : built.schedule->discontinuities) {
+        if (event.sample_frame == 24'000) {
+            at_pulse.push_back(event.kind);
+        }
+    }
+    REQUIRE(at_pulse.size() == 4);
+    CHECK(at_pulse[0] == preview_discontinuity_kind_t::bga);
+    CHECK(at_pulse[1] == preview_discontinuity_kind_t::playable);
+    CHECK(at_pulse[2] == preview_discontinuity_kind_t::bpm);
+    CHECK(at_pulse[3] == preview_discontinuity_kind_t::stop);
+
+    const auto capped = build_preview_schedule(
+        chart, *timing.index,
+        {.sample_rate = 48'000,
+         .maximum_discontinuity_events = 3,
+         .include_metronome = false});
+    REQUIRE_FALSE(capped);
+    CHECK(capped.diagnostics.back().code == timing_error_code_t::capacity_exceeded);
+}
+
+TEST_CASE("timing index permits an explicit discontinuity-profile override",
+          "[unit][core][timing][preview][discontinuity]") {
+    auto chart = base_chart();
+    chart.source_family = format_family_t::bmson;
+    const auto timing = build_timing_index(
+        chart, {.discontinuity_profile = timing_discontinuity_profile_t::canonical});
+    REQUIRE(timing);
+    CHECK(timing.index->discontinuity_profile == timing_discontinuity_profile_t::canonical);
+
+    const auto invalid = build_timing_index(
+        chart, {.discontinuity_profile = static_cast<timing_discontinuity_profile_t>(255)});
+    REQUIRE_FALSE(invalid);
+    CHECK(invalid.diagnostics.back().code == timing_error_code_t::invalid_document);
+}
+
 TEST_CASE("visual count-in extrapolates from row-zero arrival without weakening strict queries",
           "[unit][core][timing][preview][count-in][scroll]") {
     auto chart = base_chart();

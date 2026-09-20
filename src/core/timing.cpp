@@ -525,6 +525,34 @@ auto position_frame(const timing_index_t& timing, std::optional<std::uint64_t> r
     return frame.frame;
 }
 
+auto boundary_frame(const timing_index_t& timing, std::optional<std::uint64_t> row,
+                    timing_boundary_side_t side, const preview_schedule_options_t& options,
+                    std::vector<timing_diagnostic_t>& diagnostics, object_id_t object)
+    -> std::optional<std::uint64_t> {
+    if (!row) {
+        diagnostics.push_back(error(timing_error_code_t::position_out_of_range,
+                                    "timing discontinuity lies outside chart geometry", object));
+        return std::nullopt;
+    }
+    const auto query = timing_at(timing, *row, side);
+    if (!query) {
+        diagnostics.push_back(*query.error);
+        diagnostics.back().object = object;
+        return std::nullopt;
+    }
+    const auto frame = sample_frame_at(*query.seconds, options.sample_rate, options.rounding);
+    if (!frame) {
+        auto diagnostic = *frame.error;
+        diagnostic.object = object;
+        if (diagnostic.code == timing_error_code_t::negative_sample_frame) {
+            diagnostic.severity = diagnostic_severity_t::warning;
+        }
+        diagnostics.push_back(std::move(diagnostic));
+        return std::nullopt;
+    }
+    return frame.frame;
+}
+
 auto visual_draw_order(visual_event_kind_t kind) -> std::size_t {
     switch (kind) {
     case visual_event_kind_t::background:
@@ -553,6 +581,7 @@ void fingerprint_position(std::uint64_t& fingerprint, local_position_t position)
 
 auto timing_fingerprint(const chart_document_t& chart) -> std::uint64_t {
     auto fingerprint = std::uint64_t{0x574f524d54494d45ULL};
+    fingerprint_mix(fingerprint, static_cast<std::uint64_t>(chart.source_family));
     fingerprint_mix(fingerprint, chart.divisions_per_standard_measure);
     fingerprint_mix(fingerprint, magnitude(chart.beat_zero_audio_offset_seconds.numerator));
     fingerprint_mix(fingerprint, chart.beat_zero_audio_offset_seconds.numerator < 0);
@@ -600,6 +629,13 @@ auto timing_fingerprint(const chart_document_t& chart) -> std::uint64_t {
 auto build_timing_index(const chart_document_t& chart, timing_build_options_t options)
     -> timing_build_result_t {
     timing_build_result_t result;
+    if (options.discontinuity_profile &&
+        !valid_timing_discontinuity_profile(*options.discontinuity_profile)) {
+        result.diagnostics.push_back(
+            error(timing_error_code_t::invalid_document,
+                  "timing discontinuity profile is not recognized"));
+        return result;
+    }
     const auto built_measures = build_measure_index(chart);
     if (!std::holds_alternative<measure_index_t>(built_measures)) {
         result.diagnostics.push_back(
@@ -733,9 +769,14 @@ auto build_timing_index(const chart_document_t& chart, timing_build_options_t op
         return result;
     }
 
-    timing_index_t index{.divisions_per_standard_measure = chart.divisions_per_standard_measure,
-                         .total_rows = measures.total_rows,
-                         .source_fingerprint = timing_fingerprint(chart)};
+    timing_index_t index{
+        .divisions_per_standard_measure = chart.divisions_per_standard_measure,
+        .total_rows = measures.total_rows,
+        .source_fingerprint = timing_fingerprint(chart),
+        .discontinuity_profile = resolve_timing_discontinuity_profile(
+            chart.source_family, options.discontinuity_profile),
+        .rows = {},
+        .segments = {}};
     index.rows.reserve(boundary_set.size());
     index.segments.reserve(boundary_set.size() - 1);
     std::vector<std::uint64_t> boundaries(boundary_set.begin(), boundary_set.end());
@@ -1862,7 +1903,8 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
                             preview_schedule_options_t options) -> preview_schedule_result_t {
     preview_schedule_result_t result;
     if (options.sample_rate == 0 ||
-        timing.divisions_per_standard_measure != chart.divisions_per_standard_measure) {
+        timing.divisions_per_standard_measure != chart.divisions_per_standard_measure ||
+        !valid_timing_discontinuity_profile(timing.discontinuity_profile)) {
         result.diagnostics.push_back(
             error(timing_error_code_t::invalid_document,
                   "preview schedule and timing index must use the same positive chart resolution"));
@@ -1885,7 +1927,13 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
                                            "preview timing index is stale for this chart"));
         return result;
     }
-    preview_schedule_t schedule{.sample_rate = options.sample_rate};
+    preview_schedule_t schedule{.sample_rate = options.sample_rate,
+                                .discontinuity_profile = timing.discontinuity_profile,
+                                .playable = {},
+                                .bgm = {},
+                                .bga = {},
+                                .metronome = {},
+                                .discontinuities = {}};
     auto playable_candidates = std::size_t{};
     auto bgm_candidates = std::size_t{};
     auto playable_overflow = false;
@@ -2216,6 +2264,91 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
                         right.object.value);
     });
     std::ranges::stable_sort(schedule.metronome, {}, &preview_metronome_event_t::sample_frame);
+
+    const auto activation_count = schedule.playable.size() + schedule.bgm.size() +
+                                  schedule.bga.size() + schedule.metronome.size();
+    if (activation_count > options.maximum_discontinuity_events ||
+        chart.bpms.size() > options.maximum_discontinuity_events - activation_count ||
+        chart.pauses.size() >
+            options.maximum_discontinuity_events - activation_count - chart.bpms.size()) {
+        result.diagnostics.push_back(
+            error(timing_error_code_t::capacity_exceeded,
+                  "preview discontinuity stream exceeds its configured cap"));
+        return result;
+    }
+    schedule.discontinuities.reserve(activation_count + chart.bpms.size() + chart.pauses.size());
+    const auto append_family = [&](const auto& events, preview_discontinuity_kind_t kind) {
+        for (std::size_t index = 0; index < events.size(); ++index) {
+            const auto& event = events[index];
+            schedule.discontinuities.push_back({.sample_frame = event.sample_frame,
+                                                .kind = kind,
+                                                .object = event.object,
+                                                .source_order = event.source_order,
+                                                .family_index = index});
+        }
+    };
+    append_family(schedule.playable, preview_discontinuity_kind_t::playable);
+    append_family(schedule.bgm, preview_discontinuity_kind_t::bgm);
+    append_family(schedule.bga, preview_discontinuity_kind_t::bga);
+    for (std::size_t index = 0; index < schedule.metronome.size(); ++index) {
+        const auto& event = schedule.metronome[index];
+        schedule.discontinuities.push_back({.sample_frame = event.sample_frame,
+                                            .kind = preview_discontinuity_kind_t::metronome,
+                                            .object = {},
+                                            .source_order = index,
+                                            .family_index = index});
+    }
+    const auto append_timing = [&](local_position_t position, object_id_t object,
+                                   std::size_t source_order, preview_discontinuity_kind_t kind,
+                                   timing_boundary_side_t side) {
+        const auto frame = boundary_frame(timing, row_for(position), side, options,
+                                          result.diagnostics, object);
+        if (frame) {
+            schedule.discontinuities.push_back({.sample_frame = *frame,
+                                                .kind = kind,
+                                                .object = object,
+                                                .source_order = source_order,
+                                                .family_index = 0});
+        }
+    };
+    for (const auto& bpm : chart.bpms) {
+        const auto side = schedule.discontinuity_profile ==
+                                  timing_discontinuity_profile_t::bmson_1_0
+                              ? timing_boundary_side_t::event
+                              : timing_boundary_side_t::before_delays;
+        append_timing(bpm.position, bpm.id, bpm.provenance.source_order,
+                      preview_discontinuity_kind_t::bpm, side);
+    }
+    for (const auto& pause : chart.pauses) {
+        const auto row = row_for(pause.position);
+        const auto row_state =
+            row ? std::ranges::lower_bound(timing.rows, *row, {},
+                                           &timing_row_state_t::absolute_row)
+                : timing.rows.end();
+        if (row_state != timing.rows.end() && row_state->absolute_row == *row &&
+            row_state->inside_warp) {
+            continue;
+        }
+        const auto delay = pause.kind == pause_kind_t::delay;
+        append_timing(pause.position, pause.id, pause.provenance.source_order,
+                      delay ? preview_discontinuity_kind_t::delay
+                            : preview_discontinuity_kind_t::stop,
+                      delay ? timing_boundary_side_t::before_delays
+                            : timing_boundary_side_t::event);
+    }
+    std::ranges::stable_sort(schedule.discontinuities, [&](const auto& left, const auto& right) {
+        return std::tuple{left.sample_frame,
+                          timing_discontinuity_order(schedule.discontinuity_profile, left.kind),
+                          left.source_order, static_cast<std::uint8_t>(left.kind),
+                          left.object.value, left.family_index} <
+               std::tuple{right.sample_frame,
+                          timing_discontinuity_order(schedule.discontinuity_profile, right.kind),
+                          right.source_order, static_cast<std::uint8_t>(right.kind),
+                          right.object.value, right.family_index};
+    });
+    if (has_errors(result.diagnostics)) {
+        return result;
+    }
     result.schedule = std::move(schedule);
     return result;
 }

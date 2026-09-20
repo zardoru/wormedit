@@ -184,6 +184,7 @@ static uint64_t g_compose_label_note_id{std::numeric_limits<uint64_t>::max()};
 static std::array<char, WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1> g_compose_note_label{};
 static std::array<char, WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY> g_compose_semantic_layer_name{};
 static uint64_t g_compose_semantic_layer_name_id{};
+static uint64_t g_compose_semantic_layer_name_revision{std::numeric_limits<uint64_t>::max()};
 
 static void append_compose_input(
     WormUiWorkspaceAction* action, WormUiComposeInputKind kind, double x_pixels = 0.0,
@@ -1156,6 +1157,8 @@ bool worm_ui_frontend_init(SDL_Window* window) {
     g_compose_pointer_hold_active = false;
     g_compose_note_paint_pointer_active = false;
     g_compose_semantic_layer_paint_pointer_active = false;
+    g_compose_semantic_layer_name_id = 0;
+    g_compose_semantic_layer_name_revision = std::numeric_limits<uint64_t>::max();
     g_compose_lane_hold_active = false;
     g_compose_space_range_hold_active = false;
     g_compose_space_range_hold_moved = false;
@@ -3104,12 +3107,14 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
             view->semantic_layers, view->semantic_layers + visible_layer_count,
             [](const auto& layer) { return layer.selected; });
         if (selected_layer != view->semantic_layers + visible_layer_count) {
-            if (g_compose_semantic_layer_name_id != selected_layer->layer_id) {
+            if (g_compose_semantic_layer_name_id != selected_layer->layer_id ||
+                g_compose_semantic_layer_name_revision != view->document_revision) {
                 g_compose_semantic_layer_name.fill('\0');
                 const auto length = std::min(strlen(selected_layer->name),
                                              g_compose_semantic_layer_name.size() - 1);
                 memcpy(g_compose_semantic_layer_name.data(), selected_layer->name, length);
                 g_compose_semantic_layer_name_id = selected_layer->layer_id;
+                g_compose_semantic_layer_name_revision = view->document_revision;
             }
             nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 4);
             nk_layout_row_push(g_context, 0.54f);

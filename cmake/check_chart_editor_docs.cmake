@@ -8,6 +8,9 @@ set(plan_slices
     docs/chart-editor-plan/overview.md
     docs/chart-editor-plan/document-model.md
     docs/chart-editor-plan/editing.md
+    docs/chart-editor-plan/editing/layout.md
+    docs/chart-editor-plan/editing/interactions.md
+    docs/chart-editor-plan/editing/metadata-interop.md
     docs/chart-editor-plan/playback-audio.md
     docs/chart-editor-plan/formats-persistence.md
     docs/chart-editor-plan/testing.md
@@ -16,6 +19,11 @@ set(plan_slices
 )
 set(status_slices
     memory/chart-editor-status/current-milestone.md
+    memory/chart-editor-status/implemented.md
+    memory/chart-editor-status/implemented/foundation.md
+    memory/chart-editor-status/implemented/formats-persistence.md
+    memory/chart-editor-status/implemented/audio-timing.md
+    memory/chart-editor-status/implemented/editing-frontend.md
     memory/chart-editor-status/settled-decisions.md
     memory/chart-editor-status/open-decisions.md
     memory/chart-editor-status/resume.md
@@ -29,7 +37,17 @@ foreach(index IN ITEMS "${plan_index}" "${status_index}")
 endforeach()
 
 file(READ "${plan_index}" plan_index_text)
-foreach(slice IN LISTS plan_slices)
+set(plan_index_slices
+    docs/chart-editor-plan/overview.md
+    docs/chart-editor-plan/document-model.md
+    docs/chart-editor-plan/editing.md
+    docs/chart-editor-plan/playback-audio.md
+    docs/chart-editor-plan/formats-persistence.md
+    docs/chart-editor-plan/testing.md
+    docs/chart-editor-plan/stages.md
+    docs/chart-editor-plan/decisions.md
+)
+foreach(slice IN LISTS plan_index_slices)
     string(REGEX REPLACE "^docs/" "" index_target "${slice}")
     string(FIND "${plan_index_text}" "](${index_target})" link_offset)
     if(link_offset EQUAL -1)
@@ -37,12 +55,51 @@ foreach(slice IN LISTS plan_slices)
     endif()
 endforeach()
 
+set(editing_index "${WORMEDIT_SOURCE_ROOT}/docs/chart-editor-plan/editing.md")
+file(READ "${editing_index}" editing_index_text)
+set(editing_slices
+    docs/chart-editor-plan/editing/layout.md
+    docs/chart-editor-plan/editing/interactions.md
+    docs/chart-editor-plan/editing/metadata-interop.md
+)
+foreach(slice IN LISTS editing_slices)
+    string(REGEX REPLACE "^docs/chart-editor-plan/" "" index_target "${slice}")
+    string(FIND "${editing_index_text}" "](${index_target})" link_offset)
+    if(link_offset EQUAL -1)
+        message(FATAL_ERROR "Editing-plan index does not link to ${slice}")
+    endif()
+endforeach()
+
 file(READ "${status_index}" status_index_text)
-foreach(slice IN LISTS status_slices)
+set(status_index_slices
+    memory/chart-editor-status/current-milestone.md
+    memory/chart-editor-status/implemented.md
+    memory/chart-editor-status/settled-decisions.md
+    memory/chart-editor-status/open-decisions.md
+    memory/chart-editor-status/resume.md
+    memory/chart-editor-status/code-constraints.md
+)
+foreach(slice IN LISTS status_index_slices)
     string(REGEX REPLACE "^memory/" "" index_target "${slice}")
     string(FIND "${status_index_text}" "](${index_target})" link_offset)
     if(link_offset EQUAL -1)
         message(FATAL_ERROR "Status index does not link to ${slice}")
+    endif()
+endforeach()
+
+set(implemented_index "${WORMEDIT_SOURCE_ROOT}/memory/chart-editor-status/implemented.md")
+file(READ "${implemented_index}" implemented_index_text)
+set(implemented_slices
+    memory/chart-editor-status/implemented/foundation.md
+    memory/chart-editor-status/implemented/formats-persistence.md
+    memory/chart-editor-status/implemented/audio-timing.md
+    memory/chart-editor-status/implemented/editing-frontend.md
+)
+foreach(slice IN LISTS implemented_slices)
+    string(REGEX REPLACE "^memory/chart-editor-status/" "" index_target "${slice}")
+    string(FIND "${implemented_index_text}" "](${index_target})" link_offset)
+    if(link_offset EQUAL -1)
+        message(FATAL_ERROR "Implemented-capability index does not link to ${slice}")
     endif()
 endforeach()
 

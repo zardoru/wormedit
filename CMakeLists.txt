@@ -216,7 +216,10 @@ if(WORMEDIT_BUILD_APP)
     )
 
     if(WORMEDIT_ENABLE_AUDIO_DECODER)
-        target_sources(wormedit PRIVATE src/sys/sdl_audition_output.cpp)
+        target_sources(wormedit PRIVATE
+            src/sys/sdl_audition_output.cpp
+            src/sys/sdl_preview_output.cpp
+        )
         target_link_libraries(wormedit PRIVATE wormedit::audio_decoder)
         target_compile_definitions(wormedit PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1)
     endif()

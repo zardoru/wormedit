@@ -473,7 +473,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
     result.view.dirty = source.history.dirty;
     result.view.undo_depth = source.history.undo_depth;
     result.view.redo_depth = source.history.redo_depth;
-    result.view.recovery_panel_visible = true;
+    result.view.recovery_panel_visible = false;
     result.view.recovery_heading = "Project recovery";
     result.view.recovery_rows_truncated = recovery.rows_truncated;
     if (recovery_scan_configured) {
@@ -531,6 +531,8 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
         std::min(recovery.diagnostics.size(),
                  static_cast<std::size_t>(WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY));
     result.view.recovery_diagnostic_count = recovery_diagnostic_count;
+    result.view.recovery_panel_visible = recovery_row_count != 0 || recovery_diagnostic_count != 0 ||
+                                         result.view.recovery_rows_truncated;
     for (std::size_t index = 0; index < recovery_diagnostic_count; ++index) {
         auto& diagnostic = result.recovery_diagnostic_storage[index];
         diagnostic = recovery.diagnostics[index].message;
@@ -3149,6 +3151,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
         {.field_left_pixels = field_left_pixels,
          .field_width_pixels = playable_field_width,
          .split_stage_gutter_pixels = 14.0,
+         .note_head_height_pixels = 16.0,
          .bgm_pane_left_pixels = field_left_pixels + playable_field_width,
          .bgm_pane_width_pixels = bgm_pane_width,
          .bgm_lane_width_pixels = compose_bgm_lane_width_pixels,

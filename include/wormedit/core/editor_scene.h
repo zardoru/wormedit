@@ -172,6 +172,10 @@ struct editor_field_scene_request_t {
     double note_head_height_pixels{10.0};
     double comparison_difference_height_pixels{10.0};
     double hold_body_width_ratio{0.35};
+    // Optional adjacent BGM pane. A zero width leaves BGM geometry omitted.
+    double bgm_pane_left_pixels{};
+    double bgm_pane_width_pixels{};
+    double bgm_lane_width_pixels{36.0};
     editor_grid_density_t grid_density;
     std::vector<editor_grid_grouping_t> authored_groupings;
     std::vector<local_position_t> comparison_difference_rows;

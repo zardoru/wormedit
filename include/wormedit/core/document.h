@@ -273,6 +273,9 @@ struct note_t {
     note_kind_t kind{note_kind_t::tap};
     std::optional<local_position_t> end;
     std::optional<resource_id_t> sound;
+    // Stable link to the retained BMSON sound-channel event that materialized
+    // this semantic note. Ordinary BMS/native notes may leave it empty.
+    std::optional<object_id_t> sound_channel_event;
     std::vector<layer_id_t> semantic_layers;
     std::optional<std::string> label;
     std::optional<branch_id_t> branch;
@@ -286,6 +289,9 @@ struct bgm_event_t {
     // Empty BMS channel objects still occupy a source slot, so imported events
     // may have no sound binding while retaining their structural position.
     std::optional<resource_id_t> sound;
+    // Stable link to the retained BMSON sound-channel event that materialized
+    // this semantic autoplay event. Ordinary BMS events may leave it empty.
+    std::optional<object_id_t> sound_channel_event;
     std::size_t structural_slot{};
     std::optional<branch_id_t> branch;
     source_provenance_t provenance;

@@ -159,10 +159,65 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(lane_binding_t, key, lane, focused_stage)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(input_profile_t, profile_id, bindings, stage_count,
                                    requires_focused_stage)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(semantic_layer_t, id, name, color, visible, locked)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(note_t, id, position, lane, kind, end, sound, semantic_layers,
-                                   label, branch, provenance)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bgm_event_t, id, position, source_lane, sound, structural_slot,
-                                   branch, provenance)
+void to_json(json& value, const note_t& note) {
+    value = json{{"id", note.id},
+                 {"position", note.position},
+                 {"lane", note.lane},
+                 {"kind", note.kind},
+                 {"end", note.end},
+                 {"sound", note.sound},
+                 {"semantic_layers", note.semantic_layers},
+                 {"label", note.label},
+                 {"branch", note.branch},
+                 {"provenance", note.provenance}};
+    if (note.sound_channel_event.has_value()) {
+        value["sound_channel_event"] = *note.sound_channel_event;
+    }
+}
+
+void from_json(const json& value, note_t& note) {
+    value.at("id").get_to(note.id);
+    value.at("position").get_to(note.position);
+    value.at("lane").get_to(note.lane);
+    value.at("kind").get_to(note.kind);
+    value.at("end").get_to(note.end);
+    value.at("sound").get_to(note.sound);
+    value.at("semantic_layers").get_to(note.semantic_layers);
+    value.at("label").get_to(note.label);
+    value.at("branch").get_to(note.branch);
+    value.at("provenance").get_to(note.provenance);
+    note.sound_channel_event.reset();
+    if (const auto linked = value.find("sound_channel_event"); linked != value.end()) {
+        linked->get_to(note.sound_channel_event);
+    }
+}
+
+void to_json(json& value, const bgm_event_t& event) {
+    value = json{{"id", event.id},
+                 {"position", event.position},
+                 {"source_lane", event.source_lane},
+                 {"sound", event.sound},
+                 {"structural_slot", event.structural_slot},
+                 {"branch", event.branch},
+                 {"provenance", event.provenance}};
+    if (event.sound_channel_event.has_value()) {
+        value["sound_channel_event"] = *event.sound_channel_event;
+    }
+}
+
+void from_json(const json& value, bgm_event_t& event) {
+    value.at("id").get_to(event.id);
+    value.at("position").get_to(event.position);
+    value.at("source_lane").get_to(event.source_lane);
+    value.at("sound").get_to(event.sound);
+    value.at("structural_slot").get_to(event.structural_slot);
+    value.at("branch").get_to(event.branch);
+    value.at("provenance").get_to(event.provenance);
+    event.sound_channel_event.reset();
+    if (const auto linked = value.find("sound_channel_event"); linked != value.end()) {
+        linked->get_to(event.sound_channel_event);
+    }
+}
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(measure_chunk_t, id, definition, notes, bgm_events)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_measure_length_projection_t, measure_index, source_order,
                                    imported_length)

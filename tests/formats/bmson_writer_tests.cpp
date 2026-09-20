@@ -205,6 +205,10 @@ TEST_CASE("BMSON writer preserves resource path spelling and can export newly au
 
     auto authored = *imported.song;
     authored.charts.front().sound_channels.clear();
+    for (auto& measure : authored.charts.front().measures) {
+        for (auto& note : measure.notes) note.sound_channel_event.reset();
+        for (auto& event : measure.bgm_events) event.sound_channel_event.reset();
+    }
     const auto exported_authored = wormedit::write_bmson(authored);
     REQUIRE(exported_authored.json.has_value());
     const auto authored_roundtrip = parse_text(*exported_authored.json);

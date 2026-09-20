@@ -564,11 +564,39 @@ auto channels_for_chart(const song_document_t& song, const chart_document_t& cha
     }
 
     auto projection_warning_emitted = false;
+    struct retained_projection_t {
+        std::size_t channel_index{};
+        const sound_channel_event_t* event{};
+    };
+    std::unordered_map<std::uint64_t, retained_projection_t> retained_projections;
+    for (std::size_t channel_index = 0; channel_index < chart.sound_channels.size();
+         ++channel_index) {
+        for (const auto& event : chart.sound_channels[channel_index].events) {
+            retained_projections.emplace(event.id.value,
+                                         retained_projection_t{channel_index, &event});
+        }
+    }
     const auto source_projection = [&](const emitted_channel_t& channel,
+                                       std::optional<object_id_t> linked_event,
                                        const source_provenance_t& provenance,
                                        bool playable, local_position_t position,
                                        std::optional<local_position_t> end,
                                        lane_id_t lane) -> const sound_channel_event_t* {
+        if (linked_event.has_value()) {
+            const auto found = retained_projections.find(linked_event->value);
+            if (found == retained_projections.end()) {
+                fail(bmson_write_diagnostic_code_t::invalid_document,
+                     "semantic sound link refers to an unknown retained source event",
+                     "$.sound_channels");
+            }
+            const auto target_index = static_cast<std::size_t>(&channel - result.data());
+            if (found->second.channel_index != target_index) {
+                fail(bmson_write_diagnostic_code_t::invalid_document,
+                     "semantic sound resource does not match its retained source channel",
+                     "$.sound_channels");
+            }
+            return found->second.event;
+        }
         if (channel.source == nullptr) {
             return nullptr;
         }
@@ -590,12 +618,13 @@ auto channels_for_chart(const song_document_t& song, const chart_document_t& cha
         return found == channel.source->events.end() ? nullptr : &*found;
     };
     const auto reconcile_projection = [&](const emitted_channel_t& channel,
+                                          std::optional<object_id_t> linked_event,
                                           const source_provenance_t& provenance,
                                           bool playable, local_position_t position,
                                           std::optional<local_position_t> end,
                                           lane_id_t lane) -> bool {
         const auto* source_event = source_projection(
-            channel, provenance, playable, position, end, lane);
+            channel, linked_event, provenance, playable, position, end, lane);
         if (source_event == nullptr) {
             return false;
         }
@@ -630,7 +659,7 @@ auto channels_for_chart(const song_document_t& song, const chart_document_t& cha
             }
             const auto& resource = resource_for_id(song, *note.sound, "$.sound_channels");
             const auto target = ensure_channel(resource, "$.sound_channels");
-            if (reconcile_projection(result[target], note.provenance, true,
+            if (reconcile_projection(result[target], note.sound_channel_event, note.provenance, true,
                                      note.position, note.end, note.lane)) {
                 continue;
             }
@@ -659,7 +688,7 @@ auto channels_for_chart(const song_document_t& song, const chart_document_t& cha
             }
             const auto& resource = resource_for_id(song, *event.sound, "$.sound_channels");
             const auto target = ensure_channel(resource, "$.sound_channels", event.source_lane);
-            if (reconcile_projection(result[target], event.provenance, false,
+            if (reconcile_projection(result[target], event.sound_channel_event, event.provenance, false,
                                      event.position, std::nullopt, lane_id_t{})) {
                 continue;
             }

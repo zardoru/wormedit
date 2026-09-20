@@ -629,6 +629,7 @@ void validate_format_groups(const std::vector<format_metadata_t>& groups,
 
 auto validate_chart(const chart_document_t& chart,
                     const std::unordered_set<std::uint64_t>& resources,
+                    const std::unordered_map<std::uint64_t, asset_id_t>& resource_assets,
                     const std::unordered_set<std::uint64_t>& audio_assets,
                     diagnostic_list_t& diagnostics) -> void {
     validate_bms_control_tree(chart, diagnostics);
@@ -715,6 +716,61 @@ auto validate_chart(const chart_document_t& chart,
     const auto profile_diagnostics = validate_input_profile(profile_layout, chart.input_profile);
     diagnostics.insert(diagnostics.end(), profile_diagnostics.begin(), profile_diagnostics.end());
 
+    struct retained_sound_event_t {
+        const sound_channel_t* channel{};
+        const sound_channel_event_t* event{};
+    };
+    std::unordered_map<std::uint64_t, retained_sound_event_t> retained_sound_events;
+    std::unordered_set<std::uint64_t> ambiguous_sound_event_ids;
+    for (const auto& channel : chart.sound_channels) {
+        for (const auto& event : channel.events) {
+            if (!event.id ||
+                !retained_sound_events.emplace(event.id.value,
+                                               retained_sound_event_t{&channel, &event})
+                     .second) {
+                if (event.id) {
+                    ambiguous_sound_event_ids.insert(event.id.value);
+                }
+            }
+        }
+    }
+    std::unordered_set<std::uint64_t> linked_sound_events;
+    const auto validate_sound_event_link =
+        [&](object_id_t semantic_id, std::optional<object_id_t> linked_id,
+            bool playable, std::optional<resource_id_t> sound) {
+            if (!linked_id.has_value()) {
+                return;
+            }
+            const auto linked = retained_sound_events.find(linked_id->value);
+            if (!*linked_id || linked == retained_sound_events.end() ||
+                ambiguous_sound_event_ids.contains(linked_id->value)) {
+                add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                               "semantic sound link refers to an unknown or ambiguous retained event",
+                               semantic_id);
+                return;
+            }
+            if (!linked_sound_events.insert(linked_id->value).second) {
+                add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
+                               "retained sound event is linked by more than one semantic object",
+                               semantic_id);
+            }
+            const auto& event = *linked->second.event;
+            if (event.playable != playable) {
+                add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
+                               "semantic sound link does not match the retained event role",
+                               semantic_id);
+            }
+            const auto resource = sound.has_value() ? resource_assets.find(sound->value)
+                                                    : resource_assets.end();
+            if (!sound.has_value() || !linked->second.channel->source_clip.source ||
+                resource == resource_assets.end() ||
+                resource->second != linked->second.channel->source_clip.source) {
+                add_diagnostic(diagnostics, diagnostic_code_t::dangling_resource,
+                               "semantic sound link requires a sound resource bound to its source clip",
+                               semantic_id);
+            }
+        };
+
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
             validate_object_id(diagnostics, object_ids, note.id, "note");
@@ -732,6 +788,7 @@ auto validate_chart(const chart_document_t& chart,
                 add_diagnostic(diagnostics, diagnostic_code_t::dangling_resource,
                                "note refers to an unknown sound resource", note.id);
             }
+            validate_sound_event_link(note.id, note.sound_channel_event, true, note.sound);
             for (const auto layer : note.semantic_layers) {
                 if (!layer || !layer_ids.contains(layer.value)) {
                     add_diagnostic(diagnostics, diagnostic_code_t::invalid_id,
@@ -772,6 +829,7 @@ auto validate_chart(const chart_document_t& chart,
                 add_diagnostic(diagnostics, diagnostic_code_t::dangling_resource,
                                "BGM event refers to an unknown sound resource", bgm.id);
             }
+            validate_sound_event_link(bgm.id, bgm.sound_channel_event, false, bgm.sound);
         }
     }
 
@@ -1137,10 +1195,12 @@ auto validate_document(const song_document_t& song) -> diagnostic_list_t {
         }
     }
     std::unordered_set<std::uint64_t> resource_ids;
+    std::unordered_map<std::uint64_t, asset_id_t> resource_assets;
     std::map<std::tuple<int, std::string, std::string>, resource_id_t> target_identity_owners;
     for (const auto& resource : song.resources) {
         if (resource.id) {
             resource_ids.insert(resource.id.value);
+            resource_assets.emplace(resource.id.value, resource.asset);
         }
         if (!resource.asset || !asset_ids.contains(resource.asset.value)) {
             add_diagnostic(diagnostics, diagnostic_code_t::dangling_asset,
@@ -1180,7 +1240,7 @@ auto validate_document(const song_document_t& song) -> diagnostic_list_t {
         }
     }
     for (const auto& chart : song.charts) {
-        validate_chart(chart, resource_ids, audio_asset_ids, diagnostics);
+        validate_chart(chart, resource_ids, resource_assets, audio_asset_ids, diagnostics);
     }
     std::unordered_set<std::uint64_t> recipe_ids;
     for (const auto& recipe : song.generator_recipes) {

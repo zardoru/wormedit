@@ -8,6 +8,7 @@
 #include <iterator>
 #include <span>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -102,6 +103,19 @@ TEST_CASE("BMSON pulse geometry, bar lines, timing and mixed sound slices are ma
     }));
     CHECK(chart.measures[0].bgm_events.empty());
     REQUIRE(chart.measures[0].notes.size() == 4);
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            REQUIRE(note.sound_channel_event.has_value());
+            const auto linked = std::ranges::find_if(chart.sound_channels, [&](const auto& channel) {
+                return std::ranges::any_of(channel.events, [&](const auto& event) {
+                    return event.id == *note.sound_channel_event && event.playable &&
+                           event.position == note.position && event.end == note.end &&
+                           event.lane == note.lane;
+                });
+            });
+            CHECK(linked != chart.sound_channels.end());
+        }
+    }
     CHECK(absolute(chart, chart.measures[0].notes[0].position) == 0);
     CHECK(absolute(chart, chart.measures[0].notes[1].position) == 240);
     REQUIRE(chart.measures[1].notes.size() == 2);
@@ -115,6 +129,20 @@ TEST_CASE("BMSON pulse geometry, bar lines, timing and mixed sound slices are ma
     CHECK(result.song->visual_assets.size() == 1);
     REQUIRE(chart.bga_events.size() == 1);
     CHECK(chart.bga_events.front().kind == wormedit::visual_event_kind_t::background);
+
+    auto mismatched_resource = *result.song;
+    REQUIRE(mismatched_resource.resources.size() >= 2);
+    auto& mismatched_note = mismatched_resource.charts.front().measures.front().notes.front();
+    const auto original_resource = *mismatched_note.sound;
+    const auto replacement = std::ranges::find_if(
+        mismatched_resource.resources,
+        [&](const auto& resource) { return resource.id != original_resource; });
+    REQUIRE(replacement != mismatched_resource.resources.end());
+    mismatched_note.sound = replacement->id;
+    const auto mismatch_diagnostics = wormedit::validate_document(mismatched_resource);
+    CHECK(std::ranges::any_of(mismatch_diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::diagnostic_code_t::dangling_resource;
+    }));
 }
 
 TEST_CASE("BMSON continuation collisions normalize to restart while preserving source spelling",
@@ -167,6 +195,9 @@ TEST_CASE("BMSON same-source channels share one audio asset while retaining inde
     REQUIRE(chart.measures[0].bgm_events[1].sound.has_value());
     const auto& bgm1 = chart.measures[0].bgm_events[0];
     const auto& bgm2 = chart.measures[0].bgm_events[1];
+    REQUIRE(bgm1.sound_channel_event.has_value());
+    REQUIRE(bgm2.sound_channel_event.has_value());
+    CHECK(bgm1.sound_channel_event != bgm2.sound_channel_event);
     const auto resource_asset = [&](wormedit::resource_id_t resource) {
         const auto found = std::ranges::find(result.song->resources, resource,
                                              &wormedit::resource_entry_t::id);
@@ -187,6 +218,12 @@ TEST_CASE("BMSON non-playable source-channel events use lane zero but playable e
                                                 [](const auto& event) { return !event.playable; });
     REQUIRE(bgm_event != bgm_channel.events.end());
     CHECK_FALSE(bgm_event->lane);
+    const auto semantic_bgm = std::ranges::find_if(chart.measures, [](const auto& measure) {
+        return !measure.bgm_events.empty();
+    });
+    REQUIRE(semantic_bgm != chart.measures.end());
+    REQUIRE(semantic_bgm->bgm_events.front().sound_channel_event.has_value());
+    CHECK(*semantic_bgm->bgm_events.front().sound_channel_event == bgm_event->id);
     CHECK(wormedit::validate_document(*bgm.song).empty());
 
     auto invalid = *bgm.song;
@@ -196,6 +233,48 @@ TEST_CASE("BMSON non-playable source-channel events use lane zero but playable e
     const auto diagnostics = wormedit::validate_document(invalid);
     CHECK(std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::diagnostic_code_t::unknown_lane;
+    }));
+
+    auto dangling_link = *bgm.song;
+    const auto linked_measure = std::ranges::find_if(dangling_link.charts.front().measures,
+                                                     [](const auto& measure) {
+                                                         return !measure.bgm_events.empty();
+                                                     });
+    REQUIRE(linked_measure != dangling_link.charts.front().measures.end());
+    linked_measure->bgm_events.front().sound_channel_event = wormedit::object_id_t{999999};
+    const auto link_diagnostics = wormedit::validate_document(dangling_link);
+    CHECK(std::ranges::any_of(link_diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::diagnostic_code_t::invalid_id;
+    }));
+
+    auto wrong_role = *bgm.song;
+    const auto playable_event = std::ranges::find_if(
+        wrong_role.charts.front().sound_channels.front().events,
+        [](const auto& event) { return event.playable; });
+    REQUIRE(playable_event != wrong_role.charts.front().sound_channels.front().events.end());
+    const auto wrong_role_measure = std::ranges::find_if(wrong_role.charts.front().measures,
+                                                        [](const auto& measure) {
+                                                            return !measure.bgm_events.empty();
+                                                        });
+    REQUIRE(wrong_role_measure != wrong_role.charts.front().measures.end());
+    wrong_role_measure->bgm_events.front().sound_channel_event = playable_event->id;
+    const auto role_diagnostics = wormedit::validate_document(wrong_role);
+    CHECK(std::ranges::any_of(role_diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::diagnostic_code_t::invalid_id;
+    }));
+
+    auto duplicate_link = *bgm.song;
+    const auto duplicate_measure = std::ranges::find_if(duplicate_link.charts.front().measures,
+                                                        [](const auto& measure) {
+                                                            return !measure.bgm_events.empty();
+                                                        });
+    REQUIRE(duplicate_measure != duplicate_link.charts.front().measures.end());
+    auto duplicate_event = duplicate_measure->bgm_events.front();
+    duplicate_event.id = wormedit::object_id_t{999998};
+    duplicate_measure->bgm_events.push_back(std::move(duplicate_event));
+    const auto duplicate_diagnostics = wormedit::validate_document(duplicate_link);
+    CHECK(std::ranges::any_of(duplicate_diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::diagnostic_code_t::duplicate_id;
     }));
 }
 

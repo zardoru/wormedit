@@ -143,6 +143,7 @@ TEST_CASE("native project deterministically round-trips rich editor state",
     CHECK(written.bytes->find("\"wormedit-project\"") != std::string::npos);
     CHECK(written.bytes->find("\"generator_recipes\"") != std::string::npos);
     CHECK(written.bytes->find("\"semantic_layers\"") != std::string::npos);
+    CHECK(written.bytes->find("\"sound_channel_event\"") != std::string::npos);
 
     const auto parsed = wormedit::parse_native_project(*written.bytes);
     REQUIRE(parsed.song.has_value());
@@ -157,6 +158,9 @@ TEST_CASE("native project deterministically round-trips rich editor state",
     CHECK(parsed.song->output_groups.front().relative_output_path.generic_string() ==
           "exports/chart.bmson");
     CHECK(parsed.song->charts.front().bookmarks.back().audio_milliseconds == 1250);
+    const auto& original_note = song.charts.front().measures.front().notes.front();
+    const auto& parsed_note = parsed.song->charts.front().measures.front().notes.front();
+    CHECK(parsed_note.sound_channel_event == original_note.sound_channel_event);
     REQUIRE(parsed.song->charts.front().sv_recipes.size() == 1);
     CHECK(parsed.song->charts.front().sv_recipes.front().id == wormedit::recipe_id_t{10000});
     CHECK(parsed.song->charts.front().sv_recipes.front().enabled);
@@ -187,6 +191,22 @@ TEST_CASE("native project deterministically round-trips rich editor state",
     const auto rewritten = wormedit::write_native_project(*parsed.song);
     REQUIRE(rewritten.bytes.has_value());
     CHECK(*rewritten.bytes == *written.bytes);
+
+    auto legacy_links = nlohmann::json::parse(*written.bytes);
+    for (auto& measure : legacy_links["document"]["charts"][0]["measures"]) {
+        for (auto& note : measure["notes"]) note.erase("sound_channel_event");
+        for (auto& event : measure["bgm_events"]) event.erase("sound_channel_event");
+    }
+    const auto parsed_legacy_links = wormedit::parse_native_project(legacy_links.dump());
+    REQUIRE(parsed_legacy_links.song.has_value());
+    for (const auto& measure : parsed_legacy_links.song->charts.front().measures) {
+        CHECK(std::ranges::none_of(measure.notes, [](const auto& note) {
+            return note.sound_channel_event.has_value();
+        }));
+        CHECK(std::ranges::none_of(measure.bgm_events, [](const auto& event) {
+            return event.sound_channel_event.has_value();
+        }));
+    }
 }
 
 TEST_CASE("native projects persist SV recipes but accept older documents without them",

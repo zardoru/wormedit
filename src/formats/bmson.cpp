@@ -1152,7 +1152,8 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
                     lane = lane_id_t{100000ULL + note.x};
                 }
                 const auto position = map_position(note.y, note.path + ".y");
-                channel.events.push_back({.id = object_ids.take<object_id_t>(),
+                const auto sound_event_id = object_ids.take<object_id_t>();
+                channel.events.push_back({.id = sound_event_id,
                                           .position = position,
                                           .end = end,
                                           .lane = lane,
@@ -1167,6 +1168,7 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
                                              .kind = note.length == 0 ? note_kind_t::tap : note_kind_t::hold,
                                              .end = end,
                                              .sound = channel_resource,
+                                             .sound_channel_event = sound_event_id,
                                              .provenance = provenance(note.path, note.spelling, note.order)});
                 } else if (!suppress_bgm) {
                     auto& measure = measure_for(position.measure);
@@ -1174,6 +1176,7 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
                                                   .position = position,
                                                   .source_lane = bgm_source_lane,
                                                   .sound = channel_resource,
+                                                  .sound_channel_event = sound_event_id,
                                                   .structural_slot = 0,
                                                   .provenance = provenance(note.path, note.spelling, note.order)});
                 }

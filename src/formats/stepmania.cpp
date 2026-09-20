@@ -593,11 +593,12 @@ auto parse_timing_fields(const std::vector<field_t>& song_fields,
             continue;
         }
         if (options.source_implementation_profile !=
-                stepmania_implementation_profile_t::unspecified &&
-            options.source_implementation_profile !=
-                stepmania_implementation_profile_t::legacy_negative_bpm)
+                stepmania_implementation_profile_t::unspecified ||
+            (options.source_timing_syntax != stepmania_timing_syntax_t::unspecified &&
+             options.source_timing_syntax != stepmania_timing_syntax_t::legacy_negative_bpm))
             fail(stepmania_parse_diagnostic_code_t::implementation_profile_mismatch,
-                 "Negative BPM warp syntax requires the legacy_negative_bpm source profile",
+                 "Negative BPM warp syntax is outside the selected implementation or timing "
+                 "syntax profile",
                  entry.field->order, entry.field->offset);
         auto boundary = index + 1;
         while (boundary < source_bpms.size() && source_bpms[boundary].bpm.numerator <= 0)
@@ -647,11 +648,12 @@ auto parse_timing_fields(const std::vector<field_t>& song_fields,
             return;
         }
         if (options.source_implementation_profile !=
-                stepmania_implementation_profile_t::unspecified &&
-            options.source_implementation_profile !=
-                stepmania_implementation_profile_t::legacy_negative_stop)
+                stepmania_implementation_profile_t::unspecified ||
+            (options.source_timing_syntax != stepmania_timing_syntax_t::unspecified &&
+             options.source_timing_syntax != stepmania_timing_syntax_t::legacy_negative_stop))
             fail(stepmania_parse_diagnostic_code_t::implementation_profile_mismatch,
-                 "Negative STOP warp syntax requires the legacy_negative_stop source profile",
+                 "Negative STOP warp syntax is outside the selected implementation or timing "
+                 "syntax profile",
                  field.order, field.offset);
         const auto bpm = bpm_at_row(row);
         if (!bpm || bpm->numerator <= 0)
@@ -695,10 +697,8 @@ auto parse_timing_fields(const std::vector<field_t>& song_fields,
              .provenance = provenance("DELAYS", "", field.order)});
     });
     read_pairs("WARPS", [&](auto, auto length, auto row, const field_t& field) {
-        if (options.source_implementation_profile !=
-                stepmania_implementation_profile_t::unspecified &&
-            options.source_implementation_profile !=
-                stepmania_implementation_profile_t::native_warps)
+        if (options.source_timing_syntax != stepmania_timing_syntax_t::unspecified &&
+            options.source_timing_syntax != stepmania_timing_syntax_t::native_warps)
             fail(stepmania_parse_diagnostic_code_t::implementation_profile_mismatch,
                  "WARPS syntax requires the native_warps source profile", field.order,
                  field.offset);
@@ -783,6 +783,18 @@ auto parse_stepmania_bytes(std::span<const std::byte> bytes, stepmania_parse_opt
         source.remove_prefix(3);
     try {
         const auto fields = parse_source(source, options.max_fields);
+        if (options.source_implementation_profile !=
+            stepmania_implementation_profile_t::unspecified) {
+            if (options.profile != stepmania_profile_t::ssc)
+                fail(stepmania_parse_diagnostic_code_t::implementation_profile_mismatch,
+                     "Named StepMania implementation profiles currently cover SSC input only",
+                     fields.size());
+            if (options.source_timing_syntax != stepmania_timing_syntax_t::unspecified &&
+                options.source_timing_syntax != stepmania_timing_syntax_t::native_warps)
+                fail(stepmania_parse_diagnostic_code_t::implementation_profile_mismatch,
+                     "The selected implementation profile is audited only for native WARPS",
+                     fields.size());
+        }
         std::vector<field_t> song_fields;
         std::vector<chart_source_t> charts;
         if (options.profile == stepmania_profile_t::sm) {
@@ -833,7 +845,8 @@ auto parse_stepmania_bytes(std::span<const std::byte> bytes, stepmania_parse_opt
                 const auto version = decimal_rational(versions.front()->value);
                 if (!version || *version != signed_rational_t{83, 100})
                     fail(stepmania_parse_diagnostic_code_t::unsupported_version,
-                         "Only the audited StepMania 5.1 SSC version 0.83 profile is supported",
+                         "Only the audited StepMania 5.1 and Etterna 0.75.1 SSC version 0.83 "
+                         "profiles are supported",
                          versions.front()->order, versions.front()->offset);
             }
         }
@@ -1227,14 +1240,17 @@ auto make_timing_fields(const chart_document_t& chart, const stepmania_write_opt
     -> std::vector<std::pair<std::string, std::string>> {
     using event_t = std::tuple<std::uint64_t, std::size_t, std::string>;
     const auto warp_encoding = [&] {
-        switch (options.target_implementation_profile) {
-        case stepmania_implementation_profile_t::native_warps:
+        if (options.target_implementation_profile !=
+            stepmania_implementation_profile_t::unspecified)
             return warp_encoding_t::native;
-        case stepmania_implementation_profile_t::legacy_negative_bpm:
+        switch (options.target_timing_syntax) {
+        case stepmania_timing_syntax_t::native_warps:
+            return warp_encoding_t::native;
+        case stepmania_timing_syntax_t::legacy_negative_bpm:
             return warp_encoding_t::negative_bpm;
-        case stepmania_implementation_profile_t::legacy_negative_stop:
+        case stepmania_timing_syntax_t::legacy_negative_stop:
             return warp_encoding_t::negative_stop;
-        case stepmania_implementation_profile_t::unspecified:
+        case stepmania_timing_syntax_t::unspecified:
             return options.warp_encoding;
         }
         return options.warp_encoding;
@@ -1709,6 +1725,22 @@ auto write_stepmania(const song_document_t& song, stepmania_write_options_t opti
                             diagnostic_severity_t severity = diagnostic_severity_t::error) {
         result.diagnostics.push_back({severity, code, std::move(message), std::move(field)});
     };
+    if (options.target_implementation_profile !=
+        stepmania_implementation_profile_t::unspecified) {
+        if (options.profile != stepmania_profile_t::ssc) {
+            report(stepmania_write_diagnostic_code_t::unsupported_feature,
+                   "Named StepMania implementation profiles currently cover SSC output only",
+                   "profile");
+            return result;
+        }
+        if (options.target_timing_syntax != stepmania_timing_syntax_t::unspecified &&
+            options.target_timing_syntax != stepmania_timing_syntax_t::native_warps) {
+            report(stepmania_write_diagnostic_code_t::unsupported_feature,
+                   "The selected implementation profile is audited only for native WARPS",
+                   "WARPS");
+            return result;
+        }
+    }
     std::vector<const chart_document_t*> charts;
     for (const auto& chart : song.charts)
         if (!options.chart || chart.id == *options.chart)

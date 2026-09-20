@@ -19,6 +19,7 @@ set(plan_slices
     docs/chart-editor-plan/decisions.md
     docs/chart-editor-plan/decisions/open-questions.md
     docs/references/osu-mania-version-profiles.md
+    docs/references/stepmania-warps-and-conversion.md
 )
 set(status_slices
     memory/chart-editor-status/current-milestone.md

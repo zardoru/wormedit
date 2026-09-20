@@ -18,10 +18,19 @@ These routines are useful reference cases, but they do not retain the exact sour
 
 Historical behavior is also described by the [ITG simfile gimmicks reference](https://itgwiki.dominick.cc/en/packs-and-simfiles/gimmicks): older StepMania content used negative BPMs or negative stops for warp-like fast-forwarding before explicit warp syntax was available. StepMania's own issue tracker records compatibility differences around [warps and negative BPM](https://github.com/stepmania/stepmania/issues/810). Exact accepted behavior must be fixture-tested per implementation profile rather than inferred from the extension.
 
+## Pinned implementation profiles
+
+Wormedit now names two release-level SSC subsets independently from warp syntax:
+
+- `stepmania_5_1` is pinned to StepMania commit [`825467bcd81c812b33ad684dc04dd151b2d5dec3`](https://github.com/stepmania/stepmania/tree/825467bcd81c812b33ad684dc04dd151b2d5dec3). Its [`Song.h`](https://github.com/stepmania/stepmania/blob/825467bcd81c812b33ad684dc04dd151b2d5dec3/src/Song.h), [`NotesWriterSSC.cpp`](https://github.com/stepmania/stepmania/blob/825467bcd81c812b33ad684dc04dd151b2d5dec3/src/NotesWriterSSC.cpp), and [`NotesLoaderSSC.cpp`](https://github.com/stepmania/stepmania/blob/825467bcd81c812b33ad684dc04dd151b2d5dec3/src/NotesLoaderSSC.cpp) define/write SSC 0.83 and encode native `WARPS` as beat plus relative length.
+- `etterna_0_75_1` is pinned to the official Etterna 0.75.1 tag at commit [`2d706147cc4bcf95a8ceb24dc4f4129be207f803`](https://github.com/etternagame/etterna/tree/2d706147cc4bcf95a8ceb24dc4f4129be207f803). Its [`Song.h`](https://github.com/etternagame/etterna/blob/2d706147cc4bcf95a8ceb24dc4f4129be207f803/src/Etterna/Models/Songs/Song.h), [`NotesWriterSSC.cpp`](https://github.com/etternagame/etterna/blob/2d706147cc4bcf95a8ceb24dc4f4129be207f803/src/Etterna/Models/NoteWriters/NotesWriterSSC.cpp), and [`NotesLoaderSSC.cpp`](https://github.com/etternagame/etterna/blob/2d706147cc4bcf95a8ceb24dc4f4129be207f803/src/Etterna/Models/NoteLoaders/NotesLoaderSSC.cpp) expose the same bounded SSC 0.83/native-warp contract.
+
+For either named profile, Wormedit accepts and emits only the shared audited SSC 0.83 subset with native `WARPS`. It rejects `.sm` selection, explicit legacy syntax choices, and negative-BPM/negative-STOP warp encodings under the named profile. This is intentionally narrower than everything either application may happen to load: untested compatibility is not promoted into an export promise. Project OutFox remains unnamed because its current public repository does not expose the loader/writer source needed for the same audit.
+
 ## Wormedit timing syntax profiles
 
-The paired Wormedit codec now separates `.sm`/`.ssc` syntax from timing
-compatibility choices. Its explicit source/target choices are `native_warps`,
+The paired Wormedit codec separates file family, implementation target, and
+timing syntax. Its explicit source/target syntax choices are `native_warps`,
 `legacy_negative_bpm`, and `legacy_negative_stop`; they describe timing syntax
 accepted or emitted, not a claim about a particular StepMania release. The
 parser canonicalizes accepted legacy encodings to exact beat-domain warps,
@@ -39,9 +48,9 @@ overlapping or adjacent warps, BPM changes inside a warp, and pauses inside a
 warp when it cannot preserve the timing exactly. Native `WARPS` remains an
 explicit SSC encoding, with detailed overlap and in-warp event behavior still
 subject to the selected reader/player profile. The repeated-negative-BPM fixture
-covers two source regions and their semantic re-import. These profiles are
-bounded codec policies; a broader implementation/version matrix and player-level
-compatibility evidence remain open.
+covers two source regions and their semantic re-import. These syntax policies
+remain available without a named application profile; selecting a named profile
+instead opts into its stricter fixture-backed subset.
 
 ## raindrop `rdconverter`
 

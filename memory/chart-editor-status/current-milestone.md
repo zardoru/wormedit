@@ -6,7 +6,7 @@ Last updated: 2026-09-20
 
 ## Active fronts
 
-- Formats: finish externally sourced compatibility evidence. The osu!mania v128 encoder metadata inventory now has pinned fixture coverage; runtime BMSE/iBMSC clipboard capture and broader StepMania implementation profiles remain. See the [format ledger](implemented/formats-persistence.md) and [resume checklist](resume.md).
+- Formats: finish externally sourced compatibility evidence. The osu!mania v128 encoder inventory and bounded StepMania 5.1/Etterna 0.75.1 SSC profiles now have pinned fixture coverage; runtime BMSE/iBMSC clipboard capture and frontend/converter exposure of format policies remain. See the [format ledger](implemented/formats-persistence.md) and [resume checklist](resume.md).
 - Editing/frontend: continue through the backend-neutral C view/action boundary. Nuklear is the first adapter; a later wxWidgets adapter stays possible without entering current completion criteria. See the [editing/frontend ledger](implemented/editing-frontend.md).
 - Preview: retain the modeless DDReam/osu!mania/StepMania-style player surface over the shared transport, without gameplay rules or a workspace-mode change. The selected-area video exporter remains a very-late consumer. See the [visual-preview ledger](implemented/visual-preview.md) and [player-preview plan](../../docs/chart-editor-plan/playback/player-preview.md).
 

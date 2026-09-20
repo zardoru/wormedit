@@ -19,4 +19,4 @@
 15. Which BMS encodings and aliases belong in the automatic detector's initial candidate set, and what confidence threshold should force manual confirmation?
 16. Which initial video containers/codecs, resolutions, frame rates, alpha/background policies, and audio-mix options are required?
 17. What should the converter executable be named, and should it provide an `rdconverter` compatibility alias or only a compatible workflow?
-18. Which StepMania implementations define the initial export profiles, and exactly which native-warp, negative-BPM, and negative-stop encodings does each accept?
+18. Which additional StepMania implementations merit named export profiles, and can pinned fixtures safely expand the current StepMania 5.1/Etterna 0.75.1 native-SSC subsets to any legacy negative-BPM or negative-stop encoding?

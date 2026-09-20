@@ -26,4 +26,4 @@
 - Choose default curve sampling tolerance/point caps and per-target finite-pulse policy for Dirac impulses.
 - Finalize OSBX clip/loop/trigger syntax, visual-override storage, OSB bake/rasterization policy, and initial video profiles.
 - Choose the converter executable name/compatibility alias and initial stable CLI/JSON schema.
-- Define the exact supported StepMania implementation profiles and the negative-BPM/negative-stop encoding rules each accepts.
+- Decide which additional StepMania implementations merit named profiles and whether pinned fixtures justify expanding the current StepMania 5.1/Etterna 0.75.1 native-SSC subsets to legacy negative-BPM or negative-stop encodings.

@@ -15,13 +15,20 @@ enum class stepmania_profile_t {
     ssc,
 };
 
-// Timing compatibility only; these profiles describe accepted/emitted warp
-// syntax, not a specific StepMania release or complete implementation.
-enum class stepmania_implementation_profile_t {
+// Accepted/emitted warp syntax. This is independent of the target application.
+enum class stepmania_timing_syntax_t {
     unspecified,
     native_warps,
     legacy_negative_bpm,
     legacy_negative_stop,
+};
+
+// Fixture-backed application/release subsets. A named profile claims only the
+// fields and timing syntax covered by its pinned source audit.
+enum class stepmania_implementation_profile_t {
+    unspecified,
+    stepmania_5_1,
+    etterna_0_75_1,
 };
 
 enum class stepmania_parse_diagnostic_code_t {
@@ -53,6 +60,8 @@ struct stepmania_parse_diagnostic_t {
 
 struct stepmania_parse_options_t {
     stepmania_profile_t profile{stepmania_profile_t::sm};
+    stepmania_timing_syntax_t source_timing_syntax{
+        stepmania_timing_syntax_t::unspecified};
     stepmania_implementation_profile_t source_implementation_profile{
         stepmania_implementation_profile_t::unspecified};
     std::size_t max_source_bytes{16U * 1024U * 1024U};
@@ -70,9 +79,10 @@ struct stepmania_parse_result_t {
     [[nodiscard]] auto has_errors() const -> bool;
 };
 
-// Parses a complete .sm or .ssc source transactionally. SSC is bounded to the
-// audited StepMania 5.1 v0.83 semantics (with missing VERSION defaulting to
-// 0.83); song fields and each #NOTEDATA block remain separately addressable.
+// Parses a complete .sm or .ssc source transactionally. SSC is bounded to
+// audited v0.83 semantics (with missing VERSION defaulting to 0.83); named
+// StepMania 5.1 and Etterna 0.75.1 subsets require native SSC warps. Song
+// fields and each #NOTEDATA block remain separately addressable.
 [[nodiscard]] auto parse_stepmania_bytes(std::span<const std::byte> bytes,
                                          stepmania_parse_options_t options = {})
     -> stepmania_parse_result_t;
@@ -99,6 +109,8 @@ struct stepmania_write_diagnostic_t {
 
 struct stepmania_write_options_t {
     stepmania_profile_t profile{stepmania_profile_t::sm};
+    stepmania_timing_syntax_t target_timing_syntax{
+        stepmania_timing_syntax_t::unspecified};
     stepmania_implementation_profile_t target_implementation_profile{
         stepmania_implementation_profile_t::unspecified};
     std::optional<chart_id_t> chart;

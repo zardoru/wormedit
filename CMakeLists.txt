@@ -23,6 +23,7 @@ include(cmake/dependencies/nlohmann_json.cmake)
 option(WORMEDIT_BUILD_APP "Build the existing SDL/OpenGL application scaffold" ON)
 option(WORMEDIT_ENABLE_LUA "Build the pinned Lua runtime adapter" OFF)
 option(WORMEDIT_ENABLE_AUDIO_DECODER "Build the headless MP3/Ogg decoder target" ON)
+option(WORMEDIT_ENABLE_IMAGE_DECODER "Build the headless bounded static-image decoder target" ON)
 set(WORMEDIT_UI_BACKEND "nuklear" CACHE STRING "Editor UI backend (nuklear, imgui, or clay)")
 set_property(CACHE WORMEDIT_UI_BACKEND PROPERTY STRINGS nuklear imgui clay)
 if(NOT WORMEDIT_UI_BACKEND MATCHES "^(nuklear|imgui|clay)$")
@@ -111,6 +112,22 @@ endif()
 
 if(WORMEDIT_ENABLE_AUDIO_DECODER)
     include(cmake/dependencies/miniaudio.cmake)
+endif()
+
+if(WORMEDIT_ENABLE_IMAGE_DECODER)
+    include(cmake/dependencies/stb_image.cmake)
+    add_library(wormedit_visual_decoder
+        src/visual/image_decoder.cpp
+    )
+    add_library(wormedit::visual_decoder ALIAS wormedit_visual_decoder)
+    target_include_directories(wormedit_visual_decoder PUBLIC "${CMAKE_SOURCE_DIR}/include")
+    target_compile_features(wormedit_visual_decoder PUBLIC cxx_std_20)
+    target_link_libraries(wormedit_visual_decoder PUBLIC wormedit::core PRIVATE stb::image)
+    if(MSVC)
+        target_compile_options(wormedit_visual_decoder PRIVATE /W4 /permissive-)
+    else()
+        target_compile_options(wormedit_visual_decoder PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
 endif()
 
 if(WORMEDIT_BUILD_APP)
@@ -218,6 +235,11 @@ if(WORMEDIT_BUILD_APP)
             otoworm::otoworm
             OpenGL::GL
     )
+
+    if(WORMEDIT_ENABLE_IMAGE_DECODER)
+        target_link_libraries(wormedit PRIVATE wormedit::visual_decoder)
+        target_compile_definitions(wormedit PRIVATE WORMEDIT_HAS_IMAGE_DECODER=1)
+    endif()
 
     if(WORMEDIT_ENABLE_AUDIO_DECODER)
         target_sources(wormedit PRIVATE

@@ -126,6 +126,22 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
     endif()
 endif()
 
+if(WORMEDIT_ENABLE_IMAGE_DECODER)
+    add_executable(wormedit_visual_tests
+        visual/image_decoder_tests.cpp
+    )
+    target_link_libraries(wormedit_visual_tests
+        PRIVATE
+            wormedit::visual_decoder
+            Catch2::Catch2WithMain
+    )
+    catch_discover_tests(wormedit_visual_tests
+        TEST_PREFIX "visual."
+        PROPERTIES LABELS "unit;visual"
+        DISCOVERY_MODE PRE_TEST
+    )
+endif()
+
 if(WORMEDIT_ENABLE_LUA)
     add_executable(wormedit_lua_tests
         lua/lua_runtime_tests.cpp

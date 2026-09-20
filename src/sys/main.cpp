@@ -196,6 +196,7 @@ struct application_command_state_t {
     std::function<std::string()> transport_play_pause;
     std::function<std::string(std::uint64_t)> transport_seek;
     std::function<void()> transport_stop;
+    std::optional<double> preview_playhead_absolute_row;
 };
 
 struct timing_grid_state_t {
@@ -2304,6 +2305,18 @@ void populate_compose_view(flattened_workspace_t& flattened,
     auto interaction_view = *interaction.view;
     interaction_view.pixels_per_standard_measure = retained_state->pixels_per_standard_measure;
     interaction_view.viewport_scroll_pixels = retained_state->viewport_scroll_pixels;
+    if (application_state.preview_playhead_absolute_row) {
+        const auto pixels_per_row = interaction_view.pixels_per_standard_measure /
+                                    static_cast<double>(chart.divisions_per_standard_measure);
+        const auto playhead_y =
+            *application_state.preview_playhead_absolute_row * pixels_per_row -
+            interaction_view.viewport_scroll_pixels;
+        if (std::isfinite(playhead_y) && playhead_y >= 0.0 &&
+            playhead_y <= view.viewport_height_pixels) {
+            view.playhead_visible = true;
+            view.playhead_y_pixels = playhead_y;
+        }
+    }
     interaction_view.pending_hold = retained_state->pending_hold;
     interaction_view.pending_note_duration_gesture = retained_state->pending_note_duration_gesture;
     interaction_view.pending_note_move_gesture = retained_state->pending_note_move_gesture;
@@ -4854,6 +4867,7 @@ int main(int argc, char** argv) {
                                                        preview_bridge};
     wormedit::sys::sdl_preview_output_t preview_output{preview_session};
     std::optional<wormedit::preview_schedule_t> active_preview_schedule;
+    std::optional<wormedit::timing_index_t> active_preview_timing;
     std::vector<wormedit::audio::preview_object_source_binding_t> active_preview_bindings;
     std::optional<wormedit::chart_id_t> active_preview_chart;
     std::uint64_t active_preview_revision{};
@@ -4883,6 +4897,7 @@ int main(int argc, char** argv) {
             preview_end_frame = 0;
             preview_paused = false;
             active_preview_schedule.reset();
+            active_preview_timing.reset();
             active_preview_bindings.clear();
             active_preview_chart.reset();
         }
@@ -4982,6 +4997,7 @@ int main(int argc, char** argv) {
                 return resolved.diagnostics.empty() ? "Chart audio could not be resolved."
                                                     : resolved.diagnostics.front().message;
             active_preview_schedule = std::move(*schedule.schedule);
+            active_preview_timing = std::move(*timing.index);
             active_preview_bindings = std::move(resolved.bindings);
             active_preview_chart = chart->id;
             active_preview_revision = history.document.revision;
@@ -5096,6 +5112,7 @@ int main(int argc, char** argv) {
             preview_end_frame = 0;
             preview_paused = false;
             active_preview_schedule.reset();
+            active_preview_timing.reset();
             active_preview_bindings.clear();
             active_preview_chart.reset();
             if (interrupted)
@@ -5135,6 +5152,22 @@ int main(int argc, char** argv) {
         }
         if (!preview_session.active() && !preview_paused)
             preview_resume_frame = 0;
+        application_command_state.preview_playhead_absolute_row.reset();
+        if (active_preview_timing && (preview_session.active() || preview_paused)) {
+            const auto frame = preview_session.active() ? preview_session.timeline_frame()
+                                                        : preview_resume_frame;
+            if (frame <= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+                const auto position = wormedit::musical_position_at(
+                    *active_preview_timing,
+                    {static_cast<std::int64_t>(frame), wormedit::audio::output_sample_rate});
+                if (position && position.absolute_row->denominator != 0) {
+                    const auto row = static_cast<double>(position.absolute_row->numerator) /
+                                     static_cast<double>(position.absolute_row->denominator);
+                    if (std::isfinite(row))
+                        application_command_state.preview_playhead_absolute_row = row;
+                }
+            }
+        }
 #endif
 
         if (compose_interaction_state) {

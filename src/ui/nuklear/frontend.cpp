@@ -1377,6 +1377,9 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         !std::isfinite(view->playable_field_right_pixels) ||
         view->playable_field_right_pixels < 0.0 ||
         view->playable_field_right_pixels > view->viewport_width_pixels ||
+        (view->playhead_visible &&
+         (!std::isfinite(view->playhead_y_pixels) || view->playhead_y_pixels < 0.0 ||
+          view->playhead_y_pixels > view->viewport_height_pixels)) ||
         view->branch_row_count > WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY ||
         view->branch_diagnostic_count > WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY ||
         view->semantic_layer_count > WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY ||
@@ -3866,6 +3869,12 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                 nk_fill_rect(canvas, rect, 1.5f, color);
                 nk_stroke_rect(canvas, rect, 1.5f, border_width, border);
             }
+        }
+        if (view->playhead_visible) {
+            const auto y = viewport.y + static_cast<float>(view->playhead_y_pixels) * viewport.h /
+                                            static_cast<float>(view->viewport_height_pixels);
+            nk_stroke_line(canvas, viewport.x, y, viewport.x + viewport.w, y, 2.0f,
+                           nk_rgb(93, 231, 190));
         }
         if (view->cursor) {
             const auto rect = compose_screen_rect(&view->cursor->bounds, view, viewport);

@@ -307,6 +307,8 @@ typedef struct WormUiComposeView {
     double viewport_height_pixels;
     double playable_field_right_pixels;
     double pixels_per_standard_measure;
+    bool playhead_visible;
+    double playhead_y_pixels;
     const char* status_text;
     const char* selected_note_label;
     uint64_t selected_note_label_note_id;

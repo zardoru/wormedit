@@ -225,6 +225,7 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/metadata_state.cpp
         src/ui/nuklear/player_preview.cpp
         src/ui/nuklear/player_preview_texture.cpp
+        src/ui/nuklear/timing_panel.cpp
         src/ui/nuklear/timing_state.cpp
     )
 

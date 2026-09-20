@@ -21,6 +21,10 @@ struct bga_layer_state_t {
     std::optional<preview_visual_event_t> background;
     std::optional<preview_visual_event_t> poor;
     std::optional<preview_visual_event_t> layer;
+    std::optional<preview_visual_event_t> video;
+    std::optional<preview_visual_event_t> storyboard;
+
+    auto operator==(const bga_layer_state_t&) const -> bool = default;
 };
 
 enum class bga_preview_status_t : std::uint8_t {
@@ -73,7 +77,7 @@ class bga_preview_queue_t {
         -> std::optional<bga_layer_state_t>;
 
   private:
-    using layer_indices_t = std::array<std::vector<std::size_t>, 3>;
+    using layer_indices_t = std::array<std::vector<std::size_t>, 5>;
 
     [[nodiscard]] auto begin_session(std::uint64_t sample_frame)
         -> std::optional<bga_preview_token_t>;

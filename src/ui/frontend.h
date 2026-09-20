@@ -55,6 +55,7 @@
 #define WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY 64
 #define WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY 4096
 #define WORM_UI_PLAYER_PREVIEW_HOLD_CAPACITY 4096
+#define WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY 5
 #define WORM_UI_COMPOSE_MIN_PIXELS_PER_MEASURE 24.0
 #define WORM_UI_COMPOSE_MAX_PIXELS_PER_MEASURE 4096.0
 
@@ -714,6 +715,14 @@ typedef enum WormUiPlayerPreviewSkin {
     WORM_UI_PLAYER_PREVIEW_SKIN_ARROWS,
 } WormUiPlayerPreviewSkin;
 
+typedef enum WormUiPlayerPreviewVisualKind {
+    WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND = 0,
+    WORM_UI_PLAYER_PREVIEW_VISUAL_POOR,
+    WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER,
+    WORM_UI_PLAYER_PREVIEW_VISUAL_VIDEO,
+    WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD,
+} WormUiPlayerPreviewVisualKind;
+
 typedef struct WormUiPlayerPreviewRect {
     double left;
     double top;
@@ -760,6 +769,15 @@ typedef struct WormUiPlayerPreviewHoldView {
     WormUiPlayerPreviewRect bounds;
 } WormUiPlayerPreviewHoldView;
 
+typedef struct WormUiPlayerPreviewVisualLayerView {
+    uint64_t object_id;
+    uint64_t resource_id;
+    uint64_t event_sample_frame;
+    WormUiPlayerPreviewVisualKind kind;
+    size_t draw_order;
+    size_t source_order;
+} WormUiPlayerPreviewVisualLayerView;
+
 typedef struct WormUiPlayerPreviewView {
     bool visible;
     bool scene_available;
@@ -781,6 +799,8 @@ typedef struct WormUiPlayerPreviewView {
     size_t hold_body_count;
     const WormUiPlayerPreviewNoteView* note_endpoints;
     size_t note_endpoint_count;
+    const WormUiPlayerPreviewVisualLayerView* visual_layers;
+    size_t visual_layer_count;
 } WormUiPlayerPreviewView;
 
 // Private scalar view consumed by the selected frontend adapter. The owning

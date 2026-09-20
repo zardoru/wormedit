@@ -146,6 +146,36 @@ TEST_CASE("player preview skins share geometry and change presentation only",
     CHECK((tap->bounds.top + tap->bounds.bottom) / 2.0 == Catch::Approx(64.0));
 }
 
+TEST_CASE("player preview carries validated visual layers in the deterministic scene",
+          "[unit][core][player-preview][bga]") {
+    const auto built = build_player_preview_index(preview_chart(), 9);
+    REQUIRE(built);
+    auto visual_request = request(100);
+    visual_request.visual_layers.background = {
+        .sample_frame = 80,
+        .object = object_id_t{80},
+        .resource = resource_id_t{180},
+        .kind = visual_event_kind_t::background,
+    };
+    visual_request.visual_layers.video = {
+        .sample_frame = 100,
+        .object = object_id_t{81},
+        .resource = resource_id_t{181},
+        .kind = visual_event_kind_t::video,
+    };
+    const auto scene = make_player_preview_scene(*built.index, visual_request);
+    REQUIRE(scene);
+    CHECK(scene.scene->visual_layers == visual_request.visual_layers);
+
+    auto future = visual_request;
+    future.visual_layers.background->sample_frame = 101;
+    CHECK_FALSE(make_player_preview_scene(*built.index, future));
+
+    auto wrong_slot = visual_request;
+    wrong_slot.visual_layers.background->kind = visual_event_kind_t::layer;
+    CHECK_FALSE(make_player_preview_scene(*built.index, wrong_slot));
+}
+
 TEST_CASE("player preview uses scroll displacement and remains still through a stop",
           "[unit][core][player-preview][timing]") {
     auto chart = preview_chart();

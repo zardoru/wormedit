@@ -53,6 +53,7 @@ TEST_CASE("BGA preview queue preserves compiled simultaneous draw/source order",
         visual(7, 3, 20, visual_event_kind_t::poor, 1, 2),
         visual(7, 4, 30, visual_event_kind_t::layer, 2, 3),
         visual(7, 5, 40, visual_event_kind_t::video, 3, 4),
+        visual(7, 6, 50, visual_event_kind_t::storyboard, 4, 5),
     };
 
     bga_preview_queue_t queue;
@@ -82,6 +83,10 @@ TEST_CASE("BGA preview queue preserves compiled simultaneous draw/source order",
     CHECK(at.layers.poor->resource == resource_id_t{20});
     REQUIRE(at.layers.layer.has_value());
     CHECK(at.layers.layer->resource == resource_id_t{30});
+    REQUIRE(at.layers.video.has_value());
+    CHECK(at.layers.video->resource == resource_id_t{40});
+    REQUIRE(at.layers.storyboard.has_value());
+    CHECK(at.layers.storyboard->resource == resource_id_t{50});
 
     const auto drained = queue.advance(*started.token, 9);
     CHECK(drained.events.empty());
@@ -91,6 +96,10 @@ TEST_CASE("BGA preview queue preserves compiled simultaneous draw/source order",
     CHECK(drained.layers.poor->resource == at.layers.poor->resource);
     REQUIRE(drained.layers.layer.has_value());
     CHECK(drained.layers.layer->resource == at.layers.layer->resource);
+    REQUIRE(drained.layers.video.has_value());
+    CHECK(drained.layers.video->resource == at.layers.video->resource);
+    REQUIRE(drained.layers.storyboard.has_value());
+    CHECK(drained.layers.storyboard->resource == at.layers.storyboard->resource);
 }
 
 TEST_CASE("BGA preview seek restores prior layer state and starts a fresh generation",
@@ -100,7 +109,9 @@ TEST_CASE("BGA preview seek restores prior layer state and starts a fresh genera
         visual(2, 1, 11, visual_event_kind_t::background, 0, 0),
         visual(5, 2, 20, visual_event_kind_t::poor, 1, 1),
         visual(5, 3, 30, visual_event_kind_t::layer, 2, 2),
-        visual(7, 4, 12, visual_event_kind_t::background, 0, 3),
+        visual(5, 5, 40, visual_event_kind_t::video, 3, 3),
+        visual(5, 6, 50, visual_event_kind_t::storyboard, 4, 4),
+        visual(7, 4, 12, visual_event_kind_t::background, 0, 5),
     };
 
     bga_preview_queue_t queue;
@@ -112,6 +123,10 @@ TEST_CASE("BGA preview seek restores prior layer state and starts a fresh genera
     CHECK(started.layers.poor->resource == resource_id_t{20});
     REQUIRE(started.layers.layer.has_value());
     CHECK(started.layers.layer->resource == resource_id_t{30});
+    REQUIRE(started.layers.video.has_value());
+    CHECK(started.layers.video->resource == resource_id_t{40});
+    REQUIRE(started.layers.storyboard.has_value());
+    CHECK(started.layers.storyboard->resource == resource_id_t{50});
     CHECK(queue.advance(*started.token, 7).events.empty());
 
     const auto sought = queue.seek(*started.token, 7);
@@ -131,6 +146,8 @@ TEST_CASE("BGA preview seek restores prior layer state and starts a fresh genera
     CHECK_FALSE(restarted.layers.background.has_value());
     CHECK_FALSE(restarted.layers.poor.has_value());
     CHECK_FALSE(restarted.layers.layer.has_value());
+    CHECK_FALSE(restarted.layers.video.has_value());
+    CHECK_FALSE(restarted.layers.storyboard.has_value());
     const auto from_zero = queue.advance(*restarted.token, 3);
     REQUIRE(from_zero.events.size() == 1);
     CHECK(from_zero.events.front().resource == resource_id_t{11});

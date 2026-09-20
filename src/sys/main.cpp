@@ -180,6 +180,7 @@ struct flattened_workspace_t {
     std::vector<WormUiPlayerPreviewReceptorView> player_preview_receptor_storage;
     std::vector<WormUiPlayerPreviewHoldView> player_preview_hold_storage;
     std::vector<WormUiPlayerPreviewNoteView> player_preview_note_storage;
+    std::vector<WormUiPlayerPreviewVisualLayerView> player_preview_visual_layer_storage;
     std::vector<std::uint64_t> audio_asset_storage;
     std::vector<WormUiAudioWaveformColumnView> audio_waveform_storage;
 };
@@ -209,6 +210,10 @@ struct player_preview_cache_t {
     std::uint64_t revision{};
     bool attempted{};
     std::optional<wormedit::player_preview_index_t> index;
+    std::optional<wormedit::preview_schedule_t> visual_schedule;
+    std::optional<wormedit::bga_preview_queue_t> visual_queue;
+    std::optional<wormedit::bga_preview_token_t> visual_token;
+    std::uint32_t sample_rate{};
     std::string status;
 };
 
@@ -3095,6 +3100,7 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
     view.receptors = flattened.player_preview_receptor_storage.data();
     view.hold_bodies = flattened.player_preview_hold_storage.data();
     view.note_endpoints = flattened.player_preview_note_storage.data();
+    view.visual_layers = flattened.player_preview_visual_layer_storage.data();
     if (!view.visible) {
         return;
     }
@@ -3114,23 +3120,65 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
     view.document_revision = history.document.revision;
     view.sample_frame = sample_frame;
     if (!cache.attempted || cache.chart != chart->id ||
-        cache.revision != history.document.revision) {
+        cache.revision != history.document.revision || cache.sample_rate != sample_rate) {
         cache = {.chart = chart->id,
                  .revision = history.document.revision,
                  .attempted = true,
                  .index = std::nullopt,
+                 .visual_schedule = std::nullopt,
+                 .visual_queue = std::nullopt,
+                 .visual_token = std::nullopt,
+                 .sample_rate = sample_rate,
                  .status = {}};
         auto built = wormedit::build_player_preview_index(*chart, history.document.revision);
         if (built) {
             cache.index = std::move(*built.index);
+            auto schedule = wormedit::build_preview_schedule(
+                *chart, cache.index->timing,
+                {.sample_rate = sample_rate, .include_metronome = false});
+            if (schedule) {
+                cache.visual_schedule = std::move(*schedule.schedule);
+                cache.visual_queue.emplace();
+                const auto started = cache.visual_queue->start(*cache.visual_schedule);
+                if (started) {
+                    cache.visual_token = started.token;
+                } else {
+                    cache.status = "The visual preview schedule could not be started.";
+                }
+            } else {
+                cache.status = schedule.diagnostics.empty()
+                                   ? "The visual preview schedule could not be compiled."
+                                   : schedule.diagnostics.front().message;
+            }
         } else {
             cache.status = built.diagnostics.empty()
                                ? "The player-preview visual schedule could not be compiled."
                                : built.diagnostics.front().message;
         }
     }
-    if (!cache.index) {
+    if (!cache.index || !cache.visual_schedule || !cache.visual_queue || !cache.visual_token) {
         flattened.player_preview_status_storage = cache.status;
+        view.status_text = flattened.player_preview_status_storage.c_str();
+        return;
+    }
+    if (sample_frame == std::numeric_limits<std::uint64_t>::max()) {
+        flattened.player_preview_status_storage =
+            "The player-preview frame exceeds the visual cursor range.";
+        view.status_text = flattened.player_preview_status_storage.c_str();
+        return;
+    }
+    const auto exclusive_end_frame = sample_frame + 1;
+    auto visual = cache.visual_queue->advance(*cache.visual_token, exclusive_end_frame);
+    if (visual.status == wormedit::bga_preview_status_t::non_monotonic_window) {
+        const auto sought = cache.visual_queue->seek(*cache.visual_token, sample_frame);
+        if (sought) {
+            cache.visual_token = sought.token;
+            visual = cache.visual_queue->advance(*cache.visual_token, exclusive_end_frame);
+        }
+    }
+    if (visual.status != wormedit::bga_preview_status_t::ready) {
+        flattened.player_preview_status_storage =
+            "The visual preview cursor could not resolve this frame.";
         view.status_text = flattened.player_preview_status_storage.c_str();
         return;
     }
@@ -3143,6 +3191,7 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
          .receptor_y_pixels = 52.0,
          .pixels_per_beat = 82.0,
          .skin = application_state.player_preview_skin,
+         .visual_layers = visual.layers,
          .maximum_visible_notes = WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY});
     if (!scene) {
         flattened.player_preview_status_storage =
@@ -3223,6 +3272,22 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
                                                              : 0),
              .bounds = convert_rect(note.bounds)});
     }
+    const auto append_visual = [&](const auto& event) {
+        if (event) {
+            flattened.player_preview_visual_layer_storage.push_back(
+                {.object_id = event->object.value,
+                 .resource_id = event->resource.value,
+                 .event_sample_frame = event->sample_frame,
+                 .kind = static_cast<WormUiPlayerPreviewVisualKind>(event->kind),
+                 .draw_order = event->draw_order,
+                 .source_order = event->source_order});
+        }
+    };
+    append_visual(scene.scene->visual_layers.background);
+    append_visual(scene.scene->visual_layers.poor);
+    append_visual(scene.scene->visual_layers.layer);
+    append_visual(scene.scene->visual_layers.video);
+    append_visual(scene.scene->visual_layers.storyboard);
     view.scene_available = true;
     view.pre_zero = scene.scene->pre_zero;
     view.split_stage = scene.scene->split_stage;
@@ -3234,6 +3299,8 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
     view.hold_body_count = flattened.player_preview_hold_storage.size();
     view.note_endpoints = flattened.player_preview_note_storage.data();
     view.note_endpoint_count = flattened.player_preview_note_storage.size();
+    view.visual_layers = flattened.player_preview_visual_layer_storage.data();
+    view.visual_layer_count = flattened.player_preview_visual_layer_storage.size();
 }
 
 auto first_recovery_diagnostic(

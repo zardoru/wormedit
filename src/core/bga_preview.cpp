@@ -25,8 +25,9 @@ auto layer_slot(visual_event_kind_t kind) -> std::optional<std::size_t> {
     case visual_event_kind_t::layer:
         return 2;
     case visual_event_kind_t::video:
+        return 3;
     case visual_event_kind_t::storyboard:
-        return std::nullopt;
+        return 4;
     }
     return std::nullopt;
 }
@@ -34,6 +35,22 @@ auto layer_slot(visual_event_kind_t kind) -> std::optional<std::size_t> {
 auto valid_kind(visual_event_kind_t kind) -> bool {
     return static_cast<std::uint8_t>(kind) <=
            static_cast<std::uint8_t>(visual_event_kind_t::storyboard);
+}
+
+auto layer_value(bga_layer_state_t& state, std::size_t slot)
+    -> std::optional<preview_visual_event_t>& {
+    switch (slot) {
+    case 0:
+        return state.background;
+    case 1:
+        return state.poor;
+    case 2:
+        return state.layer;
+    case 3:
+        return state.video;
+    default:
+        return state.storyboard;
+    }
 }
 
 } // namespace
@@ -167,13 +184,7 @@ void bga_preview_queue_t::set_position(std::uint64_t sample_frame) {
             });
         if (boundary != indices.begin()) {
             const auto& event = events[*std::prev(boundary)];
-            if (slot == 0) {
-                layers_.background = event;
-            } else if (slot == 1) {
-                layers_.poor = event;
-            } else {
-                layers_.layer = event;
-            }
+            layer_value(layers_, slot) = event;
         }
     }
 }
@@ -184,13 +195,7 @@ void bga_preview_queue_t::apply(std::span<const preview_visual_event_t> events) 
         if (!slot.has_value()) {
             continue;
         }
-        if (*slot == 0) {
-            layers_.background = event;
-        } else if (*slot == 1) {
-            layers_.poor = event;
-        } else {
-            layers_.layer = event;
-        }
+        layer_value(layers_, *slot) = event;
     }
 }
 

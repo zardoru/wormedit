@@ -64,10 +64,12 @@ int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* vie
         view->receptor_count > WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY ||
         view->hold_body_count > WORM_UI_PLAYER_PREVIEW_HOLD_CAPACITY ||
         view->note_endpoint_count > WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY ||
+        view->visual_layer_count > WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY ||
         (view->lane_count != 0 && !view->lanes) ||
         (view->receptor_count != 0 && !view->receptors) ||
         (view->hold_body_count != 0 && !view->hold_bodies) ||
         (view->note_endpoint_count != 0 && !view->note_endpoints) ||
+        (view->visual_layer_count != 0 && !view->visual_layers) ||
         (!view->scene_available && !view->status_text)) {
         return 0;
     }
@@ -91,6 +93,15 @@ int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* vie
     for (std::size_t index = 0; index < view->note_endpoint_count; ++index) {
         if (view->note_endpoints[index].note_id == 0 ||
             !rect_valid(&view->note_endpoints[index].bounds, view)) {
+            return 0;
+        }
+    }
+    for (std::size_t index = 0; index < view->visual_layer_count; ++index) {
+        const auto& layer = view->visual_layers[index];
+        if (layer.object_id == 0 || layer.resource_id == 0 ||
+            layer.event_sample_frame > view->sample_frame ||
+            layer.kind < WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND ||
+            layer.kind > WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD) {
             return 0;
         }
     }
@@ -138,8 +149,34 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                       view->note_endpoint_count, view->pre_zero ? " · count-in" : "",
                       view->split_stage ? " · split stage" : "");
         }
+        for (std::size_t index = 0; index < view->visual_layer_count; ++index) {
+            const auto& layer = view->visual_layers[index];
+            const char* label = "Visual";
+            switch (layer.kind) {
+            case WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND:
+                label = "Background";
+                break;
+            case WORM_UI_PLAYER_PREVIEW_VISUAL_POOR:
+                label = "Poor";
+                break;
+            case WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER:
+                label = "Layer";
+                break;
+            case WORM_UI_PLAYER_PREVIEW_VISUAL_VIDEO:
+                label = "Video";
+                break;
+            case WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD:
+                label = "Storyboard";
+                break;
+            }
+            nk_layout_row_dynamic(context, 18, 1);
+            nk_labelf(context, NK_TEXT_LEFT, "%s resource %llu", label,
+                      static_cast<unsigned long long>(layer.resource_id));
+        }
         struct nk_rect viewport{};
-        nk_layout_row_dynamic(context, std::max(180.0f, panel_height - 92.0f), 1);
+        const auto visual_label_height = static_cast<float>(view->visual_layer_count) * 18.0f;
+        nk_layout_row_dynamic(context,
+                              std::max(180.0f, panel_height - 92.0f - visual_label_height), 1);
         if (nk_widget(&viewport, context) != NK_WIDGET_INVALID) {
             auto* canvas = nk_window_get_canvas(context);
             if (canvas) {

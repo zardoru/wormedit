@@ -60,6 +60,20 @@ auto finite_positive(double value) -> bool {
     return std::isfinite(value) && value > 0.0;
 }
 
+auto valid_visual_layer(const std::optional<preview_visual_event_t>& event,
+                        visual_event_kind_t expected_kind, std::uint64_t sample_frame) -> bool {
+    return !event || (event->object && event->resource && event->kind == expected_kind &&
+                      event->sample_frame <= sample_frame);
+}
+
+auto valid_visual_layers(const bga_layer_state_t& layers, std::uint64_t sample_frame) -> bool {
+    return valid_visual_layer(layers.background, visual_event_kind_t::background, sample_frame) &&
+           valid_visual_layer(layers.poor, visual_event_kind_t::poor, sample_frame) &&
+           valid_visual_layer(layers.layer, visual_event_kind_t::layer, sample_frame) &&
+           valid_visual_layer(layers.video, visual_event_kind_t::video, sample_frame) &&
+           valid_visual_layer(layers.storyboard, visual_event_kind_t::storyboard, sample_frame);
+}
+
 auto append_tree(const std::vector<player_preview_note_source_t>& notes, std::size_t leaf_base)
     -> std::vector<double> {
     std::vector<double> tree(leaf_base * 2, -std::numeric_limits<double>::infinity());
@@ -228,6 +242,7 @@ auto make_player_preview_scene(const player_preview_index_t& index,
         request.hold_body_width_ratio <= 0.0 || request.hold_body_width_ratio > 1.0 ||
         request.maximum_visible_notes == 0 || request.maximum_composition_operations == 0 ||
         !valid_skin(request.skin) || !valid_direction(request.direction) || index.layouts.empty() ||
+        !valid_visual_layers(request.visual_layers, request.sample_frame) ||
         index.timing.rows.empty() || index.note_tree_leaf_base == 0 ||
         index.note_tree_max_end.size() != index.note_tree_leaf_base * 2) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
@@ -302,6 +317,7 @@ auto make_player_preview_scene(const player_preview_index_t& index,
                                  .direction = request.direction,
                                  .pre_zero = pre_zero,
                                  .split_stage = active_layout->layout.split_stage,
+                                 .visual_layers = request.visual_layers,
                                  .composition_operations = 0,
                                  .visible_note_count = 0,
                                  .lanes = {},

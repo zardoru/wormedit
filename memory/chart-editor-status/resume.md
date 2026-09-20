@@ -4,7 +4,7 @@
 
 ## Immediate work
 
-1. Extend the modeless player-preview pipeline with deterministic BGA/video/storyboard layer state shared by headless scene consumers. Keep concrete decoding/upload separate and keep gameplay rules out of this surface.
+1. Add concrete visual-asset resolution, decoding, and renderer-owned composition over the player preview's deterministic background/poor/layer/video/storyboard snapshot. Preserve the scalar scene boundary and keep gameplay rules out of this surface.
 2. Continue the behavior-preserving frontend split around backend-neutral view/action contracts; the current Nuklear backend must not own document, transport, or scene policy, and a later wxWidgets adapter should not require moving those responsibilities again.
 3. Add richer profile-specific discontinuity ordering and later GPU composition to the preview. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
 4. Capture BMSE/iBMSC clipboard samples with tool/version provenance, then broaden BMS dialect/profile and exact branch-editing fixtures.

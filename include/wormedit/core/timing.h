@@ -350,6 +350,8 @@ struct preview_visual_event_t {
     visual_event_kind_t kind{visual_event_kind_t::background};
     std::size_t draw_order{};
     std::size_t source_order{};
+
+    auto operator==(const preview_visual_event_t&) const -> bool = default;
 };
 
 struct preview_metronome_event_t {

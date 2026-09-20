@@ -30,8 +30,10 @@
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include "sys/sdl_audition_output.h"
+#include "sys/sdl_preview_output.h"
 
 #include <wormedit/audio/object_audition.h>
+#include <wormedit/audio/preview_session.h>
 #include <wormedit/audio/source_registry.h>
 #endif
 
@@ -191,6 +193,7 @@ struct application_command_state_t {
     std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;
     std::unordered_map<std::uint64_t, double> bgm_horizontal_scroll_pixels;
     std::function<bool()> transport_active;
+    std::function<std::string()> transport_play_pause;
     std::function<void()> transport_stop;
 };
 
@@ -231,8 +234,7 @@ auto selected_chart(const wormedit::document_history_t& history,
                     const wormedit::workspace_controller_t& workspace)
     -> const wormedit::chart_document_t*;
 
-auto visible_semantic_layer_by_id(const wormedit::chart_document_t& chart,
-                                  wormedit::layer_id_t id)
+auto visible_semantic_layer_by_id(const wormedit::chart_document_t& chart, wormedit::layer_id_t id)
     -> const wormedit::semantic_layer_t*;
 
 auto recovery_status_name(wormedit::native_project_recovery_candidate_status_t status)
@@ -688,10 +690,11 @@ constexpr double compose_measure_rail_width_pixels{42.0};
 constexpr double compose_bgm_lane_width_pixels{36.0};
 
 auto compose_bgm_pane_width(double viewport_width_pixels, bool has_bgm_lanes) -> double {
-    if (!has_bgm_lanes) return 0.0;
+    if (!has_bgm_lanes)
+        return 0.0;
     const auto preferred = std::clamp(viewport_width_pixels * 0.25, 96.0, 192.0);
-    return std::min(preferred,
-                    std::max(0.0, viewport_width_pixels - compose_measure_rail_width_pixels - 80.0));
+    return std::min(
+        preferred, std::max(0.0, viewport_width_pixels - compose_measure_rail_width_pixels - 80.0));
 }
 
 auto compose_playable_field_width(double viewport_width_pixels, double bgm_pane_width_pixels)
@@ -2177,20 +2180,20 @@ void populate_compose_view(flattened_workspace_t& flattened,
             .locked = layer.locked,
             .selected = selected,
         };
-        view.semantic_layer_target_locked = view.semantic_layer_target_locked ||
-                                            (selected && layer.locked);
-        view.semantic_layer_target_visible = view.semantic_layer_target_visible ||
-                                             (selected && layer.visible);
+        view.semantic_layer_target_locked =
+            view.semantic_layer_target_locked || (selected && layer.locked);
+        view.semantic_layer_target_visible =
+            view.semantic_layer_target_visible || (selected && layer.visible);
         view.semantic_layer_target_required_filter =
             view.semantic_layer_target_required_filter ||
-            (selected && std::ranges::find(application_state.required_semantic_layer_filters,
-                                           layer.id) !=
-                             application_state.required_semantic_layer_filters.end());
+            (selected &&
+             std::ranges::find(application_state.required_semantic_layer_filters, layer.id) !=
+                 application_state.required_semantic_layer_filters.end());
         view.semantic_layer_target_excluded_filter =
             view.semantic_layer_target_excluded_filter ||
-            (selected && std::ranges::find(application_state.excluded_semantic_layer_filters,
-                                           layer.id) !=
-                             application_state.excluded_semantic_layer_filters.end());
+            (selected &&
+             std::ranges::find(application_state.excluded_semantic_layer_filters, layer.id) !=
+                 application_state.excluded_semantic_layer_filters.end());
     }
     if (!cache.attempted || cache.chart != chart.id ||
         cache.revision != history.document.revision) {
@@ -2360,13 +2363,14 @@ void populate_compose_view(flattened_workspace_t& flattened,
     interaction_view.viewport_scroll_pixels = retained_state->viewport_scroll_pixels;
     view.pixels_per_standard_measure = interaction_view.pixels_per_standard_measure;
     cache.interaction_view = interaction_view;
-    const auto hover_gesture_active = retained_state->pending_hold.has_value() ||
-                                      retained_state->pending_note_duration_gesture.has_value() ||
-                                      retained_state->pending_note_move_gesture.has_value() ||
-                                      retained_state->pending_note_paint_gesture.has_value() ||
-                                      retained_state->pending_semantic_layer_paint_gesture.has_value() ||
-                                      retained_state->pending_editor_area_selection.has_value() ||
-                                      retained_state->pending_space_range_selection.has_value();
+    const auto hover_gesture_active =
+        retained_state->pending_hold.has_value() ||
+        retained_state->pending_note_duration_gesture.has_value() ||
+        retained_state->pending_note_move_gesture.has_value() ||
+        retained_state->pending_note_paint_gesture.has_value() ||
+        retained_state->pending_semantic_layer_paint_gesture.has_value() ||
+        retained_state->pending_editor_area_selection.has_value() ||
+        retained_state->pending_space_range_selection.has_value();
     if (!hover_gesture_active && cache.hover &&
         cache.hover->document_revision == history.document.revision &&
         cache.hover->object.kind == wormedit::editor_selection_object_kind_t::note) {
@@ -2458,12 +2462,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
     const auto playable_field_width =
         compose_playable_field_width(view.viewport_width_pixels, bgm_pane_width);
     view.playable_field_right_pixels = compose_measure_rail_width_pixels + playable_field_width;
-    const auto maximum_bgm_scroll =
-        std::max(0.0, static_cast<double>(chart.bgm_source_lanes.size()) *
-                          compose_bgm_lane_width_pixels -
-                          bgm_pane_width);
-    auto& bgm_horizontal_scroll =
-        application_state.bgm_horizontal_scroll_pixels[chart.id.value];
+    const auto maximum_bgm_scroll = std::max(
+        0.0, static_cast<double>(chart.bgm_source_lanes.size()) * compose_bgm_lane_width_pixels -
+                 bgm_pane_width);
+    auto& bgm_horizontal_scroll = application_state.bgm_horizontal_scroll_pixels[chart.id.value];
     bgm_horizontal_scroll = std::clamp(bgm_horizontal_scroll, 0.0, maximum_bgm_scroll);
     const auto composed = wormedit::make_editor_field_scene(
         chart, *cache.index, interaction_view,
@@ -2554,30 +2556,22 @@ void populate_compose_view(flattened_workspace_t& flattened,
     flattened.compose_hold_storage.reserve(hold_count);
     for (std::size_t index = 0; index < hold_count; ++index) {
         const auto& hold = holds[index];
-        flattened.compose_hold_storage.push_back({.bounds = convert_rect(hold.bounds),
-                                                  .note_id = hold.note.value,
-                                                  .lane_id = hold.lane.value,
-                                                  .selected = hold.selected,
-                                                  .proposal_origin = hold.proposal_origin,
-                                                  .proposal_ghost = hold.proposal_ghost,
-                                                  .semantic_color_visible =
-                                                      hold.semantic_color.has_value(),
-                                                  .semantic_red = static_cast<std::uint8_t>(
-                                                      hold.semantic_color
-                                                          ? hold.semantic_color->red
-                                                          : 0),
-                                                  .semantic_green = static_cast<std::uint8_t>(
-                                                      hold.semantic_color
-                                                          ? hold.semantic_color->green
-                                                          : 0),
-                                                  .semantic_blue = static_cast<std::uint8_t>(
-                                                      hold.semantic_color
-                                                          ? hold.semantic_color->blue
-                                                          : 0),
-                                                  .semantic_alpha = static_cast<std::uint8_t>(
-                                                      hold.semantic_color
-                                                          ? hold.semantic_color->alpha
-                                                          : 0)});
+        flattened.compose_hold_storage.push_back(
+            {.bounds = convert_rect(hold.bounds),
+             .note_id = hold.note.value,
+             .lane_id = hold.lane.value,
+             .selected = hold.selected,
+             .proposal_origin = hold.proposal_origin,
+             .proposal_ghost = hold.proposal_ghost,
+             .semantic_color_visible = hold.semantic_color.has_value(),
+             .semantic_red =
+                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->red : 0),
+             .semantic_green =
+                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->green : 0),
+             .semantic_blue =
+                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->blue : 0),
+             .semantic_alpha =
+                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->alpha : 0)});
     }
     const auto& endpoints = scene.note_endpoints;
     const auto endpoint_count =
@@ -3029,16 +3023,16 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         return "Compose viewport input exceeded its capacity; the active gesture was canceled.";
     }
-    const auto input_chart = std::ranges::find(history.document.charts, state.chart,
-                                               &chart_document_t::id);
+    const auto input_chart =
+        std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     const auto bgm_lane_count = input_chart == history.document.charts.end()
                                     ? std::size_t{}
                                     : input_chart->bgm_source_lanes.size();
-    const auto bgm_pane_width = compose_bgm_pane_width(
-        ui_action.compose_input_viewport_width_pixels, bgm_lane_count != 0);
+    const auto bgm_pane_width =
+        compose_bgm_pane_width(ui_action.compose_input_viewport_width_pixels, bgm_lane_count != 0);
     const auto field_left_pixels = compose_measure_rail_width_pixels;
-    const auto field_width_pixels = compose_playable_field_width(
-        ui_action.compose_input_viewport_width_pixels, bgm_pane_width);
+    const auto field_width_pixels =
+        compose_playable_field_width(ui_action.compose_input_viewport_width_pixels, bgm_pane_width);
 
     if (!ui_action.shortcut_window_focused) {
         viewport_input.focus_lost();
@@ -3054,9 +3048,9 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                             ui_action.compose_input_viewport_width_pixels
                     ? viewport_pane_t::bgm
                     : viewport_pane_t::chart;
-            viewport_input.middle_click(
-                middle_click_pane, ui_action.compose_viewport_middle_click_x_pixels,
-                ui_action.compose_viewport_middle_click_y_pixels);
+            viewport_input.middle_click(middle_click_pane,
+                                        ui_action.compose_viewport_middle_click_x_pixels,
+                                        ui_action.compose_viewport_middle_click_y_pixels);
             scene_cache.viewport_autoscroll_active = viewport_input.autoscroll_active();
             if (scene_cache.viewport_autoscroll_active) {
                 scene_cache.viewport_autoscroll_anchor_x_pixels =
@@ -3103,15 +3097,14 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             }
             scene_cache.hit_test_index = std::get<editor_hit_test_index_t>(std::move(built));
         }
-        return hit_test_editor(
-            chart, *scene_cache.hit_test_index, view,
-            {.x_pixels = x_pixels,
-             .y_pixels = y_pixels,
-             .field_left_pixels = field_left_pixels,
-             .field_width_pixels = field_width_pixels});
+        return hit_test_editor(chart, *scene_cache.hit_test_index, view,
+                               {.x_pixels = x_pixels,
+                                .y_pixels = y_pixels,
+                                .field_left_pixels = field_left_pixels,
+                                .field_width_pixels = field_width_pixels});
     };
-    const auto chart = std::ranges::find(history.document.charts, state.chart,
-                                         &chart_document_t::id);
+    const auto chart =
+        std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     const auto gesture_active = state.pending_hold.has_value() ||
                                 state.pending_note_duration_gesture.has_value() ||
                                 state.pending_note_move_gesture.has_value() ||
@@ -3126,8 +3119,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
         if (!scene_cache.hit_test_index) {
             auto built = build_editor_hit_test_index(*chart, history.document.revision);
             if (std::holds_alternative<editor_hit_test_index_t>(built)) {
-                scene_cache.hit_test_index =
-                    std::get<editor_hit_test_index_t>(std::move(built));
+                scene_cache.hit_test_index = std::get<editor_hit_test_index_t>(std::move(built));
             }
         }
         if (scene_cache.hit_test_index) {
@@ -3306,7 +3298,8 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 if (state.pending_semantic_layer_paint_gesture) {
                     result =
                         dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
-                    accepted = "Semantic-layer paint stroke canceled because paint mode is inactive.";
+                    accepted =
+                        "Semantic-layer paint stroke canceled because paint mode is inactive.";
                 } else {
                     result.accepted = true;
                     accepted = "Semantic-layer paint input ignored because paint mode is inactive.";
@@ -3338,10 +3331,10 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                     accepted = "Semantic-layer paint moved between playable notes.";
                     break;
                 }
-                result = dispatch_editor_action(
-                    history, state,
-                    end_semantic_layer_paint_gesture_action_t{
-                        .note = object_id_t{}, .pointer_captured = true});
+                result =
+                    dispatch_editor_action(history, state,
+                                           end_semantic_layer_paint_gesture_action_t{
+                                               .note = object_id_t{}, .pointer_captured = true});
                 accepted = result.document_changed ? "Semantic-layer paint stroke committed."
                                                    : "Semantic-layer paint stroke released.";
                 break;
@@ -3353,16 +3346,16 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                         .layer = layer->id, .note = *target->note, .pointer_captured = true});
                 accepted = "Semantic-layer paint stroke started.";
             } else if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE) {
-                result = dispatch_editor_action(
-                    history, state,
-                    update_semantic_layer_paint_gesture_action_t{.note = *target->note,
-                                                                 .pointer_captured = true});
+                result =
+                    dispatch_editor_action(history, state,
+                                           update_semantic_layer_paint_gesture_action_t{
+                                               .note = *target->note, .pointer_captured = true});
                 accepted = "Semantic-layer paint preview updated.";
             } else {
-                result = dispatch_editor_action(
-                    history, state,
-                    end_semantic_layer_paint_gesture_action_t{.note = *target->note,
-                                                              .pointer_captured = true});
+                result =
+                    dispatch_editor_action(history, state,
+                                           end_semantic_layer_paint_gesture_action_t{
+                                               .note = *target->note, .pointer_captured = true});
                 accepted = result.document_changed ? "Semantic-layer paint stroke committed."
                                                    : "Semantic-layer paint stroke released.";
             }
@@ -3477,15 +3470,14 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             if (!selection_mode(input.selection_mode).has_value()) {
                 return "Compose area selection used an unknown selection mode.";
             }
-            result = dispatch_editor_action(
-                history, state,
-                begin_editor_area_selection_action_t{
-                    .x_pixels = input.x_pixels,
-                    .y_pixels = input.y_pixels,
-                    .field_left_pixels = field_left_pixels,
-                    .field_width_pixels = field_width_pixels,
-                    .mode = *selection_mode(input.selection_mode),
-                });
+            result = dispatch_editor_action(history, state,
+                                            begin_editor_area_selection_action_t{
+                                                .x_pixels = input.x_pixels,
+                                                .y_pixels = input.y_pixels,
+                                                .field_left_pixels = field_left_pixels,
+                                                .field_width_pixels = field_width_pixels,
+                                                .mode = *selection_mode(input.selection_mode),
+                                            });
             accepted = "Area selection started.";
             break;
         case WORM_UI_COMPOSE_INPUT_AREA_SELECTION_UPDATE:
@@ -3558,9 +3550,10 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             }
             result = dispatch_editor_action(
                 history, state,
-                select_editor_objects_action_t{{{editor_selection_object_kind_t::bgm_event,
-                                                  object_id_t{input.object_id}}},
-                                               *selection_mode(input.selection_mode), true});
+                select_editor_objects_action_t{
+                    {{editor_selection_object_kind_t::bgm_event, object_id_t{input.object_id}}},
+                    *selection_mode(input.selection_mode),
+                    true});
             accepted = "BGM event selected.";
             break;
         case WORM_UI_COMPOSE_INPUT_POINTER_CLICK: {
@@ -3582,7 +3575,8 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                     history, state,
                     select_editor_objects_action_t{
                         {{editor_selection_object_kind_t::note, *target->note}},
-                        editor_area_selection_mode_t::replace, true});
+                        editor_area_selection_mode_t::replace,
+                        true});
                 accepted = "Note selected.";
             } else {
                 result =
@@ -3648,11 +3642,11 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             const auto& viewport_action = actions[action_index];
             if (const auto* scroll = std::get_if<viewport_scroll_action_t>(&viewport_action)) {
                 if (scroll->pane == viewport_pane_t::bgm) {
-                    if (scroll->delta_x_pixels == 0.0) continue;
-                    const auto maximum_scroll =
-                        std::max(0.0, static_cast<double>(bgm_lane_count) *
-                                          compose_bgm_lane_width_pixels -
-                                          bgm_pane_width);
+                    if (scroll->delta_x_pixels == 0.0)
+                        continue;
+                    const auto maximum_scroll = std::max(
+                        0.0, static_cast<double>(bgm_lane_count) * compose_bgm_lane_width_pixels -
+                                 bgm_pane_width);
                     auto& retained_scroll =
                         application_state.bgm_horizontal_scroll_pixels[state.chart.value];
                     retained_scroll =
@@ -3844,17 +3838,20 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         }
         std::string name = "Layer";
         for (std::size_t suffix = 2;; ++suffix) {
-            const auto duplicate = std::ranges::any_of(chart->semantic_layers, [&](const auto& layer) {
-                return layer.name == name;
-            });
+            const auto duplicate = std::ranges::any_of(
+                chart->semantic_layers, [&](const auto& layer) { return layer.name == name; });
             if (!duplicate) {
                 break;
             }
             name = "Layer " + std::to_string(suffix);
         }
         constexpr std::array<semantic_layer_rgba_t, 6> colors{{
-            {0.91, 0.35, 0.31, 1.0}, {0.95, 0.67, 0.24, 1.0}, {0.36, 0.74, 0.36, 1.0},
-            {0.25, 0.62, 0.91, 1.0}, {0.58, 0.42, 0.84, 1.0}, {0.87, 0.38, 0.68, 1.0},
+            {0.91, 0.35, 0.31, 1.0},
+            {0.95, 0.67, 0.24, 1.0},
+            {0.36, 0.74, 0.36, 1.0},
+            {0.25, 0.62, 0.91, 1.0},
+            {0.58, 0.42, 0.84, 1.0},
+            {0.87, 0.38, 0.68, 1.0},
         }};
         const auto applied = apply_semantic_layer_edit(
             history, action.compose_input_document_revision,
@@ -3866,8 +3863,9 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         }
         const auto rebound = rebind_workspace(workspace, history);
         return rebound ? "Semantic layer added."
-                       : (rebound.diagnostics.empty() ? "Semantic layer added, but workspace rebinding failed."
-                                                      : rebound.diagnostics.front().message);
+                       : (rebound.diagnostics.empty()
+                              ? "Semantic layer added, but workspace rebinding failed."
+                              : rebound.diagnostics.front().message);
     }
     case WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER: {
         if (editor_interaction_has_pending_gesture(state)) {
@@ -3884,27 +3882,30 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         }
         const auto applied = apply_semantic_layer_edit(
             history, action.compose_input_document_revision,
-            update_semantic_layer_action_t{.chart = state.chart,
-                                           .layer = layer->id,
-                                           .name = action.compose_semantic_layer_name,
-                                           .color = {.red = static_cast<double>(layer->color.red) / 255.0,
-                                                     .green = static_cast<double>(layer->color.green) / 255.0,
-                                                     .blue = static_cast<double>(layer->color.blue) / 255.0,
-                                                     .alpha = static_cast<double>(layer->color.alpha) / 255.0},
-                                           .visible = layer->visible,
-                                           .locked = layer->locked});
+            update_semantic_layer_action_t{
+                .chart = state.chart,
+                .layer = layer->id,
+                .name = action.compose_semantic_layer_name,
+                .color = {.red = static_cast<double>(layer->color.red) / 255.0,
+                          .green = static_cast<double>(layer->color.green) / 255.0,
+                          .blue = static_cast<double>(layer->color.blue) / 255.0,
+                          .alpha = static_cast<double>(layer->color.alpha) / 255.0},
+                .visible = layer->visible,
+                .locked = layer->locked});
         if (!applied.applied) {
             return applied.diagnostics.empty() ? "Semantic-layer name was unchanged."
                                                : applied.diagnostics.front().message;
         }
         const auto rebound = rebind_workspace(workspace, history);
         return rebound ? "Semantic layer renamed."
-                       : (rebound.diagnostics.empty() ? "Semantic layer renamed, but workspace rebinding failed."
-                                                      : rebound.diagnostics.front().message);
+                       : (rebound.diagnostics.empty()
+                              ? "Semantic layer renamed, but workspace rebinding failed."
+                              : rebound.diagnostics.front().message);
     }
     case WORM_UI_COMPOSE_ACTION_CYCLE_SEMANTIC_LAYER_COLOR: {
         if (editor_interaction_has_pending_gesture(state)) {
-            return "Finish or cancel the active Compose gesture before recoloring a semantic layer.";
+            return "Finish or cancel the active Compose gesture before recoloring a semantic "
+                   "layer.";
         }
         const auto* chart = selected_chart(history, workspace);
         if (!chart || !application_state.semantic_layer_target) {
@@ -3916,8 +3917,12 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
             return "The selected semantic layer is no longer visible.";
         }
         constexpr std::array<semantic_layer_rgba_t, 6> colors{{
-            {0.91, 0.35, 0.31, 1.0}, {0.95, 0.67, 0.24, 1.0}, {0.36, 0.74, 0.36, 1.0},
-            {0.25, 0.62, 0.91, 1.0}, {0.58, 0.42, 0.84, 1.0}, {0.87, 0.38, 0.68, 1.0},
+            {0.91, 0.35, 0.31, 1.0},
+            {0.95, 0.67, 0.24, 1.0},
+            {0.36, 0.74, 0.36, 1.0},
+            {0.25, 0.62, 0.91, 1.0},
+            {0.58, 0.42, 0.84, 1.0},
+            {0.87, 0.38, 0.68, 1.0},
         }};
         const auto matched = std::ranges::find_if(colors, [&](const auto& candidate) {
             return std::lround(candidate.red * 255.0) == layer->color.red &&
@@ -3925,10 +3930,10 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                    std::lround(candidate.blue * 255.0) == layer->color.blue &&
                    std::lround(candidate.alpha * 255.0) == layer->color.alpha;
         });
-        const auto color = matched == colors.end()
-                               ? colors.front()
-                               : colors[(static_cast<std::size_t>(matched - colors.begin()) + 1) %
-                                        colors.size()];
+        const auto color =
+            matched == colors.end()
+                ? colors.front()
+                : colors[(static_cast<std::size_t>(matched - colors.begin()) + 1) % colors.size()];
         const auto applied = apply_semantic_layer_edit(
             history, action.compose_input_document_revision,
             update_semantic_layer_action_t{state.chart, layer->id, layer->name, color,
@@ -3939,8 +3944,9 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         }
         const auto rebound = rebind_workspace(workspace, history);
         return rebound ? "Semantic-layer color changed."
-                       : (rebound.diagnostics.empty() ? "Semantic-layer color changed, but workspace rebinding failed."
-                                                      : rebound.diagnostics.front().message);
+                       : (rebound.diagnostics.empty()
+                              ? "Semantic-layer color changed, but workspace rebinding failed."
+                              : rebound.diagnostics.front().message);
     }
     case WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER: {
         if (editor_interaction_has_pending_gesture(state)) {
@@ -3959,9 +3965,9 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
             history, action.compose_input_document_revision,
             delete_semantic_layer_action_t{state.chart, layer->id, false});
         if (!applied.applied) {
-            return applied.diagnostics.empty()
-                       ? "Semantic layer was not deleted."
-                       : "Semantic layer is assigned to notes; remove those memberships before deleting it.";
+            return applied.diagnostics.empty() ? "Semantic layer was not deleted."
+                                               : "Semantic layer is assigned to notes; remove "
+                                                 "those memberships before deleting it.";
         }
         application_state.required_semantic_layer_filters.erase(
             std::remove(application_state.required_semantic_layer_filters.begin(),
@@ -3976,8 +3982,9 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         application_state.semantic_layer_solo_active = false;
         const auto rebound = rebind_workspace(workspace, history);
         return rebound ? "Semantic layer deleted."
-                       : (rebound.diagnostics.empty() ? "Semantic layer deleted, but workspace rebinding failed."
-                                                      : rebound.diagnostics.front().message);
+                       : (rebound.diagnostics.empty()
+                              ? "Semantic layer deleted, but workspace rebinding failed."
+                              : rebound.diagnostics.front().message);
     }
     case WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP:
     case WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_DOWN: {
@@ -3988,20 +3995,24 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         if (!chart || !application_state.semantic_layer_target) {
             return "Choose a visible semantic layer before reordering it.";
         }
-        const auto found = std::ranges::find(chart->semantic_layers,
-                                             *application_state.semantic_layer_target,
-                                             &semantic_layer_t::id);
+        const auto found =
+            std::ranges::find(chart->semantic_layers, *application_state.semantic_layer_target,
+                              &semantic_layer_t::id);
         if (found == chart->semantic_layers.end()) {
             return "The selected semantic layer is no longer available.";
         }
-        const auto index = static_cast<std::size_t>(std::distance(chart->semantic_layers.begin(), found));
-        const auto moving_up = action.compose_action == WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP;
-        if ((moving_up && index == 0) || (!moving_up && index + 1 == chart->semantic_layers.size())) {
+        const auto index =
+            static_cast<std::size_t>(std::distance(chart->semantic_layers.begin(), found));
+        const auto moving_up =
+            action.compose_action == WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP;
+        if ((moving_up && index == 0) ||
+            (!moving_up && index + 1 == chart->semantic_layers.size())) {
             return "Semantic layer is already at that palette boundary.";
         }
         std::vector<layer_id_t> ordered;
         ordered.reserve(chart->semantic_layers.size());
-        for (const auto& layer : chart->semantic_layers) ordered.push_back(layer.id);
+        for (const auto& layer : chart->semantic_layers)
+            ordered.push_back(layer.id);
         std::swap(ordered[index], ordered[moving_up ? index - 1 : index + 1]);
         const auto applied = apply_semantic_layer_edit(
             history, action.compose_input_document_revision,
@@ -4012,8 +4023,9 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         }
         const auto rebound = rebind_workspace(workspace, history);
         return rebound ? "Semantic-layer order updated."
-                       : (rebound.diagnostics.empty() ? "Semantic-layer order updated, but workspace rebinding failed."
-                                                      : rebound.diagnostics.front().message);
+                       : (rebound.diagnostics.empty()
+                              ? "Semantic-layer order updated, but workspace rebinding failed."
+                              : rebound.diagnostics.front().message);
     }
     case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY: {
         if (editor_interaction_has_pending_gesture(state)) {
@@ -4023,9 +4035,9 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         if (!chart || !application_state.semantic_layer_target) {
             return "Choose a semantic layer before changing its visibility.";
         }
-        const auto layer = std::ranges::find(chart->semantic_layers,
-                                             *application_state.semantic_layer_target,
-                                             &semantic_layer_t::id);
+        const auto layer =
+            std::ranges::find(chart->semantic_layers, *application_state.semantic_layer_target,
+                              &semantic_layer_t::id);
         if (layer == chart->semantic_layers.end()) {
             application_state.semantic_layer_target.reset();
             return "The selected semantic layer is no longer available.";
@@ -4033,15 +4045,16 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         const auto was_visible = layer->visible;
         const auto applied = apply_semantic_layer_edit(
             history, action.compose_input_document_revision,
-            update_semantic_layer_action_t{state.chart,
-                                           layer->id,
-                                           layer->name,
-                                           {.red = static_cast<double>(layer->color.red) / 255.0,
-                                            .green = static_cast<double>(layer->color.green) / 255.0,
-                                            .blue = static_cast<double>(layer->color.blue) / 255.0,
-                                            .alpha = static_cast<double>(layer->color.alpha) / 255.0},
-                                           !was_visible,
-                                           layer->locked});
+            update_semantic_layer_action_t{
+                state.chart,
+                layer->id,
+                layer->name,
+                {.red = static_cast<double>(layer->color.red) / 255.0,
+                 .green = static_cast<double>(layer->color.green) / 255.0,
+                 .blue = static_cast<double>(layer->color.blue) / 255.0,
+                 .alpha = static_cast<double>(layer->color.alpha) / 255.0},
+                !was_visible,
+                layer->locked});
         if (!applied.applied) {
             return applied.diagnostics.empty() ? "Semantic-layer visibility was unchanged."
                                                : applied.diagnostics.front().message;
@@ -4052,8 +4065,9 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         }
         const auto rebound = rebind_workspace(workspace, history);
         return rebound ? (was_visible ? "Semantic layer hidden." : "Semantic layer shown.")
-                       : (rebound.diagnostics.empty() ? "Semantic-layer visibility changed, but workspace rebinding failed."
-                                                      : rebound.diagnostics.front().message);
+                       : (rebound.diagnostics.empty()
+                              ? "Semantic-layer visibility changed, but workspace rebinding failed."
+                              : rebound.diagnostics.front().message);
     }
     case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER:
     case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER: {
@@ -4067,8 +4081,8 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
             application_state.required_semantic_layer_filters.clear();
             application_state.excluded_semantic_layer_filters.clear();
         }
-        const auto require = action.compose_action ==
-                             WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER;
+        const auto require =
+            action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER;
         auto& enabled = require ? application_state.required_semantic_layer_filters
                                 : application_state.excluded_semantic_layer_filters;
         auto& opposite = require ? application_state.excluded_semantic_layer_filters
@@ -4126,7 +4140,8 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
             application_state.semantic_layer_solo_active = false;
             return "The selected semantic layer is no longer visible.";
         }
-        application_state.semantic_layer_solo_active = !application_state.semantic_layer_solo_active;
+        application_state.semantic_layer_solo_active =
+            !application_state.semantic_layer_solo_active;
         return application_state.semantic_layer_solo_active ? "Semantic-layer solo enabled."
                                                             : "Semantic-layer solo disabled.";
     }
@@ -4149,15 +4164,16 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         const auto was_locked = layer->locked;
         const auto applied = apply_semantic_layer_edit(
             history, action.compose_input_document_revision,
-            update_semantic_layer_action_t{.chart = state.chart,
-                                           .layer = layer->id,
-                                           .name = layer->name,
-                                           .color = {.red = static_cast<double>(layer->color.red) / 255.0,
-                                                     .green = static_cast<double>(layer->color.green) / 255.0,
-                                                     .blue = static_cast<double>(layer->color.blue) / 255.0,
-                                                     .alpha = static_cast<double>(layer->color.alpha) / 255.0},
-                                           .visible = layer->visible,
-                                           .locked = !was_locked});
+            update_semantic_layer_action_t{
+                .chart = state.chart,
+                .layer = layer->id,
+                .name = layer->name,
+                .color = {.red = static_cast<double>(layer->color.red) / 255.0,
+                          .green = static_cast<double>(layer->color.green) / 255.0,
+                          .blue = static_cast<double>(layer->color.blue) / 255.0,
+                          .alpha = static_cast<double>(layer->color.alpha) / 255.0},
+                .visible = layer->visible,
+                .locked = !was_locked});
         if (!applied.applied) {
             return applied.diagnostics.empty() ? "Semantic-layer lock state was unchanged."
                                                : applied.diagnostics.front().message;
@@ -4198,8 +4214,8 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                 }
             }
         }
-        result = dispatch_editor_action(history, state,
-                                        select_editor_notes_action_t{std::move(notes)});
+        result =
+            dispatch_editor_action(history, state, select_editor_notes_action_t{std::move(notes)});
         return compose_result_status(result, "Semantic-layer notes selected.");
     }
     case WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER:
@@ -4226,16 +4242,16 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         semantic_layer_edit_action_t edit;
         if (action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER) {
             edit = assign_notes_to_semantic_layer_action_t{state.chart, layer->id,
-                                                            state.selected_notes};
+                                                           state.selected_notes};
         } else if (action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER) {
             edit = remove_notes_from_semantic_layer_action_t{state.chart, layer->id,
-                                                              state.selected_notes};
+                                                             state.selected_notes};
         } else {
             edit = toggle_semantic_layer_membership_action_t{state.chart, layer->id,
-                                                              state.selected_notes};
+                                                             state.selected_notes};
         }
-        const auto applied = apply_semantic_layer_edit(history, action.compose_input_document_revision,
-                                                       std::move(edit));
+        const auto applied = apply_semantic_layer_edit(
+            history, action.compose_input_document_revision, std::move(edit));
         if (!applied.applied) {
             return applied.diagnostics.empty() ? "Semantic-layer membership was unchanged."
                                                : applied.diagnostics.front().message;
@@ -4289,11 +4305,10 @@ auto visible_semantic_layer_at(const wormedit::chart_document_t& chart, std::siz
     return nullptr;
 }
 
-auto visible_semantic_layer_by_id(const wormedit::chart_document_t& chart,
-                                  wormedit::layer_id_t id)
+auto visible_semantic_layer_by_id(const wormedit::chart_document_t& chart, wormedit::layer_id_t id)
     -> const wormedit::semantic_layer_t* {
-    const auto found = std::ranges::find(chart.semantic_layers, id,
-                                         &wormedit::semantic_layer_t::id);
+    const auto found =
+        std::ranges::find(chart.semantic_layers, id, &wormedit::semantic_layer_t::id);
     return found != chart.semantic_layers.end() && found->visible ? &*found : nullptr;
 }
 
@@ -4356,6 +4371,14 @@ auto invoke_application_command(
         }
         timing_stage.reset();
         return rebind_after_edit();
+    }
+
+    if (id == "transport.play_pause") {
+        if (!application_state.transport_play_pause) {
+            return reject_application_command(status, "Chart preview is unavailable.");
+        }
+        status = application_state.transport_play_pause();
+        return {.accepted = true};
     }
 
     if (id == "transport.stop") {
@@ -4598,9 +4621,9 @@ void refresh_application_command_states(
     const bool pending = compose_ready && editor_interaction_has_pending_gesture(*compose_state);
     bool target_valid{};
     if (chart && application_state.semantic_layer_target) {
-        const auto target_layer = std::ranges::find(chart->semantic_layers,
-                                                    *application_state.semantic_layer_target,
-                                                    &semantic_layer_t::id);
+        const auto target_layer =
+            std::ranges::find(chart->semantic_layers, *application_state.semantic_layer_target,
+                              &semantic_layer_t::id);
         target_valid = target_layer != chart->semantic_layers.end();
         if (!target_valid) {
             application_state.semantic_layer_target.reset();
@@ -4627,9 +4650,10 @@ void refresh_application_command_states(
     set("navigation.next_marker", compose_ready);
     set("navigation.previous_snap", compose_ready);
     set("navigation.next_snap", compose_ready);
-    set("transport.play_pause", false);
-    set("transport.stop", application_state.transport_active &&
-                              application_state.transport_active());
+    set("transport.play_pause",
+        chart != nullptr && static_cast<bool>(application_state.transport_play_pause));
+    set("transport.stop",
+        application_state.transport_active && application_state.transport_active());
 
     constexpr std::array<std::pair<std::string_view, workspace_tab_t>, 7> tabs{{
         {"workspace.open_setup", workspace_tab_t::setup},
@@ -4819,18 +4843,28 @@ int main(int argc, char** argv) {
     wormedit::audio::transport_t audition_transport{audition_cache};
     wormedit::audio::audition_transport_bridge_t audition_bridge{audition_transport};
     wormedit::audio::object_audition_controller_t object_audition{audition_bridge};
-    wormedit::audio::audition_session_t audition_session{
-        audition_sources, audition_transport, audition_bridge};
+    wormedit::audio::audition_session_t audition_session{audition_sources, audition_transport,
+                                                         audition_bridge};
     wormedit::sys::sdl_audition_output_t audition_output{audition_session};
-    const auto asset_base = startup.loaded_primary
-                                ? requested_primary_path.parent_path()
-                                : std::filesystem::path{};
+    wormedit::audio::decoded_block_cache_t preview_cache;
+    wormedit::audio::transport_t preview_transport{preview_cache};
+    wormedit::audio::preview_transport_bridge_t preview_bridge{preview_transport};
+    wormedit::audio::preview_session_t preview_session{audition_sources, preview_transport,
+                                                       preview_bridge};
+    wormedit::sys::sdl_preview_output_t preview_output{preview_session};
+    std::optional<wormedit::preview_schedule_t> active_preview_schedule;
+    std::vector<wormedit::audio::preview_object_source_binding_t> active_preview_bindings;
+    std::optional<wormedit::chart_id_t> active_preview_chart;
+    std::uint64_t active_preview_revision{};
+    std::uint64_t preview_resume_frame{};
+    bool preview_paused{};
+    const auto asset_base =
+        startup.loaded_primary ? requested_primary_path.parent_path() : std::filesystem::path{};
     using audition_asset_entry_t = std::pair<wormedit::asset_id_t, std::filesystem::path>;
     std::optional<wormedit::song_id_t> audition_source_project;
     std::vector<audition_asset_entry_t> audition_asset_inventory;
     std::uint64_t audition_source_generation{};
-    const auto reconcile_audition_sources = [&](bool stop_playback)
-        -> std::optional<std::size_t> {
+    const auto reconcile_audition_sources = [&](bool stop_playback) -> std::optional<std::size_t> {
         std::vector<audition_asset_entry_t> next_inventory;
         next_inventory.reserve(history.document.audio_assets.size());
         for (const auto& asset : history.document.audio_assets) {
@@ -4842,6 +4876,12 @@ int main(int argc, char** argv) {
         }
         if (stop_playback) {
             static_cast<void>(audition_output.stop());
+            static_cast<void>(preview_output.stop());
+            preview_resume_frame = 0;
+            preview_paused = false;
+            active_preview_schedule.reset();
+            active_preview_bindings.clear();
+            active_preview_chart.reset();
         }
         audition_sources.clear();
         ++audition_source_generation;
@@ -4858,12 +4898,13 @@ int main(int argc, char** argv) {
             const auto registered = audition_sources.register_source({
                 .asset = asset.id,
                 .path = resolved_path,
-                .source = {
-                    "project:" + std::to_string(history.document.id.value) + ":asset:" +
-                        std::to_string(asset.id.value),
-                    "binding:" + std::to_string(audition_source_generation) + ":" +
-                        resolved_path.generic_string(),
-                },
+                .source =
+                    {
+                        "project:" + std::to_string(history.document.id.value) +
+                            ":asset:" + std::to_string(asset.id.value),
+                        "binding:" + std::to_string(audition_source_generation) + ":" +
+                            resolved_path.generic_string(),
+                    },
             });
             if (!registered) {
                 ++unavailable;
@@ -4881,6 +4922,10 @@ int main(int argc, char** argv) {
     std::string audition_output_error;
     if (!audition_output.open(&audition_output_error)) {
         status += " Audio output unavailable: " + audition_output_error;
+    }
+    std::string preview_output_error;
+    if (!preview_output.open(&preview_output_error)) {
+        status += " Chart preview output unavailable: " + preview_output_error;
     }
 #endif
     wormedit::native_project_recovery_controller_t recovery_controller;
@@ -4900,8 +4945,60 @@ int main(int argc, char** argv) {
     wormedit::editor_navigation_input_controller_t compose_navigation_input;
     application_command_state_t application_command_state;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    application_command_state.transport_active = [&] { return audition_session.active(); };
-    application_command_state.transport_stop = [&] { static_cast<void>(audition_output.stop()); };
+    application_command_state.transport_active = [&] {
+        return audition_session.active() || preview_session.active();
+    };
+    application_command_state.transport_play_pause = [&]() -> std::string {
+        if (preview_session.active()) {
+            preview_resume_frame = preview_session.timeline_frame();
+            static_cast<void>(preview_output.stop());
+            preview_paused = true;
+            return "Chart preview paused.";
+        }
+        const auto* chart = selected_chart(history, workspace);
+        if (chart == nullptr)
+            return "Select a chart before starting preview.";
+
+        const bool reusable = active_preview_schedule.has_value() &&
+                              active_preview_chart == chart->id &&
+                              active_preview_revision == history.document.revision;
+        if (!reusable) {
+            const auto timing = wormedit::build_timing_index(*chart);
+            if (!timing)
+                return timing.diagnostics.empty() ? "Chart timing could not be compiled."
+                                                  : timing.diagnostics.front().message;
+            const auto schedule = wormedit::build_preview_schedule(
+                *chart, *timing.index,
+                {.sample_rate = wormedit::audio::output_sample_rate, .include_metronome = false});
+            if (!schedule)
+                return schedule.diagnostics.empty() ? "Chart preview could not be compiled."
+                                                    : schedule.diagnostics.front().message;
+            const auto resolved = wormedit::audio::resolve_preview_bindings(
+                history.document, chart->id, *schedule.schedule, audition_sources.bindings());
+            if (!resolved)
+                return resolved.diagnostics.empty() ? "Chart audio could not be resolved."
+                                                    : resolved.diagnostics.front().message;
+            active_preview_schedule = std::move(*schedule.schedule);
+            active_preview_bindings = std::move(resolved.bindings);
+            active_preview_chart = chart->id;
+            active_preview_revision = history.document.revision;
+            preview_resume_frame = 0;
+        }
+
+        static_cast<void>(audition_output.stop());
+        const auto started = preview_output.start(*active_preview_schedule, active_preview_bindings,
+                                                  {}, preview_resume_frame);
+        if (!started)
+            return started.message.empty() ? "Chart preview could not start." : started.message;
+        preview_paused = false;
+        return preview_resume_frame == 0 ? "Chart preview started." : "Chart preview resumed.";
+    };
+    application_command_state.transport_stop = [&] {
+        static_cast<void>(audition_output.stop());
+        static_cast<void>(preview_output.stop());
+        preview_resume_frame = 0;
+        preview_paused = false;
+    };
 #endif
     timing_grid_state_t timing_grid;
     auto command_registry = wormedit::make_default_editor_command_registry(
@@ -4945,6 +5042,14 @@ int main(int argc, char** argv) {
                 status = autosave_text;
         }
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        if (preview_session.active() &&
+            (!active_preview_chart || active_preview_revision != history.document.revision ||
+             !workspace.selected_chart || *workspace.selected_chart != *active_preview_chart)) {
+            static_cast<void>(preview_output.stop());
+            preview_resume_frame = 0;
+            preview_paused = false;
+            status = "Chart preview stopped because its document or selected chart changed.";
+        }
         if (const auto serviced = audition_output.service(); serviced && !*serviced) {
             static_cast<void>(audition_output.stop());
             if (serviced->status == wormedit::sys::sdl_audition_service_status_t::device_failed) {
@@ -4960,6 +5065,25 @@ int main(int argc, char** argv) {
                 status = "Audio preview stopped after a bounded lookahead failure.";
             }
         }
+        if (const auto serviced = preview_output.service(); serviced && !*serviced) {
+            static_cast<void>(preview_output.stop());
+            preview_resume_frame = 0;
+            preview_paused = false;
+            if (serviced->status == wormedit::sys::sdl_preview_service_status_t::device_failed) {
+                status = "Chart preview stopped after an output-device failure.";
+            } else if (serviced->status ==
+                       wormedit::sys::sdl_preview_service_status_t::render_failed) {
+                status = "Chart preview stopped after a realtime cache underrun.";
+            } else if (serviced->pump && serviced->pump->decode &&
+                       serviced->pump->decode->status ==
+                           wormedit::audio::preview_pump_status_t::source_unavailable) {
+                status = "Chart preview stopped because a decoded source is unavailable.";
+            } else {
+                status = "Chart preview stopped after a bounded refill failure.";
+            }
+        }
+        if (!preview_session.active() && !preview_paused)
+            preview_resume_frame = 0;
 #endif
 
         if (compose_interaction_state) {
@@ -5113,11 +5237,10 @@ int main(int argc, char** argv) {
                     action, history, workspace, *compose_interaction_state, compose_viewport_input,
                     compose_navigation_input, application_command_state, compose_scene_cache,
                     compose_viewport_delta_seconds);
-                if (auto request = std::exchange(compose_scene_cache.audition_request,
-                                                 std::nullopt)) {
+                if (auto request =
+                        std::exchange(compose_scene_cache.audition_request, std::nullopt)) {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-                    if (request->object.kind !=
-                            wormedit::editor_selection_object_kind_t::note &&
+                    if (request->object.kind != wormedit::editor_selection_object_kind_t::note &&
                         request->object.kind !=
                             wormedit::editor_selection_object_kind_t::bgm_event) {
                         status = "Only notes and BGM events can be prepared for audition.";
@@ -5128,11 +5251,15 @@ int main(int argc, char** argv) {
                             {request->document_revision, request->chart, request->object.id},
                             bindings);
                         if (prepared) {
+                            if (preview_session.active()) {
+                                preview_resume_frame = preview_session.timeline_frame();
+                                static_cast<void>(preview_output.stop());
+                                preview_paused = true;
+                            }
                             const auto started = audition_output.start(prepared.prepared->clips);
-                            status = started ? "Audio preview started."
-                                             : started.message.empty()
-                                                 ? "Audio preview could not start."
-                                                 : started.message;
+                            status = started                   ? "Audio preview started."
+                                     : started.message.empty() ? "Audio preview could not start."
+                                                               : started.message;
                         } else if (!prepared.diagnostics.empty()) {
                             status = prepared.diagnostics.front().message;
                         } else if (prepared.status ==
@@ -5430,6 +5557,7 @@ int main(int argc, char** argv) {
     }
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    preview_output.close();
     audition_output.close();
 #endif
     worm_ui_frontend_shutdown();

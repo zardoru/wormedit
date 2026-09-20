@@ -495,6 +495,21 @@ TEST_CASE("workspace exposes the complete BMS branch outline with current active
     CHECK_FALSE(outline.display_text_truncated);
     CHECK(outline.diagnostics.empty());
     CHECK(outline.rows.size() == 15);
+    REQUIRE(outline.choices.size() == 2);
+    CHECK_FALSE(outline.choices_truncated);
+    CHECK(outline.choices[0].id == branch_id_t{1001});
+    CHECK(outline.choices[0].kind == bms_control_kind_t::random);
+    CHECK(outline.choices[0].active);
+    CHECK(outline.choices[0].editable);
+    CHECK(outline.choices[0].selected_value == std::optional<std::int64_t>{2});
+    CHECK(outline.choices[0].previous_value == std::optional<std::int64_t>{1});
+    CHECK_FALSE(outline.choices[0].next_value.has_value());
+    CHECK(outline.choices[0].can_clear);
+    CHECK(outline.choices[1].id == branch_id_t{1007});
+    CHECK(outline.choices[1].kind == bms_control_kind_t::switch_block);
+    CHECK(outline.choices[1].active);
+    CHECK(outline.choices[1].selected_value == std::optional<std::int64_t>{2});
+    CHECK(outline.choices[1].previous_value == std::optional<std::int64_t>{1});
 
     const auto row = [&outline](branch_id_t id) -> const workspace_bms_branch_row_t* {
         const auto found = std::ranges::find(outline.rows, id, &workspace_bms_branch_row_t::id);
@@ -534,6 +549,7 @@ TEST_CASE("BMS branch outline reports bounded rows and display text",
         std::get<workspace_compose_view_t>(row_result.view->tab_view).bms_branch_outline;
     CHECK(row_outline.rows.size() == 4);
     CHECK(row_outline.rows_truncated);
+    CHECK(row_outline.choices_truncated);
     CHECK(has_code(row_outline.diagnostics, diagnostic_code_t::invalid_resolution));
 
     auto text_capped = make_workspace_controller(
@@ -562,6 +578,55 @@ TEST_CASE("BMS branch outline reports bounded rows and display text",
     CHECK(diagnostics_outline.rows_truncated);
     CHECK(diagnostics_outline.diagnostics.empty());
     CHECK(diagnostics_outline.diagnostics_truncated);
+}
+
+TEST_CASE("BMS branch choices expose one reachable unresolved control at a time",
+          "[unit][core][workspace][bms-branches][choices]") {
+    auto song = bms_branch_workspace_song();
+    song.charts.front().active_branch_selection.clear();
+    auto bound = make_workspace_controller(song);
+    REQUIRE(bound);
+    REQUIRE(apply(*bound.workspace, song, workspace_switch_tab_action_t{workspace_tab_t::compose}));
+
+    const auto result = make_workspace_view(*bound.workspace, song);
+    REQUIRE(result);
+    const auto& outline =
+        std::get<workspace_compose_view_t>(result.view->tab_view).bms_branch_outline;
+    REQUIRE(outline.choices.size() == 2);
+    const auto& random = outline.choices.front();
+    CHECK(random.id == branch_id_t{1001});
+    CHECK(random.active);
+    CHECK(random.editable);
+    CHECK_FALSE(random.selected_value.has_value());
+    CHECK_FALSE(random.previous_value.has_value());
+    CHECK(random.next_value == std::optional<std::int64_t>{1});
+    CHECK_FALSE(random.can_clear);
+    CHECK(outline.choices[1].id == branch_id_t{1007});
+    CHECK_FALSE(outline.choices[1].active);
+    CHECK_FALSE(outline.choices[1].editable);
+}
+
+TEST_CASE("BMS branch choices keep invalid imported selections clearable",
+          "[unit][core][workspace][bms-branches][choices][recovery]") {
+    auto song = bms_branch_workspace_song();
+    song.charts.front().active_branch_selection.front().selected_value = 99;
+    auto bound = make_workspace_controller(song);
+    REQUIRE(bound);
+    REQUIRE(apply(*bound.workspace, song, workspace_switch_tab_action_t{workspace_tab_t::compose}));
+
+    const auto result = make_workspace_view(*bound.workspace, song);
+    REQUIRE(result);
+    const auto& outline =
+        std::get<workspace_compose_view_t>(result.view->tab_view).bms_branch_outline;
+    REQUIRE_FALSE(outline.choices.empty());
+    const auto& random = outline.choices.front();
+    CHECK(random.active);
+    CHECK_FALSE(random.editable);
+    CHECK(random.selected_value == std::optional<std::int64_t>{99});
+    CHECK_FALSE(random.previous_value.has_value());
+    CHECK_FALSE(random.next_value.has_value());
+    CHECK(random.can_clear);
+    CHECK(has_code(outline.diagnostics, diagnostic_code_t::invalid_resolution));
 }
 
 TEST_CASE("BMS branch outline rejects a stale workspace revision and diagnoses stale choices",

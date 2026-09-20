@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <functional>
+#include <iterator>
 #include <limits>
 #include <ranges>
 #include <string_view>
@@ -417,12 +418,14 @@ auto make_branch_outline(const chart_document_t& chart, const workspace_limits_t
         }
         if (depth > limits.maximum_bms_branch_depth) {
             outline.rows_truncated = true;
+            outline.choices_truncated = true;
             diagnostic_once(depth_cap_reported, diagnostic_code_t::invalid_resolution,
                             "BMS branch outline was truncated at the configured depth cap");
             return;
         }
         if (outline.rows.size() >= limits.maximum_bms_branch_rows) {
             outline.rows_truncated = true;
+            outline.choices_truncated = true;
             diagnostic_once(row_cap_reported, diagnostic_code_t::invalid_resolution,
                             "BMS branch outline was truncated at the configured row cap");
             return;
@@ -464,7 +467,9 @@ auto make_branch_outline(const chart_document_t& chart, const workspace_limits_t
             source_order = node.children.front().source_order;
         }
 
+        auto stored_choice_value = std::optional<std::int64_t>{};
         auto choice_value = std::optional<std::int64_t>{};
+        bool choice_identity_unambiguous = true;
         auto choice_indices = selections_by_id.find(node.id.value);
         if (is_branch_choice_control(node.kind) && choice_indices != selections_by_id.end()) {
             for (const auto index : choice_indices->second) {
@@ -472,13 +477,17 @@ auto make_branch_outline(const chart_document_t& chart, const workspace_limits_t
                 active_selections[index] = active_selections[index] || active;
             }
             if (choice_indices->second.size() > 1) {
+                choice_identity_unambiguous = false;
                 if (diagnosed_selection_ids.insert(node.id.value).second) {
                     add_diagnostic(diagnostic_code_t::invalid_id,
                                    "BMS branch control has duplicate selected values");
                 }
-            } else if (active) {
-                choice_value =
+            } else {
+                stored_choice_value =
                     chart.active_branch_selection[choice_indices->second.front()].selected_value;
+                if (active) {
+                    choice_value = stored_choice_value;
+                }
             }
         }
 
@@ -517,6 +526,30 @@ auto make_branch_outline(const chart_document_t& chart, const workspace_limits_t
             const bool valid_choice = active && choice_value.has_value() &&
                                       node.value.has_value() && *choice_value >= 1 &&
                                       *choice_value <= *node.value;
+            workspace_bms_branch_choice_t choice{
+                .id = node.id,
+                .kind = node.kind,
+                .source_order = source_order,
+                .active = active,
+                .editable = active && choice_identity_unambiguous && node.value.has_value() &&
+                            *node.value > 0 && (!stored_choice_value.has_value() || valid_choice),
+                .selected_value = stored_choice_value,
+                .can_clear =
+                    active && choice_identity_unambiguous && stored_choice_value.has_value(),
+            };
+            if (choice.editable) {
+                if (!stored_choice_value.has_value()) {
+                    choice.next_value = 1;
+                } else {
+                    if (*stored_choice_value > 1) {
+                        choice.previous_value = *stored_choice_value - 1;
+                    }
+                    if (*stored_choice_value < *node.value) {
+                        choice.next_value = *stored_choice_value + 1;
+                    }
+                }
+            }
+            outline.choices.push_back(std::move(choice));
             outline.rows.back().selected = valid_choice;
             if (active && choice_value.has_value() && !valid_choice) {
                 add_diagnostic(diagnostic_code_t::invalid_resolution,
@@ -560,6 +593,8 @@ auto make_branch_outline(const chart_document_t& chart, const workspace_limits_t
         if (node.kind == bms_control_kind_t::switch_block) {
             const bms_control_node_t* selected_branch{};
             const bms_control_node_t* fallback_branch{};
+            std::vector<std::int64_t> case_values;
+            bool has_default{};
             if (active && choice_value.has_value()) {
                 for (const auto& child : node.children) {
                     if (child.kind == bms_control_kind_t::case_branch &&
@@ -579,6 +614,48 @@ auto make_branch_outline(const chart_document_t& chart, const workspace_limits_t
                                    "BMS SWITCH selection has no matching CASE or DEFAULT");
                 }
             }
+            for (const auto& child : node.children) {
+                if (child.kind == bms_control_kind_t::case_branch && child.value.has_value()) {
+                    case_values.push_back(*child.value);
+                } else if (child.kind == bms_control_kind_t::default_branch) {
+                    has_default = true;
+                }
+            }
+            std::ranges::sort(case_values);
+            case_values.erase(std::unique(case_values.begin(), case_values.end()),
+                              case_values.end());
+            const auto stored_matches_case =
+                stored_choice_value.has_value() &&
+                std::ranges::find(case_values, *stored_choice_value) != case_values.end();
+            const auto stored_is_valid =
+                !stored_choice_value.has_value() || stored_matches_case || has_default;
+            workspace_bms_branch_choice_t choice{
+                .id = node.id,
+                .kind = node.kind,
+                .source_order = source_order,
+                .active = active,
+                .editable = active && choice_identity_unambiguous && stored_is_valid &&
+                            (!case_values.empty() || has_default),
+                .selected_value = stored_choice_value,
+                .can_clear =
+                    active && choice_identity_unambiguous && stored_choice_value.has_value(),
+            };
+            if (choice.editable) {
+                if (!stored_choice_value.has_value()) {
+                    choice.next_value =
+                        case_values.empty() ? std::optional<std::int64_t>{0} : case_values.front();
+                } else {
+                    const auto lower = std::ranges::lower_bound(case_values, *stored_choice_value);
+                    if (lower != case_values.begin()) {
+                        choice.previous_value = *std::prev(lower);
+                    }
+                    const auto upper = std::ranges::upper_bound(case_values, *stored_choice_value);
+                    if (upper != case_values.end()) {
+                        choice.next_value = *upper;
+                    }
+                }
+            }
+            outline.choices.push_back(std::move(choice));
             outline.rows.back().selected = selected_branch != nullptr;
             bool entered{};
             bool stopped{};

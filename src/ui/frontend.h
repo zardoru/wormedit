@@ -42,6 +42,7 @@
 #define WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY 16
 #define WORM_UI_SHORTCUT_EVENT_CAPACITY 64
 #define WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY 96
+#define WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY 96
 #define WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY 4
 #define WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY 9
 #define WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY 128
@@ -397,6 +398,27 @@ typedef struct WormUiComposeBranchRowView {
     size_t source_order;
 } WormUiComposeBranchRowView;
 
+typedef enum WormUiComposeBranchKind {
+    WORM_UI_COMPOSE_BRANCH_RANDOM = 0,
+    WORM_UI_COMPOSE_BRANCH_SWITCH,
+} WormUiComposeBranchKind;
+
+typedef struct WormUiComposeBranchChoiceView {
+    uint64_t branch_id;
+    WormUiComposeBranchKind kind;
+    bool has_source_order;
+    size_t source_order;
+    bool active;
+    bool editable;
+    bool has_selected_value;
+    int64_t selected_value;
+    bool has_previous_value;
+    int64_t previous_value;
+    bool has_next_value;
+    int64_t next_value;
+    bool can_clear;
+} WormUiComposeBranchChoiceView;
+
 // Renderer-neutral field primitives projected into bounded scalar storage.
 // Coordinates are relative to the scene viewport; no chart/core types cross
 // the private frontend boundary.
@@ -487,10 +509,13 @@ typedef struct WormUiComposeView {
     size_t lane_key_binding_count;
     bool branch_outline_available;
     bool branch_rows_truncated;
+    bool branch_choices_truncated;
     bool branch_display_text_truncated;
     bool branch_diagnostics_truncated;
     const WormUiComposeBranchRowView* branch_rows;
     size_t branch_row_count;
+    const WormUiComposeBranchChoiceView* branch_choices;
+    size_t branch_choice_count;
     const char* branch_diagnostics[WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY];
     size_t branch_diagnostic_count;
 } WormUiComposeView;
@@ -948,6 +973,8 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY,
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER,
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER,
+    WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE,
+    WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE,
 } WormUiComposeActionKind;
 
 typedef enum WormUiComposeInputKind {
@@ -1083,6 +1110,8 @@ typedef struct WormUiWorkspaceAction {
     char compose_marker_audio_begin[WORM_UI_COMPOSE_MARKER_TIME_BYTES];
     char compose_marker_audio_end[WORM_UI_COMPOSE_MARKER_TIME_BYTES];
     uint64_t compose_semantic_layer_id;
+    uint64_t compose_branch_id;
+    int64_t compose_branch_value;
     char compose_semantic_layer_name[WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY];
     uint8_t compose_semantic_layer_red;
     uint8_t compose_semantic_layer_green;

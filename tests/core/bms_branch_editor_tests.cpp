@@ -402,6 +402,32 @@ TEST_CASE("BMS branch selection retains serialized active edits when switching a
     CHECK(first_note_resource_name(history.document) == "active.wav");
 }
 
+TEST_CASE("scalar BMS branch choice command derives set and clear proposals from current state",
+          "[unit][core][bms][branch][selection][scalar]") {
+    auto history = make_history();
+    const auto chart = history.document.charts.front().id;
+    const auto branch = history.document.charts.front().active_branch_selection.front().branch;
+    const auto selected =
+        apply_bms_branch_choice_command(history, history.document.revision,
+                                        {.chart = chart, .branch = branch, .selected_value = 2});
+    REQUIRE(selected);
+    CHECK(first_note_resource_name(history.document) == "inactive.wav");
+
+    const auto selected_branch_id =
+        history.document.charts.front().active_branch_selection.front().branch;
+    const auto cleared = apply_bms_branch_choice_command(
+        history, history.document.revision,
+        {.chart = chart, .branch = selected_branch_id, .selected_value = std::nullopt});
+    REQUIRE(cleared);
+    CHECK(history.document.charts.front().active_branch_selection.empty());
+    CHECK(history.document.charts.front().measures.front().notes.empty());
+    CHECK(history.undo.size() == 2);
+
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 2);
+    CHECK(first_note_resource_name(history.document) == "inactive.wav");
+}
+
 TEST_CASE("BMS branch selection maps nested controls across normalized source orders",
           "[unit][core][bms][branch][selection][nested]") {
     constexpr std::string_view nested_source = "#PLAYER 1\n"

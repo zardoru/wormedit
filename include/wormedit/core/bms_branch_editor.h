@@ -51,4 +51,18 @@ struct bms_branch_selection_command_result_t {
                                                       bms_branch_selection_request_t request)
     -> bms_branch_selection_command_result_t;
 
+struct bms_branch_choice_command_t {
+    chart_id_t chart;
+    branch_id_t branch;
+    // Null removes the explicit selection; a value replaces or inserts it.
+    std::optional<std::int64_t> selected_value;
+};
+
+// Scalar choice boundary for frontends. The complete proposal is derived from
+// the current revision before using the same atomic rematerialization command.
+[[nodiscard]] auto apply_bms_branch_choice_command(document_history_t& history,
+                                                   std::uint64_t expected_revision,
+                                                   bms_branch_choice_command_t choice)
+    -> bms_branch_selection_command_result_t;
+
 } // namespace wormedit

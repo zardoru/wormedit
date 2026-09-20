@@ -1,5 +1,6 @@
 #include <wormedit/core/bms_branch_editor.h>
 
+#include <algorithm>
 #include <utility>
 
 namespace wormedit {
@@ -96,6 +97,31 @@ auto apply_bms_branch_selection_command(document_history_t& history,
     result.command = commit_document_command(history, std::move(*rematerialized.song),
                                              "Change active BMS branch");
     return result;
+}
+
+auto apply_bms_branch_choice_command(document_history_t& history, std::uint64_t expected_revision,
+                                     bms_branch_choice_command_t choice)
+    -> bms_branch_selection_command_result_t {
+    bms_branch_selection_request_t request{.chart = choice.chart};
+    if (expected_revision == history.document.revision) {
+        const auto chart =
+            std::ranges::find(history.document.charts, choice.chart, &chart_document_t::id);
+        if (chart != history.document.charts.end()) {
+            request.proposed = chart->active_branch_selection;
+            const auto selected =
+                std::ranges::find(request.proposed, choice.branch, &branch_selection_t::branch);
+            if (choice.selected_value.has_value()) {
+                if (selected == request.proposed.end()) {
+                    request.proposed.push_back({choice.branch, *choice.selected_value});
+                } else {
+                    selected->selected_value = *choice.selected_value;
+                }
+            } else if (selected != request.proposed.end()) {
+                request.proposed.erase(selected);
+            }
+        }
+    }
+    return apply_bms_branch_selection_command(history, expected_revision, std::move(request));
 }
 
 } // namespace wormedit

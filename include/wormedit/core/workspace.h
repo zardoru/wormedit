@@ -216,12 +216,26 @@ struct workspace_bms_branch_row_t {
     bool display_text_truncated{};
 };
 
+struct workspace_bms_branch_choice_t {
+    branch_id_t id;
+    bms_control_kind_t kind{bms_control_kind_t::random};
+    std::optional<std::size_t> source_order;
+    bool active{};
+    bool editable{};
+    std::optional<std::int64_t> selected_value;
+    std::optional<std::int64_t> previous_value;
+    std::optional<std::int64_t> next_value;
+    bool can_clear{};
+};
+
 struct workspace_bms_branch_outline_t {
     bool available{};
     bool rows_truncated{};
+    bool choices_truncated{};
     bool display_text_truncated{};
     bool diagnostics_truncated{};
     std::vector<workspace_bms_branch_row_t> rows;
+    std::vector<workspace_bms_branch_choice_t> choices;
     diagnostic_list_t diagnostics;
 };
 

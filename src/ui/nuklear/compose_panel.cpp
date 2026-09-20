@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_panel.h"
+#include "ui/nuklear/bms_branch_panel.h"
 #include "ui/nuklear/compose_markers.h"
 #include "ui/nuklear/compose_state.h"
 
@@ -330,6 +331,7 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
          (!std::isfinite(view->playhead_y_pixels) || view->playhead_y_pixels < 0.0 ||
           view->playhead_y_pixels > view->viewport_height_pixels)) ||
         view->branch_row_count > WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY ||
+        view->branch_choice_count > WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY ||
         view->branch_diagnostic_count > WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY ||
         view->semantic_layer_count > WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY ||
         view->beat_bookmark_count > WORM_UI_COMPOSE_BOOKMARK_CAPACITY ||
@@ -350,6 +352,7 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
                                     view->semantic_layer_page *
                                         WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY)) ||
         (view->branch_row_count != 0 && !view->branch_rows) ||
+        (view->branch_choice_count != 0 && !view->branch_choices) ||
         (view->beat_bookmark_count != 0 && !view->beat_bookmarks) ||
         (view->beat_section_count != 0 && !view->beat_sections) ||
         (view->audio_bookmark_count != 0 && !view->audio_bookmarks) ||
@@ -474,6 +477,18 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         if (!view->branch_rows[index].display_text || view->branch_rows[index].depth > 512)
             return 0;
     }
+    for (size_t index = 0; index < view->branch_choice_count; ++index) {
+        const auto& choice = view->branch_choices[index];
+        if (choice.branch_id == 0 || choice.kind > WORM_UI_COMPOSE_BRANCH_SWITCH ||
+            (choice.editable && !choice.active) ||
+            (choice.can_clear && (!choice.active || !choice.has_selected_value)) ||
+            (choice.has_previous_value && choice.has_selected_value &&
+             choice.previous_value >= choice.selected_value) ||
+            (choice.has_next_value && choice.has_selected_value &&
+             choice.next_value <= choice.selected_value)) {
+            return 0;
+        }
+    }
     return !view->cursor || compose_rect_valid(&view->cursor->bounds);
 }
 
@@ -489,6 +504,7 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY &&
            view->lane_key_binding_count <= WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY &&
            view->branch_row_count <= WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY &&
+           view->branch_choice_count <= WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY &&
            view->branch_diagnostic_count <= WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY &&
            (view->band_count == 0 || view->bands) && (view->lane_count == 0 || view->lanes) &&
            (view->grid_line_count == 0 || view->grid_lines) &&
@@ -499,6 +515,7 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            (view->bgm_event_count == 0 || view->bgm_events) &&
            (view->semantic_layer_count == 0 || view->semantic_layers) &&
            (view->lane_key_binding_count == 0 || view->lane_key_bindings) &&
+           (view->branch_choice_count == 0 || view->branch_choices) &&
            (view->branch_row_count == 0 || view->branch_rows) && compose_geometry_valid(view);
 }
 
@@ -1343,21 +1360,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
              NK_TEXT_LEFT);
 
     const auto group_bounds = nk_window_get_content_region(context);
-    const auto branch_rows_shown = std::min<size_t>(view->branch_row_count, 4);
-    const auto branch_diagnostics_shown = std::min<size_t>(view->branch_diagnostic_count, 2);
-    const bool branch_status_shown =
-        view->branch_rows_truncated || view->branch_display_text_truncated ||
-        view->branch_diagnostics_truncated || view->branch_row_count > branch_rows_shown ||
-        view->branch_diagnostic_count > branch_diagnostics_shown;
-    const bool branch_outline_visible = view->branch_outline_available ||
-                                        view->branch_row_count != 0 ||
-                                        view->branch_diagnostic_count != 0 || branch_status_shown;
-    const auto branch_panel_height =
-        branch_outline_visible
-            ? 23.0f + static_cast<float>(branch_rows_shown + branch_diagnostics_shown +
-                                         (branch_status_shown ? 1 : 0)) *
-                          18.0f
-            : 0.0f;
+    const auto branch_panel_height = worm_ui_nuklear_bms_branch_panel_height(view);
     const auto semantic_toolbar_height = visible_layer_count == 0 ? 22.0f : 49.0f;
     const auto surface_height = std::max(32.0f, group_bounds.h - 54.0f - 36.0f -
                                                     semantic_toolbar_height - branch_panel_height);
@@ -2009,52 +2012,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     }
     nk_push_scissor(canvas, parent_clip);
 
-    if (!branch_outline_visible) {
-        return;
-    }
-    nk_layout_row_dynamic(context, 20, 1);
-    nk_label(context, "BMS branch outline · read-only", NK_TEXT_LEFT);
-    for (size_t index = 0; index < branch_rows_shown; ++index) {
-        const auto& row = view->branch_rows[index];
-        std::string label;
-        label.reserve(std::min<size_t>(row.depth, 32) * 2 + 96 + strlen(row.display_text));
-        const auto indentation = std::min<size_t>(row.depth, 32);
-        label.append(indentation, ' ');
-        label += row.active ? "▶ " : "· ";
-        if (row.selected) {
-            label += "selected · ";
-        } else if (!row.active) {
-            label += "inactive · ";
-        }
-        if (row.has_source_order) {
-            label += "#" + std::to_string(row.source_order) + " ";
-        }
-        label += row.display_text;
-        if (row.display_text_truncated) {
-            label += " …";
-        }
-        const auto color = row.selected ? nk_rgb(252, 221, 128)
-                           : row.active ? nk_rgb(145, 222, 172)
-                                        : nk_rgb(147, 154, 170);
-        nk_style_push_color(context, &context->style.text.color, color);
-        nk_layout_row_dynamic(context, 18, 1);
-        nk_label(context, label.c_str(), NK_TEXT_LEFT);
-        nk_style_pop_color(context);
-    }
-    if (branch_status_shown) {
-        nk_layout_row_dynamic(context, 18, 1);
-        nk_label(
-            context,
-            "Additional branch rows, text, or diagnostics were truncated by the workspace cap.",
-            NK_TEXT_LEFT);
-    }
-    for (size_t index = 0; index < branch_diagnostics_shown; ++index) {
-        if (!view->branch_diagnostics[index]) {
-            continue;
-        }
-        nk_layout_row_dynamic(context, 18, 1);
-        nk_labelf(context, NK_TEXT_LEFT, "Branch diagnostic: %s", view->branch_diagnostics[index]);
-    }
+    worm_ui_nuklear_render_bms_branch_panel(context, view, action);
 }
 
 bool worm_ui_nuklear_compose_lane_focused(const WormUiComposeView* view, bool compose_tab_active,

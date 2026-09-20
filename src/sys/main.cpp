@@ -9,6 +9,7 @@
 
 #include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/autosave_loop.h>
+#include <wormedit/core/bms_branch_editor.h>
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/command_registry.h>
@@ -176,6 +177,8 @@ struct flattened_workspace_t {
         compose_semantic_layer_name_storage;
     std::array<WormUiComposeBranchRowView, WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY>
         compose_branch_row_storage{};
+    std::array<WormUiComposeBranchChoiceView, WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY>
+        compose_branch_choice_storage{};
     std::array<std::string, WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY> compose_branch_text_storage;
     std::array<std::string, WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY>
         compose_branch_diagnostic_storage;
@@ -632,6 +635,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                 auto& compose = result.view.compose;
                 compose.branch_outline_available = outline.available;
                 compose.branch_rows_truncated = outline.rows_truncated;
+                compose.branch_choices_truncated = outline.choices_truncated;
                 compose.branch_display_text_truncated = outline.display_text_truncated;
                 compose.branch_diagnostics_truncated = outline.diagnostics_truncated;
                 compose.branch_row_count =
@@ -653,6 +657,34 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                     };
                 }
                 compose.branch_rows = result.compose_branch_row_storage.data();
+                compose.branch_choice_count =
+                    std::min(outline.choices.size(),
+                             static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY));
+                compose.branch_choices_truncated =
+                    compose.branch_choices_truncated ||
+                    compose.branch_choice_count < outline.choices.size();
+                for (std::size_t choice_index = 0; choice_index < compose.branch_choice_count;
+                     ++choice_index) {
+                    const auto& choice = outline.choices[choice_index];
+                    result.compose_branch_choice_storage[choice_index] = {
+                        .branch_id = choice.id.value,
+                        .kind = choice.kind == wormedit::bms_control_kind_t::switch_block
+                                    ? WORM_UI_COMPOSE_BRANCH_SWITCH
+                                    : WORM_UI_COMPOSE_BRANCH_RANDOM,
+                        .has_source_order = choice.source_order.has_value(),
+                        .source_order = choice.source_order.value_or(0),
+                        .active = choice.active,
+                        .editable = choice.editable,
+                        .has_selected_value = choice.selected_value.has_value(),
+                        .selected_value = choice.selected_value.value_or(0),
+                        .has_previous_value = choice.previous_value.has_value(),
+                        .previous_value = choice.previous_value.value_or(0),
+                        .has_next_value = choice.next_value.has_value(),
+                        .next_value = choice.next_value.value_or(0),
+                        .can_clear = choice.can_clear,
+                    };
+                }
+                compose.branch_choices = result.compose_branch_choice_storage.data();
                 compose.branch_diagnostic_count =
                     std::min(outline.diagnostics.size(),
                              static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY));
@@ -4228,6 +4260,54 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
 auto editor_interaction_has_pending_gesture(const wormedit::editor_interaction_state_t& state)
     -> bool;
 
+auto dispatch_bms_branch_choice_action(
+    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+    wormedit::workspace_controller_t& workspace,
+    const std::optional<wormedit::editor_interaction_state_t>& interaction_state) -> std::string {
+    using namespace wormedit;
+    if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
+        workspace.selected_chart->value != action.compose_input_chart_id ||
+        history.document.revision != action.compose_input_document_revision) {
+        return "BMS branch action ignored because the chart or document revision changed.";
+    }
+    if (interaction_state && editor_interaction_has_pending_gesture(*interaction_state)) {
+        return "Finish or cancel the active Compose gesture before changing a BMS branch.";
+    }
+    if (action.compose_branch_id == 0) {
+        return "Choose a current BMS RANDOM or SWITCH control first.";
+    }
+    const auto applied = apply_bms_branch_choice_command(
+        history, action.compose_input_document_revision,
+        {.chart = *workspace.selected_chart,
+         .branch = branch_id_t{action.compose_branch_id},
+         .selected_value = action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE
+                               ? std::optional<std::int64_t>{action.compose_branch_value}
+                               : std::nullopt});
+    if (!applied) {
+        if (!applied.command.diagnostics.empty()) {
+            return applied.command.diagnostics.front().message;
+        }
+        if (!applied.format_diagnostics.empty()) {
+            return applied.format_diagnostics.front().message;
+        }
+        if (!applied.write_diagnostics.empty()) {
+            return applied.write_diagnostics.front().message;
+        }
+        if (!applied.parse_diagnostics.empty()) {
+            return applied.parse_diagnostics.front().message;
+        }
+        return "BMS branch choice was rejected without changing the document.";
+    }
+    const auto rebound = rebind_workspace(workspace, history);
+    if (!rebound) {
+        return rebound.diagnostics.empty() ? "BMS branch changed, but workspace rebinding failed."
+                                           : rebound.diagnostics.front().message;
+    }
+    return action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE
+               ? "BMS branch choice changed and its semantics were rematerialized."
+               : "BMS branch choice cleared and its semantics were rematerialized.";
+}
+
 auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                                   wormedit::document_history_t& history,
                                   wormedit::workspace_controller_t& workspace,
@@ -5154,6 +5234,9 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
     }
     case WORM_UI_COMPOSE_ACTION_NONE:
         return {};
+    case WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE:
+    case WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE:
+        return "BMS branch actions must use the workspace action boundary.";
     }
     return compose_result_status(result, status);
 }
@@ -6358,6 +6441,7 @@ int main(int argc, char** argv) {
                 flattened.view.audio_slices.asset_ids = flattened.audio_asset_storage.data();
             }
             flattened.view.compose.branch_rows = flattened.compose_branch_row_storage.data();
+            flattened.view.compose.branch_choices = flattened.compose_branch_choice_storage.data();
             for (std::size_t row = 0; row < flattened.view.compose.branch_row_count; ++row) {
                 flattened.compose_branch_row_storage[row].display_text =
                     flattened.compose_branch_text_storage[row].c_str();
@@ -6813,6 +6897,10 @@ int main(int argc, char** argv) {
                         }
                     }
                 }
+            } else if (action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE ||
+                       action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE) {
+                status = dispatch_bms_branch_choice_action(action, history, workspace,
+                                                           compose_interaction_state);
             } else if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
                 if (compose_interaction_state) {
                     status = dispatch_compose_view_action(

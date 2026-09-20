@@ -4825,29 +4825,57 @@ int main(int argc, char** argv) {
     const auto asset_base = startup.loaded_primary
                                 ? requested_primary_path.parent_path()
                                 : std::filesystem::path{};
-    std::size_t unavailable_audio_assets{};
-    for (const auto& asset : history.document.audio_assets) {
-        if (asset.source_path.empty() ||
-            (!asset.source_path.is_absolute() && asset_base.empty())) {
-            ++unavailable_audio_assets;
-            continue;
+    using audition_asset_entry_t = std::pair<wormedit::asset_id_t, std::filesystem::path>;
+    std::optional<wormedit::song_id_t> audition_source_project;
+    std::vector<audition_asset_entry_t> audition_asset_inventory;
+    std::uint64_t audition_source_generation{};
+    const auto reconcile_audition_sources = [&](bool stop_playback)
+        -> std::optional<std::size_t> {
+        std::vector<audition_asset_entry_t> next_inventory;
+        next_inventory.reserve(history.document.audio_assets.size());
+        for (const auto& asset : history.document.audio_assets) {
+            next_inventory.emplace_back(asset.id, asset.source_path);
         }
-        const auto resolved_path =
-            asset.source_path.is_absolute() ? asset.source_path
-                                            : (asset_base / asset.source_path).lexically_normal();
-        const auto registered = audition_sources.register_source({
-            .asset = asset.id,
-            .path = resolved_path,
-            .source = {"asset:" + std::to_string(asset.id.value),
-                       "startup:" + std::to_string(history.document.revision) + ":" +
-                           resolved_path.generic_string()},
-        });
-        if (!registered) {
-            ++unavailable_audio_assets;
+        if (audition_source_project == history.document.id &&
+            audition_asset_inventory == next_inventory) {
+            return std::nullopt;
         }
-    }
-    if (unavailable_audio_assets != 0) {
-        status += " " + std::to_string(unavailable_audio_assets) +
+        if (stop_playback) {
+            static_cast<void>(audition_output.stop());
+        }
+        audition_sources.clear();
+        ++audition_source_generation;
+        std::size_t unavailable{};
+        for (const auto& asset : history.document.audio_assets) {
+            if (asset.source_path.empty() ||
+                (!asset.source_path.is_absolute() && asset_base.empty())) {
+                ++unavailable;
+                continue;
+            }
+            const auto resolved_path = asset.source_path.is_absolute()
+                                           ? asset.source_path
+                                           : (asset_base / asset.source_path).lexically_normal();
+            const auto registered = audition_sources.register_source({
+                .asset = asset.id,
+                .path = resolved_path,
+                .source = {
+                    "project:" + std::to_string(history.document.id.value) + ":asset:" +
+                        std::to_string(asset.id.value),
+                    "binding:" + std::to_string(audition_source_generation) + ":" +
+                        resolved_path.generic_string(),
+                },
+            });
+            if (!registered) {
+                ++unavailable;
+            }
+        }
+        audition_source_project = history.document.id;
+        audition_asset_inventory = std::move(next_inventory);
+        return unavailable;
+    };
+    const auto initial_unavailable_audio_assets = reconcile_audition_sources(false).value_or(0);
+    if (initial_unavailable_audio_assets != 0) {
+        status += " " + std::to_string(initial_unavailable_audio_assets) +
                   " audio asset(s) are unavailable for preview.";
     }
     std::string audition_output_error;
@@ -5382,6 +5410,13 @@ int main(int argc, char** argv) {
                     status =
                         dispatch_recovery_ui_action(action, recovery_controller, history, workspace,
                                                     scanned_primary_version, autosave_loop);
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+                    if (const auto unavailable = reconcile_audition_sources(true);
+                        unavailable && *unavailable != 0) {
+                        status += " " + std::to_string(*unavailable) +
+                                  " recovered audio asset(s) are unavailable for preview.";
+                    }
+#endif
                 }
             }
         }

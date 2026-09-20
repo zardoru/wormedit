@@ -115,8 +115,13 @@ static uint64_t g_timing_stage_buffers_revision{};
 static uint64_t g_timing_stage_buffers_object{};
 static WormUiTimingLaneKind g_timing_stage_buffers_lane{WORM_UI_TIMING_LANE_BPM};
 static double g_timing_stage_buffers_y{};
+static std::array<char, 64> g_timing_bpm_decimal{};
+static bool g_timing_bpm_decimal_edited{};
+static bool g_timing_bpm_advanced_fraction{};
 static std::array<char, 64> g_timing_primary_numerator{};
 static std::array<char, 64> g_timing_primary_denominator{};
+static std::array<char, 64> g_timing_view_primary_numerator{};
+static std::array<char, 64> g_timing_view_primary_denominator{};
 static std::array<char, 64> g_timing_secondary_numerator{};
 static std::array<char, 64> g_timing_secondary_denominator{};
 static std::array<char, 32> g_timing_meter_measure{'1'};
@@ -2091,6 +2096,9 @@ static void copy_timing_form_to_action(WormUiWorkspaceAction* action) {
     if (!action) {
         return;
     }
+    copy_timing_text(action->timing_bpm_decimal_text, sizeof(action->timing_bpm_decimal_text),
+                     g_timing_bpm_decimal.data());
+    action->timing_bpm_decimal_edited = g_timing_bpm_decimal_edited;
     copy_timing_text(action->timing_primary_numerator_text,
                      sizeof(action->timing_primary_numerator_text),
                      g_timing_primary_numerator.data());
@@ -2381,6 +2389,8 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
                g_timing_stage_buffers_object != view->stage_existing_object_id ||
                g_timing_stage_buffers_lane != view->stage_lane ||
                g_timing_stage_buffers_y != view->stage_marker_y_pixels) {
+        copy_timing_text(g_timing_bpm_decimal.data(), g_timing_bpm_decimal.size(),
+                         view->stage_primary_decimal_text);
         copy_timing_text(g_timing_primary_numerator.data(), g_timing_primary_numerator.size(),
                          view->stage_primary_numerator_text);
         copy_timing_text(g_timing_primary_denominator.data(), g_timing_primary_denominator.size(),
@@ -2390,12 +2400,38 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
         copy_timing_text(g_timing_secondary_denominator.data(),
                          g_timing_secondary_denominator.size(),
                          view->stage_secondary_denominator_text);
+        copy_timing_text(g_timing_view_primary_numerator.data(),
+                         g_timing_view_primary_numerator.size(),
+                         view->stage_primary_numerator_text);
+        copy_timing_text(g_timing_view_primary_denominator.data(),
+                         g_timing_view_primary_denominator.size(),
+                         view->stage_primary_denominator_text);
+        g_timing_bpm_decimal_edited = false;
+        g_timing_bpm_advanced_fraction = false;
         g_timing_stage_buffers_active = true;
         g_timing_stage_buffers_chart = view->chart_id;
         g_timing_stage_buffers_revision = view->document_revision;
         g_timing_stage_buffers_object = view->stage_existing_object_id;
         g_timing_stage_buffers_lane = view->stage_lane;
         g_timing_stage_buffers_y = view->stage_marker_y_pixels;
+    }
+    if (view->stage_active &&
+        (strcmp(g_timing_view_primary_numerator.data(), view->stage_primary_numerator_text) != 0 ||
+         strcmp(g_timing_view_primary_denominator.data(), view->stage_primary_denominator_text) !=
+             0)) {
+        copy_timing_text(g_timing_bpm_decimal.data(), g_timing_bpm_decimal.size(),
+                         view->stage_primary_decimal_text);
+        copy_timing_text(g_timing_primary_numerator.data(), g_timing_primary_numerator.size(),
+                         view->stage_primary_numerator_text);
+        copy_timing_text(g_timing_primary_denominator.data(), g_timing_primary_denominator.size(),
+                         view->stage_primary_denominator_text);
+        copy_timing_text(g_timing_view_primary_numerator.data(),
+                         g_timing_view_primary_numerator.size(),
+                         view->stage_primary_numerator_text);
+        copy_timing_text(g_timing_view_primary_denominator.data(),
+                         g_timing_view_primary_denominator.size(),
+                         view->stage_primary_denominator_text);
+        g_timing_bpm_decimal_edited = false;
     }
     const bool can_change_grid = !view->stage_active && !view->sv_recipe.active &&
                                  !view->sv_recipe.selection_armed && view->scene_available &&
@@ -3092,6 +3128,56 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
             nk_layout_row_end(g_context);
             nk_layout_row_dynamic(g_context, 24, 1);
             changed |= nk_checkbox_label(g_context, "Lock anchor", &toggle_primary) != 0;
+        } else if (view->stage_lane == WORM_UI_TIMING_LANE_BPM) {
+            nk_layout_row_dynamic(g_context, 20, 1);
+            nk_label(g_context,
+                     view->stage_primary_decimal_exact
+                         ? "Decimal BPM (exact)"
+                         : "Decimal BPM (approximate display; exact fraction retained)",
+                     NK_TEXT_LEFT);
+            nk_layout_row_begin(g_context, NK_DYNAMIC, 28, 2);
+            nk_layout_row_push(g_context, 0.24f);
+            nk_label(g_context, primary_label, NK_TEXT_LEFT);
+            nk_layout_row_push(g_context, 0.76f);
+            const bool decimal_changed = nk_edit_string_zero_terminated(
+                                             g_context, NK_EDIT_FIELD, g_timing_bpm_decimal.data(),
+                                             g_timing_bpm_decimal.size(), nk_filter_float) != 0;
+            nk_layout_row_end(g_context);
+            if (decimal_changed) {
+                g_timing_bpm_decimal_edited = true;
+                changed = true;
+            }
+            nk_bool advanced_fraction = g_timing_bpm_advanced_fraction ? 1 : 0;
+            nk_layout_row_dynamic(g_context, 24, 1);
+            if (nk_checkbox_label(g_context, "Advanced exact fraction", &advanced_fraction) != 0) {
+                g_timing_bpm_advanced_fraction = advanced_fraction != 0;
+            }
+            if (g_timing_bpm_advanced_fraction) {
+                nk_layout_row_begin(g_context, NK_DYNAMIC, 28, 4);
+                nk_layout_row_push(g_context, 0.24f);
+                nk_label(g_context, "Exact BPM", NK_TEXT_LEFT);
+                nk_layout_row_push(g_context, 0.30f);
+                const bool numerator_changed =
+                    nk_edit_string_zero_terminated(
+                        g_context, NK_EDIT_FIELD, g_timing_primary_numerator.data(),
+                        g_timing_primary_numerator.size(), nk_filter_float) != 0;
+                nk_layout_row_push(g_context, 0.05f);
+                nk_label(g_context, "/", NK_TEXT_CENTERED);
+                nk_layout_row_push(g_context, 0.30f);
+                const bool denominator_changed =
+                    nk_edit_string_zero_terminated(
+                        g_context, NK_EDIT_FIELD, g_timing_primary_denominator.data(),
+                        g_timing_primary_denominator.size(), nk_filter_decimal) != 0;
+                nk_layout_row_end(g_context);
+                if (numerator_changed || denominator_changed) {
+                    g_timing_bpm_decimal_edited = false;
+                    changed = true;
+                }
+            } else {
+                nk_layout_row_dynamic(g_context, 18, 1);
+                nk_labelf(g_context, NK_TEXT_LEFT, "Exact value: %s / %s",
+                          g_timing_primary_numerator.data(), g_timing_primary_denominator.data());
+            }
         } else {
             nk_layout_row_dynamic(g_context, 20, 1);
             nk_label(g_context, "Exact rational value: numerator / denominator", NK_TEXT_LEFT);

@@ -4,6 +4,9 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <variant>
 
 namespace wormedit {
@@ -12,6 +15,20 @@ struct bpm_edit_limits_t {
     std::size_t maximum_bpm_events{100'000};
     std::size_t maximum_chart_objects{1'000'000};
 };
+
+struct bpm_text_format_t {
+    std::string decimal;
+    bool decimal_exact{};
+    std::string fraction;
+};
+
+// Parses positive decimal or fraction text without passing through binary
+// floating point. Formatting emits an exact terminating decimal when it fits
+// the configured digit cap; otherwise decimal is an explicitly approximate UI
+// value while fraction remains the lossless representation.
+[[nodiscard]] auto parse_bpm_text(std::string_view text) -> std::optional<signed_rational_t>;
+[[nodiscard]] auto format_bpm_text(signed_rational_t bpm, std::size_t maximum_fraction_digits = 18)
+    -> std::optional<bpm_text_format_t>;
 
 struct insert_bpm_event_action_t {
     chart_id_t chart;

@@ -39,6 +39,31 @@ auto has_error(const document_command_result_t& result) -> bool {
 
 } // namespace
 
+TEST_CASE("BPM text parsing is decimal-first and retains a lossless fraction",
+          "[unit][core][bpm-editor][text]") {
+    CHECK(parse_bpm_text("120") == signed_rational_t{120, 1});
+    CHECK(parse_bpm_text(" 123.4500 ") == signed_rational_t{2469, 20});
+    CHECK(parse_bpm_text("7/3") == signed_rational_t{7, 3});
+    CHECK_FALSE(parse_bpm_text("0"));
+    CHECK_FALSE(parse_bpm_text("-120"));
+    CHECK_FALSE(parse_bpm_text("9223372036854775808"));
+
+    const auto terminating = format_bpm_text({2469, 20});
+    REQUIRE(terminating);
+    CHECK(terminating->decimal == "123.45");
+    CHECK(terminating->decimal_exact);
+    CHECK(terminating->fraction == "2469/20");
+
+    const auto repeating = format_bpm_text({7, 3});
+    REQUIRE(repeating);
+    CHECK_FALSE(repeating->decimal.empty());
+    CHECK_FALSE(repeating->decimal_exact);
+    CHECK(repeating->fraction == "7/3");
+    CHECK(parse_bpm_text(repeating->fraction) == signed_rational_t{7, 3});
+    CHECK_FALSE(format_bpm_text({0, 1}));
+    CHECK_FALSE(format_bpm_text({120, 0}));
+}
+
 TEST_CASE("BPM insert update and delete are undoable and retain exact identity and source order",
           "[unit][core][bpm-editor]") {
     auto song = bpm_song();

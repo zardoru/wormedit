@@ -1,8 +1,11 @@
 #include <wormedit/core/bpm_editor.h>
+#include <wormedit/core/measure.h>
 
 #include <algorithm>
+#include <charconv>
 #include <limits>
 #include <ranges>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -133,6 +136,52 @@ auto unique_bpm_event(chart_document_t& chart, object_id_t id, document_command_
 }
 
 } // namespace
+
+auto parse_bpm_text(std::string_view text) -> std::optional<signed_rational_t> {
+    const auto parsed = parse_measure_length(text);
+    if (!parsed || parsed.value->numerator >
+                       static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        return std::nullopt;
+    }
+    return signed_rational_t{static_cast<std::int64_t>(parsed.value->numerator),
+                             parsed.value->denominator};
+}
+
+auto format_bpm_text(signed_rational_t bpm, std::size_t maximum_fraction_digits)
+    -> std::optional<bpm_text_format_t> {
+    if (bpm.numerator <= 0 || bpm.denominator == 0 || maximum_fraction_digits > 64)
+        return std::nullopt;
+    bpm_text_format_t result;
+    result.fraction = std::to_string(bpm.numerator) + "/" + std::to_string(bpm.denominator);
+    const auto numerator = static_cast<std::uint64_t>(bpm.numerator);
+    result.decimal = std::to_string(numerator / bpm.denominator);
+    auto remainder = numerator % bpm.denominator;
+    if (remainder == 0) {
+        result.decimal_exact = true;
+        return result;
+    }
+    result.decimal.push_back('.');
+    for (std::size_t digit = 0; digit < maximum_fraction_digits && remainder != 0; ++digit) {
+        if (remainder > std::numeric_limits<std::uint64_t>::max() / 10)
+            break;
+        remainder *= 10;
+        result.decimal.push_back(static_cast<char>('0' + remainder / bpm.denominator));
+        remainder %= bpm.denominator;
+    }
+    if (remainder == 0) {
+        result.decimal_exact = true;
+        return result;
+    }
+    char approximate[64]{};
+    const auto value = static_cast<double>(bpm.numerator) / static_cast<double>(bpm.denominator);
+    const auto converted = std::to_chars(approximate, approximate + sizeof(approximate), value,
+                                         std::chars_format::general, 12);
+    if (converted.ec != std::errc{})
+        return std::nullopt;
+    result.decimal.assign(approximate, converted.ptr);
+    result.decimal_exact = false;
+    return result;
+}
 
 auto apply_bpm_edit(document_history_t& history, std::uint64_t expected_revision,
                     const bpm_edit_action_t& action, bpm_edit_limits_t limits)

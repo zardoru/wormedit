@@ -581,6 +581,8 @@ typedef struct WormUiTimingView {
     bool stage_transition_is_seconds;
     bool stage_toggle_primary;
     WormUiTimingPauseUnit stage_pause_unit;
+    char stage_primary_decimal_text[64];
+    bool stage_primary_decimal_exact;
     char stage_primary_numerator_text[64];
     char stage_primary_denominator_text[64];
     char stage_secondary_numerator_text[64];
@@ -853,6 +855,8 @@ typedef struct WormUiWorkspaceAction {
     bool timing_transition_is_seconds;
     bool timing_toggle_primary;
     WormUiTimingPauseUnit timing_pause_unit;
+    char timing_bpm_decimal_text[64];
+    bool timing_bpm_decimal_edited;
     char timing_primary_numerator_text[64];
     char timing_primary_denominator_text[64];
     char timing_secondary_numerator_text[64];

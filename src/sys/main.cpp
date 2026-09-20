@@ -8,6 +8,7 @@
 
 #include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/autosave_loop.h>
+#include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/editor_navigation_input.h>
@@ -1047,6 +1048,13 @@ auto timing_stage_value(const wormedit::timing_lane_pseudonote_preview_t& previe
         parse_timing_unsigned(action.timing_secondary_denominator_text);
     switch (preview.kind) {
     case timing_lane_kind_t::bpm: {
+        if (action.timing_bpm_decimal_edited) {
+            const auto bpm = parse_bpm_text(action.timing_bpm_decimal_text);
+            if (!bpm || (!preview.existing_event &&
+                         !timing_ratio_in_bounds(bpm->numerator, bpm->denominator, 1.0L, 1000.0L)))
+                return std::nullopt;
+            return timing_lane_value_t{timing_bpm_value_t{*bpm}};
+        }
         if (!primary_numerator || !primary_denominator || *primary_numerator <= 0 ||
             (!preview.existing_event &&
              !timing_ratio_in_bounds(*primary_numerator, *primary_denominator, 1.0L, 1000.0L)))
@@ -1770,6 +1778,12 @@ void populate_timing_view(flattened_workspace_t& flattened,
                         static_cast<double>(rational_as_long_double(value.beats_per_minute));
                     set_primary(value.beats_per_minute.numerator,
                                 value.beats_per_minute.denominator);
+                    if (const auto formatted = wormedit::format_bpm_text(value.beats_per_minute)) {
+                        (void)std::snprintf(view.stage_primary_decimal_text,
+                                            sizeof(view.stage_primary_decimal_text), "%s",
+                                            formatted->decimal.c_str());
+                        view.stage_primary_decimal_exact = formatted->decimal_exact;
+                    }
                 } else if constexpr (std::is_same_v<value_t, wormedit::timing_scroll_value_t>) {
                     view.stage_value =
                         static_cast<double>(rational_as_long_double(value.multiplier));

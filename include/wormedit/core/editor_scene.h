@@ -136,6 +136,19 @@ struct editor_field_cursor_geometry_t {
     editor_field_rect_t bounds;
 };
 
+struct editor_field_bgm_lane_geometry_t {
+    object_id_t source_lane;
+    std::size_t source_order{};
+    editor_field_rect_t bounds;
+};
+
+struct editor_field_bgm_event_geometry_t {
+    object_id_t event;
+    object_id_t source_lane;
+    std::optional<resource_id_t> sound;
+    editor_field_rect_t bounds;
+};
+
 struct editor_field_scene_t {
     std::uint64_t visible_begin_row{};
     std::uint64_t visible_end_row{};
@@ -147,6 +160,8 @@ struct editor_field_scene_t {
     std::vector<editor_field_grid_geometry_t> grid_lines;
     std::vector<editor_field_hold_body_geometry_t> hold_bodies;
     std::vector<editor_field_note_endpoint_geometry_t> note_endpoints;
+    std::vector<editor_field_bgm_lane_geometry_t> bgm_lanes;
+    std::vector<editor_field_bgm_event_geometry_t> bgm_events;
     std::optional<editor_field_cursor_geometry_t> cursor;
 };
 

@@ -3116,27 +3116,37 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                 g_compose_semantic_layer_name_id = selected_layer->layer_id;
                 g_compose_semantic_layer_name_revision = view->document_revision;
             }
-            nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 4);
-            nk_layout_row_push(g_context, 0.54f);
+            nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 6);
+            nk_layout_row_push(g_context, 0.42f);
             (void)nk_edit_string_zero_terminated(
                 g_context, NK_EDIT_FIELD, g_compose_semantic_layer_name.data(),
                 g_compose_semantic_layer_name.size(), nk_filter_default);
-            nk_layout_row_push(g_context, 0.18f);
+            nk_layout_row_push(g_context, 0.16f);
             if (nk_button_label(g_context, "Rename") && action &&
                 action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
                 memcpy(action->compose_semantic_layer_name, g_compose_semantic_layer_name.data(),
                        sizeof(action->compose_semantic_layer_name));
                 action->compose_action = WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER;
             }
-            nk_layout_row_push(g_context, 0.14f);
+            nk_layout_row_push(g_context, 0.12f);
             if (nk_button_label(g_context, "Color") && action &&
                 action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
                 action->compose_action = WORM_UI_COMPOSE_ACTION_CYCLE_SEMANTIC_LAYER_COLOR;
             }
-            nk_layout_row_push(g_context, 0.14f);
+            nk_layout_row_push(g_context, 0.12f);
             if (nk_button_label(g_context, "Delete") && action &&
                 action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
                 action->compose_action = WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER;
+            }
+            nk_layout_row_push(g_context, 0.09f);
+            if (nk_button_label(g_context, "Up") && action &&
+                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                action->compose_action = WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP;
+            }
+            nk_layout_row_push(g_context, 0.09f);
+            if (nk_button_label(g_context, "Down") && action &&
+                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                action->compose_action = WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_DOWN;
             }
             nk_layout_row_end(g_context);
         }

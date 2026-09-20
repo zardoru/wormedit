@@ -3777,6 +3777,42 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                        : (rebound.diagnostics.empty() ? "Semantic layer deleted, but workspace rebinding failed."
                                                       : rebound.diagnostics.front().message);
     }
+    case WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP:
+    case WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_DOWN: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before reordering semantic layers.";
+        }
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart || !application_state.semantic_layer_target) {
+            return "Choose a visible semantic layer before reordering it.";
+        }
+        const auto found = std::ranges::find(chart->semantic_layers,
+                                             *application_state.semantic_layer_target,
+                                             &semantic_layer_t::id);
+        if (found == chart->semantic_layers.end()) {
+            return "The selected semantic layer is no longer available.";
+        }
+        const auto index = static_cast<std::size_t>(std::distance(chart->semantic_layers.begin(), found));
+        const auto moving_up = action.compose_action == WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP;
+        if ((moving_up && index == 0) || (!moving_up && index + 1 == chart->semantic_layers.size())) {
+            return "Semantic layer is already at that palette boundary.";
+        }
+        std::vector<layer_id_t> ordered;
+        ordered.reserve(chart->semantic_layers.size());
+        for (const auto& layer : chart->semantic_layers) ordered.push_back(layer.id);
+        std::swap(ordered[index], ordered[moving_up ? index - 1 : index + 1]);
+        const auto applied = apply_semantic_layer_edit(
+            history, action.compose_input_document_revision,
+            reorder_semantic_layers_action_t{state.chart, std::move(ordered)});
+        if (!applied.applied) {
+            return applied.diagnostics.empty() ? "Semantic-layer order was unchanged."
+                                               : applied.diagnostics.front().message;
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        return rebound ? "Semantic-layer order updated."
+                       : (rebound.diagnostics.empty() ? "Semantic-layer order updated, but workspace rebinding failed."
+                                                      : rebound.diagnostics.front().message);
+    }
     case WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER:
         application_state.semantic_layer_target.reset();
         application_state.semantic_layer_paint_mode_active = false;

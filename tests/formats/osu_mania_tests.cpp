@@ -299,6 +299,37 @@ TEST_CASE("osu!mania fixtures preserve source bytes, tags, bookmarks, kiai and s
     CHECK(diagnostics.empty());
 }
 
+TEST_CASE("osu!mania version fixtures accept stable v14 and reject unaudited profiles",
+          "[unit][format][osu-mania][version]") {
+    const auto stable = fixture("versioned-stable-v14.osu");
+    REQUIRE(stable.song.has_value());
+    REQUIRE_FALSE(stable.has_errors());
+    const auto& fields = stable.song->metadata.format_groups.front().ordered_fields;
+    CHECK(std::ranges::find(fields,
+                            std::pair{std::string{"osu.file_format"}, std::string{"14"}}) !=
+          fields.end());
+
+    const auto written = write_inline(*stable.song);
+    REQUIRE(written.text.has_value());
+    CHECK(written.text->starts_with("osu file format v14\n"));
+
+    const auto lazer = fixture("negative-lazer-v128.osu");
+    CHECK_FALSE(lazer.song.has_value());
+    CHECK(has_code(lazer, wormedit::osu_mania_parse_diagnostic_code_t::unsupported_version));
+
+    const auto legacy = parse_inline("osu file format v4\n");
+    CHECK_FALSE(legacy.song.has_value());
+    CHECK(has_code(legacy, wormedit::osu_mania_parse_diagnostic_code_t::unsupported_version));
+
+    const auto malformed = parse_inline("osu file format vfuture\n");
+    CHECK_FALSE(malformed.song.has_value());
+    CHECK(has_code(malformed, wormedit::osu_mania_parse_diagnostic_code_t::malformed_field));
+
+    const auto missing = parse_inline("[General]\nMode:3\n");
+    CHECK_FALSE(missing.song.has_value());
+    CHECK(has_code(missing, wormedit::osu_mania_parse_diagnostic_code_t::malformed_field));
+}
+
 TEST_CASE("osu!mania reader rejects non-mania and malformed sources atomically",
           "[unit][format][osu-mania][negative]") {
     const auto non_mania = fixture("negative-non-mania.osu");

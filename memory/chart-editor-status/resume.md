@@ -5,7 +5,7 @@
 ## Immediate work
 
 1. Capture BMSE/iBMSC clipboard samples with tool/version provenance, then broaden BMS dialect/profile and exact branch-editing fixtures.
-2. Expand SM/SSC and osu!mania implementation-profile/version fixtures while retaining explicit format limits and loss diagnostics.
+2. Expand SM/SSC player/version evidence and later add an independently audited osu!mania lazer-v128 profile while retaining explicit format limits and loss diagnostics.
 3. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
 
 ## Handoff rule

@@ -304,6 +304,7 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
 
         std::vector<source_line_t> lines;
         std::vector<field_t> fields;
+        std::optional<std::uint32_t> format_version;
         std::size_t metadata_field_count{};
         std::size_t metadata_bytes{};
         const auto account_metadata = [&](std::size_t bytes, std::size_t field_order,
@@ -329,17 +330,38 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
                 line.remove_suffix(1);
             const auto trimmed = trim(line);
             if (!trimmed.empty() && !trimmed.starts_with("//")) {
-                if (trimmed.front() == '[' && trimmed.back() == ']') {
+                if (!format_version) {
+                    constexpr std::string_view version_prefix = "osu file format v";
+                    if (!trimmed.starts_with(version_prefix)) {
+                        fail(osu_mania_parse_diagnostic_code_t::malformed_field,
+                             "the first osu! content line must declare its file format version",
+                             order, offset + bom_size);
+                    }
+                    const auto version_text = trim(trimmed.substr(version_prefix.size()));
+                    std::uint32_t version{};
+                    if (!parse_integer(version_text, version)) {
+                        fail(osu_mania_parse_diagnostic_code_t::malformed_field,
+                             "osu! file format version must be an unsigned integer", order,
+                             offset + bom_size + version_prefix.size());
+                    }
+                    if (version != 14) {
+                        fail(osu_mania_parse_diagnostic_code_t::unsupported_version,
+                             "only stable osu! file format v14 is currently supported", order,
+                             offset + bom_size + version_prefix.size());
+                    }
+                    format_version = version;
+                    fields.push_back({"osu", "file_format", std::string(version_text),
+                                      std::string(trimmed), order});
+                } else if (trimmed.front() == '[' && trimmed.back() == ']') {
                     if (trimmed.size() <= 2) {
                         fail(osu_mania_parse_diagnostic_code_t::invalid_section,
                              "section name cannot be empty", order, offset + bom_size);
                     }
                     current_section = std::string(trim(trimmed.substr(1, trimmed.size() - 2)));
                 } else if (current_section.empty() && trimmed.starts_with("osu file format v")) {
-                    const auto version =
-                        trim(trimmed.substr(std::string_view("osu file format v").size()));
-                    fields.push_back(
-                        {"osu", "file_format", std::string(version), std::string(trimmed), order});
+                    fail(osu_mania_parse_diagnostic_code_t::malformed_field,
+                         "osu! source declares its file format version more than once", order,
+                         offset + bom_size);
                 } else {
                     lines.push_back({trimmed, line, current_section, order, offset + bom_size});
                     if (lines.size() > options.max_lines) {
@@ -353,6 +375,10 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
             if (newline == std::string_view::npos)
                 break;
             offset = newline + 1;
+        }
+        if (!format_version) {
+            fail(osu_mania_parse_diagnostic_code_t::malformed_field,
+                 "osu! source is missing its file format version header");
         }
 
         std::vector<source_line_t> event_lines;

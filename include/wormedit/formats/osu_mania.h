@@ -13,6 +13,7 @@ namespace wormedit {
 
 enum class osu_mania_parse_diagnostic_code_t {
     invalid_encoding,
+    unsupported_version,
     invalid_section,
     malformed_field,
     unsupported_mode,
@@ -98,8 +99,9 @@ struct osu_mania_write_result_t {
     [[nodiscard]] auto has_errors() const -> bool;
 };
 
-// Parses one UTF-8 osu!mania .osu file. Parsing is bounded and transactional:
-// the song is published only when the entire source has passed validation.
+// Parses one stable-v14 UTF-8 osu!mania .osu file. Other file-format versions
+// reject explicitly. Parsing is bounded and transactional: the song is
+// published only when the entire source has passed validation.
 // Hit-object milliseconds remain available exactly in chart format metadata
 // under osu.hitobject.<object-id>.time/.end_time while measure rows are derived
 // from the ordered uninherited timing-point phase resets.

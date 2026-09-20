@@ -184,6 +184,7 @@ struct compose_scene_cache_t {
     bool attempted{};
     std::optional<wormedit::editor_field_scene_index_t> index;
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
+    std::optional<wormedit::timing_index_t> marker_timing_index;
     std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
     std::optional<wormedit::editor_object_hover_state_t> hover;
     std::optional<wormedit::editor_object_audition_request_t> audition_request;
@@ -826,6 +827,7 @@ auto has_audio_marker_navigation(const wormedit::chart_document_t& chart) -> boo
            });
 }
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
 auto audio_frame_to_milliseconds(std::uint64_t frame, std::uint32_t sample_rate)
     -> std::optional<std::int64_t> {
     if (sample_rate == 0) {
@@ -862,6 +864,7 @@ auto audio_milliseconds_to_frame(std::int64_t milliseconds, std::uint32_t sample
     }
     return base + fractional_frames;
 }
+#endif
 
 auto timing_stage_grid_step(const wormedit::chart_document_t& chart,
                             std::uint64_t active_denominator) -> std::uint64_t {
@@ -2381,6 +2384,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
         cache.revision != history.document.revision) {
         cache.index.reset();
         cache.hit_test_index.reset();
+        cache.marker_timing_index.reset();
         cache.interaction_view.reset();
         cache.hover.reset();
         cache.focus_note_label_editor = false;
@@ -2397,6 +2401,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
             const auto& diagnostics = std::get<wormedit::diagnostic_list_t>(built);
             cache.status = diagnostics.empty() ? "The field layout could not be indexed."
                                                : diagnostics.front().message;
+        }
+        auto timing = wormedit::build_timing_index(chart);
+        if (timing) {
+            cache.marker_timing_index = std::move(*timing.index);
         }
     }
     if (!cache.index) {
@@ -2438,6 +2446,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
                 .bookmark_id = bookmark.id.value,
                 .label = flattened.compose_audio_bookmark_label_storage[index].c_str(),
                 .audio_milliseconds = *bookmark.audio_milliseconds,
+                .projection_visible = false,
+                .projected_y_pixels = 0.0,
             };
             continue;
         }
@@ -2492,6 +2502,13 @@ void populate_compose_view(flattened_workspace_t& flattened,
                 .label = flattened.compose_audio_section_label_storage[index].c_str(),
                 .begin_audio_milliseconds = section.audio_millisecond_span->first,
                 .end_audio_milliseconds = section.audio_millisecond_span->second,
+                .begin_projection_visible = false,
+                .end_projection_visible = false,
+                .span_projection_visible = false,
+                .projected_begin_y_pixels = 0.0,
+                .projected_end_y_pixels = 0.0,
+                .projected_span_top_y_pixels = 0.0,
+                .projected_span_bottom_y_pixels = 0.0,
             };
             continue;
         }
@@ -2599,6 +2616,64 @@ void populate_compose_view(flattened_workspace_t& flattened,
     auto interaction_view = *interaction.view;
     interaction_view.pixels_per_standard_measure = retained_state->pixels_per_standard_measure;
     interaction_view.viewport_scroll_pixels = retained_state->viewport_scroll_pixels;
+    if (cache.marker_timing_index) {
+        const auto projected_y = [&](std::int64_t milliseconds) -> std::optional<double> {
+            const auto projected = wormedit::musical_position_at(
+                *cache.marker_timing_index, wormedit::signed_rational_t{milliseconds, 1'000});
+            if (!projected || !projected.absolute_row || projected.absolute_row->denominator == 0) {
+                return std::nullopt;
+            }
+            const auto row = static_cast<long double>(projected.absolute_row->numerator) /
+                             static_cast<long double>(projected.absolute_row->denominator);
+            const auto pixels_per_row =
+                static_cast<long double>(interaction_view.pixels_per_standard_measure) /
+                static_cast<long double>(chart.divisions_per_standard_measure);
+            const auto y = row * pixels_per_row -
+                           static_cast<long double>(interaction_view.viewport_scroll_pixels);
+            if (!std::isfinite(y) ||
+                y < static_cast<long double>(std::numeric_limits<double>::lowest()) ||
+                y > static_cast<long double>(std::numeric_limits<double>::max())) {
+                return std::nullopt;
+            }
+            return static_cast<double>(y);
+        };
+        const auto visible_y = [&](double y) {
+            return std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels;
+        };
+        for (std::size_t index = 0; index < view.audio_bookmark_count; ++index) {
+            auto& bookmark = flattened.compose_audio_bookmark_storage[index];
+            const auto y = projected_y(bookmark.audio_milliseconds);
+            if (y && visible_y(*y)) {
+                bookmark.projection_visible = true;
+                bookmark.projected_y_pixels = *y;
+            }
+        }
+        for (std::size_t index = 0; index < view.audio_section_count; ++index) {
+            auto& section = flattened.compose_audio_section_storage[index];
+            const auto begin = projected_y(section.begin_audio_milliseconds);
+            const auto end = projected_y(section.end_audio_milliseconds);
+            if (!begin || !end) {
+                continue;
+            }
+            section.begin_projection_visible = visible_y(*begin);
+            section.end_projection_visible = visible_y(*end);
+            if (section.begin_projection_visible) {
+                section.projected_begin_y_pixels = *begin;
+            }
+            if (section.end_projection_visible) {
+                section.projected_end_y_pixels = *end;
+            }
+            const auto top = std::min(*begin, *end);
+            const auto bottom = std::max(*begin, *end);
+            if (bottom >= 0.0 && top <= view.viewport_height_pixels) {
+                section.span_projection_visible = true;
+                section.projected_span_top_y_pixels =
+                    std::clamp(top, 0.0, view.viewport_height_pixels);
+                section.projected_span_bottom_y_pixels =
+                    std::clamp(bottom, 0.0, view.viewport_height_pixels);
+            }
+        }
+    }
     if (application_state.preview_playhead_absolute_row) {
         const auto pixels_per_row = interaction_view.pixels_per_standard_measure /
                                     static_cast<double>(chart.divisions_per_standard_measure);

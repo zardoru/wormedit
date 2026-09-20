@@ -334,6 +334,8 @@ typedef struct WormUiComposeAudioBookmarkView {
     uint64_t bookmark_id;
     const char* label;
     int64_t audio_milliseconds;
+    bool projection_visible;
+    double projected_y_pixels;
 } WormUiComposeAudioBookmarkView;
 
 typedef struct WormUiComposeAudioSectionView {
@@ -341,6 +343,13 @@ typedef struct WormUiComposeAudioSectionView {
     const char* label;
     int64_t begin_audio_milliseconds;
     int64_t end_audio_milliseconds;
+    bool begin_projection_visible;
+    bool end_projection_visible;
+    bool span_projection_visible;
+    double projected_begin_y_pixels;
+    double projected_end_y_pixels;
+    double projected_span_top_y_pixels;
+    double projected_span_bottom_y_pixels;
 } WormUiComposeAudioSectionView;
 
 typedef enum WormUiComposeSelectionMode {

@@ -1664,14 +1664,32 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         return 0;
     }
     for (size_t index = 0; index < view->audio_bookmark_count; ++index) {
-        if (view->audio_bookmarks[index].bookmark_id == 0 || !view->audio_bookmarks[index].label) {
+        const auto& bookmark = view->audio_bookmarks[index];
+        if (bookmark.bookmark_id == 0 || !bookmark.label ||
+            (bookmark.projection_visible &&
+             (!std::isfinite(bookmark.projected_y_pixels) || bookmark.projected_y_pixels < 0.0 ||
+              bookmark.projected_y_pixels > view->viewport_height_pixels))) {
             return 0;
         }
     }
     for (size_t index = 0; index < view->audio_section_count; ++index) {
-        if (view->audio_sections[index].section_id == 0 || !view->audio_sections[index].label ||
-            view->audio_sections[index].end_audio_milliseconds <=
-                view->audio_sections[index].begin_audio_milliseconds) {
+        const auto& section = view->audio_sections[index];
+        if (section.section_id == 0 || !section.label ||
+            section.end_audio_milliseconds <= section.begin_audio_milliseconds ||
+            (section.begin_projection_visible &&
+             (!std::isfinite(section.projected_begin_y_pixels) ||
+              section.projected_begin_y_pixels < 0.0 ||
+              section.projected_begin_y_pixels > view->viewport_height_pixels)) ||
+            (section.end_projection_visible &&
+             (!std::isfinite(section.projected_end_y_pixels) ||
+              section.projected_end_y_pixels < 0.0 ||
+              section.projected_end_y_pixels > view->viewport_height_pixels)) ||
+            (section.span_projection_visible &&
+             (!std::isfinite(section.projected_span_top_y_pixels) ||
+              !std::isfinite(section.projected_span_bottom_y_pixels) ||
+              section.projected_span_top_y_pixels < 0.0 ||
+              section.projected_span_bottom_y_pixels < section.projected_span_top_y_pixels ||
+              section.projected_span_bottom_y_pixels > view->viewport_height_pixels))) {
             return 0;
         }
     }
@@ -4323,6 +4341,39 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                                  g_context->style.font, nk_rgb(18, 21, 29), nk_rgb(174, 185, 203));
                 }
             }
+        }
+        const auto projected_screen_y = [&](double y_pixels) {
+            return viewport.y + static_cast<float>(y_pixels) * viewport.h /
+                                    static_cast<float>(view->viewport_height_pixels);
+        };
+        for (size_t index = 0; index < view->audio_section_count; ++index) {
+            const auto& section = view->audio_sections[index];
+            if (section.span_projection_visible) {
+                const auto top = projected_screen_y(section.projected_span_top_y_pixels);
+                const auto bottom = projected_screen_y(section.projected_span_bottom_y_pixels);
+                nk_fill_rect(canvas,
+                             nk_rect(viewport.x, top, viewport.w, std::max(1.0f, bottom - top)),
+                             0.0f, nk_rgba(188, 111, 235, 24));
+            }
+            if (section.begin_projection_visible) {
+                const auto y = projected_screen_y(section.projected_begin_y_pixels);
+                nk_stroke_line(canvas, viewport.x, y, viewport.x + viewport.w, y, 1.1f,
+                               nk_rgb(205, 139, 242));
+            }
+            if (section.end_projection_visible) {
+                const auto y = projected_screen_y(section.projected_end_y_pixels);
+                nk_stroke_line(canvas, viewport.x, y, viewport.x + viewport.w, y, 1.1f,
+                               nk_rgb(205, 139, 242));
+            }
+        }
+        for (size_t index = 0; index < view->audio_bookmark_count; ++index) {
+            const auto& bookmark = view->audio_bookmarks[index];
+            if (!bookmark.projection_visible) {
+                continue;
+            }
+            const auto y = projected_screen_y(bookmark.projected_y_pixels);
+            nk_stroke_line(canvas, viewport.x, y, viewport.x + viewport.w, y, 1.4f,
+                           nk_rgb(232, 166, 255));
         }
         for (size_t index = 0; index < view->hold_body_count; ++index) {
             const auto& hold = view->hold_bodies[index];

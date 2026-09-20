@@ -33,6 +33,7 @@ auto runtime_binding(wormedit::asset_id_t asset, std::uint64_t frames = 200'000)
             .source = {"fixture:vox", "decoded:v1"},
             .source_sample_rate = 48'000,
             .source_frame_count = std::nullopt,
+            .output_sample_rate = wormedit::audio::output_sample_rate,
             .output_frame_count = frames};
 }
 
@@ -148,6 +149,27 @@ TEST_CASE("audition resolver isolates BGM slices and falls back to whole unlinke
     REQUIRE(invalid_geometry.diagnostics.size() == 1);
     CHECK(invalid_geometry.diagnostics.front().code ==
           wormedit::audio::audition_resolve_code_t::invalid_source_geometry);
+
+    auto wrong_output_rate = bindings.front();
+    wrong_output_rate.output_sample_rate = 48'000;
+    const std::array wrong_output_bindings{wrong_output_rate};
+    const auto invalid_output = wormedit::audio::resolve_object_audition(
+        song, chart.id, bgm_measure->bgm_events.front().id, wrong_output_bindings);
+    CHECK_FALSE(invalid_output);
+    REQUIRE(invalid_output.diagnostics.size() == 1);
+    CHECK(invalid_output.diagnostics.front().code ==
+          wormedit::audio::audition_resolve_code_t::invalid_source_geometry);
+
+    auto mismatched_length = bindings.front();
+    mismatched_length.source_frame_count = 240'000;
+    audio_asset->stream.frame_count = 240'001;
+    const std::array mismatched_length_bindings{mismatched_length};
+    const auto invalid_length = wormedit::audio::resolve_object_audition(
+        song, chart.id, bgm_measure->bgm_events.front().id, mismatched_length_bindings);
+    CHECK_FALSE(invalid_length);
+    REQUIRE(invalid_length.diagnostics.size() == 1);
+    CHECK(invalid_length.diagnostics.front().code ==
+          wormedit::audio::audition_resolve_code_t::invalid_source_geometry);
 }
 
 TEST_CASE("audition resolver layers fused BMSON channels and enforces its layer bound",
@@ -167,6 +189,7 @@ TEST_CASE("audition resolver layers fused BMSON channels and enforces its layer 
                             .source = {"asset:" + std::to_string(index), "decoded:v1"},
                             .source_sample_rate = 48'000,
                             .source_frame_count = std::nullopt,
+                            .output_sample_rate = wormedit::audio::output_sample_rate,
                             .output_frame_count = 200'000});
     }
 

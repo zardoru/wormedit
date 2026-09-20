@@ -161,11 +161,18 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
         }
         if (asset == assets.end() || source == sources.end() ||
             source->second->source.asset_identity.empty() ||
-            source->second->source.source_identity.empty() ||
-            source->second->source_sample_rate == 0 ||
-            source->second->output_frame_count == 0) {
+            source->second->source.source_identity.empty()) {
             result.diagnostics.push_back(error(audition_resolve_code_t::missing_source_binding,
                                                "audio asset has no decoded audition binding", layer.id));
+            result.clips.clear();
+            return result;
+        }
+        if (source->second->source_sample_rate == 0 ||
+            source->second->output_sample_rate != output_sample_rate ||
+            source->second->output_frame_count == 0) {
+            result.diagnostics.push_back(error(audition_resolve_code_t::invalid_source_geometry,
+                                               "decoded audition binding has invalid geometry",
+                                               layer.id));
             result.clips.clear();
             return result;
         }
@@ -202,6 +209,15 @@ auto resolve_object_audition(const song_document_t& song, chart_id_t chart_id,
             asset->second->stream.sample_rate != source->second->source_sample_rate) {
             result.diagnostics.push_back(error(audition_resolve_code_t::invalid_source_geometry,
                                                "stored and decoded source sample rates disagree",
+                                               layer.id));
+            result.clips.clear();
+            return result;
+        }
+        if (asset->second->stream.frame_count.has_value() &&
+            source->second->source_frame_count.has_value() &&
+            asset->second->stream.frame_count != source->second->source_frame_count) {
+            result.diagnostics.push_back(error(audition_resolve_code_t::invalid_source_geometry,
+                                               "stored and decoded source frame counts disagree",
                                                layer.id));
             result.clips.clear();
             return result;

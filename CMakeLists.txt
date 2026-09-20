@@ -215,6 +215,11 @@ if(WORMEDIT_BUILD_APP)
             OpenGL::GL
     )
 
+    if(WORMEDIT_ENABLE_AUDIO_DECODER)
+        target_link_libraries(wormedit PRIVATE wormedit::audio_decoder)
+        target_compile_definitions(wormedit PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1)
+    endif()
+
     if(MSVC)
         target_compile_options(wormedit PRIVATE /W4 /permissive-)
     else()

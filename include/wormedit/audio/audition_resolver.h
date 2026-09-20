@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/audio/audition_bridge.h>
+#include <wormedit/audio/source_registry.h>
 #include <wormedit/core/sound_slice.h>
 
 #include <span>
@@ -8,13 +9,7 @@
 
 namespace wormedit::audio {
 
-struct audition_source_binding_t {
-    asset_id_t asset;
-    audio_source_identity_t source;
-    std::uint32_t source_sample_rate{};
-    std::optional<std::uint64_t> source_frame_count;
-    std::uint64_t output_frame_count{};
-};
+using audition_source_binding_t = decoded_source_binding_t;
 
 struct audition_resolve_options_t {
     std::size_t maximum_channel_events{200'000};

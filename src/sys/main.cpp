@@ -28,6 +28,11 @@
 #include <wormedit/core/viewport_input.h>
 #include <wormedit/core/workspace.h>
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+#include <wormedit/audio/object_audition.h>
+#include <wormedit/audio/source_registry.h>
+#endif
+
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_keycode.h>
@@ -4792,6 +4797,41 @@ int main(int argc, char** argv) {
     if (!platform_recovery && !platform_recovery.error.empty()) {
         status += " " + platform_recovery.error;
     }
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    wormedit::audio::decoded_source_registry_t audition_sources;
+    wormedit::audio::decoded_block_cache_t audition_cache;
+    wormedit::audio::transport_t audition_transport{audition_cache};
+    wormedit::audio::audition_transport_bridge_t audition_bridge{audition_transport};
+    wormedit::audio::object_audition_controller_t object_audition{audition_bridge};
+    const auto asset_base = startup.loaded_primary
+                                ? requested_primary_path.parent_path()
+                                : std::filesystem::path{};
+    std::size_t unavailable_audio_assets{};
+    for (const auto& asset : history.document.audio_assets) {
+        if (asset.source_path.empty() ||
+            (!asset.source_path.is_absolute() && asset_base.empty())) {
+            ++unavailable_audio_assets;
+            continue;
+        }
+        const auto resolved_path =
+            asset.source_path.is_absolute() ? asset.source_path
+                                            : (asset_base / asset.source_path).lexically_normal();
+        const auto registered = audition_sources.register_source({
+            .asset = asset.id,
+            .path = resolved_path,
+            .source = {"asset:" + std::to_string(asset.id.value),
+                       "startup:" + std::to_string(history.document.revision) + ":" +
+                           resolved_path.generic_string()},
+        });
+        if (!registered) {
+            ++unavailable_audio_assets;
+        }
+    }
+    if (unavailable_audio_assets != 0) {
+        status += " " + std::to_string(unavailable_audio_assets) +
+                  " audio asset(s) are unavailable for preview.";
+    }
+#endif
     wormedit::native_project_recovery_controller_t recovery_controller;
     if (startup.recovery_scan_configured)
         (void)recovery_controller.replace_scan(std::move(startup.recovery_scan));
@@ -5001,6 +5041,35 @@ int main(int argc, char** argv) {
                     action, history, workspace, *compose_interaction_state, compose_viewport_input,
                     compose_navigation_input, application_command_state, compose_scene_cache,
                     compose_viewport_delta_seconds);
+                if (auto request = std::exchange(compose_scene_cache.audition_request,
+                                                 std::nullopt)) {
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+                    if (request->object.kind !=
+                            wormedit::editor_selection_object_kind_t::note &&
+                        request->object.kind !=
+                            wormedit::editor_selection_object_kind_t::bgm_event) {
+                        status = "Only notes and BGM events can be prepared for audition.";
+                    } else {
+                        const auto bindings = audition_sources.bindings();
+                        const auto prepared = object_audition.prepare(
+                            history.document,
+                            {request->document_revision, request->chart, request->object.id},
+                            bindings);
+                        if (prepared) {
+                            status = "Audio preview prepared; device playback is not connected yet.";
+                        } else if (!prepared.diagnostics.empty()) {
+                            status = prepared.diagnostics.front().message;
+                        } else if (prepared.status ==
+                                   wormedit::audio::object_audition_status_t::stale_document) {
+                            status = "Audio preview request expired after the document changed.";
+                        } else {
+                            status = "Audio preview could not be prepared.";
+                        }
+                    }
+#else
+                    status = "Audio preview is unavailable in this build.";
+#endif
+                }
             }
             if (workspace.active_tab != wormedit::workspace_tab_t::compose) {
                 compose_viewport_input.escape();

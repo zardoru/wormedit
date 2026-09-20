@@ -30,6 +30,7 @@ auto binding(wormedit::asset_id_t asset) -> wormedit::audio::audition_source_bin
             .source = {"fixture:vox", "decoded:v1"},
             .source_sample_rate = 48'000,
             .source_frame_count = std::nullopt,
+            .output_sample_rate = wormedit::audio::output_sample_rate,
             .output_frame_count = 200'000};
 }
 

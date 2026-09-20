@@ -53,6 +53,43 @@ struct waveform_level_view_t {
     std::span<const waveform_bin_t> bins;
 };
 
+inline constexpr std::size_t maximum_waveform_projection_columns = 65'536;
+
+struct waveform_column_t {
+    std::uint64_t begin_frame{};
+    std::uint64_t end_frame{};
+    std::array<float, output_channel_count> minimum{};
+    std::array<float, output_channel_count> maximum{};
+    std::array<float, output_channel_count> absolute_peak{};
+    std::array<float, output_channel_count> rms{};
+
+    auto operator==(const waveform_column_t&) const -> bool = default;
+};
+
+struct waveform_projection_request_t {
+    std::uint64_t begin_frame{};
+    std::uint64_t end_frame{};
+    std::size_t pixel_width{};
+    std::size_t maximum_columns{4'096};
+};
+
+enum class waveform_projection_status_t {
+    projected,
+    invalid_waveform,
+    invalid_window,
+    capacity_exceeded,
+};
+
+struct waveform_projection_result_t {
+    waveform_projection_status_t status{waveform_projection_status_t::invalid_waveform};
+    std::uint64_t level_frames_per_bin{};
+    std::vector<waveform_column_t> columns;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == waveform_projection_status_t::projected;
+    }
+};
+
 struct waveform_cache_limits_t {
     std::size_t maximum_entries{32};
     std::size_t maximum_bytes{16U * 1024U * 1024U};
@@ -143,5 +180,12 @@ struct waveform_analysis_result_t {
 [[nodiscard]] auto waveform_level_for_zoom(const waveform_t& waveform,
                                            double source_frames_per_pixel)
     -> std::optional<waveform_level_view_t>;
+
+// Projects one visible source-frame interval into bounded implicit pixel
+// columns. Each column retains its exact frame interval while peak/RMS values
+// come from the closest cached pyramid level.
+[[nodiscard]] auto project_waveform(const waveform_t& waveform,
+                                    waveform_projection_request_t request)
+    -> waveform_projection_result_t;
 
 } // namespace wormedit::audio

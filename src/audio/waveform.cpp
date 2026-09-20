@@ -124,6 +124,21 @@ auto waveform_bytes(const waveform_t& waveform) -> std::optional<std::size_t> {
     return result;
 }
 
+auto valid_bin(const waveform_bin_t& bin, std::uint64_t frames_per_bin) -> bool {
+    if (bin.frame_count == 0 || bin.frame_count > frames_per_bin) {
+        return false;
+    }
+    for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
+        if (!std::isfinite(bin.minimum[channel]) || !std::isfinite(bin.maximum[channel]) ||
+            !std::isfinite(bin.absolute_peak[channel]) || !std::isfinite(bin.rms[channel]) ||
+            bin.minimum[channel] > bin.maximum[channel] || bin.absolute_peak[channel] < 0.0F ||
+            bin.rms[channel] < 0.0F) {
+            return false;
+        }
+    }
+    return true;
+}
+
 auto valid_bins(std::span<const waveform_bin_t> bins, std::uint64_t total_frames,
                 std::uint64_t frames_per_bin) -> bool {
     if (total_frames == 0 || frames_per_bin == 0 || bins.empty()) {
@@ -135,21 +150,37 @@ auto valid_bins(std::span<const waveform_bin_t> bins, std::uint64_t total_frames
     }
     std::uint64_t accounted_frames{};
     for (const auto& bin : bins) {
-        if (bin.frame_count == 0 || bin.frame_count > frames_per_bin ||
+        if (!valid_bin(bin, frames_per_bin) ||
             bin.frame_count > std::numeric_limits<std::uint64_t>::max() - accounted_frames) {
             return false;
         }
         accounted_frames += bin.frame_count;
-        for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
-            if (!std::isfinite(bin.minimum[channel]) || !std::isfinite(bin.maximum[channel]) ||
-                !std::isfinite(bin.absolute_peak[channel]) || !std::isfinite(bin.rms[channel]) ||
-                bin.minimum[channel] > bin.maximum[channel] || bin.absolute_peak[channel] < 0.0F ||
-                bin.rms[channel] < 0.0F) {
-                return false;
-            }
-        }
     }
     return accounted_frames == total_frames;
+}
+
+auto valid_waveform_geometry(const waveform_t& waveform) -> bool {
+    if (!valid_source(waveform.key.source) || waveform.key.frames_per_bin == 0 ||
+        waveform.sample_rate != output_sample_rate || waveform.total_frames == 0 ||
+        waveform.bins.empty()) {
+        return false;
+    }
+    auto frames_per_bin = static_cast<std::uint64_t>(waveform.key.frames_per_bin);
+    auto expected_bins = 1U + (waveform.total_frames - 1U) / frames_per_bin;
+    if (expected_bins != waveform.bins.size()) {
+        return false;
+    }
+    for (const auto& level : waveform.coarser_levels) {
+        if (frames_per_bin > std::numeric_limits<std::uint64_t>::max() / 2U) {
+            return false;
+        }
+        frames_per_bin *= 2U;
+        expected_bins = 1U + (waveform.total_frames - 1U) / frames_per_bin;
+        if (level.frames_per_bin != frames_per_bin || level.bins.size() != expected_bins) {
+            return false;
+        }
+    }
+    return waveform.coarser_levels.empty() || expected_bins == 1;
 }
 
 auto valid_waveform(const waveform_t& waveform, std::size_t maximum_bins) -> bool {
@@ -474,6 +505,78 @@ auto waveform_level_for_zoom(const waveform_t& waveform, double source_frames_pe
         }
     }
     return best;
+}
+
+auto project_waveform(const waveform_t& waveform, waveform_projection_request_t request)
+    -> waveform_projection_result_t {
+    if (!valid_waveform_geometry(waveform)) {
+        return {.status = waveform_projection_status_t::invalid_waveform};
+    }
+    if (request.begin_frame >= request.end_frame || request.end_frame > waveform.total_frames ||
+        request.pixel_width == 0) {
+        return {.status = waveform_projection_status_t::invalid_window};
+    }
+    if (request.maximum_columns == 0 ||
+        request.maximum_columns > maximum_waveform_projection_columns ||
+        request.pixel_width > request.maximum_columns) {
+        return {.status = waveform_projection_status_t::capacity_exceeded};
+    }
+
+    const auto visible_frames = request.end_frame - request.begin_frame;
+    const auto column_count =
+        static_cast<std::size_t>(std::min<std::uint64_t>(visible_frames, request.pixel_width));
+    const auto level = waveform_level_for_zoom(waveform, static_cast<double>(visible_frames) /
+                                                             static_cast<double>(column_count));
+    if (!level.has_value()) {
+        return {.status = waveform_projection_status_t::invalid_waveform};
+    }
+
+    waveform_projection_result_t result{
+        .status = waveform_projection_status_t::projected,
+        .level_frames_per_bin = level->frames_per_bin,
+    };
+    result.columns.reserve(column_count);
+    const auto frames_per_column = visible_frames / column_count;
+    const auto remainder = visible_frames % column_count;
+    auto begin_frame = request.begin_frame;
+    for (std::size_t column_index = 0; column_index < column_count; ++column_index) {
+        const auto frame_count =
+            frames_per_column + (column_index < remainder ? std::uint64_t{1} : std::uint64_t{0});
+        const auto end_frame = begin_frame + frame_count;
+        waveform_column_t column{
+            .begin_frame = begin_frame,
+            .end_frame = end_frame,
+        };
+        column.minimum.fill(std::numeric_limits<float>::infinity());
+        column.maximum.fill(-std::numeric_limits<float>::infinity());
+        std::array<double, output_channel_count> weighted_squares{};
+        double weighted_frames{};
+        const auto first_bin = begin_frame / level->frames_per_bin;
+        const auto last_bin = (end_frame - 1U) / level->frames_per_bin;
+        for (auto bin_index = first_bin; bin_index <= last_bin; ++bin_index) {
+            const auto& bin = level->bins[static_cast<std::size_t>(bin_index)];
+            if (!valid_bin(bin, level->frames_per_bin)) {
+                return {.status = waveform_projection_status_t::invalid_waveform};
+            }
+            weighted_frames += static_cast<double>(bin.frame_count);
+            for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
+                column.minimum[channel] = std::min(column.minimum[channel], bin.minimum[channel]);
+                column.maximum[channel] = std::max(column.maximum[channel], bin.maximum[channel]);
+                column.absolute_peak[channel] =
+                    std::max(column.absolute_peak[channel], bin.absolute_peak[channel]);
+                weighted_squares[channel] += static_cast<double>(bin.rms[channel]) *
+                                             static_cast<double>(bin.rms[channel]) *
+                                             static_cast<double>(bin.frame_count);
+            }
+        }
+        for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
+            column.rms[channel] =
+                static_cast<float>(std::sqrt(weighted_squares[channel] / weighted_frames));
+        }
+        result.columns.push_back(column);
+        begin_frame = end_frame;
+    }
+    return result;
 }
 
 } // namespace wormedit::audio

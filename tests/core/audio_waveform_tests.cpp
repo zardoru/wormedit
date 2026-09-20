@@ -209,3 +209,54 @@ TEST_CASE("waveform analysis rejects invalid or unbounded requests deterministic
     CHECK_FALSE(
         wormedit::audio::waveform_level_for_zoom(wormedit::audio::waveform_t{}, 1.0).has_value());
 }
+
+TEST_CASE("waveform projection emits capped exact-frame pixel columns",
+          "[unit][audio][waveform][projection]") {
+    using namespace wormedit::audio;
+    std::vector<float> samples;
+    for (int frame = 0; frame < 16; ++frame) {
+        samples.push_back(static_cast<float>(frame));
+        samples.push_back(static_cast<float>(-frame));
+    }
+    decoder_t decoder;
+    REQUIRE(decoder.open_pcm(samples));
+    decoded_block_cache_t blocks;
+    waveform_cache_t waveforms;
+    const auto analyzed =
+        analyze_waveform(decoder, blocks, waveforms, {"generated:projection", "pcm:v1"}, 1);
+    REQUIRE(analyzed.waveform.has_value());
+
+    const auto projected = project_waveform(
+        *analyzed.waveform,
+        {.begin_frame = 0, .end_frame = 16, .pixel_width = 4, .maximum_columns = 4});
+    REQUIRE(projected);
+    CHECK(projected.level_frames_per_bin == 4);
+    REQUIRE(projected.columns.size() == 4);
+    for (std::size_t index = 0; index < projected.columns.size(); ++index) {
+        const auto& column = projected.columns[index];
+        CHECK(column.begin_frame == index * 4);
+        CHECK(column.end_frame == (index + 1) * 4);
+        CHECK(column.minimum[0] == static_cast<float>(index * 4));
+        CHECK(column.maximum[0] == static_cast<float>(index * 4 + 3));
+        CHECK(column.minimum[1] == -static_cast<float>(index * 4 + 3));
+        CHECK(column.maximum[1] == -static_cast<float>(index * 4));
+    }
+
+    const auto sample_columns = project_waveform(
+        *analyzed.waveform,
+        {.begin_frame = 4, .end_frame = 7, .pixel_width = 12, .maximum_columns = 12});
+    REQUIRE(sample_columns);
+    CHECK(sample_columns.columns.size() == 3);
+    CHECK(sample_columns.level_frames_per_bin == 1);
+    CHECK(sample_columns.columns.front().begin_frame == 4);
+    CHECK(sample_columns.columns.back().end_frame == 7);
+
+    CHECK(project_waveform(
+              *analyzed.waveform,
+              {.begin_frame = 0, .end_frame = 16, .pixel_width = 5, .maximum_columns = 4})
+              .status == waveform_projection_status_t::capacity_exceeded);
+    CHECK(project_waveform(
+              *analyzed.waveform,
+              {.begin_frame = 16, .end_frame = 16, .pixel_width = 1, .maximum_columns = 1})
+              .status == waveform_projection_status_t::invalid_window);
+}

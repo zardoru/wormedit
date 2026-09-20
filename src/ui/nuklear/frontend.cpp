@@ -147,6 +147,7 @@ static bool g_compose_keyboard_focus{};
 static bool g_compose_action_overflowed{};
 static bool g_compose_pointer_hold_active{};
 static bool g_compose_note_paint_pointer_active{};
+static bool g_compose_semantic_layer_paint_pointer_active{};
 static bool g_compose_lane_hold_active{};
 static bool g_compose_space_range_hold_active{};
 static bool g_compose_space_range_hold_moved{};
@@ -204,6 +205,7 @@ static void append_compose_input(
         g_compose_cancel_pending = false;
         g_compose_pointer_hold_active = false;
         g_compose_note_paint_pointer_active = false;
+        g_compose_semantic_layer_paint_pointer_active = false;
         g_compose_lane_hold_active = false;
         g_compose_space_range_hold_active = false;
         g_compose_space_range_hold_moved = false;
@@ -331,6 +333,7 @@ static void queue_compose_key_event(const SDL_KeyboardEvent* event, bool down) {
         g_compose_cancel_pending = true;
         g_compose_pointer_hold_active = false;
         g_compose_note_paint_pointer_active = false;
+        g_compose_semantic_layer_paint_pointer_active = false;
         g_compose_lane_hold_active = false;
         g_compose_space_range_hold_active = false;
         g_compose_space_range_hold_moved = false;
@@ -446,6 +449,7 @@ static void queue_compose_wheel_event(const SDL_MouseWheelEvent* event) {
         g_compose_key_event_count = 0;
         g_compose_pointer_hold_active = false;
         g_compose_note_paint_pointer_active = false;
+        g_compose_semantic_layer_paint_pointer_active = false;
         g_compose_lane_hold_active = false;
         g_compose_space_range_hold_active = false;
         g_compose_space_range_hold_moved = false;
@@ -1149,6 +1153,7 @@ bool worm_ui_frontend_init(SDL_Window* window) {
     g_compose_keyboard_focus = false;
     g_compose_pointer_hold_active = false;
     g_compose_note_paint_pointer_active = false;
+    g_compose_semantic_layer_paint_pointer_active = false;
     g_compose_lane_hold_active = false;
     g_compose_space_range_hold_active = false;
     g_compose_space_range_hold_moved = false;
@@ -1199,6 +1204,7 @@ void worm_ui_frontend_shutdown(void) {
     g_timing_marker_drag_cancel_pending = false;
     g_compose_pointer_hold_active = false;
     g_compose_note_paint_pointer_active = false;
+    g_compose_semantic_layer_paint_pointer_active = false;
     g_compose_lane_hold_active = false;
     g_compose_area_selection_candidate_active = false;
     g_compose_area_selection_active = false;
@@ -1492,23 +1498,29 @@ static void process_compose_key_events(const WormUiComposeView* view,
     const bool note_paint_mode_active =
         view->note_paint_mode_active ||
         action->compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
+    const bool semantic_layer_paint_mode_active =
+        view->semantic_layer_paint_mode_active ||
+        action->compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE;
+    const bool pointer_paint_mode_active =
+        note_paint_mode_active || semantic_layer_paint_mode_active;
     if (g_ime_composition_active) {
         cancel_compose_navigation(action);
         g_compose_key_event_count = 0;
         return;
     }
-    if (note_paint_mode_active && g_compose_lane_hold_active) {
+    if (pointer_paint_mode_active && g_compose_lane_hold_active) {
         append_compose_cancel_once(action);
         g_compose_lane_hold_active = false;
         g_compose_lane_hold_keycode = 0;
         g_compose_lane_hold_lane_id = 0;
     }
-    if (note_paint_mode_active && g_compose_space_range_hold_active) {
+    if (pointer_paint_mode_active && g_compose_space_range_hold_active) {
         append_compose_cancel_once(action);
         g_compose_space_range_hold_active = false;
         g_compose_space_range_hold_moved = false;
     }
-    if (note_paint_mode_active && (g_compose_note_move_candidate_active || g_compose_note_move_active)) {
+    if (pointer_paint_mode_active &&
+        (g_compose_note_move_candidate_active || g_compose_note_move_active)) {
         if (g_compose_note_move_active) {
             append_compose_cancel_once(action);
         }
@@ -1561,7 +1573,7 @@ static void process_compose_key_events(const WormUiComposeView* view,
         if (key_event.keycode == static_cast<uint32_t>(SDLK_SPACE)) {
             constexpr auto any_space_modifier = SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT |
                                                 SDL_KMOD_GUI | SDL_KMOD_MODE | SDL_KMOD_LEVEL5;
-            if (!note_paint_mode_active && !g_compose_space_range_hold_active &&
+            if (!pointer_paint_mode_active && !g_compose_space_range_hold_active &&
                 (key_event.modifiers & any_space_modifier) == 0) {
                 append_compose_input(action, WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION, 0.0, 0.0,
                                      0, false, WORM_UI_COMPOSE_SELECTION_REPLACE);
@@ -1626,7 +1638,7 @@ static void process_compose_key_events(const WormUiComposeView* view,
             g_compose_navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
             continue;
         }
-        if (note_paint_mode_active) {
+        if (pointer_paint_mode_active) {
             continue;
         }
         if (g_compose_lane_hold_active ||
@@ -3081,8 +3093,8 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
         }
         nk_layout_row_end(g_context);
 
-        nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 5);
-        nk_layout_row_push(g_context, 0.20f);
+        nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 6);
+        nk_layout_row_push(g_context, 0.16f);
         nk_labelf(g_context, NK_TEXT_LEFT, "Layer (%zu)", view->selected_note_count);
         const auto membership_enabled = view->scene_available && semantic_target_active &&
                                         !view->semantic_layer_target_locked &&
@@ -3099,13 +3111,28 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                 action->compose_action = kind;
             }
         };
-        nk_layout_row_push(g_context, 0.20f);
+        nk_layout_row_push(g_context, 0.16f);
         membership_button("Add", WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
-        nk_layout_row_push(g_context, 0.20f);
+        nk_layout_row_push(g_context, 0.16f);
         membership_button("Toggle", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER);
-        nk_layout_row_push(g_context, 0.20f);
+        nk_layout_row_push(g_context, 0.16f);
         membership_button("Remove", WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER);
-        nk_layout_row_push(g_context, 0.20f);
+        nk_layout_row_push(g_context, 0.18f);
+        const auto layer_paint_enabled = view->scene_available && semantic_target_active &&
+                                         !view->semantic_layer_target_locked;
+        if (!layer_paint_enabled) {
+            nk_widget_disable_begin(g_context);
+        }
+        const auto layer_paint_clicked = nk_button_label(
+            g_context, view->semantic_layer_paint_mode_active ? "Paint: Armed" : "Paint: Off");
+        if (!layer_paint_enabled) {
+            nk_widget_disable_end(g_context);
+        }
+        if (layer_paint_clicked && action &&
+            action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+            action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE;
+        }
+        nk_layout_row_push(g_context, 0.18f);
         if (!semantic_target_active) {
             nk_widget_disable_begin(g_context);
         }
@@ -3121,7 +3148,9 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
 
     nk_layout_row_dynamic(g_context, 18, 1);
     nk_label(g_context,
-             view->note_paint_mode_active
+             view->semantic_layer_paint_mode_active
+                 ? "Layer paint armed — unmodified click/drag toggles the selected layer on notes."
+                 : view->note_paint_mode_active
                  ? "Paint armed — unmodified click/drag adds notes; dragging over painted "
                    "notes erases."
                  : "Paint off — arm Paint to draw notes with an unmodified click or drag.",
@@ -3264,7 +3293,8 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
     const auto paint_pointer_x = clamp_paint_x(pointer_x);
     const auto paint_pointer_y = clamp_paint_y(pointer_y);
     const auto compose_pointer_captured =
-        g_compose_note_paint_pointer_active || g_compose_pointer_hold_active ||
+        g_compose_note_paint_pointer_active || g_compose_semantic_layer_paint_pointer_active ||
+        g_compose_pointer_hold_active ||
         g_compose_lane_hold_active || g_compose_note_move_active ||
         g_compose_area_selection_active;
     action->compose_has_pointer_hover =
@@ -3291,9 +3321,41 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
             compose_note_double_click_in_view = true;
         }
     }
-    bool paint_pointer_consumed =
-        g_compose_note_paint_pointer_active || compose_action_has_cancel(action);
-    if (!g_compose_action_overflowed && g_compose_note_paint_pointer_active) {
+    bool paint_pointer_consumed = g_compose_note_paint_pointer_active ||
+                                  g_compose_semantic_layer_paint_pointer_active ||
+                                  compose_action_has_cancel(action);
+    if (!g_compose_action_overflowed && g_compose_semantic_layer_paint_pointer_active) {
+        if (!g_window_focused || !view->scene_available ||
+            !view->semantic_layer_paint_mode_active || g_shortcut_event_count != 0 ||
+            (pointer_modifiers & any_pointer_modifier) != 0 || (!left_down && !left_released)) {
+            append_compose_cancel_once(action);
+            g_compose_semantic_layer_paint_pointer_active = false;
+        } else if (left_released) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE,
+                                 paint_pointer_x, paint_pointer_y);
+            g_compose_semantic_layer_paint_pointer_active = false;
+        } else if (left_down && nk_input_is_mouse_moved(&g_context->input)) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE,
+                                 paint_pointer_x, paint_pointer_y);
+        }
+    } else if (!g_compose_action_overflowed && view->scene_available &&
+               view->semantic_layer_paint_mode_active && pointer_started_in_view &&
+               g_window_focused && g_shortcut_event_count == 0 &&
+               (pointer_modifiers & any_pointer_modifier) == 0 &&
+               !g_compose_pointer_hold_active && !g_compose_lane_hold_active &&
+               !g_compose_area_selection_active && !g_compose_area_selection_candidate_active) {
+        paint_pointer_consumed = true;
+        if (compose_point_hits_note(view, paint_anchor_x, paint_anchor_y)) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN,
+                                 paint_anchor_x, paint_anchor_y);
+            g_compose_semantic_layer_paint_pointer_active =
+                !g_compose_action_overflowed && left_down;
+            if (!g_compose_action_overflowed && !left_down) {
+                append_compose_input(action, WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE,
+                                     paint_pointer_x, paint_pointer_y);
+            }
+        }
+    } else if (!g_compose_action_overflowed && g_compose_note_paint_pointer_active) {
         if (!g_window_focused || !view->scene_available || !view->note_paint_mode_active ||
             g_shortcut_event_count != 0 || (pointer_modifiers & any_pointer_modifier) != 0 ||
             (!left_down && !left_released)) {
@@ -3832,6 +3894,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
             append_compose_input(&action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
             g_compose_cancel_pending = false;
             g_compose_note_paint_pointer_active = false;
+            g_compose_semantic_layer_paint_pointer_active = false;
             g_compose_space_range_hold_active = false;
             g_compose_space_range_hold_moved = false;
             g_compose_note_move_candidate_active = false;
@@ -3841,12 +3904,14 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         const auto revision_changed =
             g_last_compose_document_revision != view->compose.document_revision;
         if (chart_changed || revision_changed) {
-            if (g_compose_note_paint_pointer_active || g_compose_space_range_hold_active ||
-                g_compose_note_move_active) {
+            if (g_compose_note_paint_pointer_active ||
+                g_compose_semantic_layer_paint_pointer_active ||
+                g_compose_space_range_hold_active || g_compose_note_move_active) {
                 append_compose_cancel_once(&action);
             }
             g_compose_pointer_hold_active = false;
             g_compose_note_paint_pointer_active = false;
+            g_compose_semantic_layer_paint_pointer_active = false;
             g_compose_lane_hold_active = false;
             g_compose_space_range_hold_active = false;
             g_compose_space_range_hold_moved = false;
@@ -3877,6 +3942,12 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
             append_compose_cancel_once(&action);
             g_compose_note_paint_pointer_active = false;
         }
+        if (g_compose_semantic_layer_paint_pointer_active &&
+            (!g_window_focused || !view->compose.scene_available ||
+             !view->compose.semantic_layer_paint_mode_active)) {
+            append_compose_cancel_once(&action);
+            g_compose_semantic_layer_paint_pointer_active = false;
+        }
     } else {
         g_compose_cancel_pending = false;
         g_compose_key_event_count = 0;
@@ -3884,12 +3955,14 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         g_compose_middle_click_pending = false;
         g_compose_keyboard_focus = false;
         if (g_compose_pointer_hold_active || g_compose_lane_hold_active ||
-            g_compose_note_paint_pointer_active || g_compose_space_range_hold_active ||
+            g_compose_note_paint_pointer_active || g_compose_semantic_layer_paint_pointer_active ||
+            g_compose_space_range_hold_active ||
             g_compose_area_selection_active) {
             append_compose_cancel_once(&action);
         }
         g_compose_pointer_hold_active = false;
         g_compose_note_paint_pointer_active = false;
+        g_compose_semantic_layer_paint_pointer_active = false;
         g_compose_lane_hold_active = false;
         g_compose_space_range_hold_active = false;
         g_compose_space_range_hold_moved = false;

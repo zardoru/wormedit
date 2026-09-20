@@ -166,6 +166,7 @@ struct compose_scene_cache_t {
 struct application_command_state_t {
     bool timing_locked{};
     bool note_paint_mode_active{};
+    bool semantic_layer_paint_mode_active{};
     std::optional<wormedit::layer_id_t> semantic_layer_target;
     // UI-only, chart-scoped preferences. Changing a snap never changes chart
     // data; an active gesture keeps its captured snap until it is resolved.
@@ -2055,6 +2056,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                            ? retained_state->pixels_per_standard_measure
                                            : wormedit::default_pixels_per_standard_measure;
     view.note_paint_mode_active = application_state.note_paint_mode_active;
+    view.semantic_layer_paint_mode_active = application_state.semantic_layer_paint_mode_active;
     view.selected_note_count = 0;
     view.semantic_layers = flattened.compose_semantic_layer_storage.data();
     view.semantic_layer_count = 0;
@@ -2285,6 +2287,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                       retained_state->pending_note_duration_gesture.has_value() ||
                                       retained_state->pending_note_move_gesture.has_value() ||
                                       retained_state->pending_note_paint_gesture.has_value() ||
+                                      retained_state->pending_semantic_layer_paint_gesture.has_value() ||
                                       retained_state->pending_editor_area_selection.has_value() ||
                                       retained_state->pending_space_range_selection.has_value();
     if (!hover_gesture_active && cache.hover &&
@@ -2953,6 +2956,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                                 state.pending_note_duration_gesture.has_value() ||
                                 state.pending_note_move_gesture.has_value() ||
                                 state.pending_note_paint_gesture.has_value() ||
+                                state.pending_semantic_layer_paint_gesture.has_value() ||
                                 state.pending_editor_area_selection.has_value() ||
                                 state.pending_space_range_selection.has_value();
     if (!ui_action.compose_has_pointer_hover || gesture_active ||
@@ -3131,6 +3135,76 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                                                 });
                 accepted =
                     result.document_changed ? "Pointer hold committed." : "Pointer hold released.";
+            }
+            break;
+        }
+        case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN:
+        case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE:
+        case WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE: {
+            if (!application_state.semantic_layer_paint_mode_active ||
+                !application_state.semantic_layer_target) {
+                if (state.pending_semantic_layer_paint_gesture) {
+                    result =
+                        dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+                    accepted = "Semantic-layer paint stroke canceled because paint mode is inactive.";
+                } else {
+                    result.accepted = true;
+                    accepted = "Semantic-layer paint input ignored because paint mode is inactive.";
+                }
+                break;
+            }
+            const auto chart =
+                std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+            const auto current_view = compose_view_for_state(history, state);
+            if (chart == history.document.charts.end() || !current_view) {
+                (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+                return "The selected chart field is no longer available.";
+            }
+            const auto* layer =
+                visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target);
+            if (!layer || layer->locked) {
+                application_state.semantic_layer_paint_mode_active = false;
+                (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+                return "Choose an unlocked visible semantic layer before painting note membership.";
+            }
+            const auto target =
+                hit_target_at(*chart, *current_view, input.x_pixels, input.y_pixels);
+            if (!target || !target->note) {
+                if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN) {
+                    return "Begin semantic-layer painting over a playable note.";
+                }
+                if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE) {
+                    result.accepted = true;
+                    accepted = "Semantic-layer paint moved between playable notes.";
+                    break;
+                }
+                result = dispatch_editor_action(
+                    history, state,
+                    end_semantic_layer_paint_gesture_action_t{
+                        .note = object_id_t{}, .pointer_captured = true});
+                accepted = result.document_changed ? "Semantic-layer paint stroke committed."
+                                                   : "Semantic-layer paint stroke released.";
+                break;
+            }
+            if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN) {
+                result = dispatch_editor_action(
+                    history, state,
+                    begin_semantic_layer_paint_gesture_action_t{
+                        .layer = layer->id, .note = *target->note, .pointer_captured = true});
+                accepted = "Semantic-layer paint stroke started.";
+            } else if (input.kind == WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE) {
+                result = dispatch_editor_action(
+                    history, state,
+                    update_semantic_layer_paint_gesture_action_t{.note = *target->note,
+                                                                 .pointer_captured = true});
+                accepted = "Semantic-layer paint preview updated.";
+            } else {
+                result = dispatch_editor_action(
+                    history, state,
+                    end_semantic_layer_paint_gesture_action_t{.note = *target->note,
+                                                              .pointer_captured = true});
+                accepted = result.document_changed ? "Semantic-layer paint stroke committed."
+                                                   : "Semantic-layer paint stroke released.";
             }
             break;
         }
@@ -3513,6 +3587,9 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
             }
         }
         application_state.note_paint_mode_active = !application_state.note_paint_mode_active;
+        if (application_state.note_paint_mode_active) {
+            application_state.semantic_layer_paint_mode_active = false;
+        }
         status = application_state.note_paint_mode_active ? "Note-paint mode enabled."
                                                           : "Note-paint mode disabled.";
         return status;
@@ -3560,7 +3637,34 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
     }
     case WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER:
         application_state.semantic_layer_target.reset();
+        application_state.semantic_layer_paint_mode_active = false;
         return "Semantic-layer target cleared.";
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
+            if (!result.accepted) {
+                return compose_result_status(result, "Compose gesture canceled.");
+            }
+        }
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart || !application_state.semantic_layer_target) {
+            return "Choose a visible semantic layer before painting note membership.";
+        }
+        const auto* layer =
+            visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target);
+        if (!layer || layer->locked) {
+            application_state.semantic_layer_paint_mode_active = false;
+            return "Choose an unlocked visible semantic layer before painting note membership.";
+        }
+        application_state.semantic_layer_paint_mode_active =
+            !application_state.semantic_layer_paint_mode_active;
+        if (application_state.semantic_layer_paint_mode_active) {
+            application_state.note_paint_mode_active = false;
+        }
+        return application_state.semantic_layer_paint_mode_active
+                   ? "Semantic-layer paint mode enabled."
+                   : "Semantic-layer paint mode disabled.";
+    }
     case WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER:
     case WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER:
     case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER: {
@@ -3575,6 +3679,7 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
             visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target);
         if (!layer) {
             application_state.semantic_layer_target.reset();
+            application_state.semantic_layer_paint_mode_active = false;
             return "The selected semantic layer is no longer visible.";
         }
         if (layer->locked) {
@@ -3616,6 +3721,7 @@ auto editor_interaction_has_pending_gesture(const wormedit::editor_interaction_s
     return state.pending_hold.has_value() || state.pending_note_duration_gesture.has_value() ||
            state.pending_note_move_gesture.has_value() ||
            state.pending_note_paint_gesture.has_value() ||
+           state.pending_semantic_layer_paint_gesture.has_value() ||
            state.pending_editor_area_selection.has_value() ||
            state.pending_space_range_selection.has_value();
 }
@@ -3740,6 +3846,7 @@ auto invoke_application_command(
         }
         (void)dispatch_editor_action(history, *state, cancel_editor_gesture_action_t{});
         application_state.note_paint_mode_active = false;
+        application_state.semantic_layer_paint_mode_active = false;
         return accept_editor_command(
             dispatch_editor_action(history, *state, select_editor_notes_action_t{}), status,
             "Selection, pending Compose gesture, and note-paint mode cleared.");
@@ -3888,6 +3995,7 @@ auto invoke_application_command(
 
     if (id == "semantic_layer.clear_target") {
         application_state.semantic_layer_target.reset();
+        application_state.semantic_layer_paint_mode_active = false;
         status = "Semantic-layer target cleared.";
         return {.accepted = true};
     }
@@ -3940,10 +4048,14 @@ void refresh_application_command_states(
     const bool pending = compose_ready && editor_interaction_has_pending_gesture(*compose_state);
     bool target_valid{};
     if (chart && application_state.semantic_layer_target) {
-        target_valid = visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target) !=
-                       nullptr;
+        const auto* target_layer =
+            visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target);
+        target_valid = target_layer != nullptr;
         if (!target_valid) {
             application_state.semantic_layer_target.reset();
+            application_state.semantic_layer_paint_mode_active = false;
+        } else if (target_layer->locked) {
+            application_state.semantic_layer_paint_mode_active = false;
         }
     }
     const auto set = [&](std::string id, bool enabled, std::optional<bool> checked = std::nullopt) {
@@ -3955,7 +4067,8 @@ void refresh_application_command_states(
     set("history.redo", !history.redo.empty());
     set("edit.delete", compose_ready);
     set("selection.clear", compose_ready && (pending || !compose_state->selected_objects.empty() ||
-                                             application_state.note_paint_mode_active));
+                                             application_state.note_paint_mode_active ||
+                                             application_state.semantic_layer_paint_mode_active));
     set("selection.select_all", compose_ready);
     set("selection.invert", compose_ready);
     set("navigation.previous_marker", compose_ready);
@@ -4219,6 +4332,9 @@ int main(int argc, char** argv) {
                  state.pending_note_move_gesture->document_revision != history.document.revision) ||
                 (state.pending_note_paint_gesture &&
                  state.pending_note_paint_gesture->document_revision !=
+                     history.document.revision) ||
+                (state.pending_semantic_layer_paint_gesture &&
+                 state.pending_semantic_layer_paint_gesture->document_revision !=
                      history.document.revision) ||
                 (state.pending_editor_area_selection &&
                  state.pending_editor_area_selection->document_revision !=

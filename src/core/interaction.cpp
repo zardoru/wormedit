@@ -1,6 +1,7 @@
 #include <wormedit/core/interaction.h>
 
 #include <wormedit/core/rational.h>
+#include <wormedit/core/semantic_layer_editor.h>
 
 #include <algorithm>
 #include <cmath>
@@ -2381,6 +2382,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         state.pending_note_duration_gesture.reset();
         state.pending_note_move_gesture.reset();
         state.pending_note_paint_gesture.reset();
+        state.pending_semantic_layer_paint_gesture.reset();
         state.pending_editor_area_selection.reset();
         state.pending_space_range_selection.reset();
         const auto recovered_view = make_view(history, state);
@@ -2465,6 +2467,14 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "finish or cancel the active note paint gesture first")});
+    }
+    if (state.pending_semantic_layer_paint_gesture.has_value() &&
+        !std::holds_alternative<update_semantic_layer_paint_gesture_action_t>(action) &&
+        !std::holds_alternative<end_semantic_layer_paint_gesture_action_t>(action)) {
+        return diagnostic_result(
+            history, state,
+            {error(diagnostic_code_t::invalid_hold,
+                   "finish or cancel the active semantic-layer paint gesture first")});
     }
     if (state.pending_editor_area_selection.has_value() &&
         !std::holds_alternative<update_editor_area_selection_action_t>(action) &&
@@ -2886,6 +2896,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
     const auto begin_move_gesture = [&](object_id_t reference_id) {
         if (state.pending_hold || state.pending_note_duration_gesture ||
             state.pending_note_move_gesture || state.pending_note_paint_gesture ||
+            state.pending_semantic_layer_paint_gesture ||
             state.pending_editor_area_selection || state.pending_space_range_selection) {
             return diagnostic_result(history, state,
                                      {error(diagnostic_code_t::invalid_hold,
@@ -3093,6 +3104,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         if (state.pending_hold.has_value() || state.pending_note_duration_gesture.has_value() ||
             state.pending_note_move_gesture.has_value() ||
             state.pending_note_paint_gesture.has_value() ||
+            state.pending_semantic_layer_paint_gesture.has_value() ||
             state.pending_editor_area_selection.has_value() ||
             state.pending_space_range_selection.has_value()) {
             return diagnostic_result(history, state,
@@ -3240,6 +3252,158 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         };
     };
 
+    const auto semantic_layer_paint_view = [&]() -> editor_interaction_result_t {
+        const auto next_view = make_view(history, state);
+        return {
+            .accepted = std::holds_alternative<editor_interaction_view_model_t>(next_view),
+            .view = std::holds_alternative<editor_interaction_view_model_t>(next_view)
+                        ? std::optional{std::get<editor_interaction_view_model_t>(next_view)}
+                        : std::nullopt,
+            .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
+                               ? std::get<diagnostic_list_t>(next_view)
+                               : diagnostic_list_t{},
+        };
+    };
+    const auto append_semantic_layer_paint_note =
+        [&](object_id_t note_id, bool pointer_captured) -> editor_interaction_result_t {
+        if (!pointer_captured) {
+            return dispatch_editor_action(
+                history, state,
+                cancel_editor_gesture_action_t{
+                    editor_gesture_cancel_reason_t::pointer_capture_lost});
+        }
+        if (!state.pending_semantic_layer_paint_gesture) {
+            return diagnostic_result(
+                history, state,
+                {error(diagnostic_code_t::invalid_hold,
+                       "semantic-layer paint update requires an active gesture")});
+        }
+        auto& pending = *state.pending_semantic_layer_paint_gesture;
+        if (pending.document_revision != history.document.revision) {
+            return diagnostic_result(
+                history, state,
+                {error(diagnostic_code_t::invalid_hold,
+                       "semantic-layer paint gesture is stale after a document edit")});
+        }
+        if (find_note(*chart, note_id) == nullptr) {
+            return diagnostic_result(
+                history, state,
+                {error(diagnostic_code_t::invalid_id,
+                       "semantic-layer paint target does not identify a chart note", note_id)});
+        }
+        if (pending.visited.contains(note_id.value)) {
+            return semantic_layer_paint_view();
+        }
+        if (!pending.notes || pending.notes->size() >= maximum_note_paint_targets) {
+            return diagnostic_result(
+                history, state,
+                {error(diagnostic_code_t::invalid_resolution,
+                       "semantic-layer paint exceeds the per-gesture note target cap")});
+        }
+        auto expanded = std::make_shared<std::vector<object_id_t>>(*pending.notes);
+        expanded->push_back(note_id);
+        pending.notes = std::move(expanded);
+        pending.visited.insert(note_id.value);
+        return semantic_layer_paint_view();
+    };
+    const auto begin_semantic_layer_paint_gesture =
+        [&](layer_id_t layer_id, object_id_t note_id,
+            bool pointer_captured) -> editor_interaction_result_t {
+        if (!pointer_captured) {
+            return diagnostic_result(
+                history, state,
+                {error(diagnostic_code_t::invalid_hold,
+                       "pointer capture is required to begin semantic-layer painting")});
+        }
+        if (state.pending_hold || state.pending_note_duration_gesture ||
+            state.pending_note_move_gesture || state.pending_note_paint_gesture ||
+            state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
+            state.pending_space_range_selection) {
+            return diagnostic_result(history, state,
+                                     {error(diagnostic_code_t::invalid_hold,
+                                            "another editor gesture is already active")});
+        }
+        const auto layer = std::ranges::find(chart->semantic_layers, layer_id,
+                                             &semantic_layer_t::id);
+        if (layer == chart->semantic_layers.end() || !layer->visible) {
+            return diagnostic_result(history, state,
+                                     {error(diagnostic_code_t::invalid_id,
+                                            "semantic-layer paint requires a visible chart layer")});
+        }
+        if (layer->locked) {
+            return diagnostic_result(history, state,
+                                     {error(diagnostic_code_t::invalid_id,
+                                            "semantic-layer paint cannot modify a locked layer")});
+        }
+        if (find_note(*chart, note_id) == nullptr) {
+            return diagnostic_result(
+                history, state,
+                {error(diagnostic_code_t::invalid_id,
+                       "semantic-layer paint must begin over a chart note", note_id)});
+        }
+        auto notes = std::make_shared<std::vector<object_id_t>>();
+        notes->push_back(note_id);
+        pending_semantic_layer_paint_gesture_t pending{
+            .layer = layer_id,
+            .document_revision = history.document.revision,
+            .notes = std::move(notes),
+        };
+        pending.visited.reserve(64);
+        pending.visited.insert(note_id.value);
+        state.pending_semantic_layer_paint_gesture = std::move(pending);
+        return semantic_layer_paint_view();
+    };
+    const auto end_semantic_layer_paint_gesture =
+        [&](object_id_t note_id, bool pointer_captured) -> editor_interaction_result_t {
+        if (!pointer_captured) {
+            return dispatch_editor_action(
+                history, state,
+                cancel_editor_gesture_action_t{
+                    editor_gesture_cancel_reason_t::pointer_capture_lost});
+        }
+        // A release between notes still commits the captured stroke. A zero
+        // note ID is the UI's explicit no-target release sentinel; it is
+        // never forwarded to semantic-layer membership editing.
+        if (note_id) {
+            const auto updated = append_semantic_layer_paint_note(note_id, true);
+            if (!updated) {
+                return updated;
+            }
+        }
+        if (!state.pending_semantic_layer_paint_gesture) {
+            return diagnostic_result(
+                history, state,
+                {error(diagnostic_code_t::invalid_hold,
+                       "semantic-layer paint gesture was cancelled before commit")});
+        }
+        const auto pending = *state.pending_semantic_layer_paint_gesture;
+        if (pending.document_revision != history.document.revision || !pending.notes ||
+            pending.notes->empty()) {
+            return diagnostic_result(
+                history, state,
+                {error(diagnostic_code_t::invalid_hold,
+                       "semantic-layer paint gesture is malformed or stale")});
+        }
+        const auto applied = apply_semantic_layer_edit(
+            history, pending.document_revision,
+            toggle_semantic_layer_membership_action_t{state.chart, pending.layer, *pending.notes});
+        if (!applied) {
+            return diagnostic_result(history, state, applied.diagnostics);
+        }
+        state.pending_semantic_layer_paint_gesture.reset();
+        const auto next_view = make_view(history, state);
+        return {
+            .accepted = std::holds_alternative<editor_interaction_view_model_t>(next_view),
+            .document_changed = true,
+            .view = std::holds_alternative<editor_interaction_view_model_t>(next_view)
+                        ? std::optional{std::get<editor_interaction_view_model_t>(next_view)}
+                        : std::nullopt,
+            .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
+                               ? std::get<diagnostic_list_t>(next_view)
+                               : diagnostic_list_t{},
+        };
+    };
+
     const auto combine_area_selection = [&](const std::vector<editor_selection_object_t>& hits,
                                             editor_area_selection_mode_t mode,
                                             const editor_hit_test_index_t& hit_index)
@@ -3303,6 +3467,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         if (state.pending_hold.has_value() || state.pending_note_duration_gesture.has_value() ||
             state.pending_note_move_gesture.has_value() ||
             state.pending_note_paint_gesture.has_value() ||
+            state.pending_semantic_layer_paint_gesture.has_value() ||
             state.pending_editor_area_selection.has_value()) {
             return diagnostic_result(history, state,
                                      {error(diagnostic_code_t::invalid_hold,
@@ -4068,6 +4233,18 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
             } else if constexpr (std::is_same_v<action_t, end_note_paint_gesture_action_t>) {
                 return end_paint_gesture(typed_action.lane, typed_action.position,
                                          typed_action.pointer_captured);
+            } else if constexpr (std::is_same_v<action_t,
+                                                begin_semantic_layer_paint_gesture_action_t>) {
+                return begin_semantic_layer_paint_gesture(typed_action.layer, typed_action.note,
+                                                          typed_action.pointer_captured);
+            } else if constexpr (std::is_same_v<action_t,
+                                                update_semantic_layer_paint_gesture_action_t>) {
+                return append_semantic_layer_paint_note(typed_action.note,
+                                                        typed_action.pointer_captured);
+            } else if constexpr (std::is_same_v<action_t,
+                                                end_semantic_layer_paint_gesture_action_t>) {
+                return end_semantic_layer_paint_gesture(typed_action.note,
+                                                        typed_action.pointer_captured);
             } else if constexpr (std::is_same_v<action_t, begin_editor_area_selection_action_t>) {
                 return begin_area_selection(typed_action);
             } else if constexpr (std::is_same_v<action_t, update_editor_area_selection_action_t>) {

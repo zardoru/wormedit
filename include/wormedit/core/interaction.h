@@ -229,6 +229,27 @@ struct end_note_paint_gesture_action_t {
     bool pointer_captured{true};
 };
 
+// Semantic-layer painting visits existing notes under a captured pointer and
+// toggles one explicitly armed layer across the whole visited set as a single
+// undoable edit. It never creates, deletes, or moves gameplay notes.
+struct begin_semantic_layer_paint_gesture_action_t {
+    layer_id_t layer;
+    object_id_t note;
+    bool pointer_captured{true};
+};
+
+struct update_semantic_layer_paint_gesture_action_t {
+    object_id_t note;
+    bool pointer_captured{true};
+};
+
+struct end_semantic_layer_paint_gesture_action_t {
+    // Zero commits the currently captured stroke without appending a final
+    // target, allowing pointer release in empty field space.
+    object_id_t note;
+    bool pointer_captured{true};
+};
+
 struct paint_cell_key_t {
     lane_id_t lane;
     std::uint64_t absolute_row{};
@@ -303,6 +324,9 @@ using editor_ui_action_t =
                  begin_note_move_gesture_action_t, update_note_move_gesture_action_t,
                  release_note_move_gesture_action_t, begin_note_paint_gesture_action_t,
                  update_note_paint_gesture_action_t, end_note_paint_gesture_action_t,
+                 begin_semantic_layer_paint_gesture_action_t,
+                 update_semantic_layer_paint_gesture_action_t,
+                 end_semantic_layer_paint_gesture_action_t,
                  begin_editor_area_selection_action_t, update_editor_area_selection_action_t,
                  commit_editor_area_selection_action_t, cancel_editor_area_selection_action_t,
                  space_range_selection_action_t, cancel_editor_gesture_action_t,
@@ -389,6 +413,13 @@ struct note_paint_gesture_preview_t {
     std::shared_ptr<const std::vector<note_paint_target_t>> targets;
 };
 
+struct pending_semantic_layer_paint_gesture_t {
+    layer_id_t layer;
+    std::uint64_t document_revision{};
+    std::shared_ptr<const std::vector<object_id_t>> notes;
+    std::unordered_set<std::uint64_t> visited;
+};
+
 struct editor_hit_test_index_t;
 
 struct pending_space_range_selection_t {
@@ -449,6 +480,7 @@ struct editor_interaction_state_t {
     std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
     std::optional<pending_note_move_gesture_t> pending_note_move_gesture;
     std::optional<pending_note_paint_gesture_t> pending_note_paint_gesture;
+    std::optional<pending_semantic_layer_paint_gesture_t> pending_semantic_layer_paint_gesture;
     std::optional<pending_editor_area_selection_t> pending_editor_area_selection;
     std::optional<pending_space_range_selection_t> pending_space_range_selection;
     std::vector<object_id_t> selected_notes;

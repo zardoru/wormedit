@@ -268,6 +268,7 @@ typedef struct WormUiComposeView {
     bool scene_available;
     bool truncated;
     bool note_paint_mode_active;
+    bool semantic_layer_paint_mode_active;
     size_t selected_note_count;
     const WormUiComposeSemanticLayerView* semantic_layers;
     size_t semantic_layer_count;
@@ -583,6 +584,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER,
+    WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE,
 } WormUiComposeActionKind;
 
 typedef enum WormUiComposeInputKind {
@@ -607,6 +609,9 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN,
     WORM_UI_COMPOSE_INPUT_NOTE_PAINT_UPDATE,
     WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE,
+    WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_BEGIN,
+    WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_UPDATE,
+    WORM_UI_COMPOSE_INPUT_SEMANTIC_LAYER_PAINT_RELEASE,
     WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN,
     WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE,
     WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE,

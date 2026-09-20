@@ -70,6 +70,8 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_NONE = 0,
     WORM_UI_WORKSPACE_ACTION_SWITCH_TAB,
     WORM_UI_WORKSPACE_ACTION_QUIT,
+    WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE,
+    WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP,
     WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT,
     WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER,
     WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS,
@@ -579,6 +581,11 @@ typedef struct WormUiWorkspaceView {
     WormUiWorkspaceTab active_tab;
     WormUiWorkspaceTabItem tabs[WORM_UI_WORKSPACE_TAB_COUNT];
     const char* tab_heading;
+    bool transport_available;
+    bool transport_playing;
+    bool transport_paused;
+    uint64_t transport_frame;
+    uint32_t transport_sample_rate;
     const char* summary_lines[WORM_UI_WORKSPACE_SUMMARY_CAPACITY];
     size_t summary_line_count;
     bool history_available;

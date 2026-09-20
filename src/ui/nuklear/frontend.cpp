@@ -4207,6 +4207,46 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         nk_label(g_context, view->status_text, NK_TEXT_RIGHT);
         nk_layout_row_end(g_context);
 
+        nk_layout_row_begin(g_context, NK_DYNAMIC, 26, 4);
+        nk_layout_row_push(g_context, 0.10f);
+        if (!view->transport_available) {
+            nk_widget_disable_begin(g_context);
+        }
+        const auto* play_label = view->transport_playing ? "Pause"
+                                 : view->transport_paused ? "Resume"
+                                                          : "Play";
+        if (nk_button_label(g_context, play_label) && view->transport_available) {
+            action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE;
+        }
+        if (!view->transport_available) {
+            nk_widget_disable_end(g_context);
+        }
+        nk_layout_row_push(g_context, 0.10f);
+        const bool can_stop = view->transport_playing || view->transport_paused;
+        if (!can_stop) {
+            nk_widget_disable_begin(g_context);
+        }
+        if (nk_button_label(g_context, "Stop") && can_stop) {
+            action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP;
+        }
+        if (!can_stop) {
+            nk_widget_disable_end(g_context);
+        }
+        nk_layout_row_push(g_context, 0.22f);
+        const auto sample_rate = view->transport_sample_rate == 0 ? 1U : view->transport_sample_rate;
+        const auto total_seconds = view->transport_frame / sample_rate;
+        const auto minutes = total_seconds / 60;
+        const auto seconds = total_seconds % 60;
+        nk_labelf(g_context, NK_TEXT_LEFT, "%s · %llu:%02llu",
+                  view->transport_playing ? "Playing"
+                  : view->transport_paused ? "Paused"
+                                           : "Stopped",
+                  static_cast<unsigned long long>(minutes),
+                  static_cast<unsigned long long>(seconds));
+        nk_layout_row_push(g_context, 0.58f);
+        nk_label(g_context, "Ctrl/Cmd+Space · Ctrl/Cmd+Shift+Space", NK_TEXT_RIGHT);
+        nk_layout_row_end(g_context);
+
         nk_layout_row_dynamic(g_context, 34, WORM_UI_WORKSPACE_TAB_COUNT);
         for (int tab = 0; tab < WORM_UI_WORKSPACE_TAB_COUNT; ++tab) {
             const WormUiWorkspaceTabItem* item = &view->tabs[tab];

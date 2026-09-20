@@ -4946,7 +4946,7 @@ int main(int argc, char** argv) {
     application_command_state_t application_command_state;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     application_command_state.transport_active = [&] {
-        return audition_session.active() || preview_session.active();
+        return audition_session.active() || preview_session.active() || preview_paused;
     };
     application_command_state.transport_play_pause = [&]() -> std::string {
         if (preview_session.active()) {
@@ -5162,6 +5162,25 @@ int main(int argc, char** argv) {
             auto flattened =
                 flatten_workspace(*model.view, history.document, status, recovery_controller.view(),
                                   recovery_scan_configured);
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+            flattened.view.transport_available =
+                workspace.selected_chart.has_value() && preview_output.available();
+            flattened.view.transport_playing =
+                preview_session.active() || audition_session.active();
+            flattened.view.transport_paused = preview_paused;
+            flattened.view.transport_frame = preview_session.active()
+                                                 ? preview_session.timeline_frame()
+                                             : audition_session.active()
+                                                 ? audition_session.timeline_frame()
+                                                 : preview_resume_frame;
+            flattened.view.transport_sample_rate = wormedit::audio::output_sample_rate;
+#else
+            flattened.view.transport_available = false;
+            flattened.view.transport_playing = false;
+            flattened.view.transport_paused = false;
+            flattened.view.transport_frame = 0;
+            flattened.view.transport_sample_rate = 44'100;
+#endif
             for (std::size_t line = 0; line < flattened.view.summary_line_count; ++line) {
                 flattened.view.summary_lines[line] = flattened.summary_storage[line].c_str();
             }
@@ -5295,6 +5314,17 @@ int main(int argc, char** argv) {
             } else if (shortcut_handled) {
                 // Registry commands take precedence over widget actions emitted
                 // by the same input frame, preventing duplicate mutations.
+            } else if (action.kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE) {
+                status = application_command_state.transport_play_pause
+                             ? application_command_state.transport_play_pause()
+                             : "Chart preview is unavailable.";
+            } else if (action.kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP) {
+                if (application_command_state.transport_stop) {
+                    application_command_state.transport_stop();
+                    status = "Audio preview stopped.";
+                } else {
+                    status = "Audio preview is unavailable.";
+                }
             } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB) {
                 const auto applied = wormedit::apply_workspace_action(
                     workspace, history.document, history.document.revision,

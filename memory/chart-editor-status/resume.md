@@ -4,7 +4,7 @@
 
 ## Immediate work
 
-1. Refine the first static-image player composition with explicit aspect-fit/crop/layout policy and renderer upload-failure diagnostics, then establish the planned SDL3 GPU path without moving decode, schedule, or document policy into the frontend.
+1. Add renderer upload-failure diagnostics to the static-image player composition, then establish the planned SDL3 GPU path without moving decode, layout, schedule, or document policy into the frontend.
 2. Continue the behavior-preserving frontend split around backend-neutral view/action contracts; the current Nuklear backend must not own document, transport, or scene policy, and a later wxWidgets adapter should not require moving those responsibilities again.
 3. Add richer profile-specific discontinuity ordering plus video/storyboard evaluation to the preview. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
 4. Capture BMSE/iBMSC clipboard samples with tool/version provenance, then broaden BMS dialect/profile and exact branch-editing fixtures.

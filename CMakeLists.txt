@@ -77,6 +77,7 @@ add_library(wormedit_core
     src/core/timing_anchor_editor.cpp
     src/core/timing_lane_controller.cpp
     src/core/viewport_input.cpp
+    src/core/visual_layout.cpp
     src/core/workspace.cpp
     src/formats/bms.cpp
     src/formats/bms_writer.cpp

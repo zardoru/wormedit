@@ -56,6 +56,7 @@
 #define WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY 4096
 #define WORM_UI_PLAYER_PREVIEW_HOLD_CAPACITY 4096
 #define WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY 5
+#define WORM_UI_PLAYER_PREVIEW_IMAGE_MAX_DIMENSION 16384
 #define WORM_UI_COMPOSE_MIN_PIXELS_PER_MEASURE 24.0
 #define WORM_UI_COMPOSE_MAX_PIXELS_PER_MEASURE 4096.0
 
@@ -715,6 +716,12 @@ typedef enum WormUiPlayerPreviewSkin {
     WORM_UI_PLAYER_PREVIEW_SKIN_ARROWS,
 } WormUiPlayerPreviewSkin;
 
+typedef enum WormUiVisualFitPolicy {
+    WORM_UI_VISUAL_FIT_STRETCH = 0,
+    WORM_UI_VISUAL_FIT_CONTAIN,
+    WORM_UI_VISUAL_FIT_COVER,
+} WormUiVisualFitPolicy;
+
 typedef enum WormUiPlayerPreviewVisualKind {
     WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND = 0,
     WORM_UI_PLAYER_PREVIEW_VISUAL_POOR,
@@ -792,6 +799,7 @@ typedef struct WormUiPlayerPreviewView {
     bool pre_zero;
     bool split_stage;
     WormUiPlayerPreviewSkin skin;
+    WormUiVisualFitPolicy visual_fit;
     uint64_t project_id;
     uint64_t chart_id;
     uint64_t document_revision;

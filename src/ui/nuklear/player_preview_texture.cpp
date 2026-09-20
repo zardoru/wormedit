@@ -2,6 +2,8 @@
 
 #include "wormedit/nuklear_config.h"
 
+#include <wormedit/core/visual_layout.h>
+
 #if defined(__APPLE__)
 #include <OpenGL/gl3.h>
 #else
@@ -139,6 +141,18 @@ auto texture_for(const WormUiPlayerPreviewView& view,
     return texture;
 }
 
+auto visual_fit_policy(WormUiVisualFitPolicy fit) -> wormedit::visual_fit_policy_t {
+    switch (fit) {
+    case WORM_UI_VISUAL_FIT_STRETCH:
+        return wormedit::visual_fit_policy_t::stretch;
+    case WORM_UI_VISUAL_FIT_COVER:
+        return wormedit::visual_fit_policy_t::cover;
+    case WORM_UI_VISUAL_FIT_CONTAIN:
+        return wormedit::visual_fit_policy_t::contain;
+    }
+    return wormedit::visual_fit_policy_t::contain;
+}
+
 } // namespace
 
 bool worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer* canvas,
@@ -172,8 +186,35 @@ bool worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer*
         if (texture == 0 || texture > static_cast<GLuint>(std::numeric_limits<int>::max())) {
             continue;
         }
-        const auto image = nk_image_id(static_cast<int>(texture));
-        nk_draw_image(canvas, viewport, &image, nk_rgba(255, 255, 255, 255));
+        const auto& layer = *ordered[index];
+        const auto layout =
+            wormedit::make_visual_image_layout({.source_width = layer.image_width,
+                                                .source_height = layer.image_height,
+                                                .destination = {.left = viewport.x,
+                                                                .top = viewport.y,
+                                                                .width = viewport.w,
+                                                                .height = viewport.h},
+                                                .fit = visual_fit_policy(view->visual_fit)});
+        if (!layout) {
+            continue;
+        }
+        const auto& source = layout->source;
+        const auto full_source = source.left == 0 && source.top == 0 &&
+                                 source.width == layer.image_width &&
+                                 source.height == layer.image_height;
+        const auto image =
+            full_source
+                ? nk_image_id(static_cast<int>(texture))
+                : nk_subimage_id(
+                      static_cast<int>(texture), static_cast<nk_ushort>(layer.image_width),
+                      static_cast<nk_ushort>(layer.image_height),
+                      nk_rect(static_cast<float>(source.left), static_cast<float>(source.top),
+                              static_cast<float>(source.width), static_cast<float>(source.height)));
+        const auto destination = nk_rect(static_cast<float>(layout->destination.left),
+                                         static_cast<float>(layout->destination.top),
+                                         static_cast<float>(layout->destination.width),
+                                         static_cast<float>(layout->destination.height));
+        nk_draw_image(canvas, destination, &image, nk_rgba(255, 255, 255, 255));
         drew_image = true;
     }
     return drew_image;

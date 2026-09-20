@@ -3108,6 +3108,7 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
     auto& view = flattened.view.player_preview;
     view.visible = application_state.player_preview_visible;
     view.skin = static_cast<WormUiPlayerPreviewSkin>(application_state.player_preview_skin);
+    view.visual_fit = WORM_UI_VISUAL_FIT_CONTAIN;
     view.viewport_width_pixels = 300.0;
     view.viewport_height_pixels = 420.0;
     view.project_id = history.document.id.value;
@@ -3221,6 +3222,7 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
          .receptor_y_pixels = 52.0,
          .pixels_per_beat = 82.0,
          .skin = application_state.player_preview_skin,
+         .visual_fit = wormedit::visual_fit_policy_t::contain,
          .visual_layers = visual.layers,
          .maximum_visible_notes = WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY});
     if (!scene) {
@@ -3377,6 +3379,7 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
     view.scene_available = true;
     view.pre_zero = scene.scene->pre_zero;
     view.split_stage = scene.scene->split_stage;
+    view.visual_fit = static_cast<WormUiVisualFitPolicy>(scene.scene->visual_fit);
     view.lanes = flattened.player_preview_lane_storage.data();
     view.lane_count = flattened.player_preview_lane_storage.size();
     view.receptors = flattened.player_preview_receptor_storage.data();

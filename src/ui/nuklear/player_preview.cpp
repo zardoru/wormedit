@@ -52,7 +52,9 @@ void draw_glyph(struct nk_command_buffer* canvas, struct nk_rect bounds, std::ui
 
 int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* view) {
     if (!view || view->skin < WORM_UI_PLAYER_PREVIEW_SKIN_NEUTRAL ||
-        view->skin > WORM_UI_PLAYER_PREVIEW_SKIN_ARROWS) {
+        view->skin > WORM_UI_PLAYER_PREVIEW_SKIN_ARROWS ||
+        view->visual_fit < WORM_UI_VISUAL_FIT_STRETCH ||
+        view->visual_fit > WORM_UI_VISUAL_FIT_COVER) {
         return 0;
     }
     if (!view->visible) {
@@ -105,8 +107,10 @@ int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* vie
             layer.kind > WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD ||
             (layer.image_ready &&
              (!layer.static_image || layer.image_pending || layer.image_width == 0 ||
-              layer.image_height == 0 || !layer.rgba_pixels ||
-              layer.image_width > SIZE_MAX / layer.image_height / 4U ||
+              layer.image_height == 0 ||
+              layer.image_width > WORM_UI_PLAYER_PREVIEW_IMAGE_MAX_DIMENSION ||
+              layer.image_height > WORM_UI_PLAYER_PREVIEW_IMAGE_MAX_DIMENSION ||
+              !layer.rgba_pixels || layer.image_width > SIZE_MAX / layer.image_height / 4U ||
               layer.rgba_byte_count !=
                   static_cast<std::size_t>(layer.image_width) * layer.image_height * 4U)) ||
             (!layer.image_ready && (layer.image_width != 0 || layer.image_height != 0 ||

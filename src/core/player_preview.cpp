@@ -241,7 +241,8 @@ auto make_player_preview_scene(const player_preview_index_t& index,
         request.split_stage_gutter_pixels < 0.0 || !std::isfinite(request.hold_body_width_ratio) ||
         request.hold_body_width_ratio <= 0.0 || request.hold_body_width_ratio > 1.0 ||
         request.maximum_visible_notes == 0 || request.maximum_composition_operations == 0 ||
-        !valid_skin(request.skin) || !valid_direction(request.direction) || index.layouts.empty() ||
+        !valid_skin(request.skin) || !valid_direction(request.direction) ||
+        !valid_visual_fit_policy(request.visual_fit) || index.layouts.empty() ||
         !valid_visual_layers(request.visual_layers, request.sample_frame) ||
         index.timing.rows.empty() || index.note_tree_leaf_base == 0 ||
         index.note_tree_max_end.size() != index.note_tree_leaf_base * 2) {
@@ -315,6 +316,7 @@ auto make_player_preview_scene(const player_preview_index_t& index,
                                  .absolute_row = *position.absolute_row,
                                  .skin = request.skin,
                                  .direction = request.direction,
+                                 .visual_fit = request.visual_fit,
                                  .pre_zero = pre_zero,
                                  .split_stage = active_layout->layout.split_stage,
                                  .visual_layers = request.visual_layers,

@@ -166,6 +166,13 @@ TEST_CASE("player preview carries validated visual layers in the deterministic s
     const auto scene = make_player_preview_scene(*built.index, visual_request);
     REQUIRE(scene);
     CHECK(scene.scene->visual_layers == visual_request.visual_layers);
+    CHECK(scene.scene->visual_fit == visual_fit_policy_t::contain);
+
+    auto covered = visual_request;
+    covered.visual_fit = visual_fit_policy_t::cover;
+    const auto cover_scene = make_player_preview_scene(*built.index, covered);
+    REQUIRE(cover_scene);
+    CHECK(cover_scene.scene->visual_fit == visual_fit_policy_t::cover);
 
     auto future = visual_request;
     future.visual_layers.background->sample_frame = 101;
@@ -174,6 +181,10 @@ TEST_CASE("player preview carries validated visual layers in the deterministic s
     auto wrong_slot = visual_request;
     wrong_slot.visual_layers.background->kind = visual_event_kind_t::layer;
     CHECK_FALSE(make_player_preview_scene(*built.index, wrong_slot));
+
+    auto invalid_fit = visual_request;
+    invalid_fit.visual_fit = static_cast<visual_fit_policy_t>(255);
+    CHECK_FALSE(make_player_preview_scene(*built.index, invalid_fit));
 }
 
 TEST_CASE("player preview uses scroll displacement and remains still through a stop",

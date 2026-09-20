@@ -3,6 +3,7 @@
 #include <wormedit/core/bga_preview.h>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/visual_layout.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -121,6 +122,7 @@ struct player_preview_scene_t {
     signed_rational_t absolute_row;
     player_preview_skin_t skin{player_preview_skin_t::neutral};
     player_preview_scroll_direction_t direction{player_preview_scroll_direction_t::toward_top};
+    visual_fit_policy_t visual_fit{visual_fit_policy_t::contain};
     bool pre_zero{};
     bool split_stage{};
     bga_layer_state_t visual_layers;
@@ -147,6 +149,7 @@ struct player_preview_scene_request_t {
     double hold_body_width_ratio{0.38};
     player_preview_skin_t skin{player_preview_skin_t::neutral};
     player_preview_scroll_direction_t direction{player_preview_scroll_direction_t::toward_top};
+    visual_fit_policy_t visual_fit{visual_fit_policy_t::contain};
     // Resolved from the immutable visual schedule at this same sample frame.
     // Asset decoding and texture ownership remain renderer responsibilities.
     bga_layer_state_t visual_layers;

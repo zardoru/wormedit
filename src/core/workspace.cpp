@@ -1025,6 +1025,8 @@ auto make_workspace_view(const workspace_controller_t& workspace, const song_doc
             .search_tags = document.metadata.ordered_search_tags,
             .selected_difficulty = selected_difficulty,
             .chart_author = chart == nullptr ? std::string{} : chart->metadata.author,
+            .beat_zero_audio_offset_seconds =
+                chart == nullptr ? signed_rational_t{} : chart->beat_zero_audio_offset_seconds,
         };
         content.format_fields.reserve(item_count - document.metadata.ordered_search_tags.size());
         const auto append_groups = [&](const auto& groups, bool chart_scoped) {

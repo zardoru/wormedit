@@ -125,6 +125,7 @@ typedef struct WormUiMetadataView {
     bool visible;
     bool song_fields_editable;
     bool chart_fields_editable;
+    bool audio_offset_editable;
     bool search_tags_editable;
     uint64_t document_revision;
     bool has_chart;
@@ -140,6 +141,9 @@ typedef struct WormUiMetadataView {
     bool has_chart_rating;
     int64_t chart_rating_numerator;
     uint64_t chart_rating_denominator;
+    bool timing_locked;
+    int64_t audio_offset_numerator;
+    uint64_t audio_offset_denominator;
     const char* const* search_tags;
     const size_t* search_tag_bytes;
     size_t search_tag_count;
@@ -735,6 +739,7 @@ typedef enum WormUiMetadataEditKind {
     WORM_UI_METADATA_EDIT_NONE = 0,
     WORM_UI_METADATA_EDIT_SONG,
     WORM_UI_METADATA_EDIT_CHART,
+    WORM_UI_METADATA_EDIT_AUDIO_OFFSET,
     WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD,
     WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD,
     WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD,
@@ -757,6 +762,8 @@ typedef struct WormUiWorkspaceAction {
     bool metadata_has_chart_rating;
     const char* metadata_chart_rating_numerator_text;
     const char* metadata_chart_rating_denominator_text;
+    const char* metadata_audio_offset_numerator_text;
+    const char* metadata_audio_offset_denominator_text;
     const char* metadata_title;
     const char* metadata_artist;
     const char* metadata_chart_name;

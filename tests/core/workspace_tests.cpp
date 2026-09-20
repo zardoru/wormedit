@@ -31,6 +31,7 @@ auto workspace_song() -> song_document_t {
                     .metadata = {.name = "Another",
                                  .author = "Chart author",
                                  .rating = signed_rational_t{12, 1}},
+                    .beat_zero_audio_offset_seconds = {-3, 8},
                     .measures = {{.id = measure_id_t{1},
                                   .notes = {{.id = object_id_t{2},
                                              .position = {measure_id_t{1}, 0},
@@ -322,6 +323,7 @@ TEST_CASE("metadata workspace exposes bounded ordered song and difficulty format
     const auto result = make_workspace_view(workspace, song);
     REQUIRE(result);
     const auto& metadata = std::get<workspace_metadata_view_t>(result.view->tab_view);
+    CHECK(metadata.beat_zero_audio_offset_seconds == signed_rational_t{-3, 8});
     REQUIRE(metadata.format_fields.size() == 5);
     CHECK(metadata.format_fields[0].name == "SUBARTIST");
     CHECK(metadata.format_fields[1].name == "SUBARTIST");

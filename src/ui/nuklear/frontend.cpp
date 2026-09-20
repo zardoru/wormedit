@@ -48,6 +48,8 @@ static std::array<char, WORM_UI_METADATA_CHART_TEXT_BYTES + 1> g_metadata_chart_
 static std::array<char, WORM_UI_METADATA_CHART_TEXT_BYTES + 1> g_metadata_chart_author{};
 static std::array<char, 64> g_metadata_chart_rating_numerator{};
 static std::array<char, 64> g_metadata_chart_rating_denominator{};
+static std::array<char, 64> g_metadata_audio_offset_numerator{};
+static std::array<char, 64> g_metadata_audio_offset_denominator{};
 static std::vector<std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1>> g_metadata_search_tags;
 static std::vector<const char*> g_metadata_search_tag_pointers;
 static std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1> g_metadata_new_search_tag{};
@@ -539,6 +541,8 @@ static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
                            metadata->chart_author, metadata->chart_author_bytes);
     g_metadata_chart_rating_numerator.fill('\0');
     g_metadata_chart_rating_denominator.fill('\0');
+    g_metadata_audio_offset_numerator.fill('\0');
+    g_metadata_audio_offset_denominator.fill('\0');
     if (metadata->has_chart) {
         const auto numerator = metadata->has_chart_rating
                                    ? std::to_string(metadata->chart_rating_numerator)
@@ -552,6 +556,14 @@ static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
         (void)copy_metadata_text(g_metadata_chart_rating_denominator.data(),
                                  g_metadata_chart_rating_denominator.size(), denominator.c_str(),
                                  denominator.size());
+        const auto offset_numerator = std::to_string(metadata->audio_offset_numerator);
+        const auto offset_denominator = std::to_string(metadata->audio_offset_denominator);
+        (void)copy_metadata_text(g_metadata_audio_offset_numerator.data(),
+                                 g_metadata_audio_offset_numerator.size(), offset_numerator.c_str(),
+                                 offset_numerator.size());
+        (void)copy_metadata_text(g_metadata_audio_offset_denominator.data(),
+                                 g_metadata_audio_offset_denominator.size(),
+                                 offset_denominator.c_str(), offset_denominator.size());
     }
     g_metadata_tag_buffers_valid =
         metadata->search_tags_editable &&
@@ -619,6 +631,38 @@ struct metadata_rating_value_t {
     int64_t numerator{};
     uint64_t denominator{1};
 };
+
+static auto metadata_audio_offset_value() -> std::optional<metadata_rating_value_t> {
+    const std::string_view numerator{g_metadata_audio_offset_numerator.data()};
+    const std::string_view denominator{g_metadata_audio_offset_denominator.data()};
+    if (numerator.empty() || denominator.empty() || numerator.size() > 21 ||
+        denominator.size() > 21) {
+        return std::nullopt;
+    }
+    auto numerator_text = numerator;
+    if (numerator_text.front() == '+')
+        numerator_text.remove_prefix(1);
+    int64_t parsed_numerator{};
+    const auto numerator_result = std::from_chars(
+        numerator_text.data(), numerator_text.data() + numerator_text.size(), parsed_numerator, 10);
+    if (numerator_result.ec != std::errc{} ||
+        numerator_result.ptr != numerator_text.data() + numerator_text.size()) {
+        return std::nullopt;
+    }
+    auto denominator_text = denominator;
+    if (denominator_text.front() == '+')
+        denominator_text.remove_prefix(1);
+    uint64_t parsed_denominator{};
+    const auto denominator_result =
+        std::from_chars(denominator_text.data(), denominator_text.data() + denominator_text.size(),
+                        parsed_denominator, 10);
+    if (denominator_result.ec != std::errc{} ||
+        denominator_result.ptr != denominator_text.data() + denominator_text.size() ||
+        parsed_denominator == 0) {
+        return std::nullopt;
+    }
+    return metadata_rating_value_t{true, parsed_numerator, parsed_denominator};
+}
 
 static auto metadata_chart_rating_value(const WormUiMetadataView* metadata)
     -> std::optional<metadata_rating_value_t> {
@@ -738,6 +782,20 @@ static void set_metadata_chart_action(WormUiWorkspaceAction* action,
         action->metadata_chart_rating_numerator_text = g_metadata_chart_rating_numerator.data();
         action->metadata_chart_rating_denominator_text = g_metadata_chart_rating_denominator.data();
     }
+}
+
+static void set_metadata_audio_offset_action(WormUiWorkspaceAction* action,
+                                             const WormUiMetadataView* metadata) {
+    if (!action || !metadata || action->metadata_edit != WORM_UI_METADATA_EDIT_NONE ||
+        !metadata->has_chart || !metadata->audio_offset_editable || metadata->timing_locked ||
+        !metadata_audio_offset_value()) {
+        return;
+    }
+    action->metadata_edit = WORM_UI_METADATA_EDIT_AUDIO_OFFSET;
+    action->metadata_document_revision = metadata->document_revision;
+    action->metadata_chart_id = metadata->chart_id;
+    action->metadata_audio_offset_numerator_text = g_metadata_audio_offset_numerator.data();
+    action->metadata_audio_offset_denominator_text = g_metadata_audio_offset_denominator.data();
 }
 
 static const char* metadata_format_family_name(uint8_t family) {
@@ -915,6 +973,42 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
     }
     if (!song_changed || !metadata->song_fields_editable) {
         nk_widget_disable_end(g_context);
+    }
+
+    nk_layout_row_dynamic(g_context, 24, 1);
+    nk_label(g_context, "Audio and synchronization", NK_TEXT_LEFT);
+    if (metadata->has_chart) {
+        const int offset_editable = metadata->audio_offset_editable && !metadata->timing_locked;
+        metadata_input_row("Offset seconds numerator", g_metadata_audio_offset_numerator.data(),
+                           g_metadata_audio_offset_numerator.size(), offset_editable);
+        metadata_input_row("Offset seconds denominator", g_metadata_audio_offset_denominator.data(),
+                           g_metadata_audio_offset_denominator.size(), offset_editable);
+        const auto parsed_offset = metadata_audio_offset_value();
+        const int offset_changed =
+            parsed_offset && (parsed_offset->numerator != metadata->audio_offset_numerator ||
+                              parsed_offset->denominator != metadata->audio_offset_denominator);
+        if (!parsed_offset) {
+            nk_layout_row_dynamic(g_context, 20, 1);
+            nk_label(g_context, "Use a signed 64-bit numerator and positive 64-bit denominator.",
+                     NK_TEXT_LEFT);
+        } else if (metadata->timing_locked) {
+            nk_layout_row_dynamic(g_context, 20, 1);
+            nk_label(g_context, "Unlock timing to change audio synchronization.", NK_TEXT_LEFT);
+        }
+        const int can_apply_offset = offset_editable && offset_changed && action &&
+                                     action->metadata_edit == WORM_UI_METADATA_EDIT_NONE;
+        nk_layout_row_dynamic(g_context, 26, 1);
+        if (!can_apply_offset)
+            nk_widget_disable_begin(g_context);
+        const int apply_offset = nk_button_label(g_context, "Apply exact audio offset");
+        if (!can_apply_offset)
+            nk_widget_disable_end(g_context);
+        if (apply_offset && can_apply_offset)
+            set_metadata_audio_offset_action(action, metadata);
+    } else {
+        nk_layout_row_dynamic(g_context, 20, 1);
+        nk_label(g_context, "Select a difficulty to edit its beat-zero audio offset.",
+                 NK_TEXT_LEFT);
     }
 
     nk_layout_row_dynamic(g_context, 24, 1);
@@ -1844,9 +1938,8 @@ static int audio_slices_view_valid(const WormUiAudioSlicesView* view) {
         (view->has_selected_asset && view->selected_asset_id == 0) ||
         (view->analysis_pending && view->waveform_available) ||
         (!view->waveform_available && view->waveform_column_count != 0) ||
-        (view->waveform_available &&
-         (view->waveform_column_count == 0 || view->total_frames == 0 || view->sample_rate == 0 ||
-          !view->has_selected_asset))) {
+        (view->waveform_available && (view->waveform_column_count == 0 || view->total_frames == 0 ||
+                                      view->sample_rate == 0 || !view->has_selected_asset))) {
         return 0;
     }
     for (size_t index = 0; index < view->asset_count; ++index) {

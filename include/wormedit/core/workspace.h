@@ -190,6 +190,7 @@ struct workspace_metadata_view_t {
     std::vector<std::string> search_tags;
     std::optional<workspace_chart_option_t> selected_difficulty;
     std::string chart_author;
+    signed_rational_t beat_zero_audio_offset_seconds;
     std::vector<format_field_t> format_fields;
 };
 

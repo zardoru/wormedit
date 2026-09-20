@@ -6,6 +6,7 @@
 #include "ui/frontend.h"
 #include "wormedit/config.h"
 
+#include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/autosave_loop.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/command_registry.h>
@@ -479,6 +480,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                 metadata.song_fields_editable =
                     metadata.song_fields_editable && metadata.search_tags_editable;
                 metadata.has_chart = tab.selected_difficulty.has_value();
+                metadata.audio_offset_editable = metadata.has_chart;
                 if (tab.selected_difficulty) {
                     metadata.chart_id = tab.selected_difficulty->id.value;
                     metadata.chart_name = tab.selected_difficulty->difficulty_name.c_str();
@@ -496,6 +498,9 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                         metadata.chart_rating_denominator =
                             tab.selected_difficulty->rating->denominator;
                     }
+                    metadata.audio_offset_numerator = tab.beat_zero_audio_offset_seconds.numerator;
+                    metadata.audio_offset_denominator =
+                        tab.beat_zero_audio_offset_seconds.denominator;
                 }
                 metadata.format_fields_truncated =
                     tab.format_fields.size() > WORM_UI_METADATA_FORMAT_FIELD_CAPACITY;
@@ -2324,9 +2329,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
     if (application_state.preview_playhead_absolute_row) {
         const auto pixels_per_row = interaction_view.pixels_per_standard_measure /
                                     static_cast<double>(chart.divisions_per_standard_measure);
-        const auto playhead_y =
-            *application_state.preview_playhead_absolute_row * pixels_per_row -
-            interaction_view.viewport_scroll_pixels;
+        const auto playhead_y = *application_state.preview_playhead_absolute_row * pixels_per_row -
+                                interaction_view.viewport_scroll_pixels;
         if (std::isfinite(playhead_y) && playhead_y >= 0.0 &&
             playhead_y <= view.viewport_height_pixels) {
             view.playhead_visible = true;
@@ -2846,7 +2850,8 @@ auto dispatch_recovery_ui_action(
 
 auto dispatch_metadata_ui_action(const WormUiWorkspaceAction& action,
                                  wormedit::document_history_t& history,
-                                 wormedit::workspace_controller_t& workspace) -> std::string {
+                                 wormedit::workspace_controller_t& workspace, bool timing_locked)
+    -> std::string {
     using namespace wormedit;
     const auto failed = [](const document_command_result_t& result) {
         if (!result.diagnostics.empty())
@@ -2909,6 +2914,22 @@ auto dispatch_metadata_ui_action(const WormUiWorkspaceAction& action,
             set_chart_metadata_action_t{chart_id_t{action.metadata_chart_id},
                                         action.metadata_chart_name, action.metadata_chart_author,
                                         rating->rating}));
+    }
+    case WORM_UI_METADATA_EDIT_AUDIO_OFFSET: {
+        if (action.metadata_chart_id == 0 || !action.metadata_audio_offset_numerator_text ||
+            !action.metadata_audio_offset_denominator_text) {
+            return "Audio offset edit payload is incomplete.";
+        }
+        const auto numerator = parse_timing_signed(action.metadata_audio_offset_numerator_text);
+        const auto denominator =
+            parse_timing_unsigned(action.metadata_audio_offset_denominator_text);
+        if (!numerator || !denominator || *denominator == 0) {
+            return "Audio offset must use a signed 64-bit numerator and positive 64-bit "
+                   "denominator.";
+        }
+        return publish(apply_audio_offset_edit(history, action.metadata_document_revision,
+                                               chart_id_t{action.metadata_chart_id},
+                                               {*numerator, *denominator}, timing_locked));
     }
     case WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD:
     case WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD:
@@ -5231,8 +5252,8 @@ int main(int argc, char** argv) {
             preview_resume_frame = 0;
         application_command_state.preview_playhead_absolute_row.reset();
         if (active_preview_timing && (preview_session.active() || preview_paused)) {
-            const auto frame = preview_session.active() ? preview_session.timeline_frame()
-                                                        : preview_resume_frame;
+            const auto frame =
+                preview_session.active() ? preview_session.timeline_frame() : preview_resume_frame;
             if (frame <= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
                 const auto position = wormedit::musical_position_at(
                     *active_preview_timing,
@@ -5346,17 +5367,17 @@ int main(int argc, char** argv) {
             auto flattened =
                 flatten_workspace(*model.view, history.document, status, recovery_controller.view(),
                                   recovery_scan_configured);
+            flattened.view.metadata.timing_locked = application_command_state.timing_locked;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
             flattened.view.transport_available =
                 workspace.selected_chart.has_value() && preview_output.available();
             flattened.view.transport_playing =
                 preview_session.active() || audition_session.active();
             flattened.view.transport_paused = preview_paused;
-            flattened.view.transport_frame = preview_session.active()
-                                                 ? preview_session.timeline_frame()
-                                             : audition_session.active()
-                                                 ? audition_session.timeline_frame()
-                                                 : preview_resume_frame;
+            flattened.view.transport_frame =
+                preview_session.active()    ? preview_session.timeline_frame()
+                : audition_session.active() ? audition_session.timeline_frame()
+                                            : preview_resume_frame;
             flattened.view.transport_end_frame = preview_end_frame;
             flattened.view.transport_sample_rate = wormedit::audio::output_sample_rate;
 #else
@@ -5550,8 +5571,7 @@ int main(int argc, char** argv) {
                 }
             } else if (action.kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK) {
                 status = application_command_state.transport_seek
-                             ? application_command_state.transport_seek(
-                                   action.transport_seek_frame)
+                             ? application_command_state.transport_seek(action.transport_seek_frame)
                              : "Chart preview seek is unavailable.";
             } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET) {
                 const auto applied = wormedit::apply_workspace_action(
@@ -5572,7 +5592,8 @@ int main(int argc, char** argv) {
                              : (applied.diagnostics.empty() ? "Workspace action rejected"
                                                             : applied.diagnostics.front().message);
             } else if (action.metadata_edit != WORM_UI_METADATA_EDIT_NONE) {
-                status = dispatch_metadata_ui_action(action, history, workspace);
+                status = dispatch_metadata_ui_action(action, history, workspace,
+                                                     application_command_state.timing_locked);
             } else if (action.timing_meter_action != WORM_UI_TIMING_METER_ACTION_NONE) {
                 const bool binding_matches =
                     action.timing_meter_action == WORM_UI_TIMING_METER_ACTION_APPLY &&

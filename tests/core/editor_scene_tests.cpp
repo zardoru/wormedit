@@ -210,6 +210,16 @@ TEST_CASE("field scene resolves semantic layer colors by visible palette order",
     CHECK_FALSE(unknown_solo);
     CHECK(has_code(unknown_solo.diagnostics, wormedit::diagnostic_code_t::invalid_id));
 
+    const auto filtered = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), view(),
+        {.field_left_pixels = 10.0,
+         .field_width_pixels = 200.0,
+         .required_semantic_layers = {wormedit::layer_id_t{2}, wormedit::layer_id_t{3}},
+         .excluded_semantic_layers = {wormedit::layer_id_t{1}}});
+    REQUIRE(filtered);
+    CHECK(filtered.scene->note_endpoints.empty());
+    CHECK(filtered.scene->hold_bodies.empty());
+
     auto move_view = view();
     move_view.pending_note_move_gesture = wormedit::pending_note_move_gesture_t{
         .reference_note = wormedit::object_id_t{11},

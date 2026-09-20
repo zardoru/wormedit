@@ -326,12 +326,23 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
             return result;
         }
     }
-    if (request.solo_semantic_layer.has_value() &&
-        std::ranges::find(chart.semantic_layers, *request.solo_semantic_layer,
-                          &semantic_layer_t::id) == chart.semantic_layers.end()) {
+    const auto known_layer = [&](layer_id_t id) {
+        return std::ranges::find(chart.semantic_layers, id, &semantic_layer_t::id) !=
+               chart.semantic_layers.end();
+    };
+    const auto valid_filter = [&](const std::vector<layer_id_t>& layers) {
+        std::unordered_set<std::uint64_t> ids;
+        for (const auto layer : layers) {
+            if (!layer || !known_layer(layer) || !ids.insert(layer.value).second) return false;
+        }
+        return true;
+    };
+    if ((request.solo_semantic_layer.has_value() && !known_layer(*request.solo_semantic_layer)) ||
+        !valid_filter(request.required_semantic_layers) ||
+        !valid_filter(request.excluded_semantic_layers)) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id,
-                  "field-scene semantic-layer solo refers to an unknown chart layer"));
+                  "field-scene semantic-layer filter refers to invalid chart layers"));
         return result;
     }
 
@@ -887,6 +898,13 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         if (request.solo_semantic_layer.has_value() &&
             std::ranges::find(note.semantic_layers, *request.solo_semantic_layer) ==
                 note.semantic_layers.end()) {
+            return;
+        }
+        const auto has_layer = [&](layer_id_t layer) {
+            return std::ranges::find(note.semantic_layers, layer) != note.semantic_layers.end();
+        };
+        if (!std::ranges::all_of(request.required_semantic_layers, has_layer) ||
+            std::ranges::any_of(request.excluded_semantic_layers, has_layer)) {
             return;
         }
         if (const auto target_rows = visible_paint_rows_by_lane.find(note.lane.value);

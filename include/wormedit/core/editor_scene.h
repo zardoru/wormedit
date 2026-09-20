@@ -152,6 +152,10 @@ struct editor_field_scene_request_t {
     // When set, compose only notes carrying this stable layer ID. This is a
     // view filter: it never changes document visibility or memberships.
     std::optional<layer_id_t> solo_semantic_layer;
+    // General view-only semantic-layer filter. Required layers are conjunctive;
+    // excluded layers remove matching notes. IDs must be distinct chart layers.
+    std::vector<layer_id_t> required_semantic_layers;
+    std::vector<layer_id_t> excluded_semantic_layers;
     std::size_t maximum_grid_lines{100'000};
     std::size_t maximum_authored_groupings{4'096};
     std::size_t maximum_comparison_difference_rows{100'000};

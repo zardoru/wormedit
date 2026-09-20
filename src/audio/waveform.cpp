@@ -310,14 +310,17 @@ auto waveform_cache_t::stats() const -> waveform_cache_stats_t {
 
 auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
                       waveform_cache_t& waveform_cache, audio_source_identity_t source,
-                      std::uint32_t frames_per_bin, waveform_analysis_options_t options)
-    -> waveform_analysis_result_t {
+                      std::uint32_t frames_per_bin, waveform_analysis_options_t options,
+                      std::stop_token stop) -> waveform_analysis_result_t {
     const waveform_key_t waveform_key{
         .source = std::move(source),
         .frames_per_bin = frames_per_bin,
     };
     if (!valid_source(waveform_key.source) || frames_per_bin == 0) {
         return {.status = waveform_analysis_status_t::invalid_request};
+    }
+    if (stop.stop_requested()) {
+        return {.status = waveform_analysis_status_t::cancelled};
     }
     if (auto cached = waveform_cache.find(waveform_key); cached.has_value()) {
         return {
@@ -359,6 +362,9 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
     const auto block_count = 1U + (stream_info->output_frame_count - 1U) / maximum_read_frames;
     std::uint64_t visited_frames{};
     for (std::uint64_t block_index = 0; block_index < block_count; ++block_index) {
+        if (stop.stop_requested()) {
+            return {.status = waveform_analysis_status_t::cancelled};
+        }
         const audio_block_key_t block_key{
             .source = waveform_key.source,
             .block_index = block_index,
@@ -416,8 +422,11 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
     const auto worker_count = waveform_worker_count(waveform.bins.size(), options);
     for_each_partition(
         waveform.bins, worker_count, options.parallel_partition_alignment_bytes,
-        [&waveform, &square_sums](std::size_t begin, std::size_t end) {
+        [&waveform, &square_sums, stop](std::size_t begin, std::size_t end) {
             for (auto bin_index = begin; bin_index < end; ++bin_index) {
+                if (stop.stop_requested()) {
+                    return;
+                }
                 auto& bin = waveform.bins[bin_index];
                 for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
                     bin.rms[channel] = static_cast<float>(std::sqrt(
@@ -425,10 +434,16 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
                 }
             }
         });
+    if (stop.stop_requested()) {
+        return {.status = waveform_analysis_status_t::cancelled};
+    }
 
     const auto* prior_bins = &waveform.bins;
     auto prior_frames_per_bin = static_cast<std::uint64_t>(frames_per_bin);
     while (prior_bins->size() > 1) {
+        if (stop.stop_requested()) {
+            return {.status = waveform_analysis_status_t::cancelled};
+        }
         if (prior_frames_per_bin > std::numeric_limits<std::uint64_t>::max() / 2U) {
             return {.status = waveform_analysis_status_t::source_too_large};
         }
@@ -439,8 +454,11 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
         const auto level_worker_count = waveform_worker_count(level.bins.size(), options);
         for_each_partition(
             level.bins, level_worker_count, options.parallel_partition_alignment_bytes,
-            [&level, prior_bins](std::size_t begin, std::size_t end) {
+            [&level, prior_bins, stop](std::size_t begin, std::size_t end) {
                 for (auto output_index = begin; output_index < end; ++output_index) {
+                    if (stop.stop_requested()) {
+                        return;
+                    }
                     auto& output = level.bins[output_index];
                     const auto first_index = output_index * 2U;
                     const auto& first = (*prior_bins)[first_index];
@@ -467,11 +485,17 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
                     }
                 }
             });
+        if (stop.stop_requested()) {
+            return {.status = waveform_analysis_status_t::cancelled};
+        }
         waveform.coarser_levels.push_back(std::move(level));
         prior_bins = &waveform.coarser_levels.back().bins;
         prior_frames_per_bin = waveform.coarser_levels.back().frames_per_bin;
     }
 
+    if (stop.stop_requested()) {
+        return {.status = waveform_analysis_status_t::cancelled};
+    }
     if (waveform_cache.store(waveform) != waveform_store_status_t::stored) {
         return {
             .status = waveform_analysis_status_t::analysis_cache_capacity_exceeded,

@@ -9,6 +9,7 @@
 #include <mutex>
 #include <optional>
 #include <span>
+#include <stop_token>
 #include <string_view>
 #include <vector>
 
@@ -151,6 +152,7 @@ class waveform_cache_t {
 enum class waveform_analysis_status_t {
     cache_hit,
     generated,
+    cancelled,
     invalid_request,
     decoder_unavailable,
     source_too_large,
@@ -171,8 +173,8 @@ struct waveform_analysis_result_t {
 [[nodiscard]] auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
                                     waveform_cache_t& waveform_cache,
                                     audio_source_identity_t source, std::uint32_t frames_per_bin,
-                                    waveform_analysis_options_t options = {})
-    -> waveform_analysis_result_t;
+                                    waveform_analysis_options_t options = {},
+                                    std::stop_token stop = {}) -> waveform_analysis_result_t;
 
 // Chooses the cached level closest to one RMS/peak bucket per screen pixel.
 // Values finer than the base level select the base; sample-level rendering can

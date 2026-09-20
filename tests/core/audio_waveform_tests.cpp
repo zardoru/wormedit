@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <future>
+#include <stop_token>
 #include <string>
 #include <string_view>
 
@@ -259,4 +260,24 @@ TEST_CASE("waveform projection emits capped exact-frame pixel columns",
               *analyzed.waveform,
               {.begin_frame = 16, .end_frame = 16, .pixel_width = 1, .maximum_columns = 1})
               .status == waveform_projection_status_t::invalid_window);
+}
+
+TEST_CASE("waveform analysis cancellation publishes no partial cache entry",
+          "[unit][audio][waveform][cancellation]") {
+    using namespace wormedit::audio;
+    std::vector<float> samples(64 * output_channel_count, 0.5F);
+    decoder_t decoder;
+    REQUIRE(decoder.open_pcm(samples));
+    decoded_block_cache_t blocks;
+    waveform_cache_t waveforms;
+    std::stop_source cancellation;
+    cancellation.request_stop();
+
+    const auto result =
+        analyze_waveform(decoder, blocks, waveforms, {"generated:cancellation", "pcm:v1"}, 4, {},
+                         cancellation.get_token());
+    CHECK(result.status == waveform_analysis_status_t::cancelled);
+    CHECK_FALSE(result.waveform.has_value());
+    CHECK(waveforms.stats().entries == 0);
+    CHECK(blocks.stats().entries == 0);
 }

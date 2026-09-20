@@ -36,6 +36,7 @@
 #define WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY 96
 #define WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY 4
 #define WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY 9
+#define WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY 128
 #define WORM_UI_TIMING_SPEED_CAPACITY 4096
 #define WORM_UI_TIMING_MARKER_CAPACITY 16384
 #define WORM_UI_TIMING_GRID_CAPACITY 16384
@@ -590,6 +591,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK,
     WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER_NOTES,
     WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER,
+    WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER,
 } WormUiComposeActionKind;
 
 typedef enum WormUiComposeInputKind {
@@ -707,6 +709,7 @@ typedef struct WormUiWorkspaceAction {
     bool compose_note_label_focus_consumed;
     char compose_note_label[WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1];
     uint64_t compose_semantic_layer_id;
+    char compose_semantic_layer_name[WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY];
     WormUiComposeInputAction compose_inputs[WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY];
     size_t compose_input_count;
     WormUiComposeViewportInput compose_viewport_inputs[WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY];

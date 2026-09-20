@@ -182,6 +182,8 @@ static uint64_t g_compose_label_chart_id{std::numeric_limits<uint64_t>::max()};
 static uint64_t g_compose_label_document_revision{std::numeric_limits<uint64_t>::max()};
 static uint64_t g_compose_label_note_id{std::numeric_limits<uint64_t>::max()};
 static std::array<char, WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1> g_compose_note_label{};
+static std::array<char, WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY> g_compose_semantic_layer_name{};
+static uint64_t g_compose_semantic_layer_name_id{};
 
 static void append_compose_input(
     WormUiWorkspaceAction* action, WormUiComposeInputKind kind, double x_pixels = 0.0,
@@ -3097,6 +3099,32 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
             }
         }
         nk_layout_row_end(g_context);
+
+        const auto selected_layer = std::ranges::find_if(
+            view->semantic_layers, view->semantic_layers + visible_layer_count,
+            [](const auto& layer) { return layer.selected; });
+        if (selected_layer != view->semantic_layers + visible_layer_count) {
+            if (g_compose_semantic_layer_name_id != selected_layer->layer_id) {
+                g_compose_semantic_layer_name.fill('\0');
+                const auto length = std::min(strlen(selected_layer->name),
+                                             g_compose_semantic_layer_name.size() - 1);
+                memcpy(g_compose_semantic_layer_name.data(), selected_layer->name, length);
+                g_compose_semantic_layer_name_id = selected_layer->layer_id;
+            }
+            nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 2);
+            nk_layout_row_push(g_context, 0.78f);
+            (void)nk_edit_string_zero_terminated(
+                g_context, NK_EDIT_FIELD, g_compose_semantic_layer_name.data(),
+                g_compose_semantic_layer_name.size(), nk_filter_default);
+            nk_layout_row_push(g_context, 0.22f);
+            if (nk_button_label(g_context, "Rename") && action &&
+                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                memcpy(action->compose_semantic_layer_name, g_compose_semantic_layer_name.data(),
+                       sizeof(action->compose_semantic_layer_name));
+                action->compose_action = WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER;
+            }
+            nk_layout_row_end(g_context);
+        }
 
         nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 9);
         nk_layout_row_push(g_context, 0.10f);

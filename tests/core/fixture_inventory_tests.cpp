@@ -27,6 +27,7 @@ constexpr std::array fixture_paths{
     "stepmania/matched-timing.ssc",
     "stepmania/native-warp.ssc",
     "stepmania/negative-invalid-timing.ssc",
+    "stepmania/negative-version-0.69.ssc",
     "stepmania/stop-inside-warp.ssc",
     "stepmania/discontinuity-order.ssc",
     "stepmania/versioned-metadata.ssc",

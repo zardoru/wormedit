@@ -1,0 +1,13 @@
+#VERSION:0.69;
+#TITLE:Negative fixture: pre-split-timing SSC version;
+#BPMS:0=120;
+#WARPS:4=8;
+#NOTEDATA:;
+#STEPSTYPE:dance-single;
+#DESCRIPTION:Old absolute warp endpoint semantics;
+#DIFFICULTY:Edit;
+#METER:1;
+#RADARVALUES:0,0,0,0,0;
+#NOTES:
+0000
+;

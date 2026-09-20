@@ -823,6 +823,20 @@ auto parse_stepmania_bytes(std::span<const std::byte> bytes, stepmania_parse_opt
                 }
             }
         }
+        if (options.profile == stepmania_profile_t::ssc) {
+            const auto versions = fields_for_key(song_fields, "VERSION");
+            if (versions.size() > 1)
+                fail(stepmania_parse_diagnostic_code_t::duplicate_field,
+                     "SSC source contains more than one song-level VERSION field",
+                     versions[1]->order, versions[1]->offset);
+            if (!versions.empty()) {
+                const auto version = decimal_rational(versions.front()->value);
+                if (!version || *version != signed_rational_t{83, 100})
+                    fail(stepmania_parse_diagnostic_code_t::unsupported_version,
+                         "Only the audited StepMania 5.1 SSC version 0.83 profile is supported",
+                         versions.front()->order, versions.front()->offset);
+            }
+        }
         if (charts.empty())
             fail(stepmania_parse_diagnostic_code_t::invalid_notes,
                  "StepMania source contains no chart note maps", fields.size());
@@ -1735,6 +1749,8 @@ auto write_stepmania(const song_document_t& song, stepmania_write_options_t opti
     const auto emit = [&](std::string_view key, std::string_view value) {
         emit_field(output, key, value, result.diagnostics, options.max_output_bytes);
     };
+    if (options.profile == stepmania_profile_t::ssc)
+        emit("VERSION", "0.83");
     if (!song.metadata.title.empty())
         emit("TITLE", song.metadata.title);
     if (!song.metadata.artist.empty())
@@ -1755,6 +1771,8 @@ auto write_stepmania(const song_document_t& song, stepmania_write_options_t opti
         } else if (!author.empty()) {
             emit("CREDIT", author);
         }
+    } else {
+        modeled_song.insert("VERSION");
     }
     append_unknown_fields(output, song_group, modeled_song, options.preserve_unknown_fields,
                           result.diagnostics, options.max_output_bytes);

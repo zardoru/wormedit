@@ -28,6 +28,7 @@ enum class stepmania_parse_diagnostic_code_t {
     invalid_encoding,
     malformed_tag,
     duplicate_field,
+    unsupported_version,
     unsupported_step_type,
     invalid_timing,
     legacy_warp_encoding,
@@ -69,8 +70,9 @@ struct stepmania_parse_result_t {
     [[nodiscard]] auto has_errors() const -> bool;
 };
 
-// Parses a complete .sm or .ssc source transactionally. SSC song fields and
-// each #NOTEDATA block remain separately addressable in format metadata.
+// Parses a complete .sm or .ssc source transactionally. SSC is bounded to the
+// audited StepMania 5.1 v0.83 semantics (with missing VERSION defaulting to
+// 0.83); song fields and each #NOTEDATA block remain separately addressable.
 [[nodiscard]] auto parse_stepmania_bytes(std::span<const std::byte> bytes,
                                          stepmania_parse_options_t options = {})
     -> stepmania_parse_result_t;

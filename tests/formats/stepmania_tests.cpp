@@ -283,6 +283,65 @@ TEST_CASE("Versioned SSC metadata remains editable without losing format-only fi
     CHECK((reparsed_chart.metadata.rating == wormedit::signed_rational_t{25, 2}));
 }
 
+TEST_CASE("SSC parsing and writing are bounded to the audited StepMania 5.1 version profile",
+          "[unit][format][stepmania][version]") {
+    SECTION("an omitted version uses the upstream 0.83 default and writes it explicitly") {
+        const auto parsed = fixture("matched-timing.ssc", wormedit::stepmania_profile_t::ssc);
+        REQUIRE(parsed.song.has_value());
+        REQUIRE_FALSE(parsed.has_errors());
+
+        const auto written = wormedit::write_stepmania(
+            *parsed.song, {.profile = wormedit::stepmania_profile_t::ssc});
+        REQUIRE(written.text.has_value());
+        const auto first = written.text->find("#VERSION:0.83;");
+        REQUIRE(first != std::string::npos);
+        CHECK(written.text->find("#VERSION:0.83;", first + 1) == std::string::npos);
+        CHECK(first == 0);
+    }
+
+    SECTION("an older version is rejected before its different warp semantics are interpreted") {
+        const auto parsed =
+            fixture("negative-version-0.69.ssc", wormedit::stepmania_profile_t::ssc);
+        CHECK_FALSE(parsed.song.has_value());
+        REQUIRE(parsed.diagnostics.size() == 1);
+        CHECK(parsed.diagnostics.front().code ==
+              wormedit::stepmania_parse_diagnostic_code_t::unsupported_version);
+    }
+
+    SECTION("malformed and duplicate version declarations reject transactionally") {
+        const auto malformed =
+            parse_ssc("#VERSION:future;#NOTEDATA:;#STEPSTYPE:dance-single;#NOTES:\n0000\n;");
+        CHECK_FALSE(malformed.song.has_value());
+        REQUIRE(malformed.diagnostics.size() == 1);
+        CHECK(malformed.diagnostics.front().code ==
+              wormedit::stepmania_parse_diagnostic_code_t::unsupported_version);
+
+        const auto duplicate =
+            parse_ssc("#VERSION:0.83;#VERSION:0.83;#NOTEDATA:;#STEPSTYPE:dance-single;"
+                      "#NOTES:\n0000\n;");
+        CHECK_FALSE(duplicate.song.has_value());
+        REQUIRE(duplicate.diagnostics.size() == 1);
+        CHECK(duplicate.diagnostics.front().code ==
+              wormedit::stepmania_parse_diagnostic_code_t::duplicate_field);
+    }
+
+    SECTION("SM does not inherit the SSC version gate") {
+        constexpr std::string_view source = "#VERSION:0.69;#BPMS:0=120;"
+                                            "#NOTES:dance-single:Legacy:Edit:1:0,0,0,0,0:\n0000\n;";
+        auto options = wormedit::stepmania_parse_options_t{};
+        options.profile = wormedit::stepmania_profile_t::sm;
+        const auto parsed = wormedit::parse_stepmania_bytes(
+            std::as_bytes(std::span{source.data(), source.size()}), options);
+        REQUIRE(parsed.song.has_value());
+        REQUIRE_FALSE(parsed.has_errors());
+
+        const auto written =
+            wormedit::write_stepmania(*parsed.song, {.profile = wormedit::stepmania_profile_t::sm});
+        REQUIRE(written.text.has_value());
+        CHECK(written.text->find("#VERSION:0.69;") != std::string::npos);
+    }
+}
+
 TEST_CASE("SM global CREDIT maps to chart authors and conflicting edits reject",
           "[unit][format][stepmania]") {
     constexpr std::string_view source =

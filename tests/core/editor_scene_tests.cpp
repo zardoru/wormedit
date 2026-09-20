@@ -210,6 +210,33 @@ TEST_CASE("field scene resolves semantic layer colors by visible palette order",
     CHECK_FALSE(unknown_solo);
     CHECK(has_code(unknown_solo.diagnostics, wormedit::diagnostic_code_t::invalid_id));
 
+    auto filter_view = view();
+    filter_view.viewport_scroll_pixels = 0.0;
+    filter_view.viewport_height_pixels = 384.0;
+    const auto required = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), filter_view,
+        {.field_left_pixels = 10.0,
+         .field_width_pixels = 200.0,
+         .required_semantic_layers = {wormedit::layer_id_t{2}}});
+    REQUIRE(required);
+    REQUIRE(required.scene->note_endpoints.size() == 2);
+    CHECK(std::ranges::all_of(required.scene->note_endpoints, [](const auto& endpoint) {
+        return endpoint.note == wormedit::object_id_t{11};
+    }));
+    CHECK(std::ranges::all_of(required.scene->hold_bodies, [](const auto& body) {
+        return body.note == wormedit::object_id_t{11};
+    }));
+
+    const auto excluded = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), filter_view,
+        {.field_left_pixels = 10.0,
+         .field_width_pixels = 200.0,
+         .excluded_semantic_layers = {wormedit::layer_id_t{1}}});
+    REQUIRE(excluded);
+    REQUIRE(excluded.scene->note_endpoints.size() == 1);
+    CHECK(excluded.scene->note_endpoints.front().note == wormedit::object_id_t{10});
+    CHECK(excluded.scene->hold_bodies.empty());
+
     const auto filtered = wormedit::make_editor_field_scene(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), view(),
         {.field_left_pixels = 10.0,

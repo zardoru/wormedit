@@ -3224,6 +3224,7 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
              .bounds = convert_rect(note.bounds)});
     }
     view.scene_available = true;
+    view.pre_zero = scene.scene->pre_zero;
     view.split_stage = scene.scene->split_stage;
     view.lanes = flattened.player_preview_lane_storage.data();
     view.lane_count = flattened.player_preview_lane_storage.size();

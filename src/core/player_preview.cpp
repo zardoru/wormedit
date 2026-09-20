@@ -242,7 +242,8 @@ auto make_player_preview_scene(const player_preview_index_t& index,
         return result;
     }
     const auto position = musical_position_at(
-        index.timing, {static_cast<std::int64_t>(request.sample_frame), request.sample_rate});
+        index.timing, {static_cast<std::int64_t>(request.sample_frame), request.sample_rate},
+        {.extrapolate_before_chart = true});
     if (!position || !position.absolute_row) {
         result.diagnostics.push_back(
             position.error ? timing_error(*position.error)
@@ -250,7 +251,8 @@ auto make_player_preview_scene(const player_preview_index_t& index,
                                    "player-preview clock is outside chart timing bounds"));
         return result;
     }
-    const auto current = scroll_speed_at(index.scroll_speed, index.timing, *position.absolute_row);
+    const auto current = scroll_speed_at(index.scroll_speed, index.timing, *position.absolute_row,
+                                         timing_boundary_side_t::event, true);
     if (!current) {
         result.diagnostics.push_back(
             current.error ? timing_error(*current.error)
@@ -264,10 +266,14 @@ auto make_player_preview_scene(const player_preview_index_t& index,
         index.layouts, current_row, {}, [](const editor_field_scene_layout_source_t& source) {
             return static_cast<long double>(source.begin_row);
         });
+    const auto pre_zero = position.absolute_row->numerator < 0;
     const auto active_layout =
-        layout == index.layouts.begin() ? index.layouts.begin() : std::prev(layout);
-    if (active_layout == index.layouts.end() || current_row < active_layout->begin_row ||
-        current_row > active_layout->end_row) {
+        pre_zero ? index.layouts.begin()
+                 : (layout == index.layouts.begin() ? index.layouts.begin() : std::prev(layout));
+    if (active_layout == index.layouts.end() ||
+        (pre_zero ? active_layout->begin_row != 0
+                  : current_row < active_layout->begin_row ||
+                        current_row > active_layout->end_row)) {
         result.diagnostics.push_back(error(diagnostic_code_t::unknown_lane,
                                            "player-preview clock has no active lane layout"));
         return result;
@@ -294,6 +300,7 @@ auto make_player_preview_scene(const player_preview_index_t& index,
                                  .absolute_row = *position.absolute_row,
                                  .skin = request.skin,
                                  .direction = request.direction,
+                                 .pre_zero = pre_zero,
                                  .split_stage = active_layout->layout.split_stage,
                                  .composition_operations = 0,
                                  .visible_note_count = 0,

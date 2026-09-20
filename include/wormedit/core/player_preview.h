@@ -120,6 +120,7 @@ struct player_preview_scene_t {
     signed_rational_t absolute_row;
     player_preview_skin_t skin{player_preview_skin_t::neutral};
     player_preview_scroll_direction_t direction{player_preview_scroll_direction_t::toward_top};
+    bool pre_zero{};
     bool split_stage{};
     std::size_t composition_operations{};
     std::size_t visible_note_count{};

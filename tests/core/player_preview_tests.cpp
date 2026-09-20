@@ -190,16 +190,20 @@ TEST_CASE("player preview uses scroll displacement and remains still through a s
     CHECK(at_event.scene->hold_bodies == during_stop.scene->hold_bodies);
 }
 
-TEST_CASE("player preview rejects invalid clocks and bounded composition overflow atomically",
-          "[unit][core][player-preview][negative]") {
+TEST_CASE("player preview extrapolates count-in and rejects bounded composition overflow atomically",
+          "[unit][core][player-preview][count-in][negative]") {
     auto chart = preview_chart();
     chart.beat_zero_audio_offset_seconds = {1, 1};
     const auto built = build_player_preview_index(chart, 11);
     REQUIRE(built);
     const auto before_chart = make_player_preview_scene(*built.index, request());
-    CHECK_FALSE(before_chart);
-    CHECK_FALSE(before_chart.scene.has_value());
-    CHECK(has_code(before_chart.diagnostics, diagnostic_code_t::row_out_of_range));
+    REQUIRE(before_chart);
+    CHECK(before_chart.scene->pre_zero);
+    CHECK(before_chart.scene->absolute_row == signed_rational_t{-480, 1});
+    const auto tap = std::ranges::find(before_chart.scene->note_endpoints, object_id_t{10},
+                                       &player_preview_note_geometry_t::note);
+    REQUIRE(tap != before_chart.scene->note_endpoints.end());
+    CHECK((tap->bounds.top + tap->bounds.bottom) / 2.0 == Catch::Approx(352.0));
 
     auto bounded_request = request(frame_at(*built.index, 0));
     bounded_request.maximum_visible_notes = 1;

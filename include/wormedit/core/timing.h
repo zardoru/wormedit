@@ -104,6 +104,9 @@ enum class timing_warp_inverse_side_t {
 
 struct timing_inverse_options_t {
     timing_warp_inverse_side_t warp_side{timing_warp_inverse_side_t::entry};
+    // Preview-only callers may extrapolate rows before the chart's first
+    // arrival time from the row-zero BPM. Ordinary editor queries stay strict.
+    bool extrapolate_before_chart{};
 };
 
 struct timing_position_query_result_t {
@@ -154,7 +157,8 @@ struct sample_frame_result_t {
 // seconds. Beat transitions advance through warped musical rows and pause
 // during stops; second transitions advance during stops and pause inside
 // warps. Event-side queries include events at their row, while before_delays
-// queries see the state arriving at that row.
+// queries see the state arriving at that row. Preview callers may explicitly
+// enable negative-row extrapolation from the row-zero event-side state.
 struct scroll_curve_segment_t {
     std::uint64_t begin_row{};
     std::uint64_t end_row{};
@@ -298,7 +302,8 @@ struct scroll_speed_transition_spans_result_t {
 // the same compiled curves between authored grid positions.
 [[nodiscard]] auto scroll_speed_at(const scroll_speed_index_t& index, const timing_index_t& timing,
                                    signed_rational_t absolute_row,
-                                   timing_boundary_side_t side = timing_boundary_side_t::event)
+                                   timing_boundary_side_t side = timing_boundary_side_t::event,
+                                   bool extrapolate_before_chart = false)
     -> scroll_speed_query_result_t;
 
 // Return the exact transition extent for a compiled SPEEDS object. Beat-clock

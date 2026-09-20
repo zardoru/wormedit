@@ -4888,9 +4888,10 @@ static void render_player_preview(const WormUiPlayerPreviewView* view,
             nk_label(g_context, view->status_text ? view->status_text : "Preview unavailable",
                      NK_TEXT_LEFT);
         } else {
-            nk_labelf(g_context, NK_TEXT_LEFT, "Frame %llu · %zu notes%s",
+            nk_labelf(g_context, NK_TEXT_LEFT, "Frame %llu · %zu notes%s%s",
                       static_cast<unsigned long long>(view->sample_frame),
-                      view->note_endpoint_count, view->split_stage ? " · split stage" : "");
+                      view->note_endpoint_count, view->pre_zero ? " · count-in" : "",
+                      view->split_stage ? " · split stage" : "");
         }
         struct nk_rect viewport{};
         nk_layout_row_dynamic(g_context, std::max(180.0f, panel_height - 92.0f), 1);

@@ -764,6 +764,7 @@ typedef struct WormUiPlayerPreviewView {
     bool visible;
     bool scene_available;
     bool truncated;
+    bool pre_zero;
     bool split_stage;
     WormUiPlayerPreviewSkin skin;
     uint64_t chart_id;

@@ -190,6 +190,10 @@ TEST_CASE("inverse timing honors signed beat-zero offsets and reports bounded fa
     const auto too_early = musical_position_at(timing, {-3, 2});
     REQUIRE_FALSE(too_early);
     CHECK(too_early.error->code == timing_error_code_t::position_out_of_range);
+    const auto pre_zero = musical_position_at(
+        timing, {-3, 2}, {.extrapolate_before_chart = true});
+    REQUIRE(pre_zero);
+    CHECK(pre_zero.absolute_row == signed_rational_t{-240, 1});
     const auto too_late = musical_position_at(timing, {10, 1});
     REQUIRE_FALSE(too_late);
     CHECK(too_late.error->code == timing_error_code_t::position_out_of_range);
@@ -335,6 +339,38 @@ TEST_CASE("metronome count-in extrapolates exact signed times from row zero",
     CHECK(clicks[4].sample_frame == 120'000);
     CHECK(clicks[4].pulse == 0);
     CHECK(clicks[4].accent == metronome_accent_t::measure);
+}
+
+TEST_CASE("visual count-in extrapolates from row-zero arrival without weakening strict queries",
+          "[unit][core][timing][preview][count-in][scroll]") {
+    auto chart = base_chart();
+    chart.beat_zero_audio_offset_seconds = {2, 1};
+    chart.pauses.push_back({.id = object_id_t{20},
+                            .position = {measure_id_t{1}, 0},
+                            .kind = pause_kind_t::delay,
+                            .duration = {1, 2},
+                            .source_unit = pause_unit_t::seconds});
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+    const auto scroll = build_scroll_speed_index(chart, *timing.index);
+    REQUIRE(scroll);
+
+    const auto strict = musical_position_at(*timing.index, {3, 2});
+    REQUIRE_FALSE(strict);
+    const auto preview = musical_position_at(
+        *timing.index, {3, 2}, {.extrapolate_before_chart = true});
+    REQUIRE(preview);
+    CHECK(preview.absolute_row == signed_rational_t{-240, 1});
+
+    const auto strict_scroll =
+        scroll_speed_at(*scroll.index, *timing.index, *preview.absolute_row);
+    REQUIRE_FALSE(strict_scroll);
+    const auto preview_scroll = scroll_speed_at(*scroll.index, *timing.index,
+                                                *preview.absolute_row,
+                                                timing_boundary_side_t::event, true);
+    REQUIRE(preview_scroll);
+    CHECK(preview_scroll.state->displacement_beats == signed_rational_t{-1, 1});
+    CHECK(preview_scroll.state->render_displacement_beats == -1.0);
 }
 
 TEST_CASE("preview schedule canonicalizes fused linked notes without merging ordinary polyphony",

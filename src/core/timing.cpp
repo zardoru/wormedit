@@ -926,6 +926,23 @@ auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
         return {.error = error(timing_error_code_t::invalid_document,
                                "timing index contains an invalid rational boundary")};
     }
+    if (*before_chart < 0 && options.extrapolate_before_chart) {
+        const auto elapsed = subtract_exact(*query, index.rows.front().before_delays_seconds);
+        const auto bpm = normalized(index.rows.front().effective_bpm);
+        const auto row_magnitude =
+            elapsed && elapsed->numerator < 0 && bpm && bpm->numerator > 0
+                ? positive_fraction(
+                      {magnitude(elapsed->numerator), magnitude(bpm->numerator),
+                       index.divisions_per_standard_measure},
+                      {elapsed->denominator, bpm->denominator, 240})
+                : std::nullopt;
+        if (!row_magnitude || row_magnitude->numerator <= 0) {
+            return {.error = error(timing_error_code_t::arithmetic_overflow,
+                                   "pre-zero inverse timing extrapolation exceeds exact bounds")};
+        }
+        return {.absolute_row =
+                    signed_rational_t{-row_magnitude->numerator, row_magnitude->denominator}};
+    }
     if (*before_chart < 0 || *after_chart > 0) {
         return {.error = error(timing_error_code_t::position_out_of_range,
                                "audio time lies outside chart timing bounds")};
@@ -1492,7 +1509,8 @@ auto scroll_speed_index_matches(const scroll_speed_index_t& index, const chart_d
 }
 
 auto scroll_speed_at(const scroll_speed_index_t& index, const timing_index_t& timing,
-                     signed_rational_t absolute_row, timing_boundary_side_t side)
+                     signed_rational_t absolute_row, timing_boundary_side_t side,
+                     bool extrapolate_before_chart)
     -> scroll_speed_query_result_t {
     if (index.divisions_per_standard_measure != timing.divisions_per_standard_measure ||
         index.total_rows != timing.total_rows ||
@@ -1504,6 +1522,33 @@ auto scroll_speed_at(const scroll_speed_index_t& index, const timing_index_t& ti
     if (!row) {
         return {.error = error(timing_error_code_t::invalid_document,
                                "scroll/speed query requires a valid rational row")};
+    }
+    if (row->numerator < 0 && extrapolate_before_chart) {
+        const auto at_zero = scroll_speed_at(index, timing, {0, 1}, timing_boundary_side_t::event);
+        const auto beat_distance =
+            multiply_exact(*row, {4, index.divisions_per_standard_measure});
+        const auto displacement_delta =
+            at_zero && beat_distance
+                ? multiply_exact(*beat_distance, at_zero.state->effective_multiplier)
+                : std::nullopt;
+        const auto displacement =
+            at_zero && displacement_delta
+                ? add_exact(at_zero.state->displacement_beats, *displacement_delta)
+                : std::nullopt;
+        if (!at_zero || !displacement) {
+            return {.error = error(timing_error_code_t::arithmetic_overflow,
+                                   "pre-zero scroll extrapolation exceeds exact bounds")};
+        }
+        const auto render_displacement = static_cast<double>(displacement->numerator) /
+                                         static_cast<double>(displacement->denominator);
+        if (!std::isfinite(render_displacement)) {
+            return {.error = error(timing_error_code_t::arithmetic_overflow,
+                                   "pre-zero scroll displacement is not finite for rendering")};
+        }
+        auto state = *at_zero.state;
+        state.displacement_beats = *displacement;
+        state.render_displacement_beats = render_displacement;
+        return {.state = state};
     }
     const auto query_time = timing_seconds_at_row(timing, *row, side);
     if (!query_time) {

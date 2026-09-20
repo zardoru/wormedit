@@ -865,18 +865,6 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
                 nk_widget_disable_end(g_context);
             }
             nk_layout_row_end(g_context);
-            nk_layout_row_begin(g_context, NK_DYNAMIC, 22, 2);
-            nk_layout_row_push(g_context, 0.5f);
-            if (nk_button_label(g_context, "Require filter") && action &&
-                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER;
-            }
-            nk_layout_row_push(g_context, 0.5f);
-            if (nk_button_label(g_context, "Exclude filter") && action &&
-                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER;
-            }
-            nk_layout_row_end(g_context);
         }
         if (g_metadata_search_tags.size() > metadata_visible_tag_count) {
             nk_layout_row_dynamic(g_context, 20, 1);
@@ -3169,6 +3157,25 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
             }
             nk_layout_row_end(g_context);
         }
+
+        nk_layout_row_begin(g_context, NK_DYNAMIC, 22, 2);
+        nk_layout_row_push(g_context, 0.5f);
+        if (nk_button_label(g_context, view->semantic_layer_target_required_filter
+                                           ? "Require: On"
+                                           : "Require filter") &&
+            action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+            action->compose_action =
+                WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER;
+        }
+        nk_layout_row_push(g_context, 0.5f);
+        if (nk_button_label(g_context, view->semantic_layer_target_excluded_filter
+                                           ? "Exclude: On"
+                                           : "Exclude filter") &&
+            action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+            action->compose_action =
+                WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER;
+        }
+        nk_layout_row_end(g_context);
 
         nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 9);
         nk_layout_row_push(g_context, 0.10f);

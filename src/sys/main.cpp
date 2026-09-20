@@ -2066,6 +2066,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.semantic_layers_truncated = false;
     view.semantic_layer_target_locked = false;
     view.semantic_layer_target_visible = false;
+    view.semantic_layer_target_required_filter = false;
+    view.semantic_layer_target_excluded_filter = false;
     view.semantic_layer_solo_active = application_state.semantic_layer_solo_active;
     view.status_text = nullptr;
     view.selected_note_label = nullptr;
@@ -2130,6 +2132,16 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                             (selected && layer.locked);
         view.semantic_layer_target_visible = view.semantic_layer_target_visible ||
                                              (selected && layer.visible);
+        view.semantic_layer_target_required_filter =
+            view.semantic_layer_target_required_filter ||
+            (selected && std::ranges::find(application_state.required_semantic_layer_filters,
+                                           layer.id) !=
+                             application_state.required_semantic_layer_filters.end());
+        view.semantic_layer_target_excluded_filter =
+            view.semantic_layer_target_excluded_filter ||
+            (selected && std::ranges::find(application_state.excluded_semantic_layer_filters,
+                                           layer.id) !=
+                             application_state.excluded_semantic_layer_filters.end());
     }
     if (!cache.attempted || cache.chart != chart.id ||
         cache.revision != history.document.revision) {

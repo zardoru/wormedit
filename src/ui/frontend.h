@@ -277,6 +277,8 @@ typedef struct WormUiComposeView {
     bool semantic_layers_truncated;
     bool semantic_layer_target_locked;
     bool semantic_layer_target_visible;
+    bool semantic_layer_target_required_filter;
+    bool semantic_layer_target_excluded_filter;
     bool semantic_layer_solo_active;
     uint64_t chart_id;
     uint64_t document_revision;

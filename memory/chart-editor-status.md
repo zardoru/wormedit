@@ -14,3 +14,9 @@ The canonical product and architecture plan begins at the [chart editor plan ind
 Treat `resume.md` as the only cross-turn working set. Put durable facts in the
 single owning ledger and link to them; split a ledger by subsystem before
 duplicating its history into the milestone or resume checklist.
+
+Keep indexes and active working slices near 100 lines and cohesive historical
+or reference slices near 200 lines. Crossing that soft budget triggers an
+ownership/split review. It does not justify fragmenting one concept or copying
+the same fact into several files. A normal handoff loads this index,
+`resume.md`, and only one relevant status and plan slice.

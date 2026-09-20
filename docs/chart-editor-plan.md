@@ -18,3 +18,7 @@ Load this index plus only the domain files relevant to the current task. Cross-d
 Keep this entry point and each domain index short. When unrelated work would
 have to load the same large domain file, split it into named subdomains and
 extend the documentation inventory test instead of duplicating requirements.
+Use a soft context budget of roughly 100 lines for an index or active working
+slice and 200 lines for a cohesive reference slice: exceeding it is a review
+trigger, not a license to split one concept arbitrarily. A continuation should
+normally need this index plus one domain and its matching status ledger.

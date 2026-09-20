@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -26,6 +27,23 @@ struct semantic_layer_rgba_t {
     double blue{};
     double alpha{1.0};
 };
+
+struct semantic_layer_palette_window_t {
+    std::size_t page{};
+    std::size_t page_count{};
+    std::size_t total_count{};
+    std::vector<std::size_t> layer_indices;
+};
+
+// Projects one bounded palette page from visible layers plus an explicitly
+// selected hidden layer. reveal_selected moves the window to that stable ID;
+// otherwise requested_page is clamped after document edits.
+[[nodiscard]] auto make_semantic_layer_palette_window(const chart_document_t& chart,
+                                                      std::optional<layer_id_t> selected_layer,
+                                                      std::size_t requested_page,
+                                                      bool reveal_selected, std::size_t page_size,
+                                                      std::size_t maximum_layers = 100'000)
+    -> std::optional<semantic_layer_palette_window_t>;
 
 struct insert_semantic_layer_action_t {
     chart_id_t chart;

@@ -1535,6 +1535,19 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         view->branch_row_count > WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY ||
         view->branch_diagnostic_count > WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY ||
         view->semantic_layer_count > WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY ||
+        (view->semantic_layer_page_count == 0
+             ? view->semantic_layer_page != 0 || view->semantic_layer_total_count != 0 ||
+                   view->semantic_layer_count != 0
+             : view->semantic_layer_total_count == 0 ||
+                   view->semantic_layer_page >= view->semantic_layer_page_count ||
+                   view->semantic_layer_page_count !=
+                       1 + (view->semantic_layer_total_count - 1) /
+                               WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY ||
+                   view->semantic_layer_count !=
+                       std::min(static_cast<size_t>(WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY),
+                                view->semantic_layer_total_count -
+                                    view->semantic_layer_page *
+                                        WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY)) ||
         (view->branch_row_count != 0 && !view->branch_rows))
         return 0;
     if ((view->area_selection_preview_visible &&
@@ -3422,10 +3435,45 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
     for (size_t index = 0; index < visible_layer_count; ++index) {
         semantic_target_active = semantic_target_active || view->semantic_layers[index].selected;
     }
-    nk_layout_row_dynamic(g_context, 22, 1);
+    nk_layout_row_begin(g_context, NK_DYNAMIC, 22, 4);
+    nk_layout_row_push(g_context, 0.40f);
     if (nk_button_label(g_context, "Add semantic layer") && action &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
         action->compose_action = WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER;
+    }
+    nk_layout_row_push(g_context, 0.15f);
+    if (view->semantic_layer_page == 0) {
+        nk_widget_disable_begin(g_context);
+    }
+    const auto previous_layer_page_clicked = nk_button_label(g_context, "Previous");
+    if (view->semantic_layer_page == 0) {
+        nk_widget_disable_end(g_context);
+    }
+    nk_layout_row_push(g_context, 0.30f);
+    if (view->semantic_layer_page_count == 0) {
+        nk_label(g_context, "Palette empty", NK_TEXT_CENTERED);
+    } else {
+        nk_labelf(g_context, NK_TEXT_CENTERED, "Page %zu/%zu · %zu layers",
+                  view->semantic_layer_page + 1, view->semantic_layer_page_count,
+                  view->semantic_layer_total_count);
+    }
+    nk_layout_row_push(g_context, 0.15f);
+    const auto last_layer_page = view->semantic_layer_page_count == 0 ||
+                                 view->semantic_layer_page + 1 >= view->semantic_layer_page_count;
+    if (last_layer_page) {
+        nk_widget_disable_begin(g_context);
+    }
+    const auto next_layer_page_clicked = nk_button_label(g_context, "Next");
+    if (last_layer_page) {
+        nk_widget_disable_end(g_context);
+    }
+    nk_layout_row_end(g_context);
+    if (action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        if (previous_layer_page_clicked) {
+            action->compose_action = WORM_UI_COMPOSE_ACTION_PREVIOUS_SEMANTIC_LAYER_PAGE;
+        } else if (next_layer_page_clicked) {
+            action->compose_action = WORM_UI_COMPOSE_ACTION_NEXT_SEMANTIC_LAYER_PAGE;
+        }
     }
     if (visible_layer_count == 0) {
         nk_layout_row_dynamic(g_context, 22, 1);

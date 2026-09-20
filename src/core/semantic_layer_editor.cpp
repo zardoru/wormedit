@@ -342,6 +342,52 @@ auto apply_membership(chart_document_t& chart, layer_id_t layer_id,
 
 } // namespace
 
+auto make_semantic_layer_palette_window(const chart_document_t& chart,
+                                        std::optional<layer_id_t> selected_layer,
+                                        std::size_t requested_page, bool reveal_selected,
+                                        std::size_t page_size, std::size_t maximum_layers)
+    -> std::optional<semantic_layer_palette_window_t> {
+    if (page_size == 0 || maximum_layers == 0 || chart.semantic_layers.size() > maximum_layers) {
+        return std::nullopt;
+    }
+    semantic_layer_palette_window_t result;
+    std::optional<std::size_t> selected_index;
+    for (const auto& layer : chart.semantic_layers) {
+        const auto selected = selected_layer == layer.id;
+        if (!layer.visible && !selected) {
+            continue;
+        }
+        if (selected) {
+            selected_index = result.total_count;
+        }
+        ++result.total_count;
+    }
+    result.page_count = result.total_count == 0 ? 0 : 1 + (result.total_count - 1) / page_size;
+    if (result.page_count != 0) {
+        result.page = reveal_selected && selected_index
+                          ? *selected_index / page_size
+                          : std::min(requested_page, result.page_count - 1);
+    }
+    const auto begin = result.page * page_size;
+    const auto end = std::min(result.total_count, begin + page_size);
+    result.layer_indices.reserve(end - begin);
+    std::size_t eligible_index{};
+    for (std::size_t index = 0; index < chart.semantic_layers.size(); ++index) {
+        const auto& layer = chart.semantic_layers[index];
+        if (!layer.visible && selected_layer != layer.id) {
+            continue;
+        }
+        if (eligible_index >= begin && eligible_index < end) {
+            result.layer_indices.push_back(index);
+        }
+        ++eligible_index;
+        if (eligible_index >= end) {
+            break;
+        }
+    }
+    return result;
+}
+
 auto apply_semantic_layer_edit(document_history_t& history, std::uint64_t expected_revision,
                                const semantic_layer_edit_action_t& action,
                                semantic_layer_edit_limits_t limits) -> document_command_result_t {

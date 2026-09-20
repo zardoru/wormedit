@@ -194,6 +194,9 @@ struct application_command_state_t {
     std::optional<wormedit::chart_id_t> semantic_layer_filter_chart;
     std::vector<wormedit::layer_id_t> required_semantic_layer_filters;
     std::vector<wormedit::layer_id_t> excluded_semantic_layer_filters;
+    std::optional<wormedit::chart_id_t> semantic_layer_palette_chart;
+    std::optional<wormedit::layer_id_t> semantic_layer_palette_target;
+    std::size_t semantic_layer_palette_page{};
     // UI-only, chart-scoped preferences. Changing a snap never changes chart
     // data; an active gesture keeps its captured snap until it is resolved.
     std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;
@@ -2154,6 +2157,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.selected_note_count = 0;
     view.semantic_layers = flattened.compose_semantic_layer_storage.data();
     view.semantic_layer_count = 0;
+    view.semantic_layer_total_count = 0;
+    view.semantic_layer_page = 0;
+    view.semantic_layer_page_count = 0;
     view.semantic_layers_truncated = false;
     view.semantic_layer_target_locked = false;
     view.semantic_layer_target_visible = false;
@@ -2217,24 +2223,32 @@ void populate_compose_view(flattened_workspace_t& flattened,
             }
         }
     }
-    for (const auto& layer : chart.semantic_layers) {
+    const auto palette_context_changed = application_state.semantic_layer_palette_chart != chart.id;
+    const auto palette_target_changed =
+        application_state.semantic_layer_palette_target != application_state.semantic_layer_target;
+    if (palette_context_changed) {
+        application_state.semantic_layer_palette_chart = chart.id;
+        application_state.semantic_layer_palette_page = 0;
+    }
+    const auto palette = wormedit::make_semantic_layer_palette_window(
+        chart, application_state.semantic_layer_target,
+        application_state.semantic_layer_palette_page,
+        palette_context_changed || palette_target_changed, WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY);
+    if (!palette) {
+        flattened.compose_status_storage = "The semantic-layer palette exceeds its UI limit.";
+        view.status_text = flattened.compose_status_storage.c_str();
+        return;
+    }
+    application_state.semantic_layer_palette_target = application_state.semantic_layer_target;
+    application_state.semantic_layer_palette_page = palette->page;
+    view.semantic_layer_total_count = palette->total_count;
+    view.semantic_layer_page = palette->page;
+    view.semantic_layer_page_count = palette->page_count;
+    view.semantic_layers_truncated = palette->page_count > 1;
+    for (const auto layer_index : palette->layer_indices) {
+        const auto& layer = chart.semantic_layers[layer_index];
         const auto selected = application_state.semantic_layer_target == layer.id;
-        if (!layer.visible && !selected) {
-            continue;
-        }
-        std::size_t index{};
-        if (view.semantic_layer_count >= flattened.compose_semantic_layer_storage.size()) {
-            view.semantic_layers_truncated = true;
-            if (!selected || layer.visible) {
-                continue;
-            }
-            // Keep an explicitly selected hidden layer reachable so its Show
-            // control remains available even when visible palette slots fill
-            // the bounded frontend array.
-            index = flattened.compose_semantic_layer_storage.size() - 1;
-        } else {
-            index = view.semantic_layer_count++;
-        }
+        const auto index = view.semantic_layer_count++;
         flattened.compose_semantic_layer_name_storage[index] = layer.name;
         flattened.compose_semantic_layer_storage[index] = {
             .layer_id = layer.id.value,
@@ -3996,6 +4010,40 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         application_state.semantic_layer_target = layer->id;
         return "Semantic-layer target: " + layer->name;
     }
+    case WORM_UI_COMPOSE_ACTION_PREVIOUS_SEMANTIC_LAYER_PAGE:
+    case WORM_UI_COMPOSE_ACTION_NEXT_SEMANTIC_LAYER_PAGE: {
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart) {
+            return "Choose a chart before navigating semantic-layer pages.";
+        }
+        if (application_state.semantic_layer_palette_chart != chart->id) {
+            application_state.semantic_layer_palette_chart = chart->id;
+            application_state.semantic_layer_palette_page = 0;
+        }
+        const auto palette =
+            make_semantic_layer_palette_window(*chart, application_state.semantic_layer_target,
+                                               application_state.semantic_layer_palette_page, false,
+                                               WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY);
+        if (!palette) {
+            return "Semantic-layer palette navigation exceeded its bounded limit.";
+        }
+        application_state.semantic_layer_palette_page = palette->page;
+        if (action.compose_action == WORM_UI_COMPOSE_ACTION_PREVIOUS_SEMANTIC_LAYER_PAGE) {
+            if (application_state.semantic_layer_palette_page == 0) {
+                return "Semantic-layer palette is already on its first page.";
+            }
+            --application_state.semantic_layer_palette_page;
+        } else {
+            if (palette->page_count == 0 ||
+                application_state.semantic_layer_palette_page + 1 >= palette->page_count) {
+                return "Semantic-layer palette is already on its last page.";
+            }
+            ++application_state.semantic_layer_palette_page;
+        }
+        return "Semantic-layer palette page " +
+               std::to_string(application_state.semantic_layer_palette_page + 1) + " of " +
+               std::to_string(palette->page_count) + ".";
+    }
     case WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER: {
         if (editor_interaction_has_pending_gesture(state)) {
             return "Finish or cancel the active Compose gesture before adding a semantic layer.";
@@ -4451,20 +4499,6 @@ auto selected_chart(const wormedit::document_history_t& history,
     return found == history.document.charts.end() ? nullptr : &*found;
 }
 
-auto visible_semantic_layer_at(const wormedit::chart_document_t& chart, std::size_t slot)
-    -> const wormedit::semantic_layer_t* {
-    std::size_t visible_slot{};
-    for (const auto& layer : chart.semantic_layers) {
-        if (!layer.visible) {
-            continue;
-        }
-        if (visible_slot++ == slot) {
-            return &layer;
-        }
-    }
-    return nullptr;
-}
-
 auto visible_semantic_layer_by_id(const wormedit::chart_document_t& chart, wormedit::layer_id_t id)
     -> const wormedit::semantic_layer_t* {
     const auto found =
@@ -4716,10 +4750,18 @@ auto invoke_application_command(
         if (parsed.ec != std::errc{} || parsed.ptr != suffix.data() + suffix.size() || slot == 0) {
             return reject_application_command(status, "That semantic-layer slot is unavailable.");
         }
-        const auto* layer = visible_semantic_layer_at(*chart, slot - 1);
-        if (!layer) {
+        if (application_state.semantic_layer_palette_chart != chart->id) {
+            application_state.semantic_layer_palette_chart = chart->id;
+            application_state.semantic_layer_palette_page = 0;
+        }
+        const auto palette =
+            make_semantic_layer_palette_window(*chart, application_state.semantic_layer_target,
+                                               application_state.semantic_layer_palette_page, false,
+                                               WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY);
+        if (!palette || slot > palette->layer_indices.size()) {
             return reject_application_command(status, "That semantic-layer slot is unavailable.");
         }
+        const auto* layer = &chart->semantic_layers[palette->layer_indices[slot - 1]];
         application_state.semantic_layer_target = layer->id;
         status = "Semantic-layer target: " + layer->name;
         return {.accepted = true};
@@ -4833,8 +4875,18 @@ void refresh_application_command_states(
     set("timing.insert_sv", false);
     set("timing.open_settings", false);
 
-    for (std::size_t index = 0; index < 9; ++index) {
-        const auto* layer = compose_ready ? visible_semantic_layer_at(*chart, index) : nullptr;
+    const auto palette = compose_ready
+                             ? make_semantic_layer_palette_window(
+                                   *chart, application_state.semantic_layer_target,
+                                   application_state.semantic_layer_palette_chart == chart->id
+                                       ? application_state.semantic_layer_palette_page
+                                       : 0,
+                                   false, WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY)
+                             : std::nullopt;
+    for (std::size_t index = 0; index < WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY; ++index) {
+        const auto* layer = palette && index < palette->layer_indices.size()
+                                ? &chart->semantic_layers[palette->layer_indices[index]]
+                                : nullptr;
         const bool available = layer != nullptr;
         const bool checked = available && application_state.semantic_layer_target &&
                              layer->id == *application_state.semantic_layer_target;

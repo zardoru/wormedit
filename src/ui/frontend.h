@@ -355,6 +355,9 @@ typedef struct WormUiComposeView {
     size_t selected_note_count;
     const WormUiComposeSemanticLayerView* semantic_layers;
     size_t semantic_layer_count;
+    size_t semantic_layer_total_count;
+    size_t semantic_layer_page;
+    size_t semantic_layer_page_count;
     bool semantic_layers_truncated;
     bool semantic_layer_target_locked;
     bool semantic_layer_target_visible;
@@ -691,6 +694,8 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO,
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK,
     WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER_NOTES,
+    WORM_UI_COMPOSE_ACTION_PREVIOUS_SEMANTIC_LAYER_PAGE,
+    WORM_UI_COMPOSE_ACTION_NEXT_SEMANTIC_LAYER_PAGE,
     WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR,

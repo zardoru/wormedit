@@ -7,6 +7,7 @@
 #include <cmath>
 #include <limits>
 #include <ranges>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -71,6 +72,40 @@ auto note_by_id(chart_document_t& chart, object_id_t id) -> note_t& {
 }
 
 } // namespace
+
+TEST_CASE("semantic-layer palette windows page visible layers and reveal a hidden selection",
+          "[unit][core][semantic-layer-editor][palette]") {
+    chart_document_t chart;
+    for (std::uint64_t index = 0; index < 12; ++index) {
+        chart.semantic_layers.push_back({
+            .id = layer_id_t{index + 1},
+            .name = "Layer " + std::to_string(index + 1),
+            .color = {0, 0, 0, 255},
+            .visible = index != 10,
+        });
+    }
+
+    const auto first = make_semantic_layer_palette_window(chart, std::nullopt, 0, false, 4);
+    REQUIRE(first);
+    CHECK(first->page == 0);
+    CHECK(first->page_count == 3);
+    CHECK(first->total_count == 11);
+    CHECK(first->layer_indices == std::vector<std::size_t>{0, 1, 2, 3});
+
+    const auto clamped = make_semantic_layer_palette_window(chart, std::nullopt, 99, false, 4);
+    REQUIRE(clamped);
+    CHECK(clamped->page == 2);
+    CHECK(clamped->layer_indices == std::vector<std::size_t>{8, 9, 11});
+
+    const auto revealed = make_semantic_layer_palette_window(chart, layer_id_t{11}, 0, true, 4);
+    REQUIRE(revealed);
+    CHECK(revealed->page == 2);
+    CHECK(revealed->total_count == 12);
+    CHECK(revealed->layer_indices == std::vector<std::size_t>{8, 9, 10, 11});
+
+    CHECK_FALSE(make_semantic_layer_palette_window(chart, std::nullopt, 0, false, 0));
+    CHECK_FALSE(make_semantic_layer_palette_window(chart, std::nullopt, 0, false, 4, 11));
+}
 
 TEST_CASE("semantic layers insert, update, reorder, and share bounded document history",
           "[unit][core][semantic-layer-editor]") {

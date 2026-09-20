@@ -3605,8 +3605,8 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
         if (event_id != 0) {
             append_compose_input(
                 action, WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK, pointer_x, pointer_y, 0, false,
-                WORM_UI_COMPOSE_SELECTION_REPLACE, WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                event_id);
+                compose_selection_mode(pointer_modifiers),
+                WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, event_id);
         }
     }
 

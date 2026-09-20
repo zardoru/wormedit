@@ -4384,7 +4384,14 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                    object.id)});
                     }
                 }
-                set_selected_objects(state, std::move(selected));
+                auto combined = combine_area_selection(selected, typed_action.mode,
+                                                       std::get<editor_hit_test_index_t>(built));
+                if (std::holds_alternative<diagnostic_list_t>(combined)) {
+                    return diagnostic_result(history, state,
+                                             std::get<diagnostic_list_t>(std::move(combined)));
+                }
+                set_selected_objects(
+                    state, std::move(std::get<std::vector<editor_selection_object_t>>(combined)));
                 const auto next_view = make_view(history, state);
                 return {
                     .accepted = std::holds_alternative<editor_interaction_view_model_t>(next_view),

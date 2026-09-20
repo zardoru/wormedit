@@ -3541,10 +3541,14 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             if (input.object_id == 0) {
                 return "BGM event click did not identify an event.";
             }
+            if (!selection_mode(input.selection_mode).has_value()) {
+                return "BGM event click used an unknown selection mode.";
+            }
             result = dispatch_editor_action(
                 history, state,
                 select_editor_objects_action_t{{{editor_selection_object_kind_t::bgm_event,
-                                                  object_id_t{input.object_id}}}});
+                                                  object_id_t{input.object_id}}},
+                                               *selection_mode(input.selection_mode)});
             accepted = "BGM event selected.";
             break;
         case WORM_UI_COMPOSE_INPUT_POINTER_CLICK: {

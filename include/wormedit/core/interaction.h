@@ -282,6 +282,7 @@ struct select_editor_notes_action_t {
 // selected_notes so note-only editing commands keep their existing contract.
 struct select_editor_objects_action_t {
     std::vector<editor_selection_object_t> objects;
+    editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
 };
 
 struct delete_editor_notes_action_t {};

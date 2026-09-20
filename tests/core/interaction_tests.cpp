@@ -1010,6 +1010,29 @@ TEST_CASE("typed object selection validates BGM events and synchronizes note sel
     REQUIRE(note_selected);
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
+    const auto bgm_added = dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{
+            {{editor_selection_object_kind_t::bgm_event, object_id_t{201}}},
+            editor_area_selection_mode_t::add});
+    REQUIRE(bgm_added);
+    CHECK(state.selected_objects ==
+          std::vector<editor_selection_object_t>{
+              {editor_selection_object_kind_t::note, object_id_t{101}},
+              {editor_selection_object_kind_t::bgm_event, object_id_t{201}}});
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+
+    const auto bgm_toggled = dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{
+            {{editor_selection_object_kind_t::bgm_event, object_id_t{201}}},
+            editor_area_selection_mode_t::toggle});
+    REQUIRE(bgm_toggled);
+    CHECK(state.selected_objects ==
+          std::vector<editor_selection_object_t>{
+              {editor_selection_object_kind_t::note, object_id_t{101}}});
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+
     const auto unknown = dispatch_editor_action(
         history, state,
         select_editor_objects_action_t{

@@ -145,6 +145,14 @@ struct flattened_workspace_t {
     std::array<WormUiComposeSectionView, WORM_UI_COMPOSE_SECTION_CAPACITY>
         compose_section_storage{};
     std::array<std::string, WORM_UI_COMPOSE_SECTION_CAPACITY> compose_section_label_storage;
+    std::array<WormUiComposeAudioBookmarkView, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY>
+        compose_audio_bookmark_storage{};
+    std::array<std::string, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY>
+        compose_audio_bookmark_label_storage;
+    std::array<WormUiComposeAudioSectionView, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY>
+        compose_audio_section_storage{};
+    std::array<std::string, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY>
+        compose_audio_section_label_storage;
     std::vector<WormUiComposeBandView> compose_band_storage;
     std::vector<WormUiComposeLaneView> compose_lane_storage;
     std::vector<WormUiComposeGridLineView> compose_grid_storage;
@@ -2184,6 +2192,12 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.beat_section_selection_begin_row = 0;
     view.beat_section_selection_end_measure_number = 0;
     view.beat_section_selection_end_row = 0;
+    view.audio_bookmarks = flattened.compose_audio_bookmark_storage.data();
+    view.audio_bookmark_count = 0;
+    view.audio_bookmarks_truncated = false;
+    view.audio_sections = flattened.compose_audio_section_storage.data();
+    view.audio_section_count = 0;
+    view.audio_sections_truncated = false;
     view.semantic_layers = flattened.compose_semantic_layer_storage.data();
     view.semantic_layer_count = 0;
     view.semantic_layer_total_count = 0;
@@ -2351,6 +2365,26 @@ void populate_compose_view(flattened_workspace_t& flattened,
     }
     const auto& measures = std::get<wormedit::measure_index_t>(measure_index);
     for (const auto& bookmark : chart.bookmarks) {
+        if (bookmark.anchor == wormedit::marker_anchor_t::audio_time) {
+            if (!bookmark.audio_milliseconds || bookmark.position) {
+                flattened.compose_status_storage =
+                    "An audio-time bookmark has inconsistent position data.";
+                view.status_text = flattened.compose_status_storage.c_str();
+                return;
+            }
+            if (view.audio_bookmark_count >= WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY) {
+                view.audio_bookmarks_truncated = true;
+                continue;
+            }
+            const auto index = view.audio_bookmark_count++;
+            flattened.compose_audio_bookmark_label_storage[index] = bookmark.label;
+            flattened.compose_audio_bookmark_storage[index] = {
+                .bookmark_id = bookmark.id.value,
+                .label = flattened.compose_audio_bookmark_label_storage[index].c_str(),
+                .audio_milliseconds = *bookmark.audio_milliseconds,
+            };
+            continue;
+        }
         if (bookmark.anchor != wormedit::marker_anchor_t::beat) {
             continue;
         }
@@ -2383,6 +2417,28 @@ void populate_compose_view(flattened_workspace_t& flattened,
         };
     }
     for (const auto& section : chart.sections) {
+        if (section.anchor == wormedit::marker_anchor_t::audio_time) {
+            if (!section.audio_millisecond_span || section.beat_span ||
+                section.audio_millisecond_span->second <= section.audio_millisecond_span->first) {
+                flattened.compose_status_storage =
+                    "An audio-time section has inconsistent span data.";
+                view.status_text = flattened.compose_status_storage.c_str();
+                return;
+            }
+            if (view.audio_section_count >= WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY) {
+                view.audio_sections_truncated = true;
+                continue;
+            }
+            const auto index = view.audio_section_count++;
+            flattened.compose_audio_section_label_storage[index] = section.label;
+            flattened.compose_audio_section_storage[index] = {
+                .section_id = section.id.value,
+                .label = flattened.compose_audio_section_label_storage[index].c_str(),
+                .begin_audio_milliseconds = section.audio_millisecond_span->first,
+                .end_audio_milliseconds = section.audio_millisecond_span->second,
+            };
+            continue;
+        }
         if (section.anchor != wormedit::marker_anchor_t::beat) {
             continue;
         }
@@ -4312,6 +4368,144 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         default:
             return "Section deleted.";
         }
+    }
+    case WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK:
+    case WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_BOOKMARK:
+    case WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_BOOKMARK: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before editing bookmarks.";
+        }
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart) {
+            return "Choose a chart before editing audio-time bookmarks.";
+        }
+        marker_edit_action_t edit;
+        const auto deleting = action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_BOOKMARK;
+        std::optional<std::int64_t> milliseconds;
+        if (!deleting) {
+            milliseconds = parse_timing_signed(action.compose_marker_audio_begin);
+            if (!milliseconds) {
+                return "Enter the audio bookmark position as exact signed milliseconds.";
+            }
+        }
+        if (action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK) {
+            edit = insert_bookmark_action_t{
+                .chart = state.chart,
+                .label = action.compose_marker_label,
+                .anchor = marker_anchor_t::audio_time,
+                .position = std::nullopt,
+                .audio_milliseconds = *milliseconds,
+            };
+        } else {
+            if (action.compose_bookmark_id == 0) {
+                return "Choose an audio-time bookmark before editing it.";
+            }
+            const auto bookmark = std::ranges::find(
+                chart->bookmarks, object_id_t{action.compose_bookmark_id}, &bookmark_t::id);
+            if (bookmark == chart->bookmarks.end() ||
+                bookmark->anchor != marker_anchor_t::audio_time || !bookmark->audio_milliseconds ||
+                bookmark->position) {
+                return "That audio-time bookmark is no longer available.";
+            }
+            if (deleting) {
+                edit = delete_bookmark_action_t{.chart = state.chart, .bookmark = bookmark->id};
+            } else {
+                edit = update_bookmark_action_t{
+                    .chart = state.chart,
+                    .bookmark = bookmark->id,
+                    .label = action.compose_marker_label,
+                    .anchor = marker_anchor_t::audio_time,
+                    .position = std::nullopt,
+                    .audio_milliseconds = *milliseconds,
+                };
+            }
+        }
+        const auto applied =
+            apply_marker_edit(history, action.compose_input_document_revision, std::move(edit));
+        if (!applied.applied) {
+            return applied.diagnostics.empty() ? "Audio bookmark edit made no changes."
+                                               : applied.diagnostics.front().message;
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty()
+                       ? "Audio bookmark changed, but workspace rebinding failed."
+                       : rebound.diagnostics.front().message;
+        }
+        if (action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK) {
+            return "Audio-time bookmark added.";
+        }
+        return deleting ? "Audio-time bookmark deleted." : "Audio-time bookmark updated.";
+    }
+    case WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION:
+    case WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_SECTION:
+    case WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before editing sections.";
+        }
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart) {
+            return "Choose a chart before editing audio-time sections.";
+        }
+        marker_edit_action_t edit;
+        const auto deleting = action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION;
+        std::optional<std::int64_t> begin;
+        std::optional<std::int64_t> end;
+        if (!deleting) {
+            begin = parse_timing_signed(action.compose_marker_audio_begin);
+            end = parse_timing_signed(action.compose_marker_audio_end);
+            if (!begin || !end) {
+                return "Enter both audio section bounds as exact signed milliseconds.";
+            }
+        }
+        if (action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION) {
+            edit = insert_section_action_t{
+                .chart = state.chart,
+                .label = action.compose_marker_label,
+                .anchor = marker_anchor_t::audio_time,
+                .beat_span = std::nullopt,
+                .audio_millisecond_span = std::pair{*begin, *end},
+            };
+        } else {
+            if (action.compose_section_id == 0) {
+                return "Choose an audio-time section before editing it.";
+            }
+            const auto section = std::ranges::find(
+                chart->sections, object_id_t{action.compose_section_id}, &section_t::id);
+            if (section == chart->sections.end() ||
+                section->anchor != marker_anchor_t::audio_time ||
+                !section->audio_millisecond_span || section->beat_span) {
+                return "That audio-time section is no longer available.";
+            }
+            if (deleting) {
+                edit = delete_section_action_t{.chart = state.chart, .section = section->id};
+            } else {
+                edit = update_section_action_t{
+                    .chart = state.chart,
+                    .section = section->id,
+                    .label = action.compose_marker_label,
+                    .anchor = marker_anchor_t::audio_time,
+                    .beat_span = std::nullopt,
+                    .audio_millisecond_span = std::pair{*begin, *end},
+                };
+            }
+        }
+        const auto applied =
+            apply_marker_edit(history, action.compose_input_document_revision, std::move(edit));
+        if (!applied.applied) {
+            return applied.diagnostics.empty() ? "Audio section edit made no changes."
+                                               : applied.diagnostics.front().message;
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty()
+                       ? "Audio section changed, but workspace rebinding failed."
+                       : rebound.diagnostics.front().message;
+        }
+        if (action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION) {
+            return "Audio-time section added.";
+        }
+        return deleting ? "Audio-time section deleted." : "Audio-time section updated.";
     }
     case WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER: {
         const auto* chart = selected_chart(history, workspace);

@@ -34,7 +34,9 @@
 #define WORM_UI_COMPOSE_NOTE_LABEL_BYTES 4096
 #define WORM_UI_COMPOSE_BOOKMARK_CAPACITY 64
 #define WORM_UI_COMPOSE_SECTION_CAPACITY 64
+#define WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY 64
 #define WORM_UI_COMPOSE_MARKER_LABEL_BYTES 4096
+#define WORM_UI_COMPOSE_MARKER_TIME_BYTES 32
 #define WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY 16
 #define WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY 16
 #define WORM_UI_SHORTCUT_EVENT_CAPACITY 64
@@ -328,6 +330,19 @@ typedef struct WormUiComposeSectionView {
     uint64_t end_row;
 } WormUiComposeSectionView;
 
+typedef struct WormUiComposeAudioBookmarkView {
+    uint64_t bookmark_id;
+    const char* label;
+    int64_t audio_milliseconds;
+} WormUiComposeAudioBookmarkView;
+
+typedef struct WormUiComposeAudioSectionView {
+    uint64_t section_id;
+    const char* label;
+    int64_t begin_audio_milliseconds;
+    int64_t end_audio_milliseconds;
+} WormUiComposeAudioSectionView;
+
 typedef enum WormUiComposeSelectionMode {
     WORM_UI_COMPOSE_SELECTION_REPLACE = 0,
     WORM_UI_COMPOSE_SELECTION_ADD,
@@ -386,6 +401,12 @@ typedef struct WormUiComposeView {
     uint64_t beat_section_selection_begin_row;
     uint64_t beat_section_selection_end_measure_number;
     uint64_t beat_section_selection_end_row;
+    const WormUiComposeAudioBookmarkView* audio_bookmarks;
+    size_t audio_bookmark_count;
+    bool audio_bookmarks_truncated;
+    const WormUiComposeAudioSectionView* audio_sections;
+    size_t audio_section_count;
+    bool audio_sections_truncated;
     const WormUiComposeSemanticLayerView* semantic_layers;
     size_t semantic_layer_count;
     size_t semantic_layer_total_count;
@@ -727,6 +748,12 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN,
     WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_END,
     WORM_UI_COMPOSE_ACTION_DELETE_BEAT_SECTION,
+    WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK,
+    WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_BOOKMARK,
+    WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_BOOKMARK,
+    WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION,
+    WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_SECTION,
+    WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION,
     WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER,
@@ -879,6 +906,8 @@ typedef struct WormUiWorkspaceAction {
     uint64_t compose_bookmark_id;
     uint64_t compose_section_id;
     char compose_marker_label[WORM_UI_COMPOSE_MARKER_LABEL_BYTES + 1];
+    char compose_marker_audio_begin[WORM_UI_COMPOSE_MARKER_TIME_BYTES];
+    char compose_marker_audio_end[WORM_UI_COMPOSE_MARKER_TIME_BYTES];
     uint64_t compose_semantic_layer_id;
     char compose_semantic_layer_name[WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY];
     uint8_t compose_semantic_layer_red;

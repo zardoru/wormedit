@@ -185,6 +185,50 @@ TEST_CASE("marker updates retain identity and kiai source data and no-op cleanly
           local_position_t{measure_id_t{3}, 360});
 }
 
+TEST_CASE("audio-time marker CRUD preserves exact signed millisecond bounds",
+          "[unit][core][marker-editor][audio-time]") {
+    auto history = make_document_history(marker_song());
+    REQUIRE(apply_marker_edit(history, 4,
+                              insert_bookmark_action_t{.chart = chart_id_t{2},
+                                                       .label = "Preroll",
+                                                       .anchor = marker_anchor_t::audio_time,
+                                                       .audio_milliseconds = INT64_MIN}));
+    const auto bookmark_id = history.document.charts.front().bookmarks.back().id;
+    REQUIRE(apply_marker_edit(
+        history, 5,
+        insert_section_action_t{.chart = chart_id_t{2},
+                                .label = "Audio span",
+                                .anchor = marker_anchor_t::audio_time,
+                                .audio_millisecond_span =
+                                    std::pair<std::int64_t, std::int64_t>{-1'500, 2'500}}));
+    const auto section_id = history.document.charts.front().sections.back().id;
+
+    REQUIRE(apply_marker_edit(history, 6,
+                              update_bookmark_action_t{.chart = chart_id_t{2},
+                                                       .bookmark = bookmark_id,
+                                                       .label = "Postroll",
+                                                       .anchor = marker_anchor_t::audio_time,
+                                                       .audio_milliseconds = INT64_MAX}));
+    REQUIRE(apply_marker_edit(
+        history, 7,
+        update_section_action_t{.chart = chart_id_t{2},
+                                .section = section_id,
+                                .label = "Expanded audio span",
+                                .anchor = marker_anchor_t::audio_time,
+                                .audio_millisecond_span =
+                                    std::pair<std::int64_t, std::int64_t>{INT64_MIN, INT64_MAX}}));
+    CHECK(history.document.charts.front().bookmarks.back().audio_milliseconds == INT64_MAX);
+    CHECK(history.document.charts.front().sections.back().audio_millisecond_span ==
+          std::pair<std::int64_t, std::int64_t>{INT64_MIN, INT64_MAX});
+
+    REQUIRE(apply_marker_edit(history, 8, delete_bookmark_action_t{chart_id_t{2}, bookmark_id}));
+    REQUIRE(apply_marker_edit(history, 9, delete_section_action_t{chart_id_t{2}, section_id}));
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().sections.back().id == section_id);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().bookmarks.back().id == bookmark_id);
+}
+
 TEST_CASE("marker editor deletes bookmark section and kiai events atomically and undoably",
           "[unit][core][marker-editor]") {
     auto history = make_document_history(marker_song());

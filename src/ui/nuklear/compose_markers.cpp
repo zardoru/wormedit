@@ -16,8 +16,15 @@ struct compose_marker_state_t {
     std::uint64_t document_revision{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t bookmark_id{};
     std::uint64_t section_id{};
+    std::uint64_t audio_bookmark_id{};
+    std::uint64_t audio_section_id{};
     std::array<char, WORM_UI_COMPOSE_MARKER_LABEL_BYTES + 1> bookmark_label{};
     std::array<char, WORM_UI_COMPOSE_MARKER_LABEL_BYTES + 1> section_label{};
+    std::array<char, WORM_UI_COMPOSE_MARKER_LABEL_BYTES + 1> audio_bookmark_label{};
+    std::array<char, WORM_UI_COMPOSE_MARKER_LABEL_BYTES + 1> audio_section_label{};
+    std::array<char, WORM_UI_COMPOSE_MARKER_TIME_BYTES> audio_bookmark_time{};
+    std::array<char, WORM_UI_COMPOSE_MARKER_TIME_BYTES> audio_section_begin{};
+    std::array<char, WORM_UI_COMPOSE_MARKER_TIME_BYTES> audio_section_end{};
 };
 
 compose_marker_state_t state;
@@ -33,6 +40,13 @@ void copy_label(std::array<char, WORM_UI_COMPOSE_MARKER_LABEL_BYTES + 1>& destin
     destination[length] = '\0';
 }
 
+template <std::size_t capacity>
+void copy_time(std::array<char, capacity>& destination, std::int64_t milliseconds) {
+    destination.fill('\0');
+    (void)std::snprintf(destination.data(), destination.size(), "%lld",
+                        static_cast<long long>(milliseconds));
+}
+
 auto selected_bookmark(const WormUiComposeView& view) -> const WormUiComposeBookmarkView* {
     for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
         if (view.beat_bookmarks[index].bookmark_id == state.bookmark_id) {
@@ -46,6 +60,25 @@ auto selected_section(const WormUiComposeView& view) -> const WormUiComposeSecti
     for (std::size_t index = 0; index < view.beat_section_count; ++index) {
         if (view.beat_sections[index].section_id == state.section_id) {
             return &view.beat_sections[index];
+        }
+    }
+    return nullptr;
+}
+
+auto selected_audio_bookmark(const WormUiComposeView& view)
+    -> const WormUiComposeAudioBookmarkView* {
+    for (std::size_t index = 0; index < view.audio_bookmark_count; ++index) {
+        if (view.audio_bookmarks[index].bookmark_id == state.audio_bookmark_id) {
+            return &view.audio_bookmarks[index];
+        }
+    }
+    return nullptr;
+}
+
+auto selected_audio_section(const WormUiComposeView& view) -> const WormUiComposeAudioSectionView* {
+    for (std::size_t index = 0; index < view.audio_section_count; ++index) {
+        if (view.audio_sections[index].section_id == state.audio_section_id) {
+            return &view.audio_sections[index];
         }
     }
     return nullptr;
@@ -67,8 +100,179 @@ void synchronize(const WormUiComposeView& view) {
         state.section_id = 0;
         state.section_label.fill('\0');
     }
+    if (const auto* bookmark = selected_audio_bookmark(view)) {
+        copy_label(state.audio_bookmark_label, bookmark->label);
+        copy_time(state.audio_bookmark_time, bookmark->audio_milliseconds);
+    } else {
+        state.audio_bookmark_id = 0;
+        state.audio_bookmark_label.fill('\0');
+        copy_time(state.audio_bookmark_time, 0);
+    }
+    if (const auto* section = selected_audio_section(view)) {
+        copy_label(state.audio_section_label, section->label);
+        copy_time(state.audio_section_begin, section->begin_audio_milliseconds);
+        copy_time(state.audio_section_end, section->end_audio_milliseconds);
+    } else {
+        state.audio_section_id = 0;
+        state.audio_section_label.fill('\0');
+        copy_time(state.audio_section_begin, 0);
+        copy_time(state.audio_section_end, 1'000);
+    }
     state.chart_id = view.chart_id;
     state.document_revision = view.document_revision;
+}
+
+void render_audio_bookmarks(struct nk_context* context, const WormUiComposeView& view,
+                            WormUiWorkspaceAction& action) {
+    const auto* selected = selected_audio_bookmark(view);
+    char header[384]{};
+    if (selected) {
+        std::snprintf(header, sizeof(header), "Audio bookmark %lld ms  %.250s",
+                      static_cast<long long>(selected->audio_milliseconds), selected->label);
+    } else {
+        std::snprintf(header, sizeof(header), "New audio-time bookmark%s",
+                      view.audio_bookmarks_truncated ? " (first 64 shown)" : "");
+    }
+
+    nk_layout_row_begin(context, NK_DYNAMIC, 25, 5);
+    nk_layout_row_push(context, 0.25F);
+    if (nk_combo_begin_label(context, header, nk_vec2(440.0F, 280.0F))) {
+        nk_layout_row_dynamic(context, 22, 1);
+        if (nk_combo_item_label(context, "New audio-time bookmark", NK_TEXT_LEFT)) {
+            state.audio_bookmark_id = 0;
+            state.audio_bookmark_label.fill('\0');
+            copy_time(state.audio_bookmark_time, 0);
+        }
+        for (std::size_t index = 0; index < view.audio_bookmark_count; ++index) {
+            const auto& bookmark = view.audio_bookmarks[index];
+            char item[384]{};
+            std::snprintf(item, sizeof(item), "%lld ms  %.280s",
+                          static_cast<long long>(bookmark.audio_milliseconds), bookmark.label);
+            if (nk_combo_item_label(context, item, NK_TEXT_LEFT)) {
+                state.audio_bookmark_id = bookmark.bookmark_id;
+                copy_label(state.audio_bookmark_label, bookmark.label);
+                copy_time(state.audio_bookmark_time, bookmark.audio_milliseconds);
+            }
+        }
+        nk_combo_end(context);
+    }
+    const auto enabled = view.scene_available;
+    nk_layout_row_push(context, 0.29F);
+    if (!enabled)
+        nk_widget_disable_begin(context);
+    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_bookmark_label.data(),
+                                         state.audio_bookmark_label.size(), nk_filter_default);
+    nk_layout_row_push(context, 0.17F);
+    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_bookmark_time.data(),
+                                         state.audio_bookmark_time.size(), nk_filter_default);
+    nk_layout_row_push(context, 0.17F);
+    const auto apply_clicked = nk_button_label(context, selected ? "Apply" : "Add");
+    if (!enabled)
+        nk_widget_disable_end(context);
+    nk_layout_row_push(context, 0.12F);
+    if (!enabled || !selected)
+        nk_widget_disable_begin(context);
+    const auto delete_clicked = nk_button_label(context, "Delete");
+    if (!enabled || !selected)
+        nk_widget_disable_end(context);
+    nk_layout_row_end(context);
+
+    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
+        return;
+    }
+    if (apply_clicked) {
+        action.compose_bookmark_id = state.audio_bookmark_id;
+        std::memcpy(action.compose_marker_label, state.audio_bookmark_label.data(),
+                    sizeof(action.compose_marker_label));
+        std::memcpy(action.compose_marker_audio_begin, state.audio_bookmark_time.data(),
+                    sizeof(action.compose_marker_audio_begin));
+        action.compose_action = selected ? WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_BOOKMARK
+                                         : WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK;
+    } else if (delete_clicked && selected) {
+        action.compose_bookmark_id = selected->bookmark_id;
+        action.compose_action = WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_BOOKMARK;
+    }
+}
+
+void render_audio_sections(struct nk_context* context, const WormUiComposeView& view,
+                           WormUiWorkspaceAction& action) {
+    const auto* selected = selected_audio_section(view);
+    char header[384]{};
+    if (selected) {
+        std::snprintf(header, sizeof(header), "Audio section %lld-%lld ms  %.230s",
+                      static_cast<long long>(selected->begin_audio_milliseconds),
+                      static_cast<long long>(selected->end_audio_milliseconds), selected->label);
+    } else {
+        std::snprintf(header, sizeof(header), "New audio-time section%s",
+                      view.audio_sections_truncated ? " (first 64 shown)" : "");
+    }
+
+    nk_layout_row_begin(context, NK_DYNAMIC, 25, 6);
+    nk_layout_row_push(context, 0.22F);
+    if (nk_combo_begin_label(context, header, nk_vec2(480.0F, 280.0F))) {
+        nk_layout_row_dynamic(context, 22, 1);
+        if (nk_combo_item_label(context, "New audio-time section", NK_TEXT_LEFT)) {
+            state.audio_section_id = 0;
+            state.audio_section_label.fill('\0');
+            copy_time(state.audio_section_begin, 0);
+            copy_time(state.audio_section_end, 1'000);
+        }
+        for (std::size_t index = 0; index < view.audio_section_count; ++index) {
+            const auto& section = view.audio_sections[index];
+            char item[384]{};
+            std::snprintf(item, sizeof(item), "%lld-%lld ms  %.260s",
+                          static_cast<long long>(section.begin_audio_milliseconds),
+                          static_cast<long long>(section.end_audio_milliseconds), section.label);
+            if (nk_combo_item_label(context, item, NK_TEXT_LEFT)) {
+                state.audio_section_id = section.section_id;
+                copy_label(state.audio_section_label, section.label);
+                copy_time(state.audio_section_begin, section.begin_audio_milliseconds);
+                copy_time(state.audio_section_end, section.end_audio_milliseconds);
+            }
+        }
+        nk_combo_end(context);
+    }
+    const auto enabled = view.scene_available;
+    nk_layout_row_push(context, 0.23F);
+    if (!enabled)
+        nk_widget_disable_begin(context);
+    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_section_label.data(),
+                                         state.audio_section_label.size(), nk_filter_default);
+    nk_layout_row_push(context, 0.13F);
+    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_section_begin.data(),
+                                         state.audio_section_begin.size(), nk_filter_default);
+    nk_layout_row_push(context, 0.13F);
+    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_section_end.data(),
+                                         state.audio_section_end.size(), nk_filter_default);
+    nk_layout_row_push(context, 0.17F);
+    const auto apply_clicked = nk_button_label(context, selected ? "Apply" : "Add");
+    if (!enabled)
+        nk_widget_disable_end(context);
+    nk_layout_row_push(context, 0.12F);
+    if (!enabled || !selected)
+        nk_widget_disable_begin(context);
+    const auto delete_clicked = nk_button_label(context, "Delete");
+    if (!enabled || !selected)
+        nk_widget_disable_end(context);
+    nk_layout_row_end(context);
+
+    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
+        return;
+    }
+    if (apply_clicked) {
+        action.compose_section_id = state.audio_section_id;
+        std::memcpy(action.compose_marker_label, state.audio_section_label.data(),
+                    sizeof(action.compose_marker_label));
+        std::memcpy(action.compose_marker_audio_begin, state.audio_section_begin.data(),
+                    sizeof(action.compose_marker_audio_begin));
+        std::memcpy(action.compose_marker_audio_end, state.audio_section_end.data(),
+                    sizeof(action.compose_marker_audio_end));
+        action.compose_action = selected ? WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_SECTION
+                                         : WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION;
+    } else if (delete_clicked && selected) {
+        action.compose_section_id = selected->section_id;
+        action.compose_action = WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION;
+    }
 }
 
 void render_bookmarks(struct nk_context* context, const WormUiComposeView& view,
@@ -262,4 +466,6 @@ void worm_ui_nuklear_render_compose_markers(struct nk_context* context,
     synchronize(*view);
     render_bookmarks(context, *view, *action);
     render_sections(context, *view, *action);
+    render_audio_bookmarks(context, *view, *action);
+    render_audio_sections(context, *view, *action);
 }

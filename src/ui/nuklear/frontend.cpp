@@ -1560,6 +1560,8 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         view->semantic_layer_count > WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY ||
         view->beat_bookmark_count > WORM_UI_COMPOSE_BOOKMARK_CAPACITY ||
         view->beat_section_count > WORM_UI_COMPOSE_SECTION_CAPACITY ||
+        view->audio_bookmark_count > WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY ||
+        view->audio_section_count > WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY ||
         (view->semantic_layer_page_count == 0
              ? view->semantic_layer_page != 0 || view->semantic_layer_total_count != 0 ||
                    view->semantic_layer_count != 0
@@ -1575,7 +1577,9 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
                                         WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY)) ||
         (view->branch_row_count != 0 && !view->branch_rows) ||
         (view->beat_bookmark_count != 0 && !view->beat_bookmarks) ||
-        (view->beat_section_count != 0 && !view->beat_sections))
+        (view->beat_section_count != 0 && !view->beat_sections) ||
+        (view->audio_bookmark_count != 0 && !view->audio_bookmarks) ||
+        (view->audio_section_count != 0 && !view->audio_sections))
         return 0;
     if ((view->area_selection_preview_visible &&
          (!compose_rect_valid(&view->area_selection_preview_bounds) ||
@@ -1658,6 +1662,18 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
               view->beat_section_selection_end_measure_number &&
           view->beat_section_selection_begin_row >= view->beat_section_selection_end_row))) {
         return 0;
+    }
+    for (size_t index = 0; index < view->audio_bookmark_count; ++index) {
+        if (view->audio_bookmarks[index].bookmark_id == 0 || !view->audio_bookmarks[index].label) {
+            return 0;
+        }
+    }
+    for (size_t index = 0; index < view->audio_section_count; ++index) {
+        if (view->audio_sections[index].section_id == 0 || !view->audio_sections[index].label ||
+            view->audio_sections[index].end_audio_milliseconds <=
+                view->audio_sections[index].begin_audio_milliseconds) {
+            return 0;
+        }
     }
     if (view->hover_note_visible && (!view->hover_tooltip || view->hover_note_id == 0)) {
         return 0;

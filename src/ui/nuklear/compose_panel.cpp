@@ -59,6 +59,7 @@ static void append_compose_input(
         state.space_range_hold_moved = false;
         state.note_move_candidate_active = false;
         state.note_move_active = false;
+        state.timing_stage_drag_active = false;
         state.area_selection_candidate_active = false;
         state.area_selection_active = false;
         state.navigation_key_active = false;
@@ -187,6 +188,7 @@ void worm_ui_nuklear_queue_compose_key(std::uint32_t keycode, std::uint32_t scan
         state.space_range_hold_moved = false;
         state.note_move_candidate_active = false;
         state.note_move_active = false;
+        state.timing_stage_drag_active = false;
         state.area_selection_candidate_active = false;
         state.area_selection_active = false;
         state.keyboard_focus = false;
@@ -218,6 +220,7 @@ void worm_ui_nuklear_queue_compose_wheel(double delta_x, double delta_y, double 
         state.space_range_hold_moved = false;
         state.note_move_candidate_active = false;
         state.note_move_active = false;
+        state.timing_stage_drag_active = false;
         state.area_selection_candidate_active = false;
         state.area_selection_active = false;
         state.keyboard_focus = false;
@@ -254,6 +257,7 @@ void worm_ui_nuklear_compose_handle_focus_lost() {
     state.space_range_hold_moved = false;
     state.note_move_candidate_active = false;
     state.note_move_active = false;
+    state.timing_stage_drag_active = false;
     state.area_selection_candidate_active = false;
     state.area_selection_active = false;
     state.navigation_key_active = false;
@@ -843,6 +847,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             state.space_range_hold_moved = false;
             state.note_move_candidate_active = false;
             state.note_move_active = false;
+            state.timing_stage_drag_active = false;
         }
         const auto chart_changed = state.last_chart_id != view->chart_id;
         const auto revision_changed = state.last_document_revision != view->document_revision;
@@ -859,6 +864,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             state.space_range_hold_moved = false;
             state.note_move_candidate_active = false;
             state.note_move_active = false;
+            state.timing_stage_drag_active = false;
             state.area_selection_candidate_active = false;
             state.area_selection_active = false;
             state.semantic_layer_color_editor_visible = false;
@@ -911,6 +917,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
     state.space_range_hold_moved = false;
     state.area_selection_candidate_active = false;
     state.area_selection_active = false;
+    state.timing_stage_drag_active = false;
     state.semantic_layer_color_editor_visible = false;
     cancel_compose_navigation(action);
     state.last_chart_id = 0;
@@ -1466,7 +1473,11 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
 
     nk_layout_row_dynamic(context, 18, 1);
     nk_label(context,
-             view->semantic_layer_paint_mode_active
+             state.timing_stage_drag_active
+                 ? "Move timing event · release to keep staged position · Apply to commit"
+             : timing_view->stage_active && timing_view->stage_existing_object_id != 0
+                 ? "Drag outlined timing marker to resnap · edit/apply in side inspector"
+             : view->semantic_layer_paint_mode_active
                  ? "Layer paint armed · click/drag toggles layer · Esc cancels"
              : view->semantic_layer_solo_active
                  ? "Layer solo active · only selected-layer notes shown"
@@ -1575,6 +1586,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                          left_button.clicked_pos.y <= viewport.y + viewport.h;
     const auto pointer_started_x = (static_cast<double>(left_button.clicked_pos.x) - viewport.x) *
                                    view->viewport_width_pixels / viewport.w;
+    const auto pointer_started_y = (static_cast<double>(left_button.clicked_pos.y) - viewport.y) *
+                                   view->viewport_height_pixels / viewport.h;
     const auto pointer_started_in_note_field =
         pointer_started_in_view && pointer_started_x >= note_field_left &&
         pointer_started_x < note_field_right;
@@ -1592,10 +1605,53 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                       view->viewport_height_pixels / viewport.h);
     const auto paint_pointer_x = clamp_paint_x(pointer_x);
     const auto paint_pointer_y = clamp_paint_y(pointer_y);
+    if (state.timing_stage_drag_active) {
+        if (!window_focused || !view->scene_available || !timing_view->stage_active ||
+            timing_view->stage_existing_object_id == 0 || (!left_down && !left_released)) {
+            state.timing_stage_drag_active = false;
+        } else if (left_released) {
+            state.timing_stage_drag_active = false;
+        } else if (left_down && nk_input_is_mouse_moved(&context->input) &&
+                   action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE) {
+            const auto viewport_fraction =
+                std::clamp(pointer_y / view->viewport_height_pixels, 0.0, 1.0);
+            action->timing_stage_action = WORM_UI_TIMING_STAGE_MOVE;
+            action->timing_chart_id = timing_view->chart_id;
+            action->timing_document_revision = timing_view->document_revision;
+            action->timing_object_id = timing_view->stage_existing_object_id;
+            action->timing_lane = timing_view->stage_lane;
+            action->timing_has_target_y = true;
+            action->timing_target_y_fraction =
+                view->timing_document_begin_fraction +
+                viewport_fraction * (view->timing_document_end_fraction -
+                                     view->timing_document_begin_fraction);
+        }
+    } else if (pointer_started_in_view && left_down && view->timing_stage_active &&
+               timing_view->stage_active && timing_view->stage_existing_object_id != 0 &&
+               shortcut_event_count == 0 && (pointer_modifiers & any_pointer_modifier) == 0) {
+        const auto lane_index = static_cast<std::size_t>(view->timing_stage_lane);
+        const auto lane_bit = static_cast<std::uint8_t>(1U << lane_index);
+        const auto visible_lane_count =
+            static_cast<std::size_t>(std::popcount(view->timing_lane_visibility_mask));
+        if ((view->timing_lane_visibility_mask & lane_bit) != 0 && visible_lane_count != 0) {
+            const auto lane_width =
+                (note_field_left - 42.0) / static_cast<double>(visible_lane_count);
+            const auto preceding_mask =
+                static_cast<std::uint8_t>(view->timing_lane_visibility_mask & (lane_bit - 1U));
+            const auto visible_slot = static_cast<std::size_t>(std::popcount(preceding_mask));
+            const auto lane_left = 42.0 + lane_width * visible_slot;
+            const auto y_tolerance = 8.0 * view->viewport_height_pixels / viewport.h;
+            if (pointer_started_x >= lane_left && pointer_started_x < lane_left + lane_width &&
+                std::abs(pointer_started_y - view->timing_stage_y_pixels) <= y_tolerance) {
+                state.timing_stage_drag_active = true;
+            }
+        }
+    }
     const auto compose_pointer_captured = state.note_paint_pointer_active ||
                                           state.semantic_layer_paint_pointer_active ||
                                           state.pointer_hold_active || state.lane_hold_active ||
-                                          state.note_move_active || state.area_selection_active;
+                                          state.note_move_active || state.area_selection_active ||
+                                          state.timing_stage_drag_active;
     action->compose_has_pointer_hover = !state.action_overflowed && window_focused &&
                                         view->scene_available && pointer_in_note_field &&
                                         !compose_pointer_captured;

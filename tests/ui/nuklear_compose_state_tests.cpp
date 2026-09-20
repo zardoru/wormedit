@@ -10,6 +10,7 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     state.cancel_pending = true;
     state.pointer_hold_active = true;
     state.note_move_active = true;
+    state.timing_stage_drag_active = true;
     state.area_selection_active = true;
     state.area_selection_mode = WORM_UI_COMPOSE_SELECTION_TOGGLE;
     state.navigation_key_active = true;
@@ -29,6 +30,7 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     CHECK_FALSE(state.cancel_pending);
     CHECK_FALSE(state.pointer_hold_active);
     CHECK_FALSE(state.note_move_active);
+    CHECK_FALSE(state.timing_stage_drag_active);
     CHECK_FALSE(state.area_selection_active);
     CHECK(state.area_selection_mode == WORM_UI_COMPOSE_SELECTION_REPLACE);
     CHECK_FALSE(state.navigation_key_active);

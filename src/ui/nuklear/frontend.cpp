@@ -3778,6 +3778,9 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
         if (view->cursor) {
             const auto rect = compose_screen_rect(&view->cursor->bounds, view, viewport);
             if (rect.w > 0.0f && rect.h > 0.0f) {
+                const auto head_y = rect.y + rect.h * 0.5f;
+                nk_stroke_line(canvas, viewport.x, head_y, viewport.x + viewport.w, head_y,
+                               1.4f, nk_rgb(255, 223, 108));
                 nk_fill_rect(canvas, rect, 0.0f, nk_rgb(248, 226, 115));
                 nk_stroke_line(canvas, rect.x, rect.y, rect.x + rect.w, rect.y, 1.0f,
                                nk_rgb(255, 243, 174));

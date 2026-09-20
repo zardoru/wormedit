@@ -214,6 +214,28 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         PROPERTIES LABELS "unit;frontend"
         DISCOVERY_MODE PRE_TEST
     )
+
+    add_executable(wormedit_player_preview_texture_tests
+        ui/nuklear_player_preview_texture_tests.cpp
+        ../src/ui/nuklear/image_quad.cpp
+        ../src/ui/nuklear/player_preview.cpp
+        ../src/ui/nuklear/player_preview_texture.cpp
+    )
+    target_include_directories(wormedit_player_preview_texture_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/src"
+    )
+    target_link_libraries(wormedit_player_preview_texture_tests
+        PRIVATE
+            wormedit::core
+            wormedit::ui_frontend
+            SDL3::SDL3
+            Catch2::Catch2WithMain
+    )
+    catch_discover_tests(wormedit_player_preview_texture_tests
+        TEST_PREFIX "player-preview-texture."
+        PROPERTIES LABELS "integration;frontend;visual"
+        DISCOVERY_MODE PRE_TEST
+    )
 endif()
 
 if(WORMEDIT_ENABLE_LUA)

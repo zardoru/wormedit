@@ -732,6 +732,12 @@ typedef enum WormUiPlayerPreviewVisualKind {
     WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD,
 } WormUiPlayerPreviewVisualKind;
 
+typedef enum WormUiPlayerPreviewVisualDiagnostic {
+    WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_NONE = 0,
+    WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_FRAME_LATE,
+    WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_DECODE_FAILED,
+} WormUiPlayerPreviewVisualDiagnostic;
+
 typedef struct WormUiPlayerPreviewRect {
     double left;
     double top;
@@ -793,6 +799,8 @@ typedef struct WormUiPlayerPreviewVisualLayerView {
     bool video_frame;
     bool image_ready;
     bool image_pending;
+    WormUiPlayerPreviewVisualDiagnostic diagnostic;
+    const char* diagnostic_text;
     uint64_t image_content_id;
     uint32_t image_width;
     uint32_t image_height;

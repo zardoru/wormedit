@@ -109,6 +109,8 @@ int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* vie
             layer.event_sample_frame > view->sample_frame ||
             layer.kind < WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND ||
             layer.kind > WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD ||
+            layer.diagnostic < WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_NONE ||
+            layer.diagnostic > WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_DECODE_FAILED ||
             (layer.video_clock_ready && (layer.kind != WORM_UI_PLAYER_PREVIEW_VISUAL_VIDEO ||
                                          layer.video_time_denominator == 0 ||
                                          layer.video_elapsed_sample_frames !=
@@ -116,6 +118,8 @@ int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* vie
             (!layer.video_clock_ready &&
              (layer.video_elapsed_sample_frames != 0 || layer.video_time_numerator != 0 ||
               layer.video_time_denominator != 0)) ||
+            (layer.video_frame &&
+             (layer.kind != WORM_UI_PLAYER_PREVIEW_VISUAL_VIDEO || !layer.video_clock_ready)) ||
             (layer.static_image && layer.video_frame) ||
             (layer.image_ready &&
              ((!layer.static_image && !layer.video_frame) || layer.image_pending ||
@@ -128,7 +132,15 @@ int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* vie
                   static_cast<std::size_t>(layer.image_width) * layer.image_height * 4U)) ||
             (!layer.image_ready &&
              (layer.image_content_id != 0 || layer.image_width != 0 || layer.image_height != 0 ||
-              layer.rgba_pixels != nullptr || layer.rgba_byte_count != 0))) {
+              layer.rgba_pixels != nullptr || layer.rgba_byte_count != 0)) ||
+            (layer.diagnostic == WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_NONE &&
+             layer.diagnostic_text != nullptr) ||
+            (layer.diagnostic != WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_NONE &&
+             (!layer.video_frame || !layer.diagnostic_text || layer.image_ready)) ||
+            (layer.diagnostic == WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_FRAME_LATE &&
+             !layer.image_pending) ||
+            (layer.diagnostic == WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_DECODE_FAILED &&
+             layer.image_pending)) {
             return 0;
         }
     }
@@ -222,10 +234,15 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                 break;
             }
             nk_layout_row_dynamic(context, 18, 1);
-            const char* image_state = layer.image_ready                         ? " · RGBA ready"
-                                      : layer.image_pending                     ? " · loading"
-                                      : layer.static_image || layer.video_frame ? " · unavailable"
-                                                                                : "";
+            const char* image_state =
+                layer.image_ready ? " · RGBA ready"
+                : layer.diagnostic == WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_FRAME_LATE
+                    ? " · late frame"
+                : layer.diagnostic == WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_DECODE_FAILED
+                    ? " · decode failed"
+                : layer.image_pending                     ? " · loading"
+                : layer.static_image || layer.video_frame ? " · unavailable"
+                                                          : "";
             if (layer.video_clock_ready) {
                 nk_labelf(context, NK_TEXT_LEFT, "%s resource %llu · t=%llu/%u s%s", label,
                           static_cast<unsigned long long>(layer.resource_id),
@@ -235,9 +252,20 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                 nk_labelf(context, NK_TEXT_LEFT, "%s resource %llu%s", label,
                           static_cast<unsigned long long>(layer.resource_id), image_state);
             }
+            if (layer.diagnostic != WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_NONE) {
+                nk_layout_row_dynamic(context, 18, 1);
+                nk_labelf(context, NK_TEXT_LEFT, "Event %llu: %s",
+                          static_cast<unsigned long long>(layer.object_id), layer.diagnostic_text);
+            }
         }
         struct nk_rect viewport{};
-        const auto visual_label_height = static_cast<float>(view->visual_layer_count) * 18.0f;
+        std::size_t diagnostic_count{};
+        for (std::size_t index = 0; index < view->visual_layer_count; ++index) {
+            diagnostic_count += view->visual_layers[index].diagnostic !=
+                                WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_NONE;
+        }
+        const auto visual_label_height =
+            static_cast<float>(view->visual_layer_count + diagnostic_count) * 18.0f;
         nk_layout_row_dynamic(context, std::max(180.0f, panel_height - 92.0f - visual_label_height),
                               1);
         if (nk_widget(&viewport, context) != NK_WIDGET_INVALID) {

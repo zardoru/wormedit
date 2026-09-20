@@ -10,6 +10,8 @@
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <latch>
+#include <string_view>
 #include <thread>
 
 namespace {
@@ -69,6 +71,30 @@ auto wait_for_frame(sys::player_preview_presenter_t& presenter, WormUiPlayerPrev
     return false;
 }
 
+auto wait_for_diagnostic(sys::player_preview_presenter_t& presenter, WormUiPlayerPreviewView& view,
+                         const document_history_t& history, visual::image_job_t& image_job,
+                         visual::video_frame_job_t& video_job,
+                         WormUiPlayerPreviewVisualDiagnostic diagnostic) -> bool {
+    const auto directory = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "video";
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
+    while (std::chrono::steady_clock::now() < deadline) {
+        presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania, 24'000,
+                           48'000, directory, image_job, video_job);
+        if (view.visual_layer_count == 1 && view.visual_layers[0].diagnostic == diagnostic) {
+            return true;
+        }
+        std::this_thread::yield();
+    }
+    return false;
+}
+
+struct latch_release_t {
+    std::latch& latch;
+    ~latch_release_t() {
+        latch.count_down();
+    }
+};
+
 } // namespace
 
 TEST_CASE("player preview asynchronously publishes and replaces exact video frames",
@@ -108,4 +134,69 @@ TEST_CASE("player preview asynchronously publishes and replaces exact video fram
         wait_for_frame(presenter, view, history, image_job, video_job, 24'000, green_content_id));
     CHECK(view.visual_layers[0].rgba_pixels[0] > 240);
     CHECK(view.visual_layers[0].rgba_pixels[1] < 16);
+}
+
+TEST_CASE("player preview links a late video frame diagnostic to its event",
+          "[integration][visual][video][player-preview][diagnostic]") {
+    const auto history = make_document_history(document());
+    visual::image_cache_t image_cache;
+    task_scheduler_t image_scheduler{1, 2};
+    visual::image_job_t image_job{image_cache, image_scheduler};
+    visual::video_frame_cache_t video_cache;
+    task_scheduler_t video_scheduler{1, 2};
+    visual::video_frame_job_t video_job{video_cache, video_scheduler};
+    std::latch release_blocker{1};
+    latch_release_t release{release_blocker};
+
+    task_graph_t blocker_graph{1};
+    const auto blocker_task = blocker_graph.add_task(
+        {}, [&](std::span<const task_result_t>, std::stop_token) -> task_result_t {
+            release_blocker.wait();
+            return task_result_t::success();
+        });
+    REQUIRE(blocker_task);
+    auto blocker = video_scheduler.submit(std::move(blocker_graph));
+    REQUIRE(blocker);
+
+    sys::player_preview_presenter_t presenter;
+    WormUiPlayerPreviewView view{};
+    const auto directory = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "video";
+    presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania, 24'000,
+                       48'000, directory, image_job, video_job);
+    REQUIRE(video_job.busy());
+    presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania, 24'000,
+                       48'000, directory, image_job, video_job);
+
+    REQUIRE(view.visual_layer_count == 1);
+    const auto& layer = view.visual_layers[0];
+    CHECK(layer.object_id == 4);
+    CHECK(layer.diagnostic == WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_FRAME_LATE);
+    REQUIRE(layer.diagnostic_text);
+    CHECK(std::string_view{layer.diagnostic_text}.find("presentation deadline") !=
+          std::string_view::npos);
+}
+
+TEST_CASE("player preview publishes an event-linked video decoder failure",
+          "[integration][visual][video][player-preview][diagnostic]") {
+    auto broken_document = document();
+    broken_document.visual_assets[0].source_path = "missing-video.mkv";
+    const auto history = make_document_history(std::move(broken_document));
+    visual::image_cache_t image_cache;
+    task_scheduler_t image_scheduler{1, 2};
+    visual::image_job_t image_job{image_cache, image_scheduler};
+    visual::video_frame_cache_t video_cache;
+    task_scheduler_t video_scheduler{1, 2};
+    visual::video_frame_job_t video_job{video_cache, video_scheduler};
+    sys::player_preview_presenter_t presenter;
+    WormUiPlayerPreviewView view{};
+
+    REQUIRE(wait_for_diagnostic(presenter, view, history, image_job, video_job,
+                                WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_DECODE_FAILED));
+    REQUIRE(view.visual_layer_count == 1);
+    const auto& layer = view.visual_layers[0];
+    CHECK(layer.object_id == 4);
+    CHECK_FALSE(layer.image_pending);
+    REQUIRE(layer.diagnostic_text);
+    CHECK(std::string_view{layer.diagnostic_text}.find("could not be opened") !=
+          std::string_view::npos);
 }

@@ -3708,6 +3708,46 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                        : (rebound.diagnostics.empty() ? "Semantic layer renamed, but workspace rebinding failed."
                                                       : rebound.diagnostics.front().message);
     }
+    case WORM_UI_COMPOSE_ACTION_CYCLE_SEMANTIC_LAYER_COLOR: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before recoloring a semantic layer.";
+        }
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart || !application_state.semantic_layer_target) {
+            return "Choose a visible semantic layer before recoloring it.";
+        }
+        const auto* layer =
+            visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target);
+        if (!layer) {
+            return "The selected semantic layer is no longer visible.";
+        }
+        constexpr std::array<semantic_layer_rgba_t, 6> colors{{
+            {0.91, 0.35, 0.31, 1.0}, {0.95, 0.67, 0.24, 1.0}, {0.36, 0.74, 0.36, 1.0},
+            {0.25, 0.62, 0.91, 1.0}, {0.58, 0.42, 0.84, 1.0}, {0.87, 0.38, 0.68, 1.0},
+        }};
+        const auto matched = std::ranges::find_if(colors, [&](const auto& candidate) {
+            return std::lround(candidate.red * 255.0) == layer->color.red &&
+                   std::lround(candidate.green * 255.0) == layer->color.green &&
+                   std::lround(candidate.blue * 255.0) == layer->color.blue &&
+                   std::lround(candidate.alpha * 255.0) == layer->color.alpha;
+        });
+        const auto color = matched == colors.end()
+                               ? colors.front()
+                               : colors[(static_cast<std::size_t>(matched - colors.begin()) + 1) %
+                                        colors.size()];
+        const auto applied = apply_semantic_layer_edit(
+            history, action.compose_input_document_revision,
+            update_semantic_layer_action_t{state.chart, layer->id, layer->name, color,
+                                           layer->visible, layer->locked});
+        if (!applied.applied) {
+            return applied.diagnostics.empty() ? "Semantic-layer color was unchanged."
+                                               : applied.diagnostics.front().message;
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        return rebound ? "Semantic-layer color changed."
+                       : (rebound.diagnostics.empty() ? "Semantic-layer color changed, but workspace rebinding failed."
+                                                      : rebound.diagnostics.front().message);
+    }
     case WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER:
         application_state.semantic_layer_target.reset();
         application_state.semantic_layer_paint_mode_active = false;

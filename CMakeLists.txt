@@ -89,6 +89,7 @@ add_library(wormedit_core
     src/formats/bms_writer.cpp
     src/formats/bmson.cpp
     src/formats/bmson_writer.cpp
+    src/formats/conversion.cpp
     src/formats/native_project.cpp
     src/formats/native_project_storage.cpp
     src/formats/osu_mania.cpp

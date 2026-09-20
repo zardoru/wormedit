@@ -2,8 +2,10 @@
 
 #include <wormedit/core/document.h>
 
+#include <cstddef>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace wormedit {
 
@@ -42,12 +44,73 @@ struct conversion_request_t {
     std::string target_profile;
     std::optional<stepmania_export_policy_t> stepmania;
     std::optional<chart_id_t> chart;
-    warp_encoding_t warp_encoding{warp_encoding_t::native};
     branch_projection_t branches{branch_projection_t::preserve_tree};
     std::optional<text_encoding_t> encoding;
     std::optional<quantize_request_t> quantization;
     loss_policy_t loss_policy{loss_policy_t::reject};
     bool overwrite{false};
 };
+
+enum class conversion_stage_t {
+    request,
+    transform,
+    serialize,
+    reimport,
+};
+
+enum class conversion_diagnostic_code_t {
+    invalid_request,
+    unsupported_target,
+    unknown_target_profile,
+    chart_not_found,
+    transform_failed,
+    target_diagnostic,
+    loss_rejected,
+    output_limit,
+    reimport_failed,
+};
+
+struct conversion_diagnostic_t {
+    diagnostic_severity_t severity{diagnostic_severity_t::error};
+    conversion_diagnostic_code_t code{conversion_diagnostic_code_t::invalid_request};
+    conversion_stage_t stage{conversion_stage_t::request};
+    format_family_t target{format_family_t::native_project};
+    std::optional<chart_id_t> chart;
+    bool loss{};
+    std::string message;
+    std::string path;
+};
+
+struct conversion_output_t {
+    format_family_t target{format_family_t::native_project};
+    std::optional<chart_id_t> chart;
+    std::string suggested_filename;
+    std::string bytes;
+    bool reimport_validated{};
+};
+
+struct conversion_limits_t {
+    std::size_t maximum_outputs{4096};
+    std::size_t maximum_total_output_bytes{256U * 1024U * 1024U};
+    std::size_t maximum_filename_bytes{240};
+};
+
+struct conversion_result_t {
+    std::vector<conversion_output_t> outputs;
+    std::vector<conversion_diagnostic_t> diagnostics;
+
+    [[nodiscard]] auto has_errors() const -> bool;
+    [[nodiscard]] explicit operator bool() const noexcept;
+};
+
+// Builds a detached, bounded output plan. It never mutates the source document
+// or publishes files. Every serialized artifact is parsed again before the
+// complete output set is returned; any error or rejected loss clears all
+// outputs so preview, CLI, and later filesystem publication share one atomic
+// preparation boundary.
+[[nodiscard]] auto convert_document(const song_document_t& song,
+                                    const conversion_request_t& request,
+                                    conversion_limits_t limits = {})
+    -> conversion_result_t;
 
 } // namespace wormedit

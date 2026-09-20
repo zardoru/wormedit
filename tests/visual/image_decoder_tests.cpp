@@ -69,12 +69,12 @@ TEST_CASE("visual resources resolve through explicit project-relative asset path
     CHECK(resolved.source->declared_height == 480);
 
     CHECK(resolve_visual_asset(document, resource_id_t{99}, "/project/song").status ==
-          image_status_t::unknown_resource);
+          visual_asset_status_t::unknown_resource);
     CHECK(resolve_visual_asset(document, resource_id_t{10}, {}).status ==
-          image_status_t::relative_path_without_base);
+          visual_asset_status_t::relative_path_without_base);
     document.resources.front().missing = true;
     CHECK(resolve_visual_asset(document, resource_id_t{10}, "/project/song").status ==
-          image_status_t::missing_resource);
+          visual_asset_status_t::missing_resource);
 }
 
 TEST_CASE("bounded static image decoding publishes exact RGBA8 pixels", "[unit][visual][decode]") {

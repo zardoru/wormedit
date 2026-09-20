@@ -36,6 +36,9 @@
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
 #include <wormedit/visual/image_job.h>
 #endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+#include <wormedit/visual/video_job.h>
+#endif
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include "sys/sdl_audition_output.h"
@@ -46,7 +49,6 @@
 #include <wormedit/audio/source_registry.h>
 #include <wormedit/audio/waveform_job.h>
 #endif
-
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_keycode.h>
@@ -5740,6 +5742,12 @@ int main(int argc, char** argv) {
                                                    WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY +
                                                        WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY};
 #endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+    wormedit::visual::video_frame_cache_t player_video_cache;
+    wormedit::task_scheduler_t player_video_scheduler(1, 2);
+    wormedit::visual::video_frame_job_t player_video_job{player_video_cache,
+                                                         player_video_scheduler};
+#endif
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     wormedit::audio::decoded_source_registry_t audition_sources;
     wormedit::audio::decoded_block_cache_t waveform_blocks;
@@ -6318,10 +6326,14 @@ int main(int argc, char** argv) {
                 flattened.view.player_preview, history, workspace.selected_chart,
                 application_command_state.player_preview_visible,
                 application_command_state.player_preview_skin, flattened.view.transport_frame,
-                flattened.view.transport_sample_rate
+                flattened.view.transport_sample_rate, asset_base
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
                 ,
-                player_image_job, asset_base
+                player_image_job
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+                ,
+                player_video_job
 #endif
             );
             for (std::size_t line = 0; line < flattened.view.summary_line_count; ++line) {

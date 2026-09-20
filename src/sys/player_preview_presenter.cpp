@@ -7,6 +7,10 @@
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
 #include <wormedit/visual/image_job.h>
 #endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+#include <wormedit/visual/video_job.h>
+#endif
+#include <wormedit/visual/visual_asset.h>
 
 #include <algorithm>
 #include <array>
@@ -102,6 +106,12 @@ struct player_preview_presenter_t::impl_t {
     std::vector<resource_id_t> requested_visual_resources;
     std::shared_ptr<const visual::image_job_result_t> decoded_visuals;
 #endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+    std::optional<video_preview_clock_t> requested_video_clock;
+    std::optional<object_id_t> failed_video_event;
+    std::shared_ptr<const visual::video_job_result_t> decoded_video;
+    std::uint64_t decoded_video_content_id{};
+#endif
     std::string status;
     std::string view_status;
     std::vector<WormUiPlayerPreviewLaneView> lanes;
@@ -123,13 +133,18 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
                                           const document_history_t& history,
                                           std::optional<chart_id_t> selected_chart, bool visible,
                                           player_preview_skin_t skin, std::uint64_t sample_frame,
-                                          std::uint32_t sample_rate
+                                          std::uint32_t sample_rate,
+                                          const std::filesystem::path& project_directory
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
                                           ,
-                                          visual::image_job_t& image_job,
-                                          const std::filesystem::path& project_directory
+                                          visual::image_job_t& image_job
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+                                          ,
+                                          visual::video_frame_job_t& video_job
 #endif
 ) {
+    static_cast<void>(project_directory);
     auto& state = *impl_;
     state.lanes.clear();
     state.receptors.clear();
@@ -156,6 +171,21 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
                                             completion->project == history.document.id &&
                                             completion->document_revision == state.revision) {
         state.decoded_visuals = std::move(completion->result);
+    }
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+    if (auto completion = video_job.poll(); completion &&
+                                            completion->project == history.document.id &&
+                                            completion->document_revision == state.revision) {
+        if (*completion && completion->result && *completion->result) {
+            state.decoded_video = std::move(completion->result);
+            state.decoded_video_content_id = completion->generation;
+            state.failed_video_event.reset();
+        } else if (completion->result) {
+            state.failed_video_event = completion->result->clock.event;
+        } else if (state.requested_video_clock) {
+            state.failed_video_event = state.requested_video_clock->event;
+        }
     }
 #endif
     if (!visible) {
@@ -195,6 +225,13 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
         state.requested_visual_resources.clear();
         state.decoded_visuals.reset();
         image_job.cancel();
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+        state.requested_video_clock.reset();
+        state.failed_video_event.reset();
+        state.decoded_video.reset();
+        state.decoded_video_content_id = 0;
+        video_job.cancel();
 #endif
         auto built = build_player_preview_index(*chart, history.document.revision);
         if (!built) {
@@ -380,8 +417,7 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
             scene.scene->video_clock->event == event->object &&
             scene.scene->video_clock->resource == event->resource) {
             layer.video_clock_ready = true;
-            layer.video_elapsed_sample_frames =
-                scene.scene->video_clock->elapsed_sample_frames;
+            layer.video_elapsed_sample_frames = scene.scene->video_clock->elapsed_sample_frames;
             layer.video_time_numerator = scene.scene->video_clock->media_time_numerator;
             layer.video_time_denominator = scene.scene->video_clock->media_time_denominator;
         }
@@ -402,6 +438,23 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
             }
         }
         layer.image_pending = layer.static_image && !layer.image_ready && image_job.busy();
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+        if (layer.video_clock_ready) {
+            layer.video_frame = true;
+            if (state.decoded_video && state.decoded_video->source.resource == event->resource &&
+                state.decoded_video->clock.event == scene.scene->video_clock->event &&
+                state.decoded_video->clock.elapsed_sample_frames <=
+                    scene.scene->video_clock->elapsed_sample_frames) {
+                layer.image_ready = true;
+                layer.image_content_id = state.decoded_video_content_id;
+                layer.image_width = state.decoded_video->frame->width;
+                layer.image_height = state.decoded_video->frame->height;
+                layer.rgba_pixels = state.decoded_video->frame->pixels.data();
+                layer.rgba_byte_count = state.decoded_video->frame->pixels.size();
+            }
+            layer.image_pending = !layer.image_ready && video_job.busy();
+        }
 #endif
         state.visual_layers.push_back(layer);
     };
@@ -476,6 +529,51 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
         } else if (image_job.request(history.document.id, history.document.revision,
                                      requested_sources)) {
             state.requested_visual_resources = std::move(requested_resources);
+        }
+    }
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+    const auto active_video = std::ranges::find_if(state.visual_layers, [](const auto& layer) {
+        return layer.video_clock_ready && layer.video_frame;
+    });
+    if (active_video == state.visual_layers.end()) {
+        if (video_job.busy()) {
+            video_job.cancel();
+        }
+        state.requested_video_clock.reset();
+        state.failed_video_event.reset();
+        state.decoded_video.reset();
+        state.decoded_video_content_id = 0;
+    } else {
+        const video_preview_clock_t clock{
+            .event = object_id_t{active_video->object_id},
+            .resource = resource_id_t{active_video->resource_id},
+            .activation_sample_frame = active_video->event_sample_frame,
+            .elapsed_sample_frames = active_video->video_elapsed_sample_frames,
+            .media_time_numerator = active_video->video_time_numerator,
+            .media_time_denominator = active_video->video_time_denominator,
+        };
+        const auto switched_event = state.requested_video_clock &&
+                                    (state.requested_video_clock->event != clock.event ||
+                                     state.requested_video_clock->resource != clock.resource);
+        const auto sought_backward =
+            state.requested_video_clock && state.requested_video_clock->event == clock.event &&
+            clock.elapsed_sample_frames < state.requested_video_clock->elapsed_sample_frames;
+        if ((switched_event || sought_backward) && video_job.busy()) {
+            video_job.cancel();
+        }
+        if (switched_event) {
+            state.failed_video_event.reset();
+        }
+        if (!video_job.busy() && state.failed_video_event != clock.event &&
+            (!state.requested_video_clock || *state.requested_video_clock != clock)) {
+            const auto resolved =
+                visual::resolve_visual_asset(history.document, clock.resource, project_directory);
+            if (resolved && resolved.source->kind == asset_kind_t::video &&
+                video_job.request(history.document.id, history.document.revision, *resolved.source,
+                                  clock)) {
+                state.requested_video_clock = clock;
+            }
         }
     }
 #endif

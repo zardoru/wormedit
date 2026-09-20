@@ -109,23 +109,26 @@ int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* vie
             layer.event_sample_frame > view->sample_frame ||
             layer.kind < WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND ||
             layer.kind > WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD ||
-            (layer.video_clock_ready &&
-             (layer.kind != WORM_UI_PLAYER_PREVIEW_VISUAL_VIDEO ||
-              layer.video_time_denominator == 0 ||
-              layer.video_elapsed_sample_frames != view->sample_frame - layer.event_sample_frame)) ||
+            (layer.video_clock_ready && (layer.kind != WORM_UI_PLAYER_PREVIEW_VISUAL_VIDEO ||
+                                         layer.video_time_denominator == 0 ||
+                                         layer.video_elapsed_sample_frames !=
+                                             view->sample_frame - layer.event_sample_frame)) ||
             (!layer.video_clock_ready &&
              (layer.video_elapsed_sample_frames != 0 || layer.video_time_numerator != 0 ||
               layer.video_time_denominator != 0)) ||
+            (layer.static_image && layer.video_frame) ||
             (layer.image_ready &&
-             (!layer.static_image || layer.image_pending || layer.image_width == 0 ||
+             ((!layer.static_image && !layer.video_frame) || layer.image_pending ||
+              (layer.video_frame && layer.image_content_id == 0) || layer.image_width == 0 ||
               layer.image_height == 0 ||
               layer.image_width > WORM_UI_PLAYER_PREVIEW_IMAGE_MAX_DIMENSION ||
               layer.image_height > WORM_UI_PLAYER_PREVIEW_IMAGE_MAX_DIMENSION ||
               !layer.rgba_pixels || layer.image_width > SIZE_MAX / layer.image_height / 4U ||
               layer.rgba_byte_count !=
                   static_cast<std::size_t>(layer.image_width) * layer.image_height * 4U)) ||
-            (!layer.image_ready && (layer.image_width != 0 || layer.image_height != 0 ||
-                                    layer.rgba_pixels != nullptr || layer.rgba_byte_count != 0))) {
+            (!layer.image_ready &&
+             (layer.image_content_id != 0 || layer.image_width != 0 || layer.image_height != 0 ||
+              layer.rgba_pixels != nullptr || layer.rgba_byte_count != 0))) {
             return 0;
         }
     }
@@ -147,7 +150,7 @@ int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* vie
               sprite.rgba_byte_count !=
                   static_cast<std::size_t>(sprite.image_width) * sprite.image_height * 4U)) ||
             (!sprite.image_ready &&
-             (sprite.image_width != 0 || sprite.image_height != 0 ||
+             (sprite.image_content_id != 0 || sprite.image_width != 0 || sprite.image_height != 0 ||
               sprite.rgba_pixels != nullptr || sprite.rgba_byte_count != 0))) {
             return 0;
         }
@@ -219,15 +222,15 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                 break;
             }
             nk_layout_row_dynamic(context, 18, 1);
-            const char* image_state = layer.image_ready     ? " · RGBA ready"
-                                      : layer.image_pending ? " · loading"
-                                      : layer.static_image  ? " · unavailable"
-                                                            : "";
+            const char* image_state = layer.image_ready                         ? " · RGBA ready"
+                                      : layer.image_pending                     ? " · loading"
+                                      : layer.static_image || layer.video_frame ? " · unavailable"
+                                                                                : "";
             if (layer.video_clock_ready) {
-                nk_labelf(context, NK_TEXT_LEFT, "%s resource %llu · t=%llu/%u s", label,
+                nk_labelf(context, NK_TEXT_LEFT, "%s resource %llu · t=%llu/%u s%s", label,
                           static_cast<unsigned long long>(layer.resource_id),
                           static_cast<unsigned long long>(layer.video_time_numerator),
-                          layer.video_time_denominator);
+                          layer.video_time_denominator, image_state);
             } else {
                 nk_labelf(context, NK_TEXT_LEFT, "%s resource %llu%s", label,
                           static_cast<unsigned long long>(layer.resource_id), image_state);

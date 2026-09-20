@@ -38,16 +38,6 @@ struct image_decode_limits_t {
     std::size_t maximum_rgba_bytes{256U * 1024U * 1024U};
 };
 
-struct visual_asset_resolution_result_t {
-    image_status_t status{image_status_t::unknown_resource};
-    std::optional<resolved_visual_asset_t> source;
-    std::string message;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == image_status_t::ready && source.has_value();
-    }
-};
-
 struct rgba_image_t {
     resource_id_t resource;
     asset_id_t asset;
@@ -66,13 +56,6 @@ struct image_decode_result_t {
         return status == image_status_t::ready && image.has_value();
     }
 };
-
-// Resolves one resource through the immutable document inventory. Relative
-// paths require an explicit project directory; current process state is never
-// consulted implicitly.
-[[nodiscard]] auto resolve_visual_asset(const song_document_t& document, resource_id_t resource,
-                                        const std::filesystem::path& project_directory)
-    -> visual_asset_resolution_result_t;
 
 // Decodes one complete bounded source buffer to tightly packed RGBA8. The
 // decoder owns no renderer or texture state and is reusable by live and

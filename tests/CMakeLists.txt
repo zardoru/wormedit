@@ -150,6 +150,7 @@ endif()
 if(TARGET wormedit_video_decoder)
     add_executable(wormedit_video_tests
         visual/video_decoder_tests.cpp
+        visual/video_job_tests.cpp
     )
     target_compile_definitions(wormedit_video_tests
         PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
@@ -162,6 +163,31 @@ if(TARGET wormedit_video_decoder)
     catch_discover_tests(wormedit_video_tests
         TEST_PREFIX "video."
         PROPERTIES LABELS "unit;visual;video"
+        DISCOVERY_MODE PRE_TEST
+    )
+endif()
+
+if(TARGET wormedit_video_decoder AND TARGET wormedit_visual_decoder)
+    add_executable(wormedit_player_preview_delivery_tests
+        sys/player_preview_presenter_tests.cpp
+        ../src/sys/player_preview_presenter.cpp
+    )
+    target_compile_definitions(wormedit_player_preview_delivery_tests PRIVATE
+        WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+        WORMEDIT_HAS_IMAGE_DECODER=1
+        WORMEDIT_HAS_VIDEO_DECODER=1
+    )
+    target_include_directories(wormedit_player_preview_delivery_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/src"
+    )
+    target_link_libraries(wormedit_player_preview_delivery_tests PRIVATE
+        wormedit::visual_decoder
+        wormedit::video_decoder
+        Catch2::Catch2WithMain
+    )
+    catch_discover_tests(wormedit_player_preview_delivery_tests
+        TEST_PREFIX "player-preview-delivery."
+        PROPERTIES LABELS "integration;visual;video"
         DISCOVERY_MODE PRE_TEST
     )
 endif()

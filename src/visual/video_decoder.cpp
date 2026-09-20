@@ -43,6 +43,11 @@ struct scale_deleter_t {
     }
 };
 
+auto interrupt_ffmpeg(void* opaque) -> int {
+    const auto* stop = static_cast<const std::stop_token*>(opaque);
+    return stop && stop->stop_requested() ? 1 : 0;
+}
+
 using format_ptr_t = std::unique_ptr<AVFormatContext, format_deleter_t>;
 using codec_ptr_t = std::unique_ptr<AVCodecContext, codec_deleter_t>;
 using frame_ptr_t = std::unique_ptr<AVFrame, frame_deleter_t>;
@@ -80,8 +85,12 @@ auto checked_rgba_bytes(int width, int height, video_frame_decode_limits_t limit
 }
 
 auto receive_frames(AVCodecContext* decoder, AVFrame* scratch, AVFrame* selected,
-                    std::int64_t target_timestamp, bool& passed_target) -> int {
+                    std::int64_t target_timestamp, bool& passed_target, std::stop_token stop)
+    -> int {
     while (true) {
+        if (stop.stop_requested()) {
+            return AVERROR_EXIT;
+        }
         const auto received = avcodec_receive_frame(decoder, scratch);
         if (received == AVERROR(EAGAIN) || received == AVERROR_EOF) {
             return 0;
@@ -111,8 +120,11 @@ auto receive_frames(AVCodecContext* decoder, AVFrame* scratch, AVFrame* selected
 } // namespace
 
 auto decode_video_frame_rgba(const resolved_visual_asset_t& source,
-                             const video_preview_clock_t& clock, video_frame_decode_limits_t limits)
-    -> video_frame_decode_result_t {
+                             const video_preview_clock_t& clock, video_frame_decode_limits_t limits,
+                             std::stop_token stop) -> video_frame_decode_result_t {
+    if (stop.stop_requested()) {
+        return failure(video_frame_status_t::cancelled, "video frame decode was cancelled");
+    }
     if (source.kind != asset_kind_t::video) {
         return failure(video_frame_status_t::unsupported_asset_kind,
                        "only video assets can be decoded as timed frames");
@@ -129,16 +141,27 @@ auto decode_video_frame_rgba(const resolved_visual_asset_t& source,
                        "video media timestamp exceeds FFmpeg's signed range");
     }
 
-    AVFormatContext* opened{};
+    AVFormatContext* opened = avformat_alloc_context();
+    if (!opened) {
+        return failure(video_frame_status_t::open_failed,
+                       "video format context could not be allocated");
+    }
+    opened->interrupt_callback = {.callback = interrupt_ffmpeg, .opaque = &stop};
     const auto path = source.path.string();
     auto result = avformat_open_input(&opened, path.c_str(), nullptr, nullptr);
     format_ptr_t format{opened};
     if (result < 0) {
+        if (stop.stop_requested()) {
+            return failure(video_frame_status_t::cancelled, "video input open was cancelled");
+        }
         return failure(video_frame_status_t::open_failed,
                        "video input could not be opened: " + ffmpeg_message(result));
     }
     result = avformat_find_stream_info(format.get(), nullptr);
     if (result < 0) {
+        if (stop.stop_requested()) {
+            return failure(video_frame_status_t::cancelled, "video stream discovery was cancelled");
+        }
         return failure(video_frame_status_t::stream_info_failed,
                        "video stream information could not be read: " + ffmpeg_message(result));
     }
@@ -161,6 +184,9 @@ auto decode_video_frame_rgba(const resolved_visual_asset_t& source,
         result = avcodec_open2(decoder.get(), decoder_type, nullptr);
     }
     if (result < 0) {
+        if (stop.stop_requested()) {
+            return failure(video_frame_status_t::cancelled, "video decoder open was cancelled");
+        }
         return failure(video_frame_status_t::decoder_open_failed,
                        "video decoder could not be opened: " + ffmpeg_message(result));
     }
@@ -181,6 +207,9 @@ auto decode_video_frame_rgba(const resolved_visual_asset_t& source,
         avformat_seek_file(format.get(), stream_index, std::numeric_limits<std::int64_t>::min(),
                            target_timestamp, target_timestamp, AVSEEK_FLAG_BACKWARD);
     if (result < 0) {
+        if (stop.stop_requested()) {
+            return failure(video_frame_status_t::cancelled, "video seek was cancelled");
+        }
         return failure(video_frame_status_t::seek_failed,
                        "video stream could not seek to the requested time: " +
                            ffmpeg_message(result));
@@ -198,16 +227,22 @@ auto decode_video_frame_rgba(const resolved_visual_asset_t& source,
     bool passed_target{};
     std::size_t packet_count{};
     while (!passed_target && packet_count < limits.maximum_packets) {
+        if (stop.stop_requested()) {
+            return failure(video_frame_status_t::cancelled, "video frame decode was cancelled");
+        }
         result = av_read_frame(format.get(), packet.get());
         if (result == AVERROR_EOF) {
             result = avcodec_send_packet(decoder.get(), nullptr);
             if (result >= 0 || result == AVERROR_EOF) {
                 result = receive_frames(decoder.get(), scratch.get(), selected.get(),
-                                        target_timestamp, passed_target);
+                                        target_timestamp, passed_target, stop);
             }
             break;
         }
         if (result < 0) {
+            if (stop.stop_requested()) {
+                return failure(video_frame_status_t::cancelled, "video packet read was cancelled");
+            }
             return failure(video_frame_status_t::decode_failed,
                            "video packet read failed: " + ffmpeg_message(result));
         }
@@ -216,13 +251,17 @@ auto decode_video_frame_rgba(const resolved_visual_asset_t& source,
             result = avcodec_send_packet(decoder.get(), packet.get());
             if (result >= 0) {
                 result = receive_frames(decoder.get(), scratch.get(), selected.get(),
-                                        target_timestamp, passed_target);
+                                        target_timestamp, passed_target, stop);
             }
         } else {
             result = 0;
         }
         av_packet_unref(packet.get());
         if (result < 0) {
+            if (stop.stop_requested()) {
+                return failure(video_frame_status_t::cancelled,
+                               "video frame receive was cancelled");
+            }
             return failure(video_frame_status_t::decode_failed,
                            "video frame decode failed: " + ffmpeg_message(result));
         }

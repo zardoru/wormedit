@@ -790,8 +790,10 @@ typedef struct WormUiPlayerPreviewVisualLayerView {
     uint64_t video_time_numerator;
     uint32_t video_time_denominator;
     bool static_image;
+    bool video_frame;
     bool image_ready;
     bool image_pending;
+    uint64_t image_content_id;
     uint32_t image_width;
     uint32_t image_height;
     const uint8_t* rgba_pixels;
@@ -816,6 +818,7 @@ typedef struct WormUiPlayerPreviewStoryboardSpriteView {
     double blue;
     bool image_ready;
     bool image_pending;
+    uint64_t image_content_id;
     uint32_t image_width;
     uint32_t image_height;
     const uint8_t* rgba_pixels;

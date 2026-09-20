@@ -14,7 +14,8 @@ namespace wormedit {
 class document_history_t;
 namespace visual {
 class image_job_t;
-}
+class video_frame_job_t;
+} // namespace visual
 } // namespace wormedit
 
 namespace wormedit::sys {
@@ -34,10 +35,15 @@ class player_preview_presenter_t {
 
     void populate(WormUiPlayerPreviewView& view, const document_history_t& history,
                   std::optional<chart_id_t> selected_chart, bool visible,
-                  player_preview_skin_t skin, std::uint64_t sample_frame, std::uint32_t sample_rate
+                  player_preview_skin_t skin, std::uint64_t sample_frame, std::uint32_t sample_rate,
+                  const std::filesystem::path& project_directory
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
                   ,
-                  visual::image_job_t& image_job, const std::filesystem::path& project_directory
+                  visual::image_job_t& image_job
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+                  ,
+                  visual::video_frame_job_t& video_job
 #endif
     );
 

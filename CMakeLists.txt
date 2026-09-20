@@ -119,6 +119,19 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
     include(cmake/dependencies/miniaudio.cmake)
 endif()
 
+if(WORMEDIT_ENABLE_IMAGE_DECODER OR WORMEDIT_ENABLE_VIDEO_DECODER)
+    add_library(wormedit_visual_assets src/visual/visual_asset.cpp)
+    add_library(wormedit::visual_assets ALIAS wormedit_visual_assets)
+    target_include_directories(wormedit_visual_assets PUBLIC "${CMAKE_SOURCE_DIR}/include")
+    target_compile_features(wormedit_visual_assets PUBLIC cxx_std_20)
+    target_link_libraries(wormedit_visual_assets PUBLIC wormedit::core)
+    if(MSVC)
+        target_compile_options(wormedit_visual_assets PRIVATE /W4 /permissive-)
+    else()
+        target_compile_options(wormedit_visual_assets PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endif()
+
 if(WORMEDIT_ENABLE_IMAGE_DECODER)
     include(cmake/dependencies/stb_image.cmake)
     add_library(wormedit_visual_decoder
@@ -128,7 +141,7 @@ if(WORMEDIT_ENABLE_IMAGE_DECODER)
     add_library(wormedit::visual_decoder ALIAS wormedit_visual_decoder)
     target_include_directories(wormedit_visual_decoder PUBLIC "${CMAKE_SOURCE_DIR}/include")
     target_compile_features(wormedit_visual_decoder PUBLIC cxx_std_20)
-    target_link_libraries(wormedit_visual_decoder PUBLIC wormedit::core PRIVATE stb::image)
+    target_link_libraries(wormedit_visual_decoder PUBLIC wormedit::visual_assets PRIVATE stb::image)
     if(MSVC)
         target_compile_options(wormedit_visual_decoder PRIVATE /W4 /permissive-)
     else()
@@ -147,12 +160,15 @@ if(WORMEDIT_ENABLE_VIDEO_DECODER)
         )
     endif()
     if(TARGET PkgConfig::WORMEDIT_FFMPEG)
-        add_library(wormedit_video_decoder src/visual/video_decoder.cpp)
+        add_library(wormedit_video_decoder
+            src/visual/video_decoder.cpp
+            src/visual/video_job.cpp
+        )
         add_library(wormedit::video_decoder ALIAS wormedit_video_decoder)
         target_include_directories(wormedit_video_decoder PUBLIC "${CMAKE_SOURCE_DIR}/include")
         target_compile_features(wormedit_video_decoder PUBLIC cxx_std_20)
         target_link_libraries(wormedit_video_decoder
-            PUBLIC wormedit::core
+            PUBLIC wormedit::visual_assets
             PRIVATE PkgConfig::WORMEDIT_FFMPEG
         )
         if(MSVC)

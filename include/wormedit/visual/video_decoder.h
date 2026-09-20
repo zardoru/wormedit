@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,7 @@ enum class video_frame_status_t : std::uint8_t {
     pixel_limit_exceeded,
     byte_limit_exceeded,
     declared_geometry_mismatch,
+    cancelled,
 };
 
 struct video_frame_decode_limits_t {
@@ -63,9 +65,9 @@ struct video_frame_decode_result_t {
 // Opens, seeks, and decodes the frame presented at an exact player-preview
 // media clock. FFmpeg state and pixel conversion stay behind this optional
 // adapter; callers receive an immutable-friendly tightly packed RGBA8 payload.
-[[nodiscard]] auto decode_video_frame_rgba(const resolved_visual_asset_t& source,
-                                           const video_preview_clock_t& clock,
-                                           video_frame_decode_limits_t limits = {})
+[[nodiscard]] auto
+decode_video_frame_rgba(const resolved_visual_asset_t& source, const video_preview_clock_t& clock,
+                        video_frame_decode_limits_t limits = {}, std::stop_token stop = {})
     -> video_frame_decode_result_t;
 
 } // namespace wormedit::visual

@@ -25,6 +25,7 @@ struct preview_texture_t {
     std::uint64_t project_id{};
     std::uint64_t document_revision{};
     std::uint64_t resource_id{};
+    std::uint64_t content_id{};
     std::uint32_t width{};
     std::uint32_t height{};
     std::size_t rgba_bytes{};
@@ -94,7 +95,8 @@ auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
     const auto found = std::find_if(textures.begin(), end, [&](const auto& entry) {
         return entry.project_id == view.project_id &&
                entry.document_revision == view.document_revision &&
-               entry.resource_id == layer.resource_id && entry.width == layer.image_width &&
+               entry.resource_id == layer.resource_id &&
+               entry.content_id == layer.image_content_id && entry.width == layer.image_width &&
                entry.height == layer.image_height;
     });
     if (found != end) {
@@ -140,6 +142,7 @@ auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
     textures[texture_count++] = {.project_id = view.project_id,
                                  .document_revision = view.document_revision,
                                  .resource_id = layer.resource_id,
+                                 .content_id = layer.image_content_id,
                                  .width = layer.image_width,
                                  .height = layer.image_height,
                                  .rgba_bytes = layer.rgba_byte_count,

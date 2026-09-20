@@ -221,6 +221,7 @@ typedef struct WormUiComposeSemanticLayerView {
     uint8_t green;
     uint8_t blue;
     uint8_t alpha;
+    bool visible;
     bool locked;
     bool selected;
 } WormUiComposeSemanticLayerView;

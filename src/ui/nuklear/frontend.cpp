@@ -3075,9 +3075,10 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
             const auto& layer = view->semantic_layers[index];
             std::array<char, 96> label{};
             const auto name_length = std::min<size_t>(strlen(layer.name), 24);
-            snprintf(label.data(), label.size(), "%zu:%.*s #%llu%s", index + 1,
+            snprintf(label.data(), label.size(), "%zu:%.*s #%llu%s%s", index + 1,
                      static_cast<int>(name_length), layer.name,
-                     static_cast<unsigned long long>(layer.layer_id), layer.selected ? " *" : "");
+                     static_cast<unsigned long long>(layer.layer_id),
+                     layer.visible ? "" : " [hidden]", layer.selected ? " *" : "");
             nk_layout_row_push(g_context, 1.0f / static_cast<float>(visible_layer_count + 1));
             const auto palette_color = nk_rgba(layer.red, layer.green, layer.blue, layer.alpha);
             nk_style_push_style_item(g_context, &g_context->style.button.normal,

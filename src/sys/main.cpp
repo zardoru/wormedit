@@ -2120,6 +2120,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
             .green = layer.color.green,
             .blue = layer.color.blue,
             .alpha = layer.color.alpha,
+            .visible = layer.visible,
             .locked = layer.locked,
             .selected = selected,
         };

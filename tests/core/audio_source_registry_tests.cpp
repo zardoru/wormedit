@@ -157,3 +157,26 @@ TEST_CASE("generated decoded sources feed transport blocks without becoming proj
             .register_generated_source({.source = added.binding->source, .interleaved_stereo = pcm})
             .status == source_registration_status_t::duplicate_source);
 }
+
+TEST_CASE("decoded source registry retains project decoders for waveform analysis",
+          "[unit][audio][source-registry][waveform][fixture]") {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    decoded_source_registry_t registry;
+    const auto added = registry.register_source(registration(asset_id_t{7}, "keysound-c4.ogg"));
+    REQUIRE(added);
+    decoded_block_cache_t blocks;
+    waveform_cache_t waveforms;
+
+    const auto analyzed = registry.analyze_waveform(asset_id_t{7}, blocks, waveforms, 128);
+    REQUIRE(analyzed.status == waveform_analysis_status_t::generated);
+    REQUIRE(analyzed.waveform.has_value());
+    CHECK(analyzed.waveform->key.source == added.binding->source);
+    CHECK(analyzed.waveform->total_frames == added.binding->output_frame_count);
+    CHECK(registry.analyze_waveform(asset_id_t{7}, blocks, waveforms, 128).status ==
+          waveform_analysis_status_t::cache_hit);
+    CHECK(registry.analyze_waveform(asset_id_t{99}, blocks, waveforms, 128).status ==
+          waveform_analysis_status_t::decoder_unavailable);
+    CHECK(registry.analyze_waveform({}, blocks, waveforms, 128).status ==
+          waveform_analysis_status_t::invalid_request);
+}

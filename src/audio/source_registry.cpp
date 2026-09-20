@@ -168,6 +168,27 @@ auto decoded_source_registry_t::decode_block(transport_t& transport, session_tok
     return transport.decode_block(entry->decoder, token, std::move(key));
 }
 
+auto decoded_source_registry_t::analyze_waveform(
+    asset_id_t asset, decoded_block_cache_t& block_cache, waveform_cache_t& waveform_cache,
+    std::uint32_t frames_per_bin, waveform_analysis_options_t options, std::stop_token stop)
+    -> waveform_analysis_result_t {
+    if (!asset || frames_per_bin == 0) {
+        return {.status = waveform_analysis_status_t::invalid_request};
+    }
+    std::shared_ptr<entry_t> entry;
+    {
+        const std::scoped_lock lock(mutex_);
+        const auto found = std::ranges::find_if(
+            entries_, [&](const auto& candidate) { return candidate->binding.asset == asset; });
+        if (found == entries_.end()) {
+            return {.status = waveform_analysis_status_t::decoder_unavailable};
+        }
+        entry = *found;
+    }
+    return wormedit::audio::analyze_waveform(entry->decoder, block_cache, waveform_cache,
+                                             entry->binding.source, frames_per_bin, options, stop);
+}
+
 auto decoded_source_registry_t::size() const -> std::size_t {
     const std::scoped_lock lock(mutex_);
     return entries_.size();

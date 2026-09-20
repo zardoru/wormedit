@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/audio/transport.h>
+#include <wormedit/audio/waveform.h>
 #include <wormedit/core/document.h>
 
 #include <filesystem>
@@ -74,6 +75,11 @@ class decoded_source_registry_t {
     [[nodiscard]] auto bindings() const -> std::vector<decoded_source_binding_t>;
     [[nodiscard]] auto decode_block(transport_t& transport, session_token_t token,
                                     audio_block_key_t key) -> block_decode_result_t;
+    [[nodiscard]] auto analyze_waveform(asset_id_t asset, decoded_block_cache_t& block_cache,
+                                        waveform_cache_t& waveform_cache,
+                                        std::uint32_t frames_per_bin,
+                                        waveform_analysis_options_t options = {},
+                                        std::stop_token stop = {}) -> waveform_analysis_result_t;
     [[nodiscard]] auto size() const -> std::size_t;
 
   private:

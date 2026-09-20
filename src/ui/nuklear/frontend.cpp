@@ -6,6 +6,7 @@
 #endif
 
 #include "ui/frontend.h"
+#include "ui/nuklear/audio_state.h"
 #include "ui/nuklear/compose_markers.h"
 #include "ui/nuklear/metadata_state.h"
 #include "ui/nuklear/player_preview.h"
@@ -40,17 +41,7 @@ static SDL_Window* g_window;
 static struct nk_context* g_context;
 static char g_recovery_save_as_destination[WORM_UI_RECOVERY_DESTINATION_CAPACITY];
 static auto& g_metadata = worm_ui_nuklear_metadata_state();
-static bool g_audio_offset_drag_active{};
-static float g_audio_offset_drag_anchor_x{};
-static float g_audio_offset_drag_width{};
-static uint64_t g_audio_offset_drag_chart_id{};
-static uint64_t g_audio_offset_drag_document_revision{};
-static uint64_t g_audio_offset_drag_asset_id{};
-static uint64_t g_audio_offset_drag_total_frames{};
-static uint32_t g_audio_offset_drag_sample_rate{};
-static int64_t g_audio_offset_drag_delta_frames{};
-static bool g_audio_offset_escape_pending{};
-static bool g_audio_offset_cancel_pending{};
+static auto& g_audio = worm_ui_nuklear_audio_state();
 
 static void render_audio_slices(const WormUiAudioSlicesView* view, WormUiWorkspaceAction* action,
                                 bool show_asset_catalog);
@@ -286,7 +277,7 @@ static void append_compose_cancel_once(WormUiWorkspaceAction* action) {
 
 static void queue_compose_key_event(const SDL_KeyboardEvent* event, bool down) {
     if (event && down && !event->repeat && event->key == SDLK_ESCAPE)
-        g_audio_offset_escape_pending = true;
+        g_audio.offset_escape_pending = true;
     if (!event || g_compose_cancel_pending) {
         return;
     }
@@ -1230,6 +1221,7 @@ bool worm_ui_frontend_init(SDL_Window* window) {
     }
     worm_ui_nuklear_reset_metadata_state();
     worm_ui_nuklear_reset_timing_state();
+    worm_ui_nuklear_reset_audio_state();
 
     struct nk_context* context = nk_sdl_init(window);
     if (!context) {
@@ -1251,8 +1243,6 @@ bool worm_ui_frontend_init(SDL_Window* window) {
     g_shortcut_events_overflowed = false;
     g_ime_composition_active = false;
     g_compose_key_event_count = 0;
-    g_audio_offset_escape_pending = false;
-    g_audio_offset_cancel_pending = false;
     g_compose_cancel_pending = false;
     g_compose_keyboard_focus = false;
     g_compose_pointer_hold_active = false;
@@ -1282,6 +1272,7 @@ void worm_ui_frontend_shutdown(void) {
     if (!g_context) {
         worm_ui_nuklear_reset_metadata_state();
         worm_ui_nuklear_reset_timing_state();
+        worm_ui_nuklear_reset_audio_state();
         return;
     }
     if (g_window) {
@@ -1315,6 +1306,7 @@ void worm_ui_frontend_shutdown(void) {
     g_last_compose_document_revision = 0;
     worm_ui_nuklear_reset_metadata_state();
     worm_ui_nuklear_reset_timing_state();
+    worm_ui_nuklear_reset_audio_state();
 }
 
 void worm_ui_frontend_begin_input(void) {
@@ -1332,7 +1324,7 @@ bool worm_ui_frontend_handle_event(const SDL_Event* event) {
     }
     if (event->type == SDL_EVENT_WINDOW_FOCUS_LOST) {
         g_window_focused = false;
-        g_audio_offset_cancel_pending = true;
+        g_audio.offset_cancel_pending = true;
         g_compose_cancel_pending = true;
         g_compose_key_event_count = 0;
         g_shortcut_event_count = 0;
@@ -2045,33 +2037,33 @@ static int audio_slices_view_valid(const WormUiAudioSlicesView* view) {
 }
 
 static void cancel_audio_offset_pointer_drag() {
-    g_audio_offset_drag_active = false;
-    g_audio_offset_drag_anchor_x = 0.0f;
-    g_audio_offset_drag_width = 0.0f;
-    g_audio_offset_drag_chart_id = 0;
-    g_audio_offset_drag_document_revision = 0;
-    g_audio_offset_drag_asset_id = 0;
-    g_audio_offset_drag_total_frames = 0;
-    g_audio_offset_drag_sample_rate = 0;
-    g_audio_offset_drag_delta_frames = 0;
+    g_audio.offset_drag_active = false;
+    g_audio.offset_drag_anchor_x = 0.0f;
+    g_audio.offset_drag_width = 0.0f;
+    g_audio.offset_drag_chart_id = 0;
+    g_audio.offset_drag_document_revision = 0;
+    g_audio.offset_drag_asset_id = 0;
+    g_audio.offset_drag_total_frames = 0;
+    g_audio.offset_drag_sample_rate = 0;
+    g_audio.offset_drag_delta_frames = 0;
 }
 
 static int audio_offset_pointer_drag_matches(const WormUiAudioSlicesView* view) {
-    return view && g_audio_offset_drag_active && view->visible && view->waveform_available &&
+    return view && g_audio.offset_drag_active && view->visible && view->waveform_available &&
            view->has_chart && view->has_selected_asset && view->offset_drag_active &&
-           !view->timing_locked && view->chart_id == g_audio_offset_drag_chart_id &&
-           view->document_revision == g_audio_offset_drag_document_revision &&
-           view->selected_asset_id == g_audio_offset_drag_asset_id &&
-           view->total_frames == g_audio_offset_drag_total_frames &&
-           view->sample_rate == g_audio_offset_drag_sample_rate;
+           !view->timing_locked && view->chart_id == g_audio.offset_drag_chart_id &&
+           view->document_revision == g_audio.offset_drag_document_revision &&
+           view->selected_asset_id == g_audio.offset_drag_asset_id &&
+           view->total_frames == g_audio.offset_drag_total_frames &&
+           view->sample_rate == g_audio.offset_drag_sample_rate;
 }
 
 static int64_t audio_offset_pointer_delta(float pointer_x) {
-    if (g_audio_offset_drag_width <= 0.0f || g_audio_offset_drag_total_frames == 0)
+    if (g_audio.offset_drag_width <= 0.0f || g_audio.offset_drag_total_frames == 0)
         return 0;
-    const auto frames = (static_cast<long double>(pointer_x) - g_audio_offset_drag_anchor_x) /
-                        g_audio_offset_drag_width *
-                        static_cast<long double>(g_audio_offset_drag_total_frames);
+    const auto frames = (static_cast<long double>(pointer_x) - g_audio.offset_drag_anchor_x) /
+                        g_audio.offset_drag_width *
+                        static_cast<long double>(g_audio.offset_drag_total_frames);
     const auto minimum = static_cast<long double>(std::numeric_limits<int64_t>::min());
     const auto maximum = static_cast<long double>(std::numeric_limits<int64_t>::max());
     if (frames <= minimum)
@@ -2086,9 +2078,9 @@ static void set_audio_offset_drag_action(WormUiWorkspaceAction* action,
     if (!action || action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE)
         return;
     action->audio_offset_drag_action = kind;
-    action->audio_offset_drag_chart_id = g_audio_offset_drag_chart_id;
-    action->audio_offset_drag_document_revision = g_audio_offset_drag_document_revision;
-    action->audio_offset_drag_sample_rate = g_audio_offset_drag_sample_rate;
+    action->audio_offset_drag_chart_id = g_audio.offset_drag_chart_id;
+    action->audio_offset_drag_document_revision = g_audio.offset_drag_document_revision;
+    action->audio_offset_drag_sample_rate = g_audio.offset_drag_sample_rate;
     action->audio_offset_drag_delta_frames = delta_frames;
 }
 
@@ -4538,13 +4530,13 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
 
 static void render_audio_slices(const WormUiAudioSlicesView* view, WormUiWorkspaceAction* action,
                                 bool show_asset_catalog) {
-    if (g_audio_offset_drag_active &&
-        (!audio_offset_pointer_drag_matches(view) || g_audio_offset_escape_pending ||
-         g_audio_offset_cancel_pending || !g_window_focused)) {
+    if (g_audio.offset_drag_active &&
+        (!audio_offset_pointer_drag_matches(view) || g_audio.offset_escape_pending ||
+         g_audio.offset_cancel_pending || !g_window_focused)) {
         set_audio_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
-                                     g_audio_offset_drag_delta_frames);
+                                     g_audio.offset_drag_delta_frames);
         cancel_audio_offset_pointer_drag();
-        g_audio_offset_cancel_pending = false;
+        g_audio.offset_cancel_pending = false;
     }
     if (show_asset_catalog) {
         nk_layout_row_dynamic(g_context, 22, 1);
@@ -4607,9 +4599,9 @@ static void render_audio_slices(const WormUiAudioSlicesView* view, WormUiWorkspa
     const bool can_drag_offset = view->has_chart && !view->timing_locked;
     const auto& left_button = g_context->input.mouse.buttons[NK_BUTTON_LEFT];
     const bool left_released = nk_input_is_mouse_released(&g_context->input, NK_BUTTON_LEFT);
-    if (g_audio_offset_drag_active) {
+    if (g_audio.offset_drag_active) {
         const auto delta = audio_offset_pointer_delta(g_context->input.mouse.pos.x);
-        g_audio_offset_drag_delta_frames = delta;
+        g_audio.offset_drag_delta_frames = delta;
         if (left_released) {
             set_audio_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_COMMIT, delta);
             cancel_audio_offset_pointer_drag();
@@ -4622,15 +4614,15 @@ static void render_audio_slices(const WormUiAudioSlicesView* view, WormUiWorkspa
     } else if (can_drag_offset && action &&
                action->audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE &&
                nk_input_is_mouse_click_in_rect(&g_context->input, NK_BUTTON_LEFT, bounds)) {
-        g_audio_offset_drag_active = true;
-        g_audio_offset_drag_anchor_x = g_context->input.mouse.pos.x;
-        g_audio_offset_drag_width = bounds.w;
-        g_audio_offset_drag_chart_id = view->chart_id;
-        g_audio_offset_drag_document_revision = view->document_revision;
-        g_audio_offset_drag_asset_id = view->selected_asset_id;
-        g_audio_offset_drag_total_frames = view->total_frames;
-        g_audio_offset_drag_sample_rate = view->sample_rate;
-        g_audio_offset_drag_delta_frames = 0;
+        g_audio.offset_drag_active = true;
+        g_audio.offset_drag_anchor_x = g_context->input.mouse.pos.x;
+        g_audio.offset_drag_width = bounds.w;
+        g_audio.offset_drag_chart_id = view->chart_id;
+        g_audio.offset_drag_document_revision = view->document_revision;
+        g_audio.offset_drag_asset_id = view->selected_asset_id;
+        g_audio.offset_drag_total_frames = view->total_frames;
+        g_audio.offset_drag_sample_rate = view->sample_rate;
+        g_audio.offset_drag_delta_frames = 0;
         set_audio_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_BEGIN, 0);
     }
     auto* canvas = nk_window_get_canvas(g_context);
@@ -4641,7 +4633,7 @@ static void render_audio_slices(const WormUiAudioSlicesView* view, WormUiWorkspa
     nk_fill_rect(canvas, bounds, 2.0f, nk_rgb(22, 25, 33));
     const auto channel_height = bounds.h * 0.5f;
     const auto column_width = bounds.w / static_cast<float>(view->waveform_column_count);
-    const auto displayed_delta = g_audio_offset_drag_active ? g_audio_offset_drag_delta_frames
+    const auto displayed_delta = g_audio.offset_drag_active ? g_audio.offset_drag_delta_frames
                                  : view->offset_drag_active ? view->offset_drag_delta_frames
                                                             : 0;
     const auto waveform_shift = static_cast<float>(static_cast<long double>(displayed_delta) /
@@ -4664,13 +4656,13 @@ static void render_audio_slices(const WormUiAudioSlicesView* view, WormUiWorkspa
                            std::max(1.0f, column_width), nk_rgb(107, 214, 235));
         }
     }
-    if (g_audio_offset_drag_active || view->offset_drag_active) {
-        nk_stroke_line(canvas, g_audio_offset_drag_anchor_x, bounds.y, g_audio_offset_drag_anchor_x,
+    if (g_audio.offset_drag_active || view->offset_drag_active) {
+        nk_stroke_line(canvas, g_audio.offset_drag_anchor_x, bounds.y, g_audio.offset_drag_anchor_x,
                        bounds.y + bounds.h, 1.0f, nk_rgb(255, 213, 99));
     }
     nk_push_scissor(canvas, parent_clip);
 
-    if (g_audio_offset_drag_active || view->offset_drag_active) {
+    if (g_audio.offset_drag_active || view->offset_drag_active) {
         nk_layout_row_dynamic(g_context, 20, 1);
         nk_labelf(g_context, NK_TEXT_LEFT, "Offset preview: %lld frames (%+.6f s)",
                   static_cast<long long>(displayed_delta),
@@ -5135,7 +5127,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
                                       view->compose.cursor && view->compose.cursor->lane_id != 0;
     expose_shortcut_input(&action, compose_lane_focused,
                           compose_lane_focused ? view->compose.cursor->lane_id : 0);
-    g_audio_offset_escape_pending = false;
+    g_audio.offset_escape_pending = false;
     return action;
 }
 

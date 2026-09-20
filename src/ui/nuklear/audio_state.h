@@ -1,0 +1,21 @@
+#pragma once
+
+#include <cstdint>
+
+struct worm_ui_nuklear_audio_state_t {
+    bool offset_drag_active{};
+    float offset_drag_anchor_x{};
+    float offset_drag_width{};
+    std::uint64_t offset_drag_chart_id{};
+    std::uint64_t offset_drag_document_revision{};
+    std::uint64_t offset_drag_asset_id{};
+    std::uint64_t offset_drag_total_frames{};
+    std::uint32_t offset_drag_sample_rate{};
+    std::int64_t offset_drag_delta_frames{};
+    bool offset_escape_pending{};
+    bool offset_cancel_pending{};
+};
+
+[[nodiscard]] auto worm_ui_nuklear_audio_state() noexcept -> worm_ui_nuklear_audio_state_t&;
+
+void worm_ui_nuklear_reset_audio_state();

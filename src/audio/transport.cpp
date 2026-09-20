@@ -228,4 +228,28 @@ auto transport_t::scheduled_voice_count() const -> std::size_t {
     return active_scheduled_voices_;
 }
 
+auto transport_t::snapshot_active_voices(session_token_t token, std::size_t maximum_voices)
+    -> active_voice_snapshot_t {
+    auto result = active_voice_snapshot_t{
+        .status = active_voice_snapshot_status_t::stale_generation, .voices = {}};
+    const auto current = decode_session_.with_current(token, [&] {
+        const std::scoped_lock lock(mutex_);
+        if (active_scheduled_voices_ > maximum_voices) {
+            result.status = active_voice_snapshot_status_t::capacity_exceeded;
+            return;
+        }
+        result.voices.reserve(active_scheduled_voices_);
+        for (const auto& entry : scheduled_voices_) {
+            if (entry.active)
+                result.voices.push_back(entry.voice);
+        }
+        result.status = active_voice_snapshot_status_t::ready;
+    });
+    if (!current) {
+        result.status = active_voice_snapshot_status_t::stale_generation;
+        result.voices.clear();
+    }
+    return result;
+}
+
 } // namespace wormedit::audio

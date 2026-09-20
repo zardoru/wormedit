@@ -48,6 +48,21 @@ enum class transport_mix_status_t {
     non_monotonic_callback,
 };
 
+enum class active_voice_snapshot_status_t {
+    ready,
+    stale_generation,
+    capacity_exceeded,
+};
+
+struct active_voice_snapshot_t {
+    active_voice_snapshot_status_t status{active_voice_snapshot_status_t::stale_generation};
+    std::vector<transport_voice_t> voices;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return status == active_voice_snapshot_status_t::ready;
+    }
+};
+
 struct transport_mix_result_t {
     transport_mix_status_t status{transport_mix_status_t::stale_generation};
     std::size_t frames{};
@@ -87,6 +102,12 @@ class transport_t {
         -> voice_schedule_status_t;
     [[nodiscard]] auto mix(session_token_t token, std::uint64_t first_timeline_frame,
                            std::span<float> interleaved_stereo) -> transport_mix_result_t;
+
+    // Control-thread snapshot for bounded decoder lookahead. Realtime mixing
+    // never calls this allocating API.
+    [[nodiscard]] auto snapshot_active_voices(session_token_t token,
+                                              std::size_t maximum_voices = 256)
+        -> active_voice_snapshot_t;
 
     [[nodiscard]] auto scheduled_voice_count() const -> std::size_t;
 

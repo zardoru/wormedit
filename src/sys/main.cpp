@@ -3686,6 +3686,49 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         return application_state.semantic_layer_solo_active ? "Semantic-layer solo enabled."
                                                             : "Semantic-layer solo disabled.";
     }
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before changing layer lock state.";
+        }
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart || !application_state.semantic_layer_target) {
+            return "Choose a visible semantic layer before changing its lock state.";
+        }
+        const auto* layer =
+            visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target);
+        if (!layer) {
+            application_state.semantic_layer_target.reset();
+            application_state.semantic_layer_paint_mode_active = false;
+            application_state.semantic_layer_solo_active = false;
+            return "The selected semantic layer is no longer visible.";
+        }
+        const auto was_locked = layer->locked;
+        const auto applied = apply_semantic_layer_edit(
+            history, action.compose_input_document_revision,
+            update_semantic_layer_action_t{.chart = state.chart,
+                                           .layer = layer->id,
+                                           .name = layer->name,
+                                           .color = {.red = static_cast<double>(layer->color.red) / 255.0,
+                                                     .green = static_cast<double>(layer->color.green) / 255.0,
+                                                     .blue = static_cast<double>(layer->color.blue) / 255.0,
+                                                     .alpha = static_cast<double>(layer->color.alpha) / 255.0},
+                                           .visible = layer->visible,
+                                           .locked = !was_locked});
+        if (!applied.applied) {
+            return applied.diagnostics.empty() ? "Semantic-layer lock state was unchanged."
+                                               : applied.diagnostics.front().message;
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty()
+                       ? "Semantic-layer lock changed, but workspace rebinding failed."
+                       : rebound.diagnostics.front().message;
+        }
+        if (!was_locked) {
+            application_state.semantic_layer_paint_mode_active = false;
+        }
+        return was_locked ? "Semantic layer unlocked." : "Semantic layer locked.";
+    }
     case WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER:
     case WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER:
     case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER: {

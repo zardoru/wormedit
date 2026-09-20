@@ -3093,8 +3093,8 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
         }
         nk_layout_row_end(g_context);
 
-        nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 7);
-        nk_layout_row_push(g_context, 0.14f);
+        nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 8);
+        nk_layout_row_push(g_context, 0.125f);
         nk_labelf(g_context, NK_TEXT_LEFT, "Layer (%zu)", view->selected_note_count);
         const auto membership_enabled = view->scene_available && semantic_target_active &&
                                         !view->semantic_layer_target_locked &&
@@ -3111,13 +3111,13 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                 action->compose_action = kind;
             }
         };
-        nk_layout_row_push(g_context, 0.14f);
+        nk_layout_row_push(g_context, 0.125f);
         membership_button("Add", WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
-        nk_layout_row_push(g_context, 0.14f);
+        nk_layout_row_push(g_context, 0.125f);
         membership_button("Toggle", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER);
-        nk_layout_row_push(g_context, 0.14f);
+        nk_layout_row_push(g_context, 0.125f);
         membership_button("Remove", WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER);
-        nk_layout_row_push(g_context, 0.18f);
+        nk_layout_row_push(g_context, 0.15f);
         const auto layer_paint_enabled = view->scene_available && semantic_target_active &&
                                          !view->semantic_layer_target_locked;
         if (!layer_paint_enabled) {
@@ -3132,7 +3132,7 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
             action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
             action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE;
         }
-        nk_layout_row_push(g_context, 0.14f);
+        nk_layout_row_push(g_context, 0.125f);
         if (!semantic_target_active) {
             nk_widget_disable_begin(g_context);
         }
@@ -3144,7 +3144,19 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
         if (solo_clicked && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
             action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO;
         }
-        nk_layout_row_push(g_context, 0.14f);
+        nk_layout_row_push(g_context, 0.10f);
+        if (!semantic_target_active) {
+            nk_widget_disable_begin(g_context);
+        }
+        const auto lock_clicked = nk_button_label(
+            g_context, view->semantic_layer_target_locked ? "Unlock" : "Lock");
+        if (!semantic_target_active) {
+            nk_widget_disable_end(g_context);
+        }
+        if (lock_clicked && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+            action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK;
+        }
+        nk_layout_row_push(g_context, 0.125f);
         if (!semantic_target_active) {
             nk_widget_disable_begin(g_context);
         }

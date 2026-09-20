@@ -1,6 +1,7 @@
 include(Catch)
 
 add_executable(wormedit_core_tests
+    core/audio_offset_editor_tests.cpp
     core/audio_fixture_inventory_tests.cpp
     core/autosave_loop_tests.cpp
     core/bms_branch_editor_tests.cpp

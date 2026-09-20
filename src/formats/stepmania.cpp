@@ -1717,6 +1717,53 @@ auto stepmania_write_result_t::has_errors() const -> bool {
     });
 }
 
+auto resolve_stepmania_export_policy(stepmania_export_policy_t policy)
+    -> stepmania_export_policy_result_t {
+    stepmania_export_policy_result_t result;
+    if (policy.timing_syntax == stepmania_timing_syntax_t::unspecified) {
+        result.error = stepmania_export_policy_error_t::timing_syntax_required;
+        result.message = "Select a StepMania timing syntax explicitly";
+        return result;
+    }
+    if (policy.implementation_profile !=
+            stepmania_implementation_profile_t::unspecified &&
+        policy.file_profile != stepmania_profile_t::ssc) {
+        result.error =
+            stepmania_export_policy_error_t::named_implementation_requires_ssc;
+        result.message = "Named StepMania implementation targets currently require SSC output";
+        return result;
+    }
+    if (policy.implementation_profile !=
+            stepmania_implementation_profile_t::unspecified &&
+        policy.timing_syntax != stepmania_timing_syntax_t::native_warps) {
+        result.error =
+            stepmania_export_policy_error_t::named_implementation_requires_native_warps;
+        result.message =
+            "The selected implementation target is audited only with native WARPS";
+        return result;
+    }
+
+    stepmania_write_options_t options;
+    options.profile = policy.file_profile;
+    options.target_timing_syntax = policy.timing_syntax;
+    options.target_implementation_profile = policy.implementation_profile;
+    switch (policy.timing_syntax) {
+    case stepmania_timing_syntax_t::native_warps:
+        options.warp_encoding = warp_encoding_t::native;
+        break;
+    case stepmania_timing_syntax_t::legacy_negative_bpm:
+        options.warp_encoding = warp_encoding_t::negative_bpm;
+        break;
+    case stepmania_timing_syntax_t::legacy_negative_stop:
+        options.warp_encoding = warp_encoding_t::negative_stop;
+        break;
+    case stepmania_timing_syntax_t::unspecified:
+        break;
+    }
+    result.options = std::move(options);
+    return result;
+}
+
 auto write_stepmania(const song_document_t& song, stepmania_write_options_t options)
     -> stepmania_write_result_t {
     stepmania_write_result_t result;
@@ -1727,19 +1774,24 @@ auto write_stepmania(const song_document_t& song, stepmania_write_options_t opti
     };
     if (options.target_implementation_profile !=
         stepmania_implementation_profile_t::unspecified) {
-        if (options.profile != stepmania_profile_t::ssc) {
+        const auto resolved = resolve_stepmania_export_policy(
+            {.file_profile = options.profile,
+             .timing_syntax = options.target_timing_syntax ==
+                                      stepmania_timing_syntax_t::unspecified
+                                  ? stepmania_timing_syntax_t::native_warps
+                                  : options.target_timing_syntax,
+             .implementation_profile = options.target_implementation_profile});
+        if (!resolved) {
             report(stepmania_write_diagnostic_code_t::unsupported_feature,
-                   "Named StepMania implementation profiles currently cover SSC output only",
-                   "profile");
+                   resolved.message,
+                   resolved.error ==
+                           stepmania_export_policy_error_t::named_implementation_requires_ssc
+                       ? "profile"
+                       : "WARPS");
             return result;
         }
-        if (options.target_timing_syntax != stepmania_timing_syntax_t::unspecified &&
-            options.target_timing_syntax != stepmania_timing_syntax_t::native_warps) {
-            report(stepmania_write_diagnostic_code_t::unsupported_feature,
-                   "The selected implementation profile is audited only for native WARPS",
-                   "WARPS");
-            return result;
-        }
+        options.target_timing_syntax = resolved.options->target_timing_syntax;
+        options.warp_encoding = resolved.options->warp_encoding;
     }
     std::vector<const chart_document_t*> charts;
     for (const auto& chart : song.charts)

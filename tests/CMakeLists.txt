@@ -197,10 +197,12 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ui/nuklear_audio_state_tests.cpp
         ui/nuklear_compose_state_tests.cpp
         ui/nuklear_metadata_state_tests.cpp
+        ui/nuklear_setup_state_tests.cpp
         ui/nuklear_timing_state_tests.cpp
         ../src/ui/nuklear/audio_state.cpp
         ../src/ui/nuklear/compose_state.cpp
         ../src/ui/nuklear/metadata_state.cpp
+        ../src/ui/nuklear/setup_state.cpp
         ../src/ui/nuklear/timing_state.cpp
     )
     target_include_directories(wormedit_frontend_state_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")

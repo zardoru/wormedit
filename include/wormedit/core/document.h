@@ -806,18 +806,6 @@ struct quantize_request_t {
     std::vector<object_id_t> objects;
 };
 
-struct conversion_request_t {
-    format_family_t target{format_family_t::native_project};
-    std::string target_profile;
-    std::optional<chart_id_t> chart;
-    warp_encoding_t warp_encoding{warp_encoding_t::native};
-    branch_projection_t branches{branch_projection_t::preserve_tree};
-    std::optional<text_encoding_t> encoding;
-    std::optional<quantize_request_t> quantization;
-    loss_policy_t loss_policy{loss_policy_t::reject};
-    bool overwrite{false};
-};
-
 enum class diagnostic_severity_t {
     info,
     warning,

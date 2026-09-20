@@ -680,6 +680,68 @@ TEST_CASE("Named StepMania implementations expose only their audited SSC 0.83 su
     }
 }
 
+TEST_CASE("StepMania export policy keeps file syntax and implementation choices separate",
+          "[unit][format][stepmania][export-policy]") {
+    using error_t = wormedit::stepmania_export_policy_error_t;
+    using implementation_t = wormedit::stepmania_implementation_profile_t;
+    using profile_t = wormedit::stepmania_profile_t;
+    using syntax_t = wormedit::stepmania_timing_syntax_t;
+
+    const auto syntax_only = wormedit::resolve_stepmania_export_policy(
+        {.file_profile = profile_t::sm,
+         .timing_syntax = syntax_t::legacy_negative_bpm,
+         .implementation_profile = implementation_t::unspecified});
+    REQUIRE(syntax_only);
+    CHECK(syntax_only.error == error_t::none);
+    CHECK(syntax_only.options->profile == profile_t::sm);
+    CHECK(syntax_only.options->target_timing_syntax == syntax_t::legacy_negative_bpm);
+    CHECK(syntax_only.options->target_implementation_profile ==
+          implementation_t::unspecified);
+    CHECK(syntax_only.options->warp_encoding == wormedit::warp_encoding_t::negative_bpm);
+
+    const auto named = wormedit::resolve_stepmania_export_policy(
+        {.file_profile = profile_t::ssc,
+         .timing_syntax = syntax_t::native_warps,
+         .implementation_profile = implementation_t::stepmania_5_1});
+    REQUIRE(named);
+    CHECK(named.options->profile == profile_t::ssc);
+    CHECK(named.options->target_implementation_profile == implementation_t::stepmania_5_1);
+    CHECK(named.options->warp_encoding == wormedit::warp_encoding_t::native);
+
+    const auto missing_syntax = wormedit::resolve_stepmania_export_policy(
+        {.file_profile = profile_t::ssc,
+         .timing_syntax = syntax_t::unspecified,
+         .implementation_profile = implementation_t::unspecified});
+    CHECK_FALSE(missing_syntax);
+    CHECK(missing_syntax.error == error_t::timing_syntax_required);
+
+    const auto named_sm = wormedit::resolve_stepmania_export_policy(
+        {.file_profile = profile_t::sm,
+         .timing_syntax = syntax_t::native_warps,
+         .implementation_profile = implementation_t::etterna_0_75_1});
+    CHECK_FALSE(named_sm);
+    CHECK(named_sm.error == error_t::named_implementation_requires_ssc);
+
+    const auto named_legacy = wormedit::resolve_stepmania_export_policy(
+        {.file_profile = profile_t::ssc,
+         .timing_syntax = syntax_t::legacy_negative_stop,
+         .implementation_profile = implementation_t::etterna_0_75_1});
+    CHECK_FALSE(named_legacy);
+    CHECK(named_legacy.error == error_t::named_implementation_requires_native_warps);
+
+    wormedit::conversion_request_t request{
+        .target = wormedit::format_family_t::stepmania,
+        .stepmania = wormedit::stepmania_export_policy_t{
+            .file_profile = profile_t::ssc,
+            .timing_syntax = syntax_t::native_warps,
+            .implementation_profile = implementation_t::etterna_0_75_1},
+    };
+    REQUIRE(request.stepmania.has_value());
+    CHECK(request.stepmania->file_profile == profile_t::ssc);
+    CHECK(request.stepmania->timing_syntax == syntax_t::native_warps);
+    CHECK(request.stepmania->implementation_profile == implementation_t::etterna_0_75_1);
+}
+
 TEST_CASE("StepMania export bakes parametric SV recipes into SCROLLS",
           "[unit][format][stepmania][sv-recipe]") {
     const auto parsed = fixture("matched-timing.ssc", wormedit::stepmania_profile_t::ssc);

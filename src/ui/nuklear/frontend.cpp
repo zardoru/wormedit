@@ -9,6 +9,8 @@
 #include "ui/nuklear/metadata_panel.h"
 #include "ui/nuklear/metadata_state.h"
 #include "ui/nuklear/player_preview.h"
+#include "ui/nuklear/setup_panel.h"
+#include "ui/nuklear/setup_state.h"
 #include "ui/nuklear/timing_panel.h"
 #include "ui/nuklear/timing_state.h"
 
@@ -332,6 +334,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         view->summary_line_count > WORM_UI_WORKSPACE_SUMMARY_CAPACITY ||
         view->recovery_candidate_count > WORM_UI_RECOVERY_ROW_CAPACITY ||
         view->recovery_diagnostic_count > WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY ||
+        !worm_ui_nuklear_setup_view_valid(&view->setup) ||
         (view->metadata.visible &&
          (view->metadata.format_field_count > WORM_UI_METADATA_FORMAT_FIELD_CAPACITY ||
           view->metadata.format_target_count > WORM_UI_METADATA_FORMAT_TARGET_CAPACITY ||
@@ -579,7 +582,9 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         }
         nk_layout_row_dynamic(g_context, content_height, 1);
         if (nk_group_begin(g_context, "workspace-content", NK_WINDOW_BORDER)) {
-            if (view->metadata.visible) {
+            if (view->setup.visible) {
+                worm_ui_nuklear_render_setup_panel(g_context, &view->setup, &action);
+            } else if (view->metadata.visible) {
                 worm_ui_nuklear_render_metadata_panel(g_context, &view->metadata, &action,
                                                       g_window_focused);
             } else if (view->timing.visible) {

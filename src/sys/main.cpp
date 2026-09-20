@@ -33,6 +33,7 @@
 #include <wormedit/core/timing_lane_controller.h>
 #include <wormedit/core/viewport_input.h>
 #include <wormedit/core/workspace.h>
+#include <wormedit/formats/stepmania.h>
 
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
 #include <wormedit/visual/image_job.h>
@@ -132,6 +133,7 @@ struct flattened_workspace_t {
     std::array<std::string, WORM_UI_RECOVERY_ROW_CAPACITY> recovery_summary_storage;
     std::array<std::string, WORM_UI_RECOVERY_ROW_CAPACITY> recovery_disabled_storage;
     std::array<std::string, WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY> recovery_diagnostic_storage;
+    std::string setup_policy_status_storage;
     std::vector<const char*> metadata_search_tag_storage;
     std::vector<std::size_t> metadata_search_tag_length_storage;
     std::array<WormUiMetadataFormatFieldView, WORM_UI_METADATA_FORMAT_FIELD_CAPACITY>
@@ -188,6 +190,85 @@ struct flattened_workspace_t {
     std::vector<std::uint64_t> audio_asset_storage;
     std::vector<WormUiAudioWaveformColumnView> audio_waveform_storage;
 };
+
+auto ui_stepmania_file_profile(wormedit::stepmania_profile_t profile)
+    -> WormUiStepmaniaFileProfile {
+    return profile == wormedit::stepmania_profile_t::sm ? WORM_UI_STEPMANIA_FILE_SM
+                                                        : WORM_UI_STEPMANIA_FILE_SSC;
+}
+
+auto ui_stepmania_timing_syntax(wormedit::stepmania_timing_syntax_t syntax)
+    -> WormUiStepmaniaTimingSyntax {
+    switch (syntax) {
+    case wormedit::stepmania_timing_syntax_t::native_warps:
+        return WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS;
+    case wormedit::stepmania_timing_syntax_t::legacy_negative_bpm:
+        return WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_BPM;
+    case wormedit::stepmania_timing_syntax_t::legacy_negative_stop:
+        return WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP;
+    case wormedit::stepmania_timing_syntax_t::unspecified:
+        return WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS;
+    }
+    return WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS;
+}
+
+auto ui_stepmania_implementation(wormedit::stepmania_implementation_profile_t implementation)
+    -> WormUiStepmaniaImplementation {
+    switch (implementation) {
+    case wormedit::stepmania_implementation_profile_t::unspecified:
+        return WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY;
+    case wormedit::stepmania_implementation_profile_t::stepmania_5_1:
+        return WORM_UI_STEPMANIA_IMPLEMENTATION_STEP_MANIA_5_1;
+    case wormedit::stepmania_implementation_profile_t::etterna_0_75_1:
+        return WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1;
+    }
+    return WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY;
+}
+
+auto stepmania_policy_from_ui(const WormUiWorkspaceAction& action)
+    -> std::optional<wormedit::stepmania_export_policy_t> {
+    wormedit::stepmania_export_policy_t policy;
+    switch (action.stepmania_file_profile) {
+    case WORM_UI_STEPMANIA_FILE_SM:
+        policy.file_profile = wormedit::stepmania_profile_t::sm;
+        break;
+    case WORM_UI_STEPMANIA_FILE_SSC:
+        policy.file_profile = wormedit::stepmania_profile_t::ssc;
+        break;
+    default:
+        return std::nullopt;
+    }
+    switch (action.stepmania_timing_syntax) {
+    case WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS:
+        policy.timing_syntax = wormedit::stepmania_timing_syntax_t::native_warps;
+        break;
+    case WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_BPM:
+        policy.timing_syntax = wormedit::stepmania_timing_syntax_t::legacy_negative_bpm;
+        break;
+    case WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP:
+        policy.timing_syntax = wormedit::stepmania_timing_syntax_t::legacy_negative_stop;
+        break;
+    default:
+        return std::nullopt;
+    }
+    switch (action.stepmania_implementation) {
+    case WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY:
+        policy.implementation_profile =
+            wormedit::stepmania_implementation_profile_t::unspecified;
+        break;
+    case WORM_UI_STEPMANIA_IMPLEMENTATION_STEP_MANIA_5_1:
+        policy.implementation_profile =
+            wormedit::stepmania_implementation_profile_t::stepmania_5_1;
+        break;
+    case WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1:
+        policy.implementation_profile =
+            wormedit::stepmania_implementation_profile_t::etterna_0_75_1;
+        break;
+    default:
+        return std::nullopt;
+    }
+    return policy;
+}
 
 struct compose_scene_cache_t {
     wormedit::chart_id_t chart;
@@ -374,7 +455,9 @@ auto recovery_action_mask(const std::vector<wormedit::native_project_recovery_ac
 auto flatten_workspace(const wormedit::workspace_view_t& source,
                        const wormedit::song_document_t& document, const std::string& status,
                        const wormedit::native_project_recovery_controller_view_t& recovery,
-                       bool recovery_scan_configured) -> flattened_workspace_t {
+                       bool recovery_scan_configured,
+                       const wormedit::stepmania_export_policy_t& stepmania_policy)
+    -> flattened_workspace_t {
     flattened_workspace_t result;
     result.view.project_title = document.metadata.title.c_str();
     result.view.artist = document.metadata.artist.c_str();
@@ -475,10 +558,31 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
             if constexpr (std::is_same_v<tab_t, wormedit::workspace_setup_view_t>) {
                 result.view.project_title = tab.title.c_str();
                 result.view.artist = tab.artist.c_str();
-                append("Charts: " + std::to_string(tab.charts.size()));
-                append("Audio assets: " + std::to_string(tab.audio_asset_count));
-                append("Visual assets: " + std::to_string(tab.visual_asset_count));
-                append("Use the tabs above to edit one shared song workspace.");
+                auto& setup = result.view.setup;
+                setup.visible = true;
+                setup.chart_count = tab.charts.size();
+                setup.audio_asset_count = tab.audio_asset_count;
+                setup.visual_asset_count = tab.visual_asset_count;
+                setup.stepmania_file_profile =
+                    ui_stepmania_file_profile(stepmania_policy.file_profile);
+                setup.stepmania_timing_syntax =
+                    ui_stepmania_timing_syntax(stepmania_policy.timing_syntax);
+                setup.stepmania_implementation =
+                    ui_stepmania_implementation(stepmania_policy.implementation_profile);
+                const auto resolved = wormedit::resolve_stepmania_export_policy(stepmania_policy);
+                setup.stepmania_policy_valid = static_cast<bool>(resolved);
+                if (resolved) {
+                    result.setup_policy_status_storage =
+                        stepmania_policy.file_profile == wormedit::stepmania_profile_t::sm &&
+                                stepmania_policy.timing_syntax ==
+                                    wormedit::stepmania_timing_syntax_t::native_warps
+                            ? "Valid syntax policy; SM charts containing warps require a legacy "
+                              "encoding instead."
+                            : "Compatible StepMania export policy.";
+                } else {
+                    result.setup_policy_status_storage = resolved.message;
+                }
+                setup.stepmania_policy_status = result.setup_policy_status_storage.c_str();
             } else if constexpr (std::is_same_v<tab_t, wormedit::workspace_metadata_view_t>) {
                 result.view.project_title = tab.title.c_str();
                 result.view.artist = tab.artist.c_str();
@@ -5990,6 +6094,7 @@ int main(int argc, char** argv) {
     wormedit::viewport_input_controller_t compose_viewport_input;
     wormedit::editor_navigation_input_controller_t compose_navigation_input;
     application_command_state_t application_command_state;
+    wormedit::stepmania_export_policy_t stepmania_export_policy;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     application_command_state.transport_active = [&] {
         return audition_session.active() || preview_session.active() || preview_paused;
@@ -6348,7 +6453,11 @@ int main(int argc, char** argv) {
             }
             auto flattened =
                 flatten_workspace(*model.view, history.document, status, recovery_controller.view(),
-                                  recovery_scan_configured);
+                                  recovery_scan_configured, stepmania_export_policy);
+            if (flattened.view.setup.visible) {
+                flattened.view.setup.stepmania_policy_status =
+                    flattened.setup_policy_status_storage.c_str();
+            }
             flattened.view.metadata.timing_locked = application_command_state.timing_locked;
             flattened.view.metadata.audio_waveform_has_selected_asset =
                 workspace.transport.audio_asset.has_value();
@@ -6641,6 +6750,18 @@ int main(int argc, char** argv) {
                     application_command_state.player_preview_skin =
                         static_cast<wormedit::player_preview_skin_t>(action.player_preview_skin);
                     status = "Player-preview skin changed.";
+                }
+            } else if (action.kind ==
+                       WORM_UI_WORKSPACE_ACTION_SET_STEPMANIA_EXPORT_POLICY) {
+                const auto candidate = stepmania_policy_from_ui(action);
+                if (!candidate) {
+                    status = "Unknown StepMania export policy ignored.";
+                } else {
+                    stepmania_export_policy = *candidate;
+                    const auto resolved =
+                        wormedit::resolve_stepmania_export_policy(stepmania_export_policy);
+                    status = resolved ? "StepMania export policy updated."
+                                      : "StepMania policy needs attention: " + resolved.message;
                 }
             } else if (action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER ||
                        action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER) {

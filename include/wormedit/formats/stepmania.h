@@ -1,6 +1,6 @@
 #pragma once
 
-#include <wormedit/core/document.h>
+#include <wormedit/formats/conversion.h>
 
 #include <cstddef>
 #include <optional>
@@ -9,27 +9,6 @@
 #include <vector>
 
 namespace wormedit {
-
-enum class stepmania_profile_t {
-    sm,
-    ssc,
-};
-
-// Accepted/emitted warp syntax. This is independent of the target application.
-enum class stepmania_timing_syntax_t {
-    unspecified,
-    native_warps,
-    legacy_negative_bpm,
-    legacy_negative_stop,
-};
-
-// Fixture-backed application/release subsets. A named profile claims only the
-// fields and timing syntax covered by its pinned source audit.
-enum class stepmania_implementation_profile_t {
-    unspecified,
-    stepmania_5_1,
-    etterna_0_75_1,
-};
 
 enum class stepmania_parse_diagnostic_code_t {
     invalid_encoding,
@@ -127,6 +106,27 @@ struct stepmania_write_result_t {
 
     [[nodiscard]] auto has_errors() const -> bool;
 };
+
+enum class stepmania_export_policy_error_t {
+    none,
+    timing_syntax_required,
+    named_implementation_requires_ssc,
+    named_implementation_requires_native_warps,
+};
+
+struct stepmania_export_policy_result_t {
+    std::optional<stepmania_write_options_t> options;
+    stepmania_export_policy_error_t error{stepmania_export_policy_error_t::none};
+    std::string message;
+
+    [[nodiscard]] explicit operator bool() const noexcept { return options.has_value(); }
+};
+
+// Resolves the three independent frontend/converter selections into writer
+// options. It validates only profile compatibility; document-specific loss is
+// still diagnosed transactionally by write_stepmania.
+[[nodiscard]] auto resolve_stepmania_export_policy(stepmania_export_policy_t policy)
+    -> stepmania_export_policy_result_t;
 
 // Emits deterministic UTF-8 StepMania text. Unsupported editor-only
 // annotations are surfaced as loss diagnostics rather than silently dropped.

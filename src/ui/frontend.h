@@ -98,6 +98,7 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS,
     WORM_UI_WORKSPACE_ACTION_RECOVERY_DISCARD,
     WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE,
+    WORM_UI_WORKSPACE_ACTION_SET_STEPMANIA_EXPORT_POLICY,
 } WormUiWorkspaceActionKind;
 
 typedef enum WormUiWorkspaceTab {
@@ -114,6 +115,35 @@ typedef struct WormUiWorkspaceTabItem {
     const char* label;
     bool enabled;
 } WormUiWorkspaceTabItem;
+
+typedef enum WormUiStepmaniaFileProfile {
+    WORM_UI_STEPMANIA_FILE_SM = 0,
+    WORM_UI_STEPMANIA_FILE_SSC,
+} WormUiStepmaniaFileProfile;
+
+typedef enum WormUiStepmaniaTimingSyntax {
+    WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS = 0,
+    WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_BPM,
+    WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP,
+} WormUiStepmaniaTimingSyntax;
+
+typedef enum WormUiStepmaniaImplementation {
+    WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY = 0,
+    WORM_UI_STEPMANIA_IMPLEMENTATION_STEP_MANIA_5_1,
+    WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1,
+} WormUiStepmaniaImplementation;
+
+typedef struct WormUiSetupView {
+    bool visible;
+    size_t chart_count;
+    size_t audio_asset_count;
+    size_t visual_asset_count;
+    WormUiStepmaniaFileProfile stepmania_file_profile;
+    WormUiStepmaniaTimingSyntax stepmania_timing_syntax;
+    WormUiStepmaniaImplementation stepmania_implementation;
+    bool stepmania_policy_valid;
+    const char* stepmania_policy_status;
+} WormUiSetupView;
 
 typedef struct WormUiMetadataFormatFieldView {
     bool chart_scoped;
@@ -918,6 +948,7 @@ typedef struct WormUiWorkspaceView {
     WormUiRecoveryCandidateView recovery_candidates[WORM_UI_RECOVERY_ROW_CAPACITY];
     size_t recovery_diagnostic_count;
     const char* recovery_diagnostics[WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY];
+    WormUiSetupView setup;
     WormUiMetadataView metadata;
     WormUiTimingView timing;
     WormUiComposeView compose;
@@ -1060,6 +1091,9 @@ typedef struct WormUiWorkspaceAction {
     uint64_t transport_seek_frame;
     uint64_t audio_asset_id;
     WormUiPlayerPreviewSkin player_preview_skin;
+    WormUiStepmaniaFileProfile stepmania_file_profile;
+    WormUiStepmaniaTimingSyntax stepmania_timing_syntax;
+    WormUiStepmaniaImplementation stepmania_implementation;
     WormUiAudioOffsetDragAction audio_offset_drag_action;
     uint64_t audio_offset_drag_chart_id;
     uint64_t audio_offset_drag_document_revision;

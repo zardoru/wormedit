@@ -2966,6 +2966,67 @@ auto dispatch_metadata_ui_action(const WormUiWorkspaceAction& action,
     return "Invalid metadata edit action.";
 }
 
+auto dispatch_audio_offset_drag_action(const WormUiWorkspaceAction& action,
+                                       wormedit::document_history_t& history,
+                                       wormedit::workspace_controller_t& workspace,
+                                       bool timing_locked,
+                                       std::optional<std::uint32_t> selected_sample_rate,
+                                       std::optional<wormedit::audio_offset_drag_t>& drag)
+    -> std::string {
+    using namespace wormedit;
+    const auto context_matches =
+        workspace.active_tab == workspace_tab_t::audio_slices && workspace.selected_chart &&
+        workspace.selected_chart->value == action.audio_offset_drag_chart_id &&
+        history.document.revision == action.audio_offset_drag_document_revision &&
+        selected_sample_rate && *selected_sample_rate == action.audio_offset_drag_sample_rate;
+    if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL) {
+        drag.reset();
+        return "Audio offset drag cancelled.";
+    }
+    if (!context_matches) {
+        drag.reset();
+        return "Audio offset drag expired after its chart or waveform changed.";
+    }
+    if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_BEGIN) {
+        const auto begun = begin_audio_offset_drag(history.document, *workspace.selected_chart,
+                                                   *selected_sample_rate, timing_locked);
+        drag = begun.drag;
+        return begun                       ? "Dragging waveform offset; release to apply."
+               : begun.diagnostics.empty() ? "Audio offset drag could not start."
+                                           : begun.diagnostics.front().message;
+    }
+    if (!drag || drag->chart != *workspace.selected_chart ||
+        drag->document_revision != action.audio_offset_drag_document_revision ||
+        drag->sample_rate != *selected_sample_rate) {
+        drag.reset();
+        return "Audio offset drag has no matching captured transaction.";
+    }
+    const auto updated = update_audio_offset_drag(
+        history.document, *drag, action.audio_offset_drag_delta_frames, timing_locked);
+    if (!updated) {
+        drag.reset();
+        return updated.diagnostics.empty() ? "Audio offset preview was rejected."
+                                           : updated.diagnostics.front().message;
+    }
+    drag = updated.drag;
+    if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_UPDATE)
+        return "Previewing exact waveform offset.";
+    if (action.audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_COMMIT) {
+        drag.reset();
+        return "Invalid audio offset drag action.";
+    }
+    const auto committed = commit_audio_offset_drag(history, *drag, timing_locked);
+    drag.reset();
+    if (!committed.applied) {
+        return committed.diagnostics.empty() ? "Audio offset was unchanged."
+                                             : committed.diagnostics.front().message;
+    }
+    const auto rebound = rebind_workspace(workspace, history);
+    return rebound                       ? "Audio offset updated from waveform drag."
+           : rebound.diagnostics.empty() ? "Audio offset changed, but workspace rebinding failed."
+                                         : rebound.diagnostics.front().message;
+}
+
 auto compose_result_status(const wormedit::editor_interaction_result_t& result,
                            std::string_view accepted) -> std::string {
     if (result.accepted) {
@@ -4888,6 +4949,7 @@ int main(int argc, char** argv) {
     if (!platform_recovery && !platform_recovery.error.empty()) {
         status += " " + platform_recovery.error;
     }
+    std::optional<wormedit::audio_offset_drag_t> audio_offset_drag;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     wormedit::audio::decoded_source_registry_t audition_sources;
     wormedit::audio::decoded_block_cache_t waveform_blocks;
@@ -5364,10 +5426,42 @@ int main(int argc, char** argv) {
                     timing_grid = refresh_timing_grid(*chart, application_command_state);
                 }
             }
+            if (audio_offset_drag &&
+                (workspace.active_tab != wormedit::workspace_tab_t::audio_slices ||
+                 !workspace.selected_chart ||
+                 *workspace.selected_chart != audio_offset_drag->chart ||
+                 history.document.revision != audio_offset_drag->document_revision ||
+                 application_command_state.timing_locked)) {
+                audio_offset_drag.reset();
+            }
             auto flattened =
                 flatten_workspace(*model.view, history.document, status, recovery_controller.view(),
                                   recovery_scan_configured);
             flattened.view.metadata.timing_locked = application_command_state.timing_locked;
+            auto& audio_view = flattened.view.audio_slices;
+            audio_view.document_revision = history.document.revision;
+            audio_view.timing_locked = application_command_state.timing_locked;
+            if (workspace.selected_chart) {
+                const auto selected =
+                    std::ranges::find(history.document.charts, *workspace.selected_chart,
+                                      &wormedit::chart_document_t::id);
+                if (selected != history.document.charts.end()) {
+                    audio_view.has_chart = true;
+                    audio_view.chart_id = selected->id.value;
+                    audio_view.offset_numerator =
+                        selected->beat_zero_audio_offset_seconds.numerator;
+                    audio_view.offset_denominator =
+                        selected->beat_zero_audio_offset_seconds.denominator;
+                }
+            }
+            if (audio_offset_drag) {
+                audio_view.offset_drag_active = true;
+                audio_view.offset_drag_delta_frames = audio_offset_drag->delta_frames;
+                audio_view.proposed_offset_numerator =
+                    audio_offset_drag->proposed_offset_seconds.numerator;
+                audio_view.proposed_offset_denominator =
+                    audio_offset_drag->proposed_offset_seconds.denominator;
+            }
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
             flattened.view.transport_available =
                 workspace.selected_chart.has_value() && preview_output.available();
@@ -5480,6 +5574,13 @@ int main(int argc, char** argv) {
                                   compose_window_width, compose_window_height,
                                   compose_interaction_state, application_command_state);
             const auto action = worm_ui_frontend_compose(&flattened.view);
+            std::optional<std::uint32_t> selected_waveform_sample_rate;
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+            if (waveform_analysis && waveform_analysis->waveform && waveform_job_asset &&
+                workspace.transport.audio_asset == waveform_job_asset) {
+                selected_waveform_sample_rate = waveform_analysis->waveform->sample_rate;
+            }
+#endif
             const bool shortcut_handled =
                 action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
                 dispatch_application_shortcuts(action, command_registry, history, workspace,
@@ -5490,6 +5591,8 @@ int main(int argc, char** argv) {
                 (void)wormedit::dispatch_editor_action(history, *compose_interaction_state,
                                                        wormedit::cancel_editor_gesture_action_t{});
             }
+            if (shortcut_handled)
+                audio_offset_drag.reset();
             if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
                 (action.compose_input_count != 0 || action.compose_viewport_input_count != 0 ||
                  action.compose_has_pointer_hover ||
@@ -5558,6 +5661,10 @@ int main(int argc, char** argv) {
             } else if (shortcut_handled) {
                 // Registry commands take precedence over widget actions emitted
                 // by the same input frame, preventing duplicate mutations.
+            } else if (action.audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
+                status = dispatch_audio_offset_drag_action(
+                    action, history, workspace, application_command_state.timing_locked,
+                    selected_waveform_sample_rate, audio_offset_drag);
             } else if (action.kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE) {
                 status = application_command_state.transport_play_pause
                              ? application_command_state.transport_play_pause()

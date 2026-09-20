@@ -175,7 +175,25 @@ typedef struct WormUiAudioSlicesView {
     uint32_t sample_rate;
     const WormUiAudioWaveformColumnView* waveform_columns;
     size_t waveform_column_count;
+    bool has_chart;
+    uint64_t chart_id;
+    uint64_t document_revision;
+    bool timing_locked;
+    int64_t offset_numerator;
+    uint64_t offset_denominator;
+    bool offset_drag_active;
+    int64_t offset_drag_delta_frames;
+    int64_t proposed_offset_numerator;
+    uint64_t proposed_offset_denominator;
 } WormUiAudioSlicesView;
+
+typedef enum WormUiAudioOffsetDragAction {
+    WORM_UI_AUDIO_OFFSET_DRAG_NONE = 0,
+    WORM_UI_AUDIO_OFFSET_DRAG_BEGIN,
+    WORM_UI_AUDIO_OFFSET_DRAG_UPDATE,
+    WORM_UI_AUDIO_OFFSET_DRAG_COMMIT,
+    WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
+} WormUiAudioOffsetDragAction;
 
 typedef struct WormUiComposeRect {
     double left;
@@ -751,6 +769,11 @@ typedef struct WormUiWorkspaceAction {
     uint64_t recovery_scan_generation;
     uint64_t transport_seek_frame;
     uint64_t audio_asset_id;
+    WormUiAudioOffsetDragAction audio_offset_drag_action;
+    uint64_t audio_offset_drag_chart_id;
+    uint64_t audio_offset_drag_document_revision;
+    uint32_t audio_offset_drag_sample_rate;
+    int64_t audio_offset_drag_delta_frames;
     size_t recovery_row_index;
     size_t recovery_candidate_index;
     char recovery_save_as_destination[WORM_UI_RECOVERY_DESTINATION_CAPACITY];

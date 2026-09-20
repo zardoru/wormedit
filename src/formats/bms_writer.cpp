@@ -1,5 +1,6 @@
 #include <wormedit/formats/bms_writer.h>
 
+#include <wormedit/core/bms_branch_projection.h>
 #include <wormedit/core/bms_profile_detection.h>
 #include <wormedit/core/sv_recipe.h>
 
@@ -887,129 +888,6 @@ auto analyze_branch_tree(const bms_control_node_t& root) -> branch_tree_analysis
     return result;
 }
 
-auto active_branch_statement_orders(const bms_control_node_t& root,
-                                    const std::vector<branch_selection_t>& selections)
-    -> std::optional<std::set<std::size_t>> {
-    std::map<std::uint64_t, std::int64_t> selected_values;
-    for (const auto& selection : selections) {
-        if (!selection.branch ||
-            !selected_values.emplace(selection.branch.value, selection.selected_value).second) {
-            return std::nullopt;
-        }
-    }
-
-    std::set<std::size_t> active_orders;
-    std::set<std::uint64_t> visited_selections;
-    std::function<void(const bms_control_node_t&, std::optional<std::int64_t>, bool, bool*)> visit;
-    visit = [&](const bms_control_node_t& node, std::optional<std::int64_t> random_value,
-                bool inside_active_branch, bool* switch_stopped) -> void {
-        if (node.kind == bms_control_kind_t::raw_statement) {
-            if (inside_active_branch) {
-                active_orders.insert(node.source_order);
-            }
-            return;
-        }
-        if (node.kind == bms_control_kind_t::skip) {
-            if (switch_stopped != nullptr) {
-                *switch_stopped = true;
-            }
-            return;
-        }
-        if (node.kind == bms_control_kind_t::random) {
-            const auto selected = selected_values.find(node.id.value);
-            if (selected == selected_values.end()) {
-                return;
-            }
-            if (!node.value.has_value() || selected->second < 1 || selected->second > *node.value) {
-                return;
-            }
-            visited_selections.insert(node.id.value);
-            for (const auto& child : node.children) {
-                visit(child, selected->second, true, switch_stopped);
-            }
-            return;
-        }
-        if (node.kind == bms_control_kind_t::if_group) {
-            if (!random_value.has_value()) {
-                return;
-            }
-            const bms_control_node_t* fallback{};
-            const bms_control_node_t* selected{};
-            for (const auto& child : node.children) {
-                if ((child.kind == bms_control_kind_t::if_branch ||
-                     child.kind == bms_control_kind_t::else_if_branch) &&
-                    child.value == random_value) {
-                    selected = &child;
-                    break;
-                }
-                if (child.kind == bms_control_kind_t::else_branch) {
-                    fallback = &child;
-                }
-            }
-            if (selected == nullptr) {
-                selected = fallback;
-            }
-            if (selected != nullptr) {
-                visit(*selected, random_value, true, switch_stopped);
-            }
-            return;
-        }
-        if (node.kind == bms_control_kind_t::switch_block) {
-            const auto choice = selected_values.find(node.id.value);
-            if (choice == selected_values.end()) {
-                return;
-            }
-            visited_selections.insert(node.id.value);
-            const bms_control_node_t* selected{};
-            const bms_control_node_t* fallback{};
-            for (const auto& child : node.children) {
-                if (child.kind == bms_control_kind_t::case_branch &&
-                    child.value == choice->second) {
-                    selected = &child;
-                    break;
-                }
-                if (child.kind == bms_control_kind_t::default_branch) {
-                    fallback = &child;
-                }
-            }
-            if (selected == nullptr) {
-                selected = fallback;
-            }
-            if (selected == nullptr) {
-                return;
-            }
-            bool stopped{};
-            bool entered{};
-            for (const auto& child : node.children) {
-                if (child.kind == bms_control_kind_t::case_branch ||
-                    child.kind == bms_control_kind_t::default_branch) {
-                    entered = entered || &child == selected;
-                    if (entered && !stopped) {
-                        visit(child, random_value, true, &stopped);
-                    }
-                } else if (entered && !stopped) {
-                    visit(child, random_value, true, &stopped);
-                }
-            }
-            return;
-        }
-        const auto branch_scope = inside_active_branch ||
-                                  node.kind == bms_control_kind_t::if_branch ||
-                                  node.kind == bms_control_kind_t::else_if_branch ||
-                                  node.kind == bms_control_kind_t::else_branch ||
-                                  node.kind == bms_control_kind_t::case_branch ||
-                                  node.kind == bms_control_kind_t::default_branch;
-        for (const auto& child : node.children) {
-            visit(child, random_value, branch_scope, switch_stopped);
-        }
-    };
-    visit(root, std::nullopt, false, nullptr);
-    if (visited_selections.size() != selected_values.size()) {
-        return std::nullopt;
-    }
-    return active_orders;
-}
-
 auto replace_retained_measure_length(std::string_view line, std::size_t expected_measure,
                                      std::string_view expected_value, std::string_view replacement)
     -> std::optional<std::string> {
@@ -1117,10 +995,19 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
              "$.charts[].active_branch_selection");
     }
     std::map<std::size_t, std::string> branch_measure_ratio_edits;
-    const auto active_branch_orders =
-        branch_tree.has_branches && options.branch_policy == bms_branch_policy_t::preserve_tree
-            ? active_branch_statement_orders(*chart.bms_control_tree, chart.active_branch_selection)
-            : std::optional<std::set<std::size_t>>{};
+    const auto active_branch_orders = [&]() -> std::optional<std::set<std::size_t>> {
+        if (!branch_tree.has_branches ||
+            options.branch_policy != bms_branch_policy_t::preserve_tree) {
+            return std::nullopt;
+        }
+        const auto projection =
+            project_bms_branch_tree(*chart.bms_control_tree, chart.active_branch_selection);
+        if (!projection) {
+            return std::nullopt;
+        }
+        return std::set<std::size_t>(projection.active_statement_source_orders.begin(),
+                                     projection.active_statement_source_orders.end());
+    }();
     std::map<std::size_t, std::pair<std::size_t, rational_t>> effective_measure_sources;
     const auto retain_effective_measure_source = [&](const source_measure_line_t& source,
                                                      bool active) {

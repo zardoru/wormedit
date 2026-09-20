@@ -1,4 +1,5 @@
 #include <wormedit/core/bms_branch_editor.h>
+#include <wormedit/core/bms_branch_projection.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -236,4 +237,70 @@ TEST_CASE("inactive BMS statement deletion enters history and replays retained s
     REQUIRE(redo_document_command(history));
     CHECK(find_node(chart_tree(history), bms_control_kind_t::raw_statement, "#00011:0200") ==
           nullptr);
+}
+
+TEST_CASE("BMS branch projection previews exact entering and leaving retained statements",
+          "[unit][core][bms][branch][projection]") {
+    const auto history = make_history();
+    const auto& chart = history.document.charts.front();
+    REQUIRE(chart.bms_control_tree.has_value());
+    REQUIRE(chart.active_branch_selection.size() == 1);
+    const auto* active =
+        find_node(*chart.bms_control_tree, bms_control_kind_t::raw_statement, "#00011:0100");
+    const auto* inactive =
+        find_node(*chart.bms_control_tree, bms_control_kind_t::raw_statement, "#00011:0200");
+    REQUIRE(active != nullptr);
+    REQUIRE(inactive != nullptr);
+
+    auto proposed = chart.active_branch_selection;
+    proposed.front().selected_value = 2;
+    const auto preview = preview_bms_branch_projection(*chart.bms_control_tree,
+                                                       chart.active_branch_selection, proposed);
+    REQUIRE(preview);
+    CHECK(preview.current.active_statement_ids == std::vector{active->id});
+    CHECK(preview.current.active_statement_source_orders == std::vector{active->source_order});
+    CHECK(preview.proposed.active_statement_ids == std::vector{inactive->id});
+    CHECK(preview.proposed.active_statement_source_orders == std::vector{inactive->source_order});
+    CHECK(preview.entering_statement_ids == std::vector{inactive->id});
+    CHECK(preview.leaving_statement_ids == std::vector{active->id});
+    CHECK(chart.active_branch_selection.front().selected_value == 1);
+}
+
+TEST_CASE("BMS branch projection rejects invalid stale and unbounded proposals without deltas",
+          "[unit][core][bms][branch][projection][negative]") {
+    const auto history = make_history();
+    const auto& chart = history.document.charts.front();
+    REQUIRE(chart.bms_control_tree.has_value());
+    REQUIRE(chart.active_branch_selection.size() == 1);
+
+    auto out_of_range = chart.active_branch_selection;
+    out_of_range.front().selected_value = 3;
+    const auto invalid = project_bms_branch_tree(*chart.bms_control_tree, out_of_range);
+    CHECK_FALSE(invalid);
+    CHECK(invalid.status == bms_branch_projection_status_t::invalid_selection);
+    CHECK(invalid.active_statement_ids.empty());
+
+    auto duplicate = chart.active_branch_selection;
+    duplicate.push_back(duplicate.front());
+    const auto duplicated = project_bms_branch_tree(*chart.bms_control_tree, duplicate);
+    CHECK_FALSE(duplicated);
+    CHECK(duplicated.status == bms_branch_projection_status_t::duplicate_selection);
+
+    auto unknown = chart.active_branch_selection;
+    unknown.front().branch = branch_id_t{999'999};
+    const auto stale = project_bms_branch_tree(*chart.bms_control_tree, unknown);
+    CHECK_FALSE(stale);
+    CHECK(stale.status == bms_branch_projection_status_t::invalid_selection);
+
+    const auto capped = project_bms_branch_tree(
+        *chart.bms_control_tree, chart.active_branch_selection,
+        {.maximum_nodes = 1, .maximum_depth = 256, .maximum_active_statements = 1});
+    CHECK_FALSE(capped);
+    CHECK(capped.status == bms_branch_projection_status_t::capacity_exceeded);
+
+    const auto failed_preview = preview_bms_branch_projection(
+        *chart.bms_control_tree, chart.active_branch_selection, out_of_range);
+    CHECK_FALSE(failed_preview);
+    CHECK(failed_preview.entering_statement_ids.empty());
+    CHECK(failed_preview.leaving_statement_ids.empty());
 }

@@ -42,6 +42,7 @@ add_library(wormedit_core
     src/core/audio_offset_editor.cpp
     src/core/autosave_loop.cpp
     src/core/bms_branch_editor.cpp
+    src/core/bms_branch_projection.cpp
     src/core/bpm_editor.cpp
     src/core/chart_compare.cpp
     src/core/command.cpp

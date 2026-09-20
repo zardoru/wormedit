@@ -180,6 +180,7 @@ struct application_command_state_t {
     // UI-only, chart-scoped preferences. Changing a snap never changes chart
     // data; an active gesture keeps its captured snap until it is resolved.
     std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;
+    std::unordered_map<std::uint64_t, double> bgm_horizontal_scroll_pixels;
 };
 
 struct timing_grid_state_t {
@@ -673,6 +674,7 @@ auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) 
 }
 
 constexpr double compose_measure_rail_width_pixels{42.0};
+constexpr double compose_bgm_lane_width_pixels{36.0};
 
 auto compose_bgm_pane_width(double viewport_width_pixels, bool has_bgm_lanes) -> double {
     if (!has_bgm_lanes) return 0.0;
@@ -2076,6 +2078,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     }
     view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
+    view.playable_field_right_pixels = view.viewport_width_pixels;
     view.pixels_per_standard_measure = retained_state
                                            ? retained_state->pixels_per_standard_measure
                                            : wormedit::default_pixels_per_standard_measure;
@@ -2443,6 +2446,14 @@ void populate_compose_view(flattened_workspace_t& flattened,
         compose_bgm_pane_width(view.viewport_width_pixels, !chart.bgm_source_lanes.empty());
     const auto playable_field_width =
         compose_playable_field_width(view.viewport_width_pixels, bgm_pane_width);
+    view.playable_field_right_pixels = compose_measure_rail_width_pixels + playable_field_width;
+    const auto maximum_bgm_scroll =
+        std::max(0.0, static_cast<double>(chart.bgm_source_lanes.size()) *
+                          compose_bgm_lane_width_pixels -
+                          bgm_pane_width);
+    auto& bgm_horizontal_scroll =
+        application_state.bgm_horizontal_scroll_pixels[chart.id.value];
+    bgm_horizontal_scroll = std::clamp(bgm_horizontal_scroll, 0.0, maximum_bgm_scroll);
     const auto composed = wormedit::make_editor_field_scene(
         chart, *cache.index, interaction_view,
         {.field_left_pixels = compose_measure_rail_width_pixels,
@@ -2450,6 +2461,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
          .split_stage_gutter_pixels = 14.0,
          .bgm_pane_left_pixels = compose_measure_rail_width_pixels + playable_field_width,
          .bgm_pane_width_pixels = bgm_pane_width,
+         .bgm_lane_width_pixels = compose_bgm_lane_width_pixels,
+         .bgm_horizontal_scroll_pixels = bgm_horizontal_scroll,
          .solo_semantic_layer = application_state.semantic_layer_solo_active
                                     ? application_state.semantic_layer_target
                                     : std::nullopt,
@@ -3006,9 +3019,11 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
     }
     const auto input_chart = std::ranges::find(history.document.charts, state.chart,
                                                &chart_document_t::id);
+    const auto bgm_lane_count = input_chart == history.document.charts.end()
+                                    ? std::size_t{}
+                                    : input_chart->bgm_source_lanes.size();
     const auto bgm_pane_width = compose_bgm_pane_width(
-        ui_action.compose_input_viewport_width_pixels,
-        input_chart != history.document.charts.end() && !input_chart->bgm_source_lanes.empty());
+        ui_action.compose_input_viewport_width_pixels, bgm_lane_count != 0);
     const auto field_left_pixels = compose_measure_rail_width_pixels;
     const auto field_width_pixels = compose_playable_field_width(
         ui_action.compose_input_viewport_width_pixels, bgm_pane_width);
@@ -3018,8 +3033,17 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
         scene_cache.viewport_autoscroll_active = false;
     } else {
         if (ui_action.compose_viewport_middle_click) {
+            const auto middle_click_pane =
+                bgm_pane_width > 0.0 &&
+                        std::isfinite(ui_action.compose_viewport_middle_click_x_pixels) &&
+                        ui_action.compose_viewport_middle_click_x_pixels >=
+                            field_left_pixels + field_width_pixels &&
+                        ui_action.compose_viewport_middle_click_x_pixels <=
+                            ui_action.compose_input_viewport_width_pixels
+                    ? viewport_pane_t::bgm
+                    : viewport_pane_t::chart;
             viewport_input.middle_click(
-                viewport_pane_t::chart, ui_action.compose_viewport_middle_click_x_pixels,
+                middle_click_pane, ui_action.compose_viewport_middle_click_x_pixels,
                 ui_action.compose_viewport_middle_click_y_pixels);
             scene_cache.viewport_autoscroll_active = viewport_input.autoscroll_active();
             if (scene_cache.viewport_autoscroll_active) {
@@ -3588,16 +3612,26 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
         for (std::size_t action_index = 0; action_index < actions.count; ++action_index) {
             const auto& viewport_action = actions[action_index];
             if (const auto* scroll = std::get_if<viewport_scroll_action_t>(&viewport_action)) {
-                if (scroll->pane != viewport_pane_t::chart || scroll->delta_y_pixels == 0.0) {
+                if (scroll->pane == viewport_pane_t::bgm) {
+                    if (scroll->delta_x_pixels == 0.0) continue;
+                    const auto maximum_scroll =
+                        std::max(0.0, static_cast<double>(bgm_lane_count) *
+                                          compose_bgm_lane_width_pixels -
+                                          bgm_pane_width);
+                    auto& retained_scroll =
+                        application_state.bgm_horizontal_scroll_pixels[state.chart.value];
+                    retained_scroll =
+                        std::clamp(retained_scroll + scroll->delta_x_pixels, 0.0, maximum_scroll);
+                    status = "Compose BGM pane scrolled.";
+                    continue;
+                }
+                if (scroll->delta_y_pixels == 0.0) {
                     continue;
                 }
                 const auto result = dispatch_editor_action(
                     history, state, scroll_editor_view_action_t{scroll->delta_y_pixels});
                 status = compose_result_status(result, "Compose field scrolled.");
             } else if (const auto* zoom = std::get_if<viewport_zoom_action_t>(&viewport_action)) {
-                if (zoom->pane != viewport_pane_t::chart) {
-                    continue;
-                }
                 const auto result = dispatch_editor_action(
                     history, state,
                     adjust_editor_zoom_action_t{.factor = zoom->factor,
@@ -3615,8 +3649,14 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                    "changed.";
         }
         const auto& input = ui_action.compose_viewport_inputs[index];
+        const auto input_pane =
+            bgm_pane_width > 0.0 && std::isfinite(input.cursor_x_pixels) &&
+                    input.cursor_x_pixels >= field_left_pixels + field_width_pixels &&
+                    input.cursor_x_pixels <= ui_action.compose_input_viewport_width_pixels
+                ? viewport_pane_t::bgm
+                : viewport_pane_t::chart;
         apply_viewport_actions(viewport_input.handle_wheel({
-            .pane = viewport_pane_t::chart,
+            .pane = input_pane,
             .kind = input.kind == WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL
                         ? viewport_wheel_kind_t::coarse_steps
                         : viewport_wheel_kind_t::smooth_pixels,

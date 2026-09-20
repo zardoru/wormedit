@@ -79,6 +79,57 @@ TEST_CASE("viewport input settings reverse direction and scale both input kinds"
     CHECK(scroll_at(coarse).delta_y_pixels == -30.0);
 }
 
+TEST_CASE("BGM wheel input converts vertical motion to horizontal and retains pane identity",
+          "[unit][core][viewport-input][bgm]") {
+    viewport_input_controller_t controller;
+    const auto vertical = controller.handle_wheel({
+        .pane = viewport_pane_t::bgm,
+        .kind = viewport_wheel_kind_t::coarse_steps,
+        .delta_y = -1.0,
+    });
+    REQUIRE(vertical.count == 1);
+    CHECK(scroll_at(vertical).pane == viewport_pane_t::bgm);
+    CHECK(scroll_at(vertical).delta_x_pixels == -48.0);
+    CHECK(scroll_at(vertical).delta_y_pixels == 0.0);
+
+    const auto horizontal = controller.handle_wheel({
+        .pane = viewport_pane_t::bgm,
+        .kind = viewport_wheel_kind_t::smooth_pixels,
+        .delta_x = 2.5,
+        .delta_y = 9.0,
+    });
+    REQUIRE(horizontal.count == 1);
+    CHECK(scroll_at(horizontal).delta_x_pixels == 2.5);
+    CHECK(scroll_at(horizontal).delta_y_pixels == 0.0);
+
+    const auto zoom = controller.handle_wheel({
+        .pane = viewport_pane_t::bgm,
+        .kind = viewport_wheel_kind_t::smooth_pixels,
+        .delta_y = -10.0,
+        .zoom_modifier = true,
+        .cursor_x_pixels = 300.0,
+        .cursor_y_pixels = 75.0,
+    });
+    REQUIRE(zoom.count == 1);
+    CHECK(zoom_at(zoom).pane == viewport_pane_t::bgm);
+    CHECK(zoom_at(zoom).cursor_y_pixels == 75.0);
+}
+
+TEST_CASE("BGM middle-click autoscroll is horizontal only",
+          "[unit][core][viewport-input][bgm]") {
+    viewport_input_controller_t controller({
+        .autoscroll_dead_zone_pixels = 0.0,
+        .autoscroll_speed_per_second_per_pixel = 2.0,
+    });
+    controller.middle_click(viewport_pane_t::bgm, 100.0, 100.0);
+    controller.update_autoscroll_pointer(110.0, 70.0);
+    const auto movement = controller.advance(0.1);
+    REQUIRE(movement.count == 1);
+    CHECK(scroll_at(movement).pane == viewport_pane_t::bgm);
+    CHECK(scroll_at(movement).delta_x_pixels == 2.0);
+    CHECK(scroll_at(movement).delta_y_pixels == 0.0);
+}
+
 TEST_CASE("trackpad and momentum keep their starting pane while pointer routing changes",
           "[unit][core][viewport-input]") {
     viewport_input_controller_t controller;

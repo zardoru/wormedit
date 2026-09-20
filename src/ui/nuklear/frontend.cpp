@@ -1371,6 +1371,9 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         !std::isfinite(view->viewport_width_pixels) || view->viewport_width_pixels <= 0.0 ||
         view->viewport_width_pixels > 10000000.0 || !std::isfinite(view->viewport_height_pixels) ||
         view->viewport_height_pixels <= 0.0 || view->viewport_height_pixels > 10000000.0 ||
+        !std::isfinite(view->playable_field_right_pixels) ||
+        view->playable_field_right_pixels < 0.0 ||
+        view->playable_field_right_pixels > view->viewport_width_pixels ||
         view->branch_row_count > WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY ||
         view->branch_diagnostic_count > WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY ||
         view->semantic_layer_count > WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY ||
@@ -3358,6 +3361,8 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                            view->viewport_width_pixels / viewport.w;
     const auto pointer_y = (static_cast<double>(g_context->input.mouse.pos.y) - viewport.y) *
                            view->viewport_height_pixels / viewport.h;
+    const auto note_field_right = view->playable_field_right_pixels;
+    const auto pointer_in_note_field = pointer_inside && pointer_x < note_field_right;
     if (!g_compose_action_overflowed && g_window_focused && view->scene_available) {
         action->compose_viewport_pointer_valid = true;
         action->compose_viewport_pointer_x_pixels = pointer_x;
@@ -3410,8 +3415,13 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                                          left_button.clicked_pos.x <= viewport.x + viewport.w &&
                                          left_button.clicked_pos.y >= viewport.y &&
                                          left_button.clicked_pos.y <= viewport.y + viewport.h;
+    const auto pointer_started_x =
+        (static_cast<double>(left_button.clicked_pos.x) - viewport.x) *
+        view->viewport_width_pixels / viewport.w;
+    const auto pointer_started_in_note_field =
+        pointer_started_in_view && pointer_started_x < note_field_right;
     const auto clamp_paint_x = [&](double value) {
-        return std::clamp(value, 0.0, view->viewport_width_pixels);
+        return std::clamp(value, 0.0, note_field_right);
     };
     const auto clamp_paint_y = [&](double value) {
         return std::clamp(value, 0.0, view->viewport_height_pixels);
@@ -3431,7 +3441,7 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
         g_compose_area_selection_active;
     action->compose_has_pointer_hover =
         !g_compose_action_overflowed && g_window_focused && view->scene_available &&
-        pointer_inside && !compose_pointer_captured;
+        pointer_in_note_field && !compose_pointer_captured;
     if (action->compose_has_pointer_hover) {
         action->compose_pointer_hover_x_pixels = pointer_x;
         action->compose_pointer_hover_y_pixels = pointer_y;
@@ -3444,10 +3454,12 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                 pointer.y < viewport.y || pointer.y >= viewport.y + viewport.h) {
                 continue;
             }
+            const auto click_x = (static_cast<double>(pointer.x) - viewport.x) *
+                                 view->viewport_width_pixels / viewport.w;
+            if (click_x >= note_field_right) continue;
             append_compose_input(
                 action, WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK,
-                (static_cast<double>(pointer.x) - viewport.x) * view->viewport_width_pixels /
-                    viewport.w,
+                click_x,
                 (static_cast<double>(pointer.y) - viewport.y) * view->viewport_height_pixels /
                     viewport.h);
             compose_note_double_click_in_view = true;
@@ -3471,7 +3483,7 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                                  paint_pointer_x, paint_pointer_y);
         }
     } else if (!g_compose_action_overflowed && view->scene_available &&
-               view->semantic_layer_paint_mode_active && pointer_started_in_view &&
+               view->semantic_layer_paint_mode_active && pointer_started_in_note_field &&
                g_window_focused && g_shortcut_event_count == 0 &&
                (pointer_modifiers & any_pointer_modifier) == 0 &&
                !g_compose_pointer_hold_active && !g_compose_lane_hold_active &&
@@ -3502,7 +3514,7 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                                  paint_pointer_y);
         }
     } else if (!g_compose_action_overflowed && view->scene_available &&
-               view->note_paint_mode_active && pointer_started_in_view && g_window_focused &&
+               view->note_paint_mode_active && pointer_started_in_note_field && g_window_focused &&
                g_shortcut_event_count == 0 && (pointer_modifiers & any_pointer_modifier) == 0 &&
                !g_compose_pointer_hold_active && !g_compose_lane_hold_active &&
                !g_compose_area_selection_active && !g_compose_area_selection_candidate_active) {
@@ -3517,7 +3529,8 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
     }
 
     if (!g_compose_action_overflowed && !paint_pointer_consumed && view->scene_available &&
-        pointer_pressed_in_view && alt_down && !g_compose_pointer_hold_active && g_window_focused &&
+        pointer_started_in_note_field && alt_down && !g_compose_pointer_hold_active &&
+        g_window_focused &&
         !compose_note_double_click_in_view) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN, pointer_x, pointer_y);
         g_compose_pointer_hold_active = !g_compose_action_overflowed;
@@ -3535,7 +3548,7 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                                  pointer_y);
         }
     } else if (!g_compose_action_overflowed && !paint_pointer_consumed && view->scene_available &&
-               pointer_pressed_in_view && g_window_focused && !alt_down &&
+               pointer_started_in_note_field && g_window_focused && !alt_down &&
                !g_compose_note_move_active && !g_compose_note_move_candidate_active &&
                !g_compose_area_selection_active && !g_compose_area_selection_candidate_active &&
                !compose_note_double_click_in_view) {
@@ -3559,7 +3572,8 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_POINTER_CLICK, pointer_x, pointer_y);
         }
     } else if (!g_compose_action_overflowed && !paint_pointer_consumed && view->scene_available &&
-               pointer_clicked && g_window_focused && !g_compose_pointer_hold_active &&
+               pointer_clicked && pointer_in_note_field && g_window_focused &&
+               !g_compose_pointer_hold_active &&
                !g_compose_note_move_active && !g_compose_note_move_candidate_active &&
                !g_compose_area_selection_active && !g_compose_area_selection_candidate_active &&
                !compose_note_double_click_in_view) {

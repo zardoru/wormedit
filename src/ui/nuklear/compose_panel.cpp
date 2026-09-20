@@ -913,7 +913,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         state.label_document_revision = view->document_revision;
         state.label_note_id = view->selected_note_label_note_id;
     }
-    nk_layout_row_begin(context, NK_DYNAMIC, 25, 10);
+    nk_layout_row_begin(context, NK_DYNAMIC, 25, 11);
     nk_layout_row_push(context, 0.06f);
     if (nk_button_label(context, "Zoom -") && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_OUT;
@@ -957,9 +957,9 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     nk_layout_row_push(context, 0.07f);
     if (nk_button_label(context, "Reset") && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW;
-    nk_layout_row_push(context, 0.15f);
+    nk_layout_row_push(context, 0.14f);
     nk_labelf(context, NK_TEXT_LEFT, "Zoom %.0f px/measure", view->pixels_per_standard_measure);
-    nk_layout_row_push(context, 0.15f);
+    nk_layout_row_push(context, 0.12f);
     if (!view->scene_available) {
         nk_widget_disable_begin(context);
     }
@@ -971,7 +971,11 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     if (!view->scene_available) {
         nk_widget_disable_end(context);
     }
-    nk_layout_row_push(context, 0.31f);
+    nk_layout_row_push(context, 0.07f);
+    if (nk_button_label(context, state.inspector_visible ? "Hide side" : "Show side")) {
+        state.inspector_visible = !state.inspector_visible;
+    }
+    nk_layout_row_push(context, 0.18f);
     if (view->truncated) {
         nk_label(context, "Visible geometry capped", NK_TEXT_RIGHT);
     } else {
@@ -979,6 +983,21 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                   view->note_endpoint_count, view->lane_count, view->grid_line_count);
     }
     nk_layout_row_end(context);
+
+    const auto compose_body_bounds = nk_window_get_content_region(context);
+    const auto compose_body_height = std::max(64.0f, compose_body_bounds.h);
+    constexpr float inspector_gap = 5.0f;
+    const auto inspector_drawn = state.inspector_visible && compose_body_bounds.w >= 540.0f;
+    const auto inspector_width = inspector_drawn
+                                     ? std::clamp(compose_body_bounds.w * 0.24f, 280.0f, 380.0f)
+                                     : 0.0f;
+    const auto editor_width = std::max(120.0f, compose_body_bounds.w - inspector_width -
+                                                   (inspector_drawn ? inspector_gap : 0.0f));
+    nk_layout_space_begin(context, NK_STATIC, compose_body_height, inspector_drawn ? 2 : 1);
+    if (inspector_drawn) {
+        nk_layout_space_push(context, nk_rect(editor_width + inspector_gap, 0.0f, inspector_width,
+                                              compose_body_height));
+        if (nk_group_begin(context, "Compose inspector", NK_WINDOW_BORDER)) {
 
     if (nk_tree_push(context, NK_TREE_TAB, "Markers / sections", NK_MINIMIZED)) {
     nk_layout_row_begin(context, NK_DYNAMIC, 24, 3);
@@ -1366,6 +1385,14 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     nk_tree_pop(context);
     }
 
+    worm_ui_nuklear_render_bms_branch_panel(context, view, action);
+    nk_group_end(context);
+        }
+    }
+    nk_layout_space_push(context, nk_rect(0.0f, 0.0f, editor_width, compose_body_height));
+    if (nk_group_begin(context, "Compose editor", NK_WINDOW_NO_SCROLLBAR)) {
+    const auto render_compose_editor = [&]() {
+
     nk_layout_row_dynamic(context, 18, 1);
     nk_label(context,
              view->semantic_layer_paint_mode_active
@@ -1388,10 +1415,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
              NK_TEXT_LEFT);
 
     const auto group_bounds = nk_window_get_content_region(context);
-    const auto branch_panel_height = worm_ui_nuklear_bms_branch_panel_height(view);
-    const auto semantic_toolbar_height = visible_layer_count == 0 ? 22.0f : 49.0f;
-    const auto surface_height = std::max(32.0f, group_bounds.h - 54.0f - 36.0f -
-                                                    semantic_toolbar_height - branch_panel_height);
+    const auto surface_height = std::max(32.0f, group_bounds.h - 42.0f);
     nk_layout_space_begin(context, NK_DYNAMIC, surface_height, 1);
     nk_layout_space_push(context, nk_rect(0.0f, 0.0f, 1.0f, 1.0f));
     struct nk_rect viewport{};
@@ -2145,8 +2169,11 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         }
     }
     nk_push_scissor(canvas, parent_clip);
-
-    worm_ui_nuklear_render_bms_branch_panel(context, view, action);
+    };
+    render_compose_editor();
+    nk_group_end(context);
+    }
+    nk_layout_space_end(context);
 }
 
 bool worm_ui_nuklear_compose_lane_focused(const WormUiComposeView* view, bool compose_tab_active,

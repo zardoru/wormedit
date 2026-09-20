@@ -82,6 +82,7 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t semantic_layer_color_id{};
     worm_ui_nuklear_compose_color_t semantic_layer_color{};
     bool semantic_layer_color_editor_visible{};
+    bool inspector_visible{true};
 };
 
 [[nodiscard]] auto worm_ui_nuklear_compose_state() noexcept -> worm_ui_nuklear_compose_state_t&;

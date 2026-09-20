@@ -419,6 +419,8 @@ auto ease(std::int32_t easing, double progress) noexcept -> double {
         return n * shifted * shifted + 0.984375;
     };
     switch (easing) {
+    case 0:
+        return t; // linear
     case 1:
         return t * (2.0 - t); // quadratic out
     case 2:
@@ -1406,6 +1408,9 @@ auto evaluate_storyboard_property(const storyboard_sprite_t& sprite, storyboard_
     return {
         .value = context.candidate.value,
         .diagnostic = std::move(context.diagnostic),
+        .start_time_ms = context.candidate.start_time_ms,
+        .source_order = context.candidate.source_order,
+        .visit_order = context.candidate.visit_order,
         .failed = context.failed,
     };
 }

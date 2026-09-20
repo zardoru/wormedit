@@ -4,7 +4,7 @@
 
 ## Immediate work
 
-1. Add richer profile-specific discontinuity ordering plus video/storyboard evaluation to the preview. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
+1. Add richer profile-specific discontinuity ordering, wire the headless storyboard-frame evaluator into the player scene, and add concrete video evaluation. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
 2. Capture BMSE/iBMSC clipboard samples with tool/version provenance, then broaden BMS dialect/profile and exact branch-editing fixtures.
 3. Expand SM/SSC and osu!mania implementation-profile/version fixtures while retaining explicit format limits and loss diagnostics.
 

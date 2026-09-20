@@ -26,6 +26,7 @@ add_executable(wormedit_core_tests
     core/note_label_editor_tests.cpp
     core/pause_warp_editor_tests.cpp
     core/player_preview_tests.cpp
+    core/storyboard_preview_tests.cpp
     core/quantize_tests.cpp
     core/rational_tests.cpp
     core/recovery_controller_tests.cpp

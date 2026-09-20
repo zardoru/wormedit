@@ -268,6 +268,9 @@ struct storyboard_value_t {
 struct storyboard_evaluation_result_t {
     storyboard_value_t value;
     storyboard_diagnostic_t diagnostic;
+    std::int64_t start_time_ms{};
+    std::uint64_t source_order{};
+    std::uint64_t visit_order{};
     bool failed{};
 };
 

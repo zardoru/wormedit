@@ -81,28 +81,44 @@ auto transport_t::decode_block(decoder_t& decoder, session_token_t token, audio_
 
 auto transport_t::schedule_voice(session_token_t token, transport_voice_t voice)
     -> voice_schedule_status_t {
-    if (!valid_voice(voice)) {
+    return schedule_voices(token, std::span<const transport_voice_t>{&voice, 1});
+}
+
+auto transport_t::schedule_voices(session_token_t token, std::span<const transport_voice_t> voices)
+    -> voice_schedule_status_t {
+    if (voices.empty() || !std::ranges::all_of(voices, valid_voice)) {
         return voice_schedule_status_t::invalid_voice;
+    }
+    for (std::size_t index = 0; index < voices.size(); ++index) {
+        if (std::ranges::any_of(voices.subspan(index + 1), [&](const auto& candidate) {
+                return candidate.id == voices[index].id;
+            })) {
+            return voice_schedule_status_t::duplicate_id;
+        }
     }
     auto status = voice_schedule_status_t::stale_generation;
     const auto current = decode_session_.with_current(token, [&] {
         const std::scoped_lock lock(mutex_);
-        if (std::ranges::any_of(scheduled_voices_, [&voice](const auto& entry) {
-                return entry.active && entry.voice.id == voice.id;
+        if (std::ranges::any_of(voices, [&](const auto& voice) {
+                return std::ranges::any_of(scheduled_voices_, [&](const auto& entry) {
+                    return entry.active && entry.voice.id == voice.id;
+                });
             })) {
             status = voice_schedule_status_t::duplicate_id;
-        } else if (active_scheduled_voices_ >= maximum_scheduled_voices_) {
+        } else if (voices.size() > maximum_scheduled_voices_ - active_scheduled_voices_) {
             status = voice_schedule_status_t::capacity_exceeded;
         } else {
-            const auto reusable = std::ranges::find_if(
-                scheduled_voices_, [](const auto& entry) { return !entry.active; });
-            if (reusable != scheduled_voices_.end()) {
-                reusable->voice = std::move(voice);
-                reusable->active = true;
-            } else {
-                scheduled_voices_.push_back({.voice = std::move(voice), .active = true});
+            for (const auto& voice : voices) {
+                const auto reusable = std::ranges::find_if(
+                    scheduled_voices_, [](const auto& entry) { return !entry.active; });
+                if (reusable != scheduled_voices_.end()) {
+                    reusable->voice = voice;
+                    reusable->active = true;
+                } else {
+                    scheduled_voices_.push_back({.voice = voice, .active = true});
+                }
             }
-            ++active_scheduled_voices_;
+            active_scheduled_voices_ += voices.size();
             status = voice_schedule_status_t::scheduled;
         }
     });

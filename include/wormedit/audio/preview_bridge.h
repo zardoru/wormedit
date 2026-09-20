@@ -18,9 +18,11 @@ struct preview_voice_source_t {
     float gain{1.0F};
 };
 
-struct preview_resource_source_binding_t {
-    resource_id_t resource;
-    preview_voice_source_t voice;
+struct preview_object_source_binding_t {
+    object_id_t object;
+    // One chart event may expand to several exact BMSON slice/layer voices.
+    // They are scheduled atomically at the event's timeline frame.
+    std::vector<preview_voice_source_t> voices;
 };
 
 struct preview_metronome_source_binding_t {
@@ -35,6 +37,7 @@ enum class preview_bridge_start_status_t : std::uint8_t {
     invalid_schedule,
     invalid_source_binding,
     duplicate_source_binding,
+    source_binding_capacity_exceeded,
     transport_start_failed,
 };
 
@@ -70,10 +73,16 @@ struct preview_bridge_pump_result_t {
 // its queue head for the next refill.
 class preview_transport_bridge_t {
   public:
-    explicit preview_transport_bridge_t(transport_t& transport) : transport_(transport) {}
+    explicit preview_transport_bridge_t(transport_t& transport,
+                                        std::size_t maximum_object_bindings = 200'000,
+                                        std::size_t maximum_total_voices = 200'000,
+                                        std::size_t maximum_layers_per_object = 64)
+        : transport_(transport), maximum_object_bindings_(maximum_object_bindings),
+          maximum_total_voices_(maximum_total_voices),
+          maximum_layers_per_object_(maximum_layers_per_object) {}
 
     [[nodiscard]] auto start(const preview_schedule_t& schedule,
-                             std::span<const preview_resource_source_binding_t> resources,
+                             std::span<const preview_object_source_binding_t> objects,
                              std::span<const preview_metronome_source_binding_t> metronome = {},
                              std::uint64_t seek_frame = 0) -> preview_bridge_start_result_t;
     [[nodiscard]] auto seek(std::uint64_t sample_frame) -> preview_bridge_start_result_t;
@@ -95,8 +104,11 @@ class preview_transport_bridge_t {
     [[nodiscard]] auto begin_session(std::uint64_t seek_frame) -> preview_bridge_start_result_t;
 
     transport_t& transport_;
+    std::size_t maximum_object_bindings_{};
+    std::size_t maximum_total_voices_{};
+    std::size_t maximum_layers_per_object_{};
     const preview_schedule_t* schedule_{};
-    std::vector<preview_resource_source_binding_t> resources_;
+    std::vector<preview_object_source_binding_t> objects_;
     std::vector<preview_metronome_source_binding_t> metronome_;
     preview_queue_head_t playable_head_;
     preview_queue_head_t bgm_head_;

@@ -80,6 +80,11 @@ class transport_t {
                                     audio_block_key_t key) -> block_decode_result_t;
     [[nodiscard]] auto schedule_voice(session_token_t token, transport_voice_t voice)
         -> voice_schedule_status_t;
+    // Validates the complete batch before publishing any voice. This keeps a
+    // layered chart event atomic when the bounded slot pool is exhausted.
+    [[nodiscard]] auto schedule_voices(session_token_t token,
+                                       std::span<const transport_voice_t> voices)
+        -> voice_schedule_status_t;
     [[nodiscard]] auto mix(session_token_t token, std::uint64_t first_timeline_frame,
                            std::span<float> interleaved_stereo) -> transport_mix_result_t;
 

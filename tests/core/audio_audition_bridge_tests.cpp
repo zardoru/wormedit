@@ -15,12 +15,10 @@ auto source(const char* name) -> audio_source_identity_t {
     return {name, "revision:1"};
 }
 
-auto clip(const char* name, std::uint64_t start = 0, std::uint64_t count = 4,
-          float gain = 1.0F) -> audition_clip_t {
-    return {.source = source(name),
-            .source_start_frame = start,
-            .frame_count = count,
-            .gain = gain};
+auto clip(const char* name, std::uint64_t start = 0, std::uint64_t count = 4, float gain = 1.0F)
+    -> audition_clip_t {
+    return {
+        .source = source(name), .source_start_frame = start, .frame_count = count, .gain = gain};
 }
 
 } // namespace
@@ -73,7 +71,7 @@ TEST_CASE("audition bridge replaces generations and rejects invalid input before
     CHECK(transport.is_current(*second.token));
 }
 
-TEST_CASE("audition bridge bounds layers and stops partial or active sessions",
+TEST_CASE("audition bridge bounds layers and atomically rejects or stops sessions",
           "[unit][audio][audition-bridge][capacity][stop]") {
     decoded_block_cache_t cache;
     transport_t transport{cache, 1};
@@ -85,7 +83,7 @@ TEST_CASE("audition bridge bounds layers and stops partial or active sessions",
     const std::array over_transport_capacity{clip("one"), clip("two")};
     const auto rejected = bridge.start(over_transport_capacity);
     CHECK(rejected.status == audition_start_status_t::transport_capacity_exceeded);
-    CHECK(rejected.scheduled_layers == 1);
+    CHECK(rejected.scheduled_layers == 0);
     CHECK_FALSE(bridge.session_token().has_value());
     CHECK(transport.scheduled_voice_count() == 0);
 

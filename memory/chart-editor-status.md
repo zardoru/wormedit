@@ -210,6 +210,8 @@ The typed selection action boundary now validates arbitrary editor object identi
 
 The application now starts those prepared one-shot auditions through an app-private SDL audio stream. The stream lock serializes callback execution with replacement and hard Stop, queued samples are cleared on both boundaries, UI-thread service performs bounded decoder refill after releasing the session mutex, and the callback only mixes cache-resident PCM. Decoder, cache-underrun, and device-submission failures return to the UI as typed service outcomes. A dummy SDL-device integration test proves callback advancement and hard Stop; the current native configuration discovers 465 tests. Full chart-play transport/device integration remains separate work. This supersedes the preceding statement that the session was not started.
 
+The chart-preview transport boundary now binds scheduled semantic object IDs to bounded vectors of exact source slices instead of binding one whole source per resource ID. This represents distinct slices from one BMSON file and simultaneous fused layers without ambiguity. Each event's complete voice batch is validated against IDs and capacity before any layer is published, so a constrained transport cannot leave partial polyphony or duplicate layers at the queue head; one-shot audition uses the same atomic batch primitive. The native configuration now discovers 468 tests. Schedule-level fused-event canonicalization, decoded lookahead for chart playback, and SDL chart-play timeline ownership remain next steps.
+
 6. Keep [`docs/chart-editor-plan.md`](../docs/chart-editor-plan.md) and this status file current when decisions change.
 
 ## Current code constraints

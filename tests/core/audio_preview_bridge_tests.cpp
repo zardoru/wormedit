@@ -14,9 +14,9 @@ namespace {
 using namespace wormedit;
 using namespace wormedit::audio;
 
-auto binding(resource_id_t resource = resource_id_t{1}) -> preview_resource_source_binding_t {
-    return {.resource = resource,
-            .voice = {.source = {"asset:key", "revision:1"}, .frame_count = 64, .gain = 0.1F}};
+auto binding(object_id_t object = object_id_t{1}) -> preview_object_source_binding_t {
+    return {.object = object,
+            .voices = {{.source = {"asset:key", "revision:1"}, .frame_count = 64, .gain = 0.1F}}};
 }
 
 auto click_binding(metronome_accent_t accent) -> preview_metronome_source_binding_t {
@@ -50,10 +50,14 @@ TEST_CASE("preview bridge windows more than 256 sequential events through bounde
     for (std::size_t index = 0; index < event_count; ++index) {
         chart.playable.push_back(audio_event(index * 10, index + 1));
     }
-    auto short_voice = binding();
-    short_voice.voice.frame_count = 2;
-    const std::array resources{short_voice};
-    const auto started = bridge.start(chart, resources);
+    std::vector<preview_object_source_binding_t> objects;
+    objects.reserve(event_count);
+    for (std::size_t index = 0; index < event_count; ++index) {
+        auto short_voice = binding(object_id_t{index + 1});
+        short_voice.voices.front().frame_count = 2;
+        objects.push_back(std::move(short_voice));
+    }
+    const auto started = bridge.start(chart, objects);
     REQUIRE(started);
 
     std::size_t scheduled{};
@@ -95,9 +99,11 @@ TEST_CASE("preview bridge preserves playable, BGM, and metronome polyphony",
                         .measure = measure_id_t{1},
                         .pulse = 0,
                         .accent = metronome_accent_t::measure}};
-    const std::array resources{binding()};
+    const std::array objects{binding(object_id_t{1}), binding(object_id_t{2}),
+                             binding(object_id_t{3}), binding(object_id_t{4}),
+                             binding(object_id_t{5})};
     const std::array clicks{click_binding(metronome_accent_t::measure)};
-    const auto started = bridge.start(chart, resources, clicks);
+    const auto started = bridge.start(chart, objects, clicks);
     REQUIRE(started);
 
     const auto pumped = bridge.materialize_until(1);
@@ -121,8 +127,9 @@ TEST_CASE("preview bridge seeks and restarts with fresh session generations",
     preview_transport_bridge_t bridge{transport};
     auto chart = schedule();
     chart.playable = {audio_event(10, 1), audio_event(20, 2), audio_event(30, 3)};
-    const std::array resources{binding()};
-    const auto first = bridge.start(chart, resources, {}, 20);
+    const std::array objects{binding(object_id_t{1}), binding(object_id_t{2}),
+                             binding(object_id_t{3})};
+    const auto first = bridge.start(chart, objects, {}, 20);
     REQUIRE(first);
     CHECK(bridge.materialize_until(40).scheduled_events == 2);
 
@@ -149,8 +156,8 @@ TEST_CASE("preview bridge Stop invalidates its generation and clears scheduled v
     preview_transport_bridge_t bridge{transport};
     auto chart = schedule();
     chart.playable = {audio_event(0, 1), audio_event(10, 2)};
-    const std::array resources{binding()};
-    const auto started = bridge.start(chart, resources);
+    const std::array objects{binding(object_id_t{1}), binding(object_id_t{2})};
+    const auto started = bridge.start(chart, objects);
     REQUIRE(started);
     REQUIRE(bridge.materialize_until(20).scheduled_events == 2);
 
@@ -163,7 +170,7 @@ TEST_CASE("preview bridge Stop invalidates its generation and clears scheduled v
           transport_mix_status_t::stale_generation);
     CHECK(std::ranges::all_of(output, [](float sample) { return sample == 0.0F; }));
 
-    const auto new_session = bridge.start(chart, resources);
+    const auto new_session = bridge.start(chart, objects);
     REQUIRE(new_session);
     CHECK(new_session.token != started.token);
 }
@@ -175,8 +182,8 @@ TEST_CASE("preview bridge skips missing sources and advances only consumed queue
     preview_transport_bridge_t bridge{transport};
     auto chart = schedule();
     chart.playable = {audio_event(10, 1, resource_id_t{2}), audio_event(11, 2, resource_id_t{1})};
-    const std::array resources{binding()};
-    const auto started = bridge.start(chart, resources);
+    const std::array objects{binding(object_id_t{2})};
+    const auto started = bridge.start(chart, objects);
     REQUIRE(started);
 
     const auto first = bridge.materialize_until(11);
@@ -199,10 +206,14 @@ TEST_CASE("preview bridge leaves an over-capacity same-frame event at the queue 
     preview_transport_bridge_t bridge{transport};
     auto chart = schedule();
     chart.playable = {audio_event(0, 1), audio_event(0, 2), audio_event(10, 3)};
-    auto short_voice = binding();
-    short_voice.voice.frame_count = 2;
-    const std::array resources{short_voice};
-    const auto started = bridge.start(chart, resources);
+    auto first_voice = binding(object_id_t{1});
+    auto second_voice = binding(object_id_t{2});
+    auto third_voice = binding(object_id_t{3});
+    first_voice.voices.front().frame_count = 2;
+    second_voice.voices.front().frame_count = 2;
+    third_voice.voices.front().frame_count = 2;
+    const std::array objects{first_voice, second_voice, third_voice};
+    const auto started = bridge.start(chart, objects);
     REQUIRE(started);
 
     const auto initial = bridge.materialize_until(11);
@@ -215,4 +226,48 @@ TEST_CASE("preview bridge leaves an over-capacity same-frame event at the queue 
     CHECK(resumed.status == preview_bridge_pump_status_t::ready);
     CHECK(resumed.scheduled_events == 1);
     CHECK(transport.scheduled_voice_count() == 1);
+}
+
+TEST_CASE("preview bridge schedules every layer of one object atomically",
+          "[unit][audio][preview-bridge][layers][capacity]") {
+    decoded_block_cache_t cache;
+    auto transport = transport_for(cache, 2);
+    preview_transport_bridge_t bridge{transport};
+    auto chart = schedule();
+    chart.playable = {audio_event(0, 1)};
+    auto layered = binding(object_id_t{1});
+    layered.voices.push_back(
+        {.source = {"asset:layer", "revision:1"}, .frame_count = 64, .gain = 0.1F});
+    layered.voices.push_back(
+        {.source = {"asset:third", "revision:1"}, .frame_count = 64, .gain = 0.1F});
+    const std::array objects{layered};
+    const auto started = bridge.start(chart, objects);
+    REQUIRE(started);
+
+    const auto pumped = bridge.materialize_until(1);
+    CHECK(pumped.status == preview_bridge_pump_status_t::capacity_limited);
+    CHECK(pumped.scheduled_events == 0);
+    CHECK(transport.scheduled_voice_count() == 0);
+    CHECK(bridge.materialize_until(1).status == preview_bridge_pump_status_t::capacity_limited);
+}
+
+TEST_CASE("preview bridge rejects duplicate and unbounded object-layer bindings",
+          "[unit][audio][preview-bridge][layers][validation]") {
+    decoded_block_cache_t cache;
+    auto transport = transport_for(cache, 8);
+    auto chart = schedule();
+    chart.playable = {audio_event(0, 1)};
+
+    const std::array duplicates{binding(object_id_t{1}), binding(object_id_t{1})};
+    preview_transport_bridge_t bridge{transport};
+    CHECK(bridge.start(chart, duplicates).status ==
+          preview_bridge_start_status_t::duplicate_source_binding);
+
+    auto layered = binding(object_id_t{1});
+    layered.voices.push_back({.source = {"asset:layer", "revision:1"}, .frame_count = 64});
+    const std::array objects{layered};
+    preview_transport_bridge_t bounded{transport, 1, 1, 1};
+    CHECK(bounded.start(chart, objects).status ==
+          preview_bridge_start_status_t::source_binding_capacity_exceeded);
+    CHECK(transport.scheduled_voice_count() == 0);
 }

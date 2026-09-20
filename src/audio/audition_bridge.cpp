@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <vector>
 
 namespace wormedit::audio {
 namespace {
@@ -32,36 +33,35 @@ auto audition_transport_bridge_t::start(std::span<const audition_clip_t> clips)
     const auto token = transport_.start();
     if (!token.has_value()) {
         token_.reset();
-        return {.status = audition_start_status_t::transport_start_failed,
-                .token = std::nullopt};
+        return {.status = audition_start_status_t::transport_start_failed, .token = std::nullopt};
     }
     token_ = token;
-    std::size_t scheduled{};
-    for (const auto& clip : clips) {
-        const auto status = transport_.schedule_voice(
-            *token,
-            {.id = static_cast<std::uint64_t>(scheduled + 1),
-             .kind = voice_kind_t::click_preview,
-             .source = clip.source,
-             .source_start_frame = clip.source_start_frame,
-             .frame_count = clip.frame_count,
-             .gain = clip.gain});
-        if (status != voice_schedule_status_t::scheduled) {
-            static_cast<void>(transport_.stop());
-            token_.reset();
-            return {
-                .status = status == voice_schedule_status_t::capacity_exceeded
-                              ? audition_start_status_t::transport_capacity_exceeded
-                              : audition_start_status_t::transport_rejected_clip,
-                .token = std::nullopt,
-                .scheduled_layers = scheduled,
-            };
-        }
-        ++scheduled;
+    std::vector<transport_voice_t> voices;
+    voices.reserve(clips.size());
+    for (std::size_t index = 0; index < clips.size(); ++index) {
+        const auto& clip = clips[index];
+        voices.push_back({.id = static_cast<std::uint64_t>(index + 1),
+                          .kind = voice_kind_t::click_preview,
+                          .source = clip.source,
+                          .source_start_frame = clip.source_start_frame,
+                          .frame_count = clip.frame_count,
+                          .gain = clip.gain});
+    }
+    const auto status = transport_.schedule_voices(*token, voices);
+    if (status != voice_schedule_status_t::scheduled) {
+        static_cast<void>(transport_.stop());
+        token_.reset();
+        return {
+            .status = status == voice_schedule_status_t::capacity_exceeded
+                          ? audition_start_status_t::transport_capacity_exceeded
+                          : audition_start_status_t::transport_rejected_clip,
+            .token = std::nullopt,
+            .scheduled_layers = 0,
+        };
     }
     return {.status = audition_start_status_t::started,
             .token = token,
-            .scheduled_layers = scheduled};
+            .scheduled_layers = clips.size()};
 }
 
 auto audition_transport_bridge_t::stop() noexcept -> transport_stop_result_t {

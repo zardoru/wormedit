@@ -46,14 +46,15 @@ TEST_CASE("transport mixes same-frame keysound polyphony from decoded cache bloc
         };
         const auto decoded = transport.decode_block(decoders[index], *token, key);
         REQUIRE(decoded.status == wormedit::audio::block_decode_status_t::decoded);
-        REQUIRE(transport.schedule_voice(*token, {
-                    .id = index + 1U,
-                    .kind = wormedit::audio::voice_kind_t::playable_note,
-                    .source = key.source,
-                    .timeline_start_frame = 128,
-                    .source_start_frame = 0,
-                    .frame_count = decoders[index].info()->output_frame_count,
-                }) == wormedit::audio::voice_schedule_status_t::scheduled);
+        REQUIRE(transport.schedule_voice(
+                    *token, {
+                                .id = index + 1U,
+                                .kind = wormedit::audio::voice_kind_t::playable_note,
+                                .source = key.source,
+                                .timeline_start_frame = 128,
+                                .source_start_frame = 0,
+                                .frame_count = decoders[index].info()->output_frame_count,
+                            }) == wormedit::audio::voice_schedule_status_t::scheduled);
     }
 
     std::vector<float> output(4096U * wormedit::audio::output_channel_count);
@@ -94,13 +95,14 @@ TEST_CASE("transport Stop clears every voice class and silences the next callbac
         wormedit::audio::voice_kind_t::click_preview,
     };
     for (std::size_t index = 0; index < kinds.size(); ++index) {
-        REQUIRE(transport.schedule_voice(*token, {
-                    .id = index + 1U,
-                    .kind = kinds[index],
-                    .source = key.source,
-                    .frame_count = decoder.info()->output_frame_count,
-                    .gain = 0.2F,
-                }) == wormedit::audio::voice_schedule_status_t::scheduled);
+        REQUIRE(transport.schedule_voice(*token,
+                                         {
+                                             .id = index + 1U,
+                                             .kind = kinds[index],
+                                             .source = key.source,
+                                             .frame_count = decoder.info()->output_frame_count,
+                                             .gain = 0.2F,
+                                         }) == wormedit::audio::voice_schedule_status_t::scheduled);
     }
     std::vector<float> before_stop(512U * wormedit::audio::output_channel_count);
     CHECK(transport.mix(*token, 0, before_stop).voices_mixed == 4);
@@ -124,11 +126,12 @@ TEST_CASE("transport Stop clears every voice class and silences the next callbac
     const auto next_token = transport.start();
     REQUIRE(next_token.has_value());
     CHECK(next_token != token);
-    CHECK(transport.schedule_voice(*token, {
-              .id = 99,
-              .source = key.source,
-              .frame_count = 1,
-          }) == wormedit::audio::voice_schedule_status_t::stale_generation);
+    CHECK(transport.schedule_voice(
+              *token, {
+                          .id = 99,
+                          .source = key.source,
+                          .frame_count = 1,
+                      }) == wormedit::audio::voice_schedule_status_t::stale_generation);
 }
 
 TEST_CASE("transport reports missing source blocks without emitting garbage",
@@ -137,16 +140,18 @@ TEST_CASE("transport reports missing source blocks without emitting garbage",
     wormedit::audio::transport_t transport(blocks, 1);
     const auto token = transport.start();
     REQUIRE(token.has_value());
-    REQUIRE(transport.schedule_voice(*token, {
-                .id = 1,
-                .source = source("missing.ogg"),
-                .frame_count = 128,
-            }) == wormedit::audio::voice_schedule_status_t::scheduled);
-    CHECK(transport.schedule_voice(*token, {
-              .id = 2,
-              .source = source("other.ogg"),
-              .frame_count = 128,
-          }) == wormedit::audio::voice_schedule_status_t::capacity_exceeded);
+    REQUIRE(
+        transport.schedule_voice(*token, {
+                                             .id = 1,
+                                             .source = source("missing.ogg"),
+                                             .frame_count = 128,
+                                         }) == wormedit::audio::voice_schedule_status_t::scheduled);
+    CHECK(transport.schedule_voice(
+              *token, {
+                          .id = 2,
+                          .source = source("other.ogg"),
+                          .frame_count = 128,
+                      }) == wormedit::audio::voice_schedule_status_t::capacity_exceeded);
 
     std::vector<float> output(128U * wormedit::audio::output_channel_count, 1.0F);
     const auto mixed = transport.mix(*token, 0, output);
@@ -156,15 +161,46 @@ TEST_CASE("transport reports missing source blocks without emitting garbage",
     CHECK(all_zero(output));
     CHECK(transport.scheduled_voice_count() == 0);
 
-    CHECK(transport.schedule_voice(*token, {
-              .id = 2,
-              .source = source("other.ogg"),
-              .timeline_start_frame = 256,
-              .frame_count = 128,
-          }) == wormedit::audio::voice_schedule_status_t::scheduled);
+    CHECK(
+        transport.schedule_voice(*token, {
+                                             .id = 2,
+                                             .source = source("other.ogg"),
+                                             .timeline_start_frame = 256,
+                                             .frame_count = 128,
+                                         }) == wormedit::audio::voice_schedule_status_t::scheduled);
     CHECK(transport.scheduled_voice_count() == 1);
     std::ranges::fill(output, 1.0F);
     CHECK(transport.mix(*token, 0, output).status ==
           wormedit::audio::transport_mix_status_t::non_monotonic_callback);
     CHECK(all_zero(output));
+}
+
+TEST_CASE("transport publishes layered voice batches atomically",
+          "[unit][audio][transport][batch][capacity]") {
+    using namespace wormedit::audio;
+    decoded_block_cache_t blocks;
+    transport_t transport(blocks, 2);
+    const auto token = transport.start();
+    REQUIRE(token.has_value());
+
+    const std::array too_many{
+        transport_voice_t{.id = 1, .source = source("one.ogg"), .frame_count = 64},
+        transport_voice_t{.id = 2, .source = source("two.ogg"), .frame_count = 64},
+        transport_voice_t{.id = 3, .source = source("three.ogg"), .frame_count = 64},
+    };
+    CHECK(transport.schedule_voices(*token, too_many) ==
+          voice_schedule_status_t::capacity_exceeded);
+    CHECK(transport.scheduled_voice_count() == 0);
+
+    const std::array duplicate_ids{
+        transport_voice_t{.id = 7, .source = source("one.ogg"), .frame_count = 64},
+        transport_voice_t{.id = 7, .source = source("two.ogg"), .frame_count = 64},
+    };
+    CHECK(transport.schedule_voices(*token, duplicate_ids) ==
+          voice_schedule_status_t::duplicate_id);
+    CHECK(transport.scheduled_voice_count() == 0);
+
+    const auto accepted = std::span{too_many}.first<2>();
+    CHECK(transport.schedule_voices(*token, accepted) == voice_schedule_status_t::scheduled);
+    CHECK(transport.scheduled_voice_count() == 2);
 }

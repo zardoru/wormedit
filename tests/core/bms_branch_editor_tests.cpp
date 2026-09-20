@@ -80,6 +80,25 @@ auto chart_tree(const document_history_t& history) -> const bms_control_node_t& 
     return *history.document.charts.front().bms_control_tree;
 }
 
+auto selected_branch(document_history_t& history, std::int64_t value)
+    -> bms_branch_selection_request_t {
+    auto proposed = history.document.charts.front().active_branch_selection;
+    proposed.front().selected_value = value;
+    return {
+        .chart = history.document.charts.front().id,
+        .proposed = std::move(proposed),
+    };
+}
+
+auto first_note_resource_name(const song_document_t& song) -> std::string_view {
+    const auto& note = song.charts.front().measures.front().notes.front();
+    if (!note.sound.has_value()) {
+        return {};
+    }
+    const auto resource = std::ranges::find(song.resources, *note.sound, &resource_entry_t::id);
+    return resource == song.resources.end() ? std::string_view{} : resource->name;
+}
+
 auto replace_request(const document_history_t& history, std::string replacement)
     -> bms_branch_statement_edit_t {
     const auto* target =
@@ -303,4 +322,192 @@ TEST_CASE("BMS branch projection rejects invalid stale and unbounded proposals w
     CHECK_FALSE(failed_preview);
     CHECK(failed_preview.entering_statement_ids.empty());
     CHECK(failed_preview.leaving_statement_ids.empty());
+}
+
+TEST_CASE("BMS branch selection rematerializes semantics as one undoable command",
+          "[unit][core][bms][branch][selection][command]") {
+    auto history = make_history();
+    const auto song_id = history.document.id;
+    const auto chart_id = history.document.charts.front().id;
+    history.document.output_groups.push_back({
+        .name = "BMS output",
+        .family = format_family_t::bms,
+        .charts = {chart_id},
+        .relative_output_path = "chart.bms",
+    });
+    REQUIRE_FALSE(history.document.audio_assets.empty());
+    history.document.audio_assets.front().stream = {
+        .sample_rate = 48'000,
+        .channels = 2,
+        .frame_count = 123'456,
+        .seekable = true,
+    };
+    history.document.audio_assets.front().source_path = "resolved/active.wav";
+    history.document.audio_assets.front().waveform_cache_path = "active.waveform";
+    history.document.charts.front().metadata.name = "Editor difficulty name";
+    history.document.charts.front().measures.front().definition.meter = meter_t{8, 8};
+    CHECK(first_note_resource_name(history.document) == "active.wav");
+
+    const auto changed = apply_bms_branch_selection_command(history, history.document.revision,
+                                                            selected_branch(history, 2));
+    REQUIRE(changed);
+    CHECK(changed.command.diagnostics.empty());
+    CHECK(changed.format_diagnostics.empty());
+    REQUIRE(changed.preview);
+    CHECK(changed.preview.entering_statement_ids.size() == 1);
+    CHECK(changed.preview.leaving_statement_ids.size() == 1);
+    CHECK(history.document.id == song_id);
+    CHECK(history.document.charts.front().id == chart_id);
+    REQUIRE(history.document.output_groups.size() == 1);
+    CHECK(history.document.output_groups.front().charts == std::vector{chart_id});
+    REQUIRE_FALSE(history.document.audio_assets.empty());
+    CHECK(history.document.audio_assets.front().source_path == "resolved/active.wav");
+    CHECK(history.document.audio_assets.front().stream.sample_rate == 48'000);
+    CHECK(history.document.audio_assets.front().waveform_cache_path == "active.waveform");
+    CHECK(history.document.charts.front().metadata.name == "Editor difficulty name");
+    CHECK(history.document.charts.front().measures.front().definition.meter == meter_t{8, 8});
+    REQUIRE(history.document.charts.front().active_branch_selection.size() == 1);
+    CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 2);
+    CHECK(first_note_resource_name(history.document) == "inactive.wav");
+    CHECK(history.undo.size() == 1);
+
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 1);
+    CHECK(first_note_resource_name(history.document) == "active.wav");
+    REQUIRE(redo_document_command(history));
+    CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 2);
+    CHECK(first_note_resource_name(history.document) == "inactive.wav");
+}
+
+TEST_CASE("BMS branch selection retains serialized active edits when switching away and back",
+          "[unit][core][bms][branch][selection][roundtrip]") {
+    auto history = make_history();
+    auto edited = history.document;
+    REQUIRE(edited.charts.front().measures.front().notes.size() == 1);
+    edited.charts.front().measures.front().notes.front().position.row = 480;
+    const auto edit = commit_document_command(history, std::move(edited), "Move branch note");
+    REQUIRE(edit);
+
+    const auto switched_away = apply_bms_branch_selection_command(
+        history, history.document.revision, selected_branch(history, 2));
+    REQUIRE(switched_away);
+    REQUIRE(history.document.charts.front().measures.front().notes.size() == 1);
+    CHECK(history.document.charts.front().measures.front().notes.front().position.row == 0);
+
+    const auto switched_back = apply_bms_branch_selection_command(
+        history, history.document.revision, selected_branch(history, 1));
+    REQUIRE(switched_back);
+    REQUIRE(history.document.charts.front().measures.front().notes.size() == 1);
+    CHECK(history.document.charts.front().measures.front().notes.front().position.row == 480);
+    CHECK(first_note_resource_name(history.document) == "active.wav");
+}
+
+TEST_CASE("BMS branch selection maps nested controls across normalized source orders",
+          "[unit][core][bms][branch][selection][nested]") {
+    constexpr std::string_view nested_source = "#PLAYER 1\n"
+                                               "#BPM 120\n"
+                                               "#WAV01 first.wav\n"
+                                               "#WAV02 second.wav\n"
+                                               "#RANDOM 2\n"
+                                               "#IF 2\n"
+                                               "#SWITCH 2\n"
+                                               "#CASE 1\n"
+                                               "#00011:0100\n"
+                                               "#SKIP\n"
+                                               "#CASE 2\n"
+                                               "#00012:0200\n"
+                                               "#SKIP\n"
+                                               "#ENDSW\n"
+                                               "#ENDIF\n"
+                                               "#ENDRANDOM\n";
+    bms_parse_options_t options;
+    options.lane_profile_id = "bme-7k-outside-scratch";
+    options.branch_choices = {
+        {source_line_order(nested_source, "#RANDOM 2"), 2},
+        {source_line_order(nested_source, "#SWITCH 2"), 2},
+    };
+    const auto parsed = parse_bms_bytes(
+        std::as_bytes(std::span{nested_source.data(), nested_source.size()}), std::move(options));
+    REQUIRE(parsed.song.has_value());
+    REQUIRE_FALSE(parsed.has_errors());
+    auto history = make_document_history(*parsed.song);
+    const auto* random = find_node(chart_tree(history), bms_control_kind_t::random, "#RANDOM 2");
+    const auto* switch_block =
+        find_node(chart_tree(history), bms_control_kind_t::switch_block, "#SWITCH 2");
+    REQUIRE(random != nullptr);
+    REQUIRE(switch_block != nullptr);
+    CHECK(first_note_resource_name(history.document) == "second.wav");
+
+    bms_branch_selection_request_t request{
+        .chart = history.document.charts.front().id,
+        .proposed = {{random->id, 2}, {switch_block->id, 1}},
+    };
+    const auto changed =
+        apply_bms_branch_selection_command(history, history.document.revision, std::move(request));
+    REQUIRE(changed);
+    REQUIRE(history.document.charts.front().active_branch_selection.size() == 2);
+    CHECK(first_note_resource_name(history.document) == "first.wav");
+}
+
+TEST_CASE("BMS branch selection rejects stale invalid and lossy proposals atomically",
+          "[unit][core][bms][branch][selection][command][negative]") {
+    auto history = make_history();
+    const auto revision = history.document.revision;
+
+    const auto stale =
+        apply_bms_branch_selection_command(history, revision + 1, selected_branch(history, 2));
+    CHECK_FALSE(stale);
+    REQUIRE(stale.command.diagnostics.size() == 1);
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+
+    auto invalid_request = selected_branch(history, 3);
+    const auto invalid =
+        apply_bms_branch_selection_command(history, revision, std::move(invalid_request));
+    CHECK_FALSE(invalid);
+    REQUIRE(invalid.format_diagnostics.size() == 1);
+    CHECK(invalid.format_diagnostics.front().code ==
+          bms_branch_selection_diagnostic_code_t::invalid_selection);
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+
+    auto parse_limited_request = selected_branch(history, 2);
+    parse_limited_request.max_line_bytes = 1;
+    const auto parse_limited =
+        apply_bms_branch_selection_command(history, revision, std::move(parse_limited_request));
+    CHECK_FALSE(parse_limited);
+    REQUIRE(parse_limited.format_diagnostics.size() == 1);
+    CHECK(parse_limited.format_diagnostics.front().code ==
+          bms_branch_selection_diagnostic_code_t::parse_failed);
+    CHECK_FALSE(parse_limited.parse_diagnostics.empty());
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+
+    history.document.charts.front().bookmarks.push_back({
+        .id = object_id_t{999'999},
+        .label = "preserve me",
+        .position = local_position_t{history.document.charts.front().measures.front().id, 0},
+    });
+    const auto lossy =
+        apply_bms_branch_selection_command(history, revision, selected_branch(history, 2));
+    CHECK_FALSE(lossy);
+    REQUIRE(lossy.format_diagnostics.size() == 1);
+    CHECK(lossy.format_diagnostics.front().code ==
+          bms_branch_selection_diagnostic_code_t::unsupported_editor_state);
+    CHECK(history.document.charts.front().bookmarks.size() == 1);
+    CHECK(history.document.charts.front().active_branch_selection.front().selected_value == 1);
+    CHECK(history.undo.empty());
+
+    auto unrepresentable = make_history();
+    unrepresentable.document.charts.front().measures.front().notes.front().kind = note_kind_t::roll;
+    const auto write_failed = apply_bms_branch_selection_command(
+        unrepresentable, unrepresentable.document.revision, selected_branch(unrepresentable, 2));
+    CHECK_FALSE(write_failed);
+    REQUIRE(write_failed.format_diagnostics.size() == 1);
+    CHECK(write_failed.format_diagnostics.front().code ==
+          bms_branch_selection_diagnostic_code_t::write_failed);
+    CHECK_FALSE(write_failed.write_diagnostics.empty());
+    CHECK(unrepresentable.document.charts.front().active_branch_selection.front().selected_value ==
+          1);
+    CHECK(unrepresentable.undo.empty());
 }

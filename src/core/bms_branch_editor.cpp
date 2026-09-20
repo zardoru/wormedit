@@ -68,4 +68,34 @@ auto apply_bms_branch_statement_delete_command(document_history_t& history,
         "Delete inactive BMS statement");
 }
 
+auto apply_bms_branch_selection_command(document_history_t& history,
+                                        std::uint64_t expected_revision,
+                                        bms_branch_selection_request_t request)
+    -> bms_branch_selection_command_result_t {
+    bms_branch_selection_command_result_t result;
+    result.command.revision = history.document.revision;
+    if (expected_revision != history.document.revision) {
+        result.command.diagnostics.push_back({
+            .severity = diagnostic_severity_t::error,
+            .code = diagnostic_code_t::invalid_id,
+            .message = "BMS branch selection document revision is stale",
+            .object = std::nullopt,
+        });
+        return result;
+    }
+
+    auto rematerialized = rematerialize_bms_branch_selection(history.document, request);
+    const auto can_publish = rematerialized.song.has_value() && !rematerialized.has_errors();
+    result.preview = std::move(rematerialized.preview);
+    result.format_diagnostics = std::move(rematerialized.diagnostics);
+    result.write_diagnostics = std::move(rematerialized.write_diagnostics);
+    result.parse_diagnostics = std::move(rematerialized.parse_diagnostics);
+    if (!can_publish) {
+        return result;
+    }
+    result.command = commit_document_command(history, std::move(*rematerialized.song),
+                                             "Change active BMS branch");
+    return result;
+}
+
 } // namespace wormedit

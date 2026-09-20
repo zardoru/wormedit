@@ -2,6 +2,7 @@
 
 #include <wormedit/core/command.h>
 #include <wormedit/formats/bms.h>
+#include <wormedit/formats/bms_branch_selection.h>
 
 namespace wormedit {
 
@@ -30,5 +31,24 @@ struct bms_branch_statement_command_result_t {
                                                              std::uint64_t expected_revision,
                                                              bms_branch_statement_delete_t deletion)
     -> bms_branch_statement_command_result_t;
+
+struct bms_branch_selection_command_result_t {
+    document_command_result_t command;
+    bms_branch_projection_preview_t preview;
+    std::vector<bms_branch_selection_diagnostic_t> format_diagnostics;
+    std::vector<bms_write_diagnostic_t> write_diagnostics;
+    std::vector<bms_parse_diagnostic_t> parse_diagnostics;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return command.applied;
+    }
+};
+
+// Revision-checks, rematerializes, validates, and publishes one complete BMS
+// branch choice as a single undoable document command.
+[[nodiscard]] auto apply_bms_branch_selection_command(document_history_t& history,
+                                                      std::uint64_t expected_revision,
+                                                      bms_branch_selection_request_t request)
+    -> bms_branch_selection_command_result_t;
 
 } // namespace wormedit

@@ -337,9 +337,14 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         }
         return true;
     };
+    const auto contradictory_filter = std::ranges::any_of(
+        request.required_semantic_layers, [&](layer_id_t layer) {
+            return std::ranges::find(request.excluded_semantic_layers, layer) !=
+                   request.excluded_semantic_layers.end();
+        });
     if ((request.solo_semantic_layer.has_value() && !known_layer(*request.solo_semantic_layer)) ||
         !valid_filter(request.required_semantic_layers) ||
-        !valid_filter(request.excluded_semantic_layers)) {
+        !valid_filter(request.excluded_semantic_layers) || contradictory_filter) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id,
                   "field-scene semantic-layer filter refers to invalid chart layers"));

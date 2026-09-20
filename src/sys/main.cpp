@@ -3640,6 +3640,41 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         application_state.semantic_layer_target = layer->id;
         return "Semantic-layer target: " + layer->name;
     }
+    case WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before adding a semantic layer.";
+        }
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart) {
+            return "Choose a chart before adding a semantic layer.";
+        }
+        std::string name = "Layer";
+        for (std::size_t suffix = 2;; ++suffix) {
+            const auto duplicate = std::ranges::any_of(chart->semantic_layers, [&](const auto& layer) {
+                return layer.name == name;
+            });
+            if (!duplicate) {
+                break;
+            }
+            name = "Layer " + std::to_string(suffix);
+        }
+        constexpr std::array<semantic_layer_rgba_t, 6> colors{{
+            {0.91, 0.35, 0.31, 1.0}, {0.95, 0.67, 0.24, 1.0}, {0.36, 0.74, 0.36, 1.0},
+            {0.25, 0.62, 0.91, 1.0}, {0.58, 0.42, 0.84, 1.0}, {0.87, 0.38, 0.68, 1.0},
+        }};
+        const auto applied = apply_semantic_layer_edit(
+            history, action.compose_input_document_revision,
+            insert_semantic_layer_action_t{state.chart, std::move(name),
+                                           colors[chart->semantic_layers.size() % colors.size()]});
+        if (!applied.applied) {
+            return applied.diagnostics.empty() ? "Semantic layer was not added."
+                                               : applied.diagnostics.front().message;
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        return rebound ? "Semantic layer added."
+                       : (rebound.diagnostics.empty() ? "Semantic layer added, but workspace rebinding failed."
+                                                      : rebound.diagnostics.front().message);
+    }
     case WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER:
         application_state.semantic_layer_target.reset();
         application_state.semantic_layer_paint_mode_active = false;

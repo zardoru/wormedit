@@ -3053,6 +3053,11 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
     for (size_t index = 0; index < visible_layer_count; ++index) {
         semantic_target_active = semantic_target_active || view->semantic_layers[index].selected;
     }
+    nk_layout_row_dynamic(g_context, 22, 1);
+    if (nk_button_label(g_context, "Add semantic layer") && action &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->compose_action = WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER;
+    }
     if (visible_layer_count == 0) {
         nk_layout_row_dynamic(g_context, 22, 1);
         nk_label(g_context, "Semantic layers: no visible palette entries", NK_TEXT_LEFT);

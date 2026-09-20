@@ -52,6 +52,9 @@
 #define WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES 32
 #define WORM_UI_AUDIO_ASSET_CAPACITY 128
 #define WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY 4096
+#define WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY 64
+#define WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY 4096
+#define WORM_UI_PLAYER_PREVIEW_HOLD_CAPACITY 4096
 #define WORM_UI_COMPOSE_MIN_PIXELS_PER_MEASURE 24.0
 #define WORM_UI_COMPOSE_MAX_PIXELS_PER_MEASURE 4096.0
 
@@ -81,6 +84,8 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK,
     WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET,
+    WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW,
+    WORM_UI_WORKSPACE_ACTION_SELECT_PLAYER_PREVIEW_SKIN,
     WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER,
     WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER,
     WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT,
@@ -703,6 +708,80 @@ typedef enum WormUiTimingMeterAction {
     WORM_UI_TIMING_METER_ACTION_APPLY,
 } WormUiTimingMeterAction;
 
+typedef enum WormUiPlayerPreviewSkin {
+    WORM_UI_PLAYER_PREVIEW_SKIN_NEUTRAL = 0,
+    WORM_UI_PLAYER_PREVIEW_SKIN_MANIA,
+    WORM_UI_PLAYER_PREVIEW_SKIN_ARROWS,
+} WormUiPlayerPreviewSkin;
+
+typedef struct WormUiPlayerPreviewRect {
+    double left;
+    double top;
+    double right;
+    double bottom;
+} WormUiPlayerPreviewRect;
+
+typedef struct WormUiPlayerPreviewLaneView {
+    uint64_t lane_id;
+    uint8_t role;
+    uint8_t glyph;
+    uint32_t display_order;
+    WormUiPlayerPreviewRect bounds;
+} WormUiPlayerPreviewLaneView;
+
+typedef struct WormUiPlayerPreviewReceptorView {
+    uint64_t lane_id;
+    uint8_t glyph;
+    WormUiPlayerPreviewRect bounds;
+} WormUiPlayerPreviewReceptorView;
+
+typedef struct WormUiPlayerPreviewNoteView {
+    uint64_t note_id;
+    uint64_t lane_id;
+    uint8_t kind;
+    uint8_t glyph;
+    bool tail;
+    bool semantic_color_visible;
+    uint8_t semantic_red;
+    uint8_t semantic_green;
+    uint8_t semantic_blue;
+    uint8_t semantic_alpha;
+    WormUiPlayerPreviewRect bounds;
+} WormUiPlayerPreviewNoteView;
+
+typedef struct WormUiPlayerPreviewHoldView {
+    uint64_t note_id;
+    uint64_t lane_id;
+    bool semantic_color_visible;
+    uint8_t semantic_red;
+    uint8_t semantic_green;
+    uint8_t semantic_blue;
+    uint8_t semantic_alpha;
+    WormUiPlayerPreviewRect bounds;
+} WormUiPlayerPreviewHoldView;
+
+typedef struct WormUiPlayerPreviewView {
+    bool visible;
+    bool scene_available;
+    bool truncated;
+    bool split_stage;
+    WormUiPlayerPreviewSkin skin;
+    uint64_t chart_id;
+    uint64_t document_revision;
+    uint64_t sample_frame;
+    double viewport_width_pixels;
+    double viewport_height_pixels;
+    const char* status_text;
+    const WormUiPlayerPreviewLaneView* lanes;
+    size_t lane_count;
+    const WormUiPlayerPreviewReceptorView* receptors;
+    size_t receptor_count;
+    const WormUiPlayerPreviewHoldView* hold_bodies;
+    size_t hold_body_count;
+    const WormUiPlayerPreviewNoteView* note_endpoints;
+    size_t note_endpoint_count;
+} WormUiPlayerPreviewView;
+
 // Private scalar view consumed by the selected frontend adapter. The owning
 // application keeps every pointed-to string alive for the duration of compose.
 typedef struct WormUiWorkspaceView {
@@ -738,6 +817,7 @@ typedef struct WormUiWorkspaceView {
     WormUiTimingView timing;
     WormUiComposeView compose;
     WormUiAudioSlicesView audio_slices;
+    WormUiPlayerPreviewView player_preview;
 } WormUiWorkspaceView;
 
 typedef enum WormUiComposeActionKind {
@@ -872,6 +952,7 @@ typedef struct WormUiWorkspaceAction {
     uint64_t recovery_scan_generation;
     uint64_t transport_seek_frame;
     uint64_t audio_asset_id;
+    WormUiPlayerPreviewSkin player_preview_skin;
     WormUiAudioOffsetDragAction audio_offset_drag_action;
     uint64_t audio_offset_drag_chart_id;
     uint64_t audio_offset_drag_document_revision;

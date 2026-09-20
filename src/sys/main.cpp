@@ -21,6 +21,7 @@
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/note_label_editor.h>
+#include <wormedit/core/player_preview.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/recovery_controller.h>
 #include <wormedit/core/semantic_layer_editor.h>
@@ -174,6 +175,11 @@ struct flattened_workspace_t {
     std::array<WormUiComposeLaneKeyBinding, WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY>
         compose_lane_key_storage{};
     std::optional<wormedit::editor_interaction_view_model_t> compose_interaction_view_storage;
+    std::string player_preview_status_storage;
+    std::vector<WormUiPlayerPreviewLaneView> player_preview_lane_storage;
+    std::vector<WormUiPlayerPreviewReceptorView> player_preview_receptor_storage;
+    std::vector<WormUiPlayerPreviewHoldView> player_preview_hold_storage;
+    std::vector<WormUiPlayerPreviewNoteView> player_preview_note_storage;
     std::vector<std::uint64_t> audio_asset_storage;
     std::vector<WormUiAudioWaveformColumnView> audio_waveform_storage;
 };
@@ -198,6 +204,14 @@ struct compose_scene_cache_t {
     std::string status;
 };
 
+struct player_preview_cache_t {
+    wormedit::chart_id_t chart;
+    std::uint64_t revision{};
+    bool attempted{};
+    std::optional<wormedit::player_preview_index_t> index;
+    std::string status;
+};
+
 struct application_command_state_t {
     bool timing_locked{};
     bool note_paint_mode_active{};
@@ -217,6 +231,9 @@ struct application_command_state_t {
     // data; an active gesture keeps its captured snap until it is resolved.
     std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;
     std::unordered_map<std::uint64_t, double> bgm_horizontal_scroll_pixels;
+    bool player_preview_visible{true};
+    wormedit::player_preview_skin_t player_preview_skin{
+        wormedit::player_preview_skin_t::neutral};
     std::function<bool()> transport_active;
     std::function<std::string()> transport_play_pause;
     std::function<std::string(std::uint64_t)> transport_seek;
@@ -3063,6 +3080,161 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.cursor = flattened.compose_cursor_storage ? &*flattened.compose_cursor_storage : nullptr;
 }
 
+void populate_player_preview_view(flattened_workspace_t& flattened,
+                                  const wormedit::document_history_t& history,
+                                  const wormedit::workspace_controller_t& workspace,
+                                  player_preview_cache_t& cache,
+                                  const application_command_state_t& application_state,
+                                  std::uint64_t sample_frame, std::uint32_t sample_rate) {
+    auto& view = flattened.view.player_preview;
+    view.visible = application_state.player_preview_visible;
+    view.skin = static_cast<WormUiPlayerPreviewSkin>(application_state.player_preview_skin);
+    view.viewport_width_pixels = 300.0;
+    view.viewport_height_pixels = 420.0;
+    view.lanes = flattened.player_preview_lane_storage.data();
+    view.receptors = flattened.player_preview_receptor_storage.data();
+    view.hold_bodies = flattened.player_preview_hold_storage.data();
+    view.note_endpoints = flattened.player_preview_note_storage.data();
+    if (!view.visible) {
+        return;
+    }
+    if (!workspace.selected_chart) {
+        flattened.player_preview_status_storage = "Choose a difficulty to preview.";
+        view.status_text = flattened.player_preview_status_storage.c_str();
+        return;
+    }
+    const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
+                                         &wormedit::chart_document_t::id);
+    if (chart == history.document.charts.end()) {
+        flattened.player_preview_status_storage = "The selected difficulty is unavailable.";
+        view.status_text = flattened.player_preview_status_storage.c_str();
+        return;
+    }
+    view.chart_id = chart->id.value;
+    view.document_revision = history.document.revision;
+    view.sample_frame = sample_frame;
+    if (!cache.attempted || cache.chart != chart->id ||
+        cache.revision != history.document.revision) {
+        cache = {.chart = chart->id,
+                 .revision = history.document.revision,
+                 .attempted = true,
+                 .index = std::nullopt,
+                 .status = {}};
+        auto built = wormedit::build_player_preview_index(*chart, history.document.revision);
+        if (built) {
+            cache.index = std::move(*built.index);
+        } else {
+            cache.status = built.diagnostics.empty()
+                               ? "The player-preview visual schedule could not be compiled."
+                               : built.diagnostics.front().message;
+        }
+    }
+    if (!cache.index) {
+        flattened.player_preview_status_storage = cache.status;
+        view.status_text = flattened.player_preview_status_storage.c_str();
+        return;
+    }
+    const auto scene = wormedit::make_player_preview_scene(
+        *cache.index,
+        {.sample_frame = sample_frame,
+         .sample_rate = sample_rate,
+         .viewport_width_pixels = view.viewport_width_pixels,
+         .viewport_height_pixels = view.viewport_height_pixels,
+         .receptor_y_pixels = 52.0,
+         .pixels_per_beat = 82.0,
+         .skin = application_state.player_preview_skin,
+         .maximum_visible_notes = WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY});
+    if (!scene) {
+        flattened.player_preview_status_storage =
+            scene.diagnostics.empty() ? "No player-preview frame is available at this time."
+                                      : scene.diagnostics.front().message;
+        view.status_text = flattened.player_preview_status_storage.c_str();
+        return;
+    }
+    if (scene.scene->lanes.size() > WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY ||
+        scene.scene->receptors.size() > WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY ||
+        scene.scene->hold_bodies.size() > WORM_UI_PLAYER_PREVIEW_HOLD_CAPACITY ||
+        scene.scene->note_endpoints.size() > WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY) {
+        flattened.player_preview_status_storage =
+            "The player-preview frame exceeds the frontend geometry cap.";
+        view.status_text = flattened.player_preview_status_storage.c_str();
+        view.truncated = true;
+        return;
+    }
+    const auto convert_rect = [](const wormedit::player_preview_rect_t& rect) {
+        return WormUiPlayerPreviewRect{rect.left, rect.top, rect.right, rect.bottom};
+    };
+    flattened.player_preview_lane_storage.reserve(scene.scene->lanes.size());
+    for (const auto& lane : scene.scene->lanes) {
+        flattened.player_preview_lane_storage.push_back(
+            {.lane_id = lane.lane.value,
+             .role = static_cast<std::uint8_t>(lane.role),
+             .glyph = static_cast<std::uint8_t>(lane.glyph),
+             .display_order = lane.display_order,
+             .bounds = convert_rect(lane.bounds)});
+    }
+    flattened.player_preview_receptor_storage.reserve(scene.scene->receptors.size());
+    for (const auto& receptor : scene.scene->receptors) {
+        flattened.player_preview_receptor_storage.push_back(
+            {.lane_id = receptor.lane.value,
+             .glyph = static_cast<std::uint8_t>(receptor.glyph),
+             .bounds = convert_rect(receptor.bounds)});
+    }
+    flattened.player_preview_hold_storage.reserve(scene.scene->hold_bodies.size());
+    for (const auto& hold : scene.scene->hold_bodies) {
+        flattened.player_preview_hold_storage.push_back(
+            {.note_id = hold.note.value,
+             .lane_id = hold.lane.value,
+             .semantic_color_visible = hold.semantic_color.has_value(),
+             .semantic_red = static_cast<std::uint8_t>(hold.semantic_color
+                                                           ? hold.semantic_color->red
+                                                           : 0),
+             .semantic_green = static_cast<std::uint8_t>(hold.semantic_color
+                                                             ? hold.semantic_color->green
+                                                             : 0),
+             .semantic_blue = static_cast<std::uint8_t>(hold.semantic_color
+                                                            ? hold.semantic_color->blue
+                                                            : 0),
+             .semantic_alpha = static_cast<std::uint8_t>(hold.semantic_color
+                                                             ? hold.semantic_color->alpha
+                                                             : 0),
+             .bounds = convert_rect(hold.bounds)});
+    }
+    flattened.player_preview_note_storage.reserve(scene.scene->note_endpoints.size());
+    for (const auto& note : scene.scene->note_endpoints) {
+        flattened.player_preview_note_storage.push_back(
+            {.note_id = note.note.value,
+             .lane_id = note.lane.value,
+             .kind = static_cast<std::uint8_t>(note.kind),
+             .glyph = static_cast<std::uint8_t>(note.glyph),
+             .tail = note.tail,
+             .semantic_color_visible = note.semantic_color.has_value(),
+             .semantic_red = static_cast<std::uint8_t>(note.semantic_color
+                                                           ? note.semantic_color->red
+                                                           : 0),
+             .semantic_green = static_cast<std::uint8_t>(note.semantic_color
+                                                             ? note.semantic_color->green
+                                                             : 0),
+             .semantic_blue = static_cast<std::uint8_t>(note.semantic_color
+                                                            ? note.semantic_color->blue
+                                                            : 0),
+             .semantic_alpha = static_cast<std::uint8_t>(note.semantic_color
+                                                             ? note.semantic_color->alpha
+                                                             : 0),
+             .bounds = convert_rect(note.bounds)});
+    }
+    view.scene_available = true;
+    view.split_stage = scene.scene->split_stage;
+    view.lanes = flattened.player_preview_lane_storage.data();
+    view.lane_count = flattened.player_preview_lane_storage.size();
+    view.receptors = flattened.player_preview_receptor_storage.data();
+    view.receptor_count = flattened.player_preview_receptor_storage.size();
+    view.hold_bodies = flattened.player_preview_hold_storage.data();
+    view.hold_body_count = flattened.player_preview_hold_storage.size();
+    view.note_endpoints = flattened.player_preview_note_storage.data();
+    view.note_endpoint_count = flattened.player_preview_note_storage.size();
+}
+
 auto first_recovery_diagnostic(
     const wormedit::native_project_recovery_controller_dispatch_result_t& result) -> std::string {
     if (!result.diagnostics.empty()) {
@@ -5879,6 +6051,7 @@ int main(int argc, char** argv) {
     std::optional<wormedit::sv_recipe_draft_t> timing_recipe_draft;
     std::optional<wormedit::sv_recipe_draft_preview_t> timing_recipe_preview;
     compose_scene_cache_t compose_scene_cache;
+    player_preview_cache_t player_preview_cache;
     std::optional<wormedit::editor_interaction_state_t> compose_interaction_state;
     wormedit::viewport_input_controller_t compose_viewport_input;
     wormedit::editor_navigation_input_controller_t compose_navigation_input;
@@ -6298,6 +6471,10 @@ int main(int argc, char** argv) {
             flattened.view.transport_end_frame = 0;
             flattened.view.transport_sample_rate = 44'100;
 #endif
+            populate_player_preview_view(flattened, history, workspace, player_preview_cache,
+                                         application_command_state,
+                                         flattened.view.transport_frame,
+                                         flattened.view.transport_sample_rate);
             for (std::size_t line = 0; line < flattened.view.summary_line_count; ++line) {
                 flattened.view.summary_lines[line] = flattened.summary_storage[line].c_str();
             }
@@ -6506,6 +6683,20 @@ int main(int argc, char** argv) {
                 status = application_command_state.transport_seek
                              ? application_command_state.transport_seek(action.transport_seek_frame)
                              : "Chart preview seek is unavailable.";
+            } else if (action.kind == WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW) {
+                application_command_state.player_preview_visible =
+                    !application_command_state.player_preview_visible;
+                status = application_command_state.player_preview_visible
+                             ? "Player preview shown."
+                             : "Player preview hidden.";
+            } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SELECT_PLAYER_PREVIEW_SKIN) {
+                if (action.player_preview_skin > WORM_UI_PLAYER_PREVIEW_SKIN_ARROWS) {
+                    status = "Unknown player-preview skin ignored.";
+                } else {
+                    application_command_state.player_preview_skin =
+                        static_cast<wormedit::player_preview_skin_t>(action.player_preview_skin);
+                    status = "Player-preview skin changed.";
+                }
             } else if (action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER ||
                        action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER) {
                 const auto command = wormedit::command_id_t{

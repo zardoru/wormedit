@@ -59,6 +59,7 @@ add_library(wormedit_core
     src/core/measure_editor.cpp
     src/core/note_label_editor.cpp
     src/core/pause_warp_editor.cpp
+    src/core/player_preview.cpp
     src/core/quantize.cpp
     src/core/rational.cpp
     src/core/recovery_controller.cpp

@@ -37,6 +37,12 @@ std::size_t texture_count{};
 std::size_t texture_bytes{};
 std::uint64_t texture_use_sequence{};
 
+struct texture_result_t {
+    GLuint texture{};
+    worm_ui_nuklear_preview_visual_failure_t failure{
+        worm_ui_nuklear_preview_visual_failure_t::none};
+};
+
 auto next_texture_use() -> std::uint64_t {
     ++texture_use_sequence;
     if (texture_use_sequence == 0) {
@@ -77,11 +83,11 @@ void evict_texture() {
 }
 
 auto texture_for(const WormUiPlayerPreviewView& view,
-                 const WormUiPlayerPreviewVisualLayerView& layer) -> GLuint {
+                 const WormUiPlayerPreviewVisualLayerView& layer) -> texture_result_t {
     if (!layer.image_ready || view.project_id == 0 || view.document_revision == 0 ||
         layer.resource_id == 0 || layer.rgba_byte_count == 0 || !layer.rgba_pixels ||
         layer.rgba_byte_count > maximum_texture_bytes) {
-        return 0;
+        return {.failure = worm_ui_nuklear_preview_visual_failure_t::invalid_image};
     }
     const auto end = textures.begin() + static_cast<std::ptrdiff_t>(texture_count);
     const auto found = std::find_if(textures.begin(), end, [&](const auto& entry) {
@@ -92,7 +98,7 @@ auto texture_for(const WormUiPlayerPreviewView& view,
     });
     if (found != end) {
         found->last_use = next_texture_use();
-        return found->texture;
+        return {.texture = found->texture};
     }
     while (texture_count != 0 && (texture_count >= maximum_texture_entries ||
                                   texture_bytes > maximum_texture_bytes - layer.rgba_byte_count)) {
@@ -102,7 +108,10 @@ auto texture_for(const WormUiPlayerPreviewView& view,
     GLuint texture{};
     glGenTextures(1, &texture);
     if (texture == 0) {
-        return 0;
+        return {.failure = worm_ui_nuklear_preview_visual_failure_t::texture_allocation};
+    }
+    for (std::size_t stale_error = 0; stale_error < 16 && glGetError() != GL_NO_ERROR;
+         ++stale_error) {
     }
     GLint previous_texture{};
     GLint previous_unpack_alignment{};
@@ -121,12 +130,19 @@ auto texture_for(const WormUiPlayerPreviewView& view,
     GLint uploaded_height{};
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &uploaded_width);
     glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &uploaded_height);
+    const auto upload_error = glGetError();
     glPixelStorei(GL_UNPACK_ALIGNMENT, previous_unpack_alignment);
     glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previous_texture));
+    if (upload_error != GL_NO_ERROR) {
+        glDeleteTextures(1, &texture);
+        return {.failure = upload_error == GL_OUT_OF_MEMORY
+                               ? worm_ui_nuklear_preview_visual_failure_t::upload_out_of_memory
+                               : worm_ui_nuklear_preview_visual_failure_t::upload_rejected};
+    }
     if (uploaded_width != static_cast<GLint>(layer.image_width) ||
         uploaded_height != static_cast<GLint>(layer.image_height)) {
         glDeleteTextures(1, &texture);
-        return 0;
+        return {.failure = worm_ui_nuklear_preview_visual_failure_t::upload_size_mismatch};
     }
 
     textures[texture_count++] = {.project_id = view.project_id,
@@ -138,7 +154,7 @@ auto texture_for(const WormUiPlayerPreviewView& view,
                                  .texture = texture,
                                  .last_use = next_texture_use()};
     texture_bytes += layer.rgba_byte_count;
-    return texture;
+    return {.texture = texture};
 }
 
 auto visual_fit_policy(WormUiVisualFitPolicy fit) -> wormedit::visual_fit_policy_t {
@@ -155,11 +171,36 @@ auto visual_fit_policy(WormUiVisualFitPolicy fit) -> wormedit::visual_fit_policy
 
 } // namespace
 
-bool worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer* canvas,
-                                                       struct nk_rect viewport,
-                                                       const WormUiPlayerPreviewView* view) {
+const char* worm_ui_nuklear_preview_visual_failure_message(
+    worm_ui_nuklear_preview_visual_failure_t failure) noexcept {
+    switch (failure) {
+    case worm_ui_nuklear_preview_visual_failure_t::none:
+        return "";
+    case worm_ui_nuklear_preview_visual_failure_t::invalid_image:
+        return "invalid decoded image";
+    case worm_ui_nuklear_preview_visual_failure_t::texture_allocation:
+        return "texture allocation failed";
+    case worm_ui_nuklear_preview_visual_failure_t::upload_out_of_memory:
+        return "GPU memory exhausted";
+    case worm_ui_nuklear_preview_visual_failure_t::upload_rejected:
+        return "GPU rejected texture upload";
+    case worm_ui_nuklear_preview_visual_failure_t::upload_size_mismatch:
+        return "uploaded texture size mismatch";
+    case worm_ui_nuklear_preview_visual_failure_t::texture_identifier_unsupported:
+        return "texture identifier is unsupported";
+    case worm_ui_nuklear_preview_visual_failure_t::layout_invalid:
+        return "image layout is invalid";
+    }
+    return "unknown renderer failure";
+}
+
+worm_ui_nuklear_preview_visual_result_t
+worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer* canvas,
+                                                  struct nk_rect viewport,
+                                                  const WormUiPlayerPreviewView* view) {
+    worm_ui_nuklear_preview_visual_result_t result;
     if (!canvas || !view) {
-        return false;
+        return result;
     }
     std::array<const WormUiPlayerPreviewVisualLayerView*,
                WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY>
@@ -180,10 +221,24 @@ bool worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer*
                   }
                   return left->kind < right->kind;
               });
-    bool drew_image{};
+    const auto record_failure = [&](std::uint64_t resource_id,
+                                    worm_ui_nuklear_preview_visual_failure_t failure) {
+        ++result.failure_count;
+        if (result.first_failure == worm_ui_nuklear_preview_visual_failure_t::none) {
+            result.first_failed_resource_id = resource_id;
+            result.first_failure = failure;
+        }
+    };
     for (std::size_t index = 0; index < count; ++index) {
-        const auto texture = texture_for(*view, *ordered[index]);
-        if (texture == 0 || texture > static_cast<GLuint>(std::numeric_limits<int>::max())) {
+        const auto uploaded = texture_for(*view, *ordered[index]);
+        if (uploaded.failure != worm_ui_nuklear_preview_visual_failure_t::none) {
+            record_failure(ordered[index]->resource_id, uploaded.failure);
+            continue;
+        }
+        if (uploaded.texture > static_cast<GLuint>(std::numeric_limits<int>::max())) {
+            record_failure(
+                ordered[index]->resource_id,
+                worm_ui_nuklear_preview_visual_failure_t::texture_identifier_unsupported);
             continue;
         }
         const auto& layer = *ordered[index];
@@ -196,6 +251,8 @@ bool worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer*
                                                                 .height = viewport.h},
                                                 .fit = visual_fit_policy(view->visual_fit)});
         if (!layout) {
+            record_failure(layer.resource_id,
+                           worm_ui_nuklear_preview_visual_failure_t::layout_invalid);
             continue;
         }
         const auto& source = layout->source;
@@ -204,9 +261,9 @@ bool worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer*
                                  source.height == layer.image_height;
         const auto image =
             full_source
-                ? nk_image_id(static_cast<int>(texture))
+                ? nk_image_id(static_cast<int>(uploaded.texture))
                 : nk_subimage_id(
-                      static_cast<int>(texture), static_cast<nk_ushort>(layer.image_width),
+                      static_cast<int>(uploaded.texture), static_cast<nk_ushort>(layer.image_width),
                       static_cast<nk_ushort>(layer.image_height),
                       nk_rect(static_cast<float>(source.left), static_cast<float>(source.top),
                               static_cast<float>(source.width), static_cast<float>(source.height)));
@@ -215,9 +272,9 @@ bool worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer*
                                          static_cast<float>(layout->destination.width),
                                          static_cast<float>(layout->destination.height));
         nk_draw_image(canvas, destination, &image, nk_rgba(255, 255, 255, 255));
-        drew_image = true;
+        result.drew_image = true;
     }
-    return drew_image;
+    return result;
 }
 
 void worm_ui_nuklear_shutdown_player_preview_textures(void) {

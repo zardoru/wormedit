@@ -2,12 +2,40 @@
 
 #include "ui/frontend.h"
 
+#include <cstddef>
+#include <cstdint>
+
 struct nk_command_buffer;
 struct nk_rect;
 
+enum class worm_ui_nuklear_preview_visual_failure_t : std::uint8_t {
+    none,
+    invalid_image,
+    texture_allocation,
+    upload_out_of_memory,
+    upload_rejected,
+    upload_size_mismatch,
+    texture_identifier_unsupported,
+    layout_invalid,
+};
+
+struct worm_ui_nuklear_preview_visual_result_t {
+    bool drew_image{};
+    std::size_t failure_count{};
+    std::uint64_t first_failed_resource_id{};
+    worm_ui_nuklear_preview_visual_failure_t first_failure{
+        worm_ui_nuklear_preview_visual_failure_t::none};
+};
+
 // Backend-private upload/composition boundary. It consumes borrowed scalar
-// RGBA views immediately and retains only OpenGL texture identities.
-[[nodiscard]] bool worm_ui_nuklear_draw_player_preview_visual_layers(
-    struct nk_command_buffer* canvas, struct nk_rect viewport, const WormUiPlayerPreviewView* view);
+// RGBA views immediately, retains only OpenGL texture identities, and reports
+// bounded renderer failures without changing document or decode state.
+[[nodiscard]] worm_ui_nuklear_preview_visual_result_t
+worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer* canvas,
+                                                  struct nk_rect viewport,
+                                                  const WormUiPlayerPreviewView* view);
+
+[[nodiscard]] const char* worm_ui_nuklear_preview_visual_failure_message(
+    worm_ui_nuklear_preview_visual_failure_t failure) noexcept;
 
 void worm_ui_nuklear_shutdown_player_preview_textures(void);

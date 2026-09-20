@@ -7,6 +7,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
 
 namespace {
 
@@ -201,12 +203,13 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                 nk_push_scissor(canvas, viewport);
                 nk_fill_rect(canvas, viewport, 2.0f, nk_rgb(14, 17, 24));
                 if (view->scene_available) {
-                    const auto visual_composed =
+                    const auto visual_result =
                         worm_ui_nuklear_draw_player_preview_visual_layers(canvas, viewport, view);
                     for (std::size_t index = 0; index < view->lane_count; ++index) {
                         const auto rect = screen_rect(&view->lanes[index].bounds, view, viewport);
                         const auto alternate = (view->lanes[index].display_order & 1U) != 0;
-                        const auto alpha = static_cast<nk_byte>(visual_composed ? 196 : 255);
+                        const auto alpha =
+                            static_cast<nk_byte>(visual_result.drew_image ? 196 : 255);
                         nk_fill_rect(canvas, rect, 0.0f,
                                      alternate ? nk_rgba(34, 40, 54, alpha)
                                                : nk_rgba(28, 34, 47, alpha));
@@ -237,6 +240,22 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                                 : (note.tail ? nk_rgb(114, 205, 220) : nk_rgb(231, 184, 86));
                         draw_glyph(canvas, rect, note.glyph, color);
                         nk_stroke_rect(canvas, rect, 1.5f, 1.0f, nk_rgb(239, 245, 255));
+                    }
+                    if (visual_result.failure_count != 0 && context->style.font) {
+                        char warning[192]{};
+                        std::snprintf(
+                            warning, sizeof(warning), "Visual resource %llu: %s%s",
+                            static_cast<unsigned long long>(visual_result.first_failed_resource_id),
+                            worm_ui_nuklear_preview_visual_failure_message(
+                                visual_result.first_failure),
+                            visual_result.failure_count > 1 ? " (additional failures)" : "");
+                        const auto bounds = nk_rect(viewport.x + 6.0f, viewport.y + 6.0f,
+                                                    std::max(1.0f, viewport.w - 12.0f), 22.0f);
+                        const auto background = nk_rgba(78, 25, 31, 232);
+                        nk_fill_rect(canvas, bounds, 2.0f, background);
+                        nk_draw_text(canvas, bounds, warning,
+                                     static_cast<int>(std::strlen(warning)), context->style.font,
+                                     background, nk_rgb(255, 218, 222));
                     }
                 }
                 nk_push_scissor(canvas, previous_clip);

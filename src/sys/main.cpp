@@ -35,6 +35,7 @@
 #include <wormedit/audio/object_audition.h>
 #include <wormedit/audio/preview_session.h>
 #include <wormedit/audio/source_registry.h>
+#include <wormedit/audio/waveform_job.h>
 #endif
 
 #include <SDL3/SDL_events.h>
@@ -156,6 +157,8 @@ struct flattened_workspace_t {
     std::array<WormUiComposeLaneKeyBinding, WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY>
         compose_lane_key_storage{};
     std::optional<wormedit::editor_interaction_view_model_t> compose_interaction_view_storage;
+    std::vector<std::uint64_t> audio_asset_storage;
+    std::vector<WormUiAudioWaveformColumnView> audio_waveform_storage;
 };
 
 struct compose_scene_cache_t {
@@ -633,6 +636,19 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                 append(tab.placeholder);
                 append("Storyboard documents: " + std::to_string(tab.storyboard_count));
             } else if constexpr (std::is_same_v<tab_t, wormedit::workspace_audio_slices_view_t>) {
+                auto& audio = result.view.audio_slices;
+                audio.visible = true;
+                audio.assets_truncated = tab.audio_assets.size() > WORM_UI_AUDIO_ASSET_CAPACITY;
+                audio.asset_count =
+                    std::min(tab.audio_assets.size(),
+                             static_cast<std::size_t>(WORM_UI_AUDIO_ASSET_CAPACITY));
+                result.audio_asset_storage.reserve(audio.asset_count);
+                for (std::size_t index = 0; index < audio.asset_count; ++index)
+                    result.audio_asset_storage.push_back(tab.audio_assets[index].value);
+                audio.asset_ids = result.audio_asset_storage.data();
+                audio.has_selected_asset = tab.transport.audio_asset.has_value();
+                audio.selected_asset_id =
+                    tab.transport.audio_asset.value_or(wormedit::asset_id_t{}).value;
                 append("Audio assets: " + std::to_string(tab.audio_assets.size()));
                 append("Clips: " + std::to_string(tab.clip_count));
                 append("Selected chart sound channels: " + std::to_string(tab.sound_channel_count));
@@ -4853,6 +4869,13 @@ int main(int argc, char** argv) {
     }
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     wormedit::audio::decoded_source_registry_t audition_sources;
+    wormedit::audio::decoded_block_cache_t waveform_blocks;
+    wormedit::audio::waveform_cache_t waveform_cache;
+    wormedit::task_scheduler_t waveform_scheduler(1, 4);
+    wormedit::audio::waveform_job_t waveform_job{audition_sources, waveform_blocks, waveform_cache,
+                                                 waveform_scheduler};
+    std::optional<wormedit::asset_id_t> waveform_job_asset;
+    std::shared_ptr<const wormedit::audio::waveform_analysis_result_t> waveform_analysis;
     wormedit::audio::decoded_block_cache_t audition_cache;
     wormedit::audio::transport_t audition_transport{audition_cache};
     wormedit::audio::audition_transport_bridge_t audition_bridge{audition_transport};
@@ -4902,7 +4925,12 @@ int main(int argc, char** argv) {
             active_preview_bindings.clear();
             active_preview_chart.reset();
         }
+        waveform_job.cancel();
+        waveform_job_asset.reset();
+        waveform_analysis.reset();
         audition_sources.clear();
+        waveform_blocks.clear();
+        waveform_cache.clear();
         preview_metronome_bindings.clear();
         ++audition_source_generation;
         std::size_t unavailable{};
@@ -5217,6 +5245,29 @@ int main(int argc, char** argv) {
                 }
             }
         }
+        if (workspace.transport.audio_asset != waveform_job_asset) {
+            waveform_job.cancel();
+            waveform_job_asset.reset();
+            waveform_analysis.reset();
+            if (workspace.transport.audio_asset) {
+                const auto started = waveform_job.request(*workspace.transport.audio_asset, 256);
+                if (started) {
+                    waveform_job_asset = workspace.transport.audio_asset;
+                } else if (started.status !=
+                           wormedit::audio::waveform_job_start_status_t::capacity_exceeded) {
+                    status = started.message.empty() ? "Waveform analysis could not start."
+                                                     : started.message;
+                }
+            }
+        }
+        if (const auto completed = waveform_job.poll();
+            completed && waveform_job_asset == completed->asset) {
+            if (*completed) {
+                waveform_analysis = completed->analysis;
+            } else if (completed->task_error) {
+                status = completed->task_error->message;
+            }
+        }
 #endif
 
         if (compose_interaction_state) {
@@ -5334,6 +5385,9 @@ int main(int argc, char** argv) {
                 flattened.view.recovery_diagnostics[diagnostic] =
                     flattened.recovery_diagnostic_storage[diagnostic].c_str();
             }
+            if (flattened.view.audio_slices.visible) {
+                flattened.view.audio_slices.asset_ids = flattened.audio_asset_storage.data();
+            }
             flattened.view.compose.branch_rows = flattened.compose_branch_row_storage.data();
             for (std::size_t row = 0; row < flattened.view.compose.branch_row_count; ++row) {
                 flattened.compose_branch_row_storage[row].display_text =
@@ -5361,6 +5415,40 @@ int main(int argc, char** argv) {
             int compose_window_width = 0;
             int compose_window_height = 0;
             worm_window_get_size(&window, &compose_window_width, &compose_window_height);
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+            if (flattened.view.audio_slices.visible) {
+                auto& audio = flattened.view.audio_slices;
+                audio.analysis_pending = waveform_job.busy();
+                if (waveform_analysis && waveform_analysis->waveform) {
+                    const auto& waveform = *waveform_analysis->waveform;
+                    const auto available_width = std::max(compose_window_width - 80, 1);
+                    const auto pixel_width =
+                        std::min(static_cast<std::size_t>(available_width),
+                                 static_cast<std::size_t>(WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY));
+                    const auto projection = wormedit::audio::project_waveform(
+                        waveform, {.begin_frame = 0,
+                                   .end_frame = waveform.total_frames,
+                                   .pixel_width = pixel_width,
+                                   .maximum_columns = WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY});
+                    if (projection) {
+                        flattened.audio_waveform_storage.reserve(projection.columns.size());
+                        for (const auto& column : projection.columns) {
+                            flattened.audio_waveform_storage.push_back({
+                                .minimum = {column.minimum[0], column.minimum[1]},
+                                .maximum = {column.maximum[0], column.maximum[1]},
+                                .absolute_peak = {column.absolute_peak[0], column.absolute_peak[1]},
+                                .rms = {column.rms[0], column.rms[1]},
+                            });
+                        }
+                        audio.waveform_available = true;
+                        audio.total_frames = waveform.total_frames;
+                        audio.sample_rate = waveform.sample_rate;
+                        audio.waveform_columns = flattened.audio_waveform_storage.data();
+                        audio.waveform_column_count = flattened.audio_waveform_storage.size();
+                    }
+                }
+            }
+#endif
             populate_timing_view(flattened, history, workspace, timing_scene_cache,
                                  compose_window_width, compose_window_height, timing_grid,
                                  timing_stage ? &*timing_stage : nullptr,
@@ -5465,6 +5553,15 @@ int main(int argc, char** argv) {
                              ? application_command_state.transport_seek(
                                    action.transport_seek_frame)
                              : "Chart preview seek is unavailable.";
+            } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET) {
+                const auto applied = wormedit::apply_workspace_action(
+                    workspace, history.document, history.document.revision,
+                    wormedit::workspace_select_audio_asset_action_t{
+                        wormedit::asset_id_t{action.audio_asset_id}});
+                status = applied
+                             ? "Audio asset selected; waveform analysis scheduled."
+                             : (applied.diagnostics.empty() ? "Audio asset selection rejected."
+                                                            : applied.diagnostics.front().message);
             } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB) {
                 const auto applied = wormedit::apply_workspace_action(
                     workspace, history.document, history.document.revision,

@@ -45,6 +45,8 @@
 #define WORM_UI_TIMING_RECIPE_POINT_CAPACITY 4096
 #define WORM_UI_TIMING_RECIPE_RATIONAL_TEXT_BYTES 64
 #define WORM_UI_TIMING_RECIPE_INTEGER_TEXT_BYTES 32
+#define WORM_UI_AUDIO_ASSET_CAPACITY 128
+#define WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY 4096
 #define WORM_UI_COMPOSE_MIN_PIXELS_PER_MEASURE 24.0
 #define WORM_UI_COMPOSE_MAX_PIXELS_PER_MEASURE 4096.0
 
@@ -73,6 +75,7 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK,
+    WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET,
     WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT,
     WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER,
     WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS,
@@ -147,6 +150,28 @@ typedef struct WormUiMetadataView {
     const WormUiMetadataFormatTargetView* format_targets;
     size_t format_target_count;
 } WormUiMetadataView;
+
+typedef struct WormUiAudioWaveformColumnView {
+    float minimum[2];
+    float maximum[2];
+    float absolute_peak[2];
+    float rms[2];
+} WormUiAudioWaveformColumnView;
+
+typedef struct WormUiAudioSlicesView {
+    bool visible;
+    bool assets_truncated;
+    const uint64_t* asset_ids;
+    size_t asset_count;
+    bool has_selected_asset;
+    uint64_t selected_asset_id;
+    bool analysis_pending;
+    bool waveform_available;
+    uint64_t total_frames;
+    uint32_t sample_rate;
+    const WormUiAudioWaveformColumnView* waveform_columns;
+    size_t waveform_column_count;
+} WormUiAudioSlicesView;
 
 typedef struct WormUiComposeRect {
     double left;
@@ -607,6 +632,7 @@ typedef struct WormUiWorkspaceView {
     WormUiMetadataView metadata;
     WormUiTimingView timing;
     WormUiComposeView compose;
+    WormUiAudioSlicesView audio_slices;
 } WormUiWorkspaceView;
 
 typedef enum WormUiComposeActionKind {
@@ -719,6 +745,7 @@ typedef struct WormUiWorkspaceAction {
     WormUiWorkspaceTab tab;
     uint64_t recovery_scan_generation;
     uint64_t transport_seek_frame;
+    uint64_t audio_asset_id;
     size_t recovery_row_index;
     size_t recovery_candidate_index;
     char recovery_save_as_destination[WORM_UI_RECOVERY_DESTINATION_CAPACITY];

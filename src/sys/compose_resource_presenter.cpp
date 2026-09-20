@@ -61,4 +61,27 @@ auto make_compose_resource_catalog(const song_document_t& document,
     return result;
 }
 
+auto find_compose_resource_uses(const chart_document_t& chart, resource_id_t resource)
+    -> std::vector<editor_selection_object_t> {
+    std::vector<editor_selection_object_t> uses;
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            if (note.sound == resource) {
+                uses.push_back({editor_selection_object_kind_t::note, note.id});
+            }
+        }
+        for (const auto& event : measure.bgm_events) {
+            if (event.sound == resource) {
+                uses.push_back({editor_selection_object_kind_t::bgm_event, event.id});
+            }
+        }
+    }
+    for (const auto& event : chart.bga_events) {
+        if (event.resource == resource) {
+            uses.push_back({editor_selection_object_kind_t::bga_event, event.id});
+        }
+    }
+    return uses;
+}
+
 } // namespace wormedit::sys

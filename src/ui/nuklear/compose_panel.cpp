@@ -1075,7 +1075,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         nk_tree_pop(context);
     }
 
-    worm_ui_nuklear_render_compose_resources(context, view, action, &state.resource_filter);
+    worm_ui_nuklear_render_compose_resources(context, view, action, &state);
 
     if (nk_tree_push(context, NK_TREE_TAB, "Markers / sections", NK_MINIMIZED)) {
     nk_layout_row_begin(context, NK_DYNAMIC, 24, 3);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/interaction.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -34,5 +35,8 @@ struct compose_resource_catalog_t {
                                                  std::optional<asset_id_t> selected_audio_asset,
                                                  std::size_t maximum_entries)
     -> compose_resource_catalog_t;
+
+[[nodiscard]] auto find_compose_resource_uses(const chart_document_t& chart, resource_id_t resource)
+    -> std::vector<editor_selection_object_t>;
 
 } // namespace wormedit::sys

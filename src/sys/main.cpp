@@ -4696,6 +4696,30 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                    ? "Compose timing lane shown."
                    : "Compose timing lane hidden.";
     }
+    case WORM_UI_COMPOSE_ACTION_SELECT_RESOURCE_USES: {
+        const resource_id_t resource{action.compose_resource_id};
+        if (resource.value == 0 ||
+            std::ranges::find(history.document.resources, resource, &resource_entry_t::id) ==
+                history.document.resources.end()) {
+            return "The selected resource is no longer available.";
+        }
+        const auto chart =
+            std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+        if (chart == history.document.charts.end()) {
+            return "The selected chart is no longer available.";
+        }
+        auto uses = wormedit::sys::find_compose_resource_uses(*chart, resource);
+        const auto use_count = uses.size();
+        result = dispatch_editor_action(
+            history, state,
+            select_editor_objects_action_t{.objects = std::move(uses),
+                                           .mode = editor_area_selection_mode_t::replace});
+        status = use_count == 0 ? "No uses of this resource exist in the active chart."
+                                : std::to_string(use_count) +
+                                      (use_count == 1 ? " resource use selected."
+                                                      : " resource uses selected.");
+        break;
+    }
     case WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL:
     case WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL: {
         if (editor_interaction_has_pending_gesture(state)) {

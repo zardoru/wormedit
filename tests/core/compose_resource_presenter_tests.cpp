@@ -65,3 +65,45 @@ TEST_CASE("Compose resource catalog falls back to stable IDs and diagnoses absen
     CHECK(catalog.entries[0].source_name.empty());
     CHECK(catalog.entries[0].missing);
 }
+
+TEST_CASE("Compose resource uses retain typed chart object identities",
+          "[unit][frontend][compose][resources]") {
+    chart_document_t chart;
+    chart.measures = {
+        {.id = measure_id_t{1},
+         .notes = {{.id = object_id_t{10},
+                    .position = {},
+                    .lane = lane_id_t{1},
+                    .sound = resource_id_t{7}},
+                   {.id = object_id_t{11},
+                    .position = {},
+                    .lane = lane_id_t{2},
+                    .sound = resource_id_t{8}}},
+         .bgm_events = {{.id = object_id_t{20},
+                         .position = {},
+                         .source_lane = object_id_t{30},
+                         .sound = resource_id_t{7}}}},
+        {.id = measure_id_t{2},
+         .notes = {{.id = object_id_t{12},
+                    .position = {},
+                    .lane = lane_id_t{1},
+                    .sound = resource_id_t{7}}}},
+    };
+    chart.bga_events = {
+        {.id = object_id_t{40}, .position = {}, .resource = resource_id_t{7}},
+        {.id = object_id_t{41}, .position = {}, .resource = resource_id_t{8}},
+    };
+
+    const auto uses = sys::find_compose_resource_uses(chart, resource_id_t{7});
+
+    REQUIRE(uses.size() == 4);
+    CHECK(uses[0] ==
+          editor_selection_object_t{editor_selection_object_kind_t::note, object_id_t{10}});
+    CHECK(uses[1] ==
+          editor_selection_object_t{editor_selection_object_kind_t::bgm_event, object_id_t{20}});
+    CHECK(uses[2] ==
+          editor_selection_object_t{editor_selection_object_kind_t::note, object_id_t{12}});
+    CHECK(uses[3] ==
+          editor_selection_object_t{editor_selection_object_kind_t::bga_event, object_id_t{40}});
+    CHECK(sys::find_compose_resource_uses(chart, resource_id_t{99}).empty());
+}

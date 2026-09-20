@@ -999,6 +999,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_RESET_VIEW,
     WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE,
     WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY,
+    WORM_UI_COMPOSE_ACTION_SELECT_RESOURCE_USES,
     WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK,
@@ -1179,6 +1180,7 @@ typedef struct WormUiWorkspaceAction {
     char compose_marker_audio_begin[WORM_UI_COMPOSE_MARKER_TIME_BYTES];
     char compose_marker_audio_end[WORM_UI_COMPOSE_MARKER_TIME_BYTES];
     uint64_t compose_semantic_layer_id;
+    uint64_t compose_resource_id;
     uint8_t compose_timing_lane;
     uint64_t compose_branch_id;
     int64_t compose_branch_value;

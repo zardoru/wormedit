@@ -22,6 +22,7 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     state.semantic_layer_color_editor_visible = true;
     state.inspector_visible = false;
     state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
+    state.resource_search[0] = 'x';
 
     worm_ui_nuklear_reset_compose_state();
 
@@ -42,4 +43,5 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     CHECK_FALSE(state.semantic_layer_color_editor_visible);
     CHECK(state.inspector_visible);
     CHECK(state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample);
+    CHECK(state.resource_search[0] == '\0');
 }

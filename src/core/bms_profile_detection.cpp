@@ -7,51 +7,6 @@
 namespace wormedit {
 namespace {
 
-enum class profile_family_t {
-    bms_five_or_ten_key,
-    bme_seven_or_fourteen_key,
-    popn,
-    special,
-};
-
-struct profile_spec_t {
-    lane_input_profile_t profile;
-    profile_family_t family{profile_family_t::special};
-    bool two_stage{};
-    bool octave_fp{};
-};
-
-auto make_profile_specs() -> std::vector<profile_spec_t> {
-    auto result = std::vector<profile_spec_t>{};
-    result.reserve(15);
-    result.push_back(
-        {make_bms_5k_free_zone_profile(), profile_family_t::bms_five_or_ten_key, false, false});
-    result.push_back(
-        {make_bms_5k_foot_pedal_profile(), profile_family_t::bms_five_or_ten_key, false, false});
-    result.push_back(
-        {make_bme_7k_profile(), profile_family_t::bme_seven_or_fourteen_key, false, false});
-    result.push_back({make_bme_7k_foot_pedal_profile(), profile_family_t::bme_seven_or_fourteen_key,
-                      false, false});
-    result.push_back(
-        {make_bms_10k_free_zone_profile(), profile_family_t::bms_five_or_ten_key, true, false});
-    result.push_back(
-        {make_bms_10k_foot_pedal_profile(), profile_family_t::bms_five_or_ten_key, true, false});
-    result.push_back(
-        {make_bme_14k_profile(), profile_family_t::bme_seven_or_fourteen_key, true, false});
-    result.push_back({make_bme_14k_foot_pedal_profile(),
-                      profile_family_t::bme_seven_or_fourteen_key, true, false});
-    result.push_back({make_pms_5k_profile(), profile_family_t::popn, false, false});
-    result.push_back({make_pms_9k_profile(), profile_family_t::popn, false, false});
-    result.push_back({make_pms_bme_style_9k_profile(), profile_family_t::popn, false, false});
-    // The split is an editor presentation choice; PMS 18-button remains one
-    // player mode for #PLAYER compatibility.
-    result.push_back({make_pms_bme_style_18k_profile(), profile_family_t::popn, false, false});
-    result.push_back({make_bms_double_scratch_profile(), profile_family_t::special, false, false});
-    result.push_back({make_bms_octave_fp_profile(), profile_family_t::special, false, true});
-    result.push_back({make_project2dx_7k_profile(), profile_family_t::special, false, false});
-    return result;
-}
-
 auto is_base36(char value) -> bool {
     return (value >= '0' && value <= '9') || (value >= 'A' && value <= 'Z');
 }
@@ -133,29 +88,30 @@ auto extension_is_known(std::string_view extension) -> bool {
     return extension == ".BMS" || extension == ".BME" || extension == ".BML" || extension == ".PMS";
 }
 
-auto profile_header_compatibility(const profile_spec_t& spec, std::string_view extension,
+auto profile_header_compatibility(const bms_lane_profile_descriptor_t& spec,
+                                  std::string_view extension,
                                   std::optional<unsigned int> player_header, bool octave_fp_header)
     -> std::optional<bool> {
     if (!player_header || *player_header < 1 || *player_header > 4) {
         return std::nullopt;
     }
-    if (spec.family == profile_family_t::popn && extension == ".PMS") {
+    if (spec.family == bms_lane_profile_family_t::popn && extension == ".PMS") {
         // The .pms extension is the compatibility discriminator for the
         // one-panel 9-button interpretation of #PLAYER 3.
         return *player_header == 3;
     }
-    if (spec.octave_fp && octave_fp_header) {
+    if (spec.octave_fp_header && octave_fp_header) {
         return *player_header == 3;
     }
     const auto expected_two_stage = *player_header != 1;
-    return spec.two_stage == expected_two_stage;
+    return spec.player_header_two_stage == expected_two_stage;
 }
 
 auto clamp_confidence(double value) -> double {
     return std::clamp(value, 0.0, 1.0);
 }
 
-auto profile_evidence(const profile_spec_t& spec, std::string_view extension,
+auto profile_evidence(const bms_lane_profile_descriptor_t& spec, std::string_view extension,
                       std::optional<unsigned int> player_header, bool octave_fp_header,
                       std::size_t compatible_count, std::size_t playable_channel_count)
     -> std::pair<double, std::vector<bms_profile_evidence_t>> {
@@ -165,23 +121,23 @@ auto profile_evidence(const profile_spec_t& spec, std::string_view extension,
     if (extension_is_known(extension)) {
         auto weight = 0.0;
         if (extension == ".PMS") {
-            weight = spec.family == profile_family_t::popn ? 0.18 : -0.18;
+            weight = spec.family == bms_lane_profile_family_t::popn ? 0.18 : -0.18;
         } else if (extension == ".BMS") {
-            if (spec.family == profile_family_t::bms_five_or_ten_key) {
+            if (spec.family == bms_lane_profile_family_t::bms_five_or_ten_key) {
                 weight = 0.12;
-            } else if (spec.family == profile_family_t::bme_seven_or_fourteen_key) {
+            } else if (spec.family == bms_lane_profile_family_t::bme_seven_or_fourteen_key) {
                 weight = 0.04;
             }
         } else if (extension == ".BME") {
-            if (spec.family == profile_family_t::bme_seven_or_fourteen_key) {
+            if (spec.family == bms_lane_profile_family_t::bme_seven_or_fourteen_key) {
                 weight = 0.14;
-            } else if (spec.family == profile_family_t::bms_five_or_ten_key) {
+            } else if (spec.family == bms_lane_profile_family_t::bms_five_or_ten_key) {
                 weight = 0.02;
             }
         } else if (extension == ".BML") {
-            if (spec.family == profile_family_t::bme_seven_or_fourteen_key) {
+            if (spec.family == bms_lane_profile_family_t::bme_seven_or_fourteen_key) {
                 weight = 0.08;
-            } else if (spec.family == profile_family_t::bms_five_or_ten_key) {
+            } else if (spec.family == bms_lane_profile_family_t::bms_five_or_ten_key) {
                 weight = 0.05;
             }
         }
@@ -224,11 +180,11 @@ auto profile_evidence(const profile_spec_t& spec, std::string_view extension,
     }
 
     if (octave_fp_header) {
-        const auto weight = spec.octave_fp ? 0.30 : -0.25;
+        const auto weight = spec.octave_fp_header ? 0.30 : -0.25;
         score += weight;
         evidence.push_back({
             .source = bms_detection_evidence_source_t::octave_fp_header,
-            .message = spec.octave_fp
+            .message = spec.octave_fp_header
                            ? "#OCT/FP explicitly identifies the octave/foot-pedal profile."
                            : "#OCT/FP conflicts with this candidate profile.",
             .weight = weight,
@@ -298,7 +254,7 @@ auto detect_bms_lane_profile(const bms_profile_detection_request_t& request)
         return result;
     }
 
-    auto specs = make_profile_specs();
+    const auto specs = built_in_bms_lane_profiles();
     auto all_candidates = std::vector<bms_profile_candidate_t>{};
     all_candidates.reserve(specs.size());
     for (const auto& spec : specs) {

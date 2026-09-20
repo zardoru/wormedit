@@ -22,6 +22,7 @@ set(status_slices
     memory/chart-editor-status/current-milestone.md
     memory/chart-editor-status/implemented.md
     memory/chart-editor-status/implemented/foundation.md
+    memory/chart-editor-status/implemented/visual-preview.md
     memory/chart-editor-status/implemented/formats-persistence.md
     memory/chart-editor-status/implemented/audio-timing.md
     memory/chart-editor-status/implemented/editing-frontend.md
@@ -92,6 +93,7 @@ set(implemented_index "${WORMEDIT_SOURCE_ROOT}/memory/chart-editor-status/implem
 file(READ "${implemented_index}" implemented_index_text)
 set(implemented_slices
     memory/chart-editor-status/implemented/foundation.md
+    memory/chart-editor-status/implemented/visual-preview.md
     memory/chart-editor-status/implemented/formats-persistence.md
     memory/chart-editor-status/implemented/audio-timing.md
     memory/chart-editor-status/implemented/editing-frontend.md

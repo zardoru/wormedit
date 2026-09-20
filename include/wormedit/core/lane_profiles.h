@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 
 namespace wormedit {
@@ -19,6 +20,23 @@ enum class scratch_placement_t {
 struct lane_input_profile_t {
     lane_layout_t layout;
     input_profile_t input;
+};
+
+enum class bms_lane_profile_family_t {
+    bms_five_or_ten_key,
+    bme_seven_or_fourteen_key,
+    popn,
+    special,
+};
+
+// Canonical frontend-neutral catalog metadata. player_header_two_stage is
+// intentionally separate from layout.split_stage: PMS 18-button is rendered
+// as two groups but remains one #PLAYER-compatible mode.
+struct bms_lane_profile_descriptor_t {
+    lane_input_profile_t profile;
+    bms_lane_profile_family_t family{bms_lane_profile_family_t::special};
+    bool player_header_two_stage{};
+    bool octave_fp_header{};
 };
 
 [[nodiscard]] auto make_bms_7k_profile(scratch_placement_t scratch = scratch_placement_t::outside)
@@ -78,6 +96,10 @@ make_bme_14k_foot_pedal_profile(scratch_placement_t left_scratch = scratch_place
 // unbound until a keyboard bank policy is specified.
 [[nodiscard]] auto make_bms_octave_fp_profile() -> lane_input_profile_t;
 [[nodiscard]] auto make_project2dx_7k_profile() -> lane_input_profile_t;
+
+// Stable process-lifetime catalog used by detection and frontend profile
+// pickers. Callers must treat the returned profiles as immutable.
+[[nodiscard]] auto built_in_bms_lane_profiles() -> std::span<const bms_lane_profile_descriptor_t>;
 
 // The number row (1 through 0) is applied in display order to playable and
 // scratch lanes in one stage. The operation fails if that stage has more than

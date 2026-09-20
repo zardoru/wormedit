@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -18,6 +19,40 @@ auto has_code(const diagnostic_list_t& diagnostics, diagnostic_code_t code) -> b
 }
 
 } // namespace
+
+TEST_CASE("built-in BMS profile registry is complete unique and frontend-neutral",
+          "[unit][core][lane-profile][bms][registry]") {
+    const auto profiles = built_in_bms_lane_profiles();
+    REQUIRE(profiles.size() == 15);
+
+    std::set<std::string> ids;
+    for (const auto& descriptor : profiles) {
+        const auto& profile = descriptor.profile;
+        CAPTURE(profile.layout.profile_id);
+        CHECK_FALSE(profile.layout.profile_id.empty());
+        CHECK_FALSE(profile.layout.display_name.empty());
+        CHECK(ids.insert(profile.layout.profile_id).second);
+        CHECK_FALSE(profile.layout.lanes.empty());
+        CHECK(validate_input_profile(profile.layout, profile.input).empty());
+        if (descriptor.player_header_two_stage)
+            CHECK(profile.layout.split_stage);
+        if (descriptor.octave_fp_header)
+            CHECK(profile.layout.profile_id == "bms-octave-foot-pedal");
+    }
+
+    CHECK(std::ranges::count_if(profiles, [](const auto& descriptor) {
+              return descriptor.family == bms_lane_profile_family_t::bms_five_or_ten_key;
+          }) == 4);
+    CHECK(std::ranges::count_if(profiles, [](const auto& descriptor) {
+              return descriptor.family == bms_lane_profile_family_t::bme_seven_or_fourteen_key;
+          }) == 4);
+    CHECK(std::ranges::count_if(profiles, [](const auto& descriptor) {
+              return descriptor.family == bms_lane_profile_family_t::popn;
+          }) == 4);
+    CHECK(std::ranges::count_if(profiles, [](const auto& descriptor) {
+              return descriptor.family == bms_lane_profile_family_t::special;
+          }) == 3);
+}
 
 TEST_CASE("BMS 7K built-in profile declares seven keys, scratch, and number-row bindings",
           "[unit][core][lane-profile]") {

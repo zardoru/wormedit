@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 using namespace wormedit;
@@ -96,6 +97,30 @@ TEST_CASE("explicit profile choice resolves a supported mapping without discardi
     CHECK(result.custom_fallback.channels[3].raw_spelling == "d9");
     CHECK(result.custom_fallback.channels[3].canonical_spelling == "D9");
     CHECK(result.custom_fallback.channels[3].kind == bms_raw_channel_kind_t::mine);
+}
+
+TEST_CASE("every catalogued BMS profile is selectable through the shared detector registry",
+          "[unit][core][bms-detection][registry]") {
+    for (const auto& descriptor : built_in_bms_lane_profiles()) {
+        std::vector<std::string> channels;
+        for (const auto& lane : descriptor.profile.layout.lanes) {
+            for (const auto* channel : {&lane.bms_channels.visible, &lane.bms_channels.invisible,
+                                        &lane.bms_channels.long_note, &lane.bms_channels.mine}) {
+                if (*channel)
+                    channels.push_back(**channel);
+            }
+        }
+        CAPTURE(descriptor.profile.layout.profile_id);
+        const auto result = detect_bms_lane_profile({
+            .used_channels = std::move(channels),
+            .explicit_profile_id = descriptor.profile.layout.profile_id,
+        });
+        REQUIRE(result.status == bms_profile_detection_status_t::selected);
+        REQUIRE(result.selected_profile);
+        CHECK(result.selected_profile->layout.profile_id == descriptor.profile.layout.profile_id);
+        CHECK(result.confidence == 1.0);
+        CHECK(has_evidence(result.evidence, bms_detection_evidence_source_t::explicit_profile));
+    }
 }
 
 TEST_CASE("octave foot-pedal header is strong evidence but channel conflicts retain custom data",

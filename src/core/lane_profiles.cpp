@@ -585,6 +585,47 @@ auto make_project2dx_7k_profile() -> lane_input_profile_t {
     return make_profile("project2dx-7k", "Project2DX 7K", std::move(lanes), std::move(input));
 }
 
+auto built_in_bms_lane_profiles() -> std::span<const bms_lane_profile_descriptor_t> {
+    static const std::array profiles{
+        bms_lane_profile_descriptor_t{make_bms_5k_free_zone_profile(),
+                                      bms_lane_profile_family_t::bms_five_or_ten_key, false, false},
+        bms_lane_profile_descriptor_t{make_bms_5k_foot_pedal_profile(),
+                                      bms_lane_profile_family_t::bms_five_or_ten_key, false, false},
+        bms_lane_profile_descriptor_t{make_bme_7k_profile(),
+                                      bms_lane_profile_family_t::bme_seven_or_fourteen_key, false,
+                                      false},
+        bms_lane_profile_descriptor_t{make_bme_7k_foot_pedal_profile(),
+                                      bms_lane_profile_family_t::bme_seven_or_fourteen_key, false,
+                                      false},
+        bms_lane_profile_descriptor_t{make_bms_10k_free_zone_profile(),
+                                      bms_lane_profile_family_t::bms_five_or_ten_key, true, false},
+        bms_lane_profile_descriptor_t{make_bms_10k_foot_pedal_profile(),
+                                      bms_lane_profile_family_t::bms_five_or_ten_key, true, false},
+        bms_lane_profile_descriptor_t{make_bme_14k_profile(),
+                                      bms_lane_profile_family_t::bme_seven_or_fourteen_key, true,
+                                      false},
+        bms_lane_profile_descriptor_t{make_bme_14k_foot_pedal_profile(),
+                                      bms_lane_profile_family_t::bme_seven_or_fourteen_key, true,
+                                      false},
+        bms_lane_profile_descriptor_t{make_pms_5k_profile(), bms_lane_profile_family_t::popn, false,
+                                      false},
+        bms_lane_profile_descriptor_t{make_pms_9k_profile(), bms_lane_profile_family_t::popn, false,
+                                      false},
+        bms_lane_profile_descriptor_t{make_pms_bme_style_9k_profile(),
+                                      bms_lane_profile_family_t::popn, false, false},
+        // Split layout is an editor presentation choice for this one-player mode.
+        bms_lane_profile_descriptor_t{make_pms_bme_style_18k_profile(),
+                                      bms_lane_profile_family_t::popn, false, false},
+        bms_lane_profile_descriptor_t{make_bms_double_scratch_profile(),
+                                      bms_lane_profile_family_t::special, false, false},
+        bms_lane_profile_descriptor_t{make_bms_octave_fp_profile(),
+                                      bms_lane_profile_family_t::special, false, true},
+        bms_lane_profile_descriptor_t{make_project2dx_7k_profile(),
+                                      bms_lane_profile_family_t::special, false, false},
+    };
+    return profiles;
+}
+
 auto make_number_row_input_profile(const lane_layout_t& layout, std::uint32_t stage,
                                    std::string profile_id) -> std::optional<input_profile_t> {
     if (stage > 1 || (stage == 1 && !layout.split_stage)) {

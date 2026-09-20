@@ -142,6 +142,9 @@ struct flattened_workspace_t {
     std::array<WormUiComposeBookmarkView, WORM_UI_COMPOSE_BOOKMARK_CAPACITY>
         compose_bookmark_storage{};
     std::array<std::string, WORM_UI_COMPOSE_BOOKMARK_CAPACITY> compose_bookmark_label_storage;
+    std::array<WormUiComposeSectionView, WORM_UI_COMPOSE_SECTION_CAPACITY>
+        compose_section_storage{};
+    std::array<std::string, WORM_UI_COMPOSE_SECTION_CAPACITY> compose_section_label_storage;
     std::vector<WormUiComposeBandView> compose_band_storage;
     std::vector<WormUiComposeLaneView> compose_lane_storage;
     std::vector<WormUiComposeGridLineView> compose_grid_storage;
@@ -2173,6 +2176,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.beat_bookmarks = flattened.compose_bookmark_storage.data();
     view.beat_bookmark_count = 0;
     view.beat_bookmarks_truncated = false;
+    view.beat_sections = flattened.compose_section_storage.data();
+    view.beat_section_count = 0;
+    view.beat_sections_truncated = false;
     view.semantic_layers = flattened.compose_semantic_layer_storage.data();
     view.semantic_layer_count = 0;
     view.semantic_layer_total_count = 0;
@@ -2369,6 +2375,45 @@ void populate_compose_view(flattened_workspace_t& flattened,
             .measure_number =
                 static_cast<std::uint64_t>(std::distance(measures.entries.begin(), measure) + 1),
             .row = bookmark.position->row,
+        };
+    }
+    for (const auto& section : chart.sections) {
+        if (section.anchor != wormedit::marker_anchor_t::beat) {
+            continue;
+        }
+        if (!section.beat_span) {
+            flattened.compose_status_storage = "A beat-anchored section has no valid chart span.";
+            view.status_text = flattened.compose_status_storage.c_str();
+            return;
+        }
+        if (view.beat_section_count >= WORM_UI_COMPOSE_SECTION_CAPACITY) {
+            view.beat_sections_truncated = true;
+            continue;
+        }
+        const auto begin_measure =
+            std::ranges::find(measures.entries, section.beat_span->begin.measure,
+                              &wormedit::measure_index_entry_t::id);
+        const auto end_measure = std::ranges::find(measures.entries, section.beat_span->end.measure,
+                                                   &wormedit::measure_index_entry_t::id);
+        if (begin_measure == measures.entries.end() || end_measure == measures.entries.end() ||
+            section.beat_span->begin.row >= begin_measure->row_capacity ||
+            section.beat_span->end.row >= end_measure->row_capacity) {
+            flattened.compose_status_storage =
+                "A beat-anchored section is outside the chart measure geometry.";
+            view.status_text = flattened.compose_status_storage.c_str();
+            return;
+        }
+        const auto index = view.beat_section_count++;
+        flattened.compose_section_label_storage[index] = section.label;
+        flattened.compose_section_storage[index] = {
+            .section_id = section.id.value,
+            .label = flattened.compose_section_label_storage[index].c_str(),
+            .begin_measure_number = static_cast<std::uint64_t>(
+                std::distance(measures.entries.begin(), begin_measure) + 1),
+            .begin_row = section.beat_span->begin.row,
+            .end_measure_number = static_cast<std::uint64_t>(
+                std::distance(measures.entries.begin(), end_measure) + 1),
+            .end_row = section.beat_span->end.row,
         };
     }
     if (!retained_state || retained_state->chart != chart.id) {
@@ -4051,6 +4096,7 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
     }
     case WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK:
     case WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK:
+    case WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION:
     case WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK: {
         if (editor_interaction_has_pending_gesture(state)) {
             return "Finish or cancel the active Compose gesture before editing bookmarks.";
@@ -4078,13 +4124,19 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                 !bookmark->position) {
                 return "That beat-anchored bookmark is no longer available.";
             }
-            if (action.compose_action == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK) {
+            if (action.compose_action == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK ||
+                action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION) {
                 edit = update_bookmark_action_t{
                     .chart = state.chart,
                     .bookmark = bookmark->id,
-                    .label = action.compose_marker_label,
+                    .label = action.compose_action == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK
+                                 ? action.compose_marker_label
+                                 : bookmark->label,
                     .anchor = marker_anchor_t::beat,
-                    .position = bookmark->position,
+                    .position =
+                        action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION
+                            ? std::optional{state.cursor}
+                            : bookmark->position,
                     .audio_milliseconds = std::nullopt,
                 };
             } else {
@@ -4109,9 +4161,107 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         if (action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK) {
             return "Bookmark added at the Compose cursor.";
         }
-        return action.compose_action == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK
-                   ? "Bookmark renamed."
+        if (action.compose_action == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK) {
+            return "Bookmark renamed.";
+        }
+        return action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION
+                   ? "Bookmark moved to the Compose cursor."
                    : "Bookmark deleted.";
+    }
+    case WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION:
+    case WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL:
+    case WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN:
+    case WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_END:
+    case WORM_UI_COMPOSE_ACTION_DELETE_BEAT_SECTION: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before editing sections.";
+        }
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart) {
+            return "Choose a chart before editing sections.";
+        }
+        marker_edit_action_t edit;
+        if (action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION) {
+            const auto built = build_measure_index(*chart);
+            const auto* measures = std::get_if<measure_index_t>(&built);
+            const auto begin = measures ? absolute_row(*measures, state.cursor) : std::nullopt;
+            if (!measures || !begin || state.active_snap_denominator == 0 ||
+                chart->divisions_per_standard_measure % state.active_snap_denominator != 0) {
+                return "The active Compose grid cannot define a section span.";
+            }
+            const auto step = chart->divisions_per_standard_measure / state.active_snap_denominator;
+            if (step == 0 || *begin >= measures->total_rows ||
+                step >= measures->total_rows - *begin) {
+                return "Move the cursor earlier to create a one-snap section.";
+            }
+            const auto end = timing_position_at_row(*measures, *begin + step);
+            if (!end) {
+                return "The next active-snap row is outside the chart.";
+            }
+            edit = insert_section_action_t{
+                .chart = state.chart,
+                .label = action.compose_marker_label,
+                .anchor = marker_anchor_t::beat,
+                .beat_span = position_span_t{state.cursor, *end},
+                .audio_millisecond_span = std::nullopt,
+            };
+        } else {
+            if (action.compose_section_id == 0) {
+                return "Choose a beat-anchored section before editing it.";
+            }
+            const auto section = std::ranges::find(
+                chart->sections, object_id_t{action.compose_section_id}, &section_t::id);
+            if (section == chart->sections.end() || section->anchor != marker_anchor_t::beat ||
+                !section->beat_span) {
+                return "That beat-anchored section is no longer available.";
+            }
+            if (action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_BEAT_SECTION) {
+                edit = delete_section_action_t{.chart = state.chart, .section = section->id};
+            } else {
+                auto span = *section->beat_span;
+                auto label = section->label;
+                if (action.compose_action == WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL) {
+                    label = action.compose_marker_label;
+                } else if (action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN) {
+                    span.begin = state.cursor;
+                } else {
+                    span.end = state.cursor;
+                }
+                edit = update_section_action_t{
+                    .chart = state.chart,
+                    .section = section->id,
+                    .label = std::move(label),
+                    .anchor = marker_anchor_t::beat,
+                    .beat_span = span,
+                    .audio_millisecond_span = std::nullopt,
+                };
+            }
+        }
+        const auto applied =
+            apply_marker_edit(history, action.compose_input_document_revision, std::move(edit));
+        if (!applied.applied) {
+            if (!applied.diagnostics.empty()) {
+                return applied.diagnostics.front().message;
+            }
+            return "Section edit made no changes.";
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty() ? "Section changed, but workspace rebinding failed."
+                                               : rebound.diagnostics.front().message;
+        }
+        switch (action.compose_action) {
+        case WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION:
+            return "One-snap section added at the Compose cursor.";
+        case WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL:
+            return "Section renamed.";
+        case WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN:
+            return "Section start moved to the Compose cursor.";
+        case WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_END:
+            return "Section end moved to the Compose cursor.";
+        default:
+            return "Section deleted.";
+        }
     }
     case WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER: {
         const auto* chart = selected_chart(history, workspace);

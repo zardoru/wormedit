@@ -196,6 +196,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/platform_recovery.cpp
         src/sys/platform_shortcut_profile.cpp
         src/sys/window.cpp
+        src/ui/nuklear/compose_markers.cpp
         src/ui/nuklear/frontend.cpp
     )
 

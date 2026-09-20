@@ -1,4 +1,5 @@
 #include "ui/nuklear/player_preview_texture.h"
+#include "ui/nuklear/image_quad.h"
 
 #include "wormedit/nuklear_config.h"
 
@@ -185,6 +186,8 @@ const char* worm_ui_nuklear_preview_visual_failure_message(
         return "texture identifier is unsupported";
     case worm_ui_nuklear_preview_visual_failure_t::layout_invalid:
         return "image layout is invalid";
+    case worm_ui_nuklear_preview_visual_failure_t::command_capacity:
+        return "preview draw-command capacity exceeded";
     }
     return "unknown renderer failure";
 }
@@ -262,16 +265,29 @@ worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_visu
         nk_draw_image(canvas, destination, &image, nk_rgba(255, 255, 255, 255));
         result.drew_image = true;
     }
-    constexpr float storyboard_width = 640.0F;
-    constexpr float storyboard_height = 480.0F;
-    const auto storyboard_scale =
-        std::min(viewport.w / storyboard_width, viewport.h / storyboard_height);
-    const auto storyboard_left =
-        viewport.x + (viewport.w - storyboard_width * storyboard_scale) * 0.5F;
-    const auto storyboard_top =
-        viewport.y + (viewport.h - storyboard_height * storyboard_scale) * 0.5F;
+    return result;
+}
+
+worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_storyboard_sprites(
+    struct nk_command_buffer* canvas, struct nk_rect viewport, struct SDL_Renderer* renderer,
+    const WormUiPlayerPreviewView* view, bool foreground) {
+    worm_ui_nuklear_preview_visual_result_t result;
+    if (!canvas || !view) {
+        return result;
+    }
+    const auto record_failure = [&](std::uint64_t resource_id,
+                                    worm_ui_nuklear_preview_visual_failure_t failure) {
+        ++result.failure_count;
+        if (result.first_failure == worm_ui_nuklear_preview_visual_failure_t::none) {
+            result.first_failed_resource_id = resource_id;
+            result.first_failure = failure;
+        }
+    };
     for (std::size_t index = 0; index < view->storyboard_sprite_count; ++index) {
         const auto& sprite = view->storyboard_sprites[index];
+        if ((sprite.layer_order >= 3) != foreground) {
+            continue;
+        }
         if (!sprite.image_ready || sprite.opacity <= 0.0 || sprite.scale_x == 0.0 ||
             sprite.scale_y == 0.0) {
             continue;
@@ -281,20 +297,38 @@ worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_visu
             record_failure(sprite.resource_id, uploaded.failure);
             continue;
         }
-        const auto width =
-            static_cast<float>(sprite.image_width * std::abs(sprite.scale_x)) * storyboard_scale;
-        const auto height =
-            static_cast<float>(sprite.image_height * std::abs(sprite.scale_y)) * storyboard_scale;
-        const auto destination =
-            nk_rect(storyboard_left + static_cast<float>(sprite.x) * storyboard_scale -
-                        width * static_cast<float>(sprite.origin_x),
-                    storyboard_top + static_cast<float>(sprite.y) * storyboard_scale -
-                        height * static_cast<float>(sprite.origin_y),
-                    width, height);
+        const auto quad =
+            wormedit::make_visual_image_quad({.source_width = sprite.image_width,
+                                              .source_height = sprite.image_height,
+                                              .destination = {.left = viewport.x,
+                                                              .top = viewport.y,
+                                                              .width = viewport.w,
+                                                              .height = viewport.h},
+                                              .x = sprite.x,
+                                              .y = sprite.y,
+                                              .origin_x = sprite.origin_x,
+                                              .origin_y = sprite.origin_y,
+                                              .scale_x = sprite.scale_x,
+                                              .scale_y = sprite.scale_y,
+                                              .rotation_radians = sprite.rotation_radians});
+        if (!quad) {
+            record_failure(sprite.resource_id,
+                           worm_ui_nuklear_preview_visual_failure_t::layout_invalid);
+            continue;
+        }
+        std::array<struct nk_vec2, 4> points{};
+        std::ranges::transform(quad->points, points.begin(), [](const auto& point) {
+            return nk_vec2(static_cast<float>(point.x), static_cast<float>(point.y));
+        });
         const auto image = nk_image_ptr(uploaded.texture);
-        nk_draw_image(canvas, destination, &image,
-                      nk_rgba(color_byte(sprite.red), color_byte(sprite.green),
-                              color_byte(sprite.blue), color_byte(sprite.opacity * 255.0)));
+        if (!worm_ui_nuklear_push_image_quad(
+                canvas, &image, points.data(),
+                nk_rgba(color_byte(sprite.red), color_byte(sprite.green), color_byte(sprite.blue),
+                        color_byte(sprite.opacity * 255.0)))) {
+            record_failure(sprite.resource_id,
+                           worm_ui_nuklear_preview_visual_failure_t::command_capacity);
+            continue;
+        }
         result.drew_image = true;
     }
     return result;

@@ -223,6 +223,7 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/compose_panel.cpp
         src/ui/nuklear/compose_state.cpp
         src/ui/nuklear/frontend.cpp
+        src/ui/nuklear/image_quad.cpp
         src/ui/nuklear/metadata_panel.cpp
         src/ui/nuklear/metadata_state.cpp
         src/ui/nuklear/player_preview.cpp

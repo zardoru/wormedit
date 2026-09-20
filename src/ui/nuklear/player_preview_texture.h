@@ -18,6 +18,7 @@ enum class worm_ui_nuklear_preview_visual_failure_t : std::uint8_t {
     upload_size_mismatch,
     texture_identifier_unsupported,
     layout_invalid,
+    command_capacity,
 };
 
 struct worm_ui_nuklear_preview_visual_result_t {
@@ -36,6 +37,13 @@ worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer* canv
                                                   struct nk_rect viewport,
                                                   struct SDL_Renderer* renderer,
                                                   const WormUiPlayerPreviewView* view);
+
+[[nodiscard]] worm_ui_nuklear_preview_visual_result_t
+worm_ui_nuklear_draw_player_preview_storyboard_sprites(struct nk_command_buffer* canvas,
+                                                       struct nk_rect viewport,
+                                                       struct SDL_Renderer* renderer,
+                                                       const WormUiPlayerPreviewView* view,
+                                                       bool foreground);
 
 [[nodiscard]] const char* worm_ui_nuklear_preview_visual_failure_message(
     worm_ui_nuklear_preview_visual_failure_t failure) noexcept;

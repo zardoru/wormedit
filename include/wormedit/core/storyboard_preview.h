@@ -42,6 +42,7 @@ struct storyboard_preview_index_result_t {
 struct storyboard_draw_instance_t {
     std::uint64_t stable_id{};
     std::uint64_t source_order{};
+    std::uint8_t layer_order{};
     std::string_view layer;
     std::string_view origin;
     std::string_view path;

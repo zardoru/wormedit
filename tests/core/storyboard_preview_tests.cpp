@@ -67,7 +67,9 @@ TEST_CASE("storyboard preview evaluates a bounded renderer-neutral frame",
     REQUIRE(frame);
     REQUIRE(frame.instances.size() == 2);
     CHECK(frame.instances[0].path == "back.png");
+    CHECK(frame.instances[0].layer_order == 0);
     CHECK(frame.instances[1].path == "front.png");
+    CHECK(frame.instances[1].layer_order == 3);
     CHECK(frame.instances[1].x == 60.0);
     CHECK(frame.instances[1].y == 60.0);
     CHECK(frame.instances[1].opacity == 0.5);

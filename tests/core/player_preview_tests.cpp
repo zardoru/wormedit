@@ -223,6 +223,10 @@ TEST_CASE("player preview carries bounded evaluated storyboard instances",
     invalid.front().stable_id = 0;
     scene_request.storyboard_instances = invalid;
     CHECK_FALSE(make_player_preview_scene(*built.index, scene_request));
+    invalid.front() = sprites.front();
+    invalid.front().layer_order = 5;
+    scene_request.storyboard_instances = invalid;
+    CHECK_FALSE(make_player_preview_scene(*built.index, scene_request));
 }
 
 TEST_CASE("player preview uses scroll displacement and remains still through a stop",

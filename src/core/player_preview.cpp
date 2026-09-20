@@ -75,12 +75,12 @@ auto valid_visual_layers(const bga_layer_state_t& layers, std::uint64_t sample_f
 }
 
 auto valid_storyboard_instance(const storyboard_draw_instance_t& instance) -> bool {
-    return instance.stable_id != 0 && !instance.layer.empty() && !instance.origin.empty() &&
-           !instance.path.empty() && std::isfinite(instance.x) && std::isfinite(instance.y) &&
-           std::isfinite(instance.scale_x) && std::isfinite(instance.scale_y) &&
-           std::isfinite(instance.rotation_radians) && std::isfinite(instance.opacity) &&
-           std::isfinite(instance.red) && std::isfinite(instance.green) &&
-           std::isfinite(instance.blue);
+    return instance.stable_id != 0 && instance.layer_order <= 4 && !instance.layer.empty() &&
+           !instance.origin.empty() && !instance.path.empty() && std::isfinite(instance.x) &&
+           std::isfinite(instance.y) && std::isfinite(instance.scale_x) &&
+           std::isfinite(instance.scale_y) && std::isfinite(instance.rotation_radians) &&
+           std::isfinite(instance.opacity) && std::isfinite(instance.red) &&
+           std::isfinite(instance.green) && std::isfinite(instance.blue);
 }
 
 auto append_tree(const std::vector<player_preview_note_source_t>& notes, std::size_t leaf_base)

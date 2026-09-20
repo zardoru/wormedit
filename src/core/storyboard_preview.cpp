@@ -173,6 +173,7 @@ auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
         storyboard_draw_instance_t instance{
             .stable_id = sprite.stable_id,
             .source_order = sprite.source_order,
+            .layer_order = source.layer_order,
             .layer = sprite.layer,
             .origin = sprite.origin,
             .path = sprite.path,

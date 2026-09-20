@@ -124,13 +124,13 @@ int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* vie
     }
     for (std::size_t index = 0; index < view->storyboard_sprite_count; ++index) {
         const auto& sprite = view->storyboard_sprites[index];
-        if (sprite.stable_id == 0 || !std::isfinite(sprite.x) || !std::isfinite(sprite.y) ||
-            !std::isfinite(sprite.origin_x) || sprite.origin_x < 0.0 || sprite.origin_x > 1.0 ||
-            !std::isfinite(sprite.origin_y) || sprite.origin_y < 0.0 || sprite.origin_y > 1.0 ||
-            !std::isfinite(sprite.scale_x) || !std::isfinite(sprite.scale_y) ||
-            !std::isfinite(sprite.rotation_radians) || !std::isfinite(sprite.opacity) ||
-            !std::isfinite(sprite.red) || !std::isfinite(sprite.green) ||
-            !std::isfinite(sprite.blue) ||
+        if (sprite.stable_id == 0 || sprite.layer_order > 4 || !std::isfinite(sprite.x) ||
+            !std::isfinite(sprite.y) || !std::isfinite(sprite.origin_x) || sprite.origin_x < 0.0 ||
+            sprite.origin_x > 1.0 || !std::isfinite(sprite.origin_y) || sprite.origin_y < 0.0 ||
+            sprite.origin_y > 1.0 || !std::isfinite(sprite.scale_x) ||
+            !std::isfinite(sprite.scale_y) || !std::isfinite(sprite.rotation_radians) ||
+            !std::isfinite(sprite.opacity) || !std::isfinite(sprite.red) ||
+            !std::isfinite(sprite.green) || !std::isfinite(sprite.blue) ||
             (sprite.image_ready &&
              (sprite.resource_id == 0 || sprite.image_pending || sprite.image_width == 0 ||
               sprite.image_height == 0 ||
@@ -230,8 +230,23 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                 nk_push_scissor(canvas, viewport);
                 nk_fill_rect(canvas, viewport, 2.0f, nk_rgb(14, 17, 24));
                 if (view->scene_available) {
-                    const auto visual_result = worm_ui_nuklear_draw_player_preview_visual_layers(
+                    auto visual_result = worm_ui_nuklear_draw_player_preview_visual_layers(
                         canvas, viewport, renderer, view);
+                    const auto merge_visual_result = [&](const auto& additional) {
+                        visual_result.drew_image =
+                            visual_result.drew_image || additional.drew_image;
+                        if (visual_result.first_failure ==
+                                worm_ui_nuklear_preview_visual_failure_t::none &&
+                            additional.first_failure !=
+                                worm_ui_nuklear_preview_visual_failure_t::none) {
+                            visual_result.first_failed_resource_id =
+                                additional.first_failed_resource_id;
+                            visual_result.first_failure = additional.first_failure;
+                        }
+                        visual_result.failure_count += additional.failure_count;
+                    };
+                    merge_visual_result(worm_ui_nuklear_draw_player_preview_storyboard_sprites(
+                        canvas, viewport, renderer, view, false));
                     for (std::size_t index = 0; index < view->lane_count; ++index) {
                         const auto rect = screen_rect(&view->lanes[index].bounds, view, viewport);
                         const auto alternate = (view->lanes[index].display_order & 1U) != 0;
@@ -268,6 +283,8 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                         draw_glyph(canvas, rect, note.glyph, color);
                         nk_stroke_rect(canvas, rect, 1.5f, 1.0f, nk_rgb(239, 245, 255));
                     }
+                    merge_visual_result(worm_ui_nuklear_draw_player_preview_storyboard_sprites(
+                        canvas, viewport, renderer, view, true));
                     if (visual_result.failure_count != 0 && context->style.font) {
                         char warning[192]{};
                         std::snprintf(

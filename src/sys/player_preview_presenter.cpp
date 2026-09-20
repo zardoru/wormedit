@@ -407,6 +407,7 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
         sprite.stable_id = instance.stable_id;
         sprite.resource_id = storyboard_resource(history.document, instance.path).value;
         sprite.source_order = instance.source_order;
+        sprite.layer_order = instance.layer_order;
         sprite.x = instance.x;
         sprite.y = instance.y;
         sprite.origin_x = origin[0];

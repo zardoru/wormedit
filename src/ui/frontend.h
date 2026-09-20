@@ -798,6 +798,7 @@ typedef struct WormUiPlayerPreviewStoryboardSpriteView {
     uint64_t stable_id;
     uint64_t resource_id;
     size_t source_order;
+    uint8_t layer_order;
     double x;
     double y;
     double origin_x;

@@ -5,6 +5,7 @@
 #include "ui/nuklear/audio_panel.h"
 #include "ui/nuklear/audio_state.h"
 #include "ui/nuklear/compose_panel.h"
+#include "ui/nuklear/image_quad.h"
 #include "ui/nuklear/metadata_panel.h"
 #include "ui/nuklear/metadata_state.h"
 #include "ui/nuklear/player_preview.h"
@@ -38,6 +39,34 @@ static std::array<WormUiShortcutEvent, WORM_UI_SHORTCUT_EVENT_CAPACITY> g_shortc
 static size_t g_shortcut_event_count{};
 static bool g_shortcut_events_overflowed{};
 static bool g_ime_composition_active{};
+
+void worm_ui_nuklear_append_image_quad(void* canvas, short, short, unsigned short, unsigned short,
+                                       nk_handle callback_data) {
+    auto* list = static_cast<struct nk_draw_list*>(canvas);
+    const auto* quad = static_cast<const WormUiNuklearImageQuad*>(callback_data.ptr);
+    if (!list || !quad) {
+        return;
+    }
+    nk_draw_list_push_image(list, quad->image.handle);
+    const auto base = static_cast<nk_draw_index>(list->vertex_count);
+    auto* vertices = nk_draw_list_alloc_vertices(list, 4);
+    auto* indices = nk_draw_list_alloc_elements(list, 6);
+    if (!vertices || !indices) {
+        return;
+    }
+    indices[0] = static_cast<nk_draw_index>(base + 0);
+    indices[1] = static_cast<nk_draw_index>(base + 1);
+    indices[2] = static_cast<nk_draw_index>(base + 2);
+    indices[3] = static_cast<nk_draw_index>(base + 0);
+    indices[4] = static_cast<nk_draw_index>(base + 2);
+    indices[5] = static_cast<nk_draw_index>(base + 3);
+    struct nk_colorf color{};
+    nk_color_fv(&color.r, quad->color);
+    for (std::size_t index = 0; index < 4; ++index) {
+        vertices =
+            nk_draw_vertex(vertices, &list->config, quad->points[index], quad->uvs[index], color);
+    }
+}
 
 static void queue_shortcut_key_event(const SDL_KeyboardEvent* event) {
     if (!event || !g_window || !g_window_focused || event->type != SDL_EVENT_KEY_DOWN ||
@@ -289,6 +318,7 @@ void worm_ui_frontend_end_input(void) {
 }
 
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
+    worm_ui_nuklear_begin_image_quad_frame();
     WormUiWorkspaceAction action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_NONE;
     action.tab = WORM_UI_WORKSPACE_TAB_SETUP;

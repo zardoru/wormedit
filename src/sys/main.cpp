@@ -50,6 +50,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <optional>
@@ -189,6 +190,8 @@ struct application_command_state_t {
     // data; an active gesture keeps its captured snap until it is resolved.
     std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;
     std::unordered_map<std::uint64_t, double> bgm_horizontal_scroll_pixels;
+    std::function<bool()> transport_active;
+    std::function<void()> transport_stop;
 };
 
 struct timing_grid_state_t {
@@ -4355,6 +4358,16 @@ auto invoke_application_command(
         return rebind_after_edit();
     }
 
+    if (id == "transport.stop") {
+        if (!application_state.transport_stop || !application_state.transport_active ||
+            !application_state.transport_active()) {
+            return reject_application_command(status, "No audio preview is playing.");
+        }
+        application_state.transport_stop();
+        status = "Audio preview stopped.";
+        return {.accepted = true};
+    }
+
     if (id == "edit.delete") {
         auto* state = require_compose();
         if (!state) {
@@ -4615,7 +4628,8 @@ void refresh_application_command_states(
     set("navigation.previous_snap", compose_ready);
     set("navigation.next_snap", compose_ready);
     set("transport.play_pause", false);
-    set("transport.stop", false);
+    set("transport.stop", application_state.transport_active &&
+                              application_state.transport_active());
 
     constexpr std::array<std::pair<std::string_view, workspace_tab_t>, 7> tabs{{
         {"workspace.open_setup", workspace_tab_t::setup},
@@ -4857,6 +4871,10 @@ int main(int argc, char** argv) {
     wormedit::viewport_input_controller_t compose_viewport_input;
     wormedit::editor_navigation_input_controller_t compose_navigation_input;
     application_command_state_t application_command_state;
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    application_command_state.transport_active = [&] { return audition_session.active(); };
+    application_command_state.transport_stop = [&] { static_cast<void>(audition_output.stop()); };
+#endif
     timing_grid_state_t timing_grid;
     auto command_registry = wormedit::make_default_editor_command_registry(
         [&](const wormedit::command_invocation_context_t& invocation) {

@@ -3438,9 +3438,15 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
             } else {
                 const auto color = hold.proposal_origin
                                        ? nk_rgb(51, 82, 100)
-                                       : (hold.selected ? nk_rgb(62, 170, 204)
-                                                        : nk_rgb(48, 111, 151));
+                                       : (hold.semantic_color_visible
+                                              ? nk_rgba(hold.semantic_red, hold.semantic_green,
+                                                        hold.semantic_blue, hold.semantic_alpha)
+                                              : (hold.selected ? nk_rgb(62, 170, 204)
+                                                               : nk_rgb(48, 111, 151)));
                 nk_fill_rect(canvas, rect, 0.0f, color);
+                if (hold.selected) {
+                    nk_stroke_rect(canvas, rect, 0.0f, 1.6f, nk_rgb(220, 247, 255));
+                }
                 if (view->hover_note_visible && hold.note_id == view->hover_note_id) {
                     nk_stroke_rect(canvas, rect, 0.0f, 2.0f, nk_rgb(255, 235, 148));
                 }
@@ -3450,7 +3456,11 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
             const auto& note = view->note_endpoints[index];
             auto color = note.proposal_origin
                              ? nk_rgb(73, 101, 120)
-                             : (note.selected ? nk_rgb(111, 221, 236) : nk_rgb(133, 182, 222));
+                             : (note.semantic_color_visible
+                                    ? nk_rgba(note.semantic_red, note.semantic_green,
+                                              note.semantic_blue, note.semantic_alpha)
+                                    : (note.selected ? nk_rgb(111, 221, 236)
+                                                     : nk_rgb(133, 182, 222)));
             auto border = nk_rgb(17, 24, 34);
             auto border_width = 1.0f;
             if (note.proposal_ghost) {
@@ -3460,6 +3470,9 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
             } else if (view->hover_note_visible && note.note_id == view->hover_note_id) {
                 color = nk_rgb(255, 226, 127);
                 border = nk_rgb(255, 247, 190);
+                border_width = 2.0f;
+            } else if (note.selected && note.semantic_color_visible) {
+                border = nk_rgb(220, 247, 255);
                 border_width = 2.0f;
             } else if (note.paint_invalid_preview) {
                 color = nk_rgba(245, 178, 65, 210);

@@ -1,6 +1,6 @@
 # Chart editor status
 
-Last updated: 2026-09-17
+Last updated: 2026-09-19
 
 ## Current milestone
 
@@ -11,6 +11,8 @@ The Compose pane now exposes an explicitly armed note-placement Paint tool. Poin
 Hold entry now keeps its pressed row as a fixed anchor and supports a moving head in either direction for Alt/Option drags and held lane keys. At release, it atomically removes covered plain taps and unions touching or overlapping plain holds on the active lane; special or metadata-bearing notes reject without mutation, and an occupied plain lane-key target removes the whole object. The Compose field renders the normalized reverse head/body/tail ghost, while a ghost showing the full forthcoming merge/removal set remains future work.
 
 Compose also exposes a bounded note-label toolbar for the current explicit note selection. Apply sends its revision-bound UTF-8 field—including an intentional empty label—through the existing atomic label command; Clear sends the distinct null label request. The controls are unavailable without a selected note or usable field scene, and command diagnostics/no-ops return through the normal workspace status path.
+
+Visible semantic-layer membership now tints Compose note endpoints and hold bodies through the renderer-neutral field scene. The first visible matching layer in the chart's ordered palette supplies the deterministic compact color when a note has multiple memberships; hidden layers are skipped. Selection, hover, paint, and proposal cues continue to take precedence as overlays, while valid move/duration proposal ghosts retain their source layer color. Palette editing, layer paint, filtering, solo, and richer multi-layer visualization remain later work.
 
 The planning review is complete enough to begin implementation. Stage 0 is establishing the build/test/dependency environment, fixture inventory, and loss-aware document foundation.
 

@@ -158,6 +158,71 @@ TEST_CASE("field scene composes split layout bands, exact grid, holds, selection
     CHECK(zoomed.scene->hold_bodies[0].bounds.bottom == Catch::Approx(192.0));
 }
 
+TEST_CASE("field scene resolves semantic layer colors by visible palette order",
+          "[unit][core][editor-scene][semantic-layer]") {
+    auto chart = scene_chart();
+    chart.semantic_layers = {
+        {.id = wormedit::layer_id_t{1},
+         .name = "Hidden",
+         .color = {11, 12, 13, 255},
+         .visible = false},
+        {.id = wormedit::layer_id_t{2}, .name = "Rhythm", .color = {31, 32, 33, 210}},
+        {.id = wormedit::layer_id_t{3}, .name = "Vocal", .color = {51, 52, 53, 220}},
+    };
+    chart.measures.front().notes[1].semantic_layers = {
+        wormedit::layer_id_t{1}, wormedit::layer_id_t{2}, wormedit::layer_id_t{3}};
+
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    const auto result = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), view(),
+        {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(result);
+    REQUIRE(result.scene->note_endpoints.size() == 2);
+    REQUIRE(result.scene->hold_bodies.size() == 2);
+    for (const auto& endpoint : result.scene->note_endpoints) {
+        REQUIRE(endpoint.semantic_color.has_value());
+        CHECK(*endpoint.semantic_color == wormedit::color_rgba_t{31, 32, 33, 210});
+    }
+    for (const auto& body : result.scene->hold_bodies) {
+        REQUIRE(body.semantic_color.has_value());
+        CHECK(*body.semantic_color == wormedit::color_rgba_t{31, 32, 33, 210});
+    }
+
+    auto move_view = view();
+    move_view.pending_note_move_gesture = wormedit::pending_note_move_gesture_t{
+        .reference_note = wormedit::object_id_t{11},
+        .document_revision = 7,
+        .notes = {wormedit::object_id_t{11}},
+        .preview_position = {wormedit::measure_id_t{2}, 240},
+        .preview = {{wormedit::object_id_t{11}, wormedit::lane_id_t{2},
+                     wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
+                     wormedit::local_position_t{wormedit::measure_id_t{2}, 720}}},
+    };
+    const auto moved = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), move_view,
+        {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(moved);
+    const auto ghost = std::ranges::find_if(moved.scene->note_endpoints, [](const auto& endpoint) {
+        return endpoint.note == wormedit::object_id_t{11} && endpoint.proposal_ghost;
+    });
+    REQUIRE(ghost != moved.scene->note_endpoints.end());
+    REQUIRE(ghost->semantic_color.has_value());
+    CHECK(*ghost->semantic_color == wormedit::color_rgba_t{31, 32, 33, 210});
+
+    chart.semantic_layers[1].visible = false;
+    const auto secondary_index = wormedit::build_editor_field_scene_index(chart, 8);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(secondary_index));
+    const auto secondary_view = view(8);
+    const auto secondary = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(secondary_index), secondary_view,
+        {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(secondary);
+    REQUIRE(secondary.scene->note_endpoints.front().semantic_color.has_value());
+    CHECK(*secondary.scene->note_endpoints.front().semantic_color ==
+          wormedit::color_rgba_t{51, 52, 53, 220});
+}
+
 TEST_CASE("field scene rejects stale indexes and returns no partial geometry at hard caps",
           "[unit][core][editor-scene][bounds]") {
     const auto chart = scene_chart();

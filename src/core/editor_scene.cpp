@@ -164,6 +164,33 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
     index.notes.reserve(note_count);
     std::unordered_set<std::uint64_t> note_ids;
     note_ids.reserve(note_count);
+    struct visible_palette_color_t {
+        std::size_t order{};
+        color_rgba_t color;
+    };
+    std::unordered_map<std::uint64_t, visible_palette_color_t> visible_palette_colors;
+    visible_palette_colors.reserve(chart.semantic_layers.size());
+    for (std::size_t order = 0; order < chart.semantic_layers.size(); ++order) {
+        const auto& layer = chart.semantic_layers[order];
+        if (layer.visible) {
+            visible_palette_colors.emplace(layer.id.value,
+                                           visible_palette_color_t{order, layer.color});
+        }
+    }
+    const auto semantic_color_for_note = [&](const note_t& note) -> std::optional<color_rgba_t> {
+        // Palette order is meaningful: the first visible layer is the note's
+        // compact field color. This deliberately does not infer a blend from
+        // multiple memberships, whose authoring semantics are still open.
+        const visible_palette_color_t* chosen{};
+        for (const auto layer : note.semantic_layers) {
+            const auto found = visible_palette_colors.find(layer.value);
+            if (found != visible_palette_colors.end() &&
+                (!chosen || found->second.order < chosen->order)) {
+                chosen = &found->second;
+            }
+        }
+        return chosen ? std::optional{chosen->color} : std::nullopt;
+    };
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
             const auto begin = absolute_row(index.measures, note.position);
@@ -197,7 +224,8 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
                                    .lane = note.lane,
                                    .kind = note.kind,
                                    .begin_row = *begin,
-                                   .end_row = *end});
+                                   .end_row = *end,
+                                   .semantic_color = semantic_color_for_note(note)});
         }
     }
     if (!diagnostics.empty()) {
@@ -907,6 +935,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                                             .tail = tail,
                                             .selected = note_selected,
                                             .proposal_origin = proposal_origin,
+                                            .semantic_color = note.semantic_color,
                                             .bounds = rect,
                                             .paint_preview = paint_target,
                                             .paint_erase_preview = erase_preview,
@@ -941,6 +970,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                      .lane = note.lane,
                      .selected = note_selected,
                      .proposal_origin = proposal_origin,
+                     .semantic_color = note.semantic_color,
                      .bounds = {center - body_width / 2.0, y_for_row(begin),
                                 center + body_width / 2.0, y_for_row(end)}});
             }
@@ -1003,6 +1033,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
              .kind = note_kind_t::tap,
              .tail = false,
              .selected = false,
+             .semantic_color = std::nullopt,
              .bounds = target.bounds,
              .paint_preview = true,
              .paint_erase_preview = false,
@@ -1013,7 +1044,9 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
     const auto append_proposal_geometry = [&](object_id_t note, lane_id_t lane, note_kind_t kind,
                                               std::uint64_t begin_row,
                                               std::optional<std::uint64_t> end_row,
-                                              bool selected_note) {
+                                              bool selected_note,
+                                              std::optional<color_rgba_t> semantic_color =
+                                                  std::nullopt) {
         if (kind == note_kind_t::hold && end_row.has_value() && *end_row > begin_row) {
             for (const auto& band : visible_bands) {
                 if (!operate()) {
@@ -1042,6 +1075,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                      .lane = lane,
                      .selected = selected_note,
                      .proposal_ghost = true,
+                     .semantic_color = semantic_color,
                      .bounds = {center - body_width / 2.0, y_for_row(begin),
                                 center + body_width / 2.0, y_for_row(end)}});
             }
@@ -1072,6 +1106,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                                             .tail = tail,
                                             .selected = selected_note,
                                             .proposal_ghost = true,
+                                            .semantic_color = semantic_color,
                                             .bounds = rect});
         };
         add_endpoint(begin_row, false);
@@ -1082,7 +1117,8 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
     for (const auto& proposal : duration_proposals) {
         append_proposal_geometry(proposal.source->note, proposal.source->lane,
                                  proposal.preview->kind, proposal.source->begin_row,
-                                 proposal.end_row, selected.contains(proposal.source->note.value));
+                                 proposal.end_row, selected.contains(proposal.source->note.value),
+                                 proposal.source->semantic_color);
         if (proposal_failed) {
             result.diagnostics.push_back(
                 error(diagnostic_code_t::invalid_resolution,
@@ -1093,7 +1129,8 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
     for (const auto& proposal : move_proposals) {
         append_proposal_geometry(proposal.source->note, proposal.preview->lane,
                                  proposal.source->kind, proposal.begin_row, proposal.end_row,
-                                 selected.contains(proposal.source->note.value));
+                                 selected.contains(proposal.source->note.value),
+                                 proposal.source->semantic_color);
         if (proposal_failed) {
             result.diagnostics.push_back(
                 error(diagnostic_code_t::invalid_resolution,

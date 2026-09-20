@@ -25,6 +25,11 @@ struct editor_field_scene_note_source_t {
     note_kind_t kind{note_kind_t::tap};
     std::uint64_t begin_row{};
     std::uint64_t end_row{};
+    // The first visible matching layer in chart palette order. Keeping the
+    // resolved color in the revision-bound scene index makes the renderer
+    // independent of document traversal while preserving a deterministic
+    // precedence rule until multi-layer blend authoring is specified.
+    std::optional<color_rgba_t> semantic_color;
 };
 
 struct editor_field_scene_layout_source_t {
@@ -95,6 +100,7 @@ struct editor_field_note_endpoint_geometry_t {
     bool selected{};
     bool proposal_origin{};
     bool proposal_ghost{};
+    std::optional<color_rgba_t> semantic_color;
     editor_field_rect_t bounds;
     bool paint_preview{};
     bool paint_erase_preview{};
@@ -107,6 +113,7 @@ struct editor_field_hold_body_geometry_t {
     bool selected{};
     bool proposal_origin{};
     bool proposal_ghost{};
+    std::optional<color_rgba_t> semantic_color;
     editor_field_rect_t bounds;
 };
 

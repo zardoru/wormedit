@@ -2405,7 +2405,25 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                                   .lane_id = hold.lane.value,
                                                   .selected = hold.selected,
                                                   .proposal_origin = hold.proposal_origin,
-                                                  .proposal_ghost = hold.proposal_ghost});
+                                                  .proposal_ghost = hold.proposal_ghost,
+                                                  .semantic_color_visible =
+                                                      hold.semantic_color.has_value(),
+                                                  .semantic_red = static_cast<std::uint8_t>(
+                                                      hold.semantic_color
+                                                          ? hold.semantic_color->red
+                                                          : 0),
+                                                  .semantic_green = static_cast<std::uint8_t>(
+                                                      hold.semantic_color
+                                                          ? hold.semantic_color->green
+                                                          : 0),
+                                                  .semantic_blue = static_cast<std::uint8_t>(
+                                                      hold.semantic_color
+                                                          ? hold.semantic_color->blue
+                                                          : 0),
+                                                  .semantic_alpha = static_cast<std::uint8_t>(
+                                                      hold.semantic_color
+                                                          ? hold.semantic_color->alpha
+                                                          : 0)});
     }
     const auto& endpoints = scene.note_endpoints;
     const auto endpoint_count =
@@ -2422,6 +2440,15 @@ void populate_compose_view(flattened_workspace_t& flattened,
              .selected = endpoint.selected,
              .proposal_origin = endpoint.proposal_origin,
              .proposal_ghost = endpoint.proposal_ghost,
+             .semantic_color_visible = endpoint.semantic_color.has_value(),
+             .semantic_red = static_cast<std::uint8_t>(
+                 endpoint.semantic_color ? endpoint.semantic_color->red : 0),
+             .semantic_green = static_cast<std::uint8_t>(
+                 endpoint.semantic_color ? endpoint.semantic_color->green : 0),
+             .semantic_blue = static_cast<std::uint8_t>(
+                 endpoint.semantic_color ? endpoint.semantic_color->blue : 0),
+             .semantic_alpha = static_cast<std::uint8_t>(
+                 endpoint.semantic_color ? endpoint.semantic_color->alpha : 0),
              .paint_preview = endpoint.paint_preview,
              .paint_erase_preview = endpoint.paint_erase_preview,
              .paint_invalid_preview = endpoint.paint_invalid_preview});

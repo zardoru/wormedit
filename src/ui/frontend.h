@@ -179,6 +179,11 @@ typedef struct WormUiComposeHoldView {
     bool selected;
     bool proposal_origin;
     bool proposal_ghost;
+    bool semantic_color_visible;
+    uint8_t semantic_red;
+    uint8_t semantic_green;
+    uint8_t semantic_blue;
+    uint8_t semantic_alpha;
 } WormUiComposeHoldView;
 
 typedef struct WormUiComposeNoteView {
@@ -190,6 +195,11 @@ typedef struct WormUiComposeNoteView {
     bool selected;
     bool proposal_origin;
     bool proposal_ghost;
+    bool semantic_color_visible;
+    uint8_t semantic_red;
+    uint8_t semantic_green;
+    uint8_t semantic_blue;
+    uint8_t semantic_alpha;
     bool paint_preview;
     bool paint_erase_preview;
     bool paint_invalid_preview;

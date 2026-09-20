@@ -498,7 +498,7 @@ static void render_timing_recipe_form(struct nk_context* context, const WormUiTi
 
 void worm_ui_nuklear_render_timing_panel(struct nk_context* context, const WormUiTimingView* view,
                                          WormUiWorkspaceAction* action, bool window_focused,
-                                         const worm_ui_nuklear_timing_double_click_t* double_clicks,
+                                         const worm_ui_nuklear_pointer_click_t* double_clicks,
                                          std::size_t double_click_count) {
     if (!context || !view || !action || !view->visible ||
         (double_click_count != 0 && !double_clicks)) {

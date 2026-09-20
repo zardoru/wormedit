@@ -1,15 +1,11 @@
 #pragma once
 
 #include "ui/frontend.h"
+#include "ui/nuklear/panel_input.h"
 
 #include <cstddef>
 
 struct nk_context;
-
-struct worm_ui_nuklear_timing_double_click_t {
-    float x{};
-    float y{};
-};
 
 [[nodiscard]] int worm_ui_nuklear_timing_view_valid(const WormUiTimingView* view);
 
@@ -23,5 +19,5 @@ void worm_ui_nuklear_emit_timing_cancellations(const WormUiTimingView* view, boo
 
 void worm_ui_nuklear_render_timing_panel(struct nk_context* context, const WormUiTimingView* view,
                                          WormUiWorkspaceAction* action, bool window_focused,
-                                         const worm_ui_nuklear_timing_double_click_t* double_clicks,
+                                         const worm_ui_nuklear_pointer_click_t* double_clicks,
                                          std::size_t double_click_count);

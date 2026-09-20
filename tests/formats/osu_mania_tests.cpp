@@ -299,23 +299,93 @@ TEST_CASE("osu!mania fixtures preserve source bytes, tags, bookmarks, kiai and s
     CHECK(diagnostics.empty());
 }
 
-TEST_CASE("osu!mania version fixtures accept stable v14 and reject unaudited profiles",
+TEST_CASE("osu!mania version profiles preserve stable-v14 and lazer-v128 time semantics",
           "[unit][format][osu-mania][version]") {
     const auto stable = fixture("versioned-stable-v14.osu");
     REQUIRE(stable.song.has_value());
     REQUIRE_FALSE(stable.has_errors());
     const auto& fields = stable.song->metadata.format_groups.front().ordered_fields;
-    CHECK(std::ranges::find(fields,
-                            std::pair{std::string{"osu.file_format"}, std::string{"14"}}) !=
+    CHECK(std::ranges::find(fields, std::pair{std::string{"osu.file_format"}, std::string{"14"}}) !=
           fields.end());
 
     const auto written = write_inline(*stable.song);
     REQUIRE(written.text.has_value());
     CHECK(written.text->starts_with("osu file format v14\n"));
 
-    const auto lazer = fixture("negative-lazer-v128.osu");
-    CHECK_FALSE(lazer.song.has_value());
-    CHECK(has_code(lazer, wormedit::osu_mania_parse_diagnostic_code_t::unsupported_version));
+    const auto lazer = fixture("lazer-v128-fractional.osu");
+    REQUIRE(lazer.song.has_value());
+    REQUIRE_FALSE(lazer.has_errors());
+    const auto& lazer_fields = lazer.song->metadata.format_groups.front().ordered_fields;
+    CHECK(std::ranges::find(lazer_fields, std::pair{std::string{"osu.file_format"},
+                                                    std::string{"128"}}) != lazer_fields.end());
+    REQUIRE(lazer.song->charts.front().measures.size() >= 1);
+    std::size_t lazer_note_count{};
+    bool found_hold{};
+    for (const auto& measure : lazer.song->charts.front().measures) {
+        lazer_note_count += measure.notes.size();
+        found_hold = found_hold || std::ranges::any_of(measure.notes, [](const auto& note) {
+                         return note.kind == wormedit::note_kind_t::hold && note.end.has_value();
+                     });
+    }
+    CHECK(lazer_note_count == 2);
+    CHECK(found_hold);
+
+    const auto lazer_written = write_inline(*lazer.song);
+    REQUIRE(lazer_written.text.has_value());
+    CHECK(lazer_written.text->starts_with("osu file format v128\n"));
+    CHECK(lazer_written.text->find(",192,1000.5,1,") != std::string::npos);
+    CHECK(lazer_written.text->find(",192,1200.5,128,0,\"1400.5:") != std::string::npos);
+    CHECK_FALSE(std::ranges::any_of(lazer_written.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code ==
+               wormedit::osu_mania_write_diagnostic_code_t::timestamp_quantization;
+    }));
+    const auto lazer_reparsed = parse_inline(*lazer_written.text);
+    REQUIRE(lazer_reparsed.song.has_value());
+    REQUIRE_FALSE(lazer_reparsed.has_errors());
+
+    auto edited_lazer = *lazer.song;
+    auto& edited_note = edited_lazer.charts.front().measures.front().notes.front();
+    ++edited_note.position.row;
+    const auto edited_lazer_written = write_inline(edited_lazer);
+    REQUIRE(edited_lazer_written.text.has_value());
+    CHECK(edited_lazer_written.text->starts_with("osu file format v128\n"));
+    CHECK(edited_lazer_written.text->find(",192,1002.5,1,") != std::string::npos);
+    const auto edited_lazer_reparsed = parse_inline(*edited_lazer_written.text);
+    REQUIRE(edited_lazer_reparsed.song.has_value());
+    REQUIRE_FALSE(edited_lazer_reparsed.has_errors());
+
+    const auto stable_conversion =
+        write_inline(*lazer.song, {.profile = wormedit::osu_mania_file_profile_t::stable_v14});
+    REQUIRE(stable_conversion.text.has_value());
+    CHECK(stable_conversion.text->starts_with("osu file format v14\n"));
+    CHECK(stable_conversion.text->find(",192,1001,1,") != std::string::npos);
+    CHECK(stable_conversion.text->find(",192,1201,128,0,\"1401:") != std::string::npos);
+    CHECK(std::ranges::any_of(stable_conversion.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code ==
+               wormedit::osu_mania_write_diagnostic_code_t::timestamp_quantization;
+    }));
+
+    const auto future = parse_inline("osu file format v129\n");
+    CHECK_FALSE(future.song.has_value());
+    CHECK(has_code(future, wormedit::osu_mania_parse_diagnostic_code_t::unsupported_version));
+
+    constexpr std::string_view fractional_v14 =
+        "osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n"
+        "[TimingPoints]\n0,500,4,0,0,100,1,0\n"
+        "[HitObjects]\n64,192,1000.5,1,0,0:0:0:0:\n";
+    const auto stable_fraction = parse_inline(fractional_v14);
+    CHECK_FALSE(stable_fraction.song.has_value());
+    CHECK(
+        has_code(stable_fraction, wormedit::osu_mania_parse_diagnostic_code_t::invalid_hit_object));
+
+    constexpr std::string_view nonfinite_v128 =
+        "osu file format v128\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n"
+        "[TimingPoints]\n0,500,4,0,0,100,1,0\n"
+        "[HitObjects]\n64,192,nan,1,0,0:0:0:0:\n";
+    const auto lazer_nonfinite = parse_inline(nonfinite_v128);
+    CHECK_FALSE(lazer_nonfinite.song.has_value());
+    CHECK(
+        has_code(lazer_nonfinite, wormedit::osu_mania_parse_diagnostic_code_t::invalid_hit_object));
 
     const auto legacy = parse_inline("osu file format v4\n");
     CHECK_FALSE(legacy.song.has_value());

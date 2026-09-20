@@ -34,7 +34,7 @@ constexpr std::array fixture_paths{
     "osu/mania-tags-bookmarks-kiai.osu",
     "osu/negative-non-mania.osu",
     "osu/versioned-stable-v14.osu",
-    "osu/negative-lazer-v128.osu",
+    "osu/lazer-v128-fractional.osu",
     "bmson/conflicting-continuation-flags.bmson",
     "bmson/negative-fractional-pulse-position.bmson",
     "bmson/negative-overflow-pulse-position.bmson",

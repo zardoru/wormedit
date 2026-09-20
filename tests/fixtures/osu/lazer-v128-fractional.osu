@@ -3,8 +3,11 @@ osu file format v128
 [General]
 Mode:3
 
+[Editor]
+VelocityPresets: 0.5,1,2
+
 [Metadata]
-Title:Unsupported lazer profile fixture
+Title:Lazer v128 fractional-time fixture
 Artist:Wormedit fixture authors
 Creator:Wormedit
 Version:4K
@@ -13,7 +16,8 @@ Version:4K
 CircleSize:4
 
 [TimingPoints]
-0,500,4,2,1,70,1,0
+0.5,480,4,2,1,70,1,0
 
 [HitObjects]
-64,192,0,1,0,0:0:0:0:
+64,192,1000.5,1,0,0:0:0:0:
+192,192,1200.5,128,0,1400.5:0:0:0:0:

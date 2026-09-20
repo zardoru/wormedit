@@ -55,10 +55,12 @@ struct timing_point_t {
 
 struct hit_object_t {
     std::int64_t x{};
-    std::int64_t time{};
+    long double time{};
+    std::string time_spelling;
     std::uint64_t type{};
     std::int64_t hit_sound{};
-    std::optional<std::int64_t> end_time;
+    std::optional<long double> end_time;
+    std::optional<std::string> end_time_spelling;
     std::string hit_sample;
     std::string raw_line;
     std::size_t order{};
@@ -344,10 +346,10 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
                              "osu! file format version must be an unsigned integer", order,
                              offset + bom_size + version_prefix.size());
                     }
-                    if (version != 14) {
+                    if (version != 14 && version != 128) {
                         fail(osu_mania_parse_diagnostic_code_t::unsupported_version,
-                             "only stable osu! file format v14 is currently supported", order,
-                             offset + bom_size + version_prefix.size());
+                             "only stable v14 and lazer v128 osu! file formats are supported",
+                             order, offset + bom_size + version_prefix.size());
                     }
                     format_version = version;
                     fields.push_back({"osu", "file_format", std::string(version_text),
@@ -492,15 +494,26 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
         for (const auto& line : hit_lines) {
             const auto parts = split_csv(line.text);
             hit_object_t object;
+            const auto parse_object_time = [&](std::string_view text, long double& value) {
+                if (*format_version == 14) {
+                    std::int64_t integer{};
+                    if (!parse_integer(text, integer))
+                        return false;
+                    value = static_cast<long double>(integer);
+                    return true;
+                }
+                return parse_number(text, value);
+            };
             if (!parts || parts->size() < 5 || !parse_integer((*parts)[0], object.x) ||
-                !parse_integer((*parts)[2], object.time) ||
+                !parse_object_time((*parts)[2], object.time) ||
                 !parse_integer((*parts)[3], object.type) ||
                 !parse_integer((*parts)[4], object.hit_sound) || object.x < 0 || object.x > 512 ||
-                object.time < -86'400'000LL || object.time > 604'800'000LL || object.type == 0) {
+                object.time < -86'400'000.0L || object.time > 604'800'000.0L || object.type == 0) {
                 fail(osu_mania_parse_diagnostic_code_t::invalid_hit_object,
                      "malformed osu! hit object or out-of-range lane/time", line.order,
                      line.byte_offset);
             }
+            object.time_spelling = (*parts)[2];
             const bool is_hold = (object.type & 128U) != 0;
             const bool is_circle = (object.type & 1U) != 0;
             if ((!is_hold && !is_circle) || (object.type & (2U | 8U)) != 0) {
@@ -516,14 +529,17 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
                          line.byte_offset);
                 }
                 const auto hold_parts = split((*parts)[5], ':');
-                std::int64_t end_time{};
-                if (hold_parts.empty() || !parse_integer(hold_parts.front(), end_time) ||
-                    end_time < object.time || end_time > 604'800'000LL) {
+                long double end_time{};
+                if (hold_parts.empty() || !parse_object_time(hold_parts.front(), end_time) ||
+                    end_time < object.time || end_time > 604'800'000.0L) {
                     fail(osu_mania_parse_diagnostic_code_t::invalid_hit_object,
-                         "hold end time must be an integer at or after its head", line.order,
-                         line.byte_offset);
+                         *format_version == 14
+                             ? "hold end time must be an integer at or after its head"
+                             : "hold end time must be a finite decimal at or after its head",
+                         line.order, line.byte_offset);
                 }
                 object.end_time = end_time;
+                object.end_time_spelling = std::string(hold_parts.front());
                 object.hit_sample = (*parts)[5];
             } else if (parts->size() >= 6) {
                 object.hit_sample = (*parts)[5];
@@ -1176,10 +1192,9 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
 
         for (std::size_t index = 0; index < hit_objects.size(); ++index) {
             const auto& source_object = hit_objects[index];
-            const auto position = position_at(static_cast<long double>(source_object.time));
-            const auto end = source_object.end_time
-                                 ? position_at(static_cast<long double>(*source_object.end_time))
-                                 : std::nullopt;
+            const auto position = position_at(source_object.time);
+            const auto end =
+                source_object.end_time ? position_at(*source_object.end_time) : std::nullopt;
             if (!position || (source_object.end_time && !end)) {
                 fail(osu_mania_parse_diagnostic_code_t::internal_conversion_error,
                      "hit object falls outside the derived measure timeline", source_object.order);
@@ -1199,10 +1214,10 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
             chart.measures[static_cast<std::size_t>(position->measure.value - 1)].notes.push_back(
                 note);
             retain_field("osu.hitobject." + std::to_string(id.value) + ".time",
-                         std::to_string(source_object.time), source_object.order, false);
+                         source_object.time_spelling, source_object.order, false);
             if (source_object.end_time) {
                 retain_field("osu.hitobject." + std::to_string(id.value) + ".end_time",
-                             std::to_string(*source_object.end_time), source_object.order, false);
+                             *source_object.end_time_spelling, source_object.order, false);
             }
         }
 
@@ -1444,9 +1459,14 @@ auto osu_resource_path(const song_document_t& song, resource_id_t id, bool expec
     return safe->generic_string();
 }
 
+struct retained_osu_time_t {
+    long double value{};
+    std::string spelling;
+};
+
 struct retained_osu_note_times_t {
-    std::optional<std::int64_t> head;
-    std::optional<std::int64_t> tail;
+    std::optional<retained_osu_time_t> head;
+    std::optional<retained_osu_time_t> tail;
 };
 
 auto embedded_storyboard_source_orders(const song_document_t& song)
@@ -1490,13 +1510,13 @@ auto retained_osu_note_times(const chart_document_t& chart)
             const auto id_text =
                 key_view.substr(prefix.size(), key_view.size() - prefix.size() - suffix_size);
             std::uint64_t id{};
-            std::int64_t time{};
-            if (parse_integer(id_text, id) && parse_integer(value, time)) {
+            long double time{};
+            if (parse_integer(id_text, id) && parse_number(value, time)) {
                 auto& retained = values[id];
                 if (is_tail)
-                    retained.tail = time;
+                    retained.tail = retained_osu_time_t{time, value};
                 else
-                    retained.head = time;
+                    retained.head = retained_osu_time_t{time, value};
             }
         }
     }
@@ -1641,6 +1661,34 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
             fail(osu_mania_write_diagnostic_code_t::missing_chart,
                  "select one chart because osu! stores one chart per .osu file", "charts");
         }
+
+        std::optional<osu_mania_file_profile_t> retained_profile;
+        const auto inspect_profile = [&](const std::vector<format_metadata_t>& groups) {
+            for (const auto& group : groups) {
+                if (group.family != format_family_t::osu_mania)
+                    continue;
+                for (const auto& [key, value] : group.ordered_fields) {
+                    if (key != "osu.file_format")
+                        continue;
+                    std::uint32_t version{};
+                    if (!parse_integer(value, version) || (version != 14 && version != 128))
+                        fail(osu_mania_write_diagnostic_code_t::invalid_metadata,
+                             "retained osu! file-format profile is malformed or unsupported",
+                             "osu.file_format");
+                    const auto candidate = version == 128 ? osu_mania_file_profile_t::lazer_v128
+                                                          : osu_mania_file_profile_t::stable_v14;
+                    if (retained_profile && *retained_profile != candidate)
+                        fail(osu_mania_write_diagnostic_code_t::invalid_metadata,
+                             "retained osu! file-format profiles conflict", "osu.file_format");
+                    retained_profile = candidate;
+                }
+            }
+        };
+        inspect_profile(song.metadata.format_groups);
+        inspect_profile(chart->metadata.format_groups);
+        const auto output_profile = options.profile.value_or(
+            retained_profile.value_or(osu_mania_file_profile_t::stable_v14));
+        const bool lazer_profile = output_profile == osu_mania_file_profile_t::lazer_v128;
 
         const auto validation = validate_document(song);
         if (const auto invalid = std::ranges::find_if(validation,
@@ -1940,9 +1988,8 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
                         const auto retained = retained_note_times.find(note.id.value);
                         const auto row = absolute_row(measures, note.position);
                         if (retained != retained_note_times.end() && retained->second.head && row)
-                            note_baselines.push_back(
-                                static_cast<long double>(*retained->second.head) -
-                                relative_milliseconds_at(*row));
+                            note_baselines.push_back(retained->second.head->value -
+                                                     relative_milliseconds_at(*row));
                     }
                 }
                 if (!note_baselines.empty()) {
@@ -2145,19 +2192,34 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
         std::vector<osu_output_event_t> hit_output;
         bool rounded_hit_time{};
         std::size_t note_serial{};
-        const auto note_time = [&](std::uint64_t row,
-                                   std::optional<std::int64_t> retained) -> std::int64_t {
+        struct serialized_time_t {
+            long double value{};
+            std::string text;
+        };
+        const auto note_time = [&](std::uint64_t row, std::optional<retained_osu_time_t> retained) {
             const auto exact = timestamp_at_row(row);
+            if (lazer_profile) {
+                if (!std::isfinite(exact) || exact < -86'400'000.0L || exact > 604'800'000.0L)
+                    fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
+                         "hit-object time is outside the supported lazer decimal range",
+                         "HitObjects.time");
+                if (retained && std::fabs(exact - retained->value) <= 1.0e-10L)
+                    return serialized_time_t{exact, retained->spelling};
+                auto text = format_double(exact);
+                if (text.empty())
+                    fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
+                         "hit-object time cannot be serialized as a finite decimal",
+                         "HitObjects.time");
+                return serialized_time_t{exact, std::move(text)};
+            }
             const auto rounded = writer_round_ms(exact);
             if (!rounded)
                 fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
                      "hit-object time is outside the supported integer millisecond range",
                      "HitObjects.time");
-            if (retained && *rounded == *retained)
-                return *retained;
             if (std::fabs(exact - static_cast<long double>(*rounded)) > 1.0e-10L)
                 rounded_hit_time = true;
-            return *rounded;
+            return serialized_time_t{static_cast<long double>(*rounded), std::to_string(*rounded)};
         };
         for (std::size_t measure_index = 0; measure_index < chart->measures.size();
              ++measure_index) {
@@ -2186,7 +2248,7 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
                 const auto head = note_time(*begin_row, retained == retained_note_times.end()
                                                             ? std::nullopt
                                                             : retained->second.head);
-                std::optional<std::int64_t> tail;
+                std::optional<serialized_time_t> tail;
                 if (note.end) {
                     const auto end_row = absolute_row(measures, *note.end);
                     if (!end_row || *end_row < *begin_row)
@@ -2196,11 +2258,13 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
                     tail = note_time(*end_row, retained == retained_note_times.end()
                                                    ? std::nullopt
                                                    : retained->second.tail);
-                    if (*tail < head)
+                    if (tail->value < head.value)
                         fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
-                             "millisecond rounding would place a hold tail before its head",
+                             lazer_profile
+                                 ? "decimal serialization would place a hold tail before its head"
+                                 : "millisecond rounding would place a hold tail before its head",
                              "HitObjects.end");
-                    if (*tail > 604'800'000LL)
+                    if (tail->value > 604'800'000.0L)
                         fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
                              "hold tail is outside this codec's supported osu! range",
                              "HitObjects.end");
@@ -2243,15 +2307,15 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
                 const auto x = static_cast<std::uint64_t>(
                     ((static_cast<unsigned long long>(*lane) * 2ULL + 1ULL) * 256ULL) / keys);
                 const auto type = hold ? 128 : 1;
-                std::string line = std::to_string(x) + ",192," + std::to_string(head) + "," +
+                std::string line = std::to_string(x) + ",192," + head.text + "," +
                                    std::to_string(type) + "," + std::to_string(hit_sound) + ",";
                 if (tail) {
-                    line += quote_csv(std::to_string(*tail) + ":" + sample_field);
+                    line += quote_csv(tail->text + ":" + sample_field);
                 } else if (!sample_field.empty()) {
                     line += quote_csv(sample_field);
                 }
-                hit_output.push_back({static_cast<long double>(head), *begin_row, note_serial,
-                                      note_serial++, std::move(line)});
+                hit_output.push_back(
+                    {head.value, *begin_row, note_serial, note_serial++, std::move(line)});
                 account_event();
             }
         }
@@ -2259,20 +2323,29 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
             return std::tuple{left.milliseconds, left.row, left.order, left.serial} <
                    std::tuple{right.milliseconds, right.row, right.order, right.serial};
         });
-        for (const auto& event : hit_output) {
-            const auto timestamp = writer_round_ms(event.milliseconds);
-            if (!timestamp || *timestamp < -86'400'000LL || *timestamp > 604'800'000LL)
-                fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
-                     "hit-object time is outside this codec's supported osu! range",
-                     "HitObjects.time");
-        }
-        if (rounded_hit_time)
+        if (rounded_hit_time && !lazer_profile)
             warn(osu_mania_write_diagnostic_code_t::timestamp_quantization,
                  "fractional hit-object milliseconds were rounded to nearest integer; exact "
                  "half-millisecond ties round away from zero",
                  "HitObjects.time");
 
         std::vector<osu_output_event_t> event_output;
+        const auto event_time = [&](std::uint64_t row, std::string_view field) {
+            const auto exact = timestamp_at_row(row);
+            if (lazer_profile) {
+                auto text = format_double(exact);
+                if (!std::isfinite(exact) || text.empty())
+                    fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
+                         "event time cannot be serialized as a finite lazer decimal",
+                         std::string(field));
+                return serialized_time_t{exact, std::move(text)};
+            }
+            const auto rounded = writer_round_ms(exact);
+            if (!rounded)
+                fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
+                     "event time is outside the integer millisecond range", std::string(field));
+            return serialized_time_t{static_cast<long double>(*rounded), std::to_string(*rounded)};
+        };
         const auto add_sample_event = [&](local_position_t position, resource_id_t resource,
                                           std::size_t order, std::uint32_t layer) {
             const auto row = absolute_row(measures, position);
@@ -2284,14 +2357,10 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
                 fail(osu_mania_write_diagnostic_code_t::invalid_resource,
                      "sample event requires a safe relative audio resource without colons",
                      "Events.Sample");
-            const auto rounded = writer_round_ms(timestamp_at_row(*row));
-            if (!rounded)
-                fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
-                     "sample event time is outside the integer millisecond range", "Events.Sample");
-            const auto line = "Sample," + std::to_string(*rounded) + "," + std::to_string(layer) +
-                              "," + quote_csv(*name) + ",100";
-            event_output.push_back(
-                {static_cast<long double>(*rounded), *row, order, event_serial++, line});
+            const auto time = event_time(*row, "Events.Sample");
+            const auto line = "Sample," + time.text + "," + std::to_string(layer) + "," +
+                              quote_csv(*name) + ",100";
+            event_output.push_back({time.value, *row, order, event_serial++, line});
             account_event();
         };
         for (std::size_t index = 0; index < chart->measures.size(); ++index) {
@@ -2352,14 +2421,11 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
             if (!name)
                 fail(osu_mania_write_diagnostic_code_t::invalid_resource,
                      "visual event refers to an unsafe or missing visual asset", "Events");
-            const auto rounded = writer_round_ms(timestamp_at_row(*row));
-            if (!rounded)
-                fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
-                     "visual event time is outside the integer millisecond range", "Events");
+            const auto time = event_time(*row, "Events");
             const auto line = (event.kind == visual_event_kind_t::video ? "Video," : "0,") +
-                              std::to_string(*rounded) + "," + quote_csv(*name) + ",0,0";
-            event_output.push_back({static_cast<long double>(*rounded), *row,
-                                    event.provenance.source_order, event_serial++, line});
+                              time.text + "," + quote_csv(*name) + ",0,0";
+            event_output.push_back(
+                {time.value, *row, event.provenance.source_order, event_serial++, line});
             account_event();
         }
         std::vector<std::int64_t> bookmark_times;
@@ -2496,7 +2562,7 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
                 if (field.section == section)
                     append_line(field.line);
         };
-        append_line("osu file format v14");
+        append_line(lazer_profile ? "osu file format v128" : "osu file format v14");
         append_section("General");
         if (!music_files.empty())
             append_line("AudioFilename: " + music_files.front());

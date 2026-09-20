@@ -35,6 +35,7 @@
 #define WORM_UI_SHORTCUT_EVENT_CAPACITY 64
 #define WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY 96
 #define WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY 4
+#define WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY 9
 #define WORM_UI_TIMING_SPEED_CAPACITY 4096
 #define WORM_UI_TIMING_MARKER_CAPACITY 16384
 #define WORM_UI_TIMING_GRID_CAPACITY 16384
@@ -210,6 +211,19 @@ typedef struct WormUiComposeCursorView {
     uint64_t lane_id;
 } WormUiComposeCursorView;
 
+// A visible palette slot. The application retains stable IDs, names, and
+// colors; the frontend must return the ID rather than a transient index.
+typedef struct WormUiComposeSemanticLayerView {
+    uint64_t layer_id;
+    const char* name;
+    uint8_t red;
+    uint8_t green;
+    uint8_t blue;
+    uint8_t alpha;
+    bool locked;
+    bool selected;
+} WormUiComposeSemanticLayerView;
+
 typedef enum WormUiComposeSelectionMode {
     WORM_UI_COMPOSE_SELECTION_REPLACE = 0,
     WORM_UI_COMPOSE_SELECTION_ADD,
@@ -255,6 +269,10 @@ typedef struct WormUiComposeView {
     bool truncated;
     bool note_paint_mode_active;
     size_t selected_note_count;
+    const WormUiComposeSemanticLayerView* semantic_layers;
+    size_t semantic_layer_count;
+    bool semantic_layers_truncated;
+    bool semantic_layer_target_locked;
     uint64_t chart_id;
     uint64_t document_revision;
     double viewport_width_pixels;
@@ -560,6 +578,11 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE,
     WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL,
+    WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER,
+    WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER,
+    WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER,
+    WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER,
+    WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER,
 } WormUiComposeActionKind;
 
 typedef enum WormUiComposeInputKind {
@@ -673,6 +696,7 @@ typedef struct WormUiWorkspaceAction {
     double compose_viewport_middle_click_y_pixels;
     bool compose_note_label_focus_consumed;
     char compose_note_label[WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1];
+    uint64_t compose_semantic_layer_id;
     WormUiComposeInputAction compose_inputs[WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY];
     size_t compose_input_count;
     WormUiComposeViewportInput compose_viewport_inputs[WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY];

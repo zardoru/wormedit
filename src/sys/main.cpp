@@ -132,6 +132,10 @@ struct flattened_workspace_t {
     std::vector<WormUiComposeHoldView> compose_hold_storage;
     std::vector<WormUiComposeNoteView> compose_note_storage;
     std::optional<WormUiComposeCursorView> compose_cursor_storage;
+    std::array<WormUiComposeSemanticLayerView, WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY>
+        compose_semantic_layer_storage{};
+    std::array<std::string, WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY>
+        compose_semantic_layer_name_storage;
     std::array<WormUiComposeBranchRowView, WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY>
         compose_branch_row_storage{};
     std::array<std::string, WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY> compose_branch_text_storage;
@@ -200,6 +204,14 @@ struct timing_scene_cache_t {
 
 auto editor_interaction_has_pending_gesture(const wormedit::editor_interaction_state_t& state)
     -> bool;
+
+auto selected_chart(const wormedit::document_history_t& history,
+                    const wormedit::workspace_controller_t& workspace)
+    -> const wormedit::chart_document_t*;
+
+auto visible_semantic_layer_by_id(const wormedit::chart_document_t& chart,
+                                  wormedit::layer_id_t id)
+    -> const wormedit::semantic_layer_t*;
 
 auto recovery_status_name(wormedit::native_project_recovery_candidate_status_t status)
     -> std::string_view {
@@ -2044,6 +2056,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                            : wormedit::default_pixels_per_standard_measure;
     view.note_paint_mode_active = application_state.note_paint_mode_active;
     view.selected_note_count = 0;
+    view.semantic_layers = flattened.compose_semantic_layer_storage.data();
+    view.semantic_layer_count = 0;
+    view.semantic_layers_truncated = false;
+    view.semantic_layer_target_locked = false;
     view.status_text = nullptr;
     view.selected_note_label = nullptr;
     view.selected_note_label_note_id = 0;
@@ -2073,6 +2089,30 @@ void populate_compose_view(flattened_workspace_t& flattened,
     const auto& chart = *chart_it;
     view.chart_id = chart.id.value;
     view.document_revision = history.document.revision;
+    for (const auto& layer : chart.semantic_layers) {
+        if (!layer.visible) {
+            continue;
+        }
+        if (view.semantic_layer_count >= flattened.compose_semantic_layer_storage.size()) {
+            view.semantic_layers_truncated = true;
+            break;
+        }
+        const auto index = view.semantic_layer_count++;
+        flattened.compose_semantic_layer_name_storage[index] = layer.name;
+        const auto selected = application_state.semantic_layer_target == layer.id;
+        flattened.compose_semantic_layer_storage[index] = {
+            .layer_id = layer.id.value,
+            .name = flattened.compose_semantic_layer_name_storage[index].c_str(),
+            .red = layer.color.red,
+            .green = layer.color.green,
+            .blue = layer.color.blue,
+            .alpha = layer.color.alpha,
+            .locked = layer.locked,
+            .selected = selected,
+        };
+        view.semantic_layer_target_locked = view.semantic_layer_target_locked ||
+                                            (selected && layer.locked);
+    }
     if (!cache.attempted || cache.chart != chart.id ||
         cache.revision != history.document.revision) {
         cache.index.reset();
@@ -3505,6 +3545,66 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         }
         return label ? "Note label applied." : "Note labels cleared.";
     }
+    case WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER: {
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart || action.compose_semantic_layer_id == 0) {
+            return "Choose a visible semantic layer from the current Compose palette.";
+        }
+        const auto* layer =
+            visible_semantic_layer_by_id(*chart, layer_id_t{action.compose_semantic_layer_id});
+        if (!layer) {
+            return "That semantic-layer palette entry is no longer visible.";
+        }
+        application_state.semantic_layer_target = layer->id;
+        return "Semantic-layer target: " + layer->name;
+    }
+    case WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER:
+        application_state.semantic_layer_target.reset();
+        return "Semantic-layer target cleared.";
+    case WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER:
+    case WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER:
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before editing semantic layers.";
+        }
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart || !application_state.semantic_layer_target || state.selected_notes.empty()) {
+            return "Choose a visible semantic layer and select playable notes first.";
+        }
+        const auto* layer =
+            visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target);
+        if (!layer) {
+            application_state.semantic_layer_target.reset();
+            return "The selected semantic layer is no longer visible.";
+        }
+        if (layer->locked) {
+            return "Unlock the selected semantic layer before changing note membership.";
+        }
+        semantic_layer_edit_action_t edit;
+        if (action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER) {
+            edit = assign_notes_to_semantic_layer_action_t{state.chart, layer->id,
+                                                            state.selected_notes};
+        } else if (action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER) {
+            edit = remove_notes_from_semantic_layer_action_t{state.chart, layer->id,
+                                                              state.selected_notes};
+        } else {
+            edit = toggle_semantic_layer_membership_action_t{state.chart, layer->id,
+                                                              state.selected_notes};
+        }
+        const auto applied = apply_semantic_layer_edit(history, action.compose_input_document_revision,
+                                                       std::move(edit));
+        if (!applied.applied) {
+            return applied.diagnostics.empty() ? "Semantic-layer membership was unchanged."
+                                               : applied.diagnostics.front().message;
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty()
+                       ? "Semantic-layer membership changed, but workspace rebinding failed."
+                       : rebound.diagnostics.front().message;
+        }
+        return "Semantic-layer membership updated.";
+    }
     case WORM_UI_COMPOSE_ACTION_NONE:
         return {};
     }
@@ -3529,6 +3629,28 @@ auto selected_chart(const wormedit::document_history_t& history,
     const auto found = std::ranges::find(history.document.charts, *workspace.selected_chart,
                                          &wormedit::chart_document_t::id);
     return found == history.document.charts.end() ? nullptr : &*found;
+}
+
+auto visible_semantic_layer_at(const wormedit::chart_document_t& chart, std::size_t slot)
+    -> const wormedit::semantic_layer_t* {
+    std::size_t visible_slot{};
+    for (const auto& layer : chart.semantic_layers) {
+        if (!layer.visible) {
+            continue;
+        }
+        if (visible_slot++ == slot) {
+            return &layer;
+        }
+    }
+    return nullptr;
+}
+
+auto visible_semantic_layer_by_id(const wormedit::chart_document_t& chart,
+                                  wormedit::layer_id_t id)
+    -> const wormedit::semantic_layer_t* {
+    const auto found = std::ranges::find(chart.semantic_layers, id,
+                                         &wormedit::semantic_layer_t::id);
+    return found != chart.semantic_layers.end() && found->visible ? &*found : nullptr;
 }
 
 auto reject_application_command(
@@ -3752,13 +3874,15 @@ auto invoke_application_command(
             std::string_view{id}.substr(std::string_view{"semantic_layer.select_slot_"}.size());
         std::size_t slot{};
         const auto parsed = std::from_chars(suffix.data(), suffix.data() + suffix.size(), slot);
-        if (parsed.ec != std::errc{} || parsed.ptr != suffix.data() + suffix.size() || slot == 0 ||
-            slot > chart->semantic_layers.size()) {
+        if (parsed.ec != std::errc{} || parsed.ptr != suffix.data() + suffix.size() || slot == 0) {
             return reject_application_command(status, "That semantic-layer slot is unavailable.");
         }
-        const auto& layer = chart->semantic_layers[slot - 1];
-        application_state.semantic_layer_target = layer.id;
-        status = "Semantic-layer target: " + layer.name;
+        const auto* layer = visible_semantic_layer_at(*chart, slot - 1);
+        if (!layer) {
+            return reject_application_command(status, "That semantic-layer slot is unavailable.");
+        }
+        application_state.semantic_layer_target = layer->id;
+        status = "Semantic-layer target: " + layer->name;
         return {.accepted = true};
     }
 
@@ -3816,9 +3940,8 @@ void refresh_application_command_states(
     const bool pending = compose_ready && editor_interaction_has_pending_gesture(*compose_state);
     bool target_valid{};
     if (chart && application_state.semantic_layer_target) {
-        target_valid =
-            std::ranges::find(chart->semantic_layers, *application_state.semantic_layer_target,
-                              &semantic_layer_t::id) != chart->semantic_layers.end();
+        target_valid = visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target) !=
+                       nullptr;
         if (!target_valid) {
             application_state.semantic_layer_target.reset();
         }
@@ -3861,10 +3984,10 @@ void refresh_application_command_states(
     set("timing.open_settings", false);
 
     for (std::size_t index = 0; index < 9; ++index) {
-        const bool available = compose_ready && index < chart->semantic_layers.size();
-        const bool checked =
-            available && application_state.semantic_layer_target &&
-            chart->semantic_layers[index].id == *application_state.semantic_layer_target;
+        const auto* layer = compose_ready ? visible_semantic_layer_at(*chart, index) : nullptr;
+        const bool available = layer != nullptr;
+        const bool checked = available && application_state.semantic_layer_target &&
+                             layer->id == *application_state.semantic_layer_target;
         set("semantic_layer.select_slot_" + std::to_string(index + 1), available, checked);
     }
     set("semantic_layer.clear_target", compose_ready && target_valid, !target_valid);

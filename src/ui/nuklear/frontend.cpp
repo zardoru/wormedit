@@ -1362,6 +1362,7 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         view->viewport_height_pixels <= 0.0 || view->viewport_height_pixels > 10000000.0 ||
         view->branch_row_count > WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY ||
         view->branch_diagnostic_count > WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY ||
+        view->semantic_layer_count > WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY ||
         (view->branch_row_count != 0 && !view->branch_rows))
         return 0;
     if ((view->area_selection_preview_visible &&
@@ -1401,6 +1402,12 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
     for (size_t index = 0; index < view->note_endpoint_count; ++index) {
         if (!compose_rect_valid(&view->note_endpoints[index].bounds))
             return 0;
+    }
+    for (size_t index = 0; index < view->semantic_layer_count; ++index) {
+        if (!view->semantic_layers || view->semantic_layers[index].layer_id == 0 ||
+            !view->semantic_layers[index].name) {
+            return 0;
+        }
     }
     if (view->hover_note_visible &&
         (!view->hover_tooltip || view->hover_note_id == 0)) {
@@ -3029,6 +3036,89 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
     }
     nk_layout_row_end(g_context);
 
+    const auto visible_layer_count = view->semantic_layer_count;
+    bool semantic_target_active = false;
+    for (size_t index = 0; index < visible_layer_count; ++index) {
+        semantic_target_active = semantic_target_active || view->semantic_layers[index].selected;
+    }
+    if (visible_layer_count == 0) {
+        nk_layout_row_dynamic(g_context, 22, 1);
+        nk_label(g_context, "Semantic layers: no visible palette entries", NK_TEXT_LEFT);
+    } else {
+        nk_layout_row_begin(g_context, NK_DYNAMIC, 25, static_cast<int>(visible_layer_count + 1));
+        nk_layout_row_push(g_context, 1.0f / static_cast<float>(visible_layer_count + 1));
+        nk_label(g_context, view->semantic_layers_truncated ? "Layers+" : "Layers",
+                 NK_TEXT_LEFT);
+        for (size_t index = 0; index < visible_layer_count; ++index) {
+            const auto& layer = view->semantic_layers[index];
+            std::array<char, 96> label{};
+            const auto name_length = std::min<size_t>(strlen(layer.name), 24);
+            snprintf(label.data(), label.size(), "%zu:%.*s #%llu%s", index + 1,
+                     static_cast<int>(name_length), layer.name,
+                     static_cast<unsigned long long>(layer.layer_id), layer.selected ? " *" : "");
+            nk_layout_row_push(g_context, 1.0f / static_cast<float>(visible_layer_count + 1));
+            const auto palette_color = nk_rgba(layer.red, layer.green, layer.blue, layer.alpha);
+            nk_style_push_style_item(g_context, &g_context->style.button.normal,
+                                     nk_style_item_color(palette_color));
+            nk_style_push_style_item(g_context, &g_context->style.button.hover,
+                                     nk_style_item_color(palette_color));
+            nk_style_push_style_item(g_context, &g_context->style.button.active,
+                                     nk_style_item_color(palette_color));
+            if (!view->scene_available) {
+                nk_widget_disable_begin(g_context);
+            }
+            const auto clicked = nk_button_label(g_context, label.data());
+            if (!view->scene_available) {
+                nk_widget_disable_end(g_context);
+            }
+            nk_style_pop_style_item(g_context);
+            nk_style_pop_style_item(g_context);
+            nk_style_pop_style_item(g_context);
+            if (clicked && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER;
+                action->compose_semantic_layer_id = layer.layer_id;
+            }
+        }
+        nk_layout_row_end(g_context);
+
+        nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 5);
+        nk_layout_row_push(g_context, 0.20f);
+        nk_labelf(g_context, NK_TEXT_LEFT, "Layer (%zu)", view->selected_note_count);
+        const auto membership_enabled = view->scene_available && semantic_target_active &&
+                                        !view->semantic_layer_target_locked &&
+                                        view->selected_note_count != 0;
+        const auto membership_button = [&](const char* label, WormUiComposeActionKind kind) {
+            if (!membership_enabled) {
+                nk_widget_disable_begin(g_context);
+            }
+            const auto clicked = nk_button_label(g_context, label);
+            if (!membership_enabled) {
+                nk_widget_disable_end(g_context);
+            }
+            if (clicked && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                action->compose_action = kind;
+            }
+        };
+        nk_layout_row_push(g_context, 0.20f);
+        membership_button("Add", WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
+        nk_layout_row_push(g_context, 0.20f);
+        membership_button("Toggle", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER);
+        nk_layout_row_push(g_context, 0.20f);
+        membership_button("Remove", WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER);
+        nk_layout_row_push(g_context, 0.20f);
+        if (!semantic_target_active) {
+            nk_widget_disable_begin(g_context);
+        }
+        const auto clear_target = nk_button_label(g_context, "Clear target");
+        if (!semantic_target_active) {
+            nk_widget_disable_end(g_context);
+        }
+        if (clear_target && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+            action->compose_action = WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER;
+        }
+        nk_layout_row_end(g_context);
+    }
+
     nk_layout_row_dynamic(g_context, 18, 1);
     nk_label(g_context,
              view->note_paint_mode_active
@@ -3061,8 +3151,10 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                                          (branch_status_shown ? 1 : 0)) *
                           18.0f
             : 0.0f;
+    const auto semantic_toolbar_height = visible_layer_count == 0 ? 22.0f : 49.0f;
     const auto surface_height =
-        std::max(32.0f, group_bounds.h - 54.0f - 36.0f - branch_panel_height);
+        std::max(32.0f, group_bounds.h - 54.0f - 36.0f - semantic_toolbar_height -
+                            branch_panel_height);
     nk_layout_space_begin(g_context, NK_DYNAMIC, surface_height, 1);
     nk_layout_space_push(g_context, nk_rect(0.0f, 0.0f, 1.0f, 1.0f));
     struct nk_rect viewport{};
@@ -3672,6 +3764,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
           view->compose.difference_count > WORM_UI_COMPOSE_DIFFERENCE_CAPACITY ||
           view->compose.hold_body_count > WORM_UI_COMPOSE_HOLD_CAPACITY ||
           view->compose.note_endpoint_count > WORM_UI_COMPOSE_NOTE_CAPACITY ||
+          view->compose.semantic_layer_count > WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY ||
           view->compose.lane_key_binding_count > WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY ||
           view->compose.branch_row_count > WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY ||
           view->compose.branch_diagnostic_count > WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY ||
@@ -3688,6 +3781,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
           (view->compose.difference_count != 0 && !view->compose.differences) ||
           (view->compose.hold_body_count != 0 && !view->compose.hold_bodies) ||
           (view->compose.note_endpoint_count != 0 && !view->compose.note_endpoints) ||
+          (view->compose.semantic_layer_count != 0 && !view->compose.semantic_layers) ||
           (view->compose.lane_key_binding_count != 0 && !view->compose.lane_key_bindings) ||
           (view->compose.branch_row_count != 0 && !view->compose.branch_rows) ||
           !compose_geometry_valid(&view->compose))) ||

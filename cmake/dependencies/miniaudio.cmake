@@ -29,6 +29,7 @@ add_library(wormedit_audio_decoder
     "${CMAKE_SOURCE_DIR}/src/audio/decoder.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/preview_bridge.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/preview_pump.cpp"
+    "${CMAKE_SOURCE_DIR}/src/audio/preview_session.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/source_registry.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/transport.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/waveform.cpp"

@@ -99,6 +99,7 @@ class preview_transport_bridge_t {
     [[nodiscard]] auto session_token() const noexcept -> std::optional<session_token_t> {
         return token_;
     }
+    [[nodiscard]] auto exhausted() const noexcept -> bool;
 
   private:
     [[nodiscard]] auto begin_session(std::uint64_t seek_frame) -> preview_bridge_start_result_t;

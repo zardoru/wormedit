@@ -280,4 +280,10 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
     return result;
 }
 
+auto preview_transport_bridge_t::exhausted() const noexcept -> bool {
+    return schedule_ != nullptr && playable_head_.index == schedule_->playable.size() &&
+           bgm_head_.index == schedule_->bgm.size() &&
+           metronome_head_.index == schedule_->metronome.size();
+}
+
 } // namespace wormedit::audio

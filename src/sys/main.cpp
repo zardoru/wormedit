@@ -670,6 +670,12 @@ auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) 
     return std::max(64.0, static_cast<double>(content_height - 38.0f - 18.0f - branch_height));
 }
 
+constexpr double compose_measure_rail_width_pixels{42.0};
+
+auto compose_playable_field_width(double viewport_width_pixels) -> double {
+    return std::max(1.0, viewport_width_pixels - compose_measure_rail_width_pixels);
+}
+
 auto rational_as_long_double(wormedit::signed_rational_t value) -> long double {
     if (value.denominator == 0) {
         return 0.0L;
@@ -2424,8 +2430,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
 
     const auto composed = wormedit::make_editor_field_scene(
         chart, *cache.index, interaction_view,
-        {.field_left_pixels = 0.0,
-         .field_width_pixels = view.viewport_width_pixels,
+        {.field_left_pixels = compose_measure_rail_width_pixels,
+         .field_width_pixels = compose_playable_field_width(view.viewport_width_pixels),
          .split_stage_gutter_pixels = 14.0,
          .solo_semantic_layer = application_state.semantic_layer_solo_active
                                     ? application_state.semantic_layer_target
@@ -2453,7 +2459,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
     for (std::size_t index = 0; index < band_count; ++index) {
         const auto& band = bands[index];
         flattened.compose_band_storage.push_back(
-            {.bounds = {0.0, band.top_pixels, view.viewport_width_pixels, band.bottom_pixels},
+            {.bounds = {compose_measure_rail_width_pixels, band.top_pixels,
+                        view.viewport_width_pixels, band.bottom_pixels},
              .split_stage = band.split_stage});
     }
     const auto& lanes = scene.lanes;
@@ -2472,13 +2479,24 @@ void populate_compose_view(flattened_workspace_t& flattened,
     const auto& lines = scene.grid_lines;
     const auto line_count =
         std::min(lines.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_GRID_CAPACITY));
+    std::unordered_map<std::uint64_t, std::uint32_t> measure_numbers;
+    measure_numbers.reserve(cache.index->measures.entries.size());
+    for (std::size_t measure = 0; measure < cache.index->measures.entries.size(); ++measure) {
+        measure_numbers.emplace(cache.index->measures.entries[measure].absolute_begin_row,
+                                static_cast<std::uint32_t>(measure + 1));
+    }
     flattened.compose_grid_storage.reserve(line_count);
     for (std::size_t index = 0; index < line_count; ++index) {
         const auto& line = lines[index];
+        const auto measure = measure_numbers.find(line.chart_row.whole_rows);
         flattened.compose_grid_storage.push_back(
             {.y_pixels = line.y_pixels,
              .kind = static_cast<std::uint8_t>(line.kind),
-             .emphasis = static_cast<std::uint8_t>(line.emphasis)});
+             .emphasis = static_cast<std::uint8_t>(line.emphasis),
+             .measure_number = line.kind == wormedit::editor_grid_line_kind_t::measure &&
+                                       measure != measure_numbers.end()
+                                   ? measure->second
+                                   : 0});
     }
     const auto& differences = scene.comparison_differences;
     const auto difference_count =
@@ -2939,6 +2957,9 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         return "Compose viewport input exceeded its capacity; the active gesture was canceled.";
     }
+    const auto field_left_pixels = compose_measure_rail_width_pixels;
+    const auto field_width_pixels =
+        compose_playable_field_width(ui_action.compose_input_viewport_width_pixels);
 
     if (!ui_action.shortcut_window_focused) {
         viewport_input.focus_lost();
@@ -2998,8 +3019,8 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             chart, *scene_cache.hit_test_index, view,
             {.x_pixels = x_pixels,
              .y_pixels = y_pixels,
-             .field_left_pixels = 0.0,
-             .field_width_pixels = ui_action.compose_input_viewport_width_pixels});
+             .field_left_pixels = field_left_pixels,
+             .field_width_pixels = field_width_pixels});
     };
     const auto chart = std::ranges::find(history.document.charts, state.chart,
                                          &chart_document_t::id);
@@ -3026,8 +3047,8 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 *chart, *scene_cache.hit_test_index, *scene_cache.interaction_view,
                 {.x_pixels = ui_action.compose_pointer_hover_x_pixels,
                  .y_pixels = ui_action.compose_pointer_hover_y_pixels,
-                 .field_left_pixels = 0.0,
-                 .field_width_pixels = ui_action.compose_input_viewport_width_pixels,
+                 .field_left_pixels = field_left_pixels,
+                 .field_width_pixels = field_width_pixels,
                  .hit_radius_pixels = 8.0,
                  .scope = {.notes = true, .bgm = false, .timing = false, .bga = false}});
         }
@@ -3373,8 +3394,8 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 begin_editor_area_selection_action_t{
                     .x_pixels = input.x_pixels,
                     .y_pixels = input.y_pixels,
-                    .field_left_pixels = 0.0,
-                    .field_width_pixels = ui_action.compose_input_viewport_width_pixels,
+                    .field_left_pixels = field_left_pixels,
+                    .field_width_pixels = field_width_pixels,
                     .mode = *selection_mode(input.selection_mode),
                 });
             accepted = "Area selection started.";
@@ -3424,8 +3445,8 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 *chart, *scene_cache.hit_test_index, *scene_cache.interaction_view,
                 {.x_pixels = input.x_pixels,
                  .y_pixels = input.y_pixels,
-                 .field_left_pixels = 0.0,
-                 .field_width_pixels = ui_action.compose_input_viewport_width_pixels,
+                 .field_left_pixels = field_left_pixels,
+                 .field_width_pixels = field_width_pixels,
                  .hit_radius_pixels = 8.0,
                  .scope = {.notes = true, .bgm = false, .timing = false, .bga = false}});
             if (!hover || hover->object.kind != editor_selection_object_kind_t::note) {

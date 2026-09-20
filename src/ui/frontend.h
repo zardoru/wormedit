@@ -168,6 +168,7 @@ typedef struct WormUiComposeGridLineView {
     double y_pixels;
     uint8_t kind;
     uint8_t emphasis;
+    uint32_t measure_number;
 } WormUiComposeGridLineView;
 
 typedef struct WormUiComposeDifferenceView {

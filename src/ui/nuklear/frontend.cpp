@@ -3645,6 +3645,12 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                      g_context->style.font, nk_rgb(22, 25, 33), nk_rgb(190, 196, 207));
         nk_push_scissor(canvas, parent_clip);
     } else {
+        const auto rail_width = static_cast<float>(42.0 * viewport.w /
+                                                   view->viewport_width_pixels);
+        const auto rail = nk_rect(viewport.x, viewport.y, rail_width, viewport.h);
+        nk_fill_rect(canvas, rail, 0.0f, nk_rgb(18, 21, 29));
+        nk_stroke_line(canvas, rail.x + rail.w, rail.y, rail.x + rail.w, rail.y + rail.h, 1.0f,
+                       nk_rgb(80, 91, 112));
         for (size_t band_index = 0; band_index < view->band_count; ++band_index) {
             const auto& band = view->bands[band_index];
             const auto color = band.split_stage ? nk_rgb(27, 31, 43) : nk_rgb(25, 29, 39);
@@ -3701,6 +3707,17 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                 color = nk_rgb(52, 61, 78);
             }
             nk_stroke_line(canvas, viewport.x, y, viewport.x + viewport.w, y, thickness, color);
+            if (line.measure_number != 0 && y + 15.0f <= viewport.y + viewport.h) {
+                char label[20]{};
+                const auto length = snprintf(label, sizeof(label), "M%u", line.measure_number);
+                if (length > 0) {
+                    const auto label_bounds = nk_rect(rail.x + 3.0f, y + 2.0f,
+                                                      std::max(1.0f, rail.w - 6.0f), 14.0f);
+                    nk_draw_text(canvas, label_bounds, label, static_cast<int>(strlen(label)),
+                                 g_context->style.font, nk_rgb(18, 21, 29),
+                                 nk_rgb(174, 185, 203));
+                }
+            }
         }
         for (size_t index = 0; index < view->hold_body_count; ++index) {
             const auto& hold = view->hold_bodies[index];

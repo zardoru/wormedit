@@ -61,6 +61,8 @@ auto scene_chart() -> wormedit::chart_document_t {
                     .split_stage = true,
                     .split_after_column = 1}},
     };
+    chart.lane_layouts[0].layout.lanes[1].glyph = wormedit::lane_glyph_t::arrow_right;
+    chart.lane_layouts[1].layout.lanes[1].glyph = wormedit::lane_glyph_t::arrow_right;
     return chart;
 }
 
@@ -139,6 +141,9 @@ TEST_CASE("field scene composes split layout bands, exact grid, holds, selection
     REQUIRE(scene.note_endpoints.size() == 2);
     CHECK(std::ranges::all_of(scene.note_endpoints,
                               [](const auto& endpoint) { return endpoint.selected; }));
+    CHECK(std::ranges::all_of(scene.note_endpoints, [](const auto& endpoint) {
+        return endpoint.glyph == wormedit::lane_glyph_t::arrow_right;
+    }));
     CHECK_FALSE(scene.note_endpoints[0].tail);
     CHECK(scene.note_endpoints[1].tail);
 

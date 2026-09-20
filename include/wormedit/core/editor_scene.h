@@ -109,6 +109,7 @@ struct editor_field_comparison_difference_geometry_t {
 struct editor_field_note_endpoint_geometry_t {
     object_id_t note;
     lane_id_t lane;
+    lane_glyph_t glyph{lane_glyph_t::bar};
     note_kind_t kind{note_kind_t::tap};
     bool tail{};
     bool selected{};

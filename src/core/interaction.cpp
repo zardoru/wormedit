@@ -2534,11 +2534,18 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                     static_cast<double>(chart->divisions_per_standard_measure);
         const auto cursor_top = static_cast<double>(*cursor_row) * pixels_per_row;
         const auto cursor_bottom = cursor_top + pixels_per_row;
-        if (cursor_top < candidate.viewport_scroll_pixels) {
-            candidate.viewport_scroll_pixels = cursor_top;
-        } else if (cursor_bottom >
-                   candidate.viewport_scroll_pixels + candidate.viewport_height_pixels) {
-            candidate.viewport_scroll_pixels = cursor_bottom - candidate.viewport_height_pixels;
+        constexpr double comfort_band_top_fraction = 0.25;
+        constexpr double comfort_band_bottom_fraction = 0.75;
+        const auto comfort_top = candidate.viewport_scroll_pixels +
+                                 candidate.viewport_height_pixels * comfort_band_top_fraction;
+        const auto comfort_bottom = candidate.viewport_scroll_pixels +
+                                    candidate.viewport_height_pixels * comfort_band_bottom_fraction;
+        if (cursor_top < comfort_top) {
+            candidate.viewport_scroll_pixels =
+                cursor_top - candidate.viewport_height_pixels * comfort_band_top_fraction;
+        } else if (cursor_bottom > comfort_bottom) {
+            candidate.viewport_scroll_pixels =
+                cursor_bottom - candidate.viewport_height_pixels * comfort_band_bottom_fraction;
         }
         candidate.viewport_scroll_pixels =
             std::clamp(candidate.viewport_scroll_pixels, 0.0, *maximum_scroll);

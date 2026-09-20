@@ -51,6 +51,7 @@ auto rect_intersects_viewport(const editor_field_rect_t& rect, double height) ->
 
 struct lane_bounds_t {
     lane_id_t lane;
+    lane_glyph_t glyph{lane_glyph_t::bar};
     double left{};
     double right{};
 };
@@ -511,7 +512,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
             const auto left = request.field_left_pixels + lane_width * lane_index +
                               (lane_index >= split ? gutter : 0.0);
             const auto right = left + lane_width;
-            band.lanes.push_back({lanes[lane_index]->id, left, right});
+            band.lanes.push_back({lanes[lane_index]->id, lanes[lane_index]->glyph, left, right});
             scene.lanes.push_back(
                 {.layout_band = scene_band,
                  .lane = lanes[lane_index]->id,
@@ -535,6 +536,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
 
     struct visible_paint_target_t {
         paint_cell_key_t cell;
+        lane_glyph_t glyph{lane_glyph_t::bar};
         editor_field_rect_t bounds;
     };
     std::vector<visible_paint_target_t> visible_paint_targets;
@@ -596,7 +598,8 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
             if (rect_intersects_viewport(bounds, view.viewport_height_pixels)) {
                 visible_paint_cells.insert(cell);
                 visible_paint_rows_by_lane[target.lane.value].push_back(*row);
-                visible_paint_targets.push_back({.cell = cell, .bounds = bounds});
+                visible_paint_targets.push_back(
+                    {.cell = cell, .glyph = lane->glyph, .bounds = bounds});
             }
         }
         for (auto& [lane, rows] : visible_paint_rows_by_lane) {
@@ -1026,6 +1029,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
             }
             scene.note_endpoints.push_back({.note = note.note,
                                             .lane = note.lane,
+                                            .glyph = bounds->glyph,
                                             .kind = note.kind,
                                             .tail = tail,
                                             .selected = note_selected,
@@ -1125,6 +1129,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         scene.note_endpoints.push_back(
             {.note = object_id_t{},
              .lane = target.cell.lane,
+             .glyph = target.glyph,
              .kind = note_kind_t::tap,
              .tail = false,
              .selected = false,
@@ -1197,6 +1202,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
             }
             scene.note_endpoints.push_back({.note = note,
                                             .lane = lane,
+                                            .glyph = bounds->glyph,
                                             .kind = kind,
                                             .tail = tail,
                                             .selected = selected_note,

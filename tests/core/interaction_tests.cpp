@@ -220,6 +220,37 @@ TEST_CASE("cursor paging preserves fractional measure rows and keeps the cursor 
     CHECK(has_code(invalid.diagnostics, diagnostic_code_t::invalid_resolution));
 }
 
+TEST_CASE("cursor navigation moves a mobile head through a central comfort band",
+          "[unit][core][interaction][navigation]") {
+    auto history = make_document_history(make_song());
+    constexpr std::array snaps{std::uint64_t{4}};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                         {measure_id_t{1}, 0}, snaps, 4, 96.0);
+    REQUIRE(setup);
+    auto state = *setup.state;
+
+    const auto first = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    REQUIRE(first);
+    CHECK(first.view->viewport_scroll_pixels == 0.0);
+
+    const auto second = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    REQUIRE(second);
+    CHECK(second.view->viewport_scroll_pixels > 0.0);
+    const auto second_y = editor_position_y_pixels(history.document.charts.front(), *second.view,
+                                                    second.view->cursor);
+    REQUIRE(second_y);
+    CHECK(*second_y <= second.view->viewport_height_pixels * 0.75);
+
+    REQUIRE(dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::backward}));
+    const auto returned = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
+    REQUIRE(returned);
+    CHECK(returned.view->viewport_scroll_pixels == 0.0);
+}
+
 TEST_CASE("editor y mapping preserves exact rows through zoom and scroll",
           "[unit][core][interaction][mapping]") {
     auto history = make_document_history(make_song());

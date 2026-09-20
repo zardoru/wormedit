@@ -325,6 +325,9 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         view->viewport_width_pixels > 10000000.0 || !std::isfinite(view->viewport_height_pixels) ||
         view->viewport_height_pixels <= 0.0 || view->viewport_height_pixels > 10000000.0 ||
         !std::isfinite(view->playable_field_right_pixels) ||
+        !std::isfinite(view->playable_field_left_pixels) ||
+        view->playable_field_left_pixels < 0.0 ||
+        view->playable_field_left_pixels > view->playable_field_right_pixels ||
         view->playable_field_right_pixels < 0.0 ||
         view->playable_field_right_pixels > view->viewport_width_pixels ||
         (view->playhead_visible &&
@@ -338,6 +341,7 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         view->beat_section_count > WORM_UI_COMPOSE_SECTION_CAPACITY ||
         view->audio_bookmark_count > WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY ||
         view->audio_section_count > WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY ||
+        view->timing_marker_count > WORM_UI_TIMING_MARKER_CAPACITY ||
         (view->semantic_layer_page_count == 0
              ? view->semantic_layer_page != 0 || view->semantic_layer_total_count != 0 ||
                    view->semantic_layer_count != 0
@@ -356,7 +360,8 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         (view->beat_bookmark_count != 0 && !view->beat_bookmarks) ||
         (view->beat_section_count != 0 && !view->beat_sections) ||
         (view->audio_bookmark_count != 0 && !view->audio_bookmarks) ||
-        (view->audio_section_count != 0 && !view->audio_sections))
+        (view->audio_section_count != 0 && !view->audio_sections) ||
+        (view->timing_marker_count != 0 && !view->timing_markers))
         return 0;
     if ((view->area_selection_preview_visible &&
          (!compose_rect_valid(&view->area_selection_preview_bounds) ||
@@ -384,6 +389,20 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
             std::abs(view->grid_lines[index].y_pixels) > 10000000.0)
             return 0;
     }
+    for (size_t index = 0; index < view->timing_marker_count; ++index) {
+        const auto& marker = view->timing_markers[index];
+        if (marker.object_id == 0 || !std::isfinite(marker.marker_y_pixels) ||
+            marker.marker_y_pixels < 0.0 ||
+            marker.marker_y_pixels > view->viewport_height_pixels ||
+            !std::isfinite(marker.marker_left_fraction) ||
+            !std::isfinite(marker.marker_right_fraction) ||
+            marker.marker_left_fraction < 0.0 ||
+            marker.marker_right_fraction <= marker.marker_left_fraction ||
+            marker.marker_right_fraction > 1.0 || marker.lane < WORM_UI_TIMING_LANE_BPM ||
+            marker.lane > WORM_UI_TIMING_LANE_ANCHOR) {
+            return 0;
+        }
+    }
     for (size_t index = 0; index < view->difference_count; ++index) {
         if (!compose_rect_valid(&view->differences[index].bounds))
             return 0;
@@ -393,7 +412,8 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
             return 0;
     }
     for (size_t index = 0; index < view->note_endpoint_count; ++index) {
-        if (!compose_rect_valid(&view->note_endpoints[index].bounds))
+        if (!compose_rect_valid(&view->note_endpoints[index].bounds) ||
+            view->note_endpoints[index].glyph > 5)
             return 0;
     }
     for (size_t index = 0; index < view->bgm_lane_count; ++index) {
@@ -496,6 +516,7 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
     return view && view->band_count <= WORM_UI_COMPOSE_BAND_CAPACITY &&
            view->lane_count <= WORM_UI_COMPOSE_LANE_CAPACITY &&
            view->grid_line_count <= WORM_UI_COMPOSE_GRID_CAPACITY &&
+           view->timing_marker_count <= WORM_UI_TIMING_MARKER_CAPACITY &&
            view->difference_count <= WORM_UI_COMPOSE_DIFFERENCE_CAPACITY &&
            view->hold_body_count <= WORM_UI_COMPOSE_HOLD_CAPACITY &&
            view->note_endpoint_count <= WORM_UI_COMPOSE_NOTE_CAPACITY &&
@@ -508,6 +529,7 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            view->branch_diagnostic_count <= WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY &&
            (view->band_count == 0 || view->bands) && (view->lane_count == 0 || view->lanes) &&
            (view->grid_line_count == 0 || view->grid_lines) &&
+           (view->timing_marker_count == 0 || view->timing_markers) &&
            (view->difference_count == 0 || view->differences) &&
            (view->hold_body_count == 0 || view->hold_bodies) &&
            (view->note_endpoint_count == 0 || view->note_endpoints) &&
@@ -1412,8 +1434,10 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                            view->viewport_width_pixels / viewport.w;
     const auto pointer_y = (static_cast<double>(context->input.mouse.pos.y) - viewport.y) *
                            view->viewport_height_pixels / viewport.h;
+    const auto note_field_left = view->playable_field_left_pixels;
     const auto note_field_right = view->playable_field_right_pixels;
-    const auto pointer_in_note_field = pointer_inside && pointer_x < note_field_right;
+    const auto pointer_in_note_field =
+        pointer_inside && pointer_x >= note_field_left && pointer_x < note_field_right;
     if (!state.action_overflowed && window_focused && view->scene_available) {
         action->compose_viewport_pointer_valid = true;
         action->compose_viewport_pointer_x_pixels = pointer_x;
@@ -1467,9 +1491,10 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     const auto pointer_started_x = (static_cast<double>(left_button.clicked_pos.x) - viewport.x) *
                                    view->viewport_width_pixels / viewport.w;
     const auto pointer_started_in_note_field =
-        pointer_started_in_view && pointer_started_x < note_field_right;
+        pointer_started_in_view && pointer_started_x >= note_field_left &&
+        pointer_started_x < note_field_right;
     const auto clamp_paint_x = [&](double value) {
-        return std::clamp(value, 0.0, note_field_right);
+        return std::clamp(value, note_field_left, note_field_right);
     };
     const auto clamp_paint_y = [&](double value) {
         return std::clamp(value, 0.0, view->viewport_height_pixels);
@@ -1503,7 +1528,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             }
             const auto click_x = (static_cast<double>(pointer.x) - viewport.x) *
                                  view->viewport_width_pixels / viewport.w;
-            if (click_x >= note_field_right)
+            if (click_x < note_field_left || click_x >= note_field_right)
                 continue;
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK, click_x,
                                  (static_cast<double>(pointer.y) - viewport.y) *
@@ -1722,6 +1747,35 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         nk_fill_rect(canvas, rail, 0.0f, nk_rgb(18, 21, 29));
         nk_stroke_line(canvas, rail.x + rail.w, rail.y, rail.x + rail.w, rail.y + rail.h, 1.0f,
                        nk_rgb(80, 91, 112));
+        constexpr std::array<const char*, 8> timing_labels{"BPM", "SV", "SPD", "STP",
+                                                           "DLY", "WRP", "KIA", "ANC"};
+        const std::array<struct nk_color, 8> timing_colors{
+            nk_rgb(242, 190, 102), nk_rgb(177, 206, 129), nk_rgb(113, 184, 218),
+            nk_rgb(224, 132, 119), nk_rgb(207, 153, 104), nk_rgb(176, 142, 218),
+            nk_rgb(244, 116, 174), nk_rgb(130, 219, 206)};
+        const auto timing_left = rail.x + rail.w;
+        const auto field_left =
+            viewport.x + static_cast<float>(view->playable_field_left_pixels) * viewport.w /
+                             static_cast<float>(view->viewport_width_pixels);
+        const auto timing_width = std::max(0.0f, field_left - timing_left);
+        const auto timing_lane_width = timing_width / static_cast<float>(timing_labels.size());
+        std::array<struct nk_rect, 8> timing_lanes{};
+        for (size_t index = 0; index < timing_lanes.size(); ++index) {
+            timing_lanes[index] =
+                nk_rect(timing_left + timing_lane_width * static_cast<float>(index), viewport.y,
+                        timing_lane_width, viewport.h);
+            nk_fill_rect(canvas, timing_lanes[index], 0.0f,
+                         (index & 1U) != 0 ? nk_rgb(25, 29, 38) : nk_rgb(28, 32, 42));
+            nk_stroke_line(canvas, timing_lanes[index].x, viewport.y, timing_lanes[index].x,
+                           viewport.y + viewport.h, 1.0f, nk_rgb(58, 67, 83));
+            if (timing_lane_width >= 17.0f) {
+                const auto title = nk_rect(timing_lanes[index].x + 2.0f, viewport.y + 2.0f,
+                                           std::max(1.0f, timing_lane_width - 4.0f), 14.0f);
+                nk_draw_text(canvas, title, timing_labels[index],
+                             static_cast<int>(strlen(timing_labels[index])), context->style.font,
+                             nk_rgba(18, 21, 29, 215), timing_colors[index]);
+            }
+        }
         for (size_t band_index = 0; band_index < view->band_count; ++band_index) {
             const auto& band = view->bands[band_index];
             const auto color = band.split_stage ? nk_rgb(27, 31, 43) : nk_rgb(25, 29, 39);
@@ -1799,6 +1853,24 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                 }
             }
         }
+        for (size_t index = 0; index < view->timing_marker_count; ++index) {
+            const auto& marker = view->timing_markers[index];
+            const auto lane_index = static_cast<size_t>(marker.lane);
+            if (lane_index >= timing_lanes.size() || timing_lanes[lane_index].w <= 0.0f) {
+                continue;
+            }
+            const auto& lane = timing_lanes[lane_index];
+            const auto inner_left = lane.x + 2.0f;
+            const auto inner_width = std::max(0.0f, lane.w - 4.0f);
+            const auto left =
+                inner_left + inner_width * static_cast<float>(marker.marker_left_fraction);
+            const auto right =
+                inner_left + inner_width * static_cast<float>(marker.marker_right_fraction);
+            const auto y = viewport.y + static_cast<float>(marker.marker_y_pixels) * viewport.h /
+                                            static_cast<float>(view->viewport_height_pixels);
+            nk_fill_rect(canvas, nk_rect(left, y - 2.5f, std::max(1.0f, right - left), 5.0f),
+                         0.0f, timing_colors[lane_index]);
+        }
         const auto projected_screen_y = [&](double y_pixels) {
             return viewport.y + static_cast<float>(y_pixels) * viewport.h /
                                     static_cast<float>(view->viewport_height_pixels);
@@ -1868,6 +1940,21 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             nk_stroke_rect(canvas, rect, 1.5f, event.selected ? 2.0f : 1.0f,
                            event.selected ? nk_rgb(248, 224, 255) : nk_rgb(50, 35, 58));
         }
+        for (size_t index = 0; index < view->bgm_lane_count; ++index) {
+            const auto rect = compose_screen_rect(&view->bgm_lanes[index].bounds, view, viewport);
+            if (rect.w < 18.0f || rect.h <= 0.0f) {
+                continue;
+            }
+            char label[20]{};
+            const auto length = snprintf(label, sizeof(label), "BGM %zu", index + 1);
+            if (length > 0) {
+                const auto title = nk_rect(rect.x + 2.0f, viewport.y + 2.0f,
+                                           std::max(1.0f, rect.w - 4.0f), 14.0f);
+                nk_draw_text(canvas, title, label, static_cast<int>(strlen(label)),
+                             context->style.font, nk_rgba(31, 25, 38, 215),
+                             nk_rgb(211, 175, 226));
+            }
+        }
         for (size_t index = 0; index < view->note_endpoint_count; ++index) {
             const auto& note = view->note_endpoints[index];
             auto color =
@@ -1911,8 +1998,49 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             }
             const auto rect = compose_screen_rect(&note.bounds, view, viewport);
             if (rect.w > 0.0f && rect.h > 0.0f) {
-                nk_fill_rect(canvas, rect, 1.5f, color);
-                nk_stroke_rect(canvas, rect, 1.5f, border_width, border);
+                const auto tile = nk_rect(rect.x + 1.0f, rect.y, std::max(1.0f, rect.w - 2.0f),
+                                          std::max(2.0f, rect.h));
+                nk_fill_rect(canvas, tile, 0.0f, color);
+                nk_stroke_rect(canvas, tile, 0.0f, border_width, border);
+                nk_stroke_line(canvas, tile.x + 1.0f, tile.y + 1.0f,
+                               tile.x + tile.w - 1.0f, tile.y + 1.0f, 1.0f,
+                               nk_rgba(255, 255, 255, 105));
+                if (note.glyph >= 2 && note.glyph <= 5 && tile.w >= 10.0f && tile.h >= 6.0f) {
+                    const auto center_x = tile.x + tile.w * 0.5f;
+                    const auto center_y = tile.y + tile.h * 0.5f;
+                    const auto extent = std::max(2.0f, std::min(tile.w, tile.h) * 0.3f);
+                    auto first_x = center_x + extent;
+                    auto first_y = center_y - extent;
+                    auto tip_x = center_x - extent;
+                    auto tip_y = center_y;
+                    auto last_x = center_x + extent;
+                    auto last_y = center_y + extent;
+                    if (note.glyph == 3) {
+                        first_x = center_x - extent;
+                        first_y = center_y - extent;
+                        tip_x = center_x;
+                        tip_y = center_y + extent;
+                        last_x = center_x + extent;
+                        last_y = center_y - extent;
+                    } else if (note.glyph == 4) {
+                        first_x = center_x - extent;
+                        first_y = center_y + extent;
+                        tip_x = center_x;
+                        tip_y = center_y - extent;
+                        last_x = center_x + extent;
+                        last_y = center_y + extent;
+                    } else if (note.glyph == 5) {
+                        first_x = center_x - extent;
+                        first_y = center_y - extent;
+                        tip_x = center_x + extent;
+                        tip_y = center_y;
+                        last_x = center_x - extent;
+                        last_y = center_y + extent;
+                    }
+                    const auto arrow_color = nk_rgb(245, 248, 252);
+                    nk_stroke_line(canvas, first_x, first_y, tip_x, tip_y, 2.0f, arrow_color);
+                    nk_stroke_line(canvas, tip_x, tip_y, last_x, last_y, 2.0f, arrow_color);
+                }
             }
         }
         if (view->playhead_visible) {

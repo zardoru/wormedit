@@ -304,6 +304,7 @@ typedef struct WormUiComposeNoteView {
     WormUiComposeRect bounds;
     uint64_t note_id;
     uint64_t lane_id;
+    uint8_t glyph;
     uint8_t kind;
     bool tail;
     bool selected;
@@ -449,6 +450,27 @@ typedef struct WormUiComposeBranchChoiceView {
     bool can_clear;
 } WormUiComposeBranchChoiceView;
 
+typedef enum WormUiTimingLaneKind {
+    WORM_UI_TIMING_LANE_BPM = 0,
+    WORM_UI_TIMING_LANE_SCROLL,
+    WORM_UI_TIMING_LANE_SPEED,
+    WORM_UI_TIMING_LANE_STOP,
+    WORM_UI_TIMING_LANE_DELAY,
+    WORM_UI_TIMING_LANE_WARP,
+    WORM_UI_TIMING_LANE_KIAI,
+    WORM_UI_TIMING_LANE_ANCHOR,
+} WormUiTimingLaneKind;
+
+typedef struct WormUiTimingMarkerView {
+    uint64_t object_id;
+    uint64_t source_order;
+    uint64_t storage_order;
+    double marker_y_pixels;
+    double marker_left_fraction;
+    double marker_right_fraction;
+    WormUiTimingLaneKind lane;
+} WormUiTimingMarkerView;
+
 // Renderer-neutral field primitives projected into bounded scalar storage.
 // Coordinates are relative to the scene viewport; no chart/core types cross
 // the private frontend boundary.
@@ -494,6 +516,7 @@ typedef struct WormUiComposeView {
     uint64_t document_revision;
     double viewport_width_pixels;
     double viewport_height_pixels;
+    double playable_field_left_pixels;
     double playable_field_right_pixels;
     double pixels_per_standard_measure;
     bool playhead_visible;
@@ -516,6 +539,8 @@ typedef struct WormUiComposeView {
     size_t lane_count;
     const WormUiComposeGridLineView* grid_lines;
     size_t grid_line_count;
+    const WormUiTimingMarkerView* timing_markers;
+    size_t timing_marker_count;
     const WormUiComposeDifferenceView* differences;
     size_t difference_count;
     const WormUiComposeHoldView* hold_bodies;
@@ -564,27 +589,6 @@ typedef struct WormUiTimingSpeedView {
     bool transition_is_seconds;
     bool transition_clipped;
 } WormUiTimingSpeedView;
-
-typedef enum WormUiTimingLaneKind {
-    WORM_UI_TIMING_LANE_BPM = 0,
-    WORM_UI_TIMING_LANE_SCROLL,
-    WORM_UI_TIMING_LANE_SPEED,
-    WORM_UI_TIMING_LANE_STOP,
-    WORM_UI_TIMING_LANE_DELAY,
-    WORM_UI_TIMING_LANE_WARP,
-    WORM_UI_TIMING_LANE_KIAI,
-    WORM_UI_TIMING_LANE_ANCHOR,
-} WormUiTimingLaneKind;
-
-typedef struct WormUiTimingMarkerView {
-    uint64_t object_id;
-    uint64_t source_order;
-    uint64_t storage_order;
-    double marker_y_pixels;
-    double marker_left_fraction;
-    double marker_right_fraction;
-    WormUiTimingLaneKind lane;
-} WormUiTimingMarkerView;
 
 // Same numeric kind ordering as editor_grid_line_kind_t, kept scalar across
 // the frontend boundary: active snap, beat, group, then measure.

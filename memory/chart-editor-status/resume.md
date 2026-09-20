@@ -4,7 +4,7 @@
 
 ## Immediate work
 
-1. Continue UI wiring around the named visual references: iBMSC for Compose's dominant canvas, compact frequent tools, persistent left timing rails, and bounded/collapsible right inspectors/resources; ArrowVortex for the dense DDReam-like waveform behind the chart, song overview, and nearby non-destructive sync controls. Preserve existing controller actions and verify resize/high-DPI behavior while extracting frontend-private units.
+1. Continue UI wiring around the named visual references: finish Compose's iBMSC-style timing/BGM rails, move vertically stacked secondary tools into bounded/collapsible iBMSC/ArrowVortex-style side panels, and make note glyphs follow the active BMS-tile or dance-arrow presentation. Then add ArrowVortex's dense DDReam-like waveform behind the chart, song overview, and nearby non-destructive sync controls. Preserve the shared mobile-head viewport contract, existing controller actions, and resize/high-DPI behavior while extracting frontend-private units.
 2. Capture BMSE/iBMSC clipboard samples with tool/version provenance; do not infer clipboard compatibility from the existing source audit.
 3. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
 

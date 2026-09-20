@@ -1,6 +1,7 @@
 #include "ui/nuklear/compose_panel.h"
 #include "ui/nuklear/bms_branch_panel.h"
 #include "ui/nuklear/compose_markers.h"
+#include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_state.h"
 
 #include "wormedit/nuklear_config.h"
@@ -342,6 +343,8 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         view->audio_bookmark_count > WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY ||
         view->audio_section_count > WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY ||
         view->timing_marker_count > WORM_UI_TIMING_MARKER_CAPACITY ||
+        view->resource_count > WORM_UI_COMPOSE_RESOURCE_CAPACITY ||
+        view->resource_total_count < view->resource_count ||
         (view->semantic_layer_page_count == 0
              ? view->semantic_layer_page != 0 || view->semantic_layer_total_count != 0 ||
                    view->semantic_layer_count != 0
@@ -361,7 +364,8 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         (view->beat_section_count != 0 && !view->beat_sections) ||
         (view->audio_bookmark_count != 0 && !view->audio_bookmarks) ||
         (view->audio_section_count != 0 && !view->audio_sections) ||
-        (view->timing_marker_count != 0 && !view->timing_markers))
+        (view->timing_marker_count != 0 && !view->timing_markers) ||
+        (view->resource_count != 0 && !view->resources))
         return 0;
     if ((view->area_selection_preview_visible &&
          (!compose_rect_valid(&view->area_selection_preview_bounds) ||
@@ -400,6 +404,17 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
             marker.marker_right_fraction <= marker.marker_left_fraction ||
             marker.marker_right_fraction > 1.0 || marker.lane < WORM_UI_TIMING_LANE_BPM ||
             marker.lane > WORM_UI_TIMING_LANE_ANCHOR) {
+            return 0;
+        }
+    }
+    constexpr std::uint8_t compose_resource_roles = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE |
+                                                    WORM_UI_COMPOSE_RESOURCE_ROLE_BGM |
+                                                    WORM_UI_COMPOSE_RESOURCE_ROLE_BGA;
+    for (size_t index = 0; index < view->resource_count; ++index) {
+        const auto& resource = view->resources[index];
+        if (resource.resource_id == 0 || resource.asset_id == 0 || resource.roles == 0 ||
+            (resource.roles & ~compose_resource_roles) != 0 || !resource.target_index ||
+            !resource.name || !resource.source_name) {
             return 0;
         }
     }
@@ -977,9 +992,9 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     }
     nk_layout_row_push(context, 0.18f);
     if (view->truncated) {
-        nk_label(context, "Visible geometry capped", NK_TEXT_RIGHT);
+        nk_label(context, "Geometry capped", NK_TEXT_RIGHT);
     } else {
-        nk_labelf(context, NK_TEXT_RIGHT, "%zu note endpoints · %zu lanes · %zu grid lines",
+        nk_labelf(context, NK_TEXT_RIGHT, "%zu notes · %zu lanes · %zu grid",
                   view->note_endpoint_count, view->lane_count, view->grid_line_count);
     }
     nk_layout_row_end(context);
@@ -998,6 +1013,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         nk_layout_space_push(context, nk_rect(editor_width + inspector_gap, 0.0f, inspector_width,
                                               compose_body_height));
         if (nk_group_begin(context, "Compose inspector", NK_WINDOW_BORDER)) {
+
+    worm_ui_nuklear_render_compose_resources(context, view, action, &state.resource_filter);
 
     if (nk_tree_push(context, NK_TREE_TAB, "Markers / sections", NK_MINIMIZED)) {
     nk_layout_row_begin(context, NK_DYNAMIC, 24, 3);
@@ -1396,26 +1413,16 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     nk_layout_row_dynamic(context, 18, 1);
     nk_label(context,
              view->semantic_layer_paint_mode_active
-                 ? "Layer paint armed — unmodified click/drag toggles the selected layer on notes."
+                 ? "Layer paint armed · click/drag toggles layer · Esc cancels"
              : view->semantic_layer_solo_active
-                 ? "Layer solo active — only notes carrying the selected layer are shown."
+                 ? "Layer solo active · only selected-layer notes shown"
              : view->note_paint_mode_active
-                 ? "Paint armed — unmodified click/drag adds notes; dragging over painted "
-                   "notes erases."
-                 : "Paint off — arm Paint to draw notes with an unmodified click or drag.",
-             NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_label(context,
-             "↑/↓ move (hold to repeat) · Page Up/Down page measures · Click toggles taps · "
-             "drag selected notes moves · empty drag selects (Shift add, Ctrl/Cmd toggle) · "
-             "hold Space + ↑/↓ then release selects; tap Space twice selects cursor range · lane "
-             "keys assign/hold · "
-             "Alt/Option-drag · Delete · "
-             "Ctrl/Cmd+Z/Y",
+                 ? "Paint armed · click/drag draws or erases · Esc cancels"
+                 : "↑/↓ move · PgUp/PgDn page · drag selects/moves · Alt-drag hold · Del",
              NK_TEXT_LEFT);
 
     const auto group_bounds = nk_window_get_content_region(context);
-    const auto surface_height = std::max(32.0f, group_bounds.h - 42.0f);
+    const auto surface_height = std::max(32.0f, group_bounds.h - 24.0f);
     nk_layout_space_begin(context, NK_DYNAMIC, surface_height, 1);
     nk_layout_space_push(context, nk_rect(0.0f, 0.0f, 1.0f, 1.0f));
     struct nk_rect viewport{};

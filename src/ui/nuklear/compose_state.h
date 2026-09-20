@@ -31,6 +31,12 @@ struct worm_ui_nuklear_compose_color_t {
     float a{};
 };
 
+enum class worm_ui_nuklear_compose_resource_filter_t : std::uint8_t {
+    sample,
+    bgm,
+    bga,
+};
+
 struct worm_ui_nuklear_compose_state_t {
     std::array<worm_ui_nuklear_compose_key_event_t, 64> key_events{};
     std::size_t key_event_count{};
@@ -83,6 +89,8 @@ struct worm_ui_nuklear_compose_state_t {
     worm_ui_nuklear_compose_color_t semantic_layer_color{};
     bool semantic_layer_color_editor_visible{};
     bool inspector_visible{true};
+    worm_ui_nuklear_compose_resource_filter_t resource_filter{
+        worm_ui_nuklear_compose_resource_filter_t::sample};
 };
 
 [[nodiscard]] auto worm_ui_nuklear_compose_state() noexcept -> worm_ui_nuklear_compose_state_t&;

@@ -265,6 +265,7 @@ if(WORMEDIT_BUILD_APP)
         src/common/chart.cpp
         src/editor/field.cpp
         src/sys/audio.cpp
+        src/sys/compose_resource_presenter.cpp
         src/sys/main.cpp
         src/sys/player_preview_presenter.cpp
         src/sys/platform_recovery.cpp
@@ -275,6 +276,7 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/bms_branch_panel.cpp
         src/ui/nuklear/compose_markers.cpp
         src/ui/nuklear/compose_panel.cpp
+        src/ui/nuklear/compose_resources.cpp
         src/ui/nuklear/compose_state.cpp
         src/ui/nuklear/frontend.cpp
         src/ui/nuklear/image_quad.cpp

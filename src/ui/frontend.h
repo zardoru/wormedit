@@ -46,6 +46,7 @@
 #define WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY 4
 #define WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY 9
 #define WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY 128
+#define WORM_UI_COMPOSE_RESOURCE_CAPACITY 128
 #define WORM_UI_TIMING_SPEED_CAPACITY 4096
 #define WORM_UI_TIMING_MARKER_CAPACITY 16384
 #define WORM_UI_TIMING_GRID_CAPACITY 16384
@@ -471,6 +472,24 @@ typedef struct WormUiTimingMarkerView {
     WormUiTimingLaneKind lane;
 } WormUiTimingMarkerView;
 
+typedef enum WormUiComposeResourceRole {
+    WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE = 1 << 0,
+    WORM_UI_COMPOSE_RESOURCE_ROLE_BGM = 1 << 1,
+    WORM_UI_COMPOSE_RESOURCE_ROLE_BGA = 1 << 2,
+} WormUiComposeResourceRole;
+
+typedef struct WormUiComposeResourceView {
+    uint64_t resource_id;
+    uint64_t asset_id;
+    uint8_t roles;
+    bool audio_asset;
+    bool selected_audio_asset;
+    bool missing;
+    const char* target_index;
+    const char* name;
+    const char* source_name;
+} WormUiComposeResourceView;
+
 // Renderer-neutral field primitives projected into bounded scalar storage.
 // Coordinates are relative to the scene viewport; no chart/core types cross
 // the private frontend boundary.
@@ -541,6 +560,10 @@ typedef struct WormUiComposeView {
     size_t grid_line_count;
     const WormUiTimingMarkerView* timing_markers;
     size_t timing_marker_count;
+    const WormUiComposeResourceView* resources;
+    size_t resource_count;
+    size_t resource_total_count;
+    bool resources_truncated;
     const WormUiComposeDifferenceView* differences;
     size_t difference_count;
     const WormUiComposeHoldView* hold_bodies;

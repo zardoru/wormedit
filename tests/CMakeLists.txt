@@ -1,6 +1,7 @@
 include(Catch)
 
 add_executable(wormedit_core_tests
+    ../src/sys/compose_resource_presenter.cpp
     core/audio_offset_editor_tests.cpp
     core/audio_fixture_inventory_tests.cpp
     core/autosave_loop_tests.cpp
@@ -9,6 +10,7 @@ add_executable(wormedit_core_tests
     core/bga_preview_tests.cpp
     core/chart_compare_tests.cpp
     core/command_tests.cpp
+    core/compose_resource_presenter_tests.cpp
     core/command_registry_tests.cpp
     core/document_tests.cpp
     core/editor_navigation_input_tests.cpp
@@ -56,6 +58,7 @@ add_executable(wormedit_core_tests
     formats/osu_mania_tests.cpp
     formats/stepmania_tests.cpp
 )
+target_include_directories(wormedit_core_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
 target_compile_definitions(wormedit_core_tests
     PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
 )

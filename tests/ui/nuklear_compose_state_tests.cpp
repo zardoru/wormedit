@@ -20,6 +20,7 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     state.semantic_layer_name_revision = 42;
     state.semantic_layer_color_editor_visible = true;
     state.inspector_visible = false;
+    state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
 
     worm_ui_nuklear_reset_compose_state();
 
@@ -38,4 +39,5 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     CHECK(state.semantic_layer_name_revision == std::numeric_limits<std::uint64_t>::max());
     CHECK_FALSE(state.semantic_layer_color_editor_visible);
     CHECK(state.inspector_visible);
+    CHECK(state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample);
 }

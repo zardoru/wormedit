@@ -1,6 +1,7 @@
 #include "wormedit/audio.h"
 #include "wormedit/window.h"
 
+#include "sys/compose_resource_presenter.h"
 #include "sys/platform_recovery.h"
 #include "sys/platform_shortcut_profile.h"
 #include "sys/player_preview_presenter.h"
@@ -186,6 +187,11 @@ struct flattened_workspace_t {
     std::array<std::string, WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY> compose_branch_text_storage;
     std::array<std::string, WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY>
         compose_branch_diagnostic_storage;
+    std::array<WormUiComposeResourceView, WORM_UI_COMPOSE_RESOURCE_CAPACITY>
+        compose_resource_storage{};
+    std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> compose_resource_index_storage;
+    std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> compose_resource_name_storage;
+    std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> compose_resource_path_storage;
     std::array<WormUiComposeLaneKeyBinding, WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY>
         compose_lane_key_storage{};
     std::optional<wormedit::editor_interaction_view_model_t> compose_interaction_view_storage;
@@ -311,7 +317,7 @@ struct application_command_state_t {
     // data; an active gesture keeps its captured snap until it is resolved.
     std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;
     std::unordered_map<std::uint64_t, double> bgm_horizontal_scroll_pixels;
-    bool player_preview_visible{true};
+    bool player_preview_visible{};
     wormedit::player_preview_skin_t player_preview_skin{wormedit::player_preview_skin_t::neutral};
     std::function<bool()> transport_active;
     std::function<std::string()> transport_play_pause;
@@ -741,6 +747,36 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                 result.view.compose.visible = true;
                 const auto& outline = tab.bms_branch_outline;
                 auto& compose = result.view.compose;
+                const auto resource_catalog = wormedit::sys::make_compose_resource_catalog(
+                    document, source.transport.audio_asset, WORM_UI_COMPOSE_RESOURCE_CAPACITY);
+                compose.resources = result.compose_resource_storage.data();
+                compose.resource_count = resource_catalog.entries.size();
+                compose.resource_total_count = resource_catalog.total_count;
+                compose.resources_truncated = resource_catalog.truncated;
+                for (std::size_t index = 0; index < resource_catalog.entries.size(); ++index) {
+                    const auto& resource = resource_catalog.entries[index];
+                    std::uint8_t roles{};
+                    roles |= resource.sample ? WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE : 0;
+                    roles |= resource.bgm ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGM : 0;
+                    roles |= resource.bga ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGA : 0;
+                    auto& target_index = result.compose_resource_index_storage[index];
+                    target_index = resource.target_index;
+                    auto& name = result.compose_resource_name_storage[index];
+                    name = resource.name;
+                    auto& source_name = result.compose_resource_path_storage[index];
+                    source_name = resource.source_name;
+                    result.compose_resource_storage[index] = {
+                        .resource_id = resource.resource.value,
+                        .asset_id = resource.asset.value,
+                        .roles = roles,
+                        .audio_asset = resource.audio_asset,
+                        .selected_audio_asset = resource.selected_audio_asset,
+                        .missing = resource.missing,
+                        .target_index = target_index.c_str(),
+                        .name = name.c_str(),
+                        .source_name = source_name.c_str(),
+                    };
+                }
                 compose.branch_outline_available = outline.available;
                 compose.branch_rows_truncated = outline.rows_truncated;
                 compose.branch_choices_truncated = outline.choices_truncated;
@@ -6680,6 +6716,16 @@ int main(int argc, char** argv) {
             }
             flattened.view.compose.branch_rows = flattened.compose_branch_row_storage.data();
             flattened.view.compose.branch_choices = flattened.compose_branch_choice_storage.data();
+            flattened.view.compose.resources = flattened.compose_resource_storage.data();
+            for (std::size_t resource = 0;
+                 resource < flattened.view.compose.resource_count; ++resource) {
+                flattened.compose_resource_storage[resource].target_index =
+                    flattened.compose_resource_index_storage[resource].c_str();
+                flattened.compose_resource_storage[resource].name =
+                    flattened.compose_resource_name_storage[resource].c_str();
+                flattened.compose_resource_storage[resource].source_name =
+                    flattened.compose_resource_path_storage[resource].c_str();
+            }
             for (std::size_t row = 0; row < flattened.view.compose.branch_row_count; ++row) {
                 flattened.compose_branch_row_storage[row].display_text =
                     flattened.compose_branch_text_storage[row].c_str();

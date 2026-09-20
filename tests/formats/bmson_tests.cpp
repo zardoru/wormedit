@@ -1,3 +1,4 @@
+#include <wormedit/core/sound_slice.h>
 #include <wormedit/formats/bmson.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -143,6 +144,47 @@ TEST_CASE("BMSON pulse geometry, bar lines, timing and mixed sound slices are ma
     CHECK(std::ranges::any_of(mismatch_diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::diagnostic_code_t::dangling_resource;
     }));
+}
+
+TEST_CASE("BMSON published slicing derives exact shared source-frame ranges",
+          "[unit][format][bmson][slicing]") {
+    const auto parsed = fixture("published-vox-slicing.bmson");
+    REQUIRE(parsed.song.has_value());
+    const auto& chart = parsed.song->charts.front();
+    REQUIRE(chart.sound_channels.size() == 1);
+
+    const auto slices = wormedit::derive_sound_channel_slices(
+        chart, chart.sound_channels.front(), 48'000, 200'000);
+    REQUIRE(slices);
+    REQUIRE(slices.slices.size() == 6);
+    const std::array expected_begin{0ULL, 12'000ULL, 48'000ULL,
+                                    60'000ULL, 96'000ULL, 144'000ULL};
+    const std::array<std::optional<std::uint64_t>, 6> expected_end{
+        12'000ULL, 48'000ULL, 60'000ULL, 96'000ULL, 144'000ULL, 200'000ULL};
+    const std::array expected_restart{true, false, true, false, false, false};
+    const std::array<std::size_t, 6> expected_event_count{1, 2, 2, 2, 1, 1};
+    for (std::size_t index = 0; index < slices.slices.size(); ++index) {
+        CHECK(slices.slices[index].source_begin_frame == expected_begin[index]);
+        CHECK(slices.slices[index].source_end_frame == expected_end[index]);
+        CHECK(slices.slices[index].restart == expected_restart[index]);
+        CHECK(slices.slices[index].events.size() == expected_event_count[index]);
+        for (const auto event : slices.slices[index].events) {
+            CHECK(wormedit::find_sound_slice(slices, event) == &slices.slices[index]);
+        }
+    }
+
+    auto clipped = chart.sound_channels.front();
+    clipped.source_clip.begin_frame = 100;
+    clipped.source_clip.end_frame = 150'100;
+    const auto clipped_slices =
+        wormedit::derive_sound_channel_slices(chart, clipped, 48'000, 300'000);
+    REQUIRE(clipped_slices);
+    CHECK(clipped_slices.slices.front().source_begin_frame == 100);
+    CHECK(clipped_slices.slices.back().source_end_frame == 150'100);
+
+    CHECK_FALSE(wormedit::derive_sound_channel_slices(chart, clipped, 0));
+    CHECK_FALSE(wormedit::derive_sound_channel_slices(
+        chart, clipped, 48'000, 300'000, {.maximum_events = 8}));
 }
 
 TEST_CASE("BMSON continuation collisions normalize to restart while preserving source spelling",

@@ -2063,6 +2063,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.semantic_layer_count = 0;
     view.semantic_layers_truncated = false;
     view.semantic_layer_target_locked = false;
+    view.semantic_layer_target_visible = false;
     view.semantic_layer_solo_active = application_state.semantic_layer_solo_active;
     view.status_text = nullptr;
     view.selected_note_label = nullptr;
@@ -2094,7 +2095,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.chart_id = chart.id.value;
     view.document_revision = history.document.revision;
     for (const auto& layer : chart.semantic_layers) {
-        if (!layer.visible) {
+        const auto selected = application_state.semantic_layer_target == layer.id;
+        if (!layer.visible && !selected) {
             continue;
         }
         if (view.semantic_layer_count >= flattened.compose_semantic_layer_storage.size()) {
@@ -2103,7 +2105,6 @@ void populate_compose_view(flattened_workspace_t& flattened,
         }
         const auto index = view.semantic_layer_count++;
         flattened.compose_semantic_layer_name_storage[index] = layer.name;
-        const auto selected = application_state.semantic_layer_target == layer.id;
         flattened.compose_semantic_layer_storage[index] = {
             .layer_id = layer.id.value,
             .name = flattened.compose_semantic_layer_name_storage[index].c_str(),
@@ -2116,6 +2117,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
         };
         view.semantic_layer_target_locked = view.semantic_layer_target_locked ||
                                             (selected && layer.locked);
+        view.semantic_layer_target_visible = view.semantic_layer_target_visible ||
+                                             (selected && layer.visible);
     }
     if (!cache.attempted || cache.chart != chart.id ||
         cache.revision != history.document.revision) {
@@ -3813,6 +3816,46 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                        : (rebound.diagnostics.empty() ? "Semantic-layer order updated, but workspace rebinding failed."
                                                       : rebound.diagnostics.front().message);
     }
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before changing layer visibility.";
+        }
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart || !application_state.semantic_layer_target) {
+            return "Choose a semantic layer before changing its visibility.";
+        }
+        const auto layer = std::ranges::find(chart->semantic_layers,
+                                             *application_state.semantic_layer_target,
+                                             &semantic_layer_t::id);
+        if (layer == chart->semantic_layers.end()) {
+            application_state.semantic_layer_target.reset();
+            return "The selected semantic layer is no longer available.";
+        }
+        const auto was_visible = layer->visible;
+        const auto applied = apply_semantic_layer_edit(
+            history, action.compose_input_document_revision,
+            update_semantic_layer_action_t{state.chart,
+                                           layer->id,
+                                           layer->name,
+                                           {.red = static_cast<double>(layer->color.red) / 255.0,
+                                            .green = static_cast<double>(layer->color.green) / 255.0,
+                                            .blue = static_cast<double>(layer->color.blue) / 255.0,
+                                            .alpha = static_cast<double>(layer->color.alpha) / 255.0},
+                                           !was_visible,
+                                           layer->locked});
+        if (!applied.applied) {
+            return applied.diagnostics.empty() ? "Semantic-layer visibility was unchanged."
+                                               : applied.diagnostics.front().message;
+        }
+        if (was_visible) {
+            application_state.semantic_layer_paint_mode_active = false;
+            application_state.semantic_layer_solo_active = false;
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        return rebound ? (was_visible ? "Semantic layer hidden." : "Semantic layer shown.")
+                       : (rebound.diagnostics.empty() ? "Semantic-layer visibility changed, but workspace rebinding failed."
+                                                      : rebound.diagnostics.front().message);
+    }
     case WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER:
         application_state.semantic_layer_target.reset();
         application_state.semantic_layer_paint_mode_active = false;
@@ -4317,14 +4360,15 @@ void refresh_application_command_states(
     const bool pending = compose_ready && editor_interaction_has_pending_gesture(*compose_state);
     bool target_valid{};
     if (chart && application_state.semantic_layer_target) {
-        const auto* target_layer =
-            visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target);
-        target_valid = target_layer != nullptr;
+        const auto target_layer = std::ranges::find(chart->semantic_layers,
+                                                    *application_state.semantic_layer_target,
+                                                    &semantic_layer_t::id);
+        target_valid = target_layer != chart->semantic_layers.end();
         if (!target_valid) {
             application_state.semantic_layer_target.reset();
             application_state.semantic_layer_paint_mode_active = false;
             application_state.semantic_layer_solo_active = false;
-        } else if (target_layer->locked) {
+        } else if (target_layer->locked || !target_layer->visible) {
             application_state.semantic_layer_paint_mode_active = false;
         }
     }

@@ -633,6 +633,7 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD,
     WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD,
     WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
+    WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK,
     WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK,
     WORM_UI_COMPOSE_INPUT_DELETE_NOTES,
     WORM_UI_COMPOSE_INPUT_UNDO,
@@ -671,6 +672,7 @@ typedef enum WormUiComposeNavigationAction {
 typedef struct WormUiComposeInputAction {
     WormUiComposeInputKind kind;
     uint64_t lane_id;
+    uint64_t object_id;
     bool successive;
     WormUiComposeSelectionMode selection_mode;
     WormUiComposeNavigationAction navigation_action;

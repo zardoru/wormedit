@@ -980,6 +980,45 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
     CHECK_FALSE(committed.view->pending_space_range_selection.has_value());
 }
 
+TEST_CASE("typed object selection validates BGM events and synchronizes note selection",
+          "[unit][core][interaction][selection][tracks]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.bgm_source_lanes.push_back({.id = object_id_t{301}, .name = "BGM"});
+    chart.measures.front().bgm_events.push_back({.id = object_id_t{201},
+                                                 .position = {measure_id_t{1}, 240},
+                                                 .source_lane = object_id_t{301}});
+    chart.measures.front().notes.push_back(
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}});
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+
+    const auto bgm_selected = dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{
+            {{editor_selection_object_kind_t::bgm_event, object_id_t{201}}}});
+    REQUIRE(bgm_selected);
+    CHECK(state.selected_objects ==
+          std::vector<editor_selection_object_t>{
+              {editor_selection_object_kind_t::bgm_event, object_id_t{201}}});
+    CHECK(state.selected_notes.empty());
+
+    const auto note_selected = dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{
+            {{editor_selection_object_kind_t::note, object_id_t{101}}}});
+    REQUIRE(note_selected);
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+
+    const auto unknown = dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{
+            {{editor_selection_object_kind_t::bgm_event, object_id_t{999}}}});
+    CHECK_FALSE(unknown);
+    CHECK(has_code(unknown.diagnostics, diagnostic_code_t::invalid_id));
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+}
+
 TEST_CASE("selection index handles a sparse 50k BGM track and rejects malformed row queries",
           "[unit][core][interaction][selection][tracks][stress]") {
     auto song = make_song();

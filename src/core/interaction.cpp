@@ -4360,6 +4360,42 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                        ? std::get<diagnostic_list_t>(next_view)
                                        : diagnostic_list_t{},
                 };
+            } else if constexpr (std::is_same_v<action_t, select_editor_objects_action_t>) {
+                const auto built = build_editor_hit_test_index(*chart, history.document.revision);
+                if (std::holds_alternative<diagnostic_list_t>(built)) {
+                    return diagnostic_result(history, state,
+                                             std::get<diagnostic_list_t>(built));
+                }
+                const auto& available = std::get<editor_hit_test_index_t>(built).available_objects;
+                auto selected = typed_action.objects;
+                std::ranges::sort(selected);
+                if (std::ranges::adjacent_find(selected) != selected.end()) {
+                    return diagnostic_result(
+                        history, state,
+                        {error(diagnostic_code_t::duplicate_id,
+                               "object selection contains a duplicate typed object")});
+                }
+                for (const auto& object : selected) {
+                    if (object.id.value == 0 || !std::ranges::binary_search(available, object)) {
+                        return diagnostic_result(
+                            history, state,
+                            {error(diagnostic_code_t::invalid_id,
+                                   "object selection contains an unknown typed object",
+                                   object.id)});
+                    }
+                }
+                set_selected_objects(state, std::move(selected));
+                const auto next_view = make_view(history, state);
+                return {
+                    .accepted = std::holds_alternative<editor_interaction_view_model_t>(next_view),
+                    .view =
+                        std::holds_alternative<editor_interaction_view_model_t>(next_view)
+                            ? std::optional{std::get<editor_interaction_view_model_t>(next_view)}
+                            : std::nullopt,
+                    .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
+                                       ? std::get<diagnostic_list_t>(next_view)
+                                       : diagnostic_list_t{},
+                };
             } else if constexpr (std::is_same_v<action_t, delete_editor_notes_action_t>) {
                 std::unordered_set<std::uint64_t> selected_ids;
                 if (!state.selected_notes.empty()) {

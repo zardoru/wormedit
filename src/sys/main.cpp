@@ -3537,6 +3537,16 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             accepted = "Note label editor focused.";
             break;
         }
+        case WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK:
+            if (input.object_id == 0) {
+                return "BGM event click did not identify an event.";
+            }
+            result = dispatch_editor_action(
+                history, state,
+                select_editor_objects_action_t{{{editor_selection_object_kind_t::bgm_event,
+                                                  object_id_t{input.object_id}}}});
+            accepted = "BGM event selected.";
+            break;
         case WORM_UI_COMPOSE_INPUT_POINTER_CLICK: {
             const auto chart =
                 std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);

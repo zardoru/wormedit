@@ -14,6 +14,14 @@ if(NOT preview_source MATCHES "SDL_CreateTexture" OR
     message(FATAL_ERROR "player preview must retain SDL textures through pointer image handles")
 endif()
 
+file(READ "${WORMEDIT_SOURCE_ROOT}/src/ui/nuklear/frontend.cpp" frontend_source)
+if(NOT frontend_source MATCHES
+   "SDL_SetRenderLogicalPresentation\\(g_renderer, window_width, window_height,")
+    message(FATAL_ERROR
+        "Nuklear frontend must map logical window coordinates across the full high-DPI backbuffer"
+    )
+endif()
+
 file(READ "${WORMEDIT_SOURCE_ROOT}/CMakeLists.txt" root_cmake)
 if(root_cmake MATCHES "OpenGL::GL" OR root_cmake MATCHES "find_package\\(OpenGL")
     message(FATAL_ERROR "application must not restore the retired OpenGL link dependency")

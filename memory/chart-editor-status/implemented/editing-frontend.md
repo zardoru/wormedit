@@ -2,6 +2,10 @@
 
 [Back to the implemented-capability index](../implemented.md).
 
+The SDL renderer now establishes a logical presentation matching the current logical window size before every Nuklear draw. Fractional high-DPI backbuffers therefore scale the complete UI and clear rather than leaving unpainted right/bottom bands, while Nuklear geometry and SDL pointer input remain in the same coordinate space. The architecture check guards this resize mapping.
+
+Compose now starts the iBMSC-oriented density pass: playable columns use a bounded profile-derived width instead of stretching across every spare pixel, an existing BGM lane set receives the remaining horizontal track area, and the fully wired marker/section and semantic-layer editors remain available in collapsed inspectors rather than permanently consuming canvas height. The note-label row stays immediately available so note double-click focus behavior is preserved. A true outer-right resource/inspector dock and the left timing-lane expansion remain the next UI slices.
+
 Setup now exposes independent SM/SSC file-family, native/legacy timing-syntax,
 and syntax-only/StepMania 5.1/Etterna 0.75.1 implementation choices. The
 application retains the typed policy outside the adapter, validates it through

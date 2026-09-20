@@ -4,8 +4,9 @@
 
 ## Immediate work
 
-1. Capture BMSE/iBMSC clipboard samples with tool/version provenance; do not infer clipboard compatibility from the existing source audit.
-2. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
+1. Continue UI wiring and reshape Compose around the iBMSC-inspired layout contract: dominant canvas, compact frequent tools, persistent left timing rails, and bounded/collapsible right inspectors and resources. Preserve existing controller actions and verify resize/high-DPI behavior while extracting frontend-private units.
+2. Capture BMSE/iBMSC clipboard samples with tool/version provenance; do not infer clipboard compatibility from the existing source audit.
+3. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
 
 ## Handoff rule
 

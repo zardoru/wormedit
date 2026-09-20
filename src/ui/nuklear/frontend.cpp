@@ -640,9 +640,15 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
 }
 
 void worm_ui_frontend_render(int window_width, int window_height) {
-    (void)window_width;
-    (void)window_height;
-    if (g_context && g_renderer) {
+    if (g_context && g_renderer && window_width > 0 && window_height > 0) {
+        // Nuklear and SDL input use window-coordinate points, while a high-DPI
+        // renderer targets the larger pixel backbuffer. Keep the renderer's
+        // logical space synchronized after every resize so geometry, clipping,
+        // hit testing, and the cleared background cover the same full window.
+        if (!SDL_SetRenderLogicalPresentation(g_renderer, window_width, window_height,
+                                              SDL_LOGICAL_PRESENTATION_STRETCH)) {
+            return;
+        }
         SDL_SetRenderDrawColor(g_renderer, 18, 20, 26, 255);
         SDL_RenderClear(g_renderer);
         nk_sdl_render(g_context, NK_ANTI_ALIASING_ON);

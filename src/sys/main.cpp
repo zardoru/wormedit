@@ -880,19 +880,37 @@ auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) 
 
 constexpr double compose_measure_rail_width_pixels{42.0};
 constexpr double compose_bgm_lane_width_pixels{36.0};
+constexpr double compose_playable_lane_width_pixels{48.0};
+constexpr double compose_minimum_playable_field_width_pixels{160.0};
+constexpr double compose_maximum_playable_field_width_pixels{640.0};
+constexpr double compose_minimum_bgm_pane_width_pixels{96.0};
 
-auto compose_bgm_pane_width(double viewport_width_pixels, bool has_bgm_lanes) -> double {
-    if (!has_bgm_lanes)
-        return 0.0;
-    const auto preferred = std::clamp(viewport_width_pixels * 0.25, 96.0, 192.0);
-    return std::min(
-        preferred, std::max(0.0, viewport_width_pixels - compose_measure_rail_width_pixels - 80.0));
+struct compose_horizontal_layout_t {
+    double playable_field_width_pixels{};
+    double bgm_pane_width_pixels{};
+};
+
+auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::size_t {
+    std::size_t result{};
+    for (const auto& segment : chart.lane_layouts)
+        result = std::max(result, segment.layout.lanes.size());
+    return result;
 }
 
-auto compose_playable_field_width(double viewport_width_pixels, double bgm_pane_width_pixels)
-    -> double {
-    return std::max(1.0, viewport_width_pixels - compose_measure_rail_width_pixels -
-                             bgm_pane_width_pixels);
+auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_count,
+                               bool has_bgm_lanes) -> compose_horizontal_layout_t {
+    const auto available = std::max(1.0, viewport_width_pixels - compose_measure_rail_width_pixels);
+    auto playable = std::clamp(static_cast<double>(std::max<std::size_t>(lane_count, 1)) *
+                                   compose_playable_lane_width_pixels,
+                               compose_minimum_playable_field_width_pixels,
+                               compose_maximum_playable_field_width_pixels);
+    playable = std::min(playable, available);
+    if (!has_bgm_lanes)
+        return {.playable_field_width_pixels = playable};
+    if (available > compose_minimum_bgm_pane_width_pixels)
+        playable = std::min(playable, available - compose_minimum_bgm_pane_width_pixels);
+    return {.playable_field_width_pixels = std::max(1.0, playable),
+            .bgm_pane_width_pixels = std::max(0.0, available - playable)};
 }
 
 auto rational_as_long_double(wormedit::signed_rational_t value) -> long double {
@@ -3011,10 +3029,11 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.lane_key_bindings = flattened.compose_lane_key_storage.data();
     view.lane_key_binding_count = lane_key_binding_count;
 
-    const auto bgm_pane_width =
-        compose_bgm_pane_width(view.viewport_width_pixels, !chart.bgm_source_lanes.empty());
-    const auto playable_field_width =
-        compose_playable_field_width(view.viewport_width_pixels, bgm_pane_width);
+    const auto horizontal_layout =
+        compose_horizontal_layout(view.viewport_width_pixels, maximum_layout_lane_count(chart),
+                                  !chart.bgm_source_lanes.empty());
+    const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
+    const auto playable_field_width = horizontal_layout.playable_field_width_pixels;
     view.playable_field_right_pixels = compose_measure_rail_width_pixels + playable_field_width;
     const auto maximum_bgm_scroll = std::max(
         0.0, static_cast<double>(chart.bgm_source_lanes.size()) * compose_bgm_lane_width_pixels -
@@ -3671,11 +3690,13 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
     const auto bgm_lane_count = input_chart == history.document.charts.end()
                                     ? std::size_t{}
                                     : input_chart->bgm_source_lanes.size();
-    const auto bgm_pane_width =
-        compose_bgm_pane_width(ui_action.compose_input_viewport_width_pixels, bgm_lane_count != 0);
+    const auto horizontal_layout = compose_horizontal_layout(
+        ui_action.compose_input_viewport_width_pixels,
+        input_chart == history.document.charts.end() ? 0 : maximum_layout_lane_count(*input_chart),
+        bgm_lane_count != 0);
+    const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
     const auto field_left_pixels = compose_measure_rail_width_pixels;
-    const auto field_width_pixels =
-        compose_playable_field_width(ui_action.compose_input_viewport_width_pixels, bgm_pane_width);
+    const auto field_width_pixels = horizontal_layout.playable_field_width_pixels;
 
     if (!ui_action.shortcut_window_focused) {
         viewport_input.focus_lost();

@@ -958,6 +958,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     }
     nk_layout_row_end(context);
 
+    if (nk_tree_push(context, NK_TREE_TAB, "Markers / sections", NK_MINIMIZED)) {
     nk_layout_row_begin(context, NK_DYNAMIC, 24, 3);
     if (!view->scene_available || !view->beat_marker_navigation_available) {
         nk_widget_disable_begin(context);
@@ -985,6 +986,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     }
 
     worm_ui_nuklear_render_compose_markers(context, view, action);
+    nk_tree_pop(context);
+    }
 
     nk_layout_row_begin(context, NK_DYNAMIC, 25, 4);
     nk_layout_row_push(context, 0.13f);
@@ -1023,6 +1026,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     for (size_t index = 0; index < visible_layer_count; ++index) {
         semantic_target_active = semantic_target_active || view->semantic_layers[index].selected;
     }
+    if (nk_tree_push(context, NK_TREE_TAB, "Semantic layers", NK_MINIMIZED)) {
     nk_layout_row_begin(context, NK_DYNAMIC, 22, 4);
     nk_layout_row_push(context, 0.40f);
     if (nk_button_label(context, "Add semantic layer") && action &&
@@ -1336,6 +1340,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             action->compose_action = WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER;
         }
         nk_layout_row_end(context);
+    }
+    nk_tree_pop(context);
     }
 
     nk_layout_row_dynamic(context, 18, 1);

@@ -3748,6 +3748,35 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                        : (rebound.diagnostics.empty() ? "Semantic-layer color changed, but workspace rebinding failed."
                                                       : rebound.diagnostics.front().message);
     }
+    case WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before deleting a semantic layer.";
+        }
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart || !application_state.semantic_layer_target) {
+            return "Choose a visible semantic layer before deleting it.";
+        }
+        const auto* layer =
+            visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target);
+        if (!layer) {
+            return "The selected semantic layer is no longer visible.";
+        }
+        const auto applied = apply_semantic_layer_edit(
+            history, action.compose_input_document_revision,
+            delete_semantic_layer_action_t{state.chart, layer->id, false});
+        if (!applied.applied) {
+            return applied.diagnostics.empty()
+                       ? "Semantic layer was not deleted."
+                       : "Semantic layer is assigned to notes; remove those memberships before deleting it.";
+        }
+        application_state.semantic_layer_target.reset();
+        application_state.semantic_layer_paint_mode_active = false;
+        application_state.semantic_layer_solo_active = false;
+        const auto rebound = rebind_workspace(workspace, history);
+        return rebound ? "Semantic layer deleted."
+                       : (rebound.diagnostics.empty() ? "Semantic layer deleted, but workspace rebinding failed."
+                                                      : rebound.diagnostics.front().message);
+    }
     case WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER:
         application_state.semantic_layer_target.reset();
         application_state.semantic_layer_paint_mode_active = false;

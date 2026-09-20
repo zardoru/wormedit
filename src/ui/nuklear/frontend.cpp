@@ -3111,22 +3111,27 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                 memcpy(g_compose_semantic_layer_name.data(), selected_layer->name, length);
                 g_compose_semantic_layer_name_id = selected_layer->layer_id;
             }
-            nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 3);
-            nk_layout_row_push(g_context, 0.62f);
+            nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 4);
+            nk_layout_row_push(g_context, 0.54f);
             (void)nk_edit_string_zero_terminated(
                 g_context, NK_EDIT_FIELD, g_compose_semantic_layer_name.data(),
                 g_compose_semantic_layer_name.size(), nk_filter_default);
-            nk_layout_row_push(g_context, 0.20f);
+            nk_layout_row_push(g_context, 0.18f);
             if (nk_button_label(g_context, "Rename") && action &&
                 action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
                 memcpy(action->compose_semantic_layer_name, g_compose_semantic_layer_name.data(),
                        sizeof(action->compose_semantic_layer_name));
                 action->compose_action = WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER;
             }
-            nk_layout_row_push(g_context, 0.18f);
+            nk_layout_row_push(g_context, 0.14f);
             if (nk_button_label(g_context, "Color") && action &&
                 action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
                 action->compose_action = WORM_UI_COMPOSE_ACTION_CYCLE_SEMANTIC_LAYER_COLOR;
+            }
+            nk_layout_row_push(g_context, 0.14f);
+            if (nk_button_label(g_context, "Delete") && action &&
+                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                action->compose_action = WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER;
             }
             nk_layout_row_end(g_context);
         }

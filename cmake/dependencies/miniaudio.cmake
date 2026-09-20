@@ -22,6 +22,7 @@ add_library(wormedit_audio_decoder
     "${CMAKE_SOURCE_DIR}/src/audio/audition_bridge.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/audition_pump.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/audition_resolver.cpp"
+    "${CMAKE_SOURCE_DIR}/src/audio/audition_session.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/block_cache.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/miniaudio_backend.c"
     "${CMAKE_SOURCE_DIR}/src/audio/object_audition.cpp"

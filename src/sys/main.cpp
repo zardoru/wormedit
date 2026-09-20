@@ -169,6 +169,10 @@ struct application_command_state_t {
     bool semantic_layer_paint_mode_active{};
     bool semantic_layer_solo_active{};
     std::optional<wormedit::layer_id_t> semantic_layer_target;
+    // Semantic-layer filters are an ephemeral per-chart Compose view setting.
+    // Layer IDs are only unique within their chart, so never carry a filter to
+    // another selected difficulty.
+    std::optional<wormedit::chart_id_t> semantic_layer_filter_chart;
     std::vector<wormedit::layer_id_t> required_semantic_layer_filters;
     std::vector<wormedit::layer_id_t> excluded_semantic_layer_filters;
     // UI-only, chart-scoped preferences. Changing a snap never changes chart
@@ -2044,7 +2048,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
                            const wormedit::workspace_controller_t& workspace,
                            compose_scene_cache_t& cache, int window_width, int window_height,
                            std::optional<wormedit::editor_interaction_state_t>& retained_state,
-                           const application_command_state_t& application_state) {
+                           application_command_state_t& application_state) {
     auto& view = flattened.view.compose;
     if (!view.visible) {
         cache.interaction_view.reset();
@@ -2096,6 +2100,20 @@ void populate_compose_view(flattened_workspace_t& flattened,
         return;
     }
     const auto& chart = *chart_it;
+    if (application_state.semantic_layer_filter_chart != chart.id) {
+        application_state.semantic_layer_filter_chart = chart.id;
+        application_state.required_semantic_layer_filters.clear();
+        application_state.excluded_semantic_layer_filters.clear();
+    }
+    if (application_state.semantic_layer_target &&
+        std::ranges::find(chart.semantic_layers, *application_state.semantic_layer_target,
+                          &wormedit::semantic_layer_t::id) == chart.semantic_layers.end()) {
+        application_state.semantic_layer_target.reset();
+        application_state.semantic_layer_paint_mode_active = false;
+        application_state.semantic_layer_solo_active = false;
+    }
+    view.semantic_layer_paint_mode_active = application_state.semantic_layer_paint_mode_active;
+    view.semantic_layer_solo_active = application_state.semantic_layer_solo_active;
     view.chart_id = chart.id.value;
     view.document_revision = history.document.revision;
     for (const auto& layer : chart.semantic_layers) {
@@ -3797,6 +3815,14 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                        ? "Semantic layer was not deleted."
                        : "Semantic layer is assigned to notes; remove those memberships before deleting it.";
         }
+        application_state.required_semantic_layer_filters.erase(
+            std::remove(application_state.required_semantic_layer_filters.begin(),
+                        application_state.required_semantic_layer_filters.end(), layer->id),
+            application_state.required_semantic_layer_filters.end());
+        application_state.excluded_semantic_layer_filters.erase(
+            std::remove(application_state.excluded_semantic_layer_filters.begin(),
+                        application_state.excluded_semantic_layer_filters.end(), layer->id),
+            application_state.excluded_semantic_layer_filters.end());
         application_state.semantic_layer_target.reset();
         application_state.semantic_layer_paint_mode_active = false;
         application_state.semantic_layer_solo_active = false;
@@ -3887,6 +3913,11 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         if (!chart || !application_state.semantic_layer_target ||
             !visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target)) {
             return "Choose a visible semantic layer before filtering by it.";
+        }
+        if (application_state.semantic_layer_filter_chart != chart->id) {
+            application_state.semantic_layer_filter_chart = chart->id;
+            application_state.required_semantic_layer_filters.clear();
+            application_state.excluded_semantic_layer_filters.clear();
         }
         const auto require = action.compose_action ==
                              WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER;

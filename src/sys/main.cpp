@@ -194,6 +194,7 @@ struct application_command_state_t {
     std::unordered_map<std::uint64_t, double> bgm_horizontal_scroll_pixels;
     std::function<bool()> transport_active;
     std::function<std::string()> transport_play_pause;
+    std::function<std::string(std::uint64_t)> transport_seek;
     std::function<void()> transport_stop;
 };
 
@@ -4857,6 +4858,7 @@ int main(int argc, char** argv) {
     std::optional<wormedit::chart_id_t> active_preview_chart;
     std::uint64_t active_preview_revision{};
     std::uint64_t preview_resume_frame{};
+    std::uint64_t preview_end_frame{};
     bool preview_paused{};
     const auto asset_base =
         startup.loaded_primary ? requested_primary_path.parent_path() : std::filesystem::path{};
@@ -4878,6 +4880,7 @@ int main(int argc, char** argv) {
             static_cast<void>(audition_output.stop());
             static_cast<void>(preview_output.stop());
             preview_resume_frame = 0;
+            preview_end_frame = 0;
             preview_paused = false;
             active_preview_schedule.reset();
             active_preview_bindings.clear();
@@ -4983,6 +4986,27 @@ int main(int argc, char** argv) {
             active_preview_chart = chart->id;
             active_preview_revision = history.document.revision;
             preview_resume_frame = 0;
+            preview_end_frame = 0;
+            const auto include_event_ends = [&](const auto& events) {
+                for (const auto& event : events) {
+                    const auto binding = std::ranges::lower_bound(
+                        active_preview_bindings, event.object, {},
+                        &wormedit::audio::preview_object_source_binding_t::object);
+                    if (binding == active_preview_bindings.end() ||
+                        binding->object != event.object) {
+                        continue;
+                    }
+                    for (const auto& voice : binding->voices) {
+                        if (voice.frame_count <=
+                            std::numeric_limits<std::uint64_t>::max() - event.sample_frame) {
+                            preview_end_frame =
+                                std::max(preview_end_frame, event.sample_frame + voice.frame_count);
+                        }
+                    }
+                }
+            };
+            include_event_ends(active_preview_schedule->playable);
+            include_event_ends(active_preview_schedule->bgm);
         }
 
         static_cast<void>(audition_output.stop());
@@ -4992,6 +5016,25 @@ int main(int argc, char** argv) {
             return started.message.empty() ? "Chart preview could not start." : started.message;
         preview_paused = false;
         return preview_resume_frame == 0 ? "Chart preview started." : "Chart preview resumed.";
+    };
+    application_command_state.transport_seek = [&](std::uint64_t frame) -> std::string {
+        if (!active_preview_schedule || !active_preview_chart ||
+            active_preview_revision != history.document.revision || !workspace.selected_chart ||
+            *workspace.selected_chart != *active_preview_chart || frame > preview_end_frame) {
+            return "Chart preview seek is unavailable or outside the compiled timeline.";
+        }
+        static_cast<void>(audition_output.stop());
+        if (preview_session.active()) {
+            const auto sought = preview_output.seek(frame);
+            if (!sought)
+                return sought.message.empty() ? "Chart preview seek failed." : sought.message;
+            preview_paused = false;
+        } else {
+            preview_paused = true;
+        }
+        preview_resume_frame = frame;
+        return "Chart preview moved to " +
+               std::to_string(frame / wormedit::audio::output_sample_rate) + " seconds.";
     };
     application_command_state.transport_stop = [&] {
         static_cast<void>(audition_output.stop());
@@ -5042,13 +5085,21 @@ int main(int argc, char** argv) {
                 status = autosave_text;
         }
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        if (preview_session.active() &&
-            (!active_preview_chart || active_preview_revision != history.document.revision ||
-             !workspace.selected_chart || *workspace.selected_chart != *active_preview_chart)) {
-            static_cast<void>(preview_output.stop());
+        const bool preview_binding_current =
+            active_preview_chart && active_preview_revision == history.document.revision &&
+            workspace.selected_chart && *workspace.selected_chart == *active_preview_chart;
+        if (active_preview_chart && !preview_binding_current) {
+            const bool interrupted = preview_session.active() || preview_paused;
+            if (preview_session.active())
+                static_cast<void>(preview_output.stop());
             preview_resume_frame = 0;
+            preview_end_frame = 0;
             preview_paused = false;
-            status = "Chart preview stopped because its document or selected chart changed.";
+            active_preview_schedule.reset();
+            active_preview_bindings.clear();
+            active_preview_chart.reset();
+            if (interrupted)
+                status = "Chart preview stopped because its document or selected chart changed.";
         }
         if (const auto serviced = audition_output.service(); serviced && !*serviced) {
             static_cast<void>(audition_output.stop());
@@ -5173,12 +5224,14 @@ int main(int argc, char** argv) {
                                              : audition_session.active()
                                                  ? audition_session.timeline_frame()
                                                  : preview_resume_frame;
+            flattened.view.transport_end_frame = preview_end_frame;
             flattened.view.transport_sample_rate = wormedit::audio::output_sample_rate;
 #else
             flattened.view.transport_available = false;
             flattened.view.transport_playing = false;
             flattened.view.transport_paused = false;
             flattened.view.transport_frame = 0;
+            flattened.view.transport_end_frame = 0;
             flattened.view.transport_sample_rate = 44'100;
 #endif
             for (std::size_t line = 0; line < flattened.view.summary_line_count; ++line) {
@@ -5325,6 +5378,11 @@ int main(int argc, char** argv) {
                 } else {
                     status = "Audio preview is unavailable.";
                 }
+            } else if (action.kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK) {
+                status = application_command_state.transport_seek
+                             ? application_command_state.transport_seek(
+                                   action.transport_seek_frame)
+                             : "Chart preview seek is unavailable.";
             } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB) {
                 const auto applied = wormedit::apply_workspace_action(
                     workspace, history.document, history.document.revision,

@@ -4247,6 +4247,22 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         nk_label(g_context, "Ctrl/Cmd+Space · Ctrl/Cmd+Shift+Space", NK_TEXT_RIGHT);
         nk_layout_row_end(g_context);
 
+        if (view->transport_available && view->transport_end_frame != 0) {
+            constexpr nk_size seek_steps = 10'000;
+            const auto bounded_frame =
+                std::min(view->transport_frame, view->transport_end_frame);
+            nk_size seek_position = static_cast<nk_size>(
+                static_cast<long double>(bounded_frame) /
+                static_cast<long double>(view->transport_end_frame) * seek_steps);
+            nk_layout_row_dynamic(g_context, 16, 1);
+            if (nk_progress(g_context, &seek_position, seek_steps, NK_MODIFIABLE)) {
+                action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK;
+                action.transport_seek_frame =
+                    (view->transport_end_frame / seek_steps) * seek_position +
+                    ((view->transport_end_frame % seek_steps) * seek_position) / seek_steps;
+            }
+        }
+
         nk_layout_row_dynamic(g_context, 34, WORM_UI_WORKSPACE_TAB_COUNT);
         for (int tab = 0; tab < WORM_UI_WORKSPACE_TAB_COUNT; ++tab) {
             const WormUiWorkspaceTabItem* item = &view->tabs[tab];

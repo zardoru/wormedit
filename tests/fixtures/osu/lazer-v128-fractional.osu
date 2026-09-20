@@ -1,19 +1,47 @@
 osu file format v128
 
 [General]
+AudioFilename: fixture.ogg
+AudioLeadIn: 750
+PreviewTime: 12500
+Countdown: 1
+SampleSet: Soft
+StackLeniency: 0.7
 Mode:3
+LetterboxInBreaks: 1
+EpilepsyWarning: 1
+CountdownOffset: 2
+SpecialStyle: 1
+WidescreenStoryboard: 1
+SamplesMatchPlaybackRate: 1
 
 [Editor]
+Bookmarks: -1000,2500
+DistanceSpacing: 1.25
+BeatDivisor: 6
+GridSize: 8
+TimelineZoom: 2.5
 VelocityPresets: 0.5,1,2
 
 [Metadata]
 Title:Lazer v128 fractional-time fixture
+TitleUnicode:Lazer v128 metadata fixture
 Artist:Wormedit fixture authors
+ArtistUnicode:Wormedit fixture authors Unicode
 Creator:Wormedit
 Version:4K
+Source:Official encoder inventory audit
+Tags:fixture lazer-v128 metadata
+BeatmapID:123
+BeatmapSetID:456
 
 [Difficulty]
+HPDrainRate:5
 CircleSize:4
+OverallDifficulty:8
+ApproachRate:9
+SliderMultiplier:1.4
+SliderTickRate:1
 
 [TimingPoints]
 0.5,480,4,2,1,70,1,0

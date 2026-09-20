@@ -11,7 +11,7 @@ Status: reviewed implementation plan. This file is the stable entry point; each 
 - [Format adapters, conversion, native persistence, undo, validation, and diagnostics](chart-editor-plan/formats-persistence.md)
 - [Test strategy and regression gates](chart-editor-plan/testing.md)
 - [Implementation stages and stage exit conditions](chart-editor-plan/stages.md)
-- [Technical decisions, open questions, and immediate next work](chart-editor-plan/decisions.md)
+- [Technical decisions, open questions, and the current-work handoff](chart-editor-plan/decisions.md)
 
 Load this index plus only the domain files relevant to the current task. Cross-domain requirements should link to their canonical owner rather than repeat normative text.
 

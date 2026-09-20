@@ -17,6 +17,8 @@ set(plan_slices
     docs/chart-editor-plan/testing.md
     docs/chart-editor-plan/stages.md
     docs/chart-editor-plan/decisions.md
+    docs/chart-editor-plan/decisions/open-questions.md
+    docs/references/osu-mania-version-profiles.md
 )
 set(status_slices
     memory/chart-editor-status/current-milestone.md
@@ -71,6 +73,13 @@ foreach(slice IN LISTS editing_slices)
         message(FATAL_ERROR "Editing-plan index does not link to ${slice}")
     endif()
 endforeach()
+
+set(decisions_index "${WORMEDIT_SOURCE_ROOT}/docs/chart-editor-plan/decisions.md")
+file(READ "${decisions_index}" decisions_index_text)
+string(FIND "${decisions_index_text}" "](decisions/open-questions.md)" questions_link_offset)
+if(questions_link_offset EQUAL -1)
+    message(FATAL_ERROR "Technical-decisions index does not link to open questions")
+endif()
 
 file(READ "${status_index}" status_index_text)
 set(status_index_slices

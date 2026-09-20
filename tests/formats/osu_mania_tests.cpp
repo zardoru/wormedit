@@ -318,6 +318,36 @@ TEST_CASE("osu!mania version profiles preserve stable-v14 and lazer-v128 time se
     const auto& lazer_fields = lazer.song->metadata.format_groups.front().ordered_fields;
     CHECK(std::ranges::find(lazer_fields, std::pair{std::string{"osu.file_format"},
                                                     std::string{"128"}}) != lazer_fields.end());
+    constexpr std::array expected_lazer_fields{
+        std::pair{"General.AudioLeadIn", "750"},
+        std::pair{"General.PreviewTime", "12500"},
+        std::pair{"General.SpecialStyle", "1"},
+        std::pair{"General.WidescreenStoryboard", "1"},
+        std::pair{"General.SamplesMatchPlaybackRate", "1"},
+        std::pair{"Editor.DistanceSpacing", "1.25"},
+        std::pair{"Editor.BeatDivisor", "6"},
+        std::pair{"Editor.GridSize", "8"},
+        std::pair{"Editor.TimelineZoom", "2.5"},
+        std::pair{"Editor.VelocityPresets", "0.5,1,2"},
+        std::pair{"Metadata.TitleUnicode", "Lazer v128 metadata fixture"},
+        std::pair{"Metadata.Source", "Official encoder inventory audit"},
+        std::pair{"Metadata.BeatmapID", "123"},
+        std::pair{"Metadata.BeatmapSetID", "456"},
+        std::pair{"Difficulty.HPDrainRate", "5"},
+        std::pair{"Difficulty.OverallDifficulty", "8"},
+        std::pair{"Difficulty.ApproachRate", "9"},
+        std::pair{"Difficulty.SliderMultiplier", "1.4"},
+        std::pair{"Difficulty.SliderTickRate", "1"},
+    };
+    std::size_t previous_field_index{};
+    for (const auto& expected : expected_lazer_fields) {
+        const auto found = std::ranges::find(lazer_fields, expected);
+        CAPTURE(expected.first, expected.second);
+        REQUIRE(found != lazer_fields.end());
+        const auto field_index = static_cast<std::size_t>(found - lazer_fields.begin());
+        CHECK(field_index >= previous_field_index);
+        previous_field_index = field_index;
+    }
     REQUIRE(lazer.song->charts.front().measures.size() >= 1);
     std::size_t lazer_note_count{};
     bool found_hold{};
@@ -335,6 +365,8 @@ TEST_CASE("osu!mania version profiles preserve stable-v14 and lazer-v128 time se
     CHECK(lazer_written.text->starts_with("osu file format v128\n"));
     CHECK(lazer_written.text->find(",192,1000.5,1,") != std::string::npos);
     CHECK(lazer_written.text->find(",192,1200.5,128,0,\"1400.5:") != std::string::npos);
+    CHECK(lazer_written.text->find("VelocityPresets:0.5,1,2") != std::string::npos);
+    CHECK(lazer_written.text->find("SamplesMatchPlaybackRate:1") != std::string::npos);
     CHECK_FALSE(std::ranges::any_of(lazer_written.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code ==
                wormedit::osu_mania_write_diagnostic_code_t::timestamp_quantization;
@@ -342,6 +374,11 @@ TEST_CASE("osu!mania version profiles preserve stable-v14 and lazer-v128 time se
     const auto lazer_reparsed = parse_inline(*lazer_written.text);
     REQUIRE(lazer_reparsed.song.has_value());
     REQUIRE_FALSE(lazer_reparsed.has_errors());
+    const auto& reparsed_fields = lazer_reparsed.song->metadata.format_groups.front().ordered_fields;
+    for (const auto& expected : expected_lazer_fields) {
+        CAPTURE(expected.first, expected.second);
+        CHECK(std::ranges::find(reparsed_fields, expected) != reparsed_fields.end());
+    }
 
     auto edited_lazer = *lazer.song;
     auto& edited_note = edited_lazer.charts.front().measures.front().notes.front();

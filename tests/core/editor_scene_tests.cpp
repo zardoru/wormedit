@@ -189,6 +189,27 @@ TEST_CASE("field scene resolves semantic layer colors by visible palette order",
         CHECK(*body.semantic_color == wormedit::color_rgba_t{31, 32, 33, 210});
     }
 
+    const auto solo = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), view(),
+        {.field_left_pixels = 10.0,
+         .field_width_pixels = 200.0,
+         .solo_semantic_layer = wormedit::layer_id_t{2}});
+    REQUIRE(solo);
+    CHECK(std::ranges::all_of(solo.scene->note_endpoints, [](const auto& endpoint) {
+        return endpoint.note == wormedit::object_id_t{11};
+    }));
+    CHECK(std::ranges::all_of(solo.scene->hold_bodies, [](const auto& body) {
+        return body.note == wormedit::object_id_t{11};
+    }));
+
+    const auto unknown_solo = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), view(),
+        {.field_left_pixels = 10.0,
+         .field_width_pixels = 200.0,
+         .solo_semantic_layer = wormedit::layer_id_t{99}});
+    CHECK_FALSE(unknown_solo);
+    CHECK(has_code(unknown_solo.diagnostics, wormedit::diagnostic_code_t::invalid_id));
+
     auto move_view = view();
     move_view.pending_note_move_gesture = wormedit::pending_note_move_gesture_t{
         .reference_note = wormedit::object_id_t{11},

@@ -225,7 +225,8 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
                                    .kind = note.kind,
                                    .begin_row = *begin,
                                    .end_row = *end,
-                                   .semantic_color = semantic_color_for_note(note)});
+                                   .semantic_color = semantic_color_for_note(note),
+                                   .semantic_layers = note.semantic_layers});
         }
     }
     if (!diagnostics.empty()) {
@@ -324,6 +325,14 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                       "field-scene paint preview target count is invalid"));
             return result;
         }
+    }
+    if (request.solo_semantic_layer.has_value() &&
+        std::ranges::find(chart.semantic_layers, *request.solo_semantic_layer,
+                          &semantic_layer_t::id) == chart.semantic_layers.end()) {
+        result.diagnostics.push_back(
+            error(diagnostic_code_t::invalid_id,
+                  "field-scene semantic-layer solo refers to an unknown chart layer"));
+        return result;
     }
 
     const auto row_at_pixel = [&](long double pixel) {
@@ -873,6 +882,11 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
     const auto add_note = [&](const editor_field_scene_note_source_t& note) {
         if (static_cast<long double>(note.end_row) < query_low ||
             static_cast<long double>(note.begin_row) > query_high) {
+            return;
+        }
+        if (request.solo_semantic_layer.has_value() &&
+            std::ranges::find(note.semantic_layers, *request.solo_semantic_layer) ==
+                note.semantic_layers.end()) {
             return;
         }
         if (const auto target_rows = visible_paint_rows_by_lane.find(note.lane.value);

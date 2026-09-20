@@ -30,6 +30,9 @@ struct editor_field_scene_note_source_t {
     // independent of document traversal while preserving a deterministic
     // precedence rule until multi-layer blend authoring is specified.
     std::optional<color_rgba_t> semantic_color;
+    // Stable memberships are retained in the index so view-only layer filters
+    // do not need document traversal on each composition frame.
+    std::vector<layer_id_t> semantic_layers;
 };
 
 struct editor_field_scene_layout_source_t {
@@ -146,6 +149,9 @@ struct editor_field_scene_request_t {
     editor_grid_density_t grid_density;
     std::vector<editor_grid_grouping_t> authored_groupings;
     std::vector<local_position_t> comparison_difference_rows;
+    // When set, compose only notes carrying this stable layer ID. This is a
+    // view filter: it never changes document visibility or memberships.
+    std::optional<layer_id_t> solo_semantic_layer;
     std::size_t maximum_grid_lines{100'000};
     std::size_t maximum_authored_groupings{4'096};
     std::size_t maximum_comparison_difference_rows{100'000};

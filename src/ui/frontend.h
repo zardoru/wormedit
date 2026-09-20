@@ -274,6 +274,7 @@ typedef struct WormUiComposeView {
     size_t semantic_layer_count;
     bool semantic_layers_truncated;
     bool semantic_layer_target_locked;
+    bool semantic_layer_solo_active;
     uint64_t chart_id;
     uint64_t document_revision;
     double viewport_width_pixels;
@@ -585,6 +586,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE,
+    WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO,
 } WormUiComposeActionKind;
 
 typedef enum WormUiComposeInputKind {

@@ -167,6 +167,7 @@ struct application_command_state_t {
     bool timing_locked{};
     bool note_paint_mode_active{};
     bool semantic_layer_paint_mode_active{};
+    bool semantic_layer_solo_active{};
     std::optional<wormedit::layer_id_t> semantic_layer_target;
     // UI-only, chart-scoped preferences. Changing a snap never changes chart
     // data; an active gesture keeps its captured snap until it is resolved.
@@ -2062,6 +2063,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.semantic_layer_count = 0;
     view.semantic_layers_truncated = false;
     view.semantic_layer_target_locked = false;
+    view.semantic_layer_solo_active = application_state.semantic_layer_solo_active;
     view.status_text = nullptr;
     view.selected_note_label = nullptr;
     view.selected_note_label_note_id = 0;
@@ -2381,6 +2383,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
         {.field_left_pixels = 0.0,
          .field_width_pixels = view.viewport_width_pixels,
          .split_stage_gutter_pixels = 14.0,
+         .solo_semantic_layer = application_state.semantic_layer_solo_active
+                                    ? application_state.semantic_layer_target
+                                    : std::nullopt,
          .maximum_grid_lines = WORM_UI_COMPOSE_GRID_CAPACITY,
          .maximum_scene_primitives = WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY});
     if (!composed.scene || composed.has_errors()) {
@@ -3638,6 +3643,7 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
     case WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER:
         application_state.semantic_layer_target.reset();
         application_state.semantic_layer_paint_mode_active = false;
+        application_state.semantic_layer_solo_active = false;
         return "Semantic-layer target cleared.";
     case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE: {
         if (editor_interaction_has_pending_gesture(state)) {
@@ -3665,6 +3671,21 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                    ? "Semantic-layer paint mode enabled."
                    : "Semantic-layer paint mode disabled.";
     }
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO: {
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart || !application_state.semantic_layer_target) {
+            return "Choose a visible semantic layer before soloing it.";
+        }
+        const auto* layer =
+            visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target);
+        if (!layer) {
+            application_state.semantic_layer_solo_active = false;
+            return "The selected semantic layer is no longer visible.";
+        }
+        application_state.semantic_layer_solo_active = !application_state.semantic_layer_solo_active;
+        return application_state.semantic_layer_solo_active ? "Semantic-layer solo enabled."
+                                                            : "Semantic-layer solo disabled.";
+    }
     case WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER:
     case WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER:
     case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER: {
@@ -3680,6 +3701,7 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         if (!layer) {
             application_state.semantic_layer_target.reset();
             application_state.semantic_layer_paint_mode_active = false;
+            application_state.semantic_layer_solo_active = false;
             return "The selected semantic layer is no longer visible.";
         }
         if (layer->locked) {
@@ -3847,6 +3869,7 @@ auto invoke_application_command(
         (void)dispatch_editor_action(history, *state, cancel_editor_gesture_action_t{});
         application_state.note_paint_mode_active = false;
         application_state.semantic_layer_paint_mode_active = false;
+        application_state.semantic_layer_solo_active = false;
         return accept_editor_command(
             dispatch_editor_action(history, *state, select_editor_notes_action_t{}), status,
             "Selection, pending Compose gesture, and note-paint mode cleared.");
@@ -3996,6 +4019,7 @@ auto invoke_application_command(
     if (id == "semantic_layer.clear_target") {
         application_state.semantic_layer_target.reset();
         application_state.semantic_layer_paint_mode_active = false;
+        application_state.semantic_layer_solo_active = false;
         status = "Semantic-layer target cleared.";
         return {.accepted = true};
     }
@@ -4054,6 +4078,7 @@ void refresh_application_command_states(
         if (!target_valid) {
             application_state.semantic_layer_target.reset();
             application_state.semantic_layer_paint_mode_active = false;
+            application_state.semantic_layer_solo_active = false;
         } else if (target_layer->locked) {
             application_state.semantic_layer_paint_mode_active = false;
         }

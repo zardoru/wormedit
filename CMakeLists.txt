@@ -24,6 +24,7 @@ option(WORMEDIT_BUILD_APP "Build the SDL3 GPU application" ON)
 option(WORMEDIT_ENABLE_LUA "Build the pinned Lua runtime adapter" OFF)
 option(WORMEDIT_ENABLE_AUDIO_DECODER "Build the headless MP3/Ogg decoder target" ON)
 option(WORMEDIT_ENABLE_IMAGE_DECODER "Build the headless bounded static-image decoder target" ON)
+option(WORMEDIT_ENABLE_VIDEO_DECODER "Build the optional bounded FFmpeg video-frame decoder" ON)
 set(WORMEDIT_UI_BACKEND "nuklear" CACHE STRING "Editor UI backend (nuklear, imgui, or clay)")
 set_property(CACHE WORMEDIT_UI_BACKEND PROPERTY STRINGS nuklear imgui clay)
 if(NOT WORMEDIT_UI_BACKEND MATCHES "^(nuklear|imgui|clay)$")
@@ -132,6 +133,37 @@ if(WORMEDIT_ENABLE_IMAGE_DECODER)
         target_compile_options(wormedit_visual_decoder PRIVATE /W4 /permissive-)
     else()
         target_compile_options(wormedit_visual_decoder PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endif()
+
+if(WORMEDIT_ENABLE_VIDEO_DECODER)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(WORMEDIT_FFMPEG QUIET IMPORTED_TARGET
+            libavformat
+            libavcodec
+            libavutil
+            libswscale
+        )
+    endif()
+    if(TARGET PkgConfig::WORMEDIT_FFMPEG)
+        add_library(wormedit_video_decoder src/visual/video_decoder.cpp)
+        add_library(wormedit::video_decoder ALIAS wormedit_video_decoder)
+        target_include_directories(wormedit_video_decoder PUBLIC "${CMAKE_SOURCE_DIR}/include")
+        target_compile_features(wormedit_video_decoder PUBLIC cxx_std_20)
+        target_link_libraries(wormedit_video_decoder
+            PUBLIC wormedit::core
+            PRIVATE PkgConfig::WORMEDIT_FFMPEG
+        )
+        if(MSVC)
+            target_compile_options(wormedit_video_decoder PRIVATE /W4 /permissive-)
+        else()
+            target_compile_options(wormedit_video_decoder PRIVATE -Wall -Wextra -Wpedantic)
+        endif()
+    else()
+        message(STATUS
+            "FFmpeg development libraries were not found; optional video decoding is disabled"
+        )
     endif()
 endif()
 
@@ -253,6 +285,11 @@ if(WORMEDIT_BUILD_APP)
     if(WORMEDIT_ENABLE_IMAGE_DECODER)
         target_link_libraries(wormedit PRIVATE wormedit::visual_decoder)
         target_compile_definitions(wormedit PRIVATE WORMEDIT_HAS_IMAGE_DECODER=1)
+    endif()
+
+    if(TARGET wormedit_video_decoder)
+        target_link_libraries(wormedit PRIVATE wormedit::video_decoder)
+        target_compile_definitions(wormedit PRIVATE WORMEDIT_HAS_VIDEO_DECODER=1)
     endif()
 
     if(WORMEDIT_ENABLE_AUDIO_DECODER)

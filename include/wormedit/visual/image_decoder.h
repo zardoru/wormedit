@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/visual/visual_asset.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -35,15 +36,6 @@ struct image_decode_limits_t {
     std::uint32_t maximum_height{16'384};
     std::size_t maximum_pixels{64U * 1024U * 1024U};
     std::size_t maximum_rgba_bytes{256U * 1024U * 1024U};
-};
-
-struct resolved_visual_asset_t {
-    resource_id_t resource;
-    asset_id_t asset;
-    asset_kind_t kind{asset_kind_t::image};
-    std::filesystem::path path;
-    std::optional<std::uint32_t> declared_width;
-    std::optional<std::uint32_t> declared_height;
 };
 
 struct visual_asset_resolution_result_t {

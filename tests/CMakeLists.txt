@@ -147,6 +147,25 @@ if(WORMEDIT_ENABLE_IMAGE_DECODER)
     )
 endif()
 
+if(TARGET wormedit_video_decoder)
+    add_executable(wormedit_video_tests
+        visual/video_decoder_tests.cpp
+    )
+    target_compile_definitions(wormedit_video_tests
+        PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    )
+    target_link_libraries(wormedit_video_tests
+        PRIVATE
+            wormedit::video_decoder
+            Catch2::Catch2WithMain
+    )
+    catch_discover_tests(wormedit_video_tests
+        TEST_PREFIX "video."
+        PROPERTIES LABELS "unit;visual;video"
+        DISCOVERY_MODE PRE_TEST
+    )
+endif()
+
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_frontend_state_tests
         ui/nuklear_audio_state_tests.cpp

@@ -10,3 +10,7 @@ This file is the stable handoff entry point. Current implementation facts, decis
 - [Current code constraints](chart-editor-status/code-constraints.md)
 
 The canonical product and architecture plan begins at the [chart editor plan index](../docs/chart-editor-plan.md).
+
+Treat `resume.md` as the only cross-turn working set. Put durable facts in the
+single owning ledger and link to them; split a ledger by subsystem before
+duplicating its history into the milestone or resume checklist.

@@ -14,3 +14,7 @@ Status: reviewed implementation plan. This file is the stable entry point; each 
 - [Technical decisions, open questions, and immediate next work](chart-editor-plan/decisions.md)
 
 Load this index plus only the domain files relevant to the current task. Cross-domain requirements should link to their canonical owner rather than repeat normative text.
+
+Keep this entry point and each domain index short. When unrelated work would
+have to load the same large domain file, split it into named subdomains and
+extend the documentation inventory test instead of duplicating requirements.

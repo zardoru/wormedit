@@ -219,6 +219,8 @@ struct application_command_state_t {
     std::function<bool()> transport_active;
     std::function<std::string()> transport_play_pause;
     std::function<std::string(std::uint64_t)> transport_seek;
+    std::function<std::optional<std::int64_t>()> transport_audio_milliseconds;
+    std::function<std::string(std::int64_t)> transport_seek_audio_milliseconds;
     std::function<void()> transport_stop;
     std::optional<double> preview_playhead_absolute_row;
 };
@@ -812,6 +814,53 @@ auto has_beat_marker_navigation(const wormedit::chart_document_t& chart) -> bool
            std::ranges::any_of(chart.sections, [](const auto& section) {
                return section.anchor == wormedit::marker_anchor_t::beat;
            });
+}
+
+auto has_audio_marker_navigation(const wormedit::chart_document_t& chart) -> bool {
+    return std::ranges::any_of(chart.bookmarks,
+                               [](const auto& bookmark) {
+                                   return bookmark.anchor == wormedit::marker_anchor_t::audio_time;
+                               }) ||
+           std::ranges::any_of(chart.sections, [](const auto& section) {
+               return section.anchor == wormedit::marker_anchor_t::audio_time;
+           });
+}
+
+auto audio_frame_to_milliseconds(std::uint64_t frame, std::uint32_t sample_rate)
+    -> std::optional<std::int64_t> {
+    if (sample_rate == 0) {
+        return std::nullopt;
+    }
+    const auto whole_seconds = frame / sample_rate;
+    const auto remaining_frames = frame % sample_rate;
+    constexpr auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+    if (whole_seconds > maximum / 1'000) {
+        return std::nullopt;
+    }
+    const auto milliseconds = whole_seconds * 1'000 + remaining_frames * 1'000 / sample_rate;
+    if (milliseconds > maximum) {
+        return std::nullopt;
+    }
+    return static_cast<std::int64_t>(milliseconds);
+}
+
+auto audio_milliseconds_to_frame(std::int64_t milliseconds, std::uint32_t sample_rate)
+    -> std::uint64_t {
+    if (milliseconds <= 0 || sample_rate == 0) {
+        return 0;
+    }
+    const auto unsigned_milliseconds = static_cast<std::uint64_t>(milliseconds);
+    const auto whole_seconds = unsigned_milliseconds / 1'000;
+    const auto remainder = unsigned_milliseconds % 1'000;
+    if (whole_seconds > std::numeric_limits<std::uint64_t>::max() / sample_rate) {
+        return std::numeric_limits<std::uint64_t>::max();
+    }
+    const auto base = whole_seconds * sample_rate;
+    const auto fractional_frames = (remainder * sample_rate + 999) / 1'000;
+    if (fractional_frames > std::numeric_limits<std::uint64_t>::max() - base) {
+        return std::numeric_limits<std::uint64_t>::max();
+    }
+    return base + fractional_frames;
 }
 
 auto timing_stage_grid_step(const wormedit::chart_document_t& chart,
@@ -2181,6 +2230,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.semantic_layer_paint_mode_active = application_state.semantic_layer_paint_mode_active;
     view.selected_note_count = 0;
     view.beat_marker_navigation_available = false;
+    view.audio_marker_navigation_available = false;
+    view.audio_marker_transport_available = false;
     view.beat_bookmarks = flattened.compose_bookmark_storage.data();
     view.beat_bookmark_count = 0;
     view.beat_bookmarks_truncated = false;
@@ -2237,6 +2288,11 @@ void populate_compose_view(flattened_workspace_t& flattened,
     }
     const auto& chart = *chart_it;
     view.beat_marker_navigation_available = has_beat_marker_navigation(chart);
+    view.audio_marker_navigation_available = has_audio_marker_navigation(chart);
+    view.audio_marker_transport_available =
+        static_cast<bool>(application_state.transport_audio_milliseconds) &&
+        static_cast<bool>(application_state.transport_seek_audio_milliseconds) &&
+        application_state.transport_audio_milliseconds().has_value();
     if (application_state.semantic_layer_filter_chart != chart.id) {
         application_state.semantic_layer_filter_chart = chart.id;
         application_state.required_semantic_layer_filters.clear();
@@ -4437,6 +4493,35 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         }
         return deleting ? "Audio-time bookmark deleted." : "Audio-time bookmark updated.";
     }
+    case WORM_UI_COMPOSE_ACTION_NAVIGATE_PREVIOUS_AUDIO_MARKER:
+    case WORM_UI_COMPOSE_ACTION_NAVIGATE_NEXT_AUDIO_MARKER: {
+        if (!application_state.transport_audio_milliseconds ||
+            !application_state.transport_seek_audio_milliseconds) {
+            return "Start chart preview once before navigating audio-time markers.";
+        }
+        const auto cursor = application_state.transport_audio_milliseconds();
+        if (!cursor) {
+            return "Start chart preview once to compile its seekable timeline.";
+        }
+        const auto direction =
+            action.compose_action == WORM_UI_COMPOSE_ACTION_NAVIGATE_PREVIOUS_AUDIO_MARKER
+                ? marker_navigation_direction_t::previous
+                : marker_navigation_direction_t::next;
+        const auto marker = navigate_markers(history.document, history.document.revision,
+                                             state.chart, *cursor, direction);
+        if (marker.status == marker_navigation_status_t::no_result) {
+            return direction == marker_navigation_direction_t::previous
+                       ? "No previous audio-time bookmark or section boundary."
+                       : "No next audio-time bookmark or section boundary.";
+        }
+        if (!marker || !marker.item->audio_milliseconds) {
+            return marker.diagnostics.empty()
+                       ? "Audio-time marker navigation could not resolve an exact millisecond."
+                       : marker.diagnostics.front().message;
+        }
+        return application_state.transport_seek_audio_milliseconds(
+            *marker.item->audio_milliseconds);
+    }
     case WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION:
     case WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_SECTION:
     case WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION: {
@@ -5824,6 +5909,37 @@ int main(int argc, char** argv) {
         preview_resume_frame = frame;
         return "Chart preview moved to " +
                std::to_string(frame / wormedit::audio::output_sample_rate) + " seconds.";
+    };
+    application_command_state.transport_audio_milliseconds = [&]() -> std::optional<std::int64_t> {
+        if (!active_preview_schedule || !active_preview_chart ||
+            active_preview_revision != history.document.revision || !workspace.selected_chart ||
+            *workspace.selected_chart != *active_preview_chart) {
+            return std::nullopt;
+        }
+        const auto frame =
+            preview_session.active() ? preview_session.timeline_frame() : preview_resume_frame;
+        return audio_frame_to_milliseconds(frame, wormedit::audio::output_sample_rate);
+    };
+    application_command_state.transport_seek_audio_milliseconds =
+        [&](std::int64_t milliseconds) -> std::string {
+        if (!application_command_state.transport_audio_milliseconds()) {
+            return "Chart preview seek is unavailable for the selected chart.";
+        }
+        const auto unclamped =
+            audio_milliseconds_to_frame(milliseconds, wormedit::audio::output_sample_rate);
+        const auto frame = std::min(unclamped, preview_end_frame);
+        const auto seek_status = application_command_state.transport_seek(frame);
+        if (!seek_status.starts_with("Chart preview moved")) {
+            return seek_status;
+        }
+        if (milliseconds < 0) {
+            return "Audio marker precedes the source; chart preview clamped to 0 ms.";
+        }
+        if (unclamped > preview_end_frame) {
+            return "Audio marker follows the compiled timeline; chart preview clamped to its end.";
+        }
+        return "Chart preview moved to the audio marker at " + std::to_string(milliseconds) +
+               " ms.";
     };
     application_command_state.transport_stop = [&] {
         static_cast<void>(audition_output.stop());

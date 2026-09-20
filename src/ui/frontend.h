@@ -390,6 +390,8 @@ typedef struct WormUiComposeView {
     bool semantic_layer_paint_mode_active;
     size_t selected_note_count;
     bool beat_marker_navigation_available;
+    bool audio_marker_navigation_available;
+    bool audio_marker_transport_available;
     const WormUiComposeBookmarkView* beat_bookmarks;
     size_t beat_bookmark_count;
     bool beat_bookmarks_truncated;
@@ -754,6 +756,8 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION,
     WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_SECTION,
     WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION,
+    WORM_UI_COMPOSE_ACTION_NAVIGATE_PREVIOUS_AUDIO_MARKER,
+    WORM_UI_COMPOSE_ACTION_NAVIGATE_NEXT_AUDIO_MARKER,
     WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER,

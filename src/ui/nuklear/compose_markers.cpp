@@ -122,6 +122,38 @@ void synchronize(const WormUiComposeView& view) {
     state.document_revision = view.document_revision;
 }
 
+void render_audio_navigation(struct nk_context* context, const WormUiComposeView& view,
+                             WormUiWorkspaceAction& action) {
+    const auto enabled = view.scene_available && view.audio_marker_navigation_available &&
+                         view.audio_marker_transport_available;
+    nk_layout_row_begin(context, NK_DYNAMIC, 25, 3);
+    if (!enabled)
+        nk_widget_disable_begin(context);
+    nk_layout_row_push(context, 0.22F);
+    const auto previous_clicked = nk_button_label(context, "Previous audio marker");
+    nk_layout_row_push(context, 0.22F);
+    const auto next_clicked = nk_button_label(context, "Next audio marker");
+    if (!enabled)
+        nk_widget_disable_end(context);
+    nk_layout_row_push(context, 0.56F);
+    const auto* explanation = !view.audio_marker_navigation_available
+                                  ? "No audio-time bookmarks or section boundaries"
+                              : !view.audio_marker_transport_available
+                                  ? "Start preview once to compile its seekable timeline"
+                                  : "Navigate against the exact preview clock";
+    nk_label(context, explanation, NK_TEXT_LEFT);
+    nk_layout_row_end(context);
+
+    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
+        return;
+    }
+    if (previous_clicked) {
+        action.compose_action = WORM_UI_COMPOSE_ACTION_NAVIGATE_PREVIOUS_AUDIO_MARKER;
+    } else if (next_clicked) {
+        action.compose_action = WORM_UI_COMPOSE_ACTION_NAVIGATE_NEXT_AUDIO_MARKER;
+    }
+}
+
 void render_audio_bookmarks(struct nk_context* context, const WormUiComposeView& view,
                             WormUiWorkspaceAction& action) {
     const auto* selected = selected_audio_bookmark(view);
@@ -464,6 +496,7 @@ void worm_ui_nuklear_render_compose_markers(struct nk_context* context,
         return;
     }
     synchronize(*view);
+    render_audio_navigation(context, *view, *action);
     render_bookmarks(context, *view, *action);
     render_sections(context, *view, *action);
     render_audio_bookmarks(context, *view, *action);

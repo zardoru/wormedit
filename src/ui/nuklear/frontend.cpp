@@ -1414,6 +1414,16 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         if (!compose_rect_valid(&view->note_endpoints[index].bounds))
             return 0;
     }
+    for (size_t index = 0; index < view->bgm_lane_count; ++index) {
+        if (!compose_rect_valid(&view->bgm_lanes[index].bounds) ||
+            view->bgm_lanes[index].source_lane_id == 0)
+            return 0;
+    }
+    for (size_t index = 0; index < view->bgm_event_count; ++index) {
+        if (!compose_rect_valid(&view->bgm_events[index].bounds) ||
+            view->bgm_events[index].event_id == 0 || view->bgm_events[index].source_lane_id == 0)
+            return 0;
+    }
     for (size_t index = 0; index < view->semantic_layer_count; ++index) {
         if (!view->semantic_layers || view->semantic_layers[index].layer_id == 0 ||
             !view->semantic_layers[index].name) {
@@ -3684,6 +3694,17 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                 }
             }
         }
+        for (size_t lane_index = 0; lane_index < view->bgm_lane_count; ++lane_index) {
+            const auto& lane = view->bgm_lanes[lane_index];
+            const auto rect = compose_screen_rect(&lane.bounds, view, viewport);
+            if (rect.w <= 0.0f || rect.h <= 0.0f)
+                continue;
+            const auto alternate = (lane.source_order & 1U) != 0;
+            nk_fill_rect(canvas, rect, 0.0f,
+                         alternate ? nk_rgb(43, 38, 52) : nk_rgb(38, 34, 47));
+            nk_stroke_line(canvas, rect.x, rect.y, rect.x, rect.y + rect.h, 1.0f,
+                           nk_rgb(79, 67, 91));
+        }
         for (size_t index = 0; index < view->difference_count; ++index) {
             compose_fill_rect(canvas, &view->differences[index].bounds, view, viewport,
                               nk_rgba(229, 190, 58, 74));
@@ -3744,6 +3765,16 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                     nk_stroke_rect(canvas, rect, 0.0f, 2.0f, nk_rgb(255, 235, 148));
                 }
             }
+        }
+        for (size_t index = 0; index < view->bgm_event_count; ++index) {
+            const auto& event = view->bgm_events[index];
+            const auto rect = compose_screen_rect(&event.bounds, view, viewport);
+            if (rect.w <= 0.0f || rect.h <= 0.0f)
+                continue;
+            const auto fill = event.has_sound ? nk_rgb(177, 116, 207) : nk_rgb(102, 88, 113);
+            nk_fill_rect(canvas, rect, 1.5f, fill);
+            nk_stroke_rect(canvas, rect, 1.5f, event.selected ? 2.0f : 1.0f,
+                           event.selected ? nk_rgb(248, 224, 255) : nk_rgb(50, 35, 58));
         }
         for (size_t index = 0; index < view->note_endpoint_count; ++index) {
             const auto& note = view->note_endpoints[index];
@@ -3968,6 +3999,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
           view->compose.difference_count > WORM_UI_COMPOSE_DIFFERENCE_CAPACITY ||
           view->compose.hold_body_count > WORM_UI_COMPOSE_HOLD_CAPACITY ||
           view->compose.note_endpoint_count > WORM_UI_COMPOSE_NOTE_CAPACITY ||
+          view->compose.bgm_lane_count > WORM_UI_COMPOSE_BGM_LANE_CAPACITY ||
+          view->compose.bgm_event_count > WORM_UI_COMPOSE_BGM_EVENT_CAPACITY ||
           view->compose.semantic_layer_count > WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY ||
           view->compose.lane_key_binding_count > WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY ||
           view->compose.branch_row_count > WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY ||
@@ -3985,6 +4018,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
           (view->compose.difference_count != 0 && !view->compose.differences) ||
           (view->compose.hold_body_count != 0 && !view->compose.hold_bodies) ||
           (view->compose.note_endpoint_count != 0 && !view->compose.note_endpoints) ||
+          (view->compose.bgm_lane_count != 0 && !view->compose.bgm_lanes) ||
+          (view->compose.bgm_event_count != 0 && !view->compose.bgm_events) ||
           (view->compose.semantic_layer_count != 0 && !view->compose.semantic_layers) ||
           (view->compose.lane_key_binding_count != 0 && !view->compose.lane_key_bindings) ||
           (view->compose.branch_row_count != 0 && !view->compose.branch_rows) ||

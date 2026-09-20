@@ -131,6 +131,8 @@ struct flattened_workspace_t {
     std::vector<WormUiComposeDifferenceView> compose_difference_storage;
     std::vector<WormUiComposeHoldView> compose_hold_storage;
     std::vector<WormUiComposeNoteView> compose_note_storage;
+    std::vector<WormUiComposeBgmLaneView> compose_bgm_lane_storage;
+    std::vector<WormUiComposeBgmEventView> compose_bgm_event_storage;
     std::optional<WormUiComposeCursorView> compose_cursor_storage;
     std::array<WormUiComposeSemanticLayerView, WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY>
         compose_semantic_layer_storage{};
@@ -672,8 +674,17 @@ auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) 
 
 constexpr double compose_measure_rail_width_pixels{42.0};
 
-auto compose_playable_field_width(double viewport_width_pixels) -> double {
-    return std::max(1.0, viewport_width_pixels - compose_measure_rail_width_pixels);
+auto compose_bgm_pane_width(double viewport_width_pixels, bool has_bgm_lanes) -> double {
+    if (!has_bgm_lanes) return 0.0;
+    const auto preferred = std::clamp(viewport_width_pixels * 0.25, 96.0, 192.0);
+    return std::min(preferred,
+                    std::max(0.0, viewport_width_pixels - compose_measure_rail_width_pixels - 80.0));
+}
+
+auto compose_playable_field_width(double viewport_width_pixels, double bgm_pane_width_pixels)
+    -> double {
+    return std::max(1.0, viewport_width_pixels - compose_measure_rail_width_pixels -
+                             bgm_pane_width_pixels);
 }
 
 auto rational_as_long_double(wormedit::signed_rational_t value) -> long double {
@@ -2428,11 +2439,17 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.lane_key_bindings = flattened.compose_lane_key_storage.data();
     view.lane_key_binding_count = lane_key_binding_count;
 
+    const auto bgm_pane_width =
+        compose_bgm_pane_width(view.viewport_width_pixels, !chart.bgm_source_lanes.empty());
+    const auto playable_field_width =
+        compose_playable_field_width(view.viewport_width_pixels, bgm_pane_width);
     const auto composed = wormedit::make_editor_field_scene(
         chart, *cache.index, interaction_view,
         {.field_left_pixels = compose_measure_rail_width_pixels,
-         .field_width_pixels = compose_playable_field_width(view.viewport_width_pixels),
+         .field_width_pixels = playable_field_width,
          .split_stage_gutter_pixels = 14.0,
+         .bgm_pane_left_pixels = compose_measure_rail_width_pixels + playable_field_width,
+         .bgm_pane_width_pixels = bgm_pane_width,
          .solo_semantic_layer = application_state.semantic_layer_solo_active
                                     ? application_state.semantic_layer_target
                                     : std::nullopt,
@@ -2460,7 +2477,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
         const auto& band = bands[index];
         flattened.compose_band_storage.push_back(
             {.bounds = {compose_measure_rail_width_pixels, band.top_pixels,
-                        view.viewport_width_pixels, band.bottom_pixels},
+                        compose_measure_rail_width_pixels + playable_field_width,
+                        band.bottom_pixels},
              .split_stage = band.split_stage});
     }
     const auto& lanes = scene.lanes;
@@ -2565,6 +2583,30 @@ void populate_compose_view(flattened_workspace_t& flattened,
              .paint_erase_preview = endpoint.paint_erase_preview,
              .paint_invalid_preview = endpoint.paint_invalid_preview});
     }
+    const auto& bgm_lanes = scene.bgm_lanes;
+    const auto bgm_lane_count =
+        std::min(bgm_lanes.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BGM_LANE_CAPACITY));
+    flattened.compose_bgm_lane_storage.reserve(bgm_lane_count);
+    for (std::size_t index = 0; index < bgm_lane_count; ++index) {
+        const auto& lane = bgm_lanes[index];
+        flattened.compose_bgm_lane_storage.push_back({.bounds = convert_rect(lane.bounds),
+                                                      .source_lane_id = lane.source_lane.value,
+                                                      .source_order = lane.source_order});
+    }
+    const auto& bgm_events = scene.bgm_events;
+    const auto bgm_event_count =
+        std::min(bgm_events.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BGM_EVENT_CAPACITY));
+    flattened.compose_bgm_event_storage.reserve(bgm_event_count);
+    for (std::size_t index = 0; index < bgm_event_count; ++index) {
+        const auto& event = bgm_events[index];
+        flattened.compose_bgm_event_storage.push_back(
+            {.bounds = convert_rect(event.bounds),
+             .event_id = event.event.value,
+             .source_lane_id = event.source_lane.value,
+             .sound_id = event.sound ? event.sound->value : 0,
+             .has_sound = event.sound.has_value(),
+             .selected = event.selected});
+    }
     if (scene.cursor) {
         flattened.compose_cursor_storage = WormUiComposeCursorView{
             .bounds = convert_rect(scene.cursor->bounds),
@@ -2574,7 +2616,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.truncated = lane_key_bindings_truncated || band_count != bands.size() ||
                      lane_count != lanes.size() || line_count != lines.size() ||
                      difference_count != differences.size() || hold_count != holds.size() ||
-                     endpoint_count != endpoints.size();
+                     endpoint_count != endpoints.size() || bgm_lane_count != bgm_lanes.size() ||
+                     bgm_event_count != bgm_events.size();
     view.bands = flattened.compose_band_storage.data();
     view.band_count = flattened.compose_band_storage.size();
     view.lanes = flattened.compose_lane_storage.data();
@@ -2587,6 +2630,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.hold_body_count = flattened.compose_hold_storage.size();
     view.note_endpoints = flattened.compose_note_storage.data();
     view.note_endpoint_count = flattened.compose_note_storage.size();
+    view.bgm_lanes = flattened.compose_bgm_lane_storage.data();
+    view.bgm_lane_count = flattened.compose_bgm_lane_storage.size();
+    view.bgm_events = flattened.compose_bgm_event_storage.data();
+    view.bgm_event_count = flattened.compose_bgm_event_storage.size();
     view.cursor = flattened.compose_cursor_storage ? &*flattened.compose_cursor_storage : nullptr;
 }
 
@@ -2957,9 +3004,14 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         return "Compose viewport input exceeded its capacity; the active gesture was canceled.";
     }
+    const auto input_chart = std::ranges::find(history.document.charts, state.chart,
+                                               &chart_document_t::id);
+    const auto bgm_pane_width = compose_bgm_pane_width(
+        ui_action.compose_input_viewport_width_pixels,
+        input_chart != history.document.charts.end() && !input_chart->bgm_source_lanes.empty());
     const auto field_left_pixels = compose_measure_rail_width_pixels;
-    const auto field_width_pixels =
-        compose_playable_field_width(ui_action.compose_input_viewport_width_pixels);
+    const auto field_width_pixels = compose_playable_field_width(
+        ui_action.compose_input_viewport_width_pixels, bgm_pane_width);
 
     if (!ui_action.shortcut_window_focused) {
         viewport_input.focus_lost();

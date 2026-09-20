@@ -562,6 +562,7 @@ typedef struct WormUiComposeView {
     size_t grid_line_count;
     const WormUiTimingMarkerView* timing_markers;
     size_t timing_marker_count;
+    uint8_t timing_lane_visibility_mask;
     bool timing_stage_active;
     bool timing_stage_valid;
     WormUiTimingLaneKind timing_stage_lane;
@@ -997,6 +998,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_SCROLL_DOWN,
     WORM_UI_COMPOSE_ACTION_RESET_VIEW,
     WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE,
+    WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY,
     WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK,
@@ -1177,6 +1179,7 @@ typedef struct WormUiWorkspaceAction {
     char compose_marker_audio_begin[WORM_UI_COMPOSE_MARKER_TIME_BYTES];
     char compose_marker_audio_end[WORM_UI_COMPOSE_MARKER_TIME_BYTES];
     uint64_t compose_semantic_layer_id;
+    uint8_t compose_timing_lane;
     uint64_t compose_branch_id;
     int64_t compose_branch_value;
     char compose_semantic_layer_name[WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY];

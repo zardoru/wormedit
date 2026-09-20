@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -1027,6 +1028,40 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                               compose_body_height));
         if (nk_group_begin(context, "Compose inspector", NK_WINDOW_BORDER)) {
 
+    if (nk_tree_push(context, NK_TREE_TAB, "Timing lanes", NK_MINIMIZED)) {
+        constexpr std::array<const char*, 8> labels{"BPM", "SV", "SPD", "STP",
+                                                    "DLY", "WRP", "KIA", "ANC"};
+        for (std::size_t row = 0; row < 2; ++row) {
+            nk_layout_row_begin(context, NK_DYNAMIC, 24, 4);
+            for (std::size_t column = 0; column < 4; ++column) {
+                const auto lane = row * 4 + column;
+                const auto bit = static_cast<std::uint8_t>(1U << lane);
+                const auto visible = (view->timing_lane_visibility_mask & bit) != 0;
+                const auto editing_lane = timing_view->stage_active &&
+                                          static_cast<std::size_t>(timing_view->stage_lane) == lane;
+                char label[16]{};
+                (void)snprintf(label, sizeof(label), "%s: %s", labels[lane],
+                               visible ? "On" : "Off");
+                nk_layout_row_push(context, 0.25f);
+                const auto disabled = !view->scene_available || (editing_lane && visible);
+                if (disabled) {
+                    nk_widget_disable_begin(context);
+                }
+                const auto clicked = nk_button_label(context, label);
+                if (disabled) {
+                    nk_widget_disable_end(context);
+                }
+                if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                    action->compose_timing_lane = static_cast<std::uint8_t>(lane);
+                    action->compose_action =
+                        WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY;
+                }
+            }
+            nk_layout_row_end(context);
+        }
+        nk_tree_pop(context);
+    }
+
     if (timing_view->stage_active &&
         nk_tree_push(context, NK_TREE_TAB, "Timing event", NK_MAXIMIZED)) {
         worm_ui_nuklear_render_timing_stage_editor(context, timing_view, action);
@@ -1581,19 +1616,32 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             const auto click_y = (static_cast<double>(pointer.y) - viewport.y) *
                                  view->viewport_height_pixels / viewport.h;
             constexpr double measure_rail_width = 42.0;
-            constexpr std::size_t timing_lane_count = 8;
             if (!timing_view->stage_active && click_x >= measure_rail_width &&
                 click_x < note_field_left &&
                 action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE) {
-                const auto lane_width =
-                    (note_field_left - measure_rail_width) / timing_lane_count;
-                if (lane_width > 0.0) {
-                    const auto lane_index = std::min(
+                const auto visible_lane_count = static_cast<std::size_t>(
+                    std::popcount(view->timing_lane_visibility_mask));
+                const auto lane_width = visible_lane_count == 0
+                                            ? 0.0
+                                            : (note_field_left - measure_rail_width) /
+                                                  visible_lane_count;
+                if (lane_width > 0.0 && visible_lane_count != 0) {
+                    const auto visible_slot = std::min(
                         static_cast<std::size_t>((click_x - measure_rail_width) / lane_width),
-                        timing_lane_count - 1);
+                        visible_lane_count - 1);
+                    std::size_t lane_index = 0;
+                    for (std::size_t candidate = 0, slot = 0; candidate < 8; ++candidate) {
+                        if ((view->timing_lane_visibility_mask & (1U << candidate)) == 0) {
+                            continue;
+                        }
+                        if (slot++ == visible_slot) {
+                            lane_index = candidate;
+                            break;
+                        }
+                    }
                     uint64_t existing_object_id = 0;
                     auto nearest_distance = std::numeric_limits<double>::max();
-                    const auto lane_left = measure_rail_width + lane_width * lane_index;
+                    const auto lane_left = measure_rail_width + lane_width * visible_slot;
                     const auto marker_inner_left = lane_left + 2.0;
                     const auto marker_inner_width = std::max(0.0, lane_width - 4.0);
                     const auto hit_tolerance = 7.0 * view->viewport_height_pixels / viewport.h;
@@ -1861,12 +1909,22 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             viewport.x + static_cast<float>(view->playable_field_left_pixels) * viewport.w /
                              static_cast<float>(view->viewport_width_pixels);
         const auto timing_width = std::max(0.0f, field_left - timing_left);
-        const auto timing_lane_width = timing_width / static_cast<float>(timing_labels.size());
+        const auto visible_timing_lane_count =
+            static_cast<std::size_t>(std::popcount(view->timing_lane_visibility_mask));
+        const auto timing_lane_width = visible_timing_lane_count == 0
+                                           ? 0.0f
+                                           : timing_width /
+                                                 static_cast<float>(visible_timing_lane_count);
         std::array<struct nk_rect, 8> timing_lanes{};
+        std::size_t visible_timing_lane = 0;
         for (size_t index = 0; index < timing_lanes.size(); ++index) {
+            if ((view->timing_lane_visibility_mask & (1U << index)) == 0) {
+                continue;
+            }
             timing_lanes[index] =
-                nk_rect(timing_left + timing_lane_width * static_cast<float>(index), viewport.y,
-                        timing_lane_width, viewport.h);
+                nk_rect(timing_left +
+                            timing_lane_width * static_cast<float>(visible_timing_lane++),
+                        viewport.y, timing_lane_width, viewport.h);
             nk_fill_rect(canvas, timing_lanes[index], 0.0f,
                          (index & 1U) != 0 ? nk_rgb(25, 29, 38) : nk_rgb(28, 32, 42));
             nk_stroke_line(canvas, timing_lanes[index].x, viewport.y, timing_lanes[index].x,

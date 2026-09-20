@@ -60,6 +60,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <charconv>
 #include <chrono>
 #include <cmath>
@@ -317,6 +318,7 @@ struct application_command_state_t {
     // data; an active gesture keeps its captured snap until it is resolved.
     std::unordered_map<std::uint64_t, std::uint64_t> requested_snap_denominators;
     std::unordered_map<std::uint64_t, double> bgm_horizontal_scroll_pixels;
+    std::uint8_t compose_timing_lane_visibility_mask{0xff};
     bool player_preview_visible{};
     wormedit::player_preview_skin_t player_preview_skin{wormedit::player_preview_skin_t::neutral};
     std::function<bool()> transport_active;
@@ -941,9 +943,10 @@ auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::
 }
 
 auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_count,
-                               bool has_bgm_lanes) -> compose_horizontal_layout_t {
+                               bool has_bgm_lanes, std::size_t visible_timing_lane_count)
+    -> compose_horizontal_layout_t {
     const auto desired_left = compose_measure_rail_width_pixels +
-                              compose_timing_lane_width_pixels * compose_timing_lane_count;
+                              compose_timing_lane_width_pixels * visible_timing_lane_count;
     const auto field_left =
         std::clamp(viewport_width_pixels - compose_minimum_playable_field_width_pixels,
                    compose_measure_rail_width_pixels, desired_left);
@@ -2455,6 +2458,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.timing_stage_valid = false;
     view.timing_stage_lane = WORM_UI_TIMING_LANE_BPM;
     view.timing_stage_y_pixels = 0.0;
+    view.timing_lane_visibility_mask = application_state.compose_timing_lane_visibility_mask;
     view.selected_note_count = 0;
     view.beat_marker_navigation_available = false;
     view.audio_marker_navigation_available = false;
@@ -3093,7 +3097,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
 
     const auto horizontal_layout =
         compose_horizontal_layout(view.viewport_width_pixels, maximum_layout_lane_count(chart),
-                                  !chart.bgm_source_lanes.empty());
+                                  !chart.bgm_source_lanes.empty(),
+                                  std::popcount(
+                                      application_state.compose_timing_lane_visibility_mask));
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
     const auto playable_field_width = horizontal_layout.playable_field_width_pixels;
     const auto field_left_pixels = horizontal_layout.field_left_pixels;
@@ -3871,7 +3877,8 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
     const auto horizontal_layout = compose_horizontal_layout(
         ui_action.compose_input_viewport_width_pixels,
         input_chart == history.document.charts.end() ? 0 : maximum_layout_lane_count(*input_chart),
-        bgm_lane_count != 0);
+        bgm_lane_count != 0,
+        std::popcount(application_state.compose_timing_lane_visibility_mask));
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
     const auto field_left_pixels = horizontal_layout.field_left_pixels;
     const auto field_width_pixels = horizontal_layout.playable_field_width_pixels;
@@ -4676,6 +4683,19 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         status = application_state.note_paint_mode_active ? "Note-paint mode enabled."
                                                           : "Note-paint mode disabled.";
         return status;
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY: {
+        if (action.compose_timing_lane >= compose_timing_lane_count) {
+            return "The requested timing lane does not exist.";
+        }
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before changing timing lanes.";
+        }
+        const auto bit = static_cast<std::uint8_t>(1U << action.compose_timing_lane);
+        application_state.compose_timing_lane_visibility_mask ^= bit;
+        return (application_state.compose_timing_lane_visibility_mask & bit) != 0
+                   ? "Compose timing lane shown."
+                   : "Compose timing lane hidden.";
+    }
     case WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL:
     case WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL: {
         if (editor_interaction_has_pending_gesture(state)) {

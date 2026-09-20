@@ -2,17 +2,18 @@
 
 #include <miniaudio.h>
 
+#include <algorithm>
 #include <limits>
 #include <mutex>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace wormedit::audio {
 namespace {
 
-auto decoder_init_file(const std::filesystem::path& path,
-                      const ma_decoder_config* config,
-                      ma_decoder* decoder) -> ma_result {
+auto decoder_init_file(const std::filesystem::path& path, const ma_decoder_config* config,
+                       ma_decoder* decoder) -> ma_result {
 #if defined(_WIN32)
     const auto native_path = path.wstring();
     return ma_decoder_init_file_w(native_path.c_str(), config, decoder);
@@ -34,6 +35,8 @@ struct decoder_t::impl_t {
     ma_decoder decoder{};
     stream_info_t stream_info{};
     bool initialized{};
+    std::vector<float> memory_pcm;
+    std::uint64_t memory_cursor{};
     mutable std::mutex mutex;
 
     ~impl_t() {
@@ -48,8 +51,7 @@ decoder_t::~decoder_t() = default;
 decoder_t::decoder_t(decoder_t&&) noexcept = default;
 auto decoder_t::operator=(decoder_t&&) noexcept -> decoder_t& = default;
 
-auto decoder_t::open(const std::filesystem::path& path,
-                     std::string* error_message) -> bool {
+auto decoder_t::open(const std::filesystem::path& path, std::string* error_message) -> bool {
     close();
     if (error_message != nullptr) {
         error_message->clear();
@@ -62,9 +64,8 @@ auto decoder_t::open(const std::filesystem::path& path,
     ma_decoder source_decoder{};
     auto result = decoder_init_file(path, nullptr, &source_decoder);
     if (result != MA_SUCCESS) {
-        set_error(error_message,
-                  "could not open audio source (miniaudio result " +
-                      std::to_string(static_cast<int>(result)) + ")");
+        set_error(error_message, "could not open audio source (miniaudio result " +
+                                     std::to_string(static_cast<int>(result)) + ")");
         return false;
     }
 
@@ -72,8 +73,8 @@ auto decoder_t::open(const std::filesystem::path& path,
     ma_uint32 source_channels{};
     ma_uint32 source_rate{};
     ma_uint64 source_frames{};
-    result = ma_decoder_get_data_format(&source_decoder, nullptr,
-                                        &source_channels, &source_rate, nullptr, 0);
+    result = ma_decoder_get_data_format(&source_decoder, nullptr, &source_channels, &source_rate,
+                                        nullptr, 0);
     if (result == MA_SUCCESS) {
         result = ma_decoder_get_length_in_pcm_frames(&source_decoder, &source_frames);
     }
@@ -85,15 +86,14 @@ auto decoder_t::open(const std::filesystem::path& path,
     }
     ma_decoder_uninit(&source_decoder);
     if (result != MA_SUCCESS || source_rate == 0 || source_channels == 0) {
-        set_error(error_message,
-                  "could not inspect audio source (miniaudio result " +
-                      std::to_string(static_cast<int>(result)) + ")");
+        set_error(error_message, "could not inspect audio source (miniaudio result " +
+                                     std::to_string(static_cast<int>(result)) + ")");
         return false;
     }
 
     auto candidate = std::make_unique<impl_t>();
-    const auto config = ma_decoder_config_init(ma_format_f32, output_channel_count,
-                                                output_sample_rate);
+    const auto config =
+        ma_decoder_config_init(ma_format_f32, output_channel_count, output_sample_rate);
     result = decoder_init_file(path, &config, &candidate->decoder);
     if (result != MA_SUCCESS) {
         set_error(error_message,
@@ -106,13 +106,35 @@ auto decoder_t::open(const std::filesystem::path& path,
     ma_uint64 output_frames{};
     result = ma_decoder_get_length_in_pcm_frames(&candidate->decoder, &output_frames);
     if (result != MA_SUCCESS) {
-        set_error(error_message,
-                  "could not determine normalized audio length (miniaudio result " +
-                      std::to_string(static_cast<int>(result)) + ")");
+        set_error(error_message, "could not determine normalized audio length (miniaudio result " +
+                                     std::to_string(static_cast<int>(result)) + ")");
         return false;
     }
     stream_info.output_frame_count = output_frames;
     candidate->stream_info = stream_info;
+    impl_ = std::move(candidate);
+    return true;
+}
+
+auto decoder_t::open_pcm(std::span<const float> interleaved_stereo, std::string* error_message)
+    -> bool {
+    close();
+    if (error_message != nullptr)
+        error_message->clear();
+    if (interleaved_stereo.empty() || interleaved_stereo.size() % output_channel_count != 0) {
+        set_error(error_message, "generated PCM must contain complete nonempty stereo frames");
+        return false;
+    }
+    auto candidate = std::make_unique<impl_t>();
+    candidate->memory_pcm.assign(interleaved_stereo.begin(), interleaved_stereo.end());
+    const auto frames = candidate->memory_pcm.size() / output_channel_count;
+    candidate->stream_info = {.source_sample_rate = output_sample_rate,
+                              .source_channel_count = output_channel_count,
+                              .source_frame_count = frames,
+                              .output_sample_rate = output_sample_rate,
+                              .output_channel_count = output_channel_count,
+                              .output_frame_count = frames,
+                              .seekable = true};
     impl_ = std::move(candidate);
     return true;
 }
@@ -138,23 +160,27 @@ auto decoder_t::seek(std::uint64_t output_frame) noexcept -> bool {
         return false;
     }
     const std::scoped_lock lock(impl_->mutex);
-    if (!impl_->stream_info.seekable ||
-        output_frame > impl_->stream_info.output_frame_count) {
+    if (!impl_->memory_pcm.empty()) {
+        if (output_frame > impl_->stream_info.output_frame_count)
+            return false;
+        impl_->memory_cursor = output_frame;
+        return true;
+    }
+    if (!impl_->stream_info.seekable || output_frame > impl_->stream_info.output_frame_count) {
         return false;
     }
     return ma_decoder_seek_to_pcm_frame(&impl_->decoder, output_frame) == MA_SUCCESS;
 }
 
-auto decoder_t::read(std::span<float> interleaved_stereo,
-                     std::size_t requested_frames) noexcept -> read_result_t {
+auto decoder_t::read(std::span<float> interleaved_stereo, std::size_t requested_frames) noexcept
+    -> read_result_t {
     if (!impl_) {
         return {read_status_t::not_open, 0};
     }
     if (requested_frames > maximum_read_frames) {
         return {read_status_t::request_too_large, 0};
     }
-    if (requested_frames > std::numeric_limits<std::size_t>::max() /
-                               output_channel_count ||
+    if (requested_frames > std::numeric_limits<std::size_t>::max() / output_channel_count ||
         interleaved_stereo.size() < requested_frames * output_channel_count) {
         return {read_status_t::insufficient_output_space, 0};
     }
@@ -163,9 +189,20 @@ auto decoder_t::read(std::span<float> interleaved_stereo,
     }
 
     const std::scoped_lock lock(impl_->mutex);
+    if (!impl_->memory_pcm.empty()) {
+        const auto remaining = impl_->stream_info.output_frame_count - impl_->memory_cursor;
+        const auto frames =
+            static_cast<std::size_t>(std::min<std::uint64_t>(remaining, requested_frames));
+        const auto begin = static_cast<std::size_t>(impl_->memory_cursor) * output_channel_count;
+        std::copy_n(impl_->memory_pcm.begin() + static_cast<std::ptrdiff_t>(begin),
+                    frames * output_channel_count, interleaved_stereo.begin());
+        impl_->memory_cursor += frames;
+        return {frames == requested_frames ? read_status_t::success : read_status_t::end_of_stream,
+                frames};
+    }
     ma_uint64 frames_read{};
-    const auto result = ma_decoder_read_pcm_frames(
-        &impl_->decoder, interleaved_stereo.data(), requested_frames, &frames_read);
+    const auto result = ma_decoder_read_pcm_frames(&impl_->decoder, interleaved_stereo.data(),
+                                                   requested_frames, &frames_read);
     if (frames_read > requested_frames) {
         return {read_status_t::decode_error, 0};
     }
@@ -178,8 +215,7 @@ auto decoder_t::read(std::span<float> interleaved_stereo,
     return {read_status_t::decode_error, static_cast<std::size_t>(frames_read)};
 }
 
-auto decoder_t::read_at(std::uint64_t output_frame,
-                        std::span<float> interleaved_stereo,
+auto decoder_t::read_at(std::uint64_t output_frame, std::span<float> interleaved_stereo,
                         std::size_t requested_frames) noexcept -> read_result_t {
     if (!impl_) {
         return {read_status_t::not_open, 0};
@@ -187,15 +223,25 @@ auto decoder_t::read_at(std::uint64_t output_frame,
     if (requested_frames > maximum_read_frames) {
         return {read_status_t::request_too_large, 0};
     }
-    if (requested_frames > std::numeric_limits<std::size_t>::max() /
-                               output_channel_count ||
+    if (requested_frames > std::numeric_limits<std::size_t>::max() / output_channel_count ||
         interleaved_stereo.size() < requested_frames * output_channel_count) {
         return {read_status_t::insufficient_output_space, 0};
     }
 
     const std::scoped_lock lock(impl_->mutex);
-    if (!impl_->stream_info.seekable ||
-        output_frame > impl_->stream_info.output_frame_count ||
+    if (!impl_->memory_pcm.empty()) {
+        if (output_frame > impl_->stream_info.output_frame_count)
+            return {read_status_t::seek_error, 0};
+        const auto remaining = impl_->stream_info.output_frame_count - output_frame;
+        const auto frames =
+            static_cast<std::size_t>(std::min<std::uint64_t>(remaining, requested_frames));
+        const auto begin = static_cast<std::size_t>(output_frame) * output_channel_count;
+        std::copy_n(impl_->memory_pcm.begin() + static_cast<std::ptrdiff_t>(begin),
+                    frames * output_channel_count, interleaved_stereo.begin());
+        return {frames == requested_frames ? read_status_t::success : read_status_t::end_of_stream,
+                frames};
+    }
+    if (!impl_->stream_info.seekable || output_frame > impl_->stream_info.output_frame_count ||
         ma_decoder_seek_to_pcm_frame(&impl_->decoder, output_frame) != MA_SUCCESS) {
         return {read_status_t::seek_error, 0};
     }
@@ -203,8 +249,8 @@ auto decoder_t::read_at(std::uint64_t output_frame,
         return {read_status_t::success, 0};
     }
     ma_uint64 frames_read{};
-    const auto result = ma_decoder_read_pcm_frames(
-        &impl_->decoder, interleaved_stereo.data(), requested_frames, &frames_read);
+    const auto result = ma_decoder_read_pcm_frames(&impl_->decoder, interleaved_stereo.data(),
+                                                   requested_frames, &frames_read);
     if (frames_read > requested_frames) {
         return {read_status_t::decode_error, 0};
     }

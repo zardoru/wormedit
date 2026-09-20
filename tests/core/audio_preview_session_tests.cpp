@@ -110,3 +110,44 @@ TEST_CASE("preview session seek replaces generations and hard Stop silences late
     CHECK(rendered.status == preview_session_render_status_t::stopped);
     CHECK(std::ranges::all_of(output, [](float sample) { return sample == 0.0F; }));
 }
+
+TEST_CASE("preview session mixes generated metronome sources on the chart timeline",
+          "[unit][audio][preview-session][metronome]") {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    std::vector<float> click(64 * output_channel_count, 0.25F);
+    const auto generated = sources.register_generated_source({
+        .source = {"internal:metronome:measure", "chart-session-v1"},
+        .interleaved_stereo = std::move(click),
+    });
+    REQUIRE(generated);
+
+    decoded_block_cache_t cache;
+    transport_t transport{cache, 2};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.metronome = {{.sample_frame = 32,
+                           .measure = measure_id_t{1},
+                           .pulse = 0,
+                           .accent = metronome_accent_t::measure}};
+    const preview_metronome_source_binding_t metronome{
+        .accent = metronome_accent_t::measure,
+        .voice = {.source = generated.binding->source, .frame_count = 64},
+    };
+
+    const auto started =
+        session.start(schedule, {}, std::span{&metronome, 1}, 0, {.lookahead_frames = 96});
+    REQUIRE(started);
+    REQUIRE(started.materialize.has_value());
+    CHECK(started.materialize->scheduled_events == 1);
+
+    std::vector<float> output(96 * output_channel_count);
+    const auto rendered = session.render(output);
+    CHECK(rendered.status == preview_session_render_status_t::complete);
+    CHECK(std::ranges::all_of(output.begin(), output.begin() + 32 * output_channel_count,
+                              [](float sample) { return sample == 0.0F; }));
+    CHECK(std::ranges::all_of(output.begin() + 32 * output_channel_count, output.end(),
+                              [](float sample) { return sample == 0.25F; }));
+}

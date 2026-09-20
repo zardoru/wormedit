@@ -31,6 +31,11 @@ struct decoded_source_registration_t {
     audio_source_identity_t source;
 };
 
+struct generated_source_registration_t {
+    audio_source_identity_t source;
+    std::vector<float> interleaved_stereo;
+};
+
 enum class source_registration_status_t {
     registered,
     invalid_request,
@@ -60,6 +65,8 @@ class decoded_source_registry_t {
         : maximum_sources_(maximum_sources) {}
 
     [[nodiscard]] auto register_source(decoded_source_registration_t registration)
+        -> source_registration_result_t;
+    [[nodiscard]] auto register_generated_source(generated_source_registration_t registration)
         -> source_registration_result_t;
     [[nodiscard]] auto remove(asset_id_t asset) -> bool;
     void clear();

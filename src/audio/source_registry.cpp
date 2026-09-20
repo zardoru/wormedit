@@ -80,6 +80,52 @@ auto decoded_source_registry_t::register_source(decoded_source_registration_t re
     return {.status = source_registration_status_t::registered, .binding = binding, .message = {}};
 }
 
+auto decoded_source_registry_t::register_generated_source(
+    generated_source_registration_t registration) -> source_registration_result_t {
+    if (!valid_source(registration.source) || registration.interleaved_stereo.empty() ||
+        registration.interleaved_stereo.size() % output_channel_count != 0) {
+        return {.status = source_registration_status_t::invalid_request,
+                .binding = std::nullopt,
+                .message = "generated decoded source registration is incomplete"};
+    }
+    auto candidate = std::make_shared<entry_t>();
+    std::string message;
+    if (!candidate->decoder.open_pcm(registration.interleaved_stereo, &message)) {
+        return {.status = source_registration_status_t::open_failed,
+                .binding = std::nullopt,
+                .message = std::move(message)};
+    }
+    const auto info = candidate->decoder.info();
+    if (!info.has_value()) {
+        return {.status = source_registration_status_t::open_failed,
+                .binding = std::nullopt,
+                .message = "generated decoded source metadata is unavailable"};
+    }
+    candidate->binding = {.asset = {},
+                          .source = std::move(registration.source),
+                          .source_sample_rate = output_sample_rate,
+                          .source_frame_count = info->source_frame_count,
+                          .output_sample_rate = output_sample_rate,
+                          .output_frame_count = info->output_frame_count};
+
+    const std::scoped_lock lock(mutex_);
+    if (std::ranges::any_of(entries_, [&](const auto& entry) {
+            return entry->binding.source == candidate->binding.source;
+        })) {
+        return {.status = source_registration_status_t::duplicate_source,
+                .binding = std::nullopt,
+                .message = "decoded source identity is already registered"};
+    }
+    if (entries_.size() >= maximum_sources_) {
+        return {.status = source_registration_status_t::capacity_exceeded,
+                .binding = std::nullopt,
+                .message = "decoded source registry capacity is exhausted"};
+    }
+    const auto binding = candidate->binding;
+    entries_.push_back(std::move(candidate));
+    return {.status = source_registration_status_t::registered, .binding = binding, .message = {}};
+}
+
 auto decoded_source_registry_t::remove(asset_id_t asset) -> bool {
     const std::scoped_lock lock(mutex_);
     const auto old_size = entries_.size();
@@ -97,7 +143,8 @@ auto decoded_source_registry_t::bindings() const -> std::vector<decoded_source_b
     std::vector<decoded_source_binding_t> result;
     result.reserve(entries_.size());
     for (const auto& entry : entries_) {
-        result.push_back(entry->binding);
+        if (entry->binding.asset)
+            result.push_back(entry->binding);
     }
     return result;
 }

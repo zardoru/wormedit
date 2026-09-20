@@ -40,7 +40,7 @@ struct read_result_t {
 };
 
 class decoder_t {
-public:
+  public:
     decoder_t();
     ~decoder_t();
 
@@ -49,8 +49,12 @@ public:
     decoder_t(decoder_t&&) noexcept;
     auto operator=(decoder_t&&) noexcept -> decoder_t&;
 
-    [[nodiscard]] auto open(const std::filesystem::path& path,
-                            std::string* error_message = nullptr) -> bool;
+    [[nodiscard]] auto open(const std::filesystem::path& path, std::string* error_message = nullptr)
+        -> bool;
+    // Owns a normalized 44.1 kHz stereo PCM copy for generated internal
+    // sources such as metronome clicks.
+    [[nodiscard]] auto open_pcm(std::span<const float> interleaved_stereo,
+                                std::string* error_message = nullptr) -> bool;
     void close() noexcept;
 
     [[nodiscard]] auto is_open() const noexcept -> bool;
@@ -60,11 +64,10 @@ public:
                             std::size_t requested_frames) noexcept -> read_result_t;
     // Seeks and reads under one decoder lock so independent background jobs
     // cannot interleave positions on a shared decoder instance.
-    [[nodiscard]] auto read_at(std::uint64_t output_frame,
-                               std::span<float> interleaved_stereo,
+    [[nodiscard]] auto read_at(std::uint64_t output_frame, std::span<float> interleaved_stereo,
                                std::size_t requested_frames) noexcept -> read_result_t;
 
-private:
+  private:
     struct impl_t;
     std::unique_ptr<impl_t> impl_;
 };

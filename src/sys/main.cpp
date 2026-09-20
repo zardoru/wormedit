@@ -4869,6 +4869,7 @@ int main(int argc, char** argv) {
     std::optional<wormedit::preview_schedule_t> active_preview_schedule;
     std::optional<wormedit::timing_index_t> active_preview_timing;
     std::vector<wormedit::audio::preview_object_source_binding_t> active_preview_bindings;
+    std::vector<wormedit::audio::preview_metronome_source_binding_t> preview_metronome_bindings;
     std::optional<wormedit::chart_id_t> active_preview_chart;
     std::uint64_t active_preview_revision{};
     std::uint64_t preview_resume_frame{};
@@ -4902,6 +4903,7 @@ int main(int argc, char** argv) {
             active_preview_chart.reset();
         }
         audition_sources.clear();
+        preview_metronome_bindings.clear();
         ++audition_source_generation;
         std::size_t unavailable{};
         for (const auto& asset : history.document.audio_assets) {
@@ -4927,6 +4929,41 @@ int main(int argc, char** argv) {
             if (!registered) {
                 ++unavailable;
             }
+        }
+        constexpr std::array click_frequencies{1'100.0, 1'500.0, 1'900.0};
+        constexpr std::array click_gains{0.16F, 0.23F, 0.31F};
+        constexpr auto click_frames = wormedit::audio::output_sample_rate * 45U / 1'000U;
+        constexpr auto pi = 3.14159265358979323846;
+        for (std::size_t accent = 0; accent < click_frequencies.size(); ++accent) {
+            std::vector<float> pcm(click_frames * wormedit::audio::output_channel_count);
+            for (std::size_t frame = 0; frame < click_frames; ++frame) {
+                const auto seconds = static_cast<double>(frame) /
+                                     static_cast<double>(wormedit::audio::output_sample_rate);
+                const auto envelope = std::exp(-90.0 * seconds);
+                const auto sample =
+                    click_gains[accent] *
+                    static_cast<float>(envelope *
+                                       std::sin(2.0 * pi * click_frequencies[accent] * seconds));
+                const auto first_sample = frame * wormedit::audio::output_channel_count;
+                pcm[first_sample] = sample;
+                pcm[first_sample + 1] = sample;
+            }
+            const auto generated = audition_sources.register_generated_source({
+                .source = {"internal:metronome:" + std::to_string(accent),
+                           "binding:" + std::to_string(audition_source_generation)},
+                .interleaved_stereo = std::move(pcm),
+            });
+            if (!generated) {
+                preview_metronome_bindings.clear();
+                break;
+            }
+            preview_metronome_bindings.push_back({
+                .accent = static_cast<wormedit::metronome_accent_t>(accent),
+                .voice = {.source = generated.binding->source,
+                          .source_start_frame = 0,
+                          .frame_count = generated.binding->output_frame_count,
+                          .gain = 1.0F},
+            });
         }
         audition_source_project = history.document.id;
         audition_asset_inventory = std::move(next_inventory);
@@ -4987,7 +5024,8 @@ int main(int argc, char** argv) {
                                                   : timing.diagnostics.front().message;
             const auto schedule = wormedit::build_preview_schedule(
                 *chart, *timing.index,
-                {.sample_rate = wormedit::audio::output_sample_rate, .include_metronome = false});
+                {.sample_rate = wormedit::audio::output_sample_rate,
+                 .include_metronome = !preview_metronome_bindings.empty()});
             if (!schedule)
                 return schedule.diagnostics.empty() ? "Chart preview could not be compiled."
                                                     : schedule.diagnostics.front().message;
@@ -5023,11 +5061,22 @@ int main(int argc, char** argv) {
             };
             include_event_ends(active_preview_schedule->playable);
             include_event_ends(active_preview_schedule->bgm);
+            for (const auto& event : active_preview_schedule->metronome) {
+                const auto binding =
+                    std::ranges::find(preview_metronome_bindings, event.accent,
+                                      &wormedit::audio::preview_metronome_source_binding_t::accent);
+                if (binding != preview_metronome_bindings.end() &&
+                    binding->voice.frame_count <=
+                        std::numeric_limits<std::uint64_t>::max() - event.sample_frame) {
+                    preview_end_frame = std::max(preview_end_frame,
+                                                 event.sample_frame + binding->voice.frame_count);
+                }
+            }
         }
 
         static_cast<void>(audition_output.stop());
         const auto started = preview_output.start(*active_preview_schedule, active_preview_bindings,
-                                                  {}, preview_resume_frame);
+                                                  preview_metronome_bindings, preview_resume_frame);
         if (!started)
             return started.message.empty() ? "Chart preview could not start." : started.message;
         preview_paused = false;

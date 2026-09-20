@@ -126,3 +126,34 @@ TEST_CASE("registered decoder bindings prepare a revision-bound semantic object 
     CHECK(prepared.prepared->clips.front().frame_count == added.binding->output_frame_count);
     CHECK_FALSE(bridge.session_token().has_value());
 }
+
+TEST_CASE("generated decoded sources feed transport blocks without becoming project bindings",
+          "[unit][audio][source-registry][generated]") {
+    using namespace wormedit::audio;
+    decoded_source_registry_t registry;
+    const std::vector<float> pcm{0.25F, -0.25F, 0.5F, -0.5F, 0.75F, -0.75F};
+    const auto added = registry.register_generated_source(
+        {.source = {"internal:metronome", "click:v1"}, .interleaved_stereo = pcm});
+    REQUIRE(added);
+    CHECK_FALSE(added.binding->asset);
+    CHECK(added.binding->output_frame_count == 3);
+    CHECK(registry.bindings().empty());
+
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    const auto token = transport.start();
+    REQUIRE(token.has_value());
+    const audio_block_key_t key{added.binding->source, 0};
+    const auto decoded = registry.decode_block(transport, *token, key);
+    REQUIRE(decoded.status == block_decode_status_t::decoded);
+    CHECK(decoded.frames == 3);
+    REQUIRE(cache.with_block(key, [&](const decoded_audio_block_t& block) {
+        CHECK(block.frame_count == 3);
+        CHECK(block.interleaved_stereo == pcm);
+    }));
+
+    CHECK(
+        registry
+            .register_generated_source({.source = added.binding->source, .interleaved_stereo = pcm})
+            .status == source_registration_status_t::duplicate_source);
+}

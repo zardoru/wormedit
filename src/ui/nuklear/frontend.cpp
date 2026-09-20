@@ -1629,6 +1629,16 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
             return 0;
         }
     }
+    if (view->beat_section_selection_span_available &&
+        (view->beat_section_selection_begin_measure_number == 0 ||
+         view->beat_section_selection_end_measure_number == 0 ||
+         view->beat_section_selection_begin_measure_number >
+             view->beat_section_selection_end_measure_number ||
+         (view->beat_section_selection_begin_measure_number ==
+              view->beat_section_selection_end_measure_number &&
+          view->beat_section_selection_begin_row >= view->beat_section_selection_end_row))) {
+        return 0;
+    }
     if (view->hover_note_visible && (!view->hover_tooltip || view->hover_note_id == 0)) {
         return 0;
     }

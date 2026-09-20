@@ -381,6 +381,11 @@ typedef struct WormUiComposeView {
     const WormUiComposeSectionView* beat_sections;
     size_t beat_section_count;
     bool beat_sections_truncated;
+    bool beat_section_selection_span_available;
+    uint64_t beat_section_selection_begin_measure_number;
+    uint64_t beat_section_selection_begin_row;
+    uint64_t beat_section_selection_end_measure_number;
+    uint64_t beat_section_selection_end_row;
     const WormUiComposeSemanticLayerView* semantic_layers;
     size_t semantic_layer_count;
     size_t semantic_layer_total_count;

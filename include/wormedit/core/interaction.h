@@ -332,28 +332,24 @@ struct scroll_editor_view_action_t {
     double vertical_pixels{};
 };
 
-using editor_ui_action_t =
-    std::variant<move_edit_cursor_action_t, page_edit_cursor_action_t, jump_edit_cursor_action_t,
-                 cycle_edit_snap_action_t, place_tap_action_t, begin_hold_action_t,
-                 update_hold_preview_action_t, commit_hold_action_t, cancel_hold_action_t,
-                 begin_lane_key_hold_gesture_action_t, release_lane_key_hold_gesture_action_t,
-                 begin_alt_pointer_hold_gesture_action_t, update_alt_pointer_hold_gesture_action_t,
-                 release_alt_pointer_hold_gesture_action_t, begin_note_duration_gesture_action_t,
-                 update_note_duration_gesture_action_t, release_note_duration_gesture_action_t,
-                 begin_note_move_gesture_action_t, update_note_move_gesture_action_t,
-                 release_note_move_gesture_action_t, begin_note_paint_gesture_action_t,
-                 update_note_paint_gesture_action_t, end_note_paint_gesture_action_t,
-                 begin_semantic_layer_paint_gesture_action_t,
-                 update_semantic_layer_paint_gesture_action_t,
-                 end_semantic_layer_paint_gesture_action_t,
-                 begin_editor_area_selection_action_t, update_editor_area_selection_action_t,
-                 commit_editor_area_selection_action_t, cancel_editor_area_selection_action_t,
-                 space_range_selection_action_t, cancel_editor_gesture_action_t,
-                 select_editor_notes_action_t, select_editor_objects_action_t,
-                 delete_editor_notes_action_t,
-                 resize_note_durations_action_t, select_editor_lane_action_t,
-                 assign_selected_notes_to_lane_action_t, adjust_editor_zoom_action_t,
-                 scroll_editor_view_action_t>;
+using editor_ui_action_t = std::variant<
+    move_edit_cursor_action_t, page_edit_cursor_action_t, jump_edit_cursor_action_t,
+    cycle_edit_snap_action_t, place_tap_action_t, begin_hold_action_t, update_hold_preview_action_t,
+    commit_hold_action_t, cancel_hold_action_t, begin_lane_key_hold_gesture_action_t,
+    release_lane_key_hold_gesture_action_t, begin_alt_pointer_hold_gesture_action_t,
+    update_alt_pointer_hold_gesture_action_t, release_alt_pointer_hold_gesture_action_t,
+    begin_note_duration_gesture_action_t, update_note_duration_gesture_action_t,
+    release_note_duration_gesture_action_t, begin_note_move_gesture_action_t,
+    update_note_move_gesture_action_t, release_note_move_gesture_action_t,
+    begin_note_paint_gesture_action_t, update_note_paint_gesture_action_t,
+    end_note_paint_gesture_action_t, begin_semantic_layer_paint_gesture_action_t,
+    update_semantic_layer_paint_gesture_action_t, end_semantic_layer_paint_gesture_action_t,
+    begin_editor_area_selection_action_t, update_editor_area_selection_action_t,
+    commit_editor_area_selection_action_t, cancel_editor_area_selection_action_t,
+    space_range_selection_action_t, cancel_editor_gesture_action_t, select_editor_notes_action_t,
+    select_editor_objects_action_t, delete_editor_notes_action_t, resize_note_durations_action_t,
+    select_editor_lane_action_t, assign_selected_notes_to_lane_action_t,
+    adjust_editor_zoom_action_t, scroll_editor_view_action_t>;
 
 // Exact, revision-bound result that a pending hold would publish. The source
 // anchor/moving endpoint stay on pending_hold_t so controllers can update the
@@ -503,6 +499,10 @@ struct editor_interaction_state_t {
     std::optional<pending_semantic_layer_paint_gesture_t> pending_semantic_layer_paint_gesture;
     std::optional<pending_editor_area_selection_t> pending_editor_area_selection;
     std::optional<pending_space_range_selection_t> pending_space_range_selection;
+    // The most recently committed non-empty area/Space interval. This is
+    // controller state rather than renderer state so marker authoring and
+    // future frontends can consume the same exact chart span.
+    std::optional<position_span_t> retained_selection_range;
     std::vector<object_id_t> selected_notes;
     std::vector<editor_selection_object_t> selected_objects;
 };
@@ -524,6 +524,7 @@ struct editor_interaction_view_model_t {
     std::optional<note_paint_gesture_preview_t> pending_note_paint_gesture;
     std::optional<editor_area_selection_preview_t> pending_editor_area_selection;
     std::optional<space_range_selection_preview_t> pending_space_range_selection;
+    std::optional<position_span_t> retained_selection_range;
     std::vector<object_id_t> selected_notes;
     std::vector<editor_selection_object_t> selected_objects;
     bool can_move_backward{};

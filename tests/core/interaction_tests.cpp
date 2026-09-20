@@ -658,6 +658,8 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
         REQUIRE(committed);
         CHECK(committed.view->selected_notes ==
               std::vector<object_id_t>{object_id_t{101}, object_id_t{102}});
+        CHECK(committed.view->retained_selection_range ==
+              position_span_t{{measure_id_t{1}, 225}, {measure_id_t{1}, 500}});
         CHECK_FALSE(committed.view->pending_editor_area_selection.has_value());
         CHECK_FALSE(committed.document_changed);
         CHECK(history.document.revision == 1);
@@ -760,6 +762,8 @@ TEST_CASE("Space range selection previews inclusive cross-measure heads, tails, 
     REQUIRE(committed);
     CHECK(committed.view->selected_notes ==
           std::vector<object_id_t>{object_id_t{102}, object_id_t{103}, object_id_t{105}});
+    CHECK(committed.view->retained_selection_range ==
+          position_span_t{{measure_id_t{1}, 480}, {measure_id_t{1}, 720}});
     CHECK_FALSE(committed.view->pending_space_range_selection.has_value());
     CHECK_FALSE(committed.document_changed);
     CHECK(history.document.revision == 1);
@@ -790,6 +794,8 @@ TEST_CASE("Space range selection previews inclusive cross-measure heads, tails, 
     REQUIRE(reverse_committed);
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{102}, object_id_t{103},
                                                            object_id_t{104}, object_id_t{105}});
+    CHECK(state.retained_selection_range ==
+          position_span_t{{measure_id_t{2}, 0}, {measure_id_t{2}, 240}});
 }
 
 TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects by typed identity",
@@ -993,16 +999,18 @@ TEST_CASE("typed object selection validates BGM events and synchronizes note sel
     auto history = make_document_history(std::move(song));
     auto state = make_state(history);
 
-    const auto bgm_selected = dispatch_editor_action(
-        history, state,
-        select_editor_objects_action_t{
-            {{editor_selection_object_kind_t::bgm_event, object_id_t{201}}},
-            editor_area_selection_mode_t::replace, true});
+    const auto bgm_selected =
+        dispatch_editor_action(history, state,
+                               select_editor_objects_action_t{
+                                   {{editor_selection_object_kind_t::bgm_event, object_id_t{201}}},
+                                   editor_area_selection_mode_t::replace,
+                                   true});
     REQUIRE(bgm_selected);
     REQUIRE(bgm_selected.audition.has_value());
     CHECK(*bgm_selected.audition ==
           editor_object_audition_request_t{
-              history.document.revision, chart_id_t{1},
+              history.document.revision,
+              chart_id_t{1},
               {editor_selection_object_kind_t::bgm_event, object_id_t{201}}});
     CHECK(state.selected_objects ==
           std::vector<editor_selection_object_t>{
@@ -1011,17 +1019,17 @@ TEST_CASE("typed object selection validates BGM events and synchronizes note sel
 
     const auto note_selected = dispatch_editor_action(
         history, state,
-        select_editor_objects_action_t{
-            {{editor_selection_object_kind_t::note, object_id_t{101}}}});
+        select_editor_objects_action_t{{{editor_selection_object_kind_t::note, object_id_t{101}}}});
     REQUIRE(note_selected);
     CHECK_FALSE(note_selected.audition.has_value());
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
-    const auto bgm_added = dispatch_editor_action(
-        history, state,
-        select_editor_objects_action_t{
-            {{editor_selection_object_kind_t::bgm_event, object_id_t{201}}},
-            editor_area_selection_mode_t::add, true});
+    const auto bgm_added =
+        dispatch_editor_action(history, state,
+                               select_editor_objects_action_t{
+                                   {{editor_selection_object_kind_t::bgm_event, object_id_t{201}}},
+                                   editor_area_selection_mode_t::add,
+                                   true});
     REQUIRE(bgm_added);
     REQUIRE(bgm_added.audition.has_value());
     CHECK(state.selected_objects ==
@@ -1030,19 +1038,18 @@ TEST_CASE("typed object selection validates BGM events and synchronizes note sel
               {editor_selection_object_kind_t::bgm_event, object_id_t{201}}});
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
-    const auto bgm_toggled = dispatch_editor_action(
-        history, state,
-        select_editor_objects_action_t{
-            {{editor_selection_object_kind_t::bgm_event, object_id_t{201}}},
-            editor_area_selection_mode_t::toggle, true});
+    const auto bgm_toggled =
+        dispatch_editor_action(history, state,
+                               select_editor_objects_action_t{
+                                   {{editor_selection_object_kind_t::bgm_event, object_id_t{201}}},
+                                   editor_area_selection_mode_t::toggle,
+                                   true});
     REQUIRE(bgm_toggled);
     REQUIRE(bgm_toggled.audition.has_value());
     CHECK(bgm_toggled.audition->object ==
-          editor_selection_object_t{editor_selection_object_kind_t::bgm_event,
-                                    object_id_t{201}});
-    CHECK(state.selected_objects ==
-          std::vector<editor_selection_object_t>{
-              {editor_selection_object_kind_t::note, object_id_t{101}}});
+          editor_selection_object_t{editor_selection_object_kind_t::bgm_event, object_id_t{201}});
+    CHECK(state.selected_objects == std::vector<editor_selection_object_t>{
+                                        {editor_selection_object_kind_t::note, object_id_t{101}}});
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
     const auto unknown = dispatch_editor_action(
@@ -1054,12 +1061,13 @@ TEST_CASE("typed object selection validates BGM events and synchronizes note sel
     CHECK(has_code(unknown.diagnostics, diagnostic_code_t::invalid_id));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
-    const auto multiple_audition = dispatch_editor_action(
-        history, state,
-        select_editor_objects_action_t{
-            {{editor_selection_object_kind_t::note, object_id_t{101}},
-             {editor_selection_object_kind_t::bgm_event, object_id_t{201}}},
-            editor_area_selection_mode_t::replace, true});
+    const auto multiple_audition =
+        dispatch_editor_action(history, state,
+                               select_editor_objects_action_t{
+                                   {{editor_selection_object_kind_t::note, object_id_t{101}},
+                                    {editor_selection_object_kind_t::bgm_event, object_id_t{201}}},
+                                   editor_area_selection_mode_t::replace,
+                                   true});
     CHECK_FALSE(multiple_audition);
     CHECK_FALSE(multiple_audition.audition.has_value());
     CHECK(has_code(multiple_audition.diagnostics, diagnostic_code_t::invalid_id));
@@ -1440,9 +1448,7 @@ TEST_CASE("semantic-layer paint visits notes once and commits one undoable toggl
           "[unit][core][interaction][semantic-layer][paint]") {
     auto song = make_song();
     auto& chart = song.charts.front();
-    chart.semantic_layers = {{.id = layer_id_t{7},
-                              .name = "Phrase",
-                              .color = {255, 96, 48, 255}}};
+    chart.semantic_layers = {{.id = layer_id_t{7}, .name = "Phrase", .color = {255, 96, 48, 255}}};
     chart.measures.front().notes = {
         {.id = object_id_t{101},
          .position = {measure_id_t{1}, 0},

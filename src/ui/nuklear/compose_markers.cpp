@@ -158,15 +158,28 @@ void render_sections(struct nk_context* context, const WormUiComposeView& view,
                       static_cast<unsigned long long>(selected->end_measure_number),
                       static_cast<unsigned long long>(selected->end_row), selected->label);
     } else {
-        std::snprintf(header, sizeof(header), "New one-snap section at cursor%s",
-                      view.beat_sections_truncated ? " (first 64 shown)" : "");
+        if (view.beat_section_selection_span_available) {
+            std::snprintf(
+                header, sizeof(header), "New section M%llu:%llu-M%llu:%llu%s",
+                static_cast<unsigned long long>(view.beat_section_selection_begin_measure_number),
+                static_cast<unsigned long long>(view.beat_section_selection_begin_row),
+                static_cast<unsigned long long>(view.beat_section_selection_end_measure_number),
+                static_cast<unsigned long long>(view.beat_section_selection_end_row),
+                view.beat_sections_truncated ? " (first 64 shown)" : "");
+        } else {
+            std::snprintf(header, sizeof(header), "New one-snap section at cursor%s",
+                          view.beat_sections_truncated ? " (first 64 shown)" : "");
+        }
     }
 
     nk_layout_row_begin(context, NK_DYNAMIC, 25, 6);
     nk_layout_row_push(context, 0.25F);
     if (nk_combo_begin_label(context, header, nk_vec2(480.0F, 280.0F))) {
         nk_layout_row_dynamic(context, 22, 1);
-        if (nk_combo_item_label(context, "New one-snap section at cursor", NK_TEXT_LEFT)) {
+        const auto* new_section_label = view.beat_section_selection_span_available
+                                            ? "New section from selected span"
+                                            : "New one-snap section at cursor";
+        if (nk_combo_item_label(context, new_section_label, NK_TEXT_LEFT)) {
             state.section_id = 0;
             state.section_label.fill('\0');
         }
@@ -193,7 +206,9 @@ void render_sections(struct nk_context* context, const WormUiComposeView& view,
                                          state.section_label.size(), nk_filter_default);
     nk_layout_row_push(context, 0.16F);
     const auto apply_clicked =
-        nk_button_label(context, selected ? "Apply rename" : "Add snap span");
+        nk_button_label(context, selected                                     ? "Apply rename"
+                                 : view.beat_section_selection_span_available ? "Add selected span"
+                                                                              : "Add snap span");
     if (!view.scene_available) {
         nk_widget_disable_end(context);
     }

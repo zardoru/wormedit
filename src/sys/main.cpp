@@ -2179,6 +2179,11 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.beat_sections = flattened.compose_section_storage.data();
     view.beat_section_count = 0;
     view.beat_sections_truncated = false;
+    view.beat_section_selection_span_available = false;
+    view.beat_section_selection_begin_measure_number = 0;
+    view.beat_section_selection_begin_row = 0;
+    view.beat_section_selection_end_measure_number = 0;
+    view.beat_section_selection_end_row = 0;
     view.semantic_layers = flattened.compose_semantic_layer_storage.data();
     view.semantic_layer_count = 0;
     view.semantic_layer_total_count = 0;
@@ -2504,6 +2509,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
                   .targets = retained_state->pending_note_paint_gesture->targets,
               }}
             : std::nullopt;
+    interaction_view.retained_selection_range = retained_state->retained_selection_range;
     interaction_view.pending_editor_area_selection =
         retained_state->pending_editor_area_selection
             ? std::optional{wormedit::editor_area_selection_preview_t{
@@ -2527,6 +2533,31 @@ void populate_compose_view(flattened_workspace_t& flattened,
             : std::nullopt;
     interaction_view.selected_notes = retained_state->selected_notes;
     interaction_view.selected_objects = retained_state->selected_objects;
+    if (retained_state->retained_selection_range) {
+        const auto& retained = *retained_state->retained_selection_range;
+        const auto begin_row = wormedit::absolute_row(cache.index->measures, retained.begin);
+        const auto end_row = wormedit::absolute_row(cache.index->measures, retained.end);
+        const auto begin_measure =
+            std::ranges::find(cache.index->measures.entries, retained.begin.measure,
+                              &wormedit::measure_index_entry_t::id);
+        const auto end_measure =
+            std::ranges::find(cache.index->measures.entries, retained.end.measure,
+                              &wormedit::measure_index_entry_t::id);
+        if (begin_row && end_row && *begin_row < *end_row &&
+            begin_measure != cache.index->measures.entries.end() &&
+            end_measure != cache.index->measures.entries.end()) {
+            view.beat_section_selection_span_available = true;
+            view.beat_section_selection_begin_measure_number = static_cast<std::uint64_t>(
+                std::distance(cache.index->measures.entries.begin(), begin_measure) + 1);
+            view.beat_section_selection_begin_row = retained.begin.row;
+            view.beat_section_selection_end_measure_number = static_cast<std::uint64_t>(
+                std::distance(cache.index->measures.entries.begin(), end_measure) + 1);
+            view.beat_section_selection_end_row = retained.end.row;
+        } else {
+            retained_state->retained_selection_range.reset();
+            interaction_view.retained_selection_range.reset();
+        }
+    }
     view.selected_note_count = retained_state->selected_notes.size();
     if (retained_state->selected_notes.size() == 1) {
         const auto note_id = retained_state->selected_notes.front();
@@ -4181,28 +4212,45 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
             return "Choose a chart before editing sections.";
         }
         marker_edit_action_t edit;
+        bool section_added_from_selection = false;
         if (action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION) {
             const auto built = build_measure_index(*chart);
             const auto* measures = std::get_if<measure_index_t>(&built);
-            const auto begin = measures ? absolute_row(*measures, state.cursor) : std::nullopt;
-            if (!measures || !begin || state.active_snap_denominator == 0 ||
-                chart->divisions_per_standard_measure % state.active_snap_denominator != 0) {
-                return "The active Compose grid cannot define a section span.";
+            if (!measures) {
+                return "The chart measure geometry cannot define a section span.";
             }
-            const auto step = chart->divisions_per_standard_measure / state.active_snap_denominator;
-            if (step == 0 || *begin >= measures->total_rows ||
-                step >= measures->total_rows - *begin) {
-                return "Move the cursor earlier to create a one-snap section.";
-            }
-            const auto end = timing_position_at_row(*measures, *begin + step);
-            if (!end) {
-                return "The next active-snap row is outside the chart.";
+            std::optional<position_span_t> span;
+            if (state.retained_selection_range) {
+                const auto begin = absolute_row(*measures, state.retained_selection_range->begin);
+                const auto end = absolute_row(*measures, state.retained_selection_range->end);
+                if (!begin || !end || *begin >= *end) {
+                    return "The retained area/Space interval is no longer valid; select it again.";
+                }
+                span = state.retained_selection_range;
+                section_added_from_selection = true;
+            } else {
+                const auto begin = absolute_row(*measures, state.cursor);
+                if (!begin || state.active_snap_denominator == 0 ||
+                    chart->divisions_per_standard_measure % state.active_snap_denominator != 0) {
+                    return "The active Compose grid cannot define a section span.";
+                }
+                const auto step =
+                    chart->divisions_per_standard_measure / state.active_snap_denominator;
+                if (step == 0 || *begin >= measures->total_rows ||
+                    step >= measures->total_rows - *begin) {
+                    return "Move the cursor earlier to create a one-snap section.";
+                }
+                const auto end = timing_position_at_row(*measures, *begin + step);
+                if (!end) {
+                    return "The next active-snap row is outside the chart.";
+                }
+                span = position_span_t{state.cursor, *end};
             }
             edit = insert_section_action_t{
                 .chart = state.chart,
                 .label = action.compose_marker_label,
                 .anchor = marker_anchor_t::beat,
-                .beat_span = position_span_t{state.cursor, *end},
+                .beat_span = *span,
                 .audio_millisecond_span = std::nullopt,
             };
         } else {
@@ -4252,7 +4300,9 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         }
         switch (action.compose_action) {
         case WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION:
-            return "One-snap section added at the Compose cursor.";
+            return section_added_from_selection
+                       ? "Section added from the retained area/Space interval."
+                       : "One-snap section added at the Compose cursor.";
         case WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL:
             return "Section renamed.";
         case WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN:

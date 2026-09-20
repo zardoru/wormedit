@@ -86,6 +86,17 @@ auto position_at(const measure_index_t& index, std::uint64_t absolute)
     };
 }
 
+auto normalized_position_span(const measure_index_t& index, local_position_t first,
+                              local_position_t second) -> std::optional<position_span_t> {
+    const auto first_row = absolute_row(index, first);
+    const auto second_row = absolute_row(index, second);
+    if (!first_row || !second_row || *first_row == *second_row) {
+        return std::nullopt;
+    }
+    return *first_row < *second_row ? position_span_t{first, second}
+                                    : position_span_t{second, first};
+}
+
 auto effective_layout(const chart_document_t& chart, const measure_index_t& index,
                       local_position_t position) -> const lane_layout_t* {
     const auto event_row = absolute_row(index, position);
@@ -332,6 +343,12 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         };
     }
 
+    std::optional<position_span_t> retained_selection_range;
+    if (state.retained_selection_range) {
+        retained_selection_range = normalized_position_span(
+            index, state.retained_selection_range->begin, state.retained_selection_range->end);
+    }
+
     const auto step = chart->divisions_per_standard_measure / state.active_snap_denominator;
     return editor_interaction_view_model_t{
         .chart = state.chart,
@@ -374,6 +391,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
                   }}
                 : std::nullopt,
         .pending_space_range_selection = std::move(space_range_preview),
+        .retained_selection_range = retained_selection_range,
         .selected_notes = state.selected_notes,
         .selected_objects = state.selected_objects,
         .can_move_backward = *absolute >= step,
@@ -2896,8 +2914,8 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
     const auto begin_move_gesture = [&](object_id_t reference_id) {
         if (state.pending_hold || state.pending_note_duration_gesture ||
             state.pending_note_move_gesture || state.pending_note_paint_gesture ||
-            state.pending_semantic_layer_paint_gesture ||
-            state.pending_editor_area_selection || state.pending_space_range_selection) {
+            state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
+            state.pending_space_range_selection) {
             return diagnostic_result(history, state,
                                      {error(diagnostic_code_t::invalid_hold,
                                             "another editor gesture is already active")});
@@ -3323,12 +3341,13 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                      {error(diagnostic_code_t::invalid_hold,
                                             "another editor gesture is already active")});
         }
-        const auto layer = std::ranges::find(chart->semantic_layers, layer_id,
-                                             &semantic_layer_t::id);
+        const auto layer =
+            std::ranges::find(chart->semantic_layers, layer_id, &semantic_layer_t::id);
         if (layer == chart->semantic_layers.end() || !layer->visible) {
-            return diagnostic_result(history, state,
-                                     {error(diagnostic_code_t::invalid_id,
-                                            "semantic-layer paint requires a visible chart layer")});
+            return diagnostic_result(
+                history, state,
+                {error(diagnostic_code_t::invalid_id,
+                       "semantic-layer paint requires a visible chart layer")});
         }
         if (layer->locked) {
             return diagnostic_result(history, state,
@@ -3379,10 +3398,9 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         const auto pending = *state.pending_semantic_layer_paint_gesture;
         if (pending.document_revision != history.document.revision || !pending.notes ||
             pending.notes->empty()) {
-            return diagnostic_result(
-                history, state,
-                {error(diagnostic_code_t::invalid_hold,
-                       "semantic-layer paint gesture is malformed or stale")});
+            return diagnostic_result(history, state,
+                                     {error(diagnostic_code_t::invalid_hold,
+                                            "semantic-layer paint gesture is malformed or stale")});
         }
         const auto applied = apply_semantic_layer_edit(
             history, pending.document_revision,
@@ -3633,6 +3651,15 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                        "area selection gesture is stale after a document edit")});
         }
         set_selected_objects(state, *pending.objects);
+        const auto& view = std::get<editor_interaction_view_model_t>(initial_view);
+        const auto last_view_y = std::nextafter(view.viewport_height_pixels, 0.0);
+        const auto position_for_y = [&](double y) {
+            return position_at_row_y_pixels(*chart, index, view, std::clamp(y, 0.0, last_view_y));
+        };
+        const auto anchor = position_for_y(pending.anchor_y_pixels);
+        const auto tail = position_for_y(pending.current_y_pixels);
+        state.retained_selection_range =
+            anchor && tail ? normalized_position_span(index, *anchor, *tail) : std::nullopt;
         state.pending_editor_area_selection.reset();
         const auto next_view = make_view(history, state);
         return {
@@ -4316,6 +4343,8 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                 }
                 set_selected_objects(
                     state, std::move(std::get<std::vector<editor_selection_object_t>>(combined)));
+                state.retained_selection_range =
+                    normalized_position_span(index, pending.anchor, state.cursor);
                 state.pending_space_range_selection.reset();
                 const auto next_view = make_view(history, state);
                 return {
@@ -4363,8 +4392,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
             } else if constexpr (std::is_same_v<action_t, select_editor_objects_action_t>) {
                 const auto built = build_editor_hit_test_index(*chart, history.document.revision);
                 if (std::holds_alternative<diagnostic_list_t>(built)) {
-                    return diagnostic_result(history, state,
-                                             std::get<diagnostic_list_t>(built));
+                    return diagnostic_result(history, state, std::get<diagnostic_list_t>(built));
                 }
                 const auto& available = std::get<editor_hit_test_index_t>(built).available_objects;
                 auto selected = typed_action.objects;

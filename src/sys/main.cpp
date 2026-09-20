@@ -172,6 +172,7 @@ struct compose_scene_cache_t {
     std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
     std::optional<wormedit::editor_object_hover_state_t> hover;
     std::optional<wormedit::editor_object_audition_request_t> audition_request;
+    std::unordered_map<std::uint64_t, std::size_t> semantic_layer_membership_counts;
     bool focus_note_label_editor{};
     bool viewport_autoscroll_active{};
     double viewport_autoscroll_anchor_x_pixels{};
@@ -2202,6 +2203,20 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.semantic_layer_solo_active = application_state.semantic_layer_solo_active;
     view.chart_id = chart.id.value;
     view.document_revision = history.document.revision;
+    if (!cache.attempted || cache.chart != chart.id ||
+        cache.revision != history.document.revision) {
+        cache.semantic_layer_membership_counts.clear();
+        for (const auto& measure : chart.measures) {
+            for (const auto& note : measure.notes) {
+                for (const auto layer : note.semantic_layers) {
+                    auto& count = cache.semantic_layer_membership_counts[layer.value];
+                    if (count != std::numeric_limits<std::size_t>::max()) {
+                        ++count;
+                    }
+                }
+            }
+        }
+    }
     for (const auto& layer : chart.semantic_layers) {
         const auto selected = application_state.semantic_layer_target == layer.id;
         if (!layer.visible && !selected) {
@@ -2228,6 +2243,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
             .green = layer.color.green,
             .blue = layer.color.blue,
             .alpha = layer.color.alpha,
+            .assigned_note_count = cache.semantic_layer_membership_counts[layer.id.value],
             .visible = layer.visible,
             .locked = layer.locked,
             .selected = selected,
@@ -4100,7 +4116,8 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                               ? "Semantic-layer color changed, but workspace rebinding failed."
                               : rebound.diagnostics.front().message);
     }
-    case WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER: {
+    case WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER:
+    case WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS: {
         if (editor_interaction_has_pending_gesture(state)) {
             return "Finish or cancel the active Compose gesture before deleting a semantic layer.";
         }
@@ -4113,21 +4130,24 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         if (!layer) {
             return "The selected semantic layer is no longer visible.";
         }
+        const auto layer_id = layer->id;
         const auto applied = apply_semantic_layer_edit(
             history, action.compose_input_document_revision,
-            delete_semantic_layer_action_t{state.chart, layer->id, false});
+            delete_semantic_layer_action_t{
+                state.chart, layer_id,
+                action.compose_action ==
+                    WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS});
         if (!applied.applied) {
             return applied.diagnostics.empty() ? "Semantic layer was not deleted."
-                                               : "Semantic layer is assigned to notes; remove "
-                                                 "those memberships before deleting it.";
+                                               : applied.diagnostics.front().message;
         }
         application_state.required_semantic_layer_filters.erase(
             std::remove(application_state.required_semantic_layer_filters.begin(),
-                        application_state.required_semantic_layer_filters.end(), layer->id),
+                        application_state.required_semantic_layer_filters.end(), layer_id),
             application_state.required_semantic_layer_filters.end());
         application_state.excluded_semantic_layer_filters.erase(
             std::remove(application_state.excluded_semantic_layer_filters.begin(),
-                        application_state.excluded_semantic_layer_filters.end(), layer->id),
+                        application_state.excluded_semantic_layer_filters.end(), layer_id),
             application_state.excluded_semantic_layer_filters.end());
         application_state.semantic_layer_target.reset();
         application_state.semantic_layer_paint_mode_active = false;

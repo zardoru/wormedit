@@ -301,6 +301,7 @@ typedef struct WormUiComposeSemanticLayerView {
     uint8_t green;
     uint8_t blue;
     uint8_t alpha;
+    size_t assigned_note_count;
     bool visible;
     bool locked;
     bool selected;
@@ -694,6 +695,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_CYCLE_SEMANTIC_LAYER_COLOR,
     WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER,
+    WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS,
     WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP,
     WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_DOWN,
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY,

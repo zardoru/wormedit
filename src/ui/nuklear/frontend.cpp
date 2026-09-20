@@ -3491,7 +3491,14 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                 action->compose_action = WORM_UI_COMPOSE_ACTION_CYCLE_SEMANTIC_LAYER_COLOR;
             }
             nk_layout_row_push(g_context, 0.12f);
-            if (nk_button_label(g_context, "Delete") && action &&
+            if (selected_layer->locked) {
+                nk_widget_disable_begin(g_context);
+            }
+            const auto delete_layer_clicked = nk_button_label(g_context, "Delete");
+            if (selected_layer->locked) {
+                nk_widget_disable_end(g_context);
+            }
+            if (delete_layer_clicked && action &&
                 action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
                 action->compose_action = WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER;
             }
@@ -3511,6 +3518,28 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                 action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY;
             }
             nk_layout_row_end(g_context);
+            if (selected_layer->assigned_note_count != 0) {
+                nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 2);
+                nk_layout_row_push(g_context, 0.65f);
+                nk_labelf(g_context, NK_TEXT_LEFT, "Assigned to %zu note%s",
+                          selected_layer->assigned_note_count,
+                          selected_layer->assigned_note_count == 1 ? "" : "s");
+                nk_layout_row_push(g_context, 0.35f);
+                if (selected_layer->locked) {
+                    nk_widget_disable_begin(g_context);
+                }
+                const auto delete_and_unlink_clicked =
+                    nk_button_label(g_context, "Delete + unlink");
+                if (selected_layer->locked) {
+                    nk_widget_disable_end(g_context);
+                }
+                if (delete_and_unlink_clicked && action &&
+                    action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                    action->compose_action =
+                        WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS;
+                }
+                nk_layout_row_end(g_context);
+            }
             if (selected_layer->visible) {
                 nk_layout_row_begin(g_context, NK_DYNAMIC, 22, 2);
                 nk_layout_row_push(g_context, 0.5f);

@@ -2971,40 +2971,49 @@ auto dispatch_audio_offset_drag_action(const WormUiWorkspaceAction& action,
                                        wormedit::workspace_controller_t& workspace,
                                        bool timing_locked,
                                        std::optional<std::uint32_t> selected_sample_rate,
-                                       std::optional<wormedit::audio_offset_drag_t>& drag)
+                                       std::optional<wormedit::audio_offset_drag_t>& drag,
+                                       std::optional<wormedit::workspace_tab_t>& drag_tab)
     -> std::string {
     using namespace wormedit;
+    const auto supported_tab = workspace.active_tab == workspace_tab_t::audio_slices ||
+                               workspace.active_tab == workspace_tab_t::metadata;
     const auto context_matches =
-        workspace.active_tab == workspace_tab_t::audio_slices && workspace.selected_chart &&
+        supported_tab && workspace.selected_chart &&
         workspace.selected_chart->value == action.audio_offset_drag_chart_id &&
         history.document.revision == action.audio_offset_drag_document_revision &&
         selected_sample_rate && *selected_sample_rate == action.audio_offset_drag_sample_rate;
     if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL) {
         drag.reset();
+        drag_tab.reset();
         return "Audio offset drag cancelled.";
     }
     if (!context_matches) {
         drag.reset();
+        drag_tab.reset();
         return "Audio offset drag expired after its chart or waveform changed.";
     }
     if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_BEGIN) {
         const auto begun = begin_audio_offset_drag(history.document, *workspace.selected_chart,
                                                    *selected_sample_rate, timing_locked);
         drag = begun.drag;
+        drag_tab = begun ? std::optional{workspace.active_tab} : std::nullopt;
         return begun                       ? "Dragging waveform offset; release to apply."
                : begun.diagnostics.empty() ? "Audio offset drag could not start."
                                            : begun.diagnostics.front().message;
     }
-    if (!drag || drag->chart != *workspace.selected_chart ||
+    if (!drag || !drag_tab || *drag_tab != workspace.active_tab ||
+        drag->chart != *workspace.selected_chart ||
         drag->document_revision != action.audio_offset_drag_document_revision ||
         drag->sample_rate != *selected_sample_rate) {
         drag.reset();
+        drag_tab.reset();
         return "Audio offset drag has no matching captured transaction.";
     }
     const auto updated = update_audio_offset_drag(
         history.document, *drag, action.audio_offset_drag_delta_frames, timing_locked);
     if (!updated) {
         drag.reset();
+        drag_tab.reset();
         return updated.diagnostics.empty() ? "Audio offset preview was rejected."
                                            : updated.diagnostics.front().message;
     }
@@ -3013,10 +3022,12 @@ auto dispatch_audio_offset_drag_action(const WormUiWorkspaceAction& action,
         return "Previewing exact waveform offset.";
     if (action.audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_COMMIT) {
         drag.reset();
+        drag_tab.reset();
         return "Invalid audio offset drag action.";
     }
     const auto committed = commit_audio_offset_drag(history, *drag, timing_locked);
     drag.reset();
+    drag_tab.reset();
     if (!committed.applied) {
         return committed.diagnostics.empty() ? "Audio offset was unchanged."
                                              : committed.diagnostics.front().message;
@@ -4950,6 +4961,7 @@ int main(int argc, char** argv) {
         status += " " + platform_recovery.error;
     }
     std::optional<wormedit::audio_offset_drag_t> audio_offset_drag;
+    std::optional<wormedit::workspace_tab_t> audio_offset_drag_tab;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     wormedit::audio::decoded_source_registry_t audition_sources;
     wormedit::audio::decoded_block_cache_t waveform_blocks;
@@ -5427,17 +5439,22 @@ int main(int argc, char** argv) {
                 }
             }
             if (audio_offset_drag &&
-                (workspace.active_tab != wormedit::workspace_tab_t::audio_slices ||
+                (!audio_offset_drag_tab || workspace.active_tab != *audio_offset_drag_tab ||
                  !workspace.selected_chart ||
                  *workspace.selected_chart != audio_offset_drag->chart ||
                  history.document.revision != audio_offset_drag->document_revision ||
                  application_command_state.timing_locked)) {
                 audio_offset_drag.reset();
+                audio_offset_drag_tab.reset();
             }
             auto flattened =
                 flatten_workspace(*model.view, history.document, status, recovery_controller.view(),
                                   recovery_scan_configured);
             flattened.view.metadata.timing_locked = application_command_state.timing_locked;
+            flattened.view.metadata.audio_waveform_has_selected_asset =
+                workspace.transport.audio_asset.has_value();
+            flattened.view.metadata.audio_waveform_selected_asset_id =
+                workspace.transport.audio_asset ? workspace.transport.audio_asset->value : 0;
             auto& audio_view = flattened.view.audio_slices;
             audio_view.document_revision = history.document.revision;
             audio_view.timing_locked = application_command_state.timing_locked;
@@ -5460,6 +5477,13 @@ int main(int argc, char** argv) {
                 audio_view.proposed_offset_numerator =
                     audio_offset_drag->proposed_offset_seconds.numerator;
                 audio_view.proposed_offset_denominator =
+                    audio_offset_drag->proposed_offset_seconds.denominator;
+                flattened.view.metadata.audio_offset_drag_active = true;
+                flattened.view.metadata.audio_offset_drag_delta_frames =
+                    audio_offset_drag->delta_frames;
+                flattened.view.metadata.proposed_audio_offset_numerator =
+                    audio_offset_drag->proposed_offset_seconds.numerator;
+                flattened.view.metadata.proposed_audio_offset_denominator =
                     audio_offset_drag->proposed_offset_seconds.denominator;
             }
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -5531,9 +5555,10 @@ int main(int argc, char** argv) {
             int compose_window_height = 0;
             worm_window_get_size(&window, &compose_window_width, &compose_window_height);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-            if (flattened.view.audio_slices.visible) {
+            if (flattened.view.audio_slices.visible || flattened.view.metadata.visible) {
                 auto& audio = flattened.view.audio_slices;
                 audio.analysis_pending = waveform_job.busy();
+                flattened.view.metadata.audio_waveform_analysis_pending = waveform_job.busy();
                 if (waveform_analysis && waveform_analysis->waveform) {
                     const auto& waveform = *waveform_analysis->waveform;
                     const auto available_width = std::max(compose_window_width - 80, 1);
@@ -5560,6 +5585,13 @@ int main(int argc, char** argv) {
                         audio.sample_rate = waveform.sample_rate;
                         audio.waveform_columns = flattened.audio_waveform_storage.data();
                         audio.waveform_column_count = flattened.audio_waveform_storage.size();
+                        auto& metadata = flattened.view.metadata;
+                        metadata.audio_waveform_available = true;
+                        metadata.audio_waveform_total_frames = waveform.total_frames;
+                        metadata.audio_waveform_sample_rate = waveform.sample_rate;
+                        metadata.audio_waveform_columns = flattened.audio_waveform_storage.data();
+                        metadata.audio_waveform_column_count =
+                            flattened.audio_waveform_storage.size();
                     }
                 }
             }
@@ -5591,8 +5623,10 @@ int main(int argc, char** argv) {
                 (void)wormedit::dispatch_editor_action(history, *compose_interaction_state,
                                                        wormedit::cancel_editor_gesture_action_t{});
             }
-            if (shortcut_handled)
+            if (shortcut_handled) {
                 audio_offset_drag.reset();
+                audio_offset_drag_tab.reset();
+            }
             if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
                 (action.compose_input_count != 0 || action.compose_viewport_input_count != 0 ||
                  action.compose_has_pointer_hover ||
@@ -5664,7 +5698,7 @@ int main(int argc, char** argv) {
             } else if (action.audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
                 status = dispatch_audio_offset_drag_action(
                     action, history, workspace, application_command_state.timing_locked,
-                    selected_waveform_sample_rate, audio_offset_drag);
+                    selected_waveform_sample_rate, audio_offset_drag, audio_offset_drag_tab);
             } else if (action.kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE) {
                 status = application_command_state.transport_play_pause
                              ? application_command_state.transport_play_pause()

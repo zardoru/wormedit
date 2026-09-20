@@ -121,6 +121,13 @@ typedef struct WormUiMetadataFormatTargetView {
     size_t field_count;
 } WormUiMetadataFormatTargetView;
 
+typedef struct WormUiAudioWaveformColumnView {
+    float minimum[2];
+    float maximum[2];
+    float absolute_peak[2];
+    float rms[2];
+} WormUiAudioWaveformColumnView;
+
 typedef struct WormUiMetadataView {
     bool visible;
     bool song_fields_editable;
@@ -144,6 +151,18 @@ typedef struct WormUiMetadataView {
     bool timing_locked;
     int64_t audio_offset_numerator;
     uint64_t audio_offset_denominator;
+    bool audio_waveform_has_selected_asset;
+    uint64_t audio_waveform_selected_asset_id;
+    bool audio_waveform_analysis_pending;
+    bool audio_waveform_available;
+    uint64_t audio_waveform_total_frames;
+    uint32_t audio_waveform_sample_rate;
+    const WormUiAudioWaveformColumnView* audio_waveform_columns;
+    size_t audio_waveform_column_count;
+    bool audio_offset_drag_active;
+    int64_t audio_offset_drag_delta_frames;
+    int64_t proposed_audio_offset_numerator;
+    uint64_t proposed_audio_offset_denominator;
     const char* const* search_tags;
     const size_t* search_tag_bytes;
     size_t search_tag_count;
@@ -154,13 +173,6 @@ typedef struct WormUiMetadataView {
     const WormUiMetadataFormatTargetView* format_targets;
     size_t format_target_count;
 } WormUiMetadataView;
-
-typedef struct WormUiAudioWaveformColumnView {
-    float minimum[2];
-    float maximum[2];
-    float absolute_peak[2];
-    float rms[2];
-} WormUiAudioWaveformColumnView;
 
 typedef struct WormUiAudioSlicesView {
     bool visible;

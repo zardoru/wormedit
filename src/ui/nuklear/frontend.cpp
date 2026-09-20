@@ -75,6 +75,9 @@ static int64_t g_audio_offset_drag_delta_frames{};
 static bool g_audio_offset_escape_pending{};
 static bool g_audio_offset_cancel_pending{};
 
+static void render_audio_slices(const WormUiAudioSlicesView* view, WormUiWorkspaceAction* action,
+                                bool show_asset_catalog);
+
 struct compose_key_event_t {
     uint32_t keycode{};
     uint32_t scancode{};
@@ -1018,6 +1021,32 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
             nk_widget_disable_end(g_context);
         if (apply_offset && can_apply_offset)
             set_metadata_audio_offset_action(action, metadata);
+
+        const WormUiAudioSlicesView offset_waveform{
+            .visible = true,
+            .assets_truncated = false,
+            .asset_ids = nullptr,
+            .asset_count = 0,
+            .has_selected_asset = metadata->audio_waveform_has_selected_asset,
+            .selected_asset_id = metadata->audio_waveform_selected_asset_id,
+            .analysis_pending = metadata->audio_waveform_analysis_pending,
+            .waveform_available = metadata->audio_waveform_available,
+            .total_frames = metadata->audio_waveform_total_frames,
+            .sample_rate = metadata->audio_waveform_sample_rate,
+            .waveform_columns = metadata->audio_waveform_columns,
+            .waveform_column_count = metadata->audio_waveform_column_count,
+            .has_chart = metadata->has_chart,
+            .chart_id = metadata->chart_id,
+            .document_revision = metadata->document_revision,
+            .timing_locked = metadata->timing_locked,
+            .offset_numerator = metadata->audio_offset_numerator,
+            .offset_denominator = metadata->audio_offset_denominator,
+            .offset_drag_active = metadata->audio_offset_drag_active,
+            .offset_drag_delta_frames = metadata->audio_offset_drag_delta_frames,
+            .proposed_offset_numerator = metadata->proposed_audio_offset_numerator,
+            .proposed_offset_denominator = metadata->proposed_audio_offset_denominator,
+        };
+        render_audio_slices(&offset_waveform, action, false);
     } else {
         nk_layout_row_dynamic(g_context, 20, 1);
         nk_label(g_context, "Select a difficulty to edit its beat-zero audio offset.",
@@ -4207,7 +4236,8 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
     }
 }
 
-static void render_audio_slices(const WormUiAudioSlicesView* view, WormUiWorkspaceAction* action) {
+static void render_audio_slices(const WormUiAudioSlicesView* view, WormUiWorkspaceAction* action,
+                                bool show_asset_catalog) {
     if (g_audio_offset_drag_active &&
         (!audio_offset_pointer_drag_matches(view) || g_audio_offset_escape_pending ||
          g_audio_offset_cancel_pending || !g_window_focused)) {
@@ -4216,35 +4246,37 @@ static void render_audio_slices(const WormUiAudioSlicesView* view, WormUiWorkspa
         cancel_audio_offset_pointer_drag();
         g_audio_offset_cancel_pending = false;
     }
-    nk_layout_row_dynamic(g_context, 22, 1);
-    if (view->asset_count == 0) {
-        nk_label(g_context, "No audio assets are registered in this project.", NK_TEXT_LEFT);
-    } else {
-        nk_label(g_context, "Source assets", NK_TEXT_LEFT);
-        constexpr int buttons_per_row = 4;
-        for (size_t begin = 0; begin < view->asset_count; begin += buttons_per_row) {
-            nk_layout_row_dynamic(g_context, 26, buttons_per_row);
-            for (size_t slot = 0; slot < buttons_per_row; ++slot) {
-                const auto index = begin + slot;
-                if (index >= view->asset_count) {
-                    nk_label(g_context, "", NK_TEXT_LEFT);
-                    continue;
-                }
-                char label[48]{};
-                const bool selected =
-                    view->has_selected_asset && view->selected_asset_id == view->asset_ids[index];
-                std::snprintf(label, sizeof(label), "%sAsset %llu", selected ? "• " : "",
-                              static_cast<unsigned long long>(view->asset_ids[index]));
-                if (nk_button_label(g_context, label) && !selected) {
-                    action->kind = WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET;
-                    action->audio_asset_id = view->asset_ids[index];
+    if (show_asset_catalog) {
+        nk_layout_row_dynamic(g_context, 22, 1);
+        if (view->asset_count == 0) {
+            nk_label(g_context, "No audio assets are registered in this project.", NK_TEXT_LEFT);
+        } else {
+            nk_label(g_context, "Source assets", NK_TEXT_LEFT);
+            constexpr int buttons_per_row = 4;
+            for (size_t begin = 0; begin < view->asset_count; begin += buttons_per_row) {
+                nk_layout_row_dynamic(g_context, 26, buttons_per_row);
+                for (size_t slot = 0; slot < buttons_per_row; ++slot) {
+                    const auto index = begin + slot;
+                    if (index >= view->asset_count) {
+                        nk_label(g_context, "", NK_TEXT_LEFT);
+                        continue;
+                    }
+                    char label[48]{};
+                    const bool selected = view->has_selected_asset &&
+                                          view->selected_asset_id == view->asset_ids[index];
+                    std::snprintf(label, sizeof(label), "%sAsset %llu", selected ? "• " : "",
+                                  static_cast<unsigned long long>(view->asset_ids[index]));
+                    if (nk_button_label(g_context, label) && !selected) {
+                        action->kind = WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET;
+                        action->audio_asset_id = view->asset_ids[index];
+                    }
                 }
             }
-        }
-        if (view->assets_truncated) {
-            nk_layout_row_dynamic(g_context, 18, 1);
-            nk_label(g_context, "Additional audio assets are hidden by the view cap.",
-                     NK_TEXT_LEFT);
+            if (view->assets_truncated) {
+                nk_layout_row_dynamic(g_context, 18, 1);
+                nk_label(g_context, "Additional audio assets are hidden by the view cap.",
+                         NK_TEXT_LEFT);
+            }
         }
     }
 
@@ -4378,7 +4410,19 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         view->recovery_diagnostic_count > WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY ||
         (view->metadata.visible &&
          (view->metadata.format_field_count > WORM_UI_METADATA_FORMAT_FIELD_CAPACITY ||
-          view->metadata.format_target_count > WORM_UI_METADATA_FORMAT_TARGET_CAPACITY)) ||
+          view->metadata.format_target_count > WORM_UI_METADATA_FORMAT_TARGET_CAPACITY ||
+          view->metadata.audio_waveform_column_count > WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY ||
+          (view->metadata.audio_waveform_column_count != 0 &&
+           !view->metadata.audio_waveform_columns) ||
+          (view->metadata.audio_waveform_analysis_pending &&
+           view->metadata.audio_waveform_available) ||
+          (!view->metadata.audio_waveform_available &&
+           view->metadata.audio_waveform_column_count != 0) ||
+          (view->metadata.audio_waveform_available &&
+           (view->metadata.audio_waveform_column_count == 0 ||
+            view->metadata.audio_waveform_total_frames == 0 ||
+            view->metadata.audio_waveform_sample_rate == 0 ||
+            !view->metadata.audio_waveform_has_selected_asset)))) ||
         (view->timing.visible && !timing_view_valid(&view->timing)) ||
         (view->audio_slices.visible && !audio_slices_view_valid(&view->audio_slices)) ||
         (view->compose.visible &&
@@ -4743,7 +4787,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
             } else if (view->compose.visible) {
                 render_compose_field(&view->compose, &action);
             } else if (view->audio_slices.visible) {
-                render_audio_slices(&view->audio_slices, &action);
+                render_audio_slices(&view->audio_slices, &action, true);
             } else {
                 nk_layout_row_dynamic(g_context, 24, 1);
                 if (view->summary_line_count == 0) {

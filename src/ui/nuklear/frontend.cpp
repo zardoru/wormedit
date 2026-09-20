@@ -922,10 +922,10 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
         for (size_t index = 0; index < visible_tags; ++index) {
             char remove_label[32];
             (void)snprintf(remove_label, sizeof(remove_label), "Remove %zu", index + 1);
-            nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 3);
-            nk_layout_row_push(g_context, 0.10f);
+            nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 5);
+            nk_layout_row_push(g_context, 0.07f);
             nk_labelf(g_context, NK_TEXT_LEFT, "%zu", index + 1);
-            nk_layout_row_push(g_context, 0.75f);
+            nk_layout_row_push(g_context, 0.57f);
             if (!tags_editable) {
                 nk_widget_disable_begin(g_context);
             }
@@ -935,21 +935,41 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
             if (!tags_editable) {
                 nk_widget_disable_end(g_context);
             }
-            nk_layout_row_push(g_context, 0.15f);
+            nk_layout_row_push(g_context, 0.09f);
+            const int can_move_up = tags_editable && index != 0;
+            if (!can_move_up) {
+                nk_widget_disable_begin(g_context);
+            }
+            const int move_up = nk_button_label(g_context, "Up");
+            if (!can_move_up) {
+                nk_widget_disable_end(g_context);
+            }
+            nk_layout_row_push(g_context, 0.11f);
+            const int can_move_down = tags_editable && index + 1 < g_metadata_search_tags.size();
+            if (!can_move_down) {
+                nk_widget_disable_begin(g_context);
+            }
+            const int move_down = nk_button_label(g_context, "Down");
+            if (!can_move_down) {
+                nk_widget_disable_end(g_context);
+            }
+            nk_layout_row_push(g_context, 0.16f);
             if (!tags_editable) {
                 nk_widget_disable_begin(g_context);
             }
-            if (nk_button_label(g_context, remove_label)) {
-                g_metadata_search_tags.erase(g_metadata_search_tags.begin() +
-                                             static_cast<std::ptrdiff_t>(index));
-                if (!tags_editable) {
-                    nk_widget_disable_end(g_context);
-                }
-                nk_layout_row_end(g_context);
-                break;
-            }
+            const int remove = nk_button_label(g_context, remove_label);
             if (!tags_editable) {
                 nk_widget_disable_end(g_context);
+            }
+            if (move_up && can_move_up) {
+                std::swap(g_metadata_search_tags[index], g_metadata_search_tags[index - 1]);
+            } else if (move_down && can_move_down) {
+                std::swap(g_metadata_search_tags[index], g_metadata_search_tags[index + 1]);
+            } else if (remove && tags_editable) {
+                g_metadata_search_tags.erase(g_metadata_search_tags.begin() +
+                                             static_cast<std::ptrdiff_t>(index));
+                nk_layout_row_end(g_context);
+                break;
             }
             nk_layout_row_end(g_context);
         }

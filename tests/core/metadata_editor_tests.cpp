@@ -61,6 +61,29 @@ TEST_CASE("normalized song and difficulty metadata edits are atomic and undoable
     CHECK(history.document.metadata.title == "Old title");
 }
 
+TEST_CASE("ordered search-tag occurrence edits preserve reordering and duplicates",
+          "[unit][core][metadata-editor][tags]") {
+    auto history = make_document_history(metadata_song());
+    const std::vector<std::string> reordered{"third", "first", "third", "second"};
+    const auto edited = apply_metadata_edit(
+        history, 4, set_song_metadata_action_t{"Old title", "Old artist", reordered});
+    REQUIRE(edited);
+    CHECK(history.document.metadata.ordered_search_tags == reordered);
+    CHECK(history.undo.size() == 1);
+
+    const auto no_op =
+        apply_metadata_edit(history, history.document.revision,
+                            set_song_metadata_action_t{"Old title", "Old artist", reordered});
+    CHECK_FALSE(no_op.applied);
+    CHECK(no_op.diagnostics.empty());
+    CHECK(history.undo.size() == 1);
+
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.metadata.ordered_search_tags.empty());
+    REQUIRE(redo_document_command(history));
+    CHECK(history.document.metadata.ordered_search_tags == reordered);
+}
+
 TEST_CASE("rating text parser preserves exact signed rational values within integer bounds",
           "[unit][core][metadata-editor][rating]") {
     CHECK(parse_metadata_rating("-6", "8") == signed_rational_t{-6, 8});

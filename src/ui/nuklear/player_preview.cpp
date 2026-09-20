@@ -9,14 +9,13 @@
 
 namespace {
 
-auto rect_valid(const WormUiPlayerPreviewRect* rect,
-                const WormUiPlayerPreviewView* view) -> bool {
+auto rect_valid(const WormUiPlayerPreviewRect* rect, const WormUiPlayerPreviewView* view) -> bool {
     constexpr double geometry_limit = 10'000'000.0;
     return rect && view && std::isfinite(rect->left) && std::isfinite(rect->top) &&
-           std::isfinite(rect->right) && std::isfinite(rect->bottom) &&
-           rect->right >= rect->left && rect->bottom >= rect->top &&
-           std::abs(rect->left) <= geometry_limit && std::abs(rect->top) <= geometry_limit &&
-           std::abs(rect->right) <= geometry_limit && std::abs(rect->bottom) <= geometry_limit;
+           std::isfinite(rect->right) && std::isfinite(rect->bottom) && rect->right >= rect->left &&
+           rect->bottom >= rect->top && std::abs(rect->left) <= geometry_limit &&
+           std::abs(rect->top) <= geometry_limit && std::abs(rect->right) <= geometry_limit &&
+           std::abs(rect->bottom) <= geometry_limit;
 }
 
 auto screen_rect(const WormUiPlayerPreviewRect* source, const WormUiPlayerPreviewView* view,
@@ -101,7 +100,15 @@ int worm_ui_nuklear_player_preview_view_valid(const WormUiPlayerPreviewView* vie
         if (layer.object_id == 0 || layer.resource_id == 0 ||
             layer.event_sample_frame > view->sample_frame ||
             layer.kind < WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND ||
-            layer.kind > WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD) {
+            layer.kind > WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD ||
+            (layer.image_ready &&
+             (!layer.static_image || layer.image_pending || layer.image_width == 0 ||
+              layer.image_height == 0 || !layer.rgba_pixels ||
+              layer.image_width > SIZE_MAX / layer.image_height / 4U ||
+              layer.rgba_byte_count !=
+                  static_cast<std::size_t>(layer.image_width) * layer.image_height * 4U)) ||
+            (!layer.image_ready && (layer.image_width != 0 || layer.image_height != 0 ||
+                                    layer.rgba_pixels != nullptr || layer.rgba_byte_count != 0))) {
             return 0;
         }
     }
@@ -118,8 +125,8 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
     const auto panel_width = std::min(360.0f, std::max(260.0f, window_width * 0.32f));
     const auto panel_height = std::min(580.0f, std::max(300.0f, window_height - 90.0f));
     if (nk_begin(context, "Player preview",
-                 nk_rect(static_cast<float>(window_width) - panel_width - 18.0f, 72.0f,
-                         panel_width, panel_height),
+                 nk_rect(static_cast<float>(window_width) - panel_width - 18.0f, 72.0f, panel_width,
+                         panel_height),
                  NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_MOVABLE | NK_WINDOW_SCALABLE)) {
         nk_layout_row_dynamic(context, 24, 4);
         const struct {
@@ -170,13 +177,17 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                 break;
             }
             nk_layout_row_dynamic(context, 18, 1);
-            nk_labelf(context, NK_TEXT_LEFT, "%s resource %llu", label,
-                      static_cast<unsigned long long>(layer.resource_id));
+            const char* image_state = layer.image_ready     ? " · RGBA ready"
+                                      : layer.image_pending ? " · loading"
+                                      : layer.static_image  ? " · unavailable"
+                                                            : "";
+            nk_labelf(context, NK_TEXT_LEFT, "%s resource %llu%s", label,
+                      static_cast<unsigned long long>(layer.resource_id), image_state);
         }
         struct nk_rect viewport{};
         const auto visual_label_height = static_cast<float>(view->visual_layer_count) * 18.0f;
-        nk_layout_row_dynamic(context,
-                              std::max(180.0f, panel_height - 92.0f - visual_label_height), 1);
+        nk_layout_row_dynamic(context, std::max(180.0f, panel_height - 92.0f - visual_label_height),
+                              1);
         if (nk_widget(&viewport, context) != NK_WIDGET_INVALID) {
             auto* canvas = nk_window_get_canvas(context);
             if (canvas) {
@@ -209,11 +220,11 @@ void worm_ui_nuklear_render_player_preview(struct nk_context* context,
                     for (std::size_t index = 0; index < view->note_endpoint_count; ++index) {
                         const auto& note = view->note_endpoints[index];
                         const auto rect = screen_rect(&note.bounds, view, viewport);
-                        const auto color = note.semantic_color_visible
-                                               ? nk_rgba(note.semantic_red, note.semantic_green,
-                                                         note.semantic_blue, note.semantic_alpha)
-                                               : (note.tail ? nk_rgb(114, 205, 220)
-                                                            : nk_rgb(231, 184, 86));
+                        const auto color =
+                            note.semantic_color_visible
+                                ? nk_rgba(note.semantic_red, note.semantic_green,
+                                          note.semantic_blue, note.semantic_alpha)
+                                : (note.tail ? nk_rgb(114, 205, 220) : nk_rgb(231, 184, 86));
                         draw_glyph(canvas, rect, note.glyph, color);
                         nk_stroke_rect(canvas, rect, 1.5f, 1.0f, nk_rgb(239, 245, 255));
                     }

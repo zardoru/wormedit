@@ -32,6 +32,10 @@
 #include <wormedit/core/viewport_input.h>
 #include <wormedit/core/workspace.h>
 
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+#include <wormedit/visual/image_job.h>
+#endif
+
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include "sys/sdl_audition_output.h"
 #include "sys/sdl_preview_output.h"
@@ -206,6 +210,7 @@ struct compose_scene_cache_t {
 };
 
 struct player_preview_cache_t {
+    wormedit::song_id_t project;
     wormedit::chart_id_t chart;
     std::uint64_t revision{};
     bool attempted{};
@@ -214,6 +219,10 @@ struct player_preview_cache_t {
     std::optional<wormedit::bga_preview_queue_t> visual_queue;
     std::optional<wormedit::bga_preview_token_t> visual_token;
     std::uint32_t sample_rate{};
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    std::vector<wormedit::resource_id_t> requested_visual_resources;
+    std::shared_ptr<const wormedit::visual::image_job_result_t> decoded_visuals;
+#endif
     std::string status;
 };
 
@@ -3090,7 +3099,12 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
                                   const wormedit::workspace_controller_t& workspace,
                                   player_preview_cache_t& cache,
                                   const application_command_state_t& application_state,
-                                  std::uint64_t sample_frame, std::uint32_t sample_rate) {
+                                  std::uint64_t sample_frame, std::uint32_t sample_rate
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+                                  , wormedit::visual::image_job_t& image_job,
+                                  const std::filesystem::path& project_directory
+#endif
+                                  ) {
     auto& view = flattened.view.player_preview;
     view.visible = application_state.player_preview_visible;
     view.skin = static_cast<WormUiPlayerPreviewSkin>(application_state.player_preview_skin);
@@ -3101,6 +3115,13 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
     view.hold_bodies = flattened.player_preview_hold_storage.data();
     view.note_endpoints = flattened.player_preview_note_storage.data();
     view.visual_layers = flattened.player_preview_visual_layer_storage.data();
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    if (auto completion = image_job.poll(); completion && *completion &&
+        completion->project == history.document.id &&
+        completion->document_revision == cache.revision) {
+        cache.decoded_visuals = std::move(completion->result);
+    }
+#endif
     if (!view.visible) {
         return;
     }
@@ -3119,9 +3140,10 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
     view.chart_id = chart->id.value;
     view.document_revision = history.document.revision;
     view.sample_frame = sample_frame;
-    if (!cache.attempted || cache.chart != chart->id ||
+    if (!cache.attempted || cache.project != history.document.id || cache.chart != chart->id ||
         cache.revision != history.document.revision || cache.sample_rate != sample_rate) {
-        cache = {.chart = chart->id,
+        cache = {.project = history.document.id,
+                 .chart = chart->id,
                  .revision = history.document.revision,
                  .attempted = true,
                  .index = std::nullopt,
@@ -3129,7 +3151,14 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
                  .visual_queue = std::nullopt,
                  .visual_token = std::nullopt,
                  .sample_rate = sample_rate,
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+                 .requested_visual_resources = {},
+                 .decoded_visuals = {},
+#endif
                  .status = {}};
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+        image_job.cancel();
+#endif
         auto built = wormedit::build_player_preview_index(*chart, history.document.revision);
         if (built) {
             cache.index = std::move(*built.index);
@@ -3274,13 +3303,41 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
     }
     const auto append_visual = [&](const auto& event) {
         if (event) {
-            flattened.player_preview_visual_layer_storage.push_back(
-                {.object_id = event->object.value,
-                 .resource_id = event->resource.value,
-                 .event_sample_frame = event->sample_frame,
-                 .kind = static_cast<WormUiPlayerPreviewVisualKind>(event->kind),
-                 .draw_order = event->draw_order,
-                 .source_order = event->source_order});
+            WormUiPlayerPreviewVisualLayerView layer{
+                .object_id = event->object.value,
+                .resource_id = event->resource.value,
+                .event_sample_frame = event->sample_frame,
+                .kind = static_cast<WormUiPlayerPreviewVisualKind>(event->kind),
+                .draw_order = event->draw_order,
+                .source_order = event->source_order,
+                .static_image = false,
+                .image_ready = false,
+                .image_pending = false,
+                .image_width = 0,
+                .image_height = 0,
+                .rgba_pixels = nullptr,
+                .rgba_byte_count = 0,
+            };
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+            const auto resolved = wormedit::visual::resolve_visual_asset(
+                history.document, event->resource, project_directory);
+            layer.static_image = resolved &&
+                                 resolved.source->kind == wormedit::asset_kind_t::image;
+            if (layer.static_image && cache.decoded_visuals) {
+                const auto decoded = std::ranges::find(
+                    cache.decoded_visuals->items, event->resource,
+                    [](const auto& item) { return item.source.resource; });
+                if (decoded != cache.decoded_visuals->items.end() && *decoded) {
+                    layer.image_ready = true;
+                    layer.image_width = decoded->image->width;
+                    layer.image_height = decoded->image->height;
+                    layer.rgba_pixels = decoded->image->pixels.data();
+                    layer.rgba_byte_count = decoded->image->pixels.size();
+                }
+            }
+            layer.image_pending = layer.static_image && !layer.image_ready && image_job.busy();
+#endif
+            flattened.player_preview_visual_layer_storage.push_back(layer);
         }
     };
     append_visual(scene.scene->visual_layers.background);
@@ -3288,6 +3345,34 @@ void populate_player_preview_view(flattened_workspace_t& flattened,
     append_visual(scene.scene->visual_layers.layer);
     append_visual(scene.scene->visual_layers.video);
     append_visual(scene.scene->visual_layers.storyboard);
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    std::vector<wormedit::visual::resolved_visual_asset_t> requested_sources;
+    std::vector<wormedit::resource_id_t> requested_resources;
+    requested_sources.reserve(flattened.player_preview_visual_layer_storage.size());
+    requested_resources.reserve(flattened.player_preview_visual_layer_storage.size());
+    for (const auto& layer : flattened.player_preview_visual_layer_storage) {
+        const auto resource = wormedit::resource_id_t{layer.resource_id};
+        if (std::ranges::find(requested_resources, resource) != requested_resources.end()) {
+            continue;
+        }
+        const auto resolved =
+            wormedit::visual::resolve_visual_asset(history.document, resource, project_directory);
+        if (resolved && resolved.source->kind == wormedit::asset_kind_t::image) {
+            requested_resources.push_back(resource);
+            requested_sources.push_back(*resolved.source);
+        }
+    }
+    if (requested_resources != cache.requested_visual_resources) {
+        if (requested_sources.empty()) {
+            image_job.cancel();
+            cache.requested_visual_resources.clear();
+            cache.decoded_visuals.reset();
+        } else if (image_job.request(history.document.id, history.document.revision,
+                                     requested_sources)) {
+            cache.requested_visual_resources = std::move(requested_resources);
+        }
+    }
+#endif
     view.scene_available = true;
     view.pre_zero = scene.scene->pre_zero;
     view.split_stage = scene.scene->split_stage;
@@ -5963,6 +6048,13 @@ int main(int argc, char** argv) {
     }
     std::optional<wormedit::audio_offset_drag_t> audio_offset_drag;
     std::optional<wormedit::workspace_tab_t> audio_offset_drag_tab;
+    const auto asset_base =
+        startup.loaded_primary ? requested_primary_path.parent_path() : std::filesystem::path{};
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    wormedit::visual::image_cache_t player_image_cache;
+    wormedit::task_scheduler_t player_image_scheduler(1, 4);
+    wormedit::visual::image_job_t player_image_job{player_image_cache, player_image_scheduler};
+#endif
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     wormedit::audio::decoded_source_registry_t audition_sources;
     wormedit::audio::decoded_block_cache_t waveform_blocks;
@@ -5994,8 +6086,6 @@ int main(int argc, char** argv) {
     std::uint64_t preview_resume_frame{};
     std::uint64_t preview_end_frame{};
     bool preview_paused{};
-    const auto asset_base =
-        startup.loaded_primary ? requested_primary_path.parent_path() : std::filesystem::path{};
     using audition_asset_entry_t = std::pair<wormedit::asset_id_t, std::filesystem::path>;
     std::optional<wormedit::song_id_t> audition_source_project;
     std::vector<audition_asset_entry_t> audition_asset_inventory;
@@ -6542,7 +6632,11 @@ int main(int argc, char** argv) {
             populate_player_preview_view(flattened, history, workspace, player_preview_cache,
                                          application_command_state,
                                          flattened.view.transport_frame,
-                                         flattened.view.transport_sample_rate);
+                                         flattened.view.transport_sample_rate
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+                                         , player_image_job, asset_base
+#endif
+                                         );
             for (std::size_t line = 0; line < flattened.view.summary_line_count; ++line) {
                 flattened.view.summary_lines[line] = flattened.summary_storage[line].c_str();
             }

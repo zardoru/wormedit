@@ -129,6 +129,7 @@ endif()
 if(WORMEDIT_ENABLE_IMAGE_DECODER)
     add_executable(wormedit_visual_tests
         visual/image_decoder_tests.cpp
+        visual/image_job_tests.cpp
     )
     target_link_libraries(wormedit_visual_tests
         PRIVATE

@@ -118,6 +118,7 @@ if(WORMEDIT_ENABLE_IMAGE_DECODER)
     include(cmake/dependencies/stb_image.cmake)
     add_library(wormedit_visual_decoder
         src/visual/image_decoder.cpp
+        src/visual/image_job.cpp
     )
     add_library(wormedit::visual_decoder ALIAS wormedit_visual_decoder)
     target_include_directories(wormedit_visual_decoder PUBLIC "${CMAKE_SOURCE_DIR}/include")

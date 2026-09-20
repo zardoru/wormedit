@@ -776,6 +776,13 @@ typedef struct WormUiPlayerPreviewVisualLayerView {
     WormUiPlayerPreviewVisualKind kind;
     size_t draw_order;
     size_t source_order;
+    bool static_image;
+    bool image_ready;
+    bool image_pending;
+    uint32_t image_width;
+    uint32_t image_height;
+    const uint8_t* rgba_pixels;
+    size_t rgba_byte_count;
 } WormUiPlayerPreviewVisualLayerView;
 
 typedef struct WormUiPlayerPreviewView {

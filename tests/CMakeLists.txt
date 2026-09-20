@@ -144,6 +144,24 @@ if(WORMEDIT_ENABLE_IMAGE_DECODER)
     )
 endif()
 
+if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
+    add_executable(wormedit_frontend_state_tests
+        ui/nuklear_metadata_state_tests.cpp
+        ../src/ui/nuklear/metadata_state.cpp
+    )
+    target_include_directories(wormedit_frontend_state_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    target_link_libraries(wormedit_frontend_state_tests
+        PRIVATE
+            SDL3::SDL3
+            Catch2::Catch2WithMain
+    )
+    catch_discover_tests(wormedit_frontend_state_tests
+        TEST_PREFIX "frontend-state."
+        PROPERTIES LABELS "unit;frontend"
+        DISCOVERY_MODE PRE_TEST
+    )
+endif()
+
 if(WORMEDIT_ENABLE_LUA)
     add_executable(wormedit_lua_tests
         lua/lua_runtime_tests.cpp

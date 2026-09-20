@@ -7,6 +7,7 @@
 
 #include "ui/frontend.h"
 #include "ui/nuklear/compose_markers.h"
+#include "ui/nuklear/metadata_state.h"
 #include "ui/nuklear/player_preview.h"
 
 #include "wormedit/nuklear_config.h"
@@ -37,34 +38,7 @@
 static SDL_Window* g_window;
 static struct nk_context* g_context;
 static char g_recovery_save_as_destination[WORM_UI_RECOVERY_DESTINATION_CAPACITY];
-static constexpr size_t metadata_visible_tag_count = 64;
-static uint64_t g_metadata_buffer_revision = std::numeric_limits<uint64_t>::max();
-static uint64_t g_metadata_buffer_chart_id{};
-static bool g_metadata_buffer_has_chart{};
-static bool g_metadata_song_buffers_valid{};
-static bool g_metadata_chart_buffers_valid{};
-static bool g_metadata_tag_buffers_valid{};
-static std::array<char, WORM_UI_METADATA_TITLE_BYTES + 1> g_metadata_title{};
-static std::array<char, WORM_UI_METADATA_TITLE_BYTES + 1> g_metadata_artist{};
-static std::array<char, WORM_UI_METADATA_CHART_TEXT_BYTES + 1> g_metadata_chart_name{};
-static std::array<char, WORM_UI_METADATA_CHART_TEXT_BYTES + 1> g_metadata_chart_author{};
-static std::array<char, 64> g_metadata_chart_rating_numerator{};
-static std::array<char, 64> g_metadata_chart_rating_denominator{};
-static std::array<char, 64> g_metadata_audio_offset_numerator{};
-static std::array<char, 64> g_metadata_audio_offset_denominator{};
-static std::vector<std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1>> g_metadata_search_tags;
-static std::vector<const char*> g_metadata_search_tag_pointers;
-static std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1> g_metadata_new_search_tag{};
-static size_t g_metadata_selected_format_field = std::numeric_limits<size_t>::max();
-static bool g_metadata_format_target_valid{};
-static bool g_metadata_format_target_chart_scoped{};
-static uint8_t g_metadata_format_target_family{};
-static size_t g_metadata_format_target_index{};
-static size_t g_metadata_format_target_field_count{};
-static bool g_metadata_format_insert_mode{};
-static bool g_metadata_format_buffers_valid{};
-static std::vector<char> g_metadata_format_name;
-static std::vector<char> g_metadata_format_value;
+static auto& g_metadata = worm_ui_nuklear_metadata_state();
 static bool g_audio_offset_drag_active{};
 static float g_audio_offset_drag_anchor_x{};
 static float g_audio_offset_drag_width{};
@@ -550,25 +524,25 @@ static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
     if (!metadata) {
         return;
     }
-    g_metadata_buffer_revision = metadata->document_revision;
-    g_metadata_buffer_has_chart = metadata->has_chart;
-    g_metadata_buffer_chart_id = metadata->has_chart ? metadata->chart_id : 0;
-    g_metadata_song_buffers_valid =
+    g_metadata.buffer_revision = metadata->document_revision;
+    g_metadata.buffer_has_chart = metadata->has_chart;
+    g_metadata.buffer_chart_id = metadata->has_chart ? metadata->chart_id : 0;
+    g_metadata.song_buffers_valid =
         metadata->song_fields_editable &&
-        copy_metadata_text(g_metadata_title.data(), g_metadata_title.size(), metadata->title,
+        copy_metadata_text(g_metadata.title.data(), g_metadata.title.size(), metadata->title,
                            metadata->title_bytes) &&
-        copy_metadata_text(g_metadata_artist.data(), g_metadata_artist.size(), metadata->artist,
+        copy_metadata_text(g_metadata.artist.data(), g_metadata.artist.size(), metadata->artist,
                            metadata->artist_bytes);
-    g_metadata_chart_buffers_valid =
+    g_metadata.chart_buffers_valid =
         metadata->has_chart && metadata->chart_fields_editable &&
-        copy_metadata_text(g_metadata_chart_name.data(), g_metadata_chart_name.size(),
+        copy_metadata_text(g_metadata.chart_name.data(), g_metadata.chart_name.size(),
                            metadata->chart_name, metadata->chart_name_bytes) &&
-        copy_metadata_text(g_metadata_chart_author.data(), g_metadata_chart_author.size(),
+        copy_metadata_text(g_metadata.chart_author.data(), g_metadata.chart_author.size(),
                            metadata->chart_author, metadata->chart_author_bytes);
-    g_metadata_chart_rating_numerator.fill('\0');
-    g_metadata_chart_rating_denominator.fill('\0');
-    g_metadata_audio_offset_numerator.fill('\0');
-    g_metadata_audio_offset_denominator.fill('\0');
+    g_metadata.chart_rating_numerator.fill('\0');
+    g_metadata.chart_rating_denominator.fill('\0');
+    g_metadata.audio_offset_numerator.fill('\0');
+    g_metadata.audio_offset_denominator.fill('\0');
     if (metadata->has_chart) {
         const auto numerator = metadata->has_chart_rating
                                    ? std::to_string(metadata->chart_rating_numerator)
@@ -576,76 +550,76 @@ static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
         const auto denominator = metadata->has_chart_rating
                                      ? std::to_string(metadata->chart_rating_denominator)
                                      : std::string{"1"};
-        (void)copy_metadata_text(g_metadata_chart_rating_numerator.data(),
-                                 g_metadata_chart_rating_numerator.size(), numerator.c_str(),
+        (void)copy_metadata_text(g_metadata.chart_rating_numerator.data(),
+                                 g_metadata.chart_rating_numerator.size(), numerator.c_str(),
                                  numerator.size());
-        (void)copy_metadata_text(g_metadata_chart_rating_denominator.data(),
-                                 g_metadata_chart_rating_denominator.size(), denominator.c_str(),
+        (void)copy_metadata_text(g_metadata.chart_rating_denominator.data(),
+                                 g_metadata.chart_rating_denominator.size(), denominator.c_str(),
                                  denominator.size());
         const auto offset_numerator = std::to_string(metadata->audio_offset_numerator);
         const auto offset_denominator = std::to_string(metadata->audio_offset_denominator);
-        (void)copy_metadata_text(g_metadata_audio_offset_numerator.data(),
-                                 g_metadata_audio_offset_numerator.size(), offset_numerator.c_str(),
+        (void)copy_metadata_text(g_metadata.audio_offset_numerator.data(),
+                                 g_metadata.audio_offset_numerator.size(), offset_numerator.c_str(),
                                  offset_numerator.size());
-        (void)copy_metadata_text(g_metadata_audio_offset_denominator.data(),
-                                 g_metadata_audio_offset_denominator.size(),
+        (void)copy_metadata_text(g_metadata.audio_offset_denominator.data(),
+                                 g_metadata.audio_offset_denominator.size(),
                                  offset_denominator.c_str(), offset_denominator.size());
     }
-    g_metadata_tag_buffers_valid =
+    g_metadata.tag_buffers_valid =
         metadata->search_tags_editable &&
         metadata->search_tag_count <= WORM_UI_METADATA_SEARCH_TAG_CAPACITY &&
         (metadata->search_tag_count == 0 || (metadata->search_tags && metadata->search_tag_bytes));
-    g_metadata_search_tags.clear();
-    if (g_metadata_tag_buffers_valid) {
-        g_metadata_search_tags.reserve(metadata->search_tag_count);
+    g_metadata.search_tags.clear();
+    if (g_metadata.tag_buffers_valid) {
+        g_metadata.search_tags.reserve(metadata->search_tag_count);
         for (size_t index = 0; index < metadata->search_tag_count; ++index) {
             std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1> tag{};
             if (!copy_metadata_text(tag.data(), tag.size(), metadata->search_tags[index],
                                     metadata->search_tag_bytes[index])) {
-                g_metadata_tag_buffers_valid = 0;
-                g_metadata_search_tags.clear();
+                g_metadata.tag_buffers_valid = 0;
+                g_metadata.search_tags.clear();
                 break;
             }
-            g_metadata_search_tags.push_back(tag);
+            g_metadata.search_tags.push_back(tag);
         }
     }
-    g_metadata_search_tag_pointers.clear();
-    g_metadata_new_search_tag.fill('\0');
-    g_metadata_selected_format_field = std::numeric_limits<size_t>::max();
-    g_metadata_format_target_valid = 0;
-    g_metadata_format_target_chart_scoped = 0;
-    g_metadata_format_target_family = 0;
-    g_metadata_format_target_index = 0;
-    g_metadata_format_target_field_count = 0;
-    g_metadata_format_insert_mode = 0;
-    g_metadata_format_buffers_valid = 0;
-    g_metadata_format_name.clear();
-    g_metadata_format_value.clear();
+    g_metadata.search_tag_pointers.clear();
+    g_metadata.new_search_tag.fill('\0');
+    g_metadata.selected_format_field = std::numeric_limits<size_t>::max();
+    g_metadata.format_target_valid = 0;
+    g_metadata.format_target_chart_scoped = 0;
+    g_metadata.format_target_family = 0;
+    g_metadata.format_target_index = 0;
+    g_metadata.format_target_field_count = 0;
+    g_metadata.format_insert_mode = 0;
+    g_metadata.format_buffers_valid = 0;
+    g_metadata.format_name.clear();
+    g_metadata.format_value.clear();
 }
 
 static int metadata_buffer_key_changed(const WormUiMetadataView* metadata) {
     const uint64_t chart_id = metadata && metadata->has_chart ? metadata->chart_id : 0;
     const int has_chart = metadata && metadata->has_chart;
     return metadata &&
-           (g_metadata_buffer_revision != metadata->document_revision ||
-            g_metadata_buffer_chart_id != chart_id || g_metadata_buffer_has_chart != has_chart);
+           (g_metadata.buffer_revision != metadata->document_revision ||
+            g_metadata.buffer_chart_id != chart_id || g_metadata.buffer_has_chart != has_chart);
 }
 
 static int metadata_song_changed(const WormUiMetadataView* metadata) {
-    if (!metadata || !g_metadata_song_buffers_valid || !g_metadata_tag_buffers_valid ||
+    if (!metadata || !g_metadata.song_buffers_valid || !g_metadata.tag_buffers_valid ||
         !metadata->title || !metadata->artist) {
         return 0;
     }
-    if (metadata->search_tag_count != g_metadata_search_tags.size()) {
+    if (metadata->search_tag_count != g_metadata.search_tags.size()) {
         return 1;
     }
-    if (strcmp(g_metadata_title.data(), metadata->title) != 0 ||
-        strcmp(g_metadata_artist.data(), metadata->artist) != 0) {
+    if (strcmp(g_metadata.title.data(), metadata->title) != 0 ||
+        strcmp(g_metadata.artist.data(), metadata->artist) != 0) {
         return 1;
     }
-    for (size_t index = 0; index < g_metadata_search_tags.size(); ++index) {
+    for (size_t index = 0; index < g_metadata.search_tags.size(); ++index) {
         if (!metadata->search_tags ||
-            strcmp(g_metadata_search_tags[index].data(), metadata->search_tags[index]) != 0) {
+            strcmp(g_metadata.search_tags[index].data(), metadata->search_tags[index]) != 0) {
             return 1;
         }
     }
@@ -659,8 +633,8 @@ struct metadata_rating_value_t {
 };
 
 static auto metadata_audio_offset_value() -> std::optional<metadata_rating_value_t> {
-    const std::string_view numerator{g_metadata_audio_offset_numerator.data()};
-    const std::string_view denominator{g_metadata_audio_offset_denominator.data()};
+    const std::string_view numerator{g_metadata.audio_offset_numerator.data()};
+    const std::string_view denominator{g_metadata.audio_offset_denominator.data()};
     if (numerator.empty() || denominator.empty() || numerator.size() > 21 ||
         denominator.size() > 21) {
         return std::nullopt;
@@ -694,8 +668,8 @@ static auto metadata_chart_rating_value(const WormUiMetadataView* metadata)
     -> std::optional<metadata_rating_value_t> {
     if (!metadata)
         return std::nullopt;
-    const std::string_view numerator{g_metadata_chart_rating_numerator.data()};
-    const std::string_view denominator{g_metadata_chart_rating_denominator.data()};
+    const std::string_view numerator{g_metadata.chart_rating_numerator.data()};
+    const std::string_view denominator{g_metadata.chart_rating_denominator.data()};
     if (numerator.empty() && !metadata->has_chart_rating && denominator == "1") {
         return metadata_rating_value_t{};
     }
@@ -737,12 +711,12 @@ static auto metadata_chart_rating_value(const WormUiMetadataView* metadata)
 }
 
 static int metadata_chart_changed(const WormUiMetadataView* metadata) {
-    if (!metadata || !metadata->has_chart || !g_metadata_chart_buffers_valid ||
+    if (!metadata || !metadata->has_chart || !g_metadata.chart_buffers_valid ||
         !metadata->chart_name || !metadata->chart_author) {
         return 0;
     }
-    const bool text_changed = strcmp(g_metadata_chart_name.data(), metadata->chart_name) != 0 ||
-                              strcmp(g_metadata_chart_author.data(), metadata->chart_author) != 0;
+    const bool text_changed = strcmp(g_metadata.chart_name.data(), metadata->chart_name) != 0 ||
+                              strcmp(g_metadata.chart_author.data(), metadata->chart_author) != 0;
     const auto rating = metadata_chart_rating_value(metadata);
     const bool rating_changed =
         rating &&
@@ -771,27 +745,27 @@ static void metadata_input_row(const char* label, char* buffer, size_t capacity,
 static void set_metadata_song_action(WormUiWorkspaceAction* action,
                                      const WormUiMetadataView* metadata) {
     if (!action || !metadata || action->metadata_edit != WORM_UI_METADATA_EDIT_NONE ||
-        !g_metadata_tag_buffers_valid ||
-        g_metadata_search_tags.size() > WORM_UI_METADATA_SEARCH_TAG_CAPACITY) {
+        !g_metadata.tag_buffers_valid ||
+        g_metadata.search_tags.size() > WORM_UI_METADATA_SEARCH_TAG_CAPACITY) {
         return;
     }
-    g_metadata_search_tag_pointers.clear();
-    g_metadata_search_tag_pointers.reserve(g_metadata_search_tags.size());
-    for (const auto& tag : g_metadata_search_tags) {
-        g_metadata_search_tag_pointers.push_back(tag.data());
+    g_metadata.search_tag_pointers.clear();
+    g_metadata.search_tag_pointers.reserve(g_metadata.search_tags.size());
+    for (const auto& tag : g_metadata.search_tags) {
+        g_metadata.search_tag_pointers.push_back(tag.data());
     }
     action->metadata_edit = WORM_UI_METADATA_EDIT_SONG;
     action->metadata_document_revision = metadata->document_revision;
-    action->metadata_title = g_metadata_title.data();
-    action->metadata_artist = g_metadata_artist.data();
-    action->metadata_search_tags = g_metadata_search_tag_pointers.data();
-    action->metadata_search_tag_count = g_metadata_search_tag_pointers.size();
+    action->metadata_title = g_metadata.title.data();
+    action->metadata_artist = g_metadata.artist.data();
+    action->metadata_search_tags = g_metadata.search_tag_pointers.data();
+    action->metadata_search_tag_count = g_metadata.search_tag_pointers.size();
 }
 
 static void set_metadata_chart_action(WormUiWorkspaceAction* action,
                                       const WormUiMetadataView* metadata, int unset_rating) {
     if (!action || !metadata || action->metadata_edit != WORM_UI_METADATA_EDIT_NONE ||
-        !metadata->has_chart || !g_metadata_chart_buffers_valid) {
+        !metadata->has_chart || !g_metadata.chart_buffers_valid) {
         return;
     }
     const auto rating = unset_rating ? std::optional<metadata_rating_value_t>{}
@@ -801,12 +775,12 @@ static void set_metadata_chart_action(WormUiWorkspaceAction* action,
     action->metadata_edit = WORM_UI_METADATA_EDIT_CHART;
     action->metadata_document_revision = metadata->document_revision;
     action->metadata_chart_id = metadata->chart_id;
-    action->metadata_chart_name = g_metadata_chart_name.data();
-    action->metadata_chart_author = g_metadata_chart_author.data();
+    action->metadata_chart_name = g_metadata.chart_name.data();
+    action->metadata_chart_author = g_metadata.chart_author.data();
     action->metadata_has_chart_rating = !unset_rating && rating->has_rating;
     if (action->metadata_has_chart_rating) {
-        action->metadata_chart_rating_numerator_text = g_metadata_chart_rating_numerator.data();
-        action->metadata_chart_rating_denominator_text = g_metadata_chart_rating_denominator.data();
+        action->metadata_chart_rating_numerator_text = g_metadata.chart_rating_numerator.data();
+        action->metadata_chart_rating_denominator_text = g_metadata.chart_rating_denominator.data();
     }
 }
 
@@ -820,8 +794,8 @@ static void set_metadata_audio_offset_action(WormUiWorkspaceAction* action,
     action->metadata_edit = WORM_UI_METADATA_EDIT_AUDIO_OFFSET;
     action->metadata_document_revision = metadata->document_revision;
     action->metadata_chart_id = metadata->chart_id;
-    action->metadata_audio_offset_numerator_text = g_metadata_audio_offset_numerator.data();
-    action->metadata_audio_offset_denominator_text = g_metadata_audio_offset_denominator.data();
+    action->metadata_audio_offset_numerator_text = g_metadata.audio_offset_numerator.data();
+    action->metadata_audio_offset_denominator_text = g_metadata.audio_offset_denominator.data();
 }
 
 static const char* metadata_format_family_name(uint8_t family) {
@@ -831,24 +805,24 @@ static const char* metadata_format_family_name(uint8_t family) {
 }
 
 static int initialize_format_buffers(const WormUiMetadataFormatFieldView* field, int insert_mode) {
-    g_metadata_format_name.assign(WORM_UI_METADATA_FORMAT_NAME_BYTES + 1, '\0');
-    g_metadata_format_value.assign(WORM_UI_METADATA_FORMAT_VALUE_BYTES + 1, '\0');
-    g_metadata_format_insert_mode = insert_mode != 0;
+    g_metadata.format_name.assign(WORM_UI_METADATA_FORMAT_NAME_BYTES + 1, '\0');
+    g_metadata.format_value.assign(WORM_UI_METADATA_FORMAT_VALUE_BYTES + 1, '\0');
+    g_metadata.format_insert_mode = insert_mode != 0;
     if (insert_mode) {
-        g_metadata_format_buffers_valid = field && field->first_group_for_family;
-        return g_metadata_format_buffers_valid;
+        g_metadata.format_buffers_valid = field && field->first_group_for_family;
+        return g_metadata.format_buffers_valid;
     }
     if (!field || !field->first_group_for_family || !field->name || !field->value ||
         field->group_field_count > WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY) {
-        g_metadata_format_buffers_valid = 0;
+        g_metadata.format_buffers_valid = 0;
         return 0;
     }
-    g_metadata_format_buffers_valid =
-        copy_metadata_text(g_metadata_format_name.data(), g_metadata_format_name.size(),
+    g_metadata.format_buffers_valid =
+        copy_metadata_text(g_metadata.format_name.data(), g_metadata.format_name.size(),
                            field->name, field->name_bytes) &&
-        copy_metadata_text(g_metadata_format_value.data(), g_metadata_format_value.size(),
+        copy_metadata_text(g_metadata.format_value.data(), g_metadata.format_value.size(),
                            field->value, field->value_bytes);
-    return g_metadata_format_buffers_valid;
+    return g_metadata.format_buffers_valid;
 }
 
 static void initialize_format_target_buffers(const WormUiMetadataView* metadata,
@@ -856,20 +830,20 @@ static void initialize_format_target_buffers(const WormUiMetadataView* metadata,
     if (!metadata || !target || target->family > 6 ||
         (target->chart_scoped && !metadata->has_chart) ||
         target->field_count > WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY) {
-        g_metadata_format_target_valid = 0;
-        g_metadata_format_buffers_valid = 0;
+        g_metadata.format_target_valid = 0;
+        g_metadata.format_buffers_valid = 0;
         return;
     }
-    g_metadata_selected_format_field = std::numeric_limits<size_t>::max();
-    g_metadata_format_target_valid = 1;
-    g_metadata_format_target_chart_scoped = target->chart_scoped;
-    g_metadata_format_target_family = target->family;
-    g_metadata_format_target_field_count = target->field_count;
-    g_metadata_format_target_index = target->field_count;
-    g_metadata_format_insert_mode = 1;
-    g_metadata_format_name.assign(WORM_UI_METADATA_FORMAT_NAME_BYTES + 1, '\0');
-    g_metadata_format_value.assign(WORM_UI_METADATA_FORMAT_VALUE_BYTES + 1, '\0');
-    g_metadata_format_buffers_valid = 1;
+    g_metadata.selected_format_field = std::numeric_limits<size_t>::max();
+    g_metadata.format_target_valid = 1;
+    g_metadata.format_target_chart_scoped = target->chart_scoped;
+    g_metadata.format_target_family = target->family;
+    g_metadata.format_target_field_count = target->field_count;
+    g_metadata.format_target_index = target->field_count;
+    g_metadata.format_insert_mode = 1;
+    g_metadata.format_name.assign(WORM_UI_METADATA_FORMAT_NAME_BYTES + 1, '\0');
+    g_metadata.format_value.assign(WORM_UI_METADATA_FORMAT_VALUE_BYTES + 1, '\0');
+    g_metadata.format_buffers_valid = 1;
 }
 
 static void set_metadata_format_action(WormUiWorkspaceAction* action,
@@ -877,19 +851,19 @@ static void set_metadata_format_action(WormUiWorkspaceAction* action,
                                        WormUiMetadataEditKind kind) {
     const int needs_text = kind != WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD;
     if (!action || !metadata || action->metadata_edit != WORM_UI_METADATA_EDIT_NONE ||
-        !g_metadata_format_target_valid || (needs_text && !g_metadata_format_buffers_valid) ||
-        g_metadata_format_target_family > 6 ||
-        (g_metadata_format_target_chart_scoped && !metadata->has_chart)) {
+        !g_metadata.format_target_valid || (needs_text && !g_metadata.format_buffers_valid) ||
+        g_metadata.format_target_family > 6 ||
+        (g_metadata.format_target_chart_scoped && !metadata->has_chart)) {
         return;
     }
     action->metadata_edit = kind;
     action->metadata_document_revision = metadata->document_revision;
-    action->metadata_chart_id = g_metadata_format_target_chart_scoped ? metadata->chart_id : 0;
-    action->metadata_format_chart_scoped = g_metadata_format_target_chart_scoped;
-    action->metadata_format_family = g_metadata_format_target_family;
-    action->metadata_format_index = g_metadata_format_target_index;
-    action->metadata_format_name = needs_text ? g_metadata_format_name.data() : nullptr;
-    action->metadata_format_value = needs_text ? g_metadata_format_value.data() : nullptr;
+    action->metadata_chart_id = g_metadata.format_target_chart_scoped ? metadata->chart_id : 0;
+    action->metadata_format_chart_scoped = g_metadata.format_target_chart_scoped;
+    action->metadata_format_family = g_metadata.format_target_family;
+    action->metadata_format_index = g_metadata.format_target_index;
+    action->metadata_format_name = needs_text ? g_metadata.format_name.data() : nullptr;
+    action->metadata_format_value = needs_text ? g_metadata.format_value.data() : nullptr;
 }
 
 static void render_metadata_editor(const WormUiMetadataView* metadata,
@@ -903,23 +877,23 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
 
     nk_layout_row_dynamic(g_context, 24, 1);
     nk_label(g_context, "Song metadata", NK_TEXT_LEFT);
-    metadata_input_row("Title", g_metadata_title.data(), g_metadata_title.size(),
-                       metadata->song_fields_editable && g_metadata_song_buffers_valid);
-    metadata_input_row("Artist", g_metadata_artist.data(), g_metadata_artist.size(),
-                       metadata->song_fields_editable && g_metadata_song_buffers_valid);
+    metadata_input_row("Title", g_metadata.title.data(), g_metadata.title.size(),
+                       metadata->song_fields_editable && g_metadata.song_buffers_valid);
+    metadata_input_row("Artist", g_metadata.artist.data(), g_metadata.artist.size(),
+                       metadata->song_fields_editable && g_metadata.song_buffers_valid);
 
     nk_layout_row_dynamic(g_context, 24, 1);
     nk_labelf(g_context, NK_TEXT_LEFT, "Ordered search tags (%zu; duplicates are preserved)",
               metadata->search_tag_count);
-    const int tags_editable = metadata->song_fields_editable && g_metadata_song_buffers_valid &&
-                              g_metadata_tag_buffers_valid;
-    if (!g_metadata_tag_buffers_valid || !metadata->song_fields_editable) {
+    const int tags_editable = metadata->song_fields_editable && g_metadata.song_buffers_valid &&
+                              g_metadata.tag_buffers_valid;
+    if (!g_metadata.tag_buffers_valid || !metadata->song_fields_editable) {
         nk_layout_row_dynamic(g_context, 22, 1);
         nk_label(g_context, "Tags are read-only because the song metadata exceeds an edit cap.",
                  NK_TEXT_LEFT);
     } else {
-        const size_t visible_tags =
-            std::min(g_metadata_search_tags.size(), metadata_visible_tag_count);
+        const size_t visible_tags = std::min(g_metadata.search_tags.size(),
+                                             worm_ui_nuklear_metadata_state_t::visible_tag_count);
         for (size_t index = 0; index < visible_tags; ++index) {
             char remove_label[32];
             (void)snprintf(remove_label, sizeof(remove_label), "Remove %zu", index + 1);
@@ -931,8 +905,8 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
                 nk_widget_disable_begin(g_context);
             }
             (void)nk_edit_string_zero_terminated(
-                g_context, NK_EDIT_FIELD, g_metadata_search_tags[index].data(),
-                g_metadata_search_tags[index].size(), nk_filter_default);
+                g_context, NK_EDIT_FIELD, g_metadata.search_tags[index].data(),
+                g_metadata.search_tags[index].size(), nk_filter_default);
             if (!tags_editable) {
                 nk_widget_disable_end(g_context);
             }
@@ -946,7 +920,7 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
                 nk_widget_disable_end(g_context);
             }
             nk_layout_row_push(g_context, 0.11f);
-            const int can_move_down = tags_editable && index + 1 < g_metadata_search_tags.size();
+            const int can_move_down = tags_editable && index + 1 < g_metadata.search_tags.size();
             if (!can_move_down) {
                 nk_widget_disable_begin(g_context);
             }
@@ -963,21 +937,21 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
                 nk_widget_disable_end(g_context);
             }
             if (move_up && can_move_up) {
-                std::swap(g_metadata_search_tags[index], g_metadata_search_tags[index - 1]);
+                std::swap(g_metadata.search_tags[index], g_metadata.search_tags[index - 1]);
             } else if (move_down && can_move_down) {
-                std::swap(g_metadata_search_tags[index], g_metadata_search_tags[index + 1]);
+                std::swap(g_metadata.search_tags[index], g_metadata.search_tags[index + 1]);
             } else if (remove && tags_editable) {
-                g_metadata_search_tags.erase(g_metadata_search_tags.begin() +
+                g_metadata.search_tags.erase(g_metadata.search_tags.begin() +
                                              static_cast<std::ptrdiff_t>(index));
                 nk_layout_row_end(g_context);
                 break;
             }
             nk_layout_row_end(g_context);
         }
-        if (g_metadata_search_tags.size() > metadata_visible_tag_count) {
+        if (g_metadata.search_tags.size() > worm_ui_nuklear_metadata_state_t::visible_tag_count) {
             nk_layout_row_dynamic(g_context, 20, 1);
             nk_labelf(g_context, NK_TEXT_LEFT, "Showing first %zu tags; the rest stay unchanged.",
-                      metadata_visible_tag_count);
+                      worm_ui_nuklear_metadata_state_t::visible_tag_count);
         }
         nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 2);
         nk_layout_row_push(g_context, 0.82f);
@@ -985,15 +959,15 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
             nk_widget_disable_begin(g_context);
         }
         (void)nk_edit_string_zero_terminated(g_context, NK_EDIT_FIELD,
-                                             g_metadata_new_search_tag.data(),
-                                             g_metadata_new_search_tag.size(), nk_filter_default);
+                                             g_metadata.new_search_tag.data(),
+                                             g_metadata.new_search_tag.size(), nk_filter_default);
         if (!tags_editable) {
             nk_widget_disable_end(g_context);
         }
         nk_layout_row_push(g_context, 0.18f);
         const int can_add_tag =
-            tags_editable && g_metadata_search_tags.size() < WORM_UI_METADATA_SEARCH_TAG_CAPACITY &&
-            g_metadata_new_search_tag[0] != '\0';
+            tags_editable && g_metadata.search_tags.size() < WORM_UI_METADATA_SEARCH_TAG_CAPACITY &&
+            g_metadata.new_search_tag[0] != '\0';
         if (!can_add_tag) {
             nk_widget_disable_begin(g_context);
         }
@@ -1002,8 +976,8 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
             nk_widget_disable_end(g_context);
         }
         if (add_tag && can_add_tag) {
-            g_metadata_search_tags.push_back(g_metadata_new_search_tag);
-            g_metadata_new_search_tag.fill('\0');
+            g_metadata.search_tags.push_back(g_metadata.new_search_tag);
+            g_metadata.new_search_tag.fill('\0');
         }
         nk_layout_row_end(g_context);
     }
@@ -1025,10 +999,10 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
     nk_label(g_context, "Audio and synchronization", NK_TEXT_LEFT);
     if (metadata->has_chart) {
         const int offset_editable = metadata->audio_offset_editable && !metadata->timing_locked;
-        metadata_input_row("Offset seconds numerator", g_metadata_audio_offset_numerator.data(),
-                           g_metadata_audio_offset_numerator.size(), offset_editable);
-        metadata_input_row("Offset seconds denominator", g_metadata_audio_offset_denominator.data(),
-                           g_metadata_audio_offset_denominator.size(), offset_editable);
+        metadata_input_row("Offset seconds numerator", g_metadata.audio_offset_numerator.data(),
+                           g_metadata.audio_offset_numerator.size(), offset_editable);
+        metadata_input_row("Offset seconds denominator", g_metadata.audio_offset_denominator.data(),
+                           g_metadata.audio_offset_denominator.size(), offset_editable);
         const auto parsed_offset = metadata_audio_offset_value();
         const int offset_changed =
             parsed_offset && (parsed_offset->numerator != metadata->audio_offset_numerator ||
@@ -1089,23 +1063,23 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
                                  : "Select a difficulty to edit chart metadata",
              NK_TEXT_LEFT);
     if (metadata->has_chart) {
-        metadata_input_row("Difficulty", g_metadata_chart_name.data(), g_metadata_chart_name.size(),
-                           metadata->chart_fields_editable && g_metadata_chart_buffers_valid);
-        metadata_input_row("Mapper", g_metadata_chart_author.data(), g_metadata_chart_author.size(),
-                           metadata->chart_fields_editable && g_metadata_chart_buffers_valid);
+        metadata_input_row("Difficulty", g_metadata.chart_name.data(), g_metadata.chart_name.size(),
+                           metadata->chart_fields_editable && g_metadata.chart_buffers_valid);
+        metadata_input_row("Mapper", g_metadata.chart_author.data(), g_metadata.chart_author.size(),
+                           metadata->chart_fields_editable && g_metadata.chart_buffers_valid);
         nk_layout_row_dynamic(g_context, 24, 1);
         nk_label(g_context, "Exact signed rational rating (stored without reduction)",
                  NK_TEXT_LEFT);
         const int rating_fields_editable =
-            metadata->chart_fields_editable && g_metadata_chart_buffers_valid;
-        metadata_input_row("Numerator", g_metadata_chart_rating_numerator.data(),
-                           g_metadata_chart_rating_numerator.size(), rating_fields_editable);
-        metadata_input_row("Denominator", g_metadata_chart_rating_denominator.data(),
-                           g_metadata_chart_rating_denominator.size(), rating_fields_editable);
+            metadata->chart_fields_editable && g_metadata.chart_buffers_valid;
+        metadata_input_row("Numerator", g_metadata.chart_rating_numerator.data(),
+                           g_metadata.chart_rating_numerator.size(), rating_fields_editable);
+        metadata_input_row("Denominator", g_metadata.chart_rating_denominator.data(),
+                           g_metadata.chart_rating_denominator.size(), rating_fields_editable);
         const auto parsed_rating = metadata_chart_rating_value(metadata);
         const bool rating_input_started =
-            g_metadata_chart_rating_numerator[0] != '\0' ||
-            strcmp(g_metadata_chart_rating_denominator.data(), "1") != 0;
+            g_metadata.chart_rating_numerator[0] != '\0' ||
+            strcmp(g_metadata.chart_rating_denominator.data(), "1") != 0;
         if (!parsed_rating && (metadata->has_chart_rating || rating_input_started)) {
             nk_layout_row_dynamic(g_context, 20, 1);
             nk_label(g_context,
@@ -1116,11 +1090,11 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
         const int chart_changed = metadata_chart_changed(metadata);
         const int can_apply_chart = chart_changed && parsed_rating.has_value() &&
                                     metadata->chart_fields_editable &&
-                                    g_metadata_chart_buffers_valid && action &&
+                                    g_metadata.chart_buffers_valid && action &&
                                     action->metadata_edit == WORM_UI_METADATA_EDIT_NONE;
         const int can_unset_rating = metadata->has_chart_rating &&
                                      metadata->chart_fields_editable &&
-                                     g_metadata_chart_buffers_valid && action &&
+                                     g_metadata.chart_buffers_valid && action &&
                                      action->metadata_edit == WORM_UI_METADATA_EDIT_NONE;
         nk_layout_row_begin(g_context, NK_DYNAMIC, 26, 2);
         nk_layout_row_push(g_context, 0.5f);
@@ -1173,12 +1147,12 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
             nk_widget_disable_begin(g_context);
         }
         if (nk_button_label(g_context, edit_label) && field_editable) {
-            g_metadata_selected_format_field = index;
-            g_metadata_format_target_valid = 1;
-            g_metadata_format_target_chart_scoped = field->chart_scoped;
-            g_metadata_format_target_family = field->family;
-            g_metadata_format_target_index = field->field_index;
-            g_metadata_format_target_field_count = field->group_field_count;
+            g_metadata.selected_format_field = index;
+            g_metadata.format_target_valid = 1;
+            g_metadata.format_target_chart_scoped = field->chart_scoped;
+            g_metadata.format_target_family = field->family;
+            g_metadata.format_target_index = field->field_index;
+            g_metadata.format_target_field_count = field->group_field_count;
             initialize_format_buffers(field, 0);
         }
         if (!field_editable) {
@@ -1223,22 +1197,22 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
             nk_layout_row_end(g_context);
         }
     }
-    if (g_metadata_format_target_valid) {
+    if (g_metadata.format_target_valid) {
         const WormUiMetadataFormatFieldView* field =
-            g_metadata_selected_format_field < metadata->format_field_count
-                ? &metadata->format_fields[g_metadata_selected_format_field]
+            g_metadata.selected_format_field < metadata->format_field_count
+                ? &metadata->format_fields[g_metadata.selected_format_field]
                 : nullptr;
         nk_layout_row_dynamic(g_context, 24, 1);
-        if (field && !g_metadata_format_insert_mode) {
+        if (field && !g_metadata.format_insert_mode) {
             nk_labelf(g_context, NK_TEXT_LEFT, "%s · %s field #%zu",
                       field->chart_scoped ? "Chart" : "Song",
                       metadata_format_family_name(field->family), field->field_index + 1);
         } else {
             nk_labelf(g_context, NK_TEXT_LEFT, "New %s · %s field",
-                      g_metadata_format_target_chart_scoped ? "Chart" : "Song",
-                      metadata_format_family_name(g_metadata_format_target_family));
+                      g_metadata.format_target_chart_scoped ? "Chart" : "Song",
+                      metadata_format_family_name(g_metadata.format_target_family));
         }
-        if (!g_metadata_format_buffers_valid) {
+        if (!g_metadata.format_buffers_valid) {
             nk_layout_row_dynamic(g_context, 20, 1);
             nk_label(g_context,
                      "Field is read-only because it exceeds the text cap or group scope.",
@@ -1252,13 +1226,13 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
                 }
             }
         } else {
-            metadata_input_row("Name", g_metadata_format_name.data(), g_metadata_format_name.size(),
+            metadata_input_row("Name", g_metadata.format_name.data(), g_metadata.format_name.size(),
                                1);
-            metadata_input_row("Value", g_metadata_format_value.data(),
-                               g_metadata_format_value.size(), 1);
-            if (g_metadata_format_insert_mode) {
+            metadata_input_row("Value", g_metadata.format_value.data(),
+                               g_metadata.format_value.size(), 1);
+            if (g_metadata.format_insert_mode) {
                 nk_layout_row_dynamic(g_context, 26, 1);
-                const int insert_enabled = g_metadata_format_target_field_count <
+                const int insert_enabled = g_metadata.format_target_field_count <
                                            WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY;
                 if (!insert_enabled) {
                     nk_widget_disable_begin(g_context);
@@ -1288,7 +1262,7 @@ static void render_metadata_editor(const WormUiMetadataView* metadata,
                 nk_layout_row_push(g_context, 0.33f);
                 if (nk_button_label(g_context, "Prepare new field") && field &&
                     action->metadata_edit == WORM_UI_METADATA_EDIT_NONE) {
-                    g_metadata_format_target_index = field->group_field_count;
+                    g_metadata.format_target_index = field->group_field_count;
                     initialize_format_buffers(field, 1);
                 }
                 nk_layout_row_end(g_context);
@@ -1301,6 +1275,7 @@ bool worm_ui_frontend_init(SDL_Window* window) {
     if (!window || g_context) {
         return false;
     }
+    worm_ui_nuklear_reset_metadata_state();
 
     struct nk_context* context = nk_sdl_init(window);
     if (!context) {
@@ -1359,6 +1334,7 @@ bool worm_ui_frontend_init(SDL_Window* window) {
 
 void worm_ui_frontend_shutdown(void) {
     if (!g_context) {
+        worm_ui_nuklear_reset_metadata_state();
         return;
     }
     if (g_window) {
@@ -1398,6 +1374,7 @@ void worm_ui_frontend_shutdown(void) {
     g_compose_keyboard_focus = false;
     g_last_compose_chart_id = 0;
     g_last_compose_document_revision = 0;
+    worm_ui_nuklear_reset_metadata_state();
 }
 
 void worm_ui_frontend_begin_input(void) {

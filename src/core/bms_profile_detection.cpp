@@ -1,6 +1,8 @@
 #include <wormedit/core/bms_profile_detection.h>
 
 #include <algorithm>
+#include <array>
+#include <set>
 #include <string_view>
 #include <utility>
 
@@ -84,6 +86,71 @@ auto profile_maps_channel(const lane_layout_t& layout, std::string_view channel)
     });
 }
 
+auto channel_for_kind(const lane_definition_t& lane, bms_raw_channel_kind_t kind)
+    -> const std::optional<std::string>* {
+    switch (kind) {
+    case bms_raw_channel_kind_t::visible_note:
+        return &lane.bms_channels.visible;
+    case bms_raw_channel_kind_t::invisible_note:
+        return &lane.bms_channels.invisible;
+    case bms_raw_channel_kind_t::long_note:
+        return &lane.bms_channels.long_note;
+    case bms_raw_channel_kind_t::mine:
+        return &lane.bms_channels.mine;
+    case bms_raw_channel_kind_t::non_playable:
+    case bms_raw_channel_kind_t::unknown_or_reserved:
+        return nullptr;
+    }
+    return nullptr;
+}
+
+constexpr std::array playable_channel_families{
+    bms_raw_channel_kind_t::visible_note,
+    bms_raw_channel_kind_t::invisible_note,
+    bms_raw_channel_kind_t::long_note,
+    bms_raw_channel_kind_t::mine,
+};
+using channel_family_sets_t =
+    std::array<std::set<std::string, std::less<>>, playable_channel_families.size()>;
+
+auto observed_channel_families(const std::vector<const bms_raw_channel_t*>& observed)
+    -> channel_family_sets_t {
+    channel_family_sets_t result;
+    for (const auto* channel : observed) {
+        if (!channel->canonical_spelling.has_value()) {
+            continue;
+        }
+        const auto family = std::ranges::find(playable_channel_families, channel->kind);
+        if (family != playable_channel_families.end()) {
+            result[static_cast<std::size_t>(family - playable_channel_families.begin())].insert(
+                *channel->canonical_spelling);
+        }
+    }
+    return result;
+}
+
+auto complete_channel_family_match(const lane_layout_t& layout,
+                                   const channel_family_sets_t& observed) -> bool {
+    for (std::size_t family_index = 0; family_index < playable_channel_families.size();
+         ++family_index) {
+        const auto& observed_channels = observed[family_index];
+        if (observed_channels.empty()) {
+            continue;
+        }
+        std::set<std::string, std::less<>> profile_channels;
+        for (const auto& lane : layout.lanes) {
+            const auto* channel = channel_for_kind(lane, playable_channel_families[family_index]);
+            if (channel != nullptr && channel->has_value()) {
+                profile_channels.insert(**channel);
+            }
+        }
+        if (observed_channels == profile_channels) {
+            return true;
+        }
+    }
+    return false;
+}
+
 auto extension_is_known(std::string_view extension) -> bool {
     return extension == ".BMS" || extension == ".BME" || extension == ".BML" || extension == ".PMS";
 }
@@ -113,7 +180,8 @@ auto clamp_confidence(double value) -> double {
 
 auto profile_evidence(const bms_lane_profile_descriptor_t& spec, std::string_view extension,
                       std::optional<unsigned int> player_header, bool octave_fp_header,
-                      std::size_t compatible_count, std::size_t playable_channel_count)
+                      std::size_t compatible_count, std::size_t playable_channel_count,
+                      bool complete_family_match)
     -> std::pair<double, std::vector<bms_profile_evidence_t>> {
     auto score = 0.55;
     auto evidence = std::vector<bms_profile_evidence_t>{};
@@ -218,6 +286,19 @@ auto profile_evidence(const bms_lane_profile_descriptor_t& spec, std::string_vie
             .weight = ambiguity_weight,
         });
     }
+    if (complete_family_match) {
+        const auto weight = spec.family == bms_lane_profile_family_t::special ? 0.0 : 0.20;
+        score += weight;
+        evidence.push_back({
+            .source = bms_detection_evidence_source_t::used_channel,
+            .message = spec.family == bms_lane_profile_family_t::special
+                           ? "A complete channel family matches this special profile, but special "
+                             "dialects still require named or explicit evidence."
+                           : "A complete observed channel family exactly matches this standard "
+                             "profile rather than only a subset of it.",
+            .weight = weight,
+        });
+    }
     return {clamp_confidence(score), std::move(evidence)};
 }
 
@@ -255,10 +336,12 @@ auto detect_bms_lane_profile(const bms_profile_detection_request_t& request)
     }
 
     const auto specs = built_in_bms_lane_profiles();
+    const auto observed_families = observed_channel_families(raw_playable_channels);
     auto all_candidates = std::vector<bms_profile_candidate_t>{};
     all_candidates.reserve(specs.size());
     for (const auto& spec : specs) {
-        auto candidate = bms_profile_candidate_t{.profile = spec.profile};
+        auto candidate = bms_profile_candidate_t{};
+        candidate.profile = spec.profile;
         for (const auto* channel : raw_playable_channels) {
             const auto canonical = channel->canonical_spelling.value_or(channel->raw_spelling);
             if (!profile_maps_channel(candidate.profile.layout, canonical)) {
@@ -266,6 +349,9 @@ auto detect_bms_lane_profile(const bms_profile_detection_request_t& request)
             }
         }
         candidate.maps_all_playable_channels = candidate.unmapped_playable_channels.empty();
+        candidate.complete_channel_family_match =
+            complete_channel_family_match(candidate.profile.layout, observed_families);
+        candidate.automatic_selection_eligible = spec.family != bms_lane_profile_family_t::special;
         all_candidates.push_back(std::move(candidate));
     }
 
@@ -279,9 +365,9 @@ auto detect_bms_lane_profile(const bms_profile_detection_request_t& request)
             continue;
         }
         auto& spec = specs[index];
-        auto [confidence, evidence] =
-            profile_evidence(spec, extension, request.player_header, request.octave_fp_header,
-                             compatible_count, raw_playable_channels.size());
+        auto [confidence, evidence] = profile_evidence(
+            spec, extension, request.player_header, request.octave_fp_header, compatible_count,
+            raw_playable_channels.size(), candidate.complete_channel_family_match);
         candidate.confidence = confidence;
         candidate.evidence = std::move(evidence);
         result.candidates.push_back(std::move(candidate));
@@ -355,15 +441,19 @@ auto detect_bms_lane_profile(const bms_profile_detection_request_t& request)
                                          : best.confidence >= 0.80 && margin >= 0.18;
         result.confidence = best.confidence;
         result.evidence = best.evidence;
-        if (enough_evidence) {
+        if (enough_evidence && best.automatic_selection_eligible) {
             result.status = bms_profile_detection_status_t::selected;
             result.selected_profile = best.profile;
         } else {
             result.status = bms_profile_detection_status_t::ambiguous;
             result.evidence.push_back({
                 .source = bms_detection_evidence_source_t::used_channel,
-                .message = "Several profile interpretations remain plausible; the custom "
-                           "raw-channel map is retained for review.",
+                .message = !best.automatic_selection_eligible
+                               ? "The best channel match is a special dialect without named or "
+                                 "explicit evidence; the custom raw-channel map is retained for "
+                                 "review."
+                               : "Several profile interpretations remain plausible; the custom "
+                                 "raw-channel map is retained for review.",
                 .weight = 0.0,
             });
         }

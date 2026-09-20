@@ -452,6 +452,71 @@ TEST_CASE("BMS import forwards extension and active headers into conservative pr
     CHECK(contradictory.song->charts.front().measures.front().notes.empty());
 }
 
+TEST_CASE("dense standard BMS-family fixtures auto-select only separated profile evidence",
+          "[unit][format][bms][events][profile][detection][coverage][fixture]") {
+    struct selected_case_t {
+        std::string_view file;
+        std::string_view extension;
+        std::string_view profile_id;
+        std::size_t note_count;
+    };
+    constexpr std::array selected_cases{
+        selected_case_t{"bme-7k.bme", ".bme", "bme-7k-outside-scratch", 8},
+        selected_case_t{"bme-14k.bme", ".bme", "bme-14k-left-outside-right-outside", 16},
+        selected_case_t{"bme-14k-foot-pedal.bme", ".bme",
+                        "bme-14k-left-outside-right-outside-foot-pedal", 18},
+        selected_case_t{"pms-5button.pms", ".pms", "pms-standard-5button", 5},
+        selected_case_t{"pms-9button.pms", ".pms", "pms-standard-9button", 9},
+        selected_case_t{"pms-bme-9button.pms", ".pms", "pms-bme-style-9button", 9},
+    };
+    for (const auto& test : selected_cases) {
+        CAPTURE(test.file, test.profile_id);
+        wormedit::bms_parse_options_t options;
+        options.file_extension = test.extension;
+        const auto result = fixture("bms/profiles/" + std::string(test.file), options);
+        REQUIRE(result.song.has_value());
+        REQUIRE_FALSE(result.has_errors());
+        REQUIRE(result.lane_profile_detection.has_value());
+        const auto& detection = *result.lane_profile_detection;
+        REQUIRE(detection.status == wormedit::bms_profile_detection_status_t::selected);
+        REQUIRE(detection.selected_profile.has_value());
+        CHECK(detection.selected_profile->layout.profile_id == test.profile_id);
+        const auto candidate = std::ranges::find_if(detection.candidates, [&](const auto& item) {
+            return item.profile.layout.profile_id == test.profile_id;
+        });
+        REQUIRE(candidate != detection.candidates.end());
+        CHECK(candidate->complete_channel_family_match);
+        REQUIRE(result.song->charts.front().lane_layouts.size() == 1);
+        CHECK(result.song->charts.front().measures.front().notes.size() == test.note_count);
+    }
+
+    struct ambiguous_case_t {
+        std::string_view file;
+        std::string_view extension;
+    };
+    constexpr std::array ambiguous_cases{
+        ambiguous_case_t{"bms-5k-free-zone.bms", ".bms"},
+        ambiguous_case_t{"bms-10k-foot-pedal.bms", ".bms"},
+        ambiguous_case_t{"bme-7k-foot-pedal.bme", ".bme"},
+        ambiguous_case_t{"double-scratch-fpp.bms", ".bms"},
+        ambiguous_case_t{"project2dx-7k.bms", ".bms"},
+    };
+    for (const auto& test : ambiguous_cases) {
+        CAPTURE(test.file);
+        wormedit::bms_parse_options_t options;
+        options.file_extension = test.extension;
+        const auto result = fixture("bms/profiles/" + std::string(test.file), options);
+        REQUIRE(result.song.has_value());
+        REQUIRE_FALSE(result.has_errors());
+        REQUIRE(result.lane_profile_detection.has_value());
+        CHECK(result.lane_profile_detection->status ==
+              wormedit::bms_profile_detection_status_t::ambiguous);
+        CHECK_FALSE(result.lane_profile_detection->selected_profile.has_value());
+        CHECK(result.song->charts.front().lane_layouts.empty());
+        CHECK(result.song->charts.front().measures.front().notes.empty());
+    }
+}
+
 TEST_CASE("BMS long-note channel endpoints pair across lines and measures",
           "[unit][format][bms][events][long-note]") {
     constexpr std::string_view source = "#WAV01 head.wav\n#WAV02 tail.wav\n"

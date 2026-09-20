@@ -27,8 +27,10 @@ BME-style fixtures deliberately overlap BME channel families while retaining but
 | `octave-foot-pedal.bms` | `bms-octave-foot-pedal` | 16 |
 | `project2dx-7k.bms` | `project2dx-7k` | 8 |
 
-These fixtures prove explicit semantic import through Wormedit's supported profile catalog. The
-PMS 18-button case also pins automatic selection from `.pms` plus `#PLAYER 3`, and the octave case
-pins `#OCT/FP`; the parser exposes the full detection result in both cases. Other combinations do
-not thereby claim automatic detection: ambiguous inputs such as the raw-identical 5K free-zone and
-foot-pedal maps remain lossless until a profile is chosen.
+These fixtures prove explicit semantic import through Wormedit's supported profile catalog. Dense
+standard BME 7K/14K and PMS 5/9-button maps also pin conservative automatic selection when one
+complete observed channel family, extension, and `#PLAYER` evidence separates the profile from
+compatible supersets. PMS 18-button additionally pins `.pms` plus `#PLAYER 3`, and the octave case
+pins the named `#OCT/FP` header. The parser exposes the full ranked detection result in every case.
+Raw-identical free-zone/foot-pedal maps, BME 7K-foot-pedal versus BME-style PMS 9-button, and unnamed
+special double-scratch/Project2DX maps remain lossless and unmaterialized until a profile is chosen.

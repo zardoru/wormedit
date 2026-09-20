@@ -65,6 +65,12 @@ struct bms_profile_candidate_t {
     lane_input_profile_t profile;
     double confidence{};
     bool maps_all_playable_channels{false};
+    // At least one observed playable channel family covers this profile's
+    // complete corresponding family after duplicate observations are removed.
+    bool complete_channel_family_match{false};
+    // Special dialects require their named header or an explicit choice even
+    // when their raw channel occupancy happens to be a strong match.
+    bool automatic_selection_eligible{true};
     std::vector<std::string> unmapped_playable_channels;
     std::vector<bms_profile_evidence_t> evidence;
 };

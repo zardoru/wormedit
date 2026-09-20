@@ -79,6 +79,72 @@ TEST_CASE(
     CHECK(has_evidence(player_candidate->evidence, bms_detection_evidence_source_t::player_header));
 }
 
+TEST_CASE("complete standard channel families distinguish dense maps from compatible supersets",
+          "[unit][core][bms-detection][coverage]") {
+    const auto bme = detect_bms_lane_profile({
+        .file_extension = ".bme",
+        .player_header = 1,
+        .used_channels = {"11", "12", "13", "14", "15", "16", "18", "19", "11"},
+    });
+    REQUIRE(bme.status == bms_profile_detection_status_t::selected);
+    REQUIRE(bme.selected_profile);
+    CHECK(bme.selected_profile->layout.profile_id == "bme-7k-outside-scratch");
+    const auto* exact_bme = find_candidate(bme, "bme-7k-outside-scratch");
+    REQUIRE(exact_bme);
+    CHECK(exact_bme->complete_channel_family_match);
+
+    const auto long_note_bme = detect_bms_lane_profile({
+        .file_extension = ".bme",
+        .player_header = 1,
+        .used_channels = {"51", "52", "53", "54", "55", "56", "58", "59"},
+    });
+    REQUIRE(long_note_bme.status == bms_profile_detection_status_t::selected);
+    REQUIRE(long_note_bme.selected_profile);
+    CHECK(long_note_bme.selected_profile->layout.profile_id == "bme-7k-outside-scratch");
+
+    const auto pms = detect_bms_lane_profile({
+        .file_extension = ".pms",
+        .player_header = 3,
+        .used_channels = {"13", "14", "15", "22", "23"},
+    });
+    REQUIRE(pms.status == bms_profile_detection_status_t::selected);
+    REQUIRE(pms.selected_profile);
+    CHECK(pms.selected_profile->layout.profile_id == "pms-standard-5button");
+    const auto* exact_pms = find_candidate(pms, "pms-standard-5button");
+    REQUIRE(exact_pms);
+    CHECK(exact_pms->complete_channel_family_match);
+}
+
+TEST_CASE("exact occupancy does not guess identical semantics or unnamed special dialects",
+          "[unit][core][bms-detection][coverage][negative]") {
+    const auto semantic_pair = detect_bms_lane_profile({
+        .file_extension = ".bms",
+        .player_header = 1,
+        .used_channels = {"11", "12", "13", "14", "15", "16", "17"},
+    });
+    CHECK(semantic_pair.status == bms_profile_detection_status_t::ambiguous);
+    CHECK_FALSE(semantic_pair.selected_profile);
+    const auto* free_zone = find_candidate(semantic_pair, "bms-5k-outside-scratch-free-zone");
+    const auto* foot_pedal = find_candidate(semantic_pair, "bms-5k-outside-scratch-foot-pedal");
+    REQUIRE(free_zone);
+    REQUIRE(foot_pedal);
+    CHECK(free_zone->complete_channel_family_match);
+    CHECK(foot_pedal->complete_channel_family_match);
+    CHECK(free_zone->confidence == foot_pedal->confidence);
+
+    const auto special = detect_bms_lane_profile({
+        .file_extension = ".bms",
+        .player_header = 1,
+        .used_channels = {"11", "12", "13", "14", "15", "16", "18", "19", "26"},
+    });
+    CHECK(special.status == bms_profile_detection_status_t::ambiguous);
+    CHECK_FALSE(special.selected_profile);
+    const auto* double_scratch = find_candidate(special, "bms-double-scratch-fpp");
+    REQUIRE(double_scratch);
+    CHECK(double_scratch->complete_channel_family_match);
+    CHECK_FALSE(double_scratch->automatic_selection_eligible);
+}
+
 TEST_CASE("explicit profile choice resolves a supported mapping without discarding raw spelling",
           "[unit][core][bms-detection]") {
     const auto result = detect_bms_lane_profile({

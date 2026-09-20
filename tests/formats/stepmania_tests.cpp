@@ -111,6 +111,38 @@ TEST_CASE("StepMania matched timing and chart notes parse transactionally",
     }
 }
 
+TEST_CASE("StepMania fixture preserves 5.1 same-row timing phases",
+          "[unit][format][stepmania][timing][discontinuity]") {
+    const auto parsed = fixture("discontinuity-order.ssc", wormedit::stepmania_profile_t::ssc,
+                                wormedit::stepmania_implementation_profile_t::native_warps);
+    REQUIRE(parsed.song.has_value());
+    REQUIRE_FALSE(parsed.has_errors());
+    const auto& chart = parsed.song->charts.front();
+    const auto timing = wormedit::build_timing_index(chart);
+    REQUIRE(timing);
+    CHECK(timing.index->discontinuity_profile ==
+          wormedit::timing_discontinuity_profile_t::stepmania_5_1);
+
+    const auto built =
+        wormedit::build_preview_schedule(chart, *timing.index, {.sample_rate = 48'000});
+    REQUIRE(built);
+    std::vector<wormedit::preview_discontinuity_kind_t> before_delay;
+    std::vector<wormedit::preview_discontinuity_kind_t> at_event;
+    for (const auto& event : built.schedule->discontinuities) {
+        if (event.sample_frame == 48'000) {
+            before_delay.push_back(event.kind);
+        } else if (event.sample_frame == 60'000) {
+            at_event.push_back(event.kind);
+        }
+    }
+    REQUIRE(before_delay.size() == 2);
+    CHECK(before_delay[0] == wormedit::preview_discontinuity_kind_t::bpm);
+    CHECK(before_delay[1] == wormedit::preview_discontinuity_kind_t::delay);
+    REQUIRE(at_event.size() == 2);
+    CHECK(at_event[0] == wormedit::preview_discontinuity_kind_t::metronome);
+    CHECK(at_event[1] == wormedit::preview_discontinuity_kind_t::stop);
+}
+
 TEST_CASE("StepMania legacy negative timing encodings become canonical beat warps",
           "[unit][format][stepmania]") {
     const auto bpm = fixture("legacy-negative-bpm.sm", wormedit::stepmania_profile_t::sm,

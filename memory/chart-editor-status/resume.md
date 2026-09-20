@@ -4,9 +4,9 @@
 
 ## Immediate work
 
-1. Broaden the canonical/BMSON discontinuity stream with fixture-backed BMS and StepMania implementation profiles now that reusable video sessions, event-linked late/decode diagnostics, and SDL/OpenGL pixel evidence are implemented. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
-2. Capture BMSE/iBMSC clipboard samples with tool/version provenance, then broaden BMS dialect/profile and exact branch-editing fixtures.
-3. Expand SM/SSC and osu!mania implementation-profile/version fixtures while retaining explicit format limits and loss diagnostics.
+1. Capture BMSE/iBMSC clipboard samples with tool/version provenance, then broaden BMS dialect/profile and exact branch-editing fixtures.
+2. Expand SM/SSC and osu!mania implementation-profile/version fixtures while retaining explicit format limits and loss diagnostics.
+3. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
 
 ## Handoff rule
 

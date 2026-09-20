@@ -27,6 +27,7 @@ constexpr std::array fixture_paths{
     "stepmania/native-warp.ssc",
     "stepmania/negative-invalid-timing.ssc",
     "stepmania/stop-inside-warp.ssc",
+    "stepmania/discontinuity-order.ssc",
     "osu/mania-tags-bookmarks-kiai.osu",
     "osu/negative-non-mania.osu",
     "bmson/conflicting-continuation-flags.bmson",

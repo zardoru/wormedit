@@ -1,0 +1,31 @@
+#TITLE:Fixture: StepMania discontinuity order;
+#MUSIC:fixture.ogg;
+#BPMS:0.000=120.000,2.000=180.000;
+#DELAYS:2.000=0.250;
+#STOPS:2.000=0.500;
+#WARPS:4.000=1.000;
+#NOTEDATA:;
+#STEPSTYPE:dance-single;
+#DESCRIPTION:Same-row timing phases;
+#DIFFICULTY:Challenge;
+#METER:9;
+#RADARVALUES:0,0,0,0,0;
+#NOTES:
+1000
+0000
+0100
+0000
+0010
+0000
+0001
+0000
+,
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+0000
+;

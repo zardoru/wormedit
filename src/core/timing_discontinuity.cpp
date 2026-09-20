@@ -4,23 +4,33 @@ namespace wormedit {
 
 auto valid_timing_discontinuity_profile(timing_discontinuity_profile_t profile) noexcept -> bool {
     return profile == timing_discontinuity_profile_t::canonical ||
-           profile == timing_discontinuity_profile_t::bmson_1_0;
+           profile == timing_discontinuity_profile_t::bms_legacy ||
+           profile == timing_discontinuity_profile_t::bmson_1_0 ||
+           profile == timing_discontinuity_profile_t::stepmania_5_1;
 }
 
 auto resolve_timing_discontinuity_profile(
-    format_family_t source_family,
-    std::optional<timing_discontinuity_profile_t> requested) noexcept
+    format_family_t source_family, std::optional<timing_discontinuity_profile_t> requested) noexcept
     -> timing_discontinuity_profile_t {
     if (requested && valid_timing_discontinuity_profile(*requested)) {
         return *requested;
     }
-    return source_family == format_family_t::bmson ? timing_discontinuity_profile_t::bmson_1_0
-                                                    : timing_discontinuity_profile_t::canonical;
+    switch (source_family) {
+    case format_family_t::bms:
+        return timing_discontinuity_profile_t::bms_legacy;
+    case format_family_t::bmson:
+        return timing_discontinuity_profile_t::bmson_1_0;
+    case format_family_t::stepmania:
+        return timing_discontinuity_profile_t::stepmania_5_1;
+    default:
+        return timing_discontinuity_profile_t::canonical;
+    }
 }
 
 auto timing_discontinuity_order(timing_discontinuity_profile_t profile,
                                 preview_discontinuity_kind_t kind) noexcept -> std::uint8_t {
-    if (profile == timing_discontinuity_profile_t::bmson_1_0) {
+    if (profile == timing_discontinuity_profile_t::bms_legacy ||
+        profile == timing_discontinuity_profile_t::bmson_1_0) {
         switch (kind) {
         case preview_discontinuity_kind_t::delay:
             return 0;

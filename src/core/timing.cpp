@@ -2312,10 +2312,11 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
         }
     };
     for (const auto& bpm : chart.bpms) {
-        const auto side = schedule.discontinuity_profile ==
-                                  timing_discontinuity_profile_t::bmson_1_0
-                              ? timing_boundary_side_t::event
-                              : timing_boundary_side_t::before_delays;
+        const auto side =
+            (schedule.discontinuity_profile == timing_discontinuity_profile_t::bms_legacy ||
+             schedule.discontinuity_profile == timing_discontinuity_profile_t::bmson_1_0)
+                ? timing_boundary_side_t::event
+                : timing_boundary_side_t::before_delays;
         append_timing(bpm.position, bpm.id, bpm.provenance.source_order,
                       preview_discontinuity_kind_t::bpm, side);
     }

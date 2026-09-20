@@ -8,11 +8,14 @@
 namespace wormedit {
 
 // A timing index resolves its profile once at construction. Native/editor
-// charts use the canonical delay/event/stop vocabulary; imported BMSON 1.0
-// charts retain the format's Note/BGA -> BPM -> STOP ordering at one pulse.
+// charts use the canonical delay/event/stop vocabulary. Imported formats keep
+// explicit, versionable identities even when a profile currently shares an
+// ordering with another profile.
 enum class timing_discontinuity_profile_t : std::uint8_t {
     canonical,
+    bms_legacy,
     bmson_1_0,
+    stepmania_5_1,
 };
 
 enum class preview_discontinuity_kind_t : std::uint8_t {

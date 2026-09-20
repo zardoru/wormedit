@@ -1,3 +1,4 @@
+#include <wormedit/core/timing.h>
 #include <wormedit/formats/bms.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -155,6 +156,39 @@ TEST_CASE("BMS reader imports metadata, source bytes, measures and resource decl
     CHECK((*ratio_line)->source_span.byte_end > (*ratio_line)->source_span.byte_begin);
     CHECK((*ratio_line)->line_ending == wormedit::bms_line_ending_t::lf);
     CHECK(wormedit::validate_document(song).empty());
+}
+
+TEST_CASE("BMS fixture preserves presentation-first discontinuity order",
+          "[unit][format][bms][timing][discontinuity]") {
+    const auto parsed = fixture("bms/repeated-bgm-ratio-stop-collision.bms");
+    REQUIRE(parsed.song.has_value());
+    REQUIRE_FALSE(parsed.has_errors());
+    const auto& chart = parsed.song->charts.front();
+    const auto timing = wormedit::build_timing_index(chart);
+    REQUIRE(timing);
+    CHECK(timing.index->discontinuity_profile ==
+          wormedit::timing_discontinuity_profile_t::bms_legacy);
+
+    const auto built = wormedit::build_preview_schedule(
+        chart, *timing.index, {.sample_rate = 48'000, .include_metronome = false});
+    REQUIRE(built);
+    std::vector<wormedit::preview_discontinuity_kind_t> at_zero;
+    for (const auto& event : built.schedule->discontinuities) {
+        if (event.sample_frame == 0) {
+            at_zero.push_back(event.kind);
+        }
+    }
+    const auto first_bpm = std::ranges::find(at_zero, wormedit::preview_discontinuity_kind_t::bpm);
+    const auto first_stop =
+        std::ranges::find(at_zero, wormedit::preview_discontinuity_kind_t::stop);
+    REQUIRE(first_bpm != at_zero.end());
+    REQUIRE(first_stop != at_zero.end());
+    CHECK(std::ranges::find(at_zero.begin(), first_bpm,
+                            wormedit::preview_discontinuity_kind_t::bgm) != first_bpm);
+    CHECK(std::ranges::find(first_bpm, at_zero.end(),
+                            wormedit::preview_discontinuity_kind_t::bgm) == at_zero.end());
+    CHECK(std::ranges::find(first_stop, at_zero.end(),
+                            wormedit::preview_discontinuity_kind_t::bpm) == at_zero.end());
 }
 
 TEST_CASE("BMS reader retains extended metadata fields in source order",

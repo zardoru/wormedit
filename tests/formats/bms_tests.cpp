@@ -1,3 +1,4 @@
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/formats/bms.h>
 
@@ -25,6 +26,11 @@ auto read_binary(const std::filesystem::path& path) -> std::vector<std::byte> {
         bytes.push_back(static_cast<std::byte>(static_cast<unsigned char>(character)));
     }
     return bytes;
+}
+
+auto read_text(const std::filesystem::path& path) -> std::string {
+    std::ifstream stream(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
 }
 
 auto parse(std::string_view source, wormedit::bms_parse_options_t options = {})
@@ -290,6 +296,84 @@ TEST_CASE("BMS channel materialization respects explicit profiles and exact grid
         return diagnostic.code == wormedit::bms_parse_diagnostic_code_t::invalid_measure &&
                diagnostic.message.find("channel subdivisions") != std::string::npos;
     }));
+}
+
+TEST_CASE("every built-in BMS lane profile imports its fixture-backed visible channel map",
+          "[unit][format][bms][events][profile][fixture]") {
+    struct fixture_case_t {
+        std::string_view file;
+        std::string_view profile_id;
+        std::size_t lane_count;
+    };
+    constexpr std::array cases{
+        fixture_case_t{"bms-5k-free-zone.bms", "bms-5k-outside-scratch-free-zone", 7},
+        fixture_case_t{"bms-5k-foot-pedal.bms", "bms-5k-outside-scratch-foot-pedal", 7},
+        fixture_case_t{"bme-7k.bme", "bme-7k-outside-scratch", 8},
+        fixture_case_t{"bme-7k-foot-pedal.bme", "bme-7k-outside-scratch-foot-pedal", 9},
+        fixture_case_t{"bms-10k-free-zone.bms", "bms-10k-left-outside-right-outside-free-zone", 14},
+        fixture_case_t{"bms-10k-foot-pedal.bms", "bms-10k-left-outside-right-outside-foot-pedal",
+                       14},
+        fixture_case_t{"bme-14k.bme", "bme-14k-left-outside-right-outside", 16},
+        fixture_case_t{"bme-14k-foot-pedal.bme", "bme-14k-left-outside-right-outside-foot-pedal",
+                       18},
+        fixture_case_t{"pms-5button.pms", "pms-standard-5button", 5},
+        fixture_case_t{"pms-9button.pms", "pms-standard-9button", 9},
+        fixture_case_t{"pms-bme-9button.pms", "pms-bme-style-9button", 9},
+        fixture_case_t{"pms-bme-18button.pms", "pms-bme-style-18button", 18},
+        fixture_case_t{"double-scratch-fpp.bms", "bms-double-scratch-fpp", 9},
+        fixture_case_t{"octave-foot-pedal.bms", "bms-octave-foot-pedal", 16},
+        fixture_case_t{"project2dx-7k.bms", "project2dx-7k", 8},
+    };
+
+    const auto root = std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bms" / "profiles";
+    const auto inventory = read_text(root / "README.md");
+    REQUIRE_FALSE(inventory.empty());
+    const auto catalog = wormedit::built_in_bms_lane_profiles();
+    REQUIRE(catalog.size() == cases.size());
+
+    for (const auto& test : cases) {
+        CAPTURE(test.file, test.profile_id);
+        CHECK(inventory.find(test.file) != std::string::npos);
+        CHECK(inventory.find(test.profile_id) != std::string::npos);
+
+        const auto descriptor = std::ranges::find_if(catalog, [&](const auto& candidate) {
+            return candidate.profile.layout.profile_id == test.profile_id;
+        });
+        REQUIRE(descriptor != catalog.end());
+        REQUIRE(descriptor->profile.layout.lanes.size() == test.lane_count);
+
+        wormedit::bms_parse_options_t options;
+        options.lane_profile_id = test.profile_id;
+        auto result = fixture("bms/profiles/" + std::string(test.file), std::move(options));
+        REQUIRE(result.song.has_value());
+        CHECK_FALSE(result.has_errors());
+        REQUIRE(result.song->charts.size() == 1);
+        const auto& chart = result.song->charts.front();
+        REQUIRE(chart.lane_layouts.size() == 1);
+        const auto& imported_layout = chart.lane_layouts.front().layout;
+        CHECK(imported_layout.profile_id == test.profile_id);
+        REQUIRE(imported_layout.lanes.size() == test.lane_count);
+        REQUIRE(chart.measures.front().notes.size() == test.lane_count);
+
+        for (const auto& expected_lane : descriptor->profile.layout.lanes) {
+            REQUIRE(expected_lane.bms_channels.visible.has_value());
+            const auto note =
+                std::ranges::find_if(chart.measures.front().notes, [&](const auto& item) {
+                    return item.lane == expected_lane.id;
+                });
+            REQUIRE(note != chart.measures.front().notes.end());
+            CHECK(note->kind == wormedit::note_kind_t::tap);
+            CHECK(note->sound.has_value());
+            CHECK(note->provenance.profile == test.profile_id);
+            CHECK(note->provenance.source_field.starts_with(*expected_lane.bms_channels.visible));
+
+            const auto imported_lane = std::ranges::find(imported_layout.lanes, expected_lane.id,
+                                                         &wormedit::lane_definition_t::id);
+            REQUIRE(imported_lane != imported_layout.lanes.end());
+            CHECK(imported_lane->role == expected_lane.role);
+            CHECK(imported_lane->stage == expected_lane.stage);
+        }
+    }
 }
 
 TEST_CASE("BMS long-note channel endpoints pair across lines and measures",

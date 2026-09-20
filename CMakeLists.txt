@@ -242,4 +242,11 @@ if(BUILD_TESTING)
             -P "${CMAKE_SOURCE_DIR}/cmake/check_ui_boundary.cmake"
     )
     set_tests_properties(architecture.ui_frontend_boundary PROPERTIES LABELS "unit;architecture")
+    add_test(
+        NAME documentation.chart_editor_state
+        COMMAND "${CMAKE_COMMAND}"
+            -DWORMEDIT_SOURCE_ROOT=${CMAKE_SOURCE_DIR}
+            -P "${CMAKE_SOURCE_DIR}/cmake/check_chart_editor_docs.cmake"
+    )
+    set_tests_properties(documentation.chart_editor_state PROPERTIES LABELS "unit;documentation")
 endif()

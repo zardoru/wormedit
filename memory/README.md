@@ -2,8 +2,8 @@
 
 This directory holds short, durable handoff notes for ongoing wormedit work.
 
-- The canonical product and architecture plan is [`docs/chart-editor-plan.md`](../docs/chart-editor-plan.md).
-- The active milestone, settled decisions, open questions, and next actions are in [`chart-editor-status.md`](chart-editor-status.md).
+- The canonical product and architecture plan starts at the small [`docs/chart-editor-plan.md`](../docs/chart-editor-plan.md) index and is divided into domain-owned files below it.
+- The active milestone, settled decisions, open questions, next actions, and current constraints start at the small [`chart-editor-status.md`](chart-editor-status.md) index and are divided into purpose-owned files below it.
 - The requested Sol/Luna delegation protocol and task-brief template are in [`agent-workflow.md`](agent-workflow.md).
 
-Update the status file after a milestone begins or ends, after a decision changes implementation direction, or before leaving partially completed work. Keep detailed design in the planning document and implementation truth in code/tests rather than duplicating it here.
+Update the owning status slice after a milestone begins or ends, after a decision changes implementation direction, or before leaving partially completed work. Keep detailed design in the owning plan domain and implementation truth in code/tests rather than duplicating it here.

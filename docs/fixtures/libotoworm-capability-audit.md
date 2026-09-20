@@ -58,7 +58,7 @@ Extension matching is case-normalized. Unsupported extensions return `false`; ac
 
 ## Wormedit-owned component assignment
 
-These are ownership assignments for replacement work, not claims that the listed behavior is implemented. They follow the layered architecture and stage gates in [`docs/chart-editor-plan.md:43-76`](../chart-editor-plan.md#L43) and [`:708-726`](../chart-editor-plan.md#L708).
+These are ownership assignments for replacement work, not claims that the listed behavior is implemented. They follow the [layered architecture](../chart-editor-plan/overview.md#architecture-and-implementation-style) and [format/persistence gates](../chart-editor-plan/formats-persistence.md#format-adapters-and-capability-policy) in the canonical plan.
 
 | Audited capability / loss | Wormedit owner | Required retained semantics |
 |---|---|---|

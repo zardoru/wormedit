@@ -300,6 +300,108 @@ TEST_CASE("field scene resolves semantic layer colors by visible palette order",
           wormedit::color_rgba_t{51, 52, 53, 220});
 }
 
+TEST_CASE("field scene composes an independently scrolled BGM pane",
+          "[unit][core][editor-scene][bgm]") {
+    auto chart = scene_chart();
+    chart.bgm_source_lanes = {
+        {.id = wormedit::object_id_t{31}, .name = "first", .source_order = 7},
+        {.id = wormedit::object_id_t{30}, .name = "second", .source_order = 3},
+        {.id = wormedit::object_id_t{32}, .name = "third", .source_order = 9},
+    };
+    chart.measures[0].bgm_events = {
+        {.id = wormedit::object_id_t{12},
+         .position = {wormedit::measure_id_t{1}, 480},
+         .source_lane = wormedit::object_id_t{30},
+         .sound = wormedit::resource_id_t{40}},
+        {.id = wormedit::object_id_t{13},
+         .position = {wormedit::measure_id_t{1}, 0},
+         .source_lane = wormedit::object_id_t{31}},
+    };
+    chart.measures[1].bgm_events = {
+        {.id = wormedit::object_id_t{14},
+         .position = {wormedit::measure_id_t{2}, 480},
+         .source_lane = wormedit::object_id_t{32}},
+    };
+    auto scene_view = view();
+    scene_view.selected_objects.push_back(
+        {wormedit::editor_selection_object_kind_t::bgm_event, wormedit::object_id_t{12}});
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+
+    const auto result = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
+        {.field_left_pixels = 10.0,
+         .field_width_pixels = 200.0,
+         .bgm_pane_left_pixels = 220.0,
+         .bgm_pane_width_pixels = 60.0,
+         .bgm_lane_width_pixels = 40.0,
+         .bgm_horizontal_scroll_pixels = 20.0});
+    REQUIRE(result);
+    REQUIRE(result.scene->bgm_lanes.size() == 2);
+    CHECK(result.scene->bgm_lanes[0].source_lane == wormedit::object_id_t{31});
+    CHECK(result.scene->bgm_lanes[0].source_order == 7);
+    CHECK(result.scene->bgm_lanes[0].bounds.left == 220.0);
+    CHECK(result.scene->bgm_lanes[0].bounds.right == 240.0);
+    CHECK(result.scene->bgm_lanes[1].source_lane == wormedit::object_id_t{30});
+    CHECK(result.scene->bgm_lanes[1].source_order == 3);
+    CHECK(result.scene->bgm_lanes[1].bounds.left == 240.0);
+    CHECK(result.scene->bgm_lanes[1].bounds.right == 280.0);
+    REQUIRE(result.scene->bgm_events.size() == 1);
+    CHECK(result.scene->bgm_events[0].event == wormedit::object_id_t{12});
+    CHECK(result.scene->bgm_events[0].source_lane == wormedit::object_id_t{30});
+    CHECK(result.scene->bgm_events[0].sound == wormedit::resource_id_t{40});
+    CHECK(result.scene->bgm_events[0].selected);
+    CHECK(result.scene->bgm_events[0].bounds.left == 240.0);
+    CHECK(result.scene->bgm_events[0].bounds.right == 280.0);
+    CHECK(result.scene->bgm_events[0].bounds.top == Catch::Approx(-5.0));
+    CHECK(result.scene->bgm_events[0].bounds.bottom == Catch::Approx(5.0));
+
+    const auto disabled = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
+        {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(disabled);
+    CHECK(disabled.scene->bgm_lanes.empty());
+    CHECK(disabled.scene->bgm_events.empty());
+
+    const auto primitive_count =
+        result.scene->layout_bands.size() + result.scene->lanes.size() +
+        result.scene->comparison_differences.size() + result.scene->grid_lines.size() +
+        result.scene->hold_bodies.size() + result.scene->note_endpoints.size() +
+        result.scene->bgm_lanes.size() + result.scene->bgm_events.size() +
+        static_cast<std::size_t>(result.scene->cursor.has_value());
+    const auto capped = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
+        {.field_left_pixels = 10.0,
+         .field_width_pixels = 200.0,
+         .bgm_pane_left_pixels = 220.0,
+         .bgm_pane_width_pixels = 60.0,
+         .bgm_lane_width_pixels = 40.0,
+         .bgm_horizontal_scroll_pixels = 20.0,
+         .maximum_scene_primitives = primitive_count - 1});
+    CHECK_FALSE(capped);
+    CHECK_FALSE(capped.scene.has_value());
+
+    const auto invalid_geometry = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
+        {.field_left_pixels = 10.0,
+         .field_width_pixels = 200.0,
+         .bgm_pane_left_pixels = 220.0,
+         .bgm_pane_width_pixels = -1.0});
+    CHECK_FALSE(invalid_geometry);
+    CHECK_FALSE(invalid_geometry.scene.has_value());
+
+    const auto excessive_scroll = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
+        {.field_left_pixels = 10.0,
+         .field_width_pixels = 200.0,
+         .bgm_pane_left_pixels = 220.0,
+         .bgm_pane_width_pixels = 60.0,
+         .bgm_lane_width_pixels = 40.0,
+         .bgm_horizontal_scroll_pixels = 61.0});
+    CHECK_FALSE(excessive_scroll);
+    CHECK_FALSE(excessive_scroll.scene.has_value());
+}
+
 TEST_CASE("field scene rejects stale indexes and returns no partial geometry at hard caps",
           "[unit][core][editor-scene][bounds]") {
     const auto chart = scene_chart();
@@ -310,11 +412,19 @@ TEST_CASE("field scene rejects stale indexes and returns no partial geometry at 
                    wormedit::diagnostic_code_t::invalid_resolution));
 
     const auto no_bgm_capacity = wormedit::build_editor_field_scene_index(
-        chart, 7, {.maximum_notes = 2, .maximum_bgm_events = 0,
-                   .maximum_layout_segments = 2});
+        chart, 7, {.maximum_notes = 2, .maximum_bgm_events = 0, .maximum_layout_segments = 2});
     REQUIRE(std::holds_alternative<wormedit::diagnostic_list_t>(no_bgm_capacity));
     CHECK(has_code(std::get<wormedit::diagnostic_list_t>(no_bgm_capacity),
                    wormedit::diagnostic_code_t::invalid_resolution));
+
+    auto duplicate_bgm = chart;
+    duplicate_bgm.measures[1].bgm_events.push_back({.id = wormedit::object_id_t{12},
+                                                    .position = {wormedit::measure_id_t{2}, 0},
+                                                    .source_lane = wormedit::object_id_t{30}});
+    const auto duplicate_bgm_index = wormedit::build_editor_field_scene_index(duplicate_bgm, 7);
+    REQUIRE(std::holds_alternative<wormedit::diagnostic_list_t>(duplicate_bgm_index));
+    CHECK(has_code(std::get<wormedit::diagnostic_list_t>(duplicate_bgm_index),
+                   wormedit::diagnostic_code_t::duplicate_id));
 
     const auto built = wormedit::build_editor_field_scene_index(chart, 7);
     REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));

@@ -76,6 +76,8 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK,
     WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET,
+    WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER,
+    WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER,
     WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT,
     WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER,
     WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS,
@@ -353,6 +355,7 @@ typedef struct WormUiComposeView {
     bool note_paint_mode_active;
     bool semantic_layer_paint_mode_active;
     size_t selected_note_count;
+    bool beat_marker_navigation_available;
     const WormUiComposeSemanticLayerView* semantic_layers;
     size_t semantic_layer_count;
     size_t semantic_layer_total_count;

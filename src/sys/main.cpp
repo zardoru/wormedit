@@ -789,6 +789,16 @@ auto refresh_timing_grid(const wormedit::chart_document_t& chart,
     return state;
 }
 
+auto has_beat_marker_navigation(const wormedit::chart_document_t& chart) -> bool {
+    return std::ranges::any_of(chart.bookmarks,
+                               [](const auto& bookmark) {
+                                   return bookmark.anchor == wormedit::marker_anchor_t::beat;
+                               }) ||
+           std::ranges::any_of(chart.sections, [](const auto& section) {
+               return section.anchor == wormedit::marker_anchor_t::beat;
+           });
+}
+
 auto timing_stage_grid_step(const wormedit::chart_document_t& chart,
                             std::uint64_t active_denominator) -> std::uint64_t {
     if (active_denominator == 0 || chart.divisions_per_standard_measure % active_denominator != 0) {
@@ -2155,6 +2165,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.note_paint_mode_active = application_state.note_paint_mode_active;
     view.semantic_layer_paint_mode_active = application_state.semantic_layer_paint_mode_active;
     view.selected_note_count = 0;
+    view.beat_marker_navigation_available = false;
     view.semantic_layers = flattened.compose_semantic_layer_storage.data();
     view.semantic_layer_count = 0;
     view.semantic_layer_total_count = 0;
@@ -2193,6 +2204,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
         return;
     }
     const auto& chart = *chart_it;
+    view.beat_marker_navigation_available = has_beat_marker_navigation(chart);
     if (application_state.semantic_layer_filter_chart != chart.id) {
         application_state.semantic_layer_filter_chart = chart.id;
         application_state.required_semantic_layer_filters.clear();
@@ -4848,8 +4860,10 @@ void refresh_application_command_states(
                                              application_state.semantic_layer_paint_mode_active));
     set("selection.select_all", compose_ready);
     set("selection.invert", compose_ready);
-    set("navigation.previous_marker", compose_ready);
-    set("navigation.next_marker", compose_ready);
+    const bool beat_marker_navigation_available =
+        compose_ready && has_beat_marker_navigation(*chart);
+    set("navigation.previous_marker", beat_marker_navigation_available);
+    set("navigation.next_marker", beat_marker_navigation_available);
     set("navigation.previous_snap", compose_ready);
     set("navigation.next_snap", compose_ready);
     set("transport.play_pause",
@@ -5803,6 +5817,23 @@ int main(int argc, char** argv) {
                 status = application_command_state.transport_seek
                              ? application_command_state.transport_seek(action.transport_seek_frame)
                              : "Chart preview seek is unavailable.";
+            } else if (action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER ||
+                       action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER) {
+                const auto command = wormedit::command_id_t{
+                    action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER
+                        ? "navigation.previous_marker"
+                        : "navigation.next_marker"};
+                refresh_application_command_states(command_registry, history, workspace,
+                                                   compose_interaction_state,
+                                                   application_command_state);
+                const auto dispatched = wormedit::invoke_command(
+                    command_registry, command, application_command_focus(action, workspace));
+                if (dispatched.status == wormedit::command_dispatch_status_t::disabled) {
+                    status = "No beat-anchored bookmarks or section boundaries are available.";
+                } else if (dispatched.status != wormedit::command_dispatch_status_t::invoked &&
+                           !dispatched.diagnostics.empty()) {
+                    status = dispatched.diagnostics.front().message;
+                }
             } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET) {
                 const auto applied = wormedit::apply_workspace_action(
                     workspace, history.document, history.document.revision,

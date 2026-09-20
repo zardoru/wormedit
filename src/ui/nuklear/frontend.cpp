@@ -3398,6 +3398,32 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
     }
     nk_layout_row_end(g_context);
 
+    nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 3);
+    if (!view->scene_available || !view->beat_marker_navigation_available) {
+        nk_widget_disable_begin(g_context);
+    }
+    nk_layout_row_push(g_context, 0.22f);
+    const auto previous_marker_clicked = nk_button_label(g_context, "Previous marker");
+    nk_layout_row_push(g_context, 0.22f);
+    const auto next_marker_clicked = nk_button_label(g_context, "Next marker");
+    if (!view->scene_available || !view->beat_marker_navigation_available) {
+        nk_widget_disable_end(g_context);
+    }
+    nk_layout_row_push(g_context, 0.56f);
+    nk_label(g_context,
+             view->beat_marker_navigation_available
+                 ? "Navigate beat-anchored bookmarks and section boundaries"
+                 : "No beat-anchored bookmarks or sections",
+             NK_TEXT_LEFT);
+    nk_layout_row_end(g_context);
+    if (action && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
+        if (previous_marker_clicked) {
+            action->kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER;
+        } else if (next_marker_clicked) {
+            action->kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER;
+        }
+    }
+
     nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 4);
     nk_layout_row_push(g_context, 0.13f);
     nk_labelf(g_context, NK_TEXT_LEFT, "Label (%zu)", view->selected_note_count);

@@ -693,7 +693,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER_NOTES,
     WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER,
-    WORM_UI_COMPOSE_ACTION_CYCLE_SEMANTIC_LAYER_COLOR,
+    WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR,
     WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER,
     WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS,
     WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP,
@@ -831,6 +831,10 @@ typedef struct WormUiWorkspaceAction {
     char compose_note_label[WORM_UI_COMPOSE_NOTE_LABEL_BYTES + 1];
     uint64_t compose_semantic_layer_id;
     char compose_semantic_layer_name[WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY];
+    uint8_t compose_semantic_layer_red;
+    uint8_t compose_semantic_layer_green;
+    uint8_t compose_semantic_layer_blue;
+    uint8_t compose_semantic_layer_alpha;
     WormUiComposeInputAction compose_inputs[WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY];
     size_t compose_input_count;
     WormUiComposeViewportInput compose_viewport_inputs[WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY];

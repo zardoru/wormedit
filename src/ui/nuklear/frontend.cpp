@@ -207,6 +207,9 @@ static std::array<char, WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY>
     g_compose_semantic_layer_name{};
 static uint64_t g_compose_semantic_layer_name_id{};
 static uint64_t g_compose_semantic_layer_name_revision{std::numeric_limits<uint64_t>::max()};
+static uint64_t g_compose_semantic_layer_color_id{};
+static struct nk_colorf g_compose_semantic_layer_color{};
+static bool g_compose_semantic_layer_color_editor_visible{};
 
 static void append_compose_input(
     WormUiWorkspaceAction* action, WormUiComposeInputKind kind, double x_pixels = 0.0,
@@ -1306,6 +1309,8 @@ bool worm_ui_frontend_init(SDL_Window* window) {
     g_compose_semantic_layer_paint_pointer_active = false;
     g_compose_semantic_layer_name_id = 0;
     g_compose_semantic_layer_name_revision = std::numeric_limits<uint64_t>::max();
+    g_compose_semantic_layer_color_id = 0;
+    g_compose_semantic_layer_color_editor_visible = false;
     g_compose_lane_hold_active = false;
     g_compose_space_range_hold_active = false;
     g_compose_space_range_hold_moved = false;
@@ -1357,6 +1362,8 @@ void worm_ui_frontend_shutdown(void) {
     g_compose_pointer_hold_active = false;
     g_compose_note_paint_pointer_active = false;
     g_compose_semantic_layer_paint_pointer_active = false;
+    g_compose_semantic_layer_color_id = 0;
+    g_compose_semantic_layer_color_editor_visible = false;
     g_compose_lane_hold_active = false;
     g_compose_area_selection_candidate_active = false;
     g_compose_area_selection_active = false;
@@ -3473,6 +3480,15 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                 g_compose_semantic_layer_name_id = selected_layer->layer_id;
                 g_compose_semantic_layer_name_revision = view->document_revision;
             }
+            if (g_compose_semantic_layer_color_id != selected_layer->layer_id) {
+                g_compose_semantic_layer_color_id = selected_layer->layer_id;
+                g_compose_semantic_layer_color_editor_visible = false;
+            }
+            if (!g_compose_semantic_layer_color_editor_visible) {
+                g_compose_semantic_layer_color =
+                    nk_color_cf(nk_rgba(selected_layer->red, selected_layer->green,
+                                        selected_layer->blue, selected_layer->alpha));
+            }
             nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 7);
             nk_layout_row_push(g_context, 0.35f);
             (void)nk_edit_string_zero_terminated(
@@ -3486,9 +3502,9 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                 action->compose_action = WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER;
             }
             nk_layout_row_push(g_context, 0.12f);
-            if (nk_button_label(g_context, "Color") && action &&
-                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                action->compose_action = WORM_UI_COMPOSE_ACTION_CYCLE_SEMANTIC_LAYER_COLOR;
+            if (nk_button_label(g_context, "Color...")) {
+                g_compose_semantic_layer_color_editor_visible =
+                    !g_compose_semantic_layer_color_editor_visible;
             }
             nk_layout_row_push(g_context, 0.12f);
             if (selected_layer->locked) {
@@ -3518,6 +3534,40 @@ static void render_compose_field(const WormUiComposeView* view, WormUiWorkspaceA
                 action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY;
             }
             nk_layout_row_end(g_context);
+            if (g_compose_semantic_layer_color_editor_visible) {
+                nk_layout_row_dynamic(g_context, 110, 1);
+                g_compose_semantic_layer_color =
+                    nk_color_picker(g_context, g_compose_semantic_layer_color, NK_RGBA);
+                const auto byte_component = [](float component) {
+                    return static_cast<uint8_t>(
+                        std::lround(std::clamp(component, 0.0f, 1.0f) * 255.0f));
+                };
+                const auto red = byte_component(g_compose_semantic_layer_color.r);
+                const auto green = byte_component(g_compose_semantic_layer_color.g);
+                const auto blue = byte_component(g_compose_semantic_layer_color.b);
+                const auto alpha = byte_component(g_compose_semantic_layer_color.a);
+                nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 3);
+                nk_layout_row_push(g_context, 0.46f);
+                nk_labelf(g_context, NK_TEXT_LEFT, "RGBA %u %u %u %u", static_cast<unsigned>(red),
+                          static_cast<unsigned>(green), static_cast<unsigned>(blue),
+                          static_cast<unsigned>(alpha));
+                nk_layout_row_push(g_context, 0.27f);
+                const auto apply_color_clicked = nk_button_label(g_context, "Apply color");
+                nk_layout_row_push(g_context, 0.27f);
+                const auto cancel_color_clicked = nk_button_label(g_context, "Cancel color");
+                nk_layout_row_end(g_context);
+                if (apply_color_clicked && action &&
+                    action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                    action->compose_semantic_layer_red = red;
+                    action->compose_semantic_layer_green = green;
+                    action->compose_semantic_layer_blue = blue;
+                    action->compose_semantic_layer_alpha = alpha;
+                    action->compose_action = WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR;
+                    g_compose_semantic_layer_color_editor_visible = false;
+                } else if (cancel_color_clicked) {
+                    g_compose_semantic_layer_color_editor_visible = false;
+                }
+            }
             if (selected_layer->assigned_note_count != 0) {
                 nk_layout_row_begin(g_context, NK_DYNAMIC, 24, 2);
                 nk_layout_row_push(g_context, 0.65f);
@@ -4655,6 +4705,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
             g_compose_note_move_active = false;
             g_compose_area_selection_candidate_active = false;
             g_compose_area_selection_active = false;
+            g_compose_semantic_layer_color_editor_visible = false;
             g_compose_lane_hold_keycode = 0;
             g_compose_lane_hold_lane_id = 0;
             cancel_compose_navigation(&action);
@@ -4703,6 +4754,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         g_compose_space_range_hold_moved = false;
         g_compose_area_selection_candidate_active = false;
         g_compose_area_selection_active = false;
+        g_compose_semantic_layer_color_editor_visible = false;
         cancel_compose_navigation(&action);
         g_last_compose_chart_id = 0;
         g_last_compose_document_revision = 0;

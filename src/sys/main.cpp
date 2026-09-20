@@ -4070,7 +4070,7 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                               ? "Semantic layer renamed, but workspace rebinding failed."
                               : rebound.diagnostics.front().message);
     }
-    case WORM_UI_COMPOSE_ACTION_CYCLE_SEMANTIC_LAYER_COLOR: {
+    case WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR: {
         if (editor_interaction_has_pending_gesture(state)) {
             return "Finish or cancel the active Compose gesture before recoloring a semantic "
                    "layer.";
@@ -4084,24 +4084,12 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         if (!layer) {
             return "The selected semantic layer is no longer visible.";
         }
-        constexpr std::array<semantic_layer_rgba_t, 6> colors{{
-            {0.91, 0.35, 0.31, 1.0},
-            {0.95, 0.67, 0.24, 1.0},
-            {0.36, 0.74, 0.36, 1.0},
-            {0.25, 0.62, 0.91, 1.0},
-            {0.58, 0.42, 0.84, 1.0},
-            {0.87, 0.38, 0.68, 1.0},
-        }};
-        const auto matched = std::ranges::find_if(colors, [&](const auto& candidate) {
-            return std::lround(candidate.red * 255.0) == layer->color.red &&
-                   std::lround(candidate.green * 255.0) == layer->color.green &&
-                   std::lround(candidate.blue * 255.0) == layer->color.blue &&
-                   std::lround(candidate.alpha * 255.0) == layer->color.alpha;
-        });
-        const auto color =
-            matched == colors.end()
-                ? colors.front()
-                : colors[(static_cast<std::size_t>(matched - colors.begin()) + 1) % colors.size()];
+        const auto color = semantic_layer_rgba_t{
+            .red = static_cast<double>(action.compose_semantic_layer_red) / 255.0,
+            .green = static_cast<double>(action.compose_semantic_layer_green) / 255.0,
+            .blue = static_cast<double>(action.compose_semantic_layer_blue) / 255.0,
+            .alpha = static_cast<double>(action.compose_semantic_layer_alpha) / 255.0,
+        };
         const auto applied = apply_semantic_layer_edit(
             history, action.compose_input_document_revision,
             update_semantic_layer_action_t{state.chart, layer->id, layer->name, color,

@@ -2099,11 +2099,19 @@ void populate_compose_view(flattened_workspace_t& flattened,
         if (!layer.visible && !selected) {
             continue;
         }
+        std::size_t index{};
         if (view.semantic_layer_count >= flattened.compose_semantic_layer_storage.size()) {
             view.semantic_layers_truncated = true;
-            break;
+            if (!selected || layer.visible) {
+                continue;
+            }
+            // Keep an explicitly selected hidden layer reachable so its Show
+            // control remains available even when visible palette slots fill
+            // the bounded frontend array.
+            index = flattened.compose_semantic_layer_storage.size() - 1;
+        } else {
+            index = view.semantic_layer_count++;
         }
-        const auto index = view.semantic_layer_count++;
         flattened.compose_semantic_layer_name_storage[index] = layer.name;
         flattened.compose_semantic_layer_storage[index] = {
             .layer_id = layer.id.value,

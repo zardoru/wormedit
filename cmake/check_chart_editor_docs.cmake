@@ -16,6 +16,9 @@ set(plan_slices
     docs/chart-editor-plan/formats-persistence.md
     docs/chart-editor-plan/testing.md
     docs/chart-editor-plan/stages.md
+    docs/chart-editor-plan/stages/foundation.md
+    docs/chart-editor-plan/stages/authoring-export.md
+    docs/chart-editor-plan/stages/later.md
     docs/chart-editor-plan/decisions.md
     docs/chart-editor-plan/decisions/open-questions.md
     docs/references/osu-mania-version-profiles.md
@@ -30,6 +33,11 @@ set(status_slices
     memory/chart-editor-status/implemented/audio-timing.md
     memory/chart-editor-status/implemented/editing-frontend.md
     memory/chart-editor-status/settled-decisions.md
+    memory/chart-editor-status/settled-decisions/document-formats.md
+    memory/chart-editor-status/settled-decisions/editor-audio-preview.md
+    memory/chart-editor-status/settled-decisions/interaction-testing.md
+    memory/chart-editor-status/settled-decisions/future-performance-compatibility.md
+    memory/chart-editor-status/settled-decisions/architecture-persistence.md
     memory/chart-editor-status/open-decisions.md
     memory/chart-editor-status/resume.md
     memory/chart-editor-status/code-constraints.md
@@ -38,6 +46,21 @@ set(status_slices
 foreach(index IN ITEMS "${plan_index}" "${status_index}")
     if(NOT EXISTS "${index}")
         message(FATAL_ERROR "Missing chart-editor documentation index: ${index}")
+    endif()
+endforeach()
+
+set(stages_index "${WORMEDIT_SOURCE_ROOT}/docs/chart-editor-plan/stages.md")
+file(READ "${stages_index}" stages_index_text)
+set(stage_slices
+    docs/chart-editor-plan/stages/foundation.md
+    docs/chart-editor-plan/stages/authoring-export.md
+    docs/chart-editor-plan/stages/later.md
+)
+foreach(slice IN LISTS stage_slices)
+    string(REGEX REPLACE "^docs/chart-editor-plan/" "" index_target "${slice}")
+    string(FIND "${stages_index_text}" "](${index_target})" link_offset)
+    if(link_offset EQUAL -1)
+        message(FATAL_ERROR "Implementation-stage index does not link to ${slice}")
     endif()
 endforeach()
 
@@ -57,6 +80,24 @@ foreach(slice IN LISTS plan_index_slices)
     string(FIND "${plan_index_text}" "](${index_target})" link_offset)
     if(link_offset EQUAL -1)
         message(FATAL_ERROR "Plan index does not link to ${slice}")
+    endif()
+endforeach()
+
+set(settled_decisions_index
+    "${WORMEDIT_SOURCE_ROOT}/memory/chart-editor-status/settled-decisions.md")
+file(READ "${settled_decisions_index}" settled_decisions_index_text)
+set(settled_decision_slices
+    memory/chart-editor-status/settled-decisions/document-formats.md
+    memory/chart-editor-status/settled-decisions/editor-audio-preview.md
+    memory/chart-editor-status/settled-decisions/interaction-testing.md
+    memory/chart-editor-status/settled-decisions/future-performance-compatibility.md
+    memory/chart-editor-status/settled-decisions/architecture-persistence.md
+)
+foreach(slice IN LISTS settled_decision_slices)
+    string(REGEX REPLACE "^memory/chart-editor-status/" "" index_target "${slice}")
+    string(FIND "${settled_decisions_index_text}" "](${index_target})" link_offset)
+    if(link_offset EQUAL -1)
+        message(FATAL_ERROR "Settled-decision index does not link to ${slice}")
     endif()
 endforeach()
 

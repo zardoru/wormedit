@@ -3729,6 +3729,35 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         }
         return was_locked ? "Semantic layer unlocked." : "Semantic layer locked.";
     }
+    case WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER_NOTES: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before selecting by layer.";
+        }
+        const auto* chart = selected_chart(history, workspace);
+        if (!chart || !application_state.semantic_layer_target) {
+            return "Choose a visible semantic layer before selecting its notes.";
+        }
+        const auto* layer =
+            visible_semantic_layer_by_id(*chart, *application_state.semantic_layer_target);
+        if (!layer) {
+            application_state.semantic_layer_target.reset();
+            application_state.semantic_layer_paint_mode_active = false;
+            application_state.semantic_layer_solo_active = false;
+            return "The selected semantic layer is no longer visible.";
+        }
+        std::vector<object_id_t> notes;
+        for (const auto& measure : chart->measures) {
+            for (const auto& note : measure.notes) {
+                if (std::ranges::find(note.semantic_layers, layer->id) !=
+                    note.semantic_layers.end()) {
+                    notes.push_back(note.id);
+                }
+            }
+        }
+        result = dispatch_editor_action(history, state,
+                                        select_editor_notes_action_t{std::move(notes)});
+        return compose_result_status(result, "Semantic-layer notes selected.");
+    }
     case WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER:
     case WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER:
     case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER: {

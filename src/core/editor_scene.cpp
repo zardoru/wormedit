@@ -82,6 +82,7 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
     -> std::variant<editor_field_scene_index_t, diagnostic_list_t> {
     diagnostic_list_t diagnostics;
     if (!chart.id || chart.divisions_per_standard_measure == 0 || options.maximum_notes == 0 ||
+        options.maximum_bgm_events == 0 ||
         options.maximum_layout_segments == 0 || options.maximum_lane_definitions == 0) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                     "field-scene index limits and chart identity must be valid"));
@@ -229,6 +230,38 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
                                    .semantic_layers = note.semantic_layers});
         }
     }
+    std::size_t bgm_event_count{};
+    for (const auto& measure : chart.measures) {
+        if (measure.bgm_events.size() > options.maximum_bgm_events - bgm_event_count) {
+            diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                                        "field-scene BGM event count exceeds its configured cap"));
+            return diagnostics;
+        }
+        bgm_event_count += measure.bgm_events.size();
+    }
+    index.bgm_events.reserve(bgm_event_count);
+    std::unordered_set<std::uint64_t> bgm_source_lanes;
+    bgm_source_lanes.reserve(chart.bgm_source_lanes.size());
+    for (const auto& lane : chart.bgm_source_lanes) {
+        if (!lane.id || !bgm_source_lanes.insert(lane.id.value).second) {
+            diagnostics.push_back(error(diagnostic_code_t::duplicate_id,
+                                        "field-scene BGM source lane identity is invalid", lane.id));
+        }
+    }
+    for (const auto& measure : chart.measures) {
+        for (const auto& event : measure.bgm_events) {
+            const auto row = absolute_row(index.measures, event.position);
+            if (!event.id || !event.source_lane || !bgm_source_lanes.contains(event.source_lane.value) ||
+                !row || event.position.measure != measure.id) {
+                diagnostics.push_back(error(diagnostic_code_t::invalid_id,
+                                            "field-scene BGM event has invalid source geometry",
+                                            event.id));
+                continue;
+            }
+            index.bgm_events.push_back(
+                {.event = event.id, .source_lane = event.source_lane, .row = *row, .sound = event.sound});
+        }
+    }
     if (!diagnostics.empty()) {
         return diagnostics;
     }
@@ -236,6 +269,10 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
     std::ranges::sort(index.notes, [](const auto& left, const auto& right) {
         return std::tie(left.begin_row, left.end_row, left.note.value) <
                std::tie(right.begin_row, right.end_row, right.note.value);
+    });
+    std::ranges::sort(index.bgm_events, [](const auto& left, const auto& right) {
+        return std::tie(left.row, left.source_lane.value, left.event.value) <
+               std::tie(right.row, right.source_lane.value, right.event.value);
     });
     index.note_indices_by_id.reserve(index.notes.size());
     for (std::size_t note = 0; note < index.notes.size(); ++note) {

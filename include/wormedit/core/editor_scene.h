@@ -15,8 +15,16 @@ namespace wormedit {
 
 struct editor_field_scene_index_options_t {
     std::size_t maximum_notes{100'000};
+    std::size_t maximum_bgm_events{100'000};
     std::size_t maximum_layout_segments{4'096};
     std::size_t maximum_lane_definitions{100'000};
+};
+
+struct editor_field_scene_bgm_source_t {
+    object_id_t event;
+    object_id_t source_lane;
+    std::uint64_t row{};
+    std::optional<resource_id_t> sound;
 };
 
 struct editor_field_scene_note_source_t {
@@ -49,6 +57,9 @@ struct editor_field_scene_index_t {
     std::uint64_t document_revision{};
     measure_index_t measures;
     std::vector<editor_field_scene_note_source_t> notes;
+    // BGM events use a separate source-lane stack, but share this exact
+    // revision-bound row index with the playable field.
+    std::vector<editor_field_scene_bgm_source_t> bgm_events;
     std::unordered_map<std::uint64_t, std::size_t> note_indices_by_id;
     std::size_t note_tree_leaf_base{1};
     std::vector<std::uint64_t> note_tree_max_end;

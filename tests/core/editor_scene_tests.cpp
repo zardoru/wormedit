@@ -35,9 +35,14 @@ auto scene_chart() -> wormedit::chart_document_t {
                     .position = {wormedit::measure_id_t{1}, 720},
                     .lane = wormedit::lane_id_t{2},
                     .kind = wormedit::note_kind_t::hold,
-                    .end = wormedit::local_position_t{wormedit::measure_id_t{2}, 240}}}},
+                    .end = wormedit::local_position_t{wormedit::measure_id_t{2}, 240}}},
+         .bgm_events = {{.id = wormedit::object_id_t{12},
+                         .position = {wormedit::measure_id_t{1}, 480},
+                         .source_lane = wormedit::object_id_t{30},
+                         .sound = wormedit::resource_id_t{40}}}},
         {.id = wormedit::measure_id_t{2}, .definition = {{1, 1}, wormedit::meter_t{4, 4}}},
     };
+    chart.bgm_source_lanes = {{.id = wormedit::object_id_t{30}, .name = "BGM 1"}};
     chart.lane_layouts = {
         {.id = wormedit::object_id_t{20},
          .position = {wormedit::measure_id_t{1}, 0},
@@ -87,8 +92,13 @@ TEST_CASE("field scene composes split layout bands, exact grid, holds, selection
     const auto chart = scene_chart();
     const auto built = wormedit::build_editor_field_scene_index(chart, 7);
     REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    const auto& indexed = std::get<wormedit::editor_field_scene_index_t>(built);
+    REQUIRE(indexed.bgm_events.size() == 1);
+    CHECK(indexed.bgm_events.front().event == wormedit::object_id_t{12});
+    CHECK(indexed.bgm_events.front().source_lane == wormedit::object_id_t{30});
+    CHECK(indexed.bgm_events.front().row == 480);
     const auto result = wormedit::make_editor_field_scene(
-        chart, std::get<wormedit::editor_field_scene_index_t>(built), view(),
+        chart, indexed, view(),
         {.field_left_pixels = 10.0,
          .field_width_pixels = 200.0,
          .split_stage_gutter_pixels = 12.0,

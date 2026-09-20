@@ -3075,6 +3075,7 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
         nk_bool seconds = view->stage_transition_is_seconds ? 1 : 0;
         nk_bool toggle_primary = view->stage_toggle_primary ? 1 : 0;
         bool changed = false;
+        int bpm_step = 0;
         const char* primary_label = "Value";
         const char* pause_unit_label = "seconds";
         switch (view->stage_pause_unit) {
@@ -3135,18 +3136,27 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
                          ? "Decimal BPM (exact)"
                          : "Decimal BPM (approximate display; exact fraction retained)",
                      NK_TEXT_LEFT);
-            nk_layout_row_begin(g_context, NK_DYNAMIC, 28, 2);
-            nk_layout_row_push(g_context, 0.24f);
+            nk_layout_row_begin(g_context, NK_DYNAMIC, 28, 4);
+            nk_layout_row_push(g_context, 0.18f);
             nk_label(g_context, primary_label, NK_TEXT_LEFT);
-            nk_layout_row_push(g_context, 0.76f);
+            nk_layout_row_push(g_context, 0.56f);
             const bool decimal_changed = nk_edit_string_zero_terminated(
                                              g_context, NK_EDIT_FIELD, g_timing_bpm_decimal.data(),
                                              g_timing_bpm_decimal.size(), nk_filter_float) != 0;
+            nk_layout_row_push(g_context, 0.13f);
+            if (nk_button_label(g_context, "-1")) {
+                bpm_step = -1;
+            }
+            nk_layout_row_push(g_context, 0.13f);
+            if (nk_button_label(g_context, "+1")) {
+                bpm_step = 1;
+            }
             nk_layout_row_end(g_context);
             if (decimal_changed) {
                 g_timing_bpm_decimal_edited = true;
                 changed = true;
             }
+            changed = changed || bpm_step != 0;
             nk_bool advanced_fraction = g_timing_bpm_advanced_fraction ? 1 : 0;
             nk_layout_row_dynamic(g_context, 24, 1);
             if (nk_checkbox_label(g_context, "Advanced exact fraction", &advanced_fraction) != 0) {
@@ -3261,6 +3271,7 @@ static void render_timing_lane(const WormUiTimingView* view, WormUiWorkspaceActi
             action->timing_transition_is_seconds = seconds != 0;
             action->timing_toggle_primary = toggle_primary != 0;
             copy_timing_form_to_action(action);
+            action->timing_bpm_step = bpm_step;
         }
         if (action && delete_clicked) {
             set_timing_action(action, view, WORM_UI_TIMING_STAGE_DELETE, view->stage_value,

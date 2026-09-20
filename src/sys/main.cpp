@@ -1048,6 +1048,21 @@ auto timing_stage_value(const wormedit::timing_lane_pseudonote_preview_t& previe
         parse_timing_unsigned(action.timing_secondary_denominator_text);
     switch (preview.kind) {
     case timing_lane_kind_t::bpm: {
+        if (action.timing_bpm_step != 0) {
+            const auto* current = std::get_if<timing_bpm_value_t>(&preview.value);
+            const auto direction =
+                action.timing_bpm_step == -1  ? std::optional{bpm_step_direction_t::decrement}
+                : action.timing_bpm_step == 1 ? std::optional{bpm_step_direction_t::increment}
+                                              : std::nullopt;
+            const auto stepped = current && direction
+                                     ? step_bpm_by_one(current->beats_per_minute, *direction)
+                                     : std::nullopt;
+            if (!stepped ||
+                (!preview.existing_event &&
+                 !timing_ratio_in_bounds(stepped->numerator, stepped->denominator, 1.0L, 1000.0L)))
+                return std::nullopt;
+            return timing_lane_value_t{timing_bpm_value_t{*stepped}};
+        }
         if (action.timing_bpm_decimal_edited) {
             const auto bpm = parse_bpm_text(action.timing_bpm_decimal_text);
             if (!bpm || (!preview.existing_event &&

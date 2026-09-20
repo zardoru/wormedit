@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <limits>
 #include <ranges>
 
 using namespace wormedit;
@@ -62,6 +63,14 @@ TEST_CASE("BPM text parsing is decimal-first and retains a lossless fraction",
     CHECK(parse_bpm_text(repeating->fraction) == signed_rational_t{7, 3});
     CHECK_FALSE(format_bpm_text({0, 1}));
     CHECK_FALSE(format_bpm_text({120, 0}));
+
+    CHECK(step_bpm_by_one({7, 3}, bpm_step_direction_t::increment) == signed_rational_t{10, 3});
+    CHECK(step_bpm_by_one({7, 3}, bpm_step_direction_t::decrement) == signed_rational_t{4, 3});
+    CHECK_FALSE(step_bpm_by_one({1, 1}, bpm_step_direction_t::decrement));
+    CHECK_FALSE(step_bpm_by_one({std::numeric_limits<std::int64_t>::max(), 1},
+                                bpm_step_direction_t::increment));
+    CHECK_FALSE(step_bpm_by_one({1, std::numeric_limits<std::uint64_t>::max()},
+                                bpm_step_direction_t::increment));
 }
 
 TEST_CASE("BPM insert update and delete are undoable and retain exact identity and source order",

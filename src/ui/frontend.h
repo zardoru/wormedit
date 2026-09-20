@@ -857,6 +857,7 @@ typedef struct WormUiWorkspaceAction {
     WormUiTimingPauseUnit timing_pause_unit;
     char timing_bpm_decimal_text[64];
     bool timing_bpm_decimal_edited;
+    int timing_bpm_step;
     char timing_primary_numerator_text[64];
     char timing_primary_denominator_text[64];
     char timing_secondary_numerator_text[64];

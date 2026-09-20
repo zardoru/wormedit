@@ -183,6 +183,23 @@ auto format_bpm_text(signed_rational_t bpm, std::size_t maximum_fraction_digits)
     return result;
 }
 
+auto step_bpm_by_one(signed_rational_t bpm, bpm_step_direction_t direction)
+    -> std::optional<signed_rational_t> {
+    if (bpm.numerator <= 0 || bpm.denominator == 0 ||
+        bpm.denominator > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        return std::nullopt;
+    }
+    const auto denominator = static_cast<std::int64_t>(bpm.denominator);
+    if (direction == bpm_step_direction_t::increment) {
+        if (bpm.numerator > std::numeric_limits<std::int64_t>::max() - denominator)
+            return std::nullopt;
+        return signed_rational_t{bpm.numerator + denominator, bpm.denominator};
+    }
+    if (bpm.numerator <= denominator)
+        return std::nullopt;
+    return signed_rational_t{bpm.numerator - denominator, bpm.denominator};
+}
+
 auto apply_bpm_edit(document_history_t& history, std::uint64_t expected_revision,
                     const bpm_edit_action_t& action, bpm_edit_limits_t limits)
     -> document_command_result_t {

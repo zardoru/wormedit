@@ -22,6 +22,8 @@ struct bpm_text_format_t {
     std::string fraction;
 };
 
+enum class bpm_step_direction_t { decrement, increment };
+
 // Parses positive decimal or fraction text without passing through binary
 // floating point. Formatting emits an exact terminating decimal when it fits
 // the configured digit cap; otherwise decimal is an explicitly approximate UI
@@ -29,6 +31,8 @@ struct bpm_text_format_t {
 [[nodiscard]] auto parse_bpm_text(std::string_view text) -> std::optional<signed_rational_t>;
 [[nodiscard]] auto format_bpm_text(signed_rational_t bpm, std::size_t maximum_fraction_digits = 18)
     -> std::optional<bpm_text_format_t>;
+[[nodiscard]] auto step_bpm_by_one(signed_rational_t bpm, bpm_step_direction_t direction)
+    -> std::optional<signed_rational_t>;
 
 struct insert_bpm_event_action_t {
     chart_id_t chart;

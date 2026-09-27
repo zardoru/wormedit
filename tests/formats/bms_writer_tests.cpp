@@ -2,6 +2,7 @@
 #include <wormedit/formats/bms_writer.h>
 
 #include <wormedit/core/timing.h>
+#include <wormedit/core/interaction.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -118,6 +119,55 @@ auto simple_chart() -> wormedit::bms_parse_result_t {
 }
 
 } // namespace
+
+TEST_CASE("virtual BMS #999 remains sparse until an edit and round-trips its measure number",
+          "[unit][format][bms][writer][virtual-canvas]") {
+    constexpr std::string_view source =
+        "#PLAYER 1\n#TITLE Virtual extent\n#WAV01 click.wav\n#00002:1/2\n#00011:01\n";
+    auto imported = parse(source, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(imported.song);
+    REQUIRE(imported.song->charts.size() == 1);
+    REQUIRE(imported.song->charts.front().measures.size() == 1);
+    const auto lane = imported.song->charts.front().measures.front().notes.front().lane;
+    const auto sound = imported.song->charts.front().measures.front().notes.front().sound;
+    REQUIRE(sound);
+    const auto untouched = wormedit::write_bms(*imported.song);
+    REQUIRE(untouched.bytes);
+    CHECK(*untouched.bytes == source);
+
+    auto history = wormedit::make_document_history(std::move(*imported.song));
+    constexpr std::array snaps{std::uint64_t{4}};
+    auto setup = wormedit::make_editor_interaction(
+        history, history.document.charts.front().id, lane,
+        {history.document.charts.front().measures.front().id, 0}, snaps, 4);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+    const auto placed = wormedit::dispatch_editor_action(
+        history, state, wormedit::place_virtual_bms_tap_action_t{958'560, lane});
+    REQUIRE(placed);
+    REQUIRE(history.document.charts.front().measures.size() == 1'000);
+    auto& last_note = history.document.charts.front().measures.back().notes.front();
+    last_note.sound = sound;
+
+    const auto written = wormedit::write_bms(history.document);
+    REQUIRE(written.bytes);
+    CHECK_FALSE(written.has_errors());
+    CHECK(written.bytes->find("#99911:01") != std::string::npos);
+    CHECK(written.bytes->find("#998") == std::string::npos);
+    CHECK(written.bytes->find("#500") == std::string::npos);
+    const auto reloaded = parse(*written.bytes, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(reloaded.song);
+    REQUIRE(reloaded.song->charts.front().measures.size() == 1'000);
+    REQUIRE(reloaded.song->charts.front().measures.back().notes.size() == 1);
+    CHECK(reloaded.song->charts.front().measures.back().notes.front().position.row == 0);
+    CHECK((reloaded.song->charts.front().measures.front().definition.length ==
+           wormedit::rational_t{1, 2}));
+    REQUIRE(wormedit::undo_document_command(history));
+    REQUIRE(history.document.charts.front().measures.size() == 1);
+    const auto undone = wormedit::write_bms(history.document);
+    REQUIRE(undone.bytes);
+    CHECK(*undone.bytes == source);
+}
 
 TEST_CASE("BMS writer preserves unchanged source bytes exactly", "[unit][format][bms][writer]") {
     constexpr std::string_view source = "#TITLE Keep bytes\r\n#BPM 120\r\n";

@@ -2859,6 +2859,11 @@ void populate_compose_view(flattened_workspace_t& flattened,
             .measure_number =
                 static_cast<std::uint64_t>(std::distance(measures.entries.begin(), measure) + 1),
             .row = bookmark.position->row,
+            .chart_row = measure->absolute_begin_row + bookmark.position->row,
+            .projection_visible = false,
+            .projected_y_pixels = 0.0,
+            .proposed_projection_visible = false,
+            .proposed_y_pixels = 0.0,
         };
     }
     for (const auto& section : chart.sections) {
@@ -2927,6 +2932,22 @@ void populate_compose_view(flattened_workspace_t& flattened,
             .end_measure_number = static_cast<std::uint64_t>(
                 std::distance(measures.entries.begin(), end_measure) + 1),
             .end_row = section.beat_span->end.row,
+            .begin_chart_row = begin_measure->absolute_begin_row + section.beat_span->begin.row,
+            .end_chart_row = end_measure->absolute_begin_row + section.beat_span->end.row,
+            .begin_projection_visible = false,
+            .end_projection_visible = false,
+            .span_projection_visible = false,
+            .projected_begin_y_pixels = 0.0,
+            .projected_end_y_pixels = 0.0,
+            .projected_span_top_y_pixels = 0.0,
+            .projected_span_bottom_y_pixels = 0.0,
+            .proposed_begin_projection_visible = false,
+            .proposed_end_projection_visible = false,
+            .proposed_span_projection_visible = false,
+            .proposed_begin_y_pixels = 0.0,
+            .proposed_end_y_pixels = 0.0,
+            .proposed_span_top_y_pixels = 0.0,
+            .proposed_span_bottom_y_pixels = 0.0,
         };
     }
     if (!retained_state || retained_state->chart != chart.id) {
@@ -2995,6 +3016,42 @@ void populate_compose_view(flattened_workspace_t& flattened,
     auto interaction_view = *interaction.view;
     interaction_view.pixels_per_standard_measure = retained_state->pixels_per_standard_measure;
     interaction_view.viewport_scroll_pixels = retained_state->viewport_scroll_pixels;
+    const auto beat_pixels_per_row =
+        interaction_view.pixels_per_standard_measure / chart.divisions_per_standard_measure;
+    const auto visible_beat_y = [&](std::uint64_t row) -> std::optional<double> {
+        const auto y = static_cast<double>(row) * beat_pixels_per_row -
+                       interaction_view.viewport_scroll_pixels;
+        if (!std::isfinite(y) || y < 0.0 || y > view.viewport_height_pixels)
+            return std::nullopt;
+        return y;
+    };
+    for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
+        auto& bookmark = flattened.compose_bookmark_storage[index];
+        const auto y = visible_beat_y(bookmark.chart_row);
+        bookmark.projection_visible = y.has_value();
+        bookmark.projected_y_pixels = y.value_or(0.0);
+    }
+    for (std::size_t index = 0; index < view.beat_section_count; ++index) {
+        auto& section = flattened.compose_section_storage[index];
+        const auto begin_y = static_cast<double>(section.begin_chart_row) * beat_pixels_per_row -
+                             interaction_view.viewport_scroll_pixels;
+        const auto end_y = static_cast<double>(section.end_chart_row) * beat_pixels_per_row -
+                           interaction_view.viewport_scroll_pixels;
+        section.begin_projection_visible =
+            std::isfinite(begin_y) && begin_y >= 0.0 && begin_y <= view.viewport_height_pixels;
+        section.end_projection_visible =
+            std::isfinite(end_y) && end_y >= 0.0 && end_y <= view.viewport_height_pixels;
+        section.projected_begin_y_pixels = section.begin_projection_visible ? begin_y : 0.0;
+        section.projected_end_y_pixels = section.end_projection_visible ? end_y : 0.0;
+        section.span_projection_visible = std::isfinite(begin_y) && std::isfinite(end_y) &&
+                                          end_y >= 0.0 && begin_y <= view.viewport_height_pixels;
+        if (section.span_projection_visible) {
+            section.projected_span_top_y_pixels =
+                std::clamp(begin_y, 0.0, view.viewport_height_pixels);
+            section.projected_span_bottom_y_pixels =
+                std::clamp(end_y, 0.0, view.viewport_height_pixels);
+        }
+    }
     if (cache.marker_timing_index) {
         const auto projected_y = [&](std::int64_t milliseconds) -> std::optional<double> {
             const auto projected = wormedit::musical_position_at(
@@ -4225,6 +4282,41 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
     }
     view.timing_preview_markers = preview_markers.data();
     view.timing_preview_marker_count = preview_markers.size();
+    for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
+        auto& bookmark = flattened.compose_bookmark_storage[index];
+        const auto y = proposed_y(bookmark.chart_row);
+        const auto old_y = static_cast<double>(bookmark.chart_row) * pixels_per_row -
+                           interaction.viewport_scroll_pixels;
+        bookmark.proposed_projection_visible =
+            y && std::abs(*y - old_y) >= 0.5 && *y >= 0.0 && *y <= view.viewport_height_pixels;
+        bookmark.proposed_y_pixels = bookmark.proposed_projection_visible ? *y : 0.0;
+    }
+    for (std::size_t index = 0; index < view.beat_section_count; ++index) {
+        auto& section = flattened.compose_section_storage[index];
+        const auto begin = proposed_y(section.begin_chart_row);
+        const auto end = proposed_y(section.end_chart_row);
+        const auto old_begin = static_cast<double>(section.begin_chart_row) * pixels_per_row -
+                               interaction.viewport_scroll_pixels;
+        const auto old_end = static_cast<double>(section.end_chart_row) * pixels_per_row -
+                             interaction.viewport_scroll_pixels;
+        section.proposed_begin_projection_visible = begin && std::abs(*begin - old_begin) >= 0.5 &&
+                                                    *begin >= 0.0 &&
+                                                    *begin <= view.viewport_height_pixels;
+        section.proposed_end_projection_visible = end && std::abs(*end - old_end) >= 0.5 &&
+                                                  *end >= 0.0 &&
+                                                  *end <= view.viewport_height_pixels;
+        section.proposed_begin_y_pixels = section.proposed_begin_projection_visible ? *begin : 0.0;
+        section.proposed_end_y_pixels = section.proposed_end_projection_visible ? *end : 0.0;
+        section.proposed_span_projection_visible =
+            begin && end && *end >= 0.0 && *begin <= view.viewport_height_pixels &&
+            (std::abs(*begin - old_begin) >= 0.5 || std::abs(*end - old_end) >= 0.5);
+        if (section.proposed_span_projection_visible) {
+            section.proposed_span_top_y_pixels =
+                std::clamp(*begin, 0.0, view.viewport_height_pixels);
+            section.proposed_span_bottom_y_pixels =
+                std::clamp(*end, 0.0, view.viewport_height_pixels);
+        }
+    }
 }
 
 auto dispatch_audio_offset_drag_action(const WormUiWorkspaceAction& action,

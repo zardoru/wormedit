@@ -397,6 +397,11 @@ typedef struct WormUiComposeBookmarkView {
     const char* label;
     uint64_t measure_number;
     uint64_t row;
+    uint64_t chart_row;
+    bool projection_visible;
+    double projected_y_pixels;
+    bool proposed_projection_visible;
+    double proposed_y_pixels;
 } WormUiComposeBookmarkView;
 
 typedef struct WormUiComposeSectionView {
@@ -406,6 +411,22 @@ typedef struct WormUiComposeSectionView {
     uint64_t begin_row;
     uint64_t end_measure_number;
     uint64_t end_row;
+    uint64_t begin_chart_row;
+    uint64_t end_chart_row;
+    bool begin_projection_visible;
+    bool end_projection_visible;
+    bool span_projection_visible;
+    double projected_begin_y_pixels;
+    double projected_end_y_pixels;
+    double projected_span_top_y_pixels;
+    double projected_span_bottom_y_pixels;
+    bool proposed_begin_projection_visible;
+    bool proposed_end_projection_visible;
+    bool proposed_span_projection_visible;
+    double proposed_begin_y_pixels;
+    double proposed_end_y_pixels;
+    double proposed_span_top_y_pixels;
+    double proposed_span_bottom_y_pixels;
 } WormUiComposeSectionView;
 
 typedef struct WormUiComposeAudioBookmarkView {

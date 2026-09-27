@@ -96,6 +96,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         core/audio_source_registry_tests.cpp
         core/audio_transport_tests.cpp
         core/audio_waveform_tests.cpp
+        core/audio_aligned_waveform_tests.cpp
         core/audio_waveform_job_tests.cpp
     )
     target_compile_definitions(wormedit_audio_tests

@@ -30,6 +30,7 @@
 #define WORM_UI_COMPOSE_NOTE_CAPACITY 32768
 #define WORM_UI_COMPOSE_BGM_LANE_CAPACITY 4096
 #define WORM_UI_COMPOSE_BGM_EVENT_CAPACITY 32768
+#define WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY 4096
 #define WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY 32768
 #define WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY 128
 #define WORM_UI_COMPOSE_NOTE_LABEL_BYTES 4096
@@ -351,6 +352,12 @@ typedef struct WormUiComposeBgmDraftView {
     bool playable;
 } WormUiComposeBgmDraftView;
 
+typedef struct WormUiComposeWaveformRowView {
+    double y_pixels;
+    float absolute_peak[2];
+    float rms[2];
+} WormUiComposeWaveformRowView;
+
 typedef struct WormUiComposeBgmMovePreviewView {
     WormUiComposeRect bounds;
     bool valid;
@@ -608,6 +615,9 @@ typedef struct WormUiComposeView {
     size_t bgm_lane_count;
     const WormUiComposeBgmEventView* bgm_events;
     size_t bgm_event_count;
+    const WormUiComposeWaveformRowView* waveform_rows;
+    size_t waveform_row_count;
+    bool waveform_analysis_pending;
     const WormUiComposeBgmDraftView* bmson_marker_drafts;
     size_t bmson_marker_draft_count;
     const WormUiComposeBgmMovePreviewView* bmson_marker_move_preview;

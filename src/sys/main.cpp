@@ -49,9 +49,10 @@
 #endif
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-#include <wormedit/audio/decoder.h>
 #include "sys/sdl_audition_output.h"
 #include "sys/sdl_preview_output.h"
+#include <wormedit/audio/aligned_waveform.h>
+#include <wormedit/audio/decoder.h>
 
 #include <wormedit/audio/object_audition.h>
 #include <wormedit/audio/preview_session.h>
@@ -182,6 +183,7 @@ struct flattened_workspace_t {
     std::vector<WormUiComposeNoteView> compose_note_storage;
     std::vector<WormUiComposeBgmLaneView> compose_bgm_lane_storage;
     std::vector<WormUiComposeBgmEventView> compose_bgm_event_storage;
+    std::vector<WormUiComposeWaveformRowView> compose_waveform_storage;
     std::vector<WormUiComposeBgmDraftView> compose_bgm_draft_storage;
     std::vector<std::uint64_t> compose_bmson_draft_playable_lane_storage;
     std::vector<std::uint8_t> compose_bmson_draft_restart_storage;
@@ -2520,6 +2522,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.bmson_marker_drafts = nullptr;
     view.bmson_marker_draft_count = 0;
     view.bmson_marker_move_preview = nullptr;
+    view.waveform_rows = nullptr;
+    view.waveform_row_count = 0;
+    view.waveform_analysis_pending = false;
     view.beat_marker_navigation_available = false;
     view.audio_marker_navigation_available = false;
     view.audio_marker_transport_available = false;
@@ -8081,6 +8086,38 @@ int main(int argc, char** argv) {
                                   compose_window_width, compose_window_height,
                                   compose_interaction_state, application_command_state,
                                   timing_stage ? &*timing_stage : nullptr);
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+            if (flattened.view.compose.visible && workspace.transport.audio_asset) {
+                auto& compose = flattened.view.compose;
+                compose.waveform_analysis_pending = waveform_job.busy();
+                if (compose.scene_available && compose_interaction_state &&
+                    compose_scene_cache.marker_timing_index && waveform_analysis &&
+                    waveform_analysis->waveform &&
+                    waveform_job_asset == workspace.transport.audio_asset) {
+                    const auto aligned = wormedit::audio::project_aligned_waveform(
+                        *waveform_analysis->waveform, *compose_scene_cache.marker_timing_index,
+                        {.viewport_scroll_pixels =
+                             compose_interaction_state->viewport_scroll_pixels,
+                         .viewport_height_pixels = compose.viewport_height_pixels,
+                         .pixels_per_standard_measure = compose.pixels_per_standard_measure,
+                         .maximum_rows = WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY});
+                    if (aligned) {
+                        flattened.compose_waveform_storage.reserve(aligned.rows.size());
+                        for (const auto& row : aligned.rows) {
+                            flattened.compose_waveform_storage.push_back({
+                                .y_pixels = row.y_pixels,
+                                .absolute_peak = {std::clamp(row.absolute_peak[0], 0.0f, 1.0f),
+                                                  std::clamp(row.absolute_peak[1], 0.0f, 1.0f)},
+                                .rms = {std::clamp(row.rms[0], 0.0f, 1.0f),
+                                        std::clamp(row.rms[1], 0.0f, 1.0f)},
+                            });
+                        }
+                        compose.waveform_rows = flattened.compose_waveform_storage.data();
+                        compose.waveform_row_count = flattened.compose_waveform_storage.size();
+                    }
+                }
+            }
+#endif
             const auto action = worm_ui_frontend_compose(&flattened.view);
             std::optional<std::uint32_t> selected_waveform_sample_rate;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)

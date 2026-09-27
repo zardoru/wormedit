@@ -477,6 +477,20 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
             view->bgm_events[index].event_id == 0 || view->bgm_events[index].source_lane_id == 0)
             return 0;
     }
+    for (size_t index = 0; index < view->waveform_row_count; ++index) {
+        const auto& row = view->waveform_rows[index];
+        if (!std::isfinite(row.y_pixels) || row.y_pixels < 0.0 ||
+            row.y_pixels > view->viewport_height_pixels) {
+            return 0;
+        }
+        for (size_t channel = 0; channel < 2; ++channel) {
+            if (!std::isfinite(row.absolute_peak[channel]) || !std::isfinite(row.rms[channel]) ||
+                row.absolute_peak[channel] < 0.0f || row.absolute_peak[channel] > 1.0f ||
+                row.rms[channel] < 0.0f || row.rms[channel] > 1.0f) {
+                return 0;
+            }
+        }
+    }
     for (size_t index = 0; index < view->bmson_marker_draft_count; ++index) {
         if (!compose_rect_valid(&view->bmson_marker_drafts[index].bounds)) {
             return 0;
@@ -592,6 +606,7 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            view->note_endpoint_count <= WORM_UI_COMPOSE_NOTE_CAPACITY &&
            view->bgm_lane_count <= WORM_UI_COMPOSE_BGM_LANE_CAPACITY &&
            view->bgm_event_count <= WORM_UI_COMPOSE_BGM_EVENT_CAPACITY &&
+           view->waveform_row_count <= WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY &&
            view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY &&
            view->lane_key_binding_count <= WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY &&
            view->branch_row_count <= WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY &&
@@ -605,6 +620,7 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            (view->note_endpoint_count == 0 || view->note_endpoints) &&
            (view->bgm_lane_count == 0 || view->bgm_lanes) &&
            (view->bgm_event_count == 0 || view->bgm_events) &&
+           (view->waveform_row_count == 0 || view->waveform_rows) &&
            (view->semantic_layer_count == 0 || view->semantic_layers) &&
            (view->lane_key_binding_count == 0 || view->lane_key_bindings) &&
            (view->branch_choice_count == 0 || view->branch_choices) &&
@@ -1142,6 +1158,10 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     }
 
     worm_ui_nuklear_render_compose_resources(context, view, action, &state);
+    if (view->waveform_analysis_pending) {
+        nk_layout_row_dynamic(context, 18, 1);
+        nk_label(context, "Building aligned waveform...", NK_TEXT_LEFT);
+    }
 
     if (view->staged_bmson_marker_count != 0 &&
         nk_tree_push(context, NK_TREE_TAB, "Staged BMSON regions", NK_MAXIMIZED)) {
@@ -2372,6 +2392,28 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             nk_fill_rect(canvas, rect, 0.0f, alternate ? nk_rgb(43, 38, 52) : nk_rgb(38, 34, 47));
             nk_stroke_line(canvas, rect.x, rect.y, rect.x, rect.y + rect.h, 1.0f,
                            nk_rgb(79, 67, 91));
+        }
+        if (view->waveform_row_count != 0) {
+            const auto scale = viewport.w / static_cast<float>(view->viewport_width_pixels);
+            const auto left =
+                viewport.x + static_cast<float>(view->playable_field_left_pixels) * scale;
+            const auto right =
+                viewport.x + static_cast<float>(view->playable_field_right_pixels) * scale;
+            const auto center = (left + right) * 0.5f;
+            const auto half_width = std::max(0.0f, (right - left) * 0.47f);
+            for (size_t index = 0; index < view->waveform_row_count; ++index) {
+                const auto& row = view->waveform_rows[index];
+                const auto y = viewport.y + static_cast<float>(row.y_pixels) * viewport.h /
+                                                static_cast<float>(view->viewport_height_pixels);
+                nk_stroke_line(canvas, center - row.rms[0] * half_width, y, center, y, 2.0f,
+                               nk_rgba(57, 137, 167, 96));
+                nk_stroke_line(canvas, center, y, center + row.rms[1] * half_width, y, 2.0f,
+                               nk_rgba(57, 137, 167, 96));
+                nk_stroke_line(canvas, center - row.absolute_peak[0] * half_width, y, center, y,
+                               1.0f, nk_rgba(114, 222, 239, 142));
+                nk_stroke_line(canvas, center, y, center + row.absolute_peak[1] * half_width, y,
+                               1.0f, nk_rgba(114, 222, 239, 142));
+            }
         }
         for (size_t index = 0; index < view->difference_count; ++index) {
             compose_fill_rect(canvas, &view->differences[index].bounds, view, viewport,

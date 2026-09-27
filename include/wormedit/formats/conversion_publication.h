@@ -3,6 +3,7 @@
 #include <wormedit/formats/conversion.h>
 
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -36,5 +37,36 @@ struct conversion_publication_plan_t {
                                                const conversion_request_t& request,
                                                const conversion_result_t& converted)
     -> conversion_publication_plan_t;
+
+enum class conversion_publication_stage_t {
+    copy_existing,
+    write_output,
+    validate_staging,
+    exchange_directory,
+};
+
+struct conversion_publication_options_t {
+    std::uintmax_t maximum_existing_bytes{64ULL * 1024ULL * 1024ULL * 1024ULL};
+    std::size_t maximum_existing_entries{8192};
+    std::function<bool(conversion_publication_stage_t)> allow_stage;
+};
+
+struct conversion_publication_result_t {
+    bool published{};
+    std::vector<std::string> errors;
+    std::vector<std::string> warnings;
+};
+
+// Replans at execution time, builds a complete sibling directory, then makes
+// it visible in one rename/exchange. Existing-directory exchange currently
+// requires Linux renameat2 or macOS renameatx_np; unsupported platforms fail
+// before changing the destination. The output group must have a non-root
+// directory with an existing parent.
+[[nodiscard]] auto publish_conversion_group_atomic(const std::filesystem::path& project_directory,
+                                                   const output_group_t& group,
+                                                   const conversion_request_t& request,
+                                                   const conversion_result_t& converted,
+                                                   conversion_publication_options_t options = {})
+    -> conversion_publication_result_t;
 
 } // namespace wormedit

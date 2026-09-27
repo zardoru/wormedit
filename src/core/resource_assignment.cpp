@@ -1,8 +1,12 @@
 #include <wormedit/core/resource_assignment.h>
 
 #include <algorithm>
+#include <array>
+#include <cctype>
+#include <limits>
 #include <ranges>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace wormedit {
@@ -21,6 +25,104 @@ auto has_role(const resource_entry_t& resource, resource_role_t role) -> bool {
 }
 
 } // namespace
+
+auto apply_resource_creation(document_history_t& history, std::uint64_t expected_revision,
+                             const create_resource_action_t& action) -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id, "resource creation document revision is stale");
+        return result;
+    }
+    if (history.document.resources.size() >= 100'000 || action.name.size() > 255 ||
+        action.name.find('\0') != std::string::npos) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "resource catalog is full or the resource name is invalid");
+        return result;
+    }
+    const auto audio_role = action.role == resource_role_t::sample ||
+                            action.role == resource_role_t::bgm;
+    const auto visual_role = action.role == resource_role_t::bga;
+    if (!audio_role && !visual_role) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "resource creation requires a Sample, BGM, or BGA role");
+        return result;
+    }
+    const auto& document = history.document;
+    const auto audio = std::ranges::find(document.audio_assets, action.asset, &audio_asset_t::id);
+    const auto visual =
+        std::ranges::find(document.visual_assets, action.asset, &visual_asset_t::id);
+    if (!action.asset || (audio_role && audio == document.audio_assets.end()) ||
+        (visual_role && visual == document.visual_assets.end())) {
+        reject(result, diagnostic_code_t::dangling_asset,
+               "resource creation requires a registered asset of the selected type");
+        return result;
+    }
+    std::uint64_t largest_id{};
+    for (const auto& resource : document.resources) {
+        largest_id = std::max(largest_id, resource.id.value);
+    }
+    if (largest_id == std::numeric_limits<std::uint64_t>::max()) {
+        reject(result, diagnostic_code_t::invalid_id, "resource ID space is exhausted");
+        return result;
+    }
+    resource_entry_t resource{.id = resource_id_t{largest_id + 1},
+                              .name = action.name,
+                              .asset = action.asset,
+                              .roles = {action.role},
+                              .target_identities = {},
+                              .missing = false,
+                              .provenance = {}};
+    if (action.allocate_bms_identifier) {
+        const std::string_view name_space = visual_role ? "BMP" : "WAV";
+        constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        std::array<bool, 36 * 36> occupied{};
+        const auto digit_value = [](unsigned char character) -> int {
+            const auto upper = std::toupper(character);
+            if (upper >= '0' && upper <= '9') {
+                return upper - '0';
+            }
+            if (upper >= 'A' && upper <= 'Z') {
+                return upper - 'A' + 10;
+            }
+            return -1;
+        };
+        for (const auto& existing : document.resources) {
+            for (const auto& identity : existing.target_identities) {
+                if (identity.family != format_family_t::bms ||
+                    identity.namespace_name != name_space || identity.identifier.size() != 2) {
+                    continue;
+                }
+                const auto high = digit_value(
+                    static_cast<unsigned char>(identity.identifier[0]));
+                const auto low = digit_value(
+                    static_cast<unsigned char>(identity.identifier[1]));
+                if (high >= 0 && low >= 0) {
+                    occupied[static_cast<std::size_t>(high * 36 + low)] = true;
+                }
+            }
+        }
+        bool found{};
+        for (std::size_t value = 1; value < 36 * 36; ++value) {
+            if (!occupied[value]) {
+                std::string candidate{digits[value / 36], digits[value % 36]};
+                resource.target_identities.push_back(
+                    {.family = format_family_t::bms,
+                     .identifier = std::move(candidate),
+                     .namespace_name = std::string{name_space}});
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            reject(result, diagnostic_code_t::invalid_resolution,
+                   "BMS resource namespace has no free nonzero identifier");
+            return result;
+        }
+    }
+    auto proposed = document;
+    proposed.resources.push_back(std::move(resource));
+    return commit_document_command(history, std::move(proposed), "Create resource");
+}
 
 auto apply_resource_assignment(document_history_t& history, std::uint64_t expected_revision,
                                const assign_resource_action_t& action,

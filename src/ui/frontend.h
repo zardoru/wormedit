@@ -570,6 +570,7 @@ typedef struct WormUiComposeView {
     WormUiTimingLaneKind timing_stage_lane;
     double timing_stage_y_pixels;
     const WormUiComposeResourceView* resources;
+    uint64_t selected_audio_asset_id;
     size_t resource_count;
     size_t resource_total_count;
     bool resources_truncated;
@@ -1003,6 +1004,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY,
     WORM_UI_COMPOSE_ACTION_SELECT_RESOURCE_USES,
     WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION,
+    WORM_UI_COMPOSE_ACTION_CREATE_RESOURCE,
     WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK,
@@ -1184,6 +1186,8 @@ typedef struct WormUiWorkspaceAction {
     char compose_marker_audio_end[WORM_UI_COMPOSE_MARKER_TIME_BYTES];
     uint64_t compose_semantic_layer_id;
     uint64_t compose_resource_id;
+    uint64_t compose_resource_asset_id;
+    uint8_t compose_resource_role;
     uint8_t compose_timing_lane;
     uint64_t compose_branch_id;
     int64_t compose_branch_value;

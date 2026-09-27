@@ -750,6 +750,8 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                 result.view.compose.visible = true;
                 const auto& outline = tab.bms_branch_outline;
                 auto& compose = result.view.compose;
+                compose.selected_audio_asset_id =
+                    source.transport.audio_asset.value_or(wormedit::asset_id_t{}).value;
                 const auto resource_catalog = wormedit::sys::make_compose_resource_catalog(
                     document, source.transport.audio_asset, WORM_UI_COMPOSE_RESOURCE_CAPACITY);
                 compose.resources = result.compose_resource_storage.data();
@@ -4745,6 +4747,37 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                        : rebound.diagnostics.front().message;
         }
         return "Resource assigned to selected objects.";
+    }
+    case WORM_UI_COMPOSE_ACTION_CREATE_RESOURCE: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before creating a resource.";
+        }
+        const auto role = action.compose_resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE
+                              ? resource_role_t::sample
+                              : action.compose_resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM
+                                    ? resource_role_t::bgm
+                                    : action.compose_resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGA
+                                          ? resource_role_t::bga
+                                          : resource_role_t::music;
+        const auto chart = std::ranges::find(history.document.charts, state.chart,
+                                             &chart_document_t::id);
+        const auto applied = apply_resource_creation(
+            history, action.compose_input_document_revision,
+            {.asset = asset_id_t{action.compose_resource_asset_id},
+             .role = role,
+             .allocate_bms_identifier =
+                 chart != history.document.charts.end() &&
+                 chart->source_family == format_family_t::bms});
+        if (!applied.diagnostics.empty()) {
+            return applied.diagnostics.front().message;
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty()
+                       ? "Resource created, but workspace rebinding failed."
+                       : rebound.diagnostics.front().message;
+        }
+        return "Resource created from the selected audio asset.";
     }
     case WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL:
     case WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL: {

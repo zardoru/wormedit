@@ -136,6 +136,30 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         state->armed_resource_id = 0;
     }
 
+    if (state->resource_filter != worm_ui_nuklear_compose_resource_filter_t::bga) {
+        nk_layout_row_dynamic(context, 24, 1);
+        const auto can_create = view->selected_audio_asset_id != 0;
+        if (!can_create) {
+            nk_widget_disable_begin(context);
+        }
+        const auto create_clicked = nk_button_label(
+            context, state->resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample
+                         ? "Create Sample from waveform"
+                         : "Create BGM from waveform");
+        if (!can_create) {
+            nk_widget_disable_end(context);
+        }
+        if (create_clicked && can_create &&
+            action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+            action->compose_resource_asset_id = view->selected_audio_asset_id;
+            action->compose_resource_role =
+                state->resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample
+                    ? WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE
+                    : WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
+            action->compose_action = WORM_UI_COMPOSE_ACTION_CREATE_RESOURCE;
+        }
+    }
+
     const auto role = filter_role(state->resource_filter);
     std::size_t role_count{};
     std::size_t matched_count{};

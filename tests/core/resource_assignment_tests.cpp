@@ -71,6 +71,56 @@ auto has_code(const document_command_result_t& result, diagnostic_code_t code) -
 
 } // namespace
 
+TEST_CASE("resource creation assigns stable IDs and independent BMS namespaces",
+          "[unit][core][resources]") {
+    auto song = assignment_song();
+    song.resources.front().target_identities = {
+        {.family = format_family_t::bms, .identifier = "01", .namespace_name = "WAV"}};
+    song.resources[1].target_identities = {
+        {.family = format_family_t::bms, .identifier = "02", .namespace_name = "WAV"}};
+    auto history = make_document_history(std::move(song));
+    const auto created = apply_resource_creation(
+        history, 4, {.asset = asset_id_t{2}, .role = resource_role_t::sample,
+                     .name = "New sample", .allocate_bms_identifier = true});
+    REQUIRE(created);
+    REQUIRE(history.document.resources.size() == 6);
+    const auto& sample = history.document.resources.back();
+    CHECK(sample.id == resource_id_t{6});
+    CHECK(sample.asset == asset_id_t{2});
+    CHECK(sample.target_identities.front().identifier == "03");
+    CHECK(sample.target_identities.front().namespace_name == "WAV");
+    const auto visual = apply_resource_creation(
+        history, 5, {.asset = asset_id_t{4}, .role = resource_role_t::bga,
+                     .allocate_bms_identifier = true});
+    REQUIRE(visual);
+    CHECK(history.document.resources.back().id == resource_id_t{7});
+    CHECK(history.document.resources.back().target_identities.front().identifier == "01");
+    CHECK(history.document.resources.back().target_identities.front().namespace_name == "BMP");
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.resources.size() == 6);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.resources.size() == 5);
+}
+
+TEST_CASE("resource creation rejects stale revisions and wrong asset types atomically",
+          "[unit][core][resources]") {
+    auto history = make_document_history(assignment_song());
+    CHECK(has_code(apply_resource_creation(
+                       history, 3, {.asset = asset_id_t{1}, .role = resource_role_t::sample}),
+                   diagnostic_code_t::invalid_id));
+    CHECK(has_code(apply_resource_creation(
+                       history, 4, {.asset = asset_id_t{4}, .role = resource_role_t::sample}),
+                   diagnostic_code_t::dangling_asset));
+    CHECK(has_code(apply_resource_creation(
+                       history, 4, {.asset = asset_id_t{1}, .role = resource_role_t::bga}),
+                   diagnostic_code_t::dangling_asset));
+    CHECK(has_code(apply_resource_creation(
+                       history, 4, {.asset = asset_id_t{1}, .role = resource_role_t::music}),
+                   diagnostic_code_t::unsupported_feature));
+    CHECK(history.document.resources.size() == 5);
+    CHECK(history.undo.empty());
+}
+
 TEST_CASE("resource assignment changes typed note and BGM references atomically",
           "[unit][core][resources]") {
     auto history = make_document_history(assignment_song());

@@ -345,6 +345,11 @@ typedef struct WormUiComposeBgmEventView {
     bool selected;
 } WormUiComposeBgmEventView;
 
+typedef struct WormUiComposeBgmDraftView {
+    WormUiComposeRect bounds;
+    bool restart;
+} WormUiComposeBgmDraftView;
+
 // A visible palette slot. The application retains stable IDs, names, and
 // colors; the frontend must return the ID rather than a transient index.
 typedef struct WormUiComposeSemanticLayerView {
@@ -508,6 +513,7 @@ typedef struct WormUiComposeView {
     size_t selected_note_count;
     size_t selected_object_count;
     uint64_t selected_bmson_bgm_event_id;
+    size_t staged_bmson_marker_count;
     bool beat_marker_navigation_available;
     bool audio_marker_navigation_available;
     bool audio_marker_transport_available;
@@ -592,6 +598,8 @@ typedef struct WormUiComposeView {
     size_t bgm_lane_count;
     const WormUiComposeBgmEventView* bgm_events;
     size_t bgm_event_count;
+    const WormUiComposeBgmDraftView* bmson_marker_drafts;
+    size_t bmson_marker_draft_count;
     const WormUiComposeCursorView* cursor;
     bool area_selection_preview_visible;
     WormUiComposeRect area_selection_preview_bounds;
@@ -1018,6 +1026,10 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_MOVE_BMSON_BGM_TO_CURSOR,
     WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_CONTINUE_AT_CURSOR,
     WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR,
+    WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_CONTINUE_AT_CURSOR,
+    WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_RESTART_AT_CURSOR,
+    WORM_UI_COMPOSE_ACTION_COMMIT_STAGED_BMSON_BGM,
+    WORM_UI_COMPOSE_ACTION_CANCEL_STAGED_BMSON_BGM,
     WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER,
     WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE,
     WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL,

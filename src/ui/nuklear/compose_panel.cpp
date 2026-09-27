@@ -460,6 +460,11 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
             view->bgm_events[index].event_id == 0 || view->bgm_events[index].source_lane_id == 0)
             return 0;
     }
+    for (size_t index = 0; index < view->bmson_marker_draft_count; ++index) {
+        if (!compose_rect_valid(&view->bmson_marker_drafts[index].bounds)) {
+            return 0;
+        }
+    }
     for (size_t index = 0; index < view->semantic_layer_count; ++index) {
         if (!view->semantic_layers || view->semantic_layers[index].layer_id == 0 ||
             !view->semantic_layers[index].name) {
@@ -2239,6 +2244,16 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                 nk_stroke_line(canvas, rect.x + 3.0f, rect.y + 2.0f,
                                rect.x + 3.0f, rect.y + rect.h - 2.0f, 2.0f, color);
             }
+        }
+        for (size_t index = 0; index < view->bmson_marker_draft_count; ++index) {
+            const auto& marker = view->bmson_marker_drafts[index];
+            const auto rect = compose_screen_rect(&marker.bounds, view, viewport);
+            if (rect.w <= 0.0f || rect.h <= 0.0f) {
+                continue;
+            }
+            nk_fill_rect(canvas, rect, 1.5f, nk_rgba(240, 171, 71, 94));
+            nk_stroke_rect(canvas, rect, 1.5f, 2.0f,
+                           marker.restart ? nk_rgb(255, 188, 94) : nk_rgb(119, 231, 226));
         }
         for (size_t index = 0; index < view->bgm_lane_count; ++index) {
             const auto rect = compose_screen_rect(&view->bgm_lanes[index].bounds, view, viewport);

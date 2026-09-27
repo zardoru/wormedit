@@ -311,6 +311,42 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
             ? WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR
             : WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_CONTINUE_AT_CURSOR;
     }
+    nk_layout_row_dynamic(context, 20, 1);
+    nk_labelf(context, NK_TEXT_LEFT, "Staged BMSON markers: %zu",
+              view->staged_bmson_marker_count);
+    nk_layout_row_dynamic(context, 24, 2);
+    if (!can_move_bmson) {
+        nk_widget_disable_begin(context);
+    }
+    const auto stage_continue_clicked = nk_button_label(context, "Stage continue");
+    const auto stage_restart_clicked = nk_button_label(context, "Stage restart");
+    if (!can_move_bmson) {
+        nk_widget_disable_end(context);
+    }
+    if ((stage_continue_clicked || stage_restart_clicked) && can_move_bmson &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->compose_bmson_bgm_event_id = view->selected_bmson_bgm_event_id;
+        action->compose_action = stage_restart_clicked
+            ? WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_RESTART_AT_CURSOR
+            : WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_CONTINUE_AT_CURSOR;
+    }
+    nk_layout_row_dynamic(context, 24, 2);
+    if (view->staged_bmson_marker_count == 0) {
+        nk_widget_disable_begin(context);
+    }
+    const auto commit_staged_clicked = nk_button_label(context, "Commit staged");
+    const auto cancel_staged_clicked = nk_button_label(context, "Cancel staged");
+    if (view->staged_bmson_marker_count == 0) {
+        nk_widget_disable_end(context);
+    }
+    if (view->staged_bmson_marker_count != 0 &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        if (commit_staged_clicked) {
+            action->compose_action = WORM_UI_COMPOSE_ACTION_COMMIT_STAGED_BMSON_BGM;
+        } else if (cancel_staged_clicked) {
+            action->compose_action = WORM_UI_COMPOSE_ACTION_CANCEL_STAGED_BMSON_BGM;
+        }
+    }
 
     {
         nk_layout_row_dynamic(context, 24, 1);

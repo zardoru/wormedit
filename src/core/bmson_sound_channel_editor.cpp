@@ -3,6 +3,7 @@
 #include <wormedit/core/sound_slice.h>
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <ranges>
 
@@ -167,9 +168,22 @@ auto insert_bmson_bgm_marker(document_history_t& history, std::uint64_t expected
                              chart_id_t chart, object_id_t reference_bgm_event,
                              local_position_t target, bool restart)
     -> document_command_result_t {
+    const std::array markers{bmson_bgm_marker_insertion_t{target, restart}};
+    return insert_bmson_bgm_markers(history, expected_revision, chart, reference_bgm_event,
+                                     markers);
+}
+
+auto insert_bmson_bgm_markers(
+    document_history_t& history, std::uint64_t expected_revision, chart_id_t chart,
+    object_id_t reference_bgm_event, std::span<const bmson_bgm_marker_insertion_t> markers)
+    -> document_command_result_t {
     if (expected_revision != history.document.revision) {
         return rejected(history.document.revision, diagnostic_code_t::invalid_id,
                         "BMSON marker insertion has a stale document revision");
+    }
+    if (markers.empty() || markers.size() > 256) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BMSON marker insertion requires 1 to 256 markers");
     }
     const auto found_chart = std::ranges::find(history.document.charts, chart,
                                                 &chart_document_t::id);
@@ -179,10 +193,21 @@ auto insert_bmson_bgm_marker(document_history_t& history, std::uint64_t expected
                         "BMSON marker insertion requires a known chart and BGM event");
     }
     const auto measures = build_measure_index(*found_chart);
-    if (!std::holds_alternative<measure_index_t>(measures) ||
-        !absolute_row(std::get<measure_index_t>(measures), target)) {
-        return rejected(history.document.revision, diagnostic_code_t::row_out_of_range,
-                        "BMSON marker target is outside exact chart geometry");
+    if (!std::holds_alternative<measure_index_t>(measures)) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_measure,
+                        "BMSON chart has invalid measure geometry");
+    }
+    for (std::size_t index = 0; index < markers.size(); ++index) {
+        if (!absolute_row(std::get<measure_index_t>(measures), markers[index].position)) {
+            return rejected(history.document.revision, diagnostic_code_t::row_out_of_range,
+                            "BMSON marker target is outside exact chart geometry");
+        }
+        if (std::ranges::any_of(markers.first(index), [&](const auto& prior) {
+                return prior.position == markers[index].position;
+            })) {
+            return rejected(history.document.revision, diagnostic_code_t::collision,
+                            "BMSON marker batch contains the same channel pulse twice");
+        }
     }
     const bgm_event_t* reference{};
     for (const auto& measure : found_chart->measures) {
@@ -214,11 +239,13 @@ auto insert_bmson_bgm_marker(document_history_t& history, std::uint64_t expected
         return rejected(history.document.revision, diagnostic_code_t::invalid_id,
                         "Reference BGM marker and retained source event disagree");
     }
-    if (std::ranges::any_of(channel->events, [&](const auto& event) {
-            return event.position == target;
-        })) {
-        return rejected(history.document.revision, diagnostic_code_t::collision,
-                        "Another event in this BMSON sound channel occupies the target row");
+    for (const auto& marker : markers) {
+        if (std::ranges::any_of(channel->events, [&](const auto& event) {
+                return event.position == marker.position;
+            })) {
+            return rejected(history.document.revision, diagnostic_code_t::collision,
+                            "Another event in this BMSON sound channel occupies the target row");
+        }
     }
 
     std::uint64_t largest{};
@@ -249,7 +276,9 @@ auto insert_bmson_bgm_marker(document_history_t& history, std::uint64_t expected
         scan(measure.notes);
         scan(measure.bgm_events);
     }
-    if (count > 999'998 || largest >= std::numeric_limits<std::uint64_t>::max() - 2) {
+    const auto needed = markers.size() * 2;
+    if (count > 1'000'000 - needed ||
+        largest > std::numeric_limits<std::uint64_t>::max() - needed) {
         return rejected(history.document.revision, diagnostic_code_t::invalid_id,
                         "BMSON chart object ID space is exhausted");
     }
@@ -259,24 +288,26 @@ auto insert_bmson_bgm_marker(document_history_t& history, std::uint64_t expected
     auto& changed_chart = proposed.charts[chart_offset];
     const auto channel_offset = static_cast<std::size_t>(channel - found_chart->sound_channels.begin());
     auto& changed_channel = changed_chart.sound_channels[channel_offset];
-    const object_id_t source_id{largest + 1};
-    const object_id_t bgm_id{largest + 2};
-    changed_channel.events.push_back({.id = source_id, .position = target,
-                                      .end = std::nullopt, .lane = {},
-                                      .continuation = !restart, .playable = false,
-                                      .provenance = {}});
-    const auto destination = std::ranges::find(changed_chart.measures, target.measure,
-                                                &measure_chunk_t::id);
-    if (destination == changed_chart.measures.end()) {
-        return rejected(history.document.revision, diagnostic_code_t::invalid_measure,
-                        "BMSON marker destination measure is unavailable");
+    for (const auto& marker : markers) {
+        const object_id_t source_id{++largest};
+        const object_id_t bgm_id{++largest};
+        changed_channel.events.push_back({.id = source_id, .position = marker.position,
+                                          .end = std::nullopt, .lane = {},
+                                          .continuation = !marker.restart, .playable = false,
+                                          .provenance = {}});
+        const auto destination = std::ranges::find(changed_chart.measures,
+            marker.position.measure, &measure_chunk_t::id);
+        if (destination == changed_chart.measures.end()) {
+            return rejected(history.document.revision, diagnostic_code_t::invalid_measure,
+                            "BMSON marker destination measure is unavailable");
+        }
+        destination->bgm_events.push_back({.id = bgm_id, .position = marker.position,
+                                           .source_lane = reference->source_lane,
+                                           .sound = reference->sound,
+                                           .sound_channel_event = source_id,
+                                           .structural_slot = 0, .branch = std::nullopt,
+                                           .provenance = {}});
     }
-    destination->bgm_events.push_back({.id = bgm_id, .position = target,
-                                       .source_lane = reference->source_lane,
-                                       .sound = reference->sound,
-                                       .sound_channel_event = source_id,
-                                       .structural_slot = 0, .branch = std::nullopt,
-                                       .provenance = {}});
     const auto asset = std::ranges::find(proposed.audio_assets,
         changed_channel.source_clip.source, &audio_asset_t::id);
     if (asset != proposed.audio_assets.end() && asset->stream.sample_rate != 0) {
@@ -287,7 +318,9 @@ auto insert_bmson_bgm_marker(document_history_t& history, std::uint64_t expected
                             slices.diagnostics.front().message);
         }
     }
-    return commit_document_command(history, std::move(proposed), "Insert BMSON BGM marker");
+    return commit_document_command(history, std::move(proposed),
+                                   markers.size() == 1 ? "Insert BMSON BGM marker"
+                                                       : "Insert BMSON BGM markers");
 }
 
 auto delete_bmson_bgm_marker(document_history_t& history,

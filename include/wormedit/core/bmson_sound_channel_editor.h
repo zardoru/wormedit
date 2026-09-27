@@ -2,6 +2,8 @@
 
 #include <wormedit/core/command.h>
 
+#include <span>
+
 namespace wormedit {
 
 // Toggles continuation/restart for every retained event at one pulse in a
@@ -23,6 +25,17 @@ namespace wormedit {
                                            std::uint64_t expected_revision,
                                            chart_id_t chart, object_id_t reference_bgm_event,
                                            local_position_t target, bool restart)
+    -> document_command_result_t;
+
+struct bmson_bgm_marker_insertion_t {
+    local_position_t position;
+    bool restart{};
+};
+
+// Commits up to 256 markers in one history step after validating every target.
+[[nodiscard]] auto insert_bmson_bgm_markers(
+    document_history_t& history, std::uint64_t expected_revision, chart_id_t chart,
+    object_id_t reference_bgm_event, std::span<const bmson_bgm_marker_insertion_t> markers)
     -> document_command_result_t;
 
 // Removes the linked semantic BGM marker and retained source event atomically.

@@ -357,6 +357,50 @@ TEST_CASE("virtual BMS hold rejects a protected authored collision atomically",
     CHECK(state.cursor == cursor);
 }
 
+TEST_CASE("area selection in virtual BMS space excludes authored boundary events",
+          "[unit][core][interaction][virtual-canvas][selection]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    chart.bgm_source_lanes.push_back({.id = object_id_t{300}, .name = "BGM"});
+    chart.measures[1].bgm_events.push_back({.id = object_id_t{201},
+                                            .position = {measure_id_t{2}, 959},
+                                            .source_lane = object_id_t{300}});
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{std::uint64_t{4}};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                         {measure_id_t{2}, 720}, snaps, 4, 192.0);
+    REQUIRE(setup);
+    auto state = *setup.state;
+    REQUIRE(dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward}));
+    state.viewport_scroll_pixels = 384.0;
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_editor_area_selection_action_t{
+            110.0, 50.0, 100.0, 200.0, editor_area_selection_mode_t::replace,
+            true, {.notes = false, .bgm = true}}));
+    const auto empty = dispatch_editor_action(
+        history, state, commit_editor_area_selection_action_t{190.0, 100.0, true});
+    REQUIRE(empty);
+    CHECK(state.selected_objects.empty());
+    CHECK_FALSE(state.retained_selection_range);
+
+    state.viewport_scroll_pixels = 360.0;
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        begin_editor_area_selection_action_t{
+            110.0, 0.0, 100.0, 200.0, editor_area_selection_mode_t::replace,
+            true, {.notes = false, .bgm = true}}));
+    const auto crossing = dispatch_editor_action(
+        history, state, commit_editor_area_selection_action_t{190.0, 50.0, true});
+    REQUIRE(crossing);
+    CHECK((state.selected_objects == std::vector<editor_selection_object_t>{
+                                         {editor_selection_object_kind_t::bgm_event,
+                                          object_id_t{201}}}));
+    CHECK(history.document.charts.front().measures.size() == 2);
+}
+
 TEST_CASE(
     "headless editor actions cycle exact snaps, step across measures, and place undoable taps",
     "[unit][core][interaction]") {

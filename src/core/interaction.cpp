@@ -2199,10 +2199,9 @@ auto editor_notes_in_area_selection(const chart_document_t& chart,
                static_cast<long double>(chart.divisions_per_standard_measure) /
                static_cast<long double>(view.pixels_per_standard_measure);
     };
-    const auto minimum_row =
-        std::clamp(row_at_y(top), 0.0L, static_cast<long double>(index.measures.total_rows - 1));
-    const auto maximum_row =
-        std::clamp(row_at_y(bottom), 0.0L, static_cast<long double>(index.measures.total_rows - 1));
+    const auto minimum_row = std::max(row_at_y(top), 0.0L);
+    const auto maximum_row = std::min(
+        row_at_y(bottom), static_cast<long double>(index.measures.total_rows - 1));
     if (minimum_row > maximum_row) {
         return std::vector<object_id_t>{};
     }
@@ -2455,8 +2454,8 @@ auto editor_objects_in_area_selection(const chart_document_t& chart,
                        static_cast<long double>(view.pixels_per_standard_measure);
             };
             const auto max_row = static_cast<long double>(index.measures.total_rows - 1);
-            const auto low = std::clamp(to_row(top), 0.0L, max_row);
-            const auto high = std::clamp(to_row(bottom), 0.0L, max_row);
+            const auto low = std::max(to_row(top), 0.0L);
+            const auto high = std::min(to_row(bottom), max_row);
             const editor_selection_scope_t non_note_scope{
                 .notes = false,
                 .bgm = request.scope.bgm,
@@ -2493,7 +2492,7 @@ auto editor_objects_in_area_selection(const chart_document_t& chart,
                 self(self, node * 2, first, middle);
                 self(self, node * 2 + 1, middle, last);
             };
-            if (candidate_count != 0)
+            if (candidate_count != 0 && low <= high)
                 visit(visit, 1, 0, index.selection_span_tree_leaf_base);
         }
     }
@@ -2651,6 +2650,9 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         !std::holds_alternative<cycle_edit_snap_action_t>(action) &&
         !std::holds_alternative<place_virtual_bms_tap_action_t>(action) &&
         !std::holds_alternative<place_virtual_bms_hold_action_t>(action) &&
+        !std::holds_alternative<begin_editor_area_selection_action_t>(action) &&
+        !std::holds_alternative<update_editor_area_selection_action_t>(action) &&
+        !std::holds_alternative<commit_editor_area_selection_action_t>(action) &&
         !std::holds_alternative<select_editor_lane_action_t>(action) &&
         !std::holds_alternative<adjust_editor_zoom_action_t>(action) &&
         !std::holds_alternative<scroll_editor_view_action_t>(action)) {

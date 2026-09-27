@@ -274,6 +274,27 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
     if (auto_clicked && can_place) {
         state->auto_increment_on_place = !state->auto_increment_on_place;
     }
+    nk_layout_row_dynamic(context, 24, 2);
+    const auto can_move_bmson = view->scene_available &&
+                                 view->selected_bmson_bgm_event_id != 0;
+    if (!can_move_bmson) {
+        nk_widget_disable_begin(context);
+    }
+    const auto move_bmson_clicked = nk_button_label(
+        context, "Move BMSON BGM to cursor");
+    const auto delete_bmson_clicked = nk_button_label(context, "Delete BMSON BGM");
+    if (!can_move_bmson) {
+        nk_widget_disable_end(context);
+    }
+    if (move_bmson_clicked && can_move_bmson &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->compose_bmson_bgm_event_id = view->selected_bmson_bgm_event_id;
+        action->compose_action = WORM_UI_COMPOSE_ACTION_MOVE_BMSON_BGM_TO_CURSOR;
+    } else if (delete_bmson_clicked && can_move_bmson &&
+               action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->compose_bmson_bgm_event_id = view->selected_bmson_bgm_event_id;
+        action->compose_action = WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER;
+    }
 
     {
         nk_layout_row_dynamic(context, 24, 1);

@@ -507,6 +507,7 @@ typedef struct WormUiComposeView {
     bool semantic_layer_paint_mode_active;
     size_t selected_note_count;
     size_t selected_object_count;
+    uint64_t selected_bmson_bgm_event_id;
     bool beat_marker_navigation_available;
     bool audio_marker_navigation_available;
     bool audio_marker_transport_available;
@@ -1014,6 +1015,8 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_CREATE_RESOURCE,
     WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET,
     WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT,
+    WORM_UI_COMPOSE_ACTION_MOVE_BMSON_BGM_TO_CURSOR,
+    WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER,
     WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE,
     WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL,
@@ -1201,6 +1204,7 @@ typedef struct WormUiWorkspaceAction {
     char compose_marker_audio_end[WORM_UI_COMPOSE_MARKER_TIME_BYTES];
     uint64_t compose_semantic_layer_id;
     uint64_t compose_resource_id;
+    uint64_t compose_bmson_bgm_event_id;
     uint64_t compose_resource_asset_id;
     uint8_t compose_resource_role;
     char compose_import_path[WORM_UI_COMPOSE_IMPORT_PATH_BYTES + 1];

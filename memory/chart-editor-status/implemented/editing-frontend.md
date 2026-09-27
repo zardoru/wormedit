@@ -28,6 +28,8 @@ The Compose resource toolbar now has an opt-in Auto next control for Sample, BGM
 
 The independently scrolled BGM canvas now distinguishes BMSON source-channel slice continuations from restarts with colored marks on linked tiles. Shift-clicking a linked non-playable BMSON tile toggles the retained channel's restart flag for every event at that pulse in one undoable command; BMS tiles keep their ordinary Shift-selection behavior. The scene index resolves same-pulse restart state once per revision, and the BMSON writer round-trip preserves the edit. The broader timing-aligned sound-channel waveform, multi-marker razor, drag/delete, and region audition workflow remains.
 
+A selected BMSON BGM marker can now move to the exact Compose cursor row or be deleted from the resource drawer. Revision-checked history commands update the retained source-channel event and its semantic BGM projection together, preserving stable IDs, resource binding, and the source lane when moving across measures. Moving rejects same-channel pulse collisions; both operations re-derive exact sound slices before commit when decoded source geometry is known. BMSON writer round-trips and undo preserve the edits. Interactive drag and the remaining multi-marker razor workflow remain.
+
 Setup now exposes independent SM/SSC file-family, native/legacy timing-syntax,
 and syntax-only/StepMania 5.1/Etterna 0.75.1 implementation choices. The
 application retains the typed policy outside the adapter, validates it through

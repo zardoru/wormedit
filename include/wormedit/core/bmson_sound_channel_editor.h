@@ -10,4 +10,17 @@ namespace wormedit {
     document_history_t& history, std::uint64_t expected_revision,
     chart_id_t chart, object_id_t sound_channel_event) -> document_command_result_t;
 
+// Moves one semantic BMSON BGM marker and its retained source event together.
+// The target must be an exact chart row free within that sound channel.
+[[nodiscard]] auto move_bmson_bgm_marker(document_history_t& history,
+                                         std::uint64_t expected_revision,
+                                         chart_id_t chart, object_id_t bgm_event,
+                                         local_position_t target) -> document_command_result_t;
+
+// Removes the linked semantic BGM marker and retained source event atomically.
+[[nodiscard]] auto delete_bmson_bgm_marker(document_history_t& history,
+                                           std::uint64_t expected_revision,
+                                           chart_id_t chart, object_id_t bgm_event)
+    -> document_command_result_t;
+
 } // namespace wormedit

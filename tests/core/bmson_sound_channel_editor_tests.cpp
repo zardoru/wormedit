@@ -70,3 +70,103 @@ TEST_CASE("BMSON restart toggle updates one channel pulse and survives export an
     REQUIRE(wormedit::undo_document_command(history));
     CHECK(history.document.charts.front().sound_channels.front().events.back().continuation);
 }
+
+TEST_CASE("BMSON BGM marker move preserves source link and rejects channel collisions",
+          "[unit][core][bmson][marker]") {
+    auto song = fixture();
+    song.audio_assets.front().stream = {48'000, 2, 200'000, true};
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto& chart = history.document.charts.front();
+    const auto chart_id = chart.id;
+    const auto source_measure = std::ranges::find_if(chart.measures, [](const auto& measure) {
+        return !measure.bgm_events.empty();
+    });
+    REQUIRE(source_measure != chart.measures.end());
+    const auto bgm = source_measure->bgm_events.front();
+    REQUIRE(bgm.sound_channel_event.has_value());
+    REQUIRE(chart.measures.back().id != bgm.position.measure);
+    const auto target = wormedit::local_position_t{chart.measures.back().id, 0};
+    const auto revision = history.document.revision;
+    const auto applied = wormedit::move_bmson_bgm_marker(
+        history, revision, chart_id, bgm.id, target);
+    REQUIRE(applied);
+    const auto& moved_chart = history.document.charts.front();
+    const auto moved_measure = std::ranges::find(moved_chart.measures, target.measure,
+                                                 &wormedit::measure_chunk_t::id);
+    REQUIRE(moved_measure != moved_chart.measures.end());
+    const auto moved_item = std::ranges::find(moved_measure->bgm_events, bgm.id,
+                                               &wormedit::bgm_event_t::id);
+    REQUIRE(moved_item != moved_measure->bgm_events.end());
+    const auto& moved = *moved_item;
+    CHECK(moved.id == bgm.id);
+    CHECK(moved.position == target);
+    CHECK(moved.sound_channel_event == bgm.sound_channel_event);
+    CHECK(moved_chart.sound_channels.front().events.back().position == target);
+    CHECK(wormedit::validate_document(history.document).empty());
+    const auto slices = wormedit::derive_sound_channel_slices(
+        moved_chart, moved_chart.sound_channels.front(), 48'000, 200'000);
+    REQUIRE(slices);
+    CHECK(slices.slices.back().absolute_row > 0);
+
+    const auto written = wormedit::write_bmson(history.document);
+    REQUIRE(written.json.has_value());
+    const auto reparsed = wormedit::parse_bmson_bytes(
+        std::as_bytes(std::span{written.json->data(), written.json->size()}));
+    REQUIRE(reparsed.song.has_value());
+    CHECK(reparsed.song->charts.front().sound_channels.front().events.back().position == target);
+
+    CHECK_FALSE(wormedit::move_bmson_bgm_marker(
+        history, history.document.revision, chart_id, bgm.id,
+        moved_chart.sound_channels.front().events.front().position));
+    CHECK_FALSE(wormedit::move_bmson_bgm_marker(
+        history, history.document.revision, chart_id, bgm.id, target));
+    REQUIRE(wormedit::undo_document_command(history));
+    const auto& restored = history.document.charts.front();
+    const auto restored_measure = std::ranges::find(restored.measures, bgm.position.measure,
+                                                    &wormedit::measure_chunk_t::id);
+    REQUIRE(restored_measure != restored.measures.end());
+    CHECK(std::ranges::any_of(restored_measure->bgm_events, [&](const auto& event) {
+        return event.id == bgm.id && event.position == bgm.position;
+    }));
+}
+
+TEST_CASE("BMSON BGM marker deletion removes its source event and is undoable",
+          "[unit][core][bmson][marker]") {
+    auto song = fixture();
+    song.audio_assets.front().stream = {48'000, 2, 200'000, true};
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto& chart = history.document.charts.front();
+    const auto chart_id = chart.id;
+    const auto initial_sound_event_count = chart.sound_channels.front().events.size();
+    const auto measure = std::ranges::find_if(chart.measures, [](const auto& item) {
+        return !item.bgm_events.empty();
+    });
+    REQUIRE(measure != chart.measures.end());
+    const auto bgm = measure->bgm_events.front();
+    REQUIRE(bgm.sound_channel_event.has_value());
+    const auto revision = history.document.revision;
+    REQUIRE(wormedit::delete_bmson_bgm_marker(history, revision, chart_id, bgm.id));
+    const auto& changed = history.document.charts.front();
+    CHECK(std::ranges::none_of(changed.measures, [&](const auto& item) {
+        return std::ranges::any_of(item.bgm_events, [&](const auto& event) {
+            return event.id == bgm.id;
+        });
+    }));
+    CHECK(std::ranges::none_of(changed.sound_channels.front().events, [&](const auto& event) {
+        return event.id == *bgm.sound_channel_event;
+    }));
+    CHECK(wormedit::validate_document(history.document).empty());
+    const auto written = wormedit::write_bmson(history.document);
+    REQUIRE(written.json.has_value());
+    const auto reparsed = wormedit::parse_bmson_bytes(
+        std::as_bytes(std::span{written.json->data(), written.json->size()}));
+    REQUIRE(reparsed.song.has_value());
+    CHECK(reparsed.song->charts.front().sound_channels.front().events.size() ==
+          initial_sound_event_count - 1);
+    CHECK_FALSE(wormedit::delete_bmson_bgm_marker(history, revision, chart_id, bgm.id));
+    REQUIRE(wormedit::undo_document_command(history));
+    CHECK(std::ranges::any_of(history.document.charts.front().sound_channels.front().events,
+                              [&](const auto& event) {
+                                  return event.id == *bgm.sound_channel_event;
+                              }));
+}

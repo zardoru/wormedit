@@ -2473,6 +2473,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.timing_stage_y_pixels = 0.0;
     view.timing_lane_visibility_mask = application_state.compose_timing_lane_visibility_mask;
     view.selected_note_count = 0;
+    view.selected_bmson_bgm_event_id = 0;
     view.beat_marker_navigation_available = false;
     view.audio_marker_navigation_available = false;
     view.audio_marker_transport_available = false;
@@ -2991,6 +2992,20 @@ void populate_compose_view(flattened_workspace_t& flattened,
     }
     view.selected_note_count = retained_state->selected_notes.size();
     view.selected_object_count = retained_state->selected_objects.size();
+    if (chart.source_family == wormedit::format_family_t::bmson &&
+        retained_state->selected_objects.size() == 1 &&
+        retained_state->selected_objects.front().kind ==
+            wormedit::editor_selection_object_kind_t::bgm_event) {
+        const auto selected = retained_state->selected_objects.front().id;
+        for (const auto& measure : chart.measures) {
+            const auto event = std::ranges::find(measure.bgm_events, selected,
+                                                  &wormedit::bgm_event_t::id);
+            if (event != measure.bgm_events.end() && event->sound_channel_event) {
+                view.selected_bmson_bgm_event_id = selected.value;
+                break;
+            }
+        }
+    }
     if (retained_state->selected_notes.size() == 1) {
         const auto note_id = retained_state->selected_notes.front();
         for (const auto& measure : chart.measures) {
@@ -5153,6 +5168,60 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                        : rebound.diagnostics.front().message;
         }
         return "Resource placed at the edit cursor.";
+    }
+    case WORM_UI_COMPOSE_ACTION_MOVE_BMSON_BGM_TO_CURSOR: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before moving a BMSON marker.";
+        }
+        const object_id_t event{action.compose_bmson_bgm_event_id};
+        if (state.selected_objects.size() != 1 ||
+            state.selected_objects.front().kind != editor_selection_object_kind_t::bgm_event ||
+            state.selected_objects.front().id != event) {
+            return "Select one BMSON BGM marker before moving it.";
+        }
+        const auto moved = move_bmson_bgm_marker(
+            history, action.compose_input_document_revision, state.chart, event, state.cursor);
+        if (!moved.diagnostics.empty()) {
+            return moved.diagnostics.front().message;
+        }
+        if (!moved.applied) {
+            return "BMSON BGM marker is already at the cursor.";
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty()
+                       ? "BMSON marker moved, but workspace rebinding failed."
+                       : rebound.diagnostics.front().message;
+        }
+        return "BMSON BGM marker moved to the edit cursor.";
+    }
+    case WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before deleting a BMSON marker.";
+        }
+        const object_id_t event{action.compose_bmson_bgm_event_id};
+        if (state.selected_objects.size() != 1 ||
+            state.selected_objects.front().kind != editor_selection_object_kind_t::bgm_event ||
+            state.selected_objects.front().id != event) {
+            return "Select one BMSON BGM marker before deleting it.";
+        }
+        const auto deleted = delete_bmson_bgm_marker(
+            history, action.compose_input_document_revision, state.chart, event);
+        if (!deleted.diagnostics.empty()) {
+            return deleted.diagnostics.front().message;
+        }
+        if (!deleted.applied) {
+            return "BMSON marker deletion made no document change.";
+        }
+        state.selected_objects.clear();
+        state.selected_notes.clear();
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty()
+                       ? "BMSON marker deleted, but workspace rebinding failed."
+                       : rebound.diagnostics.front().message;
+        }
+        return "BMSON BGM marker deleted.";
     }
     case WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL:
     case WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL: {

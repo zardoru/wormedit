@@ -548,6 +548,7 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
 
 int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
     return view && view->band_count <= WORM_UI_COMPOSE_BAND_CAPACITY &&
+           (view->selected_bmson_bgm_event_id == 0 || view->selected_object_count == 1) &&
            view->lane_count <= WORM_UI_COMPOSE_LANE_CAPACITY &&
            view->grid_line_count <= WORM_UI_COMPOSE_GRID_CAPACITY &&
            view->timing_marker_count <= WORM_UI_TIMING_MARKER_CAPACITY &&

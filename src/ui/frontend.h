@@ -257,6 +257,7 @@ typedef enum WormUiAudioOffsetDragAction {
     WORM_UI_AUDIO_OFFSET_DRAG_UPDATE,
     WORM_UI_AUDIO_OFFSET_DRAG_COMMIT,
     WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
+    WORM_UI_AUDIO_OFFSET_NUDGE,
 } WormUiAudioOffsetDragAction;
 
 typedef struct WormUiComposeRect {
@@ -627,6 +628,10 @@ typedef struct WormUiComposeView {
     size_t waveform_overview_row_count;
     double waveform_overview_visible_begin_fraction;
     double waveform_overview_visible_end_fraction;
+    uint32_t waveform_overview_sample_rate;
+    int64_t waveform_audio_offset_numerator;
+    uint64_t waveform_audio_offset_denominator;
+    bool waveform_timing_locked;
     bool waveform_analysis_pending;
     const WormUiComposeBgmDraftView* bmson_marker_drafts;
     size_t bmson_marker_draft_count;

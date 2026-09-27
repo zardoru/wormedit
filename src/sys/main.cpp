@@ -2531,6 +2531,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.waveform_overview_row_count = 0;
     view.waveform_overview_visible_begin_fraction = 0.0;
     view.waveform_overview_visible_end_fraction = 0.0;
+    view.waveform_overview_sample_rate = 0;
+    view.waveform_audio_offset_numerator = 0;
+    view.waveform_audio_offset_denominator = 1;
+    view.waveform_timing_locked = application_state.timing_locked;
     view.waveform_analysis_pending = false;
     view.beat_marker_navigation_available = false;
     view.audio_marker_navigation_available = false;
@@ -2592,6 +2596,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
         return;
     }
     const auto& chart = *chart_it;
+    view.waveform_audio_offset_numerator = chart.beat_zero_audio_offset_seconds.numerator;
+    view.waveform_audio_offset_denominator = chart.beat_zero_audio_offset_seconds.denominator;
     view.beat_marker_navigation_available = has_beat_marker_navigation(chart);
     view.audio_marker_navigation_available = has_audio_marker_navigation(chart);
     view.audio_marker_transport_available =
@@ -3889,7 +3895,8 @@ auto dispatch_audio_offset_drag_action(const WormUiWorkspaceAction& action,
     -> std::string {
     using namespace wormedit;
     const auto supported_tab = workspace.active_tab == workspace_tab_t::audio_slices ||
-                               workspace.active_tab == workspace_tab_t::metadata;
+                               workspace.active_tab == workspace_tab_t::metadata ||
+                               workspace.active_tab == workspace_tab_t::compose;
     const auto context_matches =
         supported_tab && workspace.selected_chart &&
         workspace.selected_chart->value == action.audio_offset_drag_chart_id &&
@@ -3904,6 +3911,31 @@ auto dispatch_audio_offset_drag_action(const WormUiWorkspaceAction& action,
         drag.reset();
         drag_tab.reset();
         return "Audio offset drag expired after its chart or waveform changed.";
+    }
+    if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_NUDGE) {
+        if (drag) {
+            return "Finish or cancel the active audio offset drag before nudging.";
+        }
+        const auto begun = begin_audio_offset_drag(history.document, *workspace.selected_chart,
+                                                   *selected_sample_rate, timing_locked);
+        if (!begun) {
+            return begun.diagnostics.empty() ? "Audio offset nudge could not start."
+                                             : begun.diagnostics.front().message;
+        }
+        const auto updated = update_audio_offset_drag(
+            history.document, *begun.drag, action.audio_offset_drag_delta_frames, timing_locked);
+        if (!updated) {
+            return updated.diagnostics.empty() ? "Audio offset nudge was rejected."
+                                               : updated.diagnostics.front().message;
+        }
+        const auto committed = commit_audio_offset_drag(history, *updated.drag, timing_locked);
+        if (!committed.applied) {
+            return committed.diagnostics.empty() ? "Audio offset was unchanged."
+                                                 : committed.diagnostics.front().message;
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        return rebound ? "Audio offset nudged by an exact frame count."
+                       : "Audio offset changed, but workspace rebinding failed.";
     }
     if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_BEGIN) {
         const auto begun = begin_audio_offset_drag(history.document, *workspace.selected_chart,
@@ -8186,6 +8218,8 @@ int main(int argc, char** argv) {
                             overview.visible_begin_fraction;
                         compose.waveform_overview_visible_end_fraction =
                             overview.visible_end_fraction;
+                        compose.waveform_overview_sample_rate =
+                            waveform_analysis->waveform->sample_rate;
                         compose_scene_cache.waveform_overview_total_frames =
                             waveform_analysis->waveform->total_frames;
                         compose_scene_cache.waveform_overview_sample_rate =

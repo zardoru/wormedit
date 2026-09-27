@@ -624,6 +624,9 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            view->waveform_overview_visible_end_fraction <= 1.0 &&
            view->waveform_overview_visible_begin_fraction <=
                view->waveform_overview_visible_end_fraction &&
+           (view->waveform_overview_row_count == 0 ||
+            (view->waveform_overview_sample_rate != 0 &&
+             view->waveform_audio_offset_denominator != 0)) &&
            view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY &&
            view->lane_key_binding_count <= WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY &&
            view->branch_row_count <= WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY &&
@@ -1629,9 +1632,50 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                  : "↑/↓ move · drag selects/moves · Alt-drag hold · drag BMSON BGM to move",
              NK_TEXT_LEFT);
 
-    const auto group_bounds = nk_window_get_content_region(context);
-    const auto surface_height = std::max(32.0f, group_bounds.h - 24.0f);
     const bool overview_available = view->waveform_overview_row_count != 0;
+    const auto group_bounds = nk_window_get_content_region(context);
+    if (overview_available) {
+        const auto offset_seconds = static_cast<double>(view->waveform_audio_offset_numerator) /
+                                    static_cast<double>(view->waveform_audio_offset_denominator);
+        const auto ten_milliseconds =
+            static_cast<int64_t>(std::max(1U, view->waveform_overview_sample_rate / 100U));
+        const auto nudge = [&](int64_t frames) {
+            if (action && action->audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
+                action->audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_NUDGE;
+                action->audio_offset_drag_chart_id = view->chart_id;
+                action->audio_offset_drag_document_revision = view->document_revision;
+                action->audio_offset_drag_sample_rate = view->waveform_overview_sample_rate;
+                action->audio_offset_drag_delta_frames = frames;
+            }
+        };
+        nk_layout_row_begin(context, NK_DYNAMIC, 22, 5);
+        if (view->waveform_timing_locked)
+            nk_widget_disable_begin(context);
+        nk_layout_row_push(context, 0.13f);
+        if (nk_button_label(context, "-10ms"))
+            nudge(-ten_milliseconds);
+        nk_layout_row_push(context, 0.10f);
+        if (nk_button_label(context, "-1f"))
+            nudge(-1);
+        if (view->waveform_timing_locked)
+            nk_widget_disable_end(context);
+        nk_layout_row_push(context, 0.54f);
+        nk_labelf(context, NK_TEXT_CENTERED, "Offset %+.6f s%s", offset_seconds,
+                  view->waveform_timing_locked ? " · locked" : "");
+        if (view->waveform_timing_locked)
+            nk_widget_disable_begin(context);
+        nk_layout_row_push(context, 0.10f);
+        if (nk_button_label(context, "+1f"))
+            nudge(1);
+        nk_layout_row_push(context, 0.13f);
+        if (nk_button_label(context, "+10ms"))
+            nudge(ten_milliseconds);
+        if (view->waveform_timing_locked)
+            nk_widget_disable_end(context);
+        nk_layout_row_end(context);
+    }
+    const auto surface_height =
+        std::max(32.0f, group_bounds.h - (overview_available ? 52.0f : 24.0f));
     const auto overview_fraction =
         overview_available ? std::min(0.08f, 26.0f / std::max(group_bounds.w, 1.0f)) : 0.0f;
     nk_layout_space_begin(context, NK_DYNAMIC, surface_height, overview_available ? 2 : 1);

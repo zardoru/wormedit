@@ -3359,14 +3359,16 @@ void populate_compose_view(flattened_workspace_t& flattened,
     }
     if (retained_state->pending_space_range_selection) {
         const auto& pending = *retained_state->pending_space_range_selection;
-        const auto& measures = std::get<wormedit::measure_index_t>(measure_index);
-        const auto anchor_row = wormedit::absolute_row(measures, pending.anchor);
-        const auto cursor_row = wormedit::absolute_row(measures, retained_state->cursor);
-        if (anchor_row && cursor_row) {
+        const auto cursor_row = retained_state->virtual_bms_cursor_row
+                                    ? retained_state->virtual_bms_cursor_row
+                                    : wormedit::absolute_row(
+                                          std::get<wormedit::measure_index_t>(measure_index),
+                                          retained_state->cursor);
+        if (cursor_row) {
             const auto pixels_per_row = interaction_view.pixels_per_standard_measure /
                                         static_cast<double>(chart.divisions_per_standard_measure);
-            const auto first_row = std::min(*anchor_row, *cursor_row);
-            const auto last_row = std::max(*anchor_row, *cursor_row);
+            const auto first_row = std::min(pending.anchor_canvas_row, *cursor_row);
+            const auto last_row = std::max(pending.anchor_canvas_row, *cursor_row);
             const auto top = static_cast<double>(first_row) * pixels_per_row -
                              interaction_view.viewport_scroll_pixels;
             const auto bottom = static_cast<double>(last_row + 1) * pixels_per_row -
@@ -3384,7 +3386,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                       interaction_view.viewport_scroll_pixels,
                                   0.0, view.viewport_height_pixels);
             };
-            view.space_range_anchor_y_pixels = row_center(*anchor_row);
+            view.space_range_anchor_y_pixels = row_center(pending.anchor_canvas_row);
             view.space_range_tail_y_pixels = row_center(*cursor_row);
         }
     }

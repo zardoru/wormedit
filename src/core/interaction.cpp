@@ -242,28 +242,37 @@ auto maximum_viewport_scroll(const chart_document_t& chart, const measure_index_
 }
 
 auto absolute_row_at_y_pixels(const chart_document_t& chart, const measure_index_t& index,
-                              const editor_interaction_view_model_t& view, double y_pixels)
+                              const editor_interaction_view_model_t& view, double y_pixels,
+                              bool include_virtual_bms_tail = false)
     -> std::optional<std::uint64_t> {
+    auto total_rows = index.total_rows;
+    if (include_virtual_bms_tail && chart.source_family == format_family_t::bms) {
+        const auto built_canvas = build_virtual_canvas(chart);
+        if (const auto* canvas = std::get_if<virtual_canvas_t>(&built_canvas))
+            total_rows = canvas->total_rows;
+        else
+            return std::nullopt;
+    }
     if (view.chart != chart.id || !std::isfinite(y_pixels) || y_pixels < 0.0 ||
         y_pixels >= view.viewport_height_pixels ||
         !std::isfinite(view.pixels_per_standard_measure) ||
         view.pixels_per_standard_measure < minimum_pixels_per_standard_measure ||
         view.pixels_per_standard_measure > maximum_pixels_per_standard_measure ||
         !std::isfinite(view.viewport_scroll_pixels) || chart.divisions_per_standard_measure == 0 ||
-        index.total_rows == 0) {
+        total_rows == 0) {
         return std::nullopt;
     }
     const auto row = (static_cast<long double>(y_pixels) + view.viewport_scroll_pixels) *
                      static_cast<long double>(chart.divisions_per_standard_measure) /
                      static_cast<long double>(view.pixels_per_standard_measure);
-    if (!std::isfinite(row) || row < 0.0L || row >= static_cast<long double>(index.total_rows)) {
+    if (!std::isfinite(row) || row < 0.0L || row >= static_cast<long double>(total_rows)) {
         return std::nullopt;
     }
     // Pointer positions are continuous; map to the nearest stored row and make
     // exact half-row ties stable by resolving them toward the earlier row.
     const auto nearest = std::floor(row + 0.5L);
-    if (nearest >= static_cast<long double>(index.total_rows)) {
-        return index.total_rows - 1;
+    if (nearest >= static_cast<long double>(total_rows)) {
+        return total_rows - 1;
     }
     return static_cast<std::uint64_t>(nearest);
 }
@@ -348,13 +357,12 @@ auto make_view(const document_history_t& history, const editor_interaction_state
             return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                            "Space range selection is stale after a document edit")};
         }
-        const auto anchor_row = absolute_row(index, pending.anchor);
-        if (!anchor_row.has_value()) {
+        if (pending.anchor_canvas_row >= canvas_rows) {
             return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                            "Space range anchor lies outside chart geometry")};
         }
-        const auto first_row = std::min(*anchor_row, *absolute);
-        const auto last_row = std::max(*anchor_row, *absolute);
+        const auto first_row = std::min(pending.anchor_canvas_row, *absolute);
+        const auto last_row = std::max(pending.anchor_canvas_row, *absolute);
         auto queried = editor_objects_in_row_range(*chart, *pending.hit_index, first_row, last_row,
                                                    pending.scope);
         if (std::holds_alternative<diagnostic_list_t>(queried)) {
@@ -366,6 +374,8 @@ auto make_view(const document_history_t& history, const editor_interaction_state
             .document_revision = pending.document_revision,
             .anchor = pending.anchor,
             .cursor = state.cursor,
+            .anchor_canvas_row = pending.anchor_canvas_row,
+            .cursor_canvas_row = *absolute,
             .first_row = first_row,
             .last_row = last_row,
             .mode = pending.mode,
@@ -379,6 +389,14 @@ auto make_view(const document_history_t& history, const editor_interaction_state
     if (state.retained_selection_range) {
         retained_selection_range = normalized_position_span(
             index, state.retained_selection_range->begin, state.retained_selection_range->end);
+    }
+    if (state.retained_canvas_selection_range &&
+        (state.retained_canvas_selection_range->begin_row >= canvas_rows ||
+         state.retained_canvas_selection_range->end_row >= canvas_rows ||
+         state.retained_canvas_selection_range->begin_row >
+             state.retained_canvas_selection_range->end_row)) {
+        return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
+                                       "retained canvas range lies outside chart geometry")};
     }
 
     std::optional<editor_interaction_view_model_t::virtual_hold_preview_t> virtual_hold_preview;
@@ -442,6 +460,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
                 : std::nullopt,
         .pending_space_range_selection = std::move(space_range_preview),
         .retained_selection_range = retained_selection_range,
+        .retained_canvas_selection_range = state.retained_canvas_selection_range,
         .selected_notes = state.selected_notes,
         .selected_objects = state.selected_objects,
         .can_move_backward = *absolute >= step,
@@ -2366,13 +2385,29 @@ auto editor_objects_in_row_range(const chart_document_t& chart,
                                  std::uint64_t last_row, editor_selection_scope_t scope)
     -> std::variant<std::vector<editor_selection_object_t>, diagnostic_list_t> {
     if (index.chart != chart.id || index.measures.total_rows == 0 || first_row > last_row ||
-        last_row >= index.measures.total_rows || index.selection_span_tree_leaf_base == 0 ||
+        index.selection_span_tree_leaf_base == 0 ||
         index.selection_span_tree_leaf_base < index.selection_spans.size() ||
         index.selection_span_tree_leaf_base > std::numeric_limits<std::size_t>::max() / 2 ||
         index.selection_span_tree_max_end.size() != index.selection_span_tree_leaf_base * 2) {
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
                                        "selection index or row interval is invalid")};
     }
+    if (last_row >= index.measures.total_rows) {
+        if (chart.source_family != format_family_t::bms) {
+            return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
+                                           "selection row interval is outside the chart")};
+        }
+        const auto built_canvas = build_virtual_canvas(chart);
+        if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas))
+            return *diagnostics;
+        if (last_row >= std::get<virtual_canvas_t>(built_canvas).total_rows) {
+            return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
+                                           "selection row interval is outside the BMS canvas")};
+        }
+    }
+    if (first_row >= index.measures.total_rows)
+        return std::vector<editor_selection_object_t>{};
+    last_row = std::min(last_row, index.measures.total_rows - 1);
     const auto after_candidates = std::ranges::upper_bound(
         index.selection_spans, last_row, {}, &editor_selection_span_entry_t::begin_row);
     const auto candidate_count =
@@ -2653,6 +2688,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         !std::holds_alternative<begin_editor_area_selection_action_t>(action) &&
         !std::holds_alternative<update_editor_area_selection_action_t>(action) &&
         !std::holds_alternative<commit_editor_area_selection_action_t>(action) &&
+        !std::holds_alternative<space_range_selection_action_t>(action) &&
         !std::holds_alternative<select_editor_lane_action_t>(action) &&
         !std::holds_alternative<adjust_editor_zoom_action_t>(action) &&
         !std::holds_alternative<scroll_editor_view_action_t>(action)) {
@@ -3814,6 +3850,18 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         const auto tail = position_for_y(pending.current_y_pixels);
         state.retained_selection_range =
             anchor && tail ? normalized_position_span(index, *anchor, *tail) : std::nullopt;
+        const auto canvas_row_for_y = [&](double y) {
+            return absolute_row_at_y_pixels(*chart, index, view,
+                                            std::clamp(y, 0.0, last_view_y), true);
+        };
+        const auto anchor_canvas_row = canvas_row_for_y(pending.anchor_y_pixels);
+        const auto tail_canvas_row = canvas_row_for_y(pending.current_y_pixels);
+        state.retained_canvas_selection_range =
+            anchor_canvas_row && tail_canvas_row && *anchor_canvas_row != *tail_canvas_row
+                ? std::optional{canvas_row_span_t{
+                      std::min(*anchor_canvas_row, *tail_canvas_row),
+                      std::max(*anchor_canvas_row, *tail_canvas_row)}}
+                : std::nullopt;
         state.pending_editor_area_selection.reset();
         const auto next_view = make_view(history, state);
         return {
@@ -3867,11 +3915,6 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                 const auto next = *next_row < index.total_rows
                                       ? position_at(index, *next_row)
                                       : std::nullopt;
-                if (!next && state.pending_space_range_selection) {
-                    return diagnostic_result(history, state,
-                                             {error(diagnostic_code_t::row_out_of_range,
-                                                    "Space selection requires authored geometry")});
-                }
                 if (state.pending_hold.has_value() &&
                     state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) {
                     if (!next) {
@@ -3967,11 +4010,6 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                 const auto target = target_measure->authored
                                         ? position_at(index, target_row)
                                         : std::nullopt;
-                if (!target && state.pending_space_range_selection) {
-                    return diagnostic_result(history, state,
-                                             {error(diagnostic_code_t::row_out_of_range,
-                                                    "Space selection requires authored geometry")});
-                }
                 if (state.pending_hold.has_value() &&
                     state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) {
                     if (!target) {
@@ -4720,6 +4758,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                         .hit_index = std::make_shared<editor_hit_test_index_t>(
                             std::move(std::get<editor_hit_test_index_t>(built))),
                         .anchor = state.cursor,
+                        .anchor_canvas_row = absolute,
                         .mode = typed_action.mode,
                         .scope = typed_action.scope,
                     };
@@ -4762,8 +4801,20 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                 }
                 set_selected_objects(
                     state, std::move(std::get<std::vector<editor_selection_object_t>>(combined)));
+                const auto first_row =
+                    std::min(pending.anchor_canvas_row, absolute);
+                const auto last_row =
+                    std::max(pending.anchor_canvas_row, absolute);
+                state.retained_canvas_selection_range =
+                    first_row < last_row
+                        ? std::optional{canvas_row_span_t{first_row, last_row}}
+                        : std::nullopt;
+                const auto anchor_position = position_at(index, pending.anchor_canvas_row);
+                const auto cursor_position = position_at(index, absolute);
                 state.retained_selection_range =
-                    normalized_position_span(index, pending.anchor, state.cursor);
+                    anchor_position && cursor_position
+                        ? normalized_position_span(index, *anchor_position, *cursor_position)
+                        : std::nullopt;
                 state.pending_space_range_selection.reset();
                 const auto next_view = make_view(history, state);
                 return {

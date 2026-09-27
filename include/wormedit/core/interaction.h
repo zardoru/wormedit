@@ -458,6 +458,7 @@ struct pending_space_range_selection_t {
     std::uint64_t document_revision{};
     std::shared_ptr<const editor_hit_test_index_t> hit_index;
     local_position_t anchor;
+    std::uint64_t anchor_canvas_row{};
     editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
     editor_selection_scope_t scope{};
 };
@@ -466,11 +467,20 @@ struct space_range_selection_preview_t {
     std::uint64_t document_revision{};
     local_position_t anchor;
     local_position_t cursor;
+    std::uint64_t anchor_canvas_row{};
+    std::uint64_t cursor_canvas_row{};
     std::uint64_t first_row{};
     std::uint64_t last_row{};
     editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
     std::shared_ptr<const std::vector<object_id_t>> notes;
     std::shared_ptr<const std::vector<editor_selection_object_t>> objects;
+};
+
+struct canvas_row_span_t {
+    std::uint64_t begin_row{};
+    std::uint64_t end_row{};
+
+    auto operator==(const canvas_row_span_t&) const -> bool = default;
 };
 
 struct editor_area_selection_preview_t {
@@ -526,6 +536,7 @@ struct editor_interaction_state_t {
     // controller state rather than renderer state so marker authoring and
     // future frontends can consume the same exact chart span.
     std::optional<position_span_t> retained_selection_range;
+    std::optional<canvas_row_span_t> retained_canvas_selection_range;
     std::vector<object_id_t> selected_notes;
     std::vector<editor_selection_object_t> selected_objects;
 };
@@ -556,6 +567,7 @@ struct editor_interaction_view_model_t {
     std::optional<editor_area_selection_preview_t> pending_editor_area_selection;
     std::optional<space_range_selection_preview_t> pending_space_range_selection;
     std::optional<position_span_t> retained_selection_range;
+    std::optional<canvas_row_span_t> retained_canvas_selection_range;
     std::vector<object_id_t> selected_notes;
     std::vector<editor_selection_object_t> selected_objects;
     bool can_move_backward{};

@@ -385,6 +385,7 @@ TEST_CASE("area selection in virtual BMS space excludes authored boundary events
     REQUIRE(empty);
     CHECK(state.selected_objects.empty());
     CHECK_FALSE(state.retained_selection_range);
+    CHECK((state.retained_canvas_selection_range == canvas_row_span_t{2'170, 2'420}));
 
     state.viewport_scroll_pixels = 360.0;
     REQUIRE(dispatch_editor_action(
@@ -398,6 +399,56 @@ TEST_CASE("area selection in virtual BMS space excludes authored boundary events
     CHECK((state.selected_objects == std::vector<editor_selection_object_t>{
                                          {editor_selection_object_kind_t::bgm_event,
                                           object_id_t{201}}}));
+    CHECK((state.retained_canvas_selection_range == canvas_row_span_t{1'800, 2'050}));
+    CHECK(history.document.charts.front().measures.size() == 2);
+}
+
+TEST_CASE("Space selection crosses into virtual BMS measures without authoring them",
+          "[unit][core][interaction][virtual-canvas][selection]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    chart.measures[1].notes.push_back({.id = object_id_t{201},
+                                       .position = {measure_id_t{2}, 720},
+                                       .lane = lane_id_t{1}});
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        jump_edit_cursor_action_t{{measure_id_t{2}, 720}, history.document.revision}));
+    REQUIRE(dispatch_editor_action(history, state, space_range_selection_action_t{}));
+    const auto moved = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    REQUIRE(moved);
+    REQUIRE(moved.view->pending_space_range_selection);
+    CHECK(moved.view->pending_space_range_selection->first_row == 1'680);
+    CHECK(moved.view->pending_space_range_selection->last_row == 1'920);
+    CHECK(*moved.view->pending_space_range_selection->notes ==
+          std::vector<object_id_t>{object_id_t{201}});
+    const auto committed = dispatch_editor_action(
+        history, state, space_range_selection_action_t{});
+    REQUIRE(committed);
+    CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{201}});
+    CHECK((state.retained_canvas_selection_range == canvas_row_span_t{1'680, 1'920}));
+    CHECK_FALSE(state.retained_selection_range);
+    CHECK(history.document.charts.front().measures.size() == 2);
+    CHECK(history.undo.empty());
+
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        page_edit_cursor_action_t{interaction_direction_t::forward, 997}));
+    REQUIRE(state.virtual_bms_cursor_row);
+    CHECK(*state.virtual_bms_cursor_row == 959'040);
+    REQUIRE(dispatch_editor_action(history, state, space_range_selection_action_t{}));
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        page_edit_cursor_action_t{interaction_direction_t::backward, 1}));
+    const auto empty = dispatch_editor_action(
+        history, state, space_range_selection_action_t{});
+    REQUIRE(empty);
+    CHECK(state.selected_notes.empty());
+    CHECK((state.retained_canvas_selection_range == canvas_row_span_t{958'080, 959'040}));
+    CHECK_FALSE(state.retained_selection_range);
     CHECK(history.document.charts.front().measures.size() == 2);
 }
 

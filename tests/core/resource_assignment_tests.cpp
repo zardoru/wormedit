@@ -202,6 +202,40 @@ TEST_CASE("visual resource import records decoded geometry and BMP identity",
     CHECK(history.document.visual_assets.size() == 2);
 }
 
+TEST_CASE("resource asset relink preserves IDs and rejects escaping relative paths",
+          "[unit][core][resources]") {
+    auto history = make_document_history(assignment_song());
+    const auto relinked = apply_resource_asset_relink(
+        history, 4, {.asset = asset_id_t{1},
+                     .source_path = "assets/drums/one.wav"});
+    REQUIRE(relinked);
+    CHECK(history.document.audio_assets.front().source_path ==
+          std::filesystem::path{"assets/drums/one.wav"});
+    CHECK(history.document.resources.front().asset == asset_id_t{1});
+    CHECK(history.document.charts.front().measures.front().notes.front().sound ==
+          resource_id_t{1});
+    CHECK(has_code(apply_resource_asset_relink(
+                       history, 5, {.asset = asset_id_t{1},
+                                    .source_path = "../outside.wav"}),
+                   diagnostic_code_t::invalid_id));
+    const auto no_op = apply_resource_asset_relink(
+        history, 5, {.asset = asset_id_t{1},
+                     .source_path = "assets/drums/one.wav"});
+    CHECK_FALSE(no_op);
+    CHECK(no_op.diagnostics.empty());
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.audio_assets.front().source_path ==
+          std::filesystem::path{"one.wav"});
+
+    const auto visual = apply_resource_asset_relink(
+        history, history.document.revision,
+        {.asset = asset_id_t{4}, .source_path = "assets/background.png"});
+    REQUIRE(visual);
+    CHECK(history.document.visual_assets.front().source_path ==
+          std::filesystem::path{"assets/background.png"});
+}
+
 TEST_CASE("resource placement adds typed events with collision and lane allocation",
           "[unit][core][resources]") {
     auto history = make_document_history(assignment_song());

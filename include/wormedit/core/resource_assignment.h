@@ -44,6 +44,19 @@ struct import_resource_asset_action_t {
                                                const import_resource_asset_action_t& action)
     -> document_command_result_t;
 
+struct relink_resource_asset_action_t {
+    asset_id_t asset;
+    std::filesystem::path source_path;
+};
+
+// Repoints one registered audio/image source while preserving its stable asset
+// ID and every resource/event reference. Relative paths stay inside the
+// project directory; the caller verifies or copies the destination file.
+[[nodiscard]] auto apply_resource_asset_relink(document_history_t& history,
+                                               std::uint64_t expected_revision,
+                                               const relink_resource_asset_action_t& action)
+    -> document_command_result_t;
+
 enum class resource_placement_kind_t {
     sample_note,
     bgm_event,

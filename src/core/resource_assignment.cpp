@@ -550,6 +550,64 @@ auto apply_resource_asset_import(document_history_t& history, std::uint64_t expe
     return commit_document_command(history, std::move(draft.document), "Import resource asset");
 }
 
+auto apply_resource_asset_relink(document_history_t& history, std::uint64_t expected_revision,
+                                 const relink_resource_asset_action_t& action)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "resource asset relink document revision is stale");
+        return result;
+    }
+    const auto path = action.source_path.lexically_normal();
+    const auto path_text = path.generic_string();
+    if (path.empty() || path.filename().empty() || path_text.size() > 4096 ||
+        path_text.find('\0') != std::string::npos ||
+        (path.has_root_name() && !path.is_absolute())) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "resource asset relink path is empty, malformed, or too long");
+        return result;
+    }
+    if (!path.is_absolute() &&
+        std::ranges::any_of(path, [](const auto& component) {
+            return component == "..";
+        })) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "relative resource paths cannot escape the project directory");
+        return result;
+    }
+    const auto audio = std::ranges::find(history.document.audio_assets, action.asset,
+                                          &audio_asset_t::id);
+    const auto visual = std::ranges::find(history.document.visual_assets, action.asset,
+                                           &visual_asset_t::id);
+    if (!action.asset ||
+        (audio == history.document.audio_assets.end() &&
+         visual == history.document.visual_assets.end()) ||
+        (audio != history.document.audio_assets.end() &&
+         visual != history.document.visual_assets.end())) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "resource asset relink requires one known audio or image asset");
+        return result;
+    }
+    const auto current = audio != history.document.audio_assets.end()
+                             ? audio->source_path
+                             : visual->source_path;
+    if (current == path) {
+        return result;
+    }
+    auto proposed = history.document;
+    if (audio != history.document.audio_assets.end()) {
+        const auto index = static_cast<std::size_t>(audio -
+                                                    history.document.audio_assets.begin());
+        proposed.audio_assets[index].source_path = path;
+    } else {
+        const auto index = static_cast<std::size_t>(visual -
+                                                    history.document.visual_assets.begin());
+        proposed.visual_assets[index].source_path = path;
+    }
+    return commit_document_command(history, std::move(proposed), "Relink resource asset");
+}
+
 auto apply_resource_assignment(document_history_t& history, std::uint64_t expected_revision,
                                const assign_resource_action_t& action,
                                resource_assignment_limits_t limits) -> document_command_result_t {

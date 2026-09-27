@@ -3,6 +3,7 @@
 #include <wormedit/audio/audition_bridge.h>
 #include <wormedit/audio/preview_bridge.h>
 #include <wormedit/audio/source_registry.h>
+#include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/sound_slice.h>
 
 #include <span>
@@ -71,6 +72,15 @@ struct audition_resolve_result_t {
                                            std::span<const audition_source_binding_t> bindings,
                                            audition_resolve_options_t options = {})
     -> audition_resolve_result_t;
+
+// Auditions one uncommitted BMSON marker region against a transient chart
+// containing the complete pending batch. The caller's document is unchanged.
+[[nodiscard]] auto resolve_bmson_draft_audition(
+    const song_document_t& song, std::uint64_t expected_revision, chart_id_t chart,
+    object_id_t reference_bgm_event,
+    std::span<const bmson_bgm_marker_insertion_t> markers, std::size_t marker_index,
+    std::span<const audition_source_binding_t> bindings,
+    audition_resolve_options_t options = {}) -> audition_resolve_result_t;
 
 // Resolves all playable/BGM objects referenced by an immutable preview
 // schedule. Document, event, channel-slice, asset, and runtime-source indexes

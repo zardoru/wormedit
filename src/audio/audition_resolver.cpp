@@ -431,4 +431,87 @@ auto resolve_preview_bindings(const song_document_t& song, chart_id_t chart_id,
     return result;
 }
 
+auto resolve_bmson_draft_audition(
+    const song_document_t& song, std::uint64_t expected_revision, chart_id_t chart_id,
+    object_id_t reference_bgm_event,
+    std::span<const bmson_bgm_marker_insertion_t> markers, std::size_t marker_index,
+    std::span<const audition_source_binding_t> bindings,
+    audition_resolve_options_t options) -> audition_resolve_result_t {
+    audition_resolve_result_t result{
+        .document_revision = song.revision, .chart = chart_id, .object = {},
+        .clips = {}, .diagnostics = {}};
+    if (expected_revision != song.revision || marker_index >= markers.size()) {
+        result.diagnostics.push_back(error(
+            audition_resolve_code_t::invalid_link,
+            "BMSON draft audition has a stale revision or unknown marker"));
+        return result;
+    }
+    const auto* original = find_chart(song, chart_id);
+    if (!original || original->source_family != format_family_t::bmson) {
+        result.diagnostics.push_back(error(
+            audition_resolve_code_t::missing_chart,
+            "BMSON draft audition requires a known BMSON chart"));
+        return result;
+    }
+    std::optional<object_id_t> source_lane;
+    for (const auto& measure : original->measures) {
+        const auto reference = std::ranges::find(measure.bgm_events, reference_bgm_event,
+                                                 &bgm_event_t::id);
+        if (reference != measure.bgm_events.end() && reference->sound_channel_event) {
+            source_lane = reference->source_lane;
+            break;
+        }
+    }
+    if (!source_lane) {
+        result.diagnostics.push_back(error(
+            audition_resolve_code_t::invalid_link,
+            "BMSON draft audition reference has no retained sound-channel event",
+            reference_bgm_event));
+        return result;
+    }
+
+    auto temporary = make_document_history(song, 1);
+    const auto inserted = insert_bmson_bgm_markers(
+        temporary, temporary.document.revision, chart_id, reference_bgm_event, markers);
+    if (!inserted) {
+        const auto message = inserted.diagnostics.empty()
+            ? "BMSON draft markers cannot be materialized for audition"
+            : inserted.diagnostics.front().message;
+        result.diagnostics.push_back(error(
+            audition_resolve_code_t::invalid_link, message, reference_bgm_event));
+        return result;
+    }
+    const auto* transient_chart = find_chart(temporary.document, chart_id);
+    if (!transient_chart) {
+        result.diagnostics.push_back(error(
+            audition_resolve_code_t::missing_chart,
+            "BMSON draft chart disappeared during audition preparation"));
+        return result;
+    }
+    const auto target = markers[marker_index].position;
+    object_id_t transient_event{};
+    for (const auto& measure : transient_chart->measures) {
+        if (measure.id != target.measure) {
+            continue;
+        }
+        for (const auto& event : measure.bgm_events) {
+            if (event.position == target && event.source_lane == *source_lane &&
+                event.sound_channel_event) {
+                transient_event = event.id;
+            }
+        }
+        break;
+    }
+    if (!transient_event) {
+        result.diagnostics.push_back(error(
+            audition_resolve_code_t::invalid_link,
+            "BMSON draft marker has no linked transient BGM event"));
+        return result;
+    }
+    result = resolve_object_audition(temporary.document, chart_id, transient_event,
+                                     bindings, options);
+    result.document_revision = song.revision;
+    return result;
+}
+
 } // namespace wormedit::audio

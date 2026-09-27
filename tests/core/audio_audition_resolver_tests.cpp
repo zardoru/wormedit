@@ -171,6 +171,54 @@ TEST_CASE("audition resolver isolates BGM slices and falls back to whole unlinke
           wormedit::audio::audition_resolve_code_t::invalid_source_geometry);
 }
 
+TEST_CASE("BMSON draft audition resolves a staged region without editing the song",
+          "[unit][audio][audition-resolver][bmson]") {
+    auto parsed = published_fixture();
+    REQUIRE(parsed.song.has_value());
+    auto song = *parsed.song;
+    const auto& chart = song.charts.front();
+    const auto& channel = chart.sound_channels.front();
+    const auto asset = channel.source_clip.source;
+    const auto audio_asset = std::ranges::find(song.audio_assets, asset,
+                                               &wormedit::audio_asset_t::id);
+    REQUIRE(audio_asset != song.audio_assets.end());
+    audio_asset->stream.sample_rate = 48'000;
+    audio_asset->stream.frame_count.reset();
+    const auto bgm_measure = std::ranges::find_if(chart.measures, [](const auto& measure) {
+        return !measure.bgm_events.empty();
+    });
+    REQUIRE(bgm_measure != chart.measures.end());
+    const auto reference = bgm_measure->bgm_events.front();
+    const auto original_source_count = channel.events.size();
+    const auto original_bgm_count = bgm_measure->bgm_events.size();
+    const auto revision = song.revision;
+    const std::array markers{
+        wormedit::bmson_bgm_marker_insertion_t{{reference.position.measure, 600}, false},
+        wormedit::bmson_bgm_marker_insertion_t{{reference.position.measure, 840}, true}};
+    const std::array bindings{runtime_binding(asset)};
+
+    const auto first = wormedit::audio::resolve_bmson_draft_audition(
+        song, revision, chart.id, reference.id, markers, 0, bindings);
+    for (const auto& diagnostic : first.diagnostics) {
+        UNSCOPED_INFO(diagnostic.message);
+    }
+    REQUIRE(first);
+    REQUIRE(first.clips.size() == 1);
+    CHECK(first.clips.front().source_start_frame == 121'275);
+    CHECK(first.clips.front().frame_count == 11'025);
+    const auto second = wormedit::audio::resolve_bmson_draft_audition(
+        song, revision, chart.id, reference.id, markers, 1, bindings);
+    REQUIRE(second);
+    REQUIRE(second.clips.size() == 1);
+    CHECK(second.clips.front().source_start_frame == 143'325);
+    CHECK(second.clips.front().frame_count == 56'675);
+    CHECK(song.revision == revision);
+    CHECK(song.charts.front().sound_channels.front().events.size() == original_source_count);
+    CHECK(bgm_measure->bgm_events.size() == original_bgm_count);
+    CHECK_FALSE(wormedit::audio::resolve_bmson_draft_audition(
+        song, revision + 1, chart.id, reference.id, markers, 0, bindings));
+}
+
 TEST_CASE("audition resolver layers fused BMSON channels and enforces its layer bound",
           "[unit][audio][audition-resolver][polyphony]") {
     auto parsed = bmson_fixture("slicing-and-mixed-sounds.bmson");

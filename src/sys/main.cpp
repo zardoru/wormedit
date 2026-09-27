@@ -287,6 +287,14 @@ auto stepmania_policy_from_ui(const WormUiWorkspaceAction& action)
     return policy;
 }
 
+struct bmson_draft_audition_request_t {
+    wormedit::chart_id_t chart;
+    std::uint64_t revision{};
+    wormedit::object_id_t reference;
+    std::vector<wormedit::bmson_bgm_marker_insertion_t> markers;
+    std::size_t marker_index{};
+};
+
 struct compose_scene_cache_t {
     wormedit::chart_id_t chart;
     std::uint64_t revision{};
@@ -297,6 +305,7 @@ struct compose_scene_cache_t {
     std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
     std::optional<wormedit::editor_object_hover_state_t> hover;
     std::optional<wormedit::editor_object_audition_request_t> audition_request;
+    std::optional<bmson_draft_audition_request_t> draft_audition_request;
     std::unordered_map<std::uint64_t, std::size_t> semantic_layer_membership_counts;
     bool focus_note_label_editor{};
     bool viewport_autoscroll_active{};
@@ -4124,6 +4133,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                                    double viewport_delta_seconds) -> std::string {
     using namespace wormedit;
     scene_cache.audition_request.reset();
+    scene_cache.draft_audition_request.reset();
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != ui_action.compose_input_chart_id ||
         state.chart.value != ui_action.compose_input_chart_id ||
@@ -4862,6 +4872,19 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 stroke->last_position = *position;
             }
             return status;
+        }
+        case WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT: {
+            const auto& draft = application_state.bmson_marker_draft;
+            if (!draft || draft->chart != state.chart ||
+                draft->revision != history.document.revision ||
+                input.object_id == 0 || input.object_id > draft->markers.size()) {
+                return "The BMSON region audition request expired.";
+            }
+            scene_cache.draft_audition_request = bmson_draft_audition_request_t{
+                draft->chart, draft->revision, draft->reference, draft->markers,
+                static_cast<std::size_t>(input.object_id - 1)};
+            status = "Preparing staged BMSON region audition.";
+            continue;
         }
         case WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE: {
             if (gesture_active) {
@@ -7993,6 +8016,33 @@ int main(int argc, char** argv) {
                         } else {
                             status = "Audio preview could not be prepared.";
                         }
+                    }
+#else
+                    status = "Audio preview is unavailable in this build.";
+#endif
+                }
+                if (auto request = std::exchange(
+                        compose_scene_cache.draft_audition_request, std::nullopt)) {
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+                    const auto resolved = wormedit::audio::resolve_bmson_draft_audition(
+                        history.document, request->revision, request->chart,
+                        request->reference, request->markers, request->marker_index,
+                        audition_sources.bindings());
+                    if (resolved) {
+                        if (preview_session.active()) {
+                            preview_resume_frame = preview_session.timeline_frame();
+                            static_cast<void>(preview_output.stop());
+                            preview_paused = true;
+                        }
+                        const auto started = audition_output.start(resolved.clips);
+                        status = started ? "Staged BMSON region audition started."
+                                         : started.message.empty()
+                                             ? "Staged BMSON region audition could not start."
+                                             : started.message;
+                    } else if (!resolved.diagnostics.empty()) {
+                        status = resolved.diagnostics.front().message;
+                    } else {
+                        status = "Staged BMSON region audition could not be prepared.";
                     }
 #else
                     status = "Audio preview is unavailable in this build.";

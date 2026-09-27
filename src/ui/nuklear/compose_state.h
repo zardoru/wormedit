@@ -115,6 +115,7 @@ struct worm_ui_nuklear_compose_state_t {
     worm_ui_nuklear_compose_color_t semantic_layer_color{};
     bool semantic_layer_color_editor_visible{};
     bool inspector_visible{true};
+    int bmson_audition_index{1};
     worm_ui_nuklear_compose_resource_filter_t resource_filter{
         worm_ui_nuklear_compose_resource_filter_t::sample};
     std::array<char, 96> resource_search{};

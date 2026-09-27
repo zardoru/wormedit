@@ -1139,6 +1139,24 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
 
     worm_ui_nuklear_render_compose_resources(context, view, action, &state);
 
+    if (view->staged_bmson_marker_count != 0 &&
+        nk_tree_push(context, NK_TREE_TAB, "Staged BMSON regions", NK_MAXIMIZED)) {
+        state.bmson_audition_index = std::clamp(
+            state.bmson_audition_index, 1,
+            static_cast<int>(view->staged_bmson_marker_count));
+        nk_layout_row_dynamic(context, 24, 1);
+        nk_property_int(context, "Region", 1, &state.bmson_audition_index,
+                        static_cast<int>(view->staged_bmson_marker_count), 1, 1.0f);
+        if (nk_button_label(context, "Audition staged region")) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT,
+                                 0.0, 0.0, 0, false,
+                                 WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                 static_cast<std::uint64_t>(state.bmson_audition_index));
+        }
+        nk_tree_pop(context);
+    }
+
     if (nk_tree_push(context, NK_TREE_TAB, "Markers / sections", NK_MINIMIZED)) {
     nk_layout_row_begin(context, NK_DYNAMIC, 24, 2);
     if (!view->scene_available || !view->beat_marker_navigation_available) {

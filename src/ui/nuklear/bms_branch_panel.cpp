@@ -93,20 +93,23 @@ void worm_ui_nuklear_render_bms_branch_panel(struct nk_context* context,
         std::snprintf(next, sizeof(next), "%s%lld", choice.has_selected_value ? "> " : "Select ",
                       static_cast<long long>(choice.next_value));
 
-        nk_layout_row_begin(context, NK_DYNAMIC, 24.0f, 5);
-        nk_layout_row_push(context, 0.24f);
+        nk_layout_row_begin(context, NK_DYNAMIC, 21.0f, 2);
+        nk_layout_row_push(context, 0.50f);
         nk_label(context, identity, NK_TEXT_LEFT);
-        nk_layout_row_push(context, 0.16f);
+        nk_layout_row_push(context, 0.50f);
+        nk_label(context, current, NK_TEXT_RIGHT);
+        nk_layout_row_end(context);
+
+        nk_layout_row_begin(context, NK_DYNAMIC, 24.0f, 3);
+        nk_layout_row_push(context, 0.34f);
         choice_button(context, choice.has_previous_value ? previous : "—",
                       choice.editable && choice.has_previous_value, action, choice.branch_id,
                       choice.previous_value);
-        nk_layout_row_push(context, 0.22f);
-        nk_label(context, current, NK_TEXT_CENTERED);
-        nk_layout_row_push(context, 0.18f);
+        nk_layout_row_push(context, 0.34f);
         choice_button(context, choice.has_next_value ? next : "—",
                       choice.editable && choice.has_next_value, action, choice.branch_id,
                       choice.next_value);
-        nk_layout_row_push(context, 0.20f);
+        nk_layout_row_push(context, 0.32f);
         if (!choice.can_clear) {
             nk_widget_disable_begin(context);
         }

@@ -82,13 +82,13 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         }
     }
 
-    nk_layout_row_begin(context, NK_DYNAMIC, 25, 3);
-    nk_layout_row_push(context, 0.18f);
+    nk_layout_row_dynamic(context, 19, 1);
     nk_label(context, "Search", NK_TEXT_LEFT);
-    nk_layout_row_push(context, 0.60f);
+    nk_layout_row_begin(context, NK_DYNAMIC, 25, 2);
+    nk_layout_row_push(context, 0.76f);
     (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state->resource_search.data(),
                                          state->resource_search.size(), nk_filter_default);
-    nk_layout_row_push(context, 0.22f);
+    nk_layout_row_push(context, 0.24f);
     if (nk_button_label(context, "Clear")) {
         state->resource_search.fill('\0');
     }
@@ -167,13 +167,11 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
             continue;
         }
         std::array<char, 320> label{};
-        std::snprintf(label.data(), label.size(), "%s%s%s · %s%s%s",
+        std::snprintf(label.data(), label.size(), "%s%s%s · %s",
                       resource.selected_audio_asset ? "> " : "", resource.target_index,
                       state->armed_resource_id == resource.resource_id ? " *" : "",
-                      resource.name, resource.source_name[0] == '\0' ? "" : " · ",
-                      resource.source_name);
-        nk_layout_row_begin(context, NK_DYNAMIC, 25, 3);
-        nk_layout_row_push(context, 0.58f);
+                      resource.name);
+        nk_layout_row_dynamic(context, 25, 1);
         if (resource.audio_asset) {
             if (resource.missing) {
                 nk_widget_disable_begin(context);
@@ -190,7 +188,12 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         } else {
             nk_label(context, label.data(), NK_TEXT_LEFT);
         }
-        nk_layout_row_push(context, 0.20f);
+        if (resource.source_name[0] != '\0') {
+            nk_layout_row_dynamic(context, 18, 1);
+            nk_label(context, resource.source_name, NK_TEXT_LEFT);
+        }
+        nk_layout_row_begin(context, NK_DYNAMIC, 24, 2);
+        nk_layout_row_push(context, 0.50f);
         if (!view->scene_available) {
             nk_widget_disable_begin(context);
         }
@@ -202,7 +205,7 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
             action->compose_resource_id = resource.resource_id;
             action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_RESOURCE_USES;
         }
-        nk_layout_row_push(context, 0.22f);
+        nk_layout_row_push(context, 0.50f);
         if (resource.missing) {
             nk_widget_disable_begin(context);
         }

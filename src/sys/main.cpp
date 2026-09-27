@@ -4102,6 +4102,15 @@ auto dispatch_metadata_ui_action(const WormUiWorkspaceAction& action,
                                                chart_id_t{action.metadata_chart_id},
                                                {*numerator, *denominator}, timing_locked));
     }
+    case WORM_UI_METADATA_EDIT_OUTPUT_PATH: {
+        if (!action.metadata_output_path ||
+            std::strlen(action.metadata_output_path) > WORM_UI_METADATA_OUTPUT_PATH_BYTES)
+            return "Output path edit payload is incomplete or too long.";
+        return publish(apply_metadata_edit(
+            history, action.metadata_document_revision,
+            set_output_group_path_action_t{action.metadata_output_group_index,
+                                           action.metadata_output_path}));
+    }
     case WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD:
     case WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD:
     case WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD: {

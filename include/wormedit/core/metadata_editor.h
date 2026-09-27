@@ -20,6 +20,7 @@ struct metadata_edit_limits_t {
     std::size_t maximum_fields_per_group{16'384};
     std::size_t maximum_field_name_bytes{1U * 1024U};
     std::size_t maximum_field_value_bytes{1U * 1024U * 1024U};
+    std::size_t maximum_output_path_bytes{4U * 1024U};
     std::size_t maximum_total_metadata_bytes{32U * 1024U * 1024U};
 };
 
@@ -34,6 +35,11 @@ struct set_chart_metadata_action_t {
     std::string name;
     std::string author;
     std::optional<signed_rational_t> rating;
+};
+
+struct set_output_group_path_action_t {
+    std::size_t group_index{};
+    std::string relative_output_path;
 };
 
 struct chart_rating_edit_t {
@@ -84,6 +90,7 @@ struct erase_format_metadata_field_action_t {
 
 using metadata_edit_action_t =
     std::variant<set_song_metadata_action_t, set_chart_metadata_action_t,
+                 set_output_group_path_action_t,
                  insert_format_metadata_field_action_t, replace_format_metadata_field_action_t,
                  erase_format_metadata_field_action_t>;
 

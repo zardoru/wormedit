@@ -41,6 +41,11 @@ struct worm_ui_nuklear_metadata_state_t {
     std::vector<char> format_name;
     std::vector<char> format_value;
     std::size_t selected_output_group_index{std::numeric_limits<std::size_t>::max()};
+    std::uint64_t output_path_buffer_revision{std::numeric_limits<std::uint64_t>::max()};
+    std::size_t output_path_buffer_group_index{std::numeric_limits<std::size_t>::max()};
+    std::array<char, WORM_UI_METADATA_OUTPUT_PATH_BYTES + 1> output_path{};
+    std::array<char, WORM_UI_METADATA_OUTPUT_PATH_BYTES + 1> output_path_source{};
+    bool output_path_buffer_valid{};
     std::array<char, WORM_UI_COMPOSE_IMPORT_PATH_BYTES + 1> external_music_path{};
     std::array<char, 192> external_music_error{};
     struct drop_rectangle_t {

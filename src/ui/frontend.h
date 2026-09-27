@@ -19,6 +19,7 @@
 #define WORM_UI_METADATA_CHART_TEXT_BYTES 16384
 #define WORM_UI_METADATA_FORMAT_NAME_BYTES 1024
 #define WORM_UI_METADATA_FORMAT_VALUE_BYTES 1048576
+#define WORM_UI_METADATA_OUTPUT_PATH_BYTES 4096
 #define WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY 16384
 #define WORM_UI_METADATA_FORMAT_FIELD_CAPACITY 128
 #define WORM_UI_METADATA_FORMAT_TARGET_CAPACITY 14
@@ -1314,6 +1315,7 @@ typedef enum WormUiMetadataEditKind {
     WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD,
     WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD,
     WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD,
+    WORM_UI_METADATA_EDIT_OUTPUT_PATH,
 } WormUiMetadataEditKind;
 
 typedef struct WormUiWorkspaceAction {
@@ -1361,6 +1363,8 @@ typedef struct WormUiWorkspaceAction {
     size_t metadata_format_index;
     const char* metadata_format_name;
     const char* metadata_format_value;
+    size_t metadata_output_group_index;
+    const char* metadata_output_path;
     WormUiComposeActionKind compose_action;
     uint64_t compose_input_chart_id;
     uint64_t compose_input_document_revision;

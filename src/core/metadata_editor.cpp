@@ -1,4 +1,5 @@
 #include <wormedit/core/metadata_editor.h>
+#include <wormedit/core/resource_file_copy.h>
 
 #include <algorithm>
 #include <charconv>
@@ -297,6 +298,32 @@ auto apply_metadata_edit(document_history_t& history, std::uint64_t expected_rev
                 chart->metadata.name = edit.name;
                 chart->metadata.author = edit.author;
                 chart->metadata.rating = edit.rating;
+            } else if constexpr (std::is_same_v<edit_t, set_output_group_path_action_t>) {
+                if (edit.group_index >= proposed.output_groups.size()) {
+                    result.diagnostics.push_back(error(
+                        diagnostic_code_t::invalid_id,
+                        "output path edit refers to an unknown output group"));
+                    return;
+                }
+                if (edit.relative_output_path.empty() ||
+                    !valid_text(edit.relative_output_path, limits.maximum_output_path_bytes) ||
+                    edit.relative_output_path.find('\\') != std::string::npos ||
+                    edit.relative_output_path.find(':') != std::string::npos) {
+                    result.diagnostics.push_back(error(
+                        diagnostic_code_t::unsupported_feature,
+                        "output path must be bounded UTF-8 without platform-specific separators"));
+                    return;
+                }
+                const auto path = std::filesystem::path{edit.relative_output_path};
+                if (!export_asset_directory(path)) {
+                    result.diagnostics.push_back(error(
+                        diagnostic_code_t::unsupported_feature,
+                        "output path must name a safe project-relative file or directory"));
+                    return;
+                }
+                auto& group = proposed.output_groups[edit.group_index];
+                changed = group.relative_output_path != path;
+                group.relative_output_path = path;
             } else {
                 auto* groups = format_groups(proposed, edit.target, result.diagnostics);
                 if (!groups)

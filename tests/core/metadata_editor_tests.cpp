@@ -84,6 +84,42 @@ TEST_CASE("ordered search-tag occurrence edits preserve reordering and duplicate
     CHECK(history.document.metadata.ordered_search_tags == reordered);
 }
 
+TEST_CASE("output group path edits are safe, revision checked, and undoable",
+          "[unit][core][metadata-editor][output-path]") {
+    auto song = metadata_song();
+    song.output_groups.push_back({.name = "BMS output",
+                                  .family = format_family_t::bms,
+                                  .charts = {chart_id_t{2}},
+                                  .relative_output_path = "exports/old.bms"});
+    auto history = make_document_history(std::move(song));
+    CHECK_FALSE(apply_metadata_edit(history, 3,
+                                    set_output_group_path_action_t{0, "exports/new.bms"}));
+    CHECK_FALSE(apply_metadata_edit(history, 4,
+                                    set_output_group_path_action_t{1, "exports/new.bms"}));
+    for (const auto path : {"/outside.bms", "../outside.bms", "exports/../outside.bms",
+                            "exports\\outside.bms", "C:outside.bms", ""}) {
+        const auto rejected = apply_metadata_edit(
+            history, 4, set_output_group_path_action_t{0, path});
+        CHECK_FALSE(rejected);
+        CHECK(has_error(rejected));
+    }
+    CHECK(history.document.output_groups.front().relative_output_path == "exports/old.bms");
+    CHECK(history.undo.empty());
+    REQUIRE(apply_metadata_edit(history, 4,
+                                set_output_group_path_action_t{0, "exports/new.bms"}));
+    CHECK(history.document.output_groups.front().relative_output_path == "exports/new.bms");
+    CHECK(history.undo.size() == 1);
+    const auto no_op = apply_metadata_edit(
+        history, history.document.revision,
+        set_output_group_path_action_t{0, "exports/new.bms"});
+    CHECK_FALSE(no_op.applied);
+    CHECK(no_op.diagnostics.empty());
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.output_groups.front().relative_output_path == "exports/old.bms");
+    REQUIRE(redo_document_command(history));
+    CHECK(history.document.output_groups.front().relative_output_path == "exports/new.bms");
+}
+
 TEST_CASE("rating text parser preserves exact signed rational values within integer bounds",
           "[unit][core][metadata-editor][rating]") {
     CHECK(parse_metadata_rating("-6", "8") == signed_rational_t{-6, 8});

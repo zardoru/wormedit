@@ -728,6 +728,78 @@ static void render_metadata_paths(struct nk_context* context, const WormUiMetada
                                               metadata->dropped_music_path, dropped_group);
         }
     }
+    const WormUiComposeOutputGroupView* selected = nullptr;
+    if (metadata->output_group_count != 0) {
+        for (size_t index = 0; index < metadata->output_group_count; ++index) {
+            if (metadata->output_groups[index].document_index ==
+                state.selected_output_group_index) {
+                selected = &metadata->output_groups[index];
+                break;
+            }
+        }
+        if (!selected) {
+            selected = &metadata->output_groups[0];
+            state.selected_output_group_index = selected->document_index;
+        }
+        nk_layout_row_dynamic(context, 24, 1);
+        if (nk_combo_begin_label(context,
+                                 selected->name[0] ? selected->name
+                                                   : selected->relative_output_path,
+                                 nk_vec2(nk_widget_width(context), 180.0f))) {
+            nk_layout_row_dynamic(context, 22, 1);
+            for (size_t index = 0; index < metadata->output_group_count; ++index) {
+                const auto& group = metadata->output_groups[index];
+                if (nk_combo_item_label(context,
+                                        group.name[0] ? group.name : group.relative_output_path,
+                                        NK_TEXT_LEFT)) {
+                    selected = &group;
+                    state.selected_output_group_index = group.document_index;
+                }
+            }
+            nk_combo_end(context);
+        }
+        if (state.output_path_buffer_revision != metadata->document_revision ||
+            state.output_path_buffer_group_index != selected->document_index ||
+            std::strcmp(state.output_path_source.data(), selected->relative_output_path) != 0) {
+            state.output_path_buffer_revision = metadata->document_revision;
+            state.output_path_buffer_group_index = selected->document_index;
+            state.output_path_buffer_valid = copy_metadata_text(
+                state.output_path.data(), state.output_path.size(),
+                selected->relative_output_path,
+                std::strlen(selected->relative_output_path));
+            state.output_path_buffer_valid =
+                copy_metadata_text(state.output_path_source.data(),
+                                   state.output_path_source.size(),
+                                   selected->relative_output_path,
+                                   std::strlen(selected->relative_output_path)) &&
+                state.output_path_buffer_valid;
+        }
+        nk_layout_row_dynamic(context, 19, 1);
+        nk_label(context, "Output path relative to project", NK_TEXT_LEFT);
+        nk_layout_row_dynamic(context, 25, 1);
+        if (!state.output_path_buffer_valid)
+            nk_widget_disable_begin(context);
+        (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.output_path.data(),
+                                             state.output_path.size(), nk_filter_default);
+        if (!state.output_path_buffer_valid)
+            nk_widget_disable_end(context);
+        nk_layout_row_dynamic(context, 25, 1);
+        const bool path_changed = state.output_path_buffer_valid &&
+                                  std::strcmp(state.output_path.data(),
+                                              selected->relative_output_path) != 0;
+        if (!path_changed || state.output_path[0] == '\0')
+            nk_widget_disable_begin(context);
+        const bool apply_path = nk_button_label(context, "Apply output path");
+        if (!path_changed || state.output_path[0] == '\0')
+            nk_widget_disable_end(context);
+        if (apply_path && path_changed && state.output_path[0] != '\0' &&
+            action->metadata_edit == WORM_UI_METADATA_EDIT_NONE) {
+            action->metadata_edit = WORM_UI_METADATA_EDIT_OUTPUT_PATH;
+            action->metadata_document_revision = metadata->document_revision;
+            action->metadata_output_group_index = selected->document_index;
+            action->metadata_output_path = state.output_path.data();
+        }
+    }
     if (!metadata->project_directory || !metadata->project_directory[0]) {
         nk_layout_row_dynamic(context, 19, 1);
         nk_label(context, "Save and reopen a native project to copy resource files.", NK_TEXT_LEFT);
@@ -775,33 +847,6 @@ static void render_metadata_paths(struct nk_context* context, const WormUiMetada
         nk_layout_row_dynamic(context, 19, 1);
         nk_label(context, "No output group includes this difficulty.", NK_TEXT_LEFT);
         return;
-    }
-    const WormUiComposeOutputGroupView* selected = nullptr;
-    for (size_t index = 0; index < metadata->output_group_count; ++index) {
-        if (metadata->output_groups[index].document_index == state.selected_output_group_index) {
-            selected = &metadata->output_groups[index];
-            break;
-        }
-    }
-    if (!selected) {
-        selected = &metadata->output_groups[0];
-        state.selected_output_group_index = selected->document_index;
-    }
-    nk_layout_row_dynamic(context, 24, 1);
-    if (nk_combo_begin_label(context,
-                             selected->name[0] ? selected->name : selected->relative_output_path,
-                             nk_vec2(nk_widget_width(context), 180.0f))) {
-        nk_layout_row_dynamic(context, 22, 1);
-        for (size_t index = 0; index < metadata->output_group_count; ++index) {
-            const auto& group = metadata->output_groups[index];
-            if (nk_combo_item_label(context,
-                                    group.name[0] ? group.name : group.relative_output_path,
-                                    NK_TEXT_LEFT)) {
-                selected = &group;
-                state.selected_output_group_index = group.document_index;
-            }
-        }
-        nk_combo_end(context);
     }
     if (selected->relative_asset_directory[0]) {
         metadata_read_only_path(

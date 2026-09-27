@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
+#include <string>
 #include <vector>
 
 struct worm_ui_nuklear_metadata_state_t {
@@ -39,8 +41,23 @@ struct worm_ui_nuklear_metadata_state_t {
     std::vector<char> format_name;
     std::vector<char> format_value;
     std::size_t selected_output_group_index{std::numeric_limits<std::size_t>::max()};
+    std::array<char, WORM_UI_COMPOSE_IMPORT_PATH_BYTES + 1> external_music_path{};
+    std::array<char, 192> external_music_error{};
 };
 
 [[nodiscard]] auto worm_ui_nuklear_metadata_state() noexcept -> worm_ui_nuklear_metadata_state_t&;
 
 void worm_ui_nuklear_reset_metadata_state();
+
+struct worm_ui_nuklear_metadata_file_dialog_result_t {
+    std::string path;
+    std::string error;
+    bool canceled{};
+};
+
+[[nodiscard]] auto worm_ui_nuklear_metadata_file_dialog_begin() -> std::optional<std::uint64_t>;
+void worm_ui_nuklear_metadata_file_dialog_complete(std::uint64_t generation, std::string path,
+                                                   std::string error, bool canceled);
+[[nodiscard]] auto worm_ui_nuklear_metadata_file_dialog_take()
+    -> std::optional<worm_ui_nuklear_metadata_file_dialog_result_t>;
+[[nodiscard]] auto worm_ui_nuklear_metadata_file_dialog_open() -> bool;

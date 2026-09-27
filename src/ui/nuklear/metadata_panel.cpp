@@ -4,6 +4,10 @@
 
 #include "wormedit/nuklear_config.h"
 
+#include <SDL3/SDL_dialog.h>
+#include <SDL3/SDL_error.h>
+#include <SDL3/SDL_video.h>
+
 #include <algorithm>
 #include <array>
 #include <charconv>
@@ -13,12 +17,39 @@
 #include <cstring>
 #include <filesystem>
 #include <limits>
+#include <memory>
+#include <new>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 static auto& state = worm_ui_nuklear_metadata_state();
+
+static void SDLCALL metadata_file_dialog_callback(void* userdata, const char* const* filelist,
+                                                  int /*selected_filter*/) {
+    std::unique_ptr<std::uint64_t> generation{static_cast<std::uint64_t*>(userdata)};
+    if (!generation)
+        return;
+    if (!filelist) {
+        const auto* error = SDL_GetError();
+        worm_ui_nuklear_metadata_file_dialog_complete(
+            *generation, {}, error && *error ? error : "File picker failed.", false);
+    } else if (!filelist[0]) {
+        worm_ui_nuklear_metadata_file_dialog_complete(*generation, {}, {}, true);
+    } else {
+        std::size_t length{};
+        while (length <= WORM_UI_COMPOSE_IMPORT_PATH_BYTES && filelist[0][length] != '\0')
+            ++length;
+        if (length > WORM_UI_COMPOSE_IMPORT_PATH_BYTES) {
+            worm_ui_nuklear_metadata_file_dialog_complete(
+                *generation, {}, "Selected file path exceeds the import limit.", false);
+        } else {
+            worm_ui_nuklear_metadata_file_dialog_complete(
+                *generation, std::string{filelist[0], length}, {}, false);
+        }
+    }
+}
 
 static int copy_metadata_text(char* destination, size_t capacity, const char* source,
                               size_t source_bytes) {
@@ -391,10 +422,75 @@ static void metadata_read_only_path(struct nk_context* context, const char* labe
         buffer.data(), buffer.size(), nk_filter_default);
 }
 
+static void set_metadata_music_import_action(WormUiWorkspaceAction* action,
+                                             const WormUiMetadataView* metadata, const char* path) {
+    if (!metadata->has_chart || !path || !path[0] ||
+        std::strlen(path) > WORM_UI_COMPOSE_IMPORT_PATH_BYTES ||
+        action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+        return;
+    std::snprintf(action->compose_import_path, sizeof(action->compose_import_path), "%s", path);
+    action->compose_resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
+    action->compose_input_chart_id = metadata->chart_id;
+    action->compose_input_document_revision = metadata->document_revision;
+    action->compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET;
+}
+
 static void render_metadata_paths(struct nk_context* context, const WormUiMetadataView* metadata,
                                   WormUiWorkspaceAction* action) {
     nk_layout_row_dynamic(context, 24, 1);
     nk_label(context, "Music and output paths", NK_TEXT_LEFT);
+    if (auto picked = worm_ui_nuklear_metadata_file_dialog_take()) {
+        state.external_music_error.fill('\0');
+        if (!picked->error.empty()) {
+            std::snprintf(state.external_music_error.data(), state.external_music_error.size(),
+                          "%s", picked->error.c_str());
+        } else if (!picked->canceled) {
+            if (picked->path.size() >= state.external_music_path.size() ||
+                !std::filesystem::path{picked->path}.is_absolute()) {
+                std::snprintf(state.external_music_error.data(), state.external_music_error.size(),
+                              "Choose a bounded absolute file path.");
+            } else {
+                std::snprintf(state.external_music_path.data(), state.external_music_path.size(),
+                              "%s", picked->path.c_str());
+            }
+        }
+    }
+    const bool dialog_open = worm_ui_nuklear_metadata_file_dialog_open();
+    nk_layout_row_dynamic(context, 25, 1);
+    if (dialog_open)
+        nk_widget_disable_begin(context);
+    const bool browse = nk_button_label(context, dialog_open ? "Choosing audio file"
+                                                             : "Choose external audio file");
+    if (dialog_open)
+        nk_widget_disable_end(context);
+    if (browse && !dialog_open) {
+        if (const auto generation = worm_ui_nuklear_metadata_file_dialog_begin()) {
+            auto* token = new (std::nothrow) std::uint64_t{*generation};
+            if (!token) {
+                worm_ui_nuklear_metadata_file_dialog_complete(
+                    *generation, {}, "File picker could not allocate callback state.", false);
+            } else {
+                state.external_music_error.fill('\0');
+                SDL_ShowOpenFileDialog(metadata_file_dialog_callback, token, SDL_GetKeyboardFocus(),
+                                       nullptr, 0, nullptr, false);
+            }
+        }
+    }
+    if (state.external_music_error[0]) {
+        nk_layout_row_dynamic(context, 19, 1);
+        nk_label(context, state.external_music_error.data(), NK_TEXT_LEFT);
+    }
+    if (state.external_music_path[0]) {
+        metadata_read_only_path(context, "Chosen audio file", state.external_music_path.data());
+        nk_layout_row_dynamic(context, 25, 1);
+        if (!metadata->has_chart)
+            nk_widget_disable_begin(context);
+        const bool link = nk_button_label(context, "Link chosen file as BGM");
+        if (!metadata->has_chart)
+            nk_widget_disable_end(context);
+        if (link)
+            set_metadata_music_import_action(action, metadata, state.external_music_path.data());
+    }
     nk_layout_row_dynamic(context, 19, 1);
     nk_label(context, "Drop an audio file on Metadata to link it as BGM.", NK_TEXT_LEFT);
     if (metadata->dropped_music_path && metadata->dropped_music_path[0]) {
@@ -407,14 +503,8 @@ static void render_metadata_paths(struct nk_context* context, const WormUiMetada
         const auto link = nk_button_label(context, "Link dropped file as BGM");
         if (!can_link)
             nk_widget_disable_end(context);
-        if (link && can_link && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-            std::snprintf(action->compose_import_path, sizeof(action->compose_import_path), "%s",
-                          metadata->dropped_music_path);
-            action->compose_resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
-            action->compose_input_chart_id = metadata->chart_id;
-            action->compose_input_document_revision = metadata->document_revision;
-            action->compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET;
-        }
+        if (link && can_link)
+            set_metadata_music_import_action(action, metadata, metadata->dropped_music_path);
     }
     if (!metadata->project_directory || !metadata->project_directory[0]) {
         nk_layout_row_dynamic(context, 19, 1);

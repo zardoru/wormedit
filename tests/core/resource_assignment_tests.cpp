@@ -71,6 +71,68 @@ auto has_code(const document_command_result_t& result, diagnostic_code_t code) -
 
 } // namespace
 
+TEST_CASE("virtual BMS BGM and BGA placement commit geometry with the event",
+          "[unit][core][resources][virtual-canvas]") {
+    for (const auto kind : {resource_placement_kind_t::bgm_event,
+                            resource_placement_kind_t::bga_background}) {
+        auto song = assignment_song();
+        song.charts.front().source_family = format_family_t::bms;
+        auto history = make_document_history(std::move(song));
+        const auto revision = history.document.revision;
+        const auto resource = kind == resource_placement_kind_t::bgm_event
+                                  ? resource_id_t{1}
+                                  : resource_id_t{3};
+        const auto placed = apply_virtual_bms_resource_placement(
+            history, revision,
+            {.chart = chart_id_t{2},
+             .resource = resource,
+             .canvas_row = 959'050,
+             .source_lane = kind == resource_placement_kind_t::bgm_event
+                                ? object_id_t{20}
+                                : object_id_t{},
+             .kind = kind,
+             .snap_denominator = 4});
+        REQUIRE(placed);
+        CHECK(history.undo.size() == 1);
+        const auto& chart = history.document.charts.front();
+        REQUIRE(chart.measures.size() == 1'000);
+        if (kind == resource_placement_kind_t::bgm_event) {
+            REQUIRE(chart.measures.back().bgm_events.size() == 1);
+            CHECK(chart.measures.back().bgm_events.front().sound == resource);
+            CHECK(chart.measures.back().bgm_events.front().position.row == 0);
+        } else {
+            REQUIRE(chart.bga_events.size() == 2);
+            CHECK(chart.bga_events.back().resource == resource);
+            CHECK(chart.bga_events.back().position.measure == chart.measures.back().id);
+            CHECK(chart.bga_events.back().position.row == 0);
+        }
+        REQUIRE(undo_document_command(history));
+        CHECK(history.document.charts.front().measures.size() == 1);
+    }
+}
+
+TEST_CASE("invalid virtual BMS resource placement leaves history unchanged",
+          "[unit][core][resources][virtual-canvas]") {
+    auto song = assignment_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    const auto revision = history.document.revision;
+    CHECK_FALSE(apply_virtual_bms_resource_placement(
+        history, revision - 1,
+        {.chart = chart_id_t{2}, .resource = resource_id_t{1},
+         .canvas_row = 959'040, .kind = resource_placement_kind_t::bgm_event}));
+    CHECK_FALSE(apply_virtual_bms_resource_placement(
+        history, revision,
+        {.chart = chart_id_t{2}, .resource = resource_id_t{3},
+         .canvas_row = 959'040, .kind = resource_placement_kind_t::bgm_event}));
+    CHECK_FALSE(apply_virtual_bms_resource_placement(
+        history, revision,
+        {.chart = chart_id_t{2}, .resource = resource_id_t{1},
+         .canvas_row = 960'000, .kind = resource_placement_kind_t::bgm_event}));
+    CHECK(history.document.charts.front().measures.size() == 1);
+    CHECK(history.undo.empty());
+}
+
 TEST_CASE("resource placement picker advances in eligible catalog order without wrapping",
           "[unit][core][resources]") {
     auto song = assignment_song();

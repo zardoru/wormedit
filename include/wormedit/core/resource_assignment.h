@@ -92,6 +92,16 @@ struct place_resource_action_t {
     std::uint64_t snap_denominator{};
 };
 
+struct place_virtual_bms_resource_action_t {
+    chart_id_t chart;
+    resource_id_t resource;
+    std::uint64_t canvas_row{};
+    lane_id_t lane;
+    object_id_t source_lane;
+    resource_placement_kind_t kind{resource_placement_kind_t::sample_note};
+    std::uint64_t snap_denominator{};
+};
+
 [[nodiscard]] auto resolve_resource_placement_position(const chart_document_t& chart,
                                                        local_position_t position,
                                                        std::uint64_t snap_denominator)
@@ -103,6 +113,11 @@ struct place_resource_action_t {
                                             std::uint64_t expected_revision,
                                             const place_resource_action_t& action)
     -> document_command_result_t;
+
+// Commits required default BMS geometry and a resource-backed event together.
+[[nodiscard]] auto apply_virtual_bms_resource_placement(
+    document_history_t& history, std::uint64_t expected_revision,
+    const place_virtual_bms_resource_action_t& action) -> document_command_result_t;
 
 // Creates a catalog entry for an already registered asset. Optional BMS
 // allocation uses the first free nonzero two-digit ID in its WAV/BMP namespace.

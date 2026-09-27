@@ -3,6 +3,7 @@
 
 #include <wormedit/core/timing.h>
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/resource_assignment.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -166,6 +167,56 @@ TEST_CASE("virtual BMS #999 remains sparse until an edit and round-trips its mea
     const auto undone = wormedit::write_bms(history.document);
     REQUIRE(undone.bytes);
     CHECK(*undone.bytes == source);
+}
+
+TEST_CASE("virtual BMS BGM and BGA resources export at #999",
+          "[unit][format][bms][writer][virtual-canvas]") {
+    constexpr std::string_view source =
+        "#PLAYER 1\n#TITLE Virtual resources\n#WAV01 click.wav\n#BMP01 bg.png\n"
+        "#00011:01\n";
+    const auto imported = parse(source, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(imported.song);
+    for (const auto kind : {wormedit::resource_placement_kind_t::bgm_event,
+                            wormedit::resource_placement_kind_t::bga_background}) {
+        const auto wanted_namespace = kind == wormedit::resource_placement_kind_t::bgm_event
+                                          ? "WAV"
+                                          : "BMP";
+        const auto resource = std::ranges::find_if(imported.song->resources,
+                                                   [&](const auto& entry) {
+            return std::ranges::any_of(entry.target_identities, [&](const auto& identity) {
+                return identity.family == wormedit::format_family_t::bms &&
+                       identity.namespace_name == wanted_namespace &&
+                       identity.identifier == "01";
+            });
+        });
+        REQUIRE(resource != imported.song->resources.end());
+        auto history = wormedit::make_document_history(*imported.song);
+        const auto placed = wormedit::apply_virtual_bms_resource_placement(
+            history, history.document.revision,
+            {.chart = history.document.charts.front().id,
+             .resource = resource->id,
+             .canvas_row = 959'040,
+             .kind = kind});
+        REQUIRE(placed);
+        const auto written = wormedit::write_bms(history.document);
+        REQUIRE(written.bytes);
+        CHECK_FALSE(written.has_errors());
+        CHECK(written.bytes->find(kind == wormedit::resource_placement_kind_t::bgm_event
+                                      ? "#99901:01"
+                                      : "#99904:01") != std::string::npos);
+        CHECK(written.bytes->find("#998") == std::string::npos);
+        const auto reloaded = parse(*written.bytes,
+                                    {.lane_profile_id = "bme-7k-outside-scratch"});
+        REQUIRE(reloaded.song);
+        REQUIRE(reloaded.song->charts.front().measures.size() == 1'000);
+        if (kind == wormedit::resource_placement_kind_t::bgm_event) {
+            CHECK(reloaded.song->charts.front().measures.back().bgm_events.size() == 1);
+        } else {
+            CHECK(reloaded.song->charts.front().bga_events.size() == 1);
+            CHECK(reloaded.song->charts.front().bga_events.front().position.measure ==
+                  reloaded.song->charts.front().measures.back().id);
+        }
+    }
 }
 
 TEST_CASE("BMS writer preserves unchanged source bytes exactly", "[unit][format][bms][writer]") {

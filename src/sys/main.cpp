@@ -4885,12 +4885,11 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                                 .field_left_pixels = field_left_pixels,
                                 .field_width_pixels = field_width_pixels});
     };
-    const auto virtual_bms_hit_at =
+    const auto virtual_bms_row_at =
         [&](const chart_document_t& chart, const editor_interaction_view_model_t& view,
-            double x_pixels, double y_pixels)
-        -> std::optional<std::pair<std::uint64_t, lane_id_t>> {
-        if (chart.source_family != format_family_t::bms || !scene_cache.index ||
-            !std::isfinite(y_pixels) || y_pixels < 0.0 ||
+            double y_pixels) -> std::optional<std::uint64_t> {
+        if (chart.source_family != format_family_t::bms || !std::isfinite(y_pixels) ||
+            y_pixels < 0.0 ||
             y_pixels >= view.viewport_height_pixels) {
             return std::nullopt;
         }
@@ -4912,6 +4911,19 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
         if (!measure || measure->authored) {
             return std::nullopt;
         }
+        return canvas_row;
+    };
+    const auto virtual_bms_hit_at =
+        [&](const chart_document_t& chart, const editor_interaction_view_model_t& view,
+            double x_pixels, double y_pixels)
+        -> std::optional<std::pair<std::uint64_t, lane_id_t>> {
+        if (!scene_cache.index) {
+            return std::nullopt;
+        }
+        const auto canvas_row = virtual_bms_row_at(chart, view, y_pixels);
+        if (!canvas_row) {
+            return std::nullopt;
+        }
         auto request = scene_cache.preview_scene_request;
         request.include_virtual_bms_tail = true;
         const auto composed = make_editor_field_scene(chart, *scene_cache.index, view, request);
@@ -4921,7 +4933,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
         for (const auto& lane : composed.scene->lanes) {
             if (x_pixels >= lane.bounds.left && x_pixels < lane.bounds.right &&
                 y_pixels >= lane.bounds.top && y_pixels < lane.bounds.bottom) {
-                return std::pair{canvas_row, lane.lane};
+                return std::pair{*canvas_row, lane.lane};
             }
         }
         return std::nullopt;
@@ -5919,6 +5931,35 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             } else {
                 raw_position =
                     editor_position_at_y_pixels(*chart, *current_view, input.y_pixels);
+            }
+            if (!raw_position && !replacing &&
+                kind != resource_placement_kind_t::sample_note) {
+                if (const auto canvas_row =
+                        virtual_bms_row_at(*chart, *current_view, input.y_pixels)) {
+                    const auto applied = apply_virtual_bms_resource_placement(
+                        history, ui_action.compose_input_document_revision,
+                        {.chart = state.chart,
+                         .resource = resource_id_t{input.object_id},
+                         .canvas_row = *canvas_row,
+                         .source_lane = kind == resource_placement_kind_t::bgm_event
+                                            ? object_id_t{input.lane_id}
+                                            : object_id_t{},
+                         .kind = kind,
+                         .snap_denominator = state.active_snap_denominator});
+                    result.accepted = applied.applied;
+                    result.document_changed = applied.applied;
+                    result.diagnostics = applied.diagnostics;
+                    if (applied.applied) {
+                        const auto next = next_eligible_placement_resource(
+                            history.document, resource_id_t{input.object_id}, required_role);
+                        worm_ui_frontend_resource_placed(
+                            input.object_id, next.value_or(resource_id_t{}).value);
+                    }
+                    accepted = kind == resource_placement_kind_t::bgm_event
+                                   ? "BGM placed in BMS measure."
+                                   : "BGA placed in BMS measure.";
+                    break;
+                }
             }
             const auto position =
                 raw_position ? resolve_resource_placement_position(

@@ -410,6 +410,22 @@ static void set_metadata_format_action(WormUiWorkspaceAction* action,
     action->metadata_format_value = needs_text ? state.format_value.data() : nullptr;
 }
 
+static void metadata_register_drop_target(struct nk_context* context,
+                                          WormUiMetadataDropTarget target) {
+    if (target.destination == WORM_UI_METADATA_DROP_NONE)
+        return;
+    const auto widget = nk_widget_bounds(context);
+    const auto clip = nk_window_get_content_region(context);
+    const auto left = std::max(widget.x, clip.x);
+    const auto top = std::max(widget.y, clip.y);
+    const auto right = std::min(widget.x + widget.w, clip.x + clip.w);
+    const auto bottom = std::min(widget.y + widget.h, clip.y + clip.h);
+    worm_ui_nuklear_set_metadata_drop_target(target, {.x = left,
+                                                      .y = top,
+                                                      .width = std::max(0.0f, right - left),
+                                                      .height = std::max(0.0f, bottom - top)});
+}
+
 static void metadata_read_only_path(struct nk_context* context, const char* label,
                                     const std::string& path, WormUiMetadataDropTarget target = {}) {
     nk_layout_row_dynamic(context, 18, 1);
@@ -417,18 +433,7 @@ static void metadata_read_only_path(struct nk_context* context, const char* labe
     std::vector<char> buffer(path.begin(), path.end());
     buffer.push_back('\0');
     nk_layout_row_dynamic(context, 25, 1);
-    if (target.destination != WORM_UI_METADATA_DROP_NONE) {
-        const auto widget = nk_widget_bounds(context);
-        const auto clip = nk_window_get_content_region(context);
-        const auto left = std::max(widget.x, clip.x);
-        const auto top = std::max(widget.y, clip.y);
-        const auto right = std::min(widget.x + widget.w, clip.x + clip.w);
-        const auto bottom = std::min(widget.y + widget.h, clip.y + clip.h);
-        worm_ui_nuklear_set_metadata_drop_target(target, {.x = left,
-                                                          .y = top,
-                                                          .width = std::max(0.0f, right - left),
-                                                          .height = std::max(0.0f, bottom - top)});
-    }
+    metadata_register_drop_target(context, target);
     (void)nk_edit_string_zero_terminated(
         context, static_cast<nk_flags>(NK_EDIT_FIELD) | static_cast<nk_flags>(NK_EDIT_READ_ONLY),
         buffer.data(), buffer.size(), nk_filter_default);
@@ -621,7 +626,10 @@ static void render_metadata_paths(struct nk_context* context, const WormUiMetada
         metadata_external_copy_button(context, metadata, action, state.external_music_path.data());
     }
     nk_layout_row_dynamic(context, 19, 1);
-    nk_label(context, "Drop audio here to link, or on a directory field to stage a copy.",
+    nk_label(context, "Drop audio here to link, or on a directory to stage a copy.",
+             NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 19, 1);
+    nk_label(context, "Drop a project file or directory on Output path to set it.",
              NK_TEXT_LEFT);
     if (metadata->dropped_music_path && metadata->dropped_music_path[0]) {
         metadata_read_only_path(context, "Dropped audio file", metadata->dropped_music_path);
@@ -777,6 +785,8 @@ static void render_metadata_paths(struct nk_context* context, const WormUiMetada
         nk_layout_row_dynamic(context, 19, 1);
         nk_label(context, "Output path relative to project", NK_TEXT_LEFT);
         nk_layout_row_dynamic(context, 25, 1);
+        metadata_register_drop_target(
+            context, {WORM_UI_METADATA_DROP_OUTPUT_PATH, selected->document_index});
         if (!state.output_path_buffer_valid)
             nk_widget_disable_begin(context);
         (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.output_path.data(),
@@ -798,6 +808,37 @@ static void render_metadata_paths(struct nk_context* context, const WormUiMetada
             action->metadata_document_revision = metadata->document_revision;
             action->metadata_output_group_index = selected->document_index;
             action->metadata_output_path = state.output_path.data();
+        }
+    }
+    if (metadata->dropped_output_relative_path &&
+        metadata->dropped_output_relative_path[0]) {
+        const WormUiComposeOutputGroupView* dropped_group = nullptr;
+        for (size_t index = 0; index < metadata->output_group_count; ++index) {
+            if (metadata->output_groups[index].document_index ==
+                metadata->dropped_output_group_index) {
+                dropped_group = &metadata->output_groups[index];
+                break;
+            }
+        }
+        metadata_read_only_path(context, "Dropped output path",
+                                metadata->dropped_output_relative_path);
+        nk_layout_row_dynamic(context, 19, 1);
+        nk_label(context,
+                 dropped_group ? "Apply this path to the output group under the drop target."
+                               : "The dropped output group is no longer available.",
+                 NK_TEXT_LEFT);
+        nk_layout_row_dynamic(context, 25, 1);
+        if (!dropped_group)
+            nk_widget_disable_begin(context);
+        const bool apply_dropped_path = nk_button_label(context, "Apply dropped output path");
+        if (!dropped_group)
+            nk_widget_disable_end(context);
+        if (apply_dropped_path && dropped_group &&
+            action->metadata_edit == WORM_UI_METADATA_EDIT_NONE) {
+            action->metadata_edit = WORM_UI_METADATA_EDIT_OUTPUT_PATH;
+            action->metadata_document_revision = metadata->document_revision;
+            action->metadata_output_group_index = dropped_group->document_index;
+            action->metadata_output_path = metadata->dropped_output_relative_path;
         }
     }
     if (!metadata->project_directory || !metadata->project_directory[0]) {

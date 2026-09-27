@@ -69,6 +69,8 @@ TEST_CASE("Metadata drop targets keep the selected output group and visible boun
                                              {.x = 10, .y = 20, .width = 100, .height = 25});
     worm_ui_nuklear_set_metadata_drop_target({WORM_UI_METADATA_DROP_EXPORT, 7},
                                              {.x = 10, .y = 60, .width = 100, .height = 25});
+    worm_ui_nuklear_set_metadata_drop_target({WORM_UI_METADATA_DROP_OUTPUT_PATH, 9},
+                                             {.x = 10, .y = 100, .width = 100, .height = 25});
     CHECK(worm_ui_nuklear_metadata_drop_target(10, 20).destination ==
           WORM_UI_METADATA_DROP_PROJECT);
     CHECK(worm_ui_nuklear_metadata_drop_target(109, 44).destination ==
@@ -76,8 +78,12 @@ TEST_CASE("Metadata drop targets keep the selected output group and visible boun
     const auto output = worm_ui_nuklear_metadata_drop_target(50, 70);
     CHECK(output.destination == WORM_UI_METADATA_DROP_EXPORT);
     CHECK(output.output_group_index == 7);
+    const auto output_path = worm_ui_nuklear_metadata_drop_target(50, 110);
+    CHECK(output_path.destination == WORM_UI_METADATA_DROP_OUTPUT_PATH);
+    CHECK(output_path.output_group_index == 9);
     CHECK(worm_ui_nuklear_metadata_drop_target(110, 70).destination == WORM_UI_METADATA_DROP_NONE);
     CHECK(worm_ui_nuklear_metadata_drop_target(50, 85).destination == WORM_UI_METADATA_DROP_NONE);
     worm_ui_nuklear_clear_metadata_drop_targets();
     CHECK(worm_ui_nuklear_metadata_drop_target(50, 70).destination == WORM_UI_METADATA_DROP_NONE);
+    CHECK(worm_ui_nuklear_metadata_drop_target(50, 110).destination == WORM_UI_METADATA_DROP_NONE);
 }

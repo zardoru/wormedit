@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <variant>
@@ -41,6 +42,14 @@ struct set_output_group_path_action_t {
     std::size_t group_index{};
     std::string relative_output_path;
 };
+
+// Resolves a dropped existing file or directory inside a saved project to the
+// relative path accepted by the output-group editor. Symlinks are resolved
+// before containment is checked.
+[[nodiscard]] auto output_path_from_drop(const std::filesystem::path& project_directory,
+                                         const std::filesystem::path& dropped_path,
+                                         metadata_edit_limits_t limits = {})
+    -> std::optional<std::filesystem::path>;
 
 struct chart_rating_edit_t {
     chart_id_t chart;

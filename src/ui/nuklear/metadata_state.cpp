@@ -65,6 +65,8 @@ void worm_ui_nuklear_clear_metadata_drop_targets() {
     state.project_drop_rectangle = {};
     state.export_drop_rectangle = {};
     state.export_drop_group_index = 0;
+    state.output_path_drop_rectangle = {};
+    state.output_path_drop_group_index = 0;
 }
 
 void worm_ui_nuklear_set_metadata_drop_target(
@@ -75,6 +77,9 @@ void worm_ui_nuklear_set_metadata_drop_target(
     } else if (target.destination == WORM_UI_METADATA_DROP_EXPORT) {
         state.export_drop_rectangle = rect;
         state.export_drop_group_index = target.output_group_index;
+    } else if (target.destination == WORM_UI_METADATA_DROP_OUTPUT_PATH) {
+        state.output_path_drop_rectangle = rect;
+        state.output_path_drop_group_index = target.output_group_index;
     }
 }
 
@@ -86,6 +91,8 @@ auto worm_ui_nuklear_metadata_drop_target(float x, float y) -> WormUiMetadataDro
     };
     if (contains(state.export_drop_rectangle))
         return {WORM_UI_METADATA_DROP_EXPORT, state.export_drop_group_index};
+    if (contains(state.output_path_drop_rectangle))
+        return {WORM_UI_METADATA_DROP_OUTPUT_PATH, state.output_path_drop_group_index};
     if (contains(state.project_drop_rectangle))
         return {WORM_UI_METADATA_DROP_PROJECT, 0};
     return {};

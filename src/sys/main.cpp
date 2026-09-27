@@ -9026,6 +9026,8 @@ int main(int argc, char** argv) {
     bool running = true;
     std::string metadata_dropped_music_path;
     WormUiMetadataDropTarget metadata_dropped_music_target{};
+    std::string metadata_dropped_output_path;
+    std::size_t metadata_dropped_output_group_index{};
     std::uint64_t metadata_dropped_music_revision{};
     std::uint64_t metadata_dropped_chart_id{};
     auto compose_viewport_last_ticks = static_cast<std::uint64_t>(SDL_GetTicks());
@@ -9043,14 +9045,31 @@ int main(int argc, char** argv) {
                 const std::string_view dropped{event.drop.data};
                 if (dropped.size() <= WORM_UI_COMPOSE_IMPORT_PATH_BYTES &&
                     std::filesystem::path{dropped}.is_absolute()) {
-                    metadata_dropped_music_path.assign(dropped);
-                    metadata_dropped_music_target = worm_ui_frontend_metadata_drop_target(
+                    const auto target = worm_ui_frontend_metadata_drop_target(
                         event.drop.windowID, event.drop.x, event.drop.y);
+                    metadata_dropped_music_path.clear();
+                    metadata_dropped_output_path.clear();
+                    metadata_dropped_music_target = {};
+                    if (target.destination == WORM_UI_METADATA_DROP_OUTPUT_PATH) {
+                        const auto relative = wormedit::output_path_from_drop(
+                            asset_base, std::filesystem::path{dropped});
+                        if (relative) {
+                            metadata_dropped_output_path = relative->generic_string();
+                            metadata_dropped_output_group_index = target.output_group_index;
+                        } else {
+                            status = "Drop an existing output file or directory inside the saved "
+                                     "project; directories need extensionless names.";
+                        }
+                    } else {
+                        metadata_dropped_music_path.assign(dropped);
+                        metadata_dropped_music_target = target;
+                    }
                     metadata_dropped_music_revision = history.document.revision;
                     metadata_dropped_chart_id =
                         workspace.selected_chart ? workspace.selected_chart->value : 0;
                 } else {
                     metadata_dropped_music_path.clear();
+                    metadata_dropped_output_path.clear();
                     metadata_dropped_music_target = {};
                     status = "Drop an absolute local file path within the import limit.";
                 }
@@ -9060,6 +9079,7 @@ int main(int argc, char** argv) {
         worm_ui_frontend_end_input();
         if (workspace.active_tab != wormedit::workspace_tab_t::metadata) {
             metadata_dropped_music_path.clear();
+            metadata_dropped_output_path.clear();
             metadata_dropped_music_target = {};
         }
         if (metadata_copy_preview.pending) {
@@ -9609,10 +9629,12 @@ int main(int argc, char** argv) {
             }
             if (flattened.view.metadata.visible) {
                 auto& metadata = flattened.view.metadata;
-                if (!metadata_dropped_music_path.empty() &&
+                if ((!metadata_dropped_music_path.empty() ||
+                     !metadata_dropped_output_path.empty()) &&
                     (metadata_dropped_music_revision != history.document.revision ||
                      metadata_dropped_chart_id != metadata.chart_id)) {
                     metadata_dropped_music_path.clear();
+                    metadata_dropped_output_path.clear();
                     metadata_dropped_music_target = {};
                 }
                 flattened.metadata_project_directory_storage = asset_base.generic_string();
@@ -9624,6 +9646,8 @@ int main(int argc, char** argv) {
                 }
                 metadata.dropped_music_path = metadata_dropped_music_path.c_str();
                 metadata.dropped_music_target = metadata_dropped_music_target;
+                metadata.dropped_output_relative_path = metadata_dropped_output_path.c_str();
+                metadata.dropped_output_group_index = metadata_dropped_output_group_index;
                 if (workspace.transport.audio_asset) {
                     const auto audio = std::ranges::find(history.document.audio_assets,
                                                          *workspace.transport.audio_asset,
@@ -10287,6 +10311,8 @@ int main(int argc, char** argv) {
             } else if (action.metadata_edit != WORM_UI_METADATA_EDIT_NONE) {
                 status = dispatch_metadata_ui_action(action, history, workspace,
                                                      application_command_state.timing_locked);
+                if (action.metadata_edit == WORM_UI_METADATA_EDIT_OUTPUT_PATH)
+                    metadata_dropped_output_path.clear();
             } else if (action.metadata_import_copy_project || action.metadata_import_copy_export) {
                 status = start_metadata_asset_import(action, history, workspace, asset_base,
                                                      resource_copy_scheduler, pending_resource_copy,

@@ -53,8 +53,9 @@ struct worm_ui_nuklear_metadata_state_t {
         float y{};
         float width{};
         float height{};
-    } project_drop_rectangle, export_drop_rectangle;
+    } project_drop_rectangle, export_drop_rectangle, output_path_drop_rectangle;
     std::size_t export_drop_group_index{};
+    std::size_t output_path_drop_group_index{};
 };
 
 [[nodiscard]] auto worm_ui_nuklear_metadata_state() noexcept -> worm_ui_nuklear_metadata_state_t&;

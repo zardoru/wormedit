@@ -3,6 +3,10 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <ranges>
 
@@ -39,6 +43,24 @@ auto has_error(const document_command_result_t& result) -> bool {
         return diagnostic.severity == diagnostic_severity_t::error;
     });
 }
+
+struct temporary_output_drop_directory_t {
+    std::filesystem::path path;
+
+    temporary_output_drop_directory_t() {
+        static std::atomic<std::uint64_t> sequence{0};
+        path = std::filesystem::temp_directory_path() /
+               ("wormedit-output-drop-" +
+                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+                "-" + std::to_string(sequence.fetch_add(1)));
+        std::filesystem::create_directories(path);
+    }
+
+    ~temporary_output_drop_directory_t() {
+        std::error_code error;
+        std::filesystem::remove_all(path, error);
+    }
+};
 
 } // namespace
 
@@ -118,6 +140,31 @@ TEST_CASE("output group path edits are safe, revision checked, and undoable",
     CHECK(history.document.output_groups.front().relative_output_path == "exports/old.bms");
     REQUIRE(redo_document_command(history));
     CHECK(history.document.output_groups.front().relative_output_path == "exports/new.bms");
+}
+
+TEST_CASE("output path drops resolve only existing project-contained targets",
+          "[unit][core][metadata-editor][output-path][drop]") {
+    temporary_output_drop_directory_t temporary;
+    const auto project = temporary.path / "project";
+    const auto exports = project / "exports";
+    const auto outside = temporary.path / "outside.bms";
+    std::filesystem::create_directories(exports);
+    std::ofstream(exports / "chart.bms") << "chart";
+    std::ofstream(outside) << "outside";
+    CHECK(output_path_from_drop(project, exports) == std::filesystem::path{"exports"});
+    CHECK(output_path_from_drop(project, exports / "chart.bms") ==
+          std::filesystem::path{"exports/chart.bms"});
+    CHECK_FALSE(output_path_from_drop(project, outside));
+    CHECK_FALSE(output_path_from_drop(project, project));
+    CHECK_FALSE(output_path_from_drop(project, exports / "missing.bms"));
+    std::filesystem::create_directories(project / "version.2");
+    CHECK_FALSE(output_path_from_drop(project, project / "version.2"));
+    std::ofstream(project / "extensionless") << "file";
+    CHECK_FALSE(output_path_from_drop(project, project / "extensionless"));
+    std::error_code symlink_error;
+    std::filesystem::create_symlink(outside, project / "outside-link.bms", symlink_error);
+    if (!symlink_error)
+        CHECK_FALSE(output_path_from_drop(project, project / "outside-link.bms"));
 }
 
 TEST_CASE("rating text parser preserves exact signed rational values within integer bounds",

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <ranges>
 #include <string_view>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 
@@ -180,6 +181,37 @@ auto validate_field(std::string_view name, std::string_view value,
 }
 
 } // namespace
+
+auto output_path_from_drop(const std::filesystem::path& project_directory,
+                           const std::filesystem::path& dropped_path,
+                           metadata_edit_limits_t limits)
+    -> std::optional<std::filesystem::path> {
+    if (!project_directory.is_absolute() || !dropped_path.is_absolute())
+        return std::nullopt;
+    std::error_code filesystem_error;
+    const auto project = std::filesystem::canonical(project_directory, filesystem_error);
+    if (filesystem_error || !std::filesystem::is_directory(project, filesystem_error) ||
+        filesystem_error)
+        return std::nullopt;
+    const auto dropped = std::filesystem::canonical(dropped_path, filesystem_error);
+    if (filesystem_error)
+        return std::nullopt;
+    const auto directory = std::filesystem::is_directory(dropped, filesystem_error);
+    if (filesystem_error)
+        return std::nullopt;
+    if (!directory && !std::filesystem::is_regular_file(dropped, filesystem_error))
+        return std::nullopt;
+    if (filesystem_error)
+        return std::nullopt;
+    const auto relative = dropped.lexically_relative(project);
+    const auto text = relative.generic_string();
+    if (relative.empty() || relative == "." || directory == relative.has_extension() ||
+        !export_asset_directory(relative) || text.empty() ||
+        !valid_text(text, limits.maximum_output_path_bytes) ||
+        text.find('\\') != std::string::npos || text.find(':') != std::string::npos)
+        return std::nullopt;
+    return relative;
+}
 
 auto parse_metadata_rating(std::string_view numerator, std::string_view denominator)
     -> std::optional<signed_rational_t> {

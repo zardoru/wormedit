@@ -187,6 +187,7 @@ typedef enum WormUiMetadataDropDestination {
     WORM_UI_METADATA_DROP_NONE,
     WORM_UI_METADATA_DROP_PROJECT,
     WORM_UI_METADATA_DROP_EXPORT,
+    WORM_UI_METADATA_DROP_OUTPUT_PATH,
 } WormUiMetadataDropDestination;
 
 typedef struct WormUiMetadataDropTarget {
@@ -250,6 +251,8 @@ typedef struct WormUiMetadataView {
     bool output_groups_truncated;
     const char* dropped_music_path;
     WormUiMetadataDropTarget dropped_music_target;
+    const char* dropped_output_relative_path;
+    size_t dropped_output_group_index;
     const char* copy_preview_text;
     bool copy_preview_pending;
     bool copy_preview_export;

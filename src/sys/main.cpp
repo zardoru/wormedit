@@ -321,6 +321,11 @@ struct compose_scene_cache_t {
     std::optional<wormedit::timing_index_t> marker_timing_index;
     std::optional<wormedit::timing_index_t> proposed_offset_timing_index;
     std::optional<wormedit::signed_rational_t> proposed_offset_seconds;
+    std::optional<wormedit::beat_interval_drag_t> beat_fit_drag;
+    std::optional<wormedit::asset_id_t> beat_fit_asset;
+    std::optional<wormedit::timing_index_t> proposed_beat_timing_index;
+    std::optional<wormedit::signed_rational_t> proposed_beat_bpm;
+    wormedit::object_id_t proposed_beat_event;
     std::optional<channel_waveform_selection_t> channel_waveform_selection;
     wormedit::object_id_t channel_waveform_channel;
     const void* channel_waveform_source{};
@@ -2565,6 +2570,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.waveform_audio_offset_numerator = 0;
     view.waveform_audio_offset_denominator = 1;
     view.waveform_offset_drag_active = false;
+    view.beat_fit_drag_active = false;
     view.proposed_grid_lines = nullptr;
     view.proposed_grid_line_count = 0;
     view.waveform_proposed_beat_zero_visible = false;
@@ -2733,6 +2739,11 @@ void populate_compose_view(flattened_workspace_t& flattened,
         cache.marker_timing_index.reset();
         cache.proposed_offset_timing_index.reset();
         cache.proposed_offset_seconds.reset();
+        cache.beat_fit_drag.reset();
+        cache.beat_fit_asset.reset();
+        cache.proposed_beat_timing_index.reset();
+        cache.proposed_beat_bpm.reset();
+        cache.proposed_beat_event = {};
         cache.channel_waveform_channel = {};
         cache.channel_waveform_source = nullptr;
         cache.channel_waveform_source_generation = 0;
@@ -3468,7 +3479,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
              .measure_number = line.kind == wormedit::editor_grid_line_kind_t::measure &&
                                        measure != measure_numbers.end()
                                    ? measure->second
-                                   : 0});
+                                   : 0,
+             .chart_row =
+                 line.chart_row.fractional_rows.numerator == 0 ? line.chart_row.whole_rows : 0});
     }
     const auto& differences = scene.comparison_differences;
     const auto difference_count =
@@ -3930,6 +3943,37 @@ auto dispatch_metadata_ui_action(const WormUiWorkspaceAction& action,
         break;
     }
     return "Invalid metadata edit action.";
+}
+
+void project_compose_proposed_grid(flattened_workspace_t& flattened,
+                                   const wormedit::timing_index_t& original,
+                                   const wormedit::timing_index_t& proposed,
+                                   const wormedit::editor_interaction_state_t& interaction) {
+    auto& view = flattened.view.compose;
+    auto& output = flattened.compose_proposed_grid_storage;
+    output.clear();
+    output.reserve(flattened.compose_grid_row_storage.size());
+    for (std::size_t index = 0; index < flattened.compose_grid_row_storage.size(); ++index) {
+        const auto at = wormedit::timing_at(proposed, flattened.compose_grid_row_storage[index]);
+        if (!at)
+            continue;
+        const auto position = wormedit::musical_position_at(original, *at.seconds,
+                                                            {.extrapolate_before_chart = true});
+        if (!position)
+            continue;
+        const auto& row = *position.absolute_row;
+        const auto y = (static_cast<long double>(row.numerator) / row.denominator) *
+                           view.pixels_per_standard_measure /
+                           original.divisions_per_standard_measure -
+                       interaction.viewport_scroll_pixels;
+        if (!std::isfinite(y) || y < 0.0L || y > view.viewport_height_pixels)
+            continue;
+        auto line = flattened.compose_grid_storage[index];
+        line.y_pixels = static_cast<double>(y);
+        output.push_back(line);
+    }
+    view.proposed_grid_lines = output.data();
+    view.proposed_grid_line_count = output.size();
 }
 
 auto dispatch_audio_offset_drag_action(const WormUiWorkspaceAction& action,
@@ -4424,6 +4468,102 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
         editor_interaction_result_t result;
         std::string_view accepted = "Compose interaction applied.";
         switch (input.kind) {
+        case WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN: {
+            if (application_state.timing_locked || scene_cache.beat_fit_drag ||
+                editor_interaction_has_pending_gesture(state) || !scene_cache.index ||
+                !scene_cache.marker_timing_index ||
+                scene_cache.waveform_overview_sample_rate == 0 ||
+                scene_cache.waveform_overview_total_frames == 0 ||
+                input_chart == history.document.charts.end() || input.object_id == 0) {
+                return "Beat fitting requires an unlocked waveform and idle chart gesture.";
+            }
+            const auto& measures = scene_cache.index->measures;
+            const auto beat_row = input.object_id;
+            const auto measure = std::ranges::upper_bound(
+                measures.entries, beat_row, {}, &measure_index_entry_t::absolute_begin_row);
+            if (measure == measures.entries.begin()) {
+                return "Selected beat is outside the chart.";
+            }
+            const auto& entry = *std::prev(measure);
+            if (beat_row - entry.absolute_begin_row >= entry.row_capacity) {
+                return "Selected beat is outside the chart.";
+            }
+            const auto beat = local_position_t{entry.id, beat_row - entry.absolute_begin_row};
+            std::optional<object_id_t> previous_bpm;
+            std::uint64_t previous_row{};
+            for (const auto& bpm : input_chart->bpms) {
+                const auto row = absolute_row(measures, bpm.position);
+                if (row && *row < beat_row && (!previous_bpm || *row > previous_row)) {
+                    previous_bpm = bpm.id;
+                    previous_row = *row;
+                }
+            }
+            if (!previous_bpm) {
+                return "No earlier BPM change can anchor this beat fit.";
+            }
+            const auto begun = begin_beat_interval_drag(
+                history.document, input_chart->id, *previous_bpm, beat,
+                scene_cache.waveform_overview_sample_rate, application_state.timing_locked);
+            if (!begun) {
+                return begun.diagnostics.empty() ? "Beat fit could not start."
+                                                 : begun.diagnostics.front().message;
+            }
+            if (begun.drag->original_sample_frame >= scene_cache.waveform_overview_total_frames) {
+                return "Selected beat lies after the source audio ends.";
+            }
+            scene_cache.beat_fit_drag = begun.drag;
+            scene_cache.beat_fit_asset = workspace.transport.audio_asset;
+            return "Dragging beat against the fixed waveform; release to apply.";
+        }
+        case WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE:
+        case WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE: {
+            if (!scene_cache.beat_fit_drag || !scene_cache.marker_timing_index ||
+                scene_cache.beat_fit_drag->document_revision != history.document.revision) {
+                scene_cache.beat_fit_drag.reset();
+                scene_cache.beat_fit_asset.reset();
+                return "Beat fit has no matching captured transaction.";
+            }
+            const auto frame = sample_frame_at_chart_y(
+                *scene_cache.marker_timing_index, state.viewport_scroll_pixels,
+                state.pixels_per_standard_measure, input.y_pixels, state.viewport_height_pixels,
+                scene_cache.beat_fit_drag->sample_rate);
+            if (!frame || *frame >= scene_cache.waveform_overview_total_frames) {
+                if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE)
+                    scene_cache.beat_fit_drag.reset();
+                if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE)
+                    scene_cache.beat_fit_asset.reset();
+                return "Beat target is outside the source audio range.";
+            }
+            const auto updated =
+                update_beat_interval_drag(history.document, *scene_cache.beat_fit_drag, *frame,
+                                          application_state.timing_locked);
+            if (!updated) {
+                if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE)
+                    scene_cache.beat_fit_drag.reset();
+                if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE)
+                    scene_cache.beat_fit_asset.reset();
+                return updated.diagnostics.empty() ? "Beat fit target was rejected."
+                                                   : updated.diagnostics.front().message;
+            }
+            scene_cache.beat_fit_drag = updated.drag;
+            if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE)
+                return "Previewing exact sample-frame beat fit.";
+            const auto committed = commit_beat_interval_drag(history, *scene_cache.beat_fit_drag,
+                                                             application_state.timing_locked);
+            scene_cache.beat_fit_drag.reset();
+            scene_cache.beat_fit_asset.reset();
+            if (!committed.applied) {
+                return committed.diagnostics.empty() ? "Beat fit was unchanged."
+                                                     : committed.diagnostics.front().message;
+            }
+            const auto rebound = rebind_workspace(workspace, history);
+            return rebound ? "Beat interval fitted to the selected audio frame."
+                           : "Beat fit applied, but workspace rebinding failed.";
+        }
+        case WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL:
+            scene_cache.beat_fit_drag.reset();
+            scene_cache.beat_fit_asset.reset();
+            return "Beat fit cancelled; timing was unchanged.";
         case WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK: {
             if (!std::isfinite(input.audio_fraction) || input.audio_fraction < 0.0 ||
                 input.audio_fraction > 1.0 || !scene_cache.marker_timing_index ||
@@ -5345,6 +5485,8 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             continue;
         }
         case WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE:
+            scene_cache.beat_fit_drag.reset();
+            scene_cache.beat_fit_asset.reset();
             navigation_input.cancel();
             application_state.bmson_marker_move_preview.reset();
             result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
@@ -8090,6 +8232,17 @@ int main(int argc, char** argv) {
                 audio_offset_drag.reset();
                 audio_offset_drag_tab.reset();
             }
+            if (compose_scene_cache.beat_fit_drag &&
+                (workspace.active_tab != wormedit::workspace_tab_t::compose ||
+                 !workspace.selected_chart ||
+                 *workspace.selected_chart != compose_scene_cache.beat_fit_drag->chart ||
+                 history.document.revision !=
+                     compose_scene_cache.beat_fit_drag->document_revision ||
+                 workspace.transport.audio_asset != compose_scene_cache.beat_fit_asset ||
+                 application_command_state.timing_locked)) {
+                compose_scene_cache.beat_fit_drag.reset();
+                compose_scene_cache.beat_fit_asset.reset();
+            }
             auto flattened =
                 flatten_workspace(*model.view, history.document, status, recovery_controller.view(),
                                   recovery_scan_configured, stepmania_export_policy);
@@ -8371,37 +8524,10 @@ int main(int argc, char** argv) {
                                 }
                             }
                             if (compose_scene_cache.proposed_offset_timing_index) {
-                                auto& proposed = flattened.compose_proposed_grid_storage;
-                                proposed.reserve(flattened.compose_grid_row_storage.size());
-                                const auto& original = *compose_scene_cache.marker_timing_index;
-                                const auto& updated =
-                                    *compose_scene_cache.proposed_offset_timing_index;
-                                for (std::size_t index = 0;
-                                     index < flattened.compose_grid_row_storage.size(); ++index) {
-                                    const auto at = wormedit::timing_at(
-                                        updated, flattened.compose_grid_row_storage[index]);
-                                    if (!at)
-                                        continue;
-                                    const auto position = wormedit::musical_position_at(
-                                        original, *at.seconds, {.extrapolate_before_chart = true});
-                                    if (!position)
-                                        continue;
-                                    const auto& row = *position.absolute_row;
-                                    const auto y =
-                                        (static_cast<long double>(row.numerator) /
-                                         row.denominator) *
-                                            compose.pixels_per_standard_measure /
-                                            original.divisions_per_standard_measure -
-                                        compose_interaction_state->viewport_scroll_pixels;
-                                    if (!std::isfinite(y) || y < 0.0L ||
-                                        y > compose.viewport_height_pixels)
-                                        continue;
-                                    auto line = flattened.compose_grid_storage[index];
-                                    line.y_pixels = static_cast<double>(y);
-                                    proposed.push_back(line);
-                                }
-                                compose.proposed_grid_lines = proposed.data();
-                                compose.proposed_grid_line_count = proposed.size();
+                                project_compose_proposed_grid(
+                                    flattened, *compose_scene_cache.marker_timing_index,
+                                    *compose_scene_cache.proposed_offset_timing_index,
+                                    *compose_interaction_state);
                             }
                             compose.waveform_proposed_audio_offset_numerator =
                                 audio_offset_drag->proposed_offset_seconds.numerator;
@@ -8419,6 +8545,83 @@ int main(int argc, char** argv) {
                             if (compose.waveform_proposed_beat_zero_visible)
                                 compose.waveform_proposed_beat_zero_fraction =
                                     static_cast<double>(proposed_fraction);
+                        }
+                        if (compose_scene_cache.beat_fit_drag &&
+                            compose_scene_cache.beat_fit_asset == workspace.transport.audio_asset &&
+                            compose_scene_cache.beat_fit_drag->sample_rate ==
+                                waveform_analysis->waveform->sample_rate &&
+                            compose_scene_cache.beat_fit_drag->document_revision ==
+                                history.document.revision) {
+                            const auto& drag = *compose_scene_cache.beat_fit_drag;
+                            compose.beat_fit_drag_active = true;
+                            compose.beat_fit_target_y_pixels = -1.0;
+                            compose.beat_fit_target_sample_frame = drag.proposed_sample_frame;
+                            compose.beat_fit_original_bpm_numerator = drag.original_bpm.numerator;
+                            compose.beat_fit_original_bpm_denominator =
+                                drag.original_bpm.denominator;
+                            compose.beat_fit_proposed_bpm_numerator = drag.proposed_bpm.numerator;
+                            compose.beat_fit_proposed_bpm_denominator =
+                                drag.proposed_bpm.denominator;
+                            const auto chart =
+                                std::ranges::find(history.document.charts, drag.chart,
+                                                  &wormedit::chart_document_t::id);
+                            if (chart != history.document.charts.end() &&
+                                compose_scene_cache.index) {
+                                compose.beat_fit_chart_row =
+                                    wormedit::absolute_row(compose_scene_cache.index->measures,
+                                                           drag.beat)
+                                        .value_or(0);
+                                const auto anchor_row =
+                                    wormedit::absolute_row(compose_scene_cache.index->measures,
+                                                           drag.original_bpm_position);
+                                const auto pixels_per_row = compose.pixels_per_standard_measure /
+                                                            compose_scene_cache.marker_timing_index
+                                                                ->divisions_per_standard_measure;
+                                if (anchor_row) {
+                                    compose.beat_fit_anchor_y_pixels =
+                                        static_cast<double>(*anchor_row) * pixels_per_row -
+                                        compose_interaction_state->viewport_scroll_pixels;
+                                }
+                                compose.beat_fit_beat_y_pixels =
+                                    static_cast<double>(compose.beat_fit_chart_row) *
+                                        pixels_per_row -
+                                    compose_interaction_state->viewport_scroll_pixels;
+                                if (compose_scene_cache.proposed_beat_bpm != drag.proposed_bpm ||
+                                    compose_scene_cache.proposed_beat_event != drag.bpm_event) {
+                                    compose_scene_cache.proposed_beat_timing_index.reset();
+                                    compose_scene_cache.proposed_beat_bpm = drag.proposed_bpm;
+                                    compose_scene_cache.proposed_beat_event = drag.bpm_event;
+                                    auto candidate = *chart;
+                                    const auto event = std::ranges::find(
+                                        candidate.bpms, drag.bpm_event, &wormedit::bpm_event_t::id);
+                                    if (event != candidate.bpms.end()) {
+                                        event->beats_per_minute = drag.proposed_bpm;
+                                        auto built = wormedit::build_timing_index(candidate);
+                                        if (built)
+                                            compose_scene_cache.proposed_beat_timing_index =
+                                                std::move(*built.index);
+                                    }
+                                }
+                                if (compose_scene_cache.proposed_beat_timing_index) {
+                                    project_compose_proposed_grid(
+                                        flattened, *compose_scene_cache.marker_timing_index,
+                                        *compose_scene_cache.proposed_beat_timing_index,
+                                        *compose_interaction_state);
+                                }
+                            }
+                            const auto target = wormedit::musical_position_at(
+                                *compose_scene_cache.marker_timing_index,
+                                {static_cast<std::int64_t>(drag.proposed_sample_frame),
+                                 drag.sample_rate});
+                            if (target) {
+                                const auto& row = *target.absolute_row;
+                                compose.beat_fit_target_y_pixels = static_cast<double>(
+                                    static_cast<long double>(row.numerator) / row.denominator *
+                                        compose.pixels_per_standard_measure /
+                                        compose_scene_cache.marker_timing_index
+                                            ->divisions_per_standard_measure -
+                                    compose_interaction_state->viewport_scroll_pixels);
+                            }
                         }
                         compose_scene_cache.waveform_overview_total_frames =
                             waveform_analysis->waveform->total_frames;
@@ -8556,6 +8759,8 @@ int main(int argc, char** argv) {
             if (shortcut_handled) {
                 audio_offset_drag.reset();
                 audio_offset_drag_tab.reset();
+                compose_scene_cache.beat_fit_drag.reset();
+                compose_scene_cache.beat_fit_asset.reset();
             }
             if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
                 (action.compose_input_count != 0 || action.compose_viewport_input_count != 0 ||

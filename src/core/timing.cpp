@@ -961,6 +961,37 @@ auto timing_at(const timing_index_t& index, exact_chart_row_t absolute_row,
     return timing_seconds_at_row(index, *row, side);
 }
 
+auto sample_frame_at_chart_y(const timing_index_t& index, double viewport_scroll_pixels,
+                             double pixels_per_standard_measure, double y_pixels,
+                             double viewport_height_pixels, std::uint32_t sample_rate)
+    -> std::optional<std::uint64_t> {
+    if (!std::isfinite(y_pixels) || y_pixels < 0.0 || y_pixels > viewport_height_pixels ||
+        !std::isfinite(viewport_height_pixels) || viewport_height_pixels <= 0.0 ||
+        !std::isfinite(viewport_scroll_pixels) || viewport_scroll_pixels < 0.0 ||
+        !std::isfinite(pixels_per_standard_measure) || pixels_per_standard_measure <= 0.0 ||
+        sample_rate == 0 || index.divisions_per_standard_measure == 0) {
+        return std::nullopt;
+    }
+    const auto row = (static_cast<long double>(y_pixels) + viewport_scroll_pixels) *
+                     index.divisions_per_standard_measure / pixels_per_standard_measure;
+    if (!std::isfinite(row) || row < 0.0L || row > index.total_rows) {
+        return std::nullopt;
+    }
+    constexpr std::uint64_t fractional_scale = 1'000'000;
+    auto whole = static_cast<std::uint64_t>(std::floor(row));
+    auto fractional = static_cast<std::uint64_t>(
+        std::llround((row - static_cast<long double>(whole)) * fractional_scale));
+    if (fractional == fractional_scale) {
+        ++whole;
+        fractional = 0;
+    }
+    const auto at = timing_at(index, exact_chart_row_t{whole, {fractional, fractional_scale}});
+    const auto frame =
+        at ? sample_frame_at(*at.seconds, sample_rate, sample_rounding_t::nearest_ties_to_even)
+           : sample_frame_result_t{};
+    return frame ? frame.frame : std::nullopt;
+}
+
 auto timing_at(const timing_index_t& index, const measure_index_t& measures,
                local_position_t position, timing_boundary_side_t side) -> timing_query_result_t {
     const auto row = absolute_row(measures, position);

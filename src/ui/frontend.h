@@ -287,6 +287,7 @@ typedef struct WormUiComposeGridLineView {
     uint8_t kind;
     uint8_t emphasis;
     uint32_t measure_number;
+    uint64_t chart_row;
 } WormUiComposeGridLineView;
 
 typedef struct WormUiComposeDifferenceView {
@@ -641,6 +642,16 @@ typedef struct WormUiComposeView {
     int64_t waveform_audio_offset_numerator;
     uint64_t waveform_audio_offset_denominator;
     bool waveform_offset_drag_active;
+    bool beat_fit_drag_active;
+    uint64_t beat_fit_chart_row;
+    double beat_fit_anchor_y_pixels;
+    double beat_fit_beat_y_pixels;
+    uint64_t beat_fit_target_sample_frame;
+    double beat_fit_target_y_pixels;
+    int64_t beat_fit_original_bpm_numerator;
+    uint64_t beat_fit_original_bpm_denominator;
+    int64_t beat_fit_proposed_bpm_numerator;
+    uint64_t beat_fit_proposed_bpm_denominator;
     bool waveform_proposed_beat_zero_visible;
     double waveform_proposed_beat_zero_fraction;
     int64_t waveform_proposed_audio_offset_numerator;
@@ -1175,6 +1186,10 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE,
     WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL,
     WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK,
+    WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN,
+    WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE,
+    WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE,
+    WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL,
 } WormUiComposeInputKind;
 
 typedef enum WormUiComposeNavigationAction {

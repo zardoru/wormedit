@@ -89,6 +89,7 @@ static void append_compose_input(
         state.note_move_candidate_active = false;
         state.note_move_active = false;
         state.timing_stage_drag_active = false;
+        state.beat_fit_drag_active = false;
         state.area_selection_candidate_active = false;
         state.area_selection_active = false;
         state.navigation_key_active = false;
@@ -113,6 +114,14 @@ static void append_compose_input(
         .y_pixels = y_pixels,
         .audio_fraction = 0.0,
     };
+}
+
+static void cancel_beat_fit_drag(WormUiWorkspaceAction* action) {
+    if (state.beat_fit_drag_active) {
+        append_compose_input(action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL);
+        state.beat_fit_drag_active = false;
+        state.beat_fit_anchor_screen_y = 0.0f;
+    }
 }
 
 static void
@@ -646,7 +655,19 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            view->lane_count <= WORM_UI_COMPOSE_LANE_CAPACITY &&
            view->grid_line_count <= WORM_UI_COMPOSE_GRID_CAPACITY &&
            view->proposed_grid_line_count <= WORM_UI_COMPOSE_GRID_CAPACITY &&
-           (view->proposed_grid_line_count == 0 || view->waveform_offset_drag_active) &&
+           (view->proposed_grid_line_count == 0 || view->waveform_offset_drag_active ||
+            view->beat_fit_drag_active) &&
+           (!view->beat_fit_drag_active ||
+            (view->beat_fit_chart_row != 0 && view->waveform_overview_sample_rate != 0 &&
+             view->beat_fit_original_bpm_denominator != 0 &&
+             view->beat_fit_proposed_bpm_denominator != 0 &&
+             std::isfinite(view->beat_fit_target_y_pixels) &&
+             std::isfinite(view->beat_fit_anchor_y_pixels) &&
+             std::isfinite(view->beat_fit_beat_y_pixels) &&
+             std::abs(view->beat_fit_target_y_pixels) <= 10000000.0 &&
+             std::abs(view->beat_fit_anchor_y_pixels) <= 10000000.0 &&
+             std::abs(view->beat_fit_beat_y_pixels) <= 10000000.0 &&
+             view->beat_fit_target_sample_frame < view->waveform_overview_total_frames)) &&
            view->timing_marker_count <= WORM_UI_TIMING_MARKER_CAPACITY &&
            view->difference_count <= WORM_UI_COMPOSE_DIFFERENCE_CAPACITY &&
            view->hold_body_count <= WORM_UI_COMPOSE_HOLD_CAPACITY &&
@@ -852,6 +873,7 @@ static void process_compose_key_events(struct nk_context* context, const WormUiC
         }
         const bool shortcut = compose_shortcut_modifier(key_event.modifiers);
         if (key_event.keycode == static_cast<uint32_t>(SDLK_ESCAPE)) {
+            cancel_beat_fit_drag(action);
             if (state.waveform_beat_zero_drag_active) {
                 set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
                                                 state.waveform_beat_zero_drag_delta_frames);
@@ -978,6 +1000,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             cancel_compose_navigation(action);
         }
         if (state.cancel_pending) {
+            cancel_beat_fit_drag(action);
             if (state.waveform_beat_zero_drag_active) {
                 set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
                                                 state.waveform_beat_zero_drag_delta_frames);
@@ -1011,6 +1034,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             state.last_project_id = view->project_id;
         }
         if (chart_changed || revision_changed) {
+            cancel_beat_fit_drag(action);
             if (state.waveform_beat_zero_drag_active) {
                 set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
                                                 state.waveform_beat_zero_drag_delta_frames);
@@ -1073,6 +1097,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
     }
 
     state.cancel_pending = false;
+    cancel_beat_fit_drag(action);
     state.key_event_count = 0;
     state.wheel_event_count = 0;
     state.middle_click_pending = false;
@@ -1683,6 +1708,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         context,
         state.timing_stage_drag_active
             ? "Move timing event · release to keep staged position · Apply to commit"
+        : state.beat_fit_drag_active
+            ? "Fit beat to waveform · release to commit one BPM change · Esc cancels"
         : state.waveform_beat_zero_drag_active
             ? "Move beat zero on waveform overview · release to commit · Esc cancels"
         : state.bmson_marker_move_active ? "Move BMSON BGM marker · release to commit · Esc cancels"
@@ -1697,8 +1724,9 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         : view->semantic_layer_paint_mode_active
             ? "Layer paint armed · click/drag toggles layer · Esc cancels"
         : view->semantic_layer_solo_active ? "Layer solo active · only selected-layer notes shown"
-        : view->note_paint_mode_active
-            ? "Paint armed · click/drag draws or erases · Esc cancels"
+        : view->note_paint_mode_active ? "Paint armed · click/drag draws or erases · Esc cancels"
+        : view->waveform_overview_row_count != 0 && !view->waveform_timing_locked
+            ? "Drag beat squares in rail to fit BPM · drag beat zero in song overview"
             : "↑/↓ move · drag selects/moves · Alt-drag hold · drag BMSON BGM to move",
         NK_TEXT_LEFT);
 
@@ -2009,6 +2037,65 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                       view->viewport_height_pixels / viewport.h);
     const auto paint_pointer_x = clamp_paint_x(pointer_x);
     const auto paint_pointer_y = clamp_paint_y(pointer_y);
+    bool beat_fit_pointer_consumed = state.beat_fit_drag_active;
+    if (state.beat_fit_drag_active) {
+        const bool matches = window_focused && view->scene_available &&
+                             view->beat_fit_drag_active && !view->waveform_timing_locked &&
+                             view->chart_id == state.beat_fit_chart_id &&
+                             view->document_revision == state.beat_fit_revision &&
+                             view->selected_audio_asset_id == state.beat_fit_asset_id &&
+                             view->waveform_overview_sample_rate == state.beat_fit_sample_rate;
+        if (!matches || (!left_down && !left_released)) {
+            cancel_beat_fit_drag(action);
+        } else if (left_released) {
+            if (std::abs(context->input.mouse.pos.y - state.beat_fit_anchor_screen_y) < 4.0f) {
+                cancel_beat_fit_drag(action);
+            } else {
+                append_compose_input(action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE, 0.0,
+                                     clamp_paint_y(pointer_y));
+                state.beat_fit_drag_active = false;
+            }
+        } else if (left_down && nk_input_is_mouse_moved(&context->input)) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, 0.0,
+                                 clamp_paint_y(pointer_y));
+        }
+    } else if (view->beat_fit_drag_active) {
+        const auto cancel_pending = std::ranges::any_of(
+            action->compose_inputs, action->compose_inputs + action->compose_input_count,
+            [](const auto& input) { return input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL; });
+        if (!cancel_pending)
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL);
+    } else if (view->scene_available && window_focused && pointer_started_in_view && left_down &&
+               shortcut_event_count == 0 && (pointer_modifiers & any_pointer_modifier) == 0 &&
+               pointer_started_x >= 22.0 && pointer_started_x <= 42.0 &&
+               view->waveform_row_count != 0 && view->waveform_overview_sample_rate != 0 &&
+               !view->waveform_timing_locked && !view->waveform_offset_drag_active) {
+        std::uint64_t nearest_row = 0;
+        auto nearest_distance = 6.0 * view->viewport_height_pixels / viewport.h;
+        for (std::size_t index = 0; index < view->grid_line_count; ++index) {
+            const auto& line = view->grid_lines[index];
+            if (line.chart_row == 0 || (line.kind != 1 && line.kind != 3))
+                continue;
+            const auto distance = std::abs(line.y_pixels - pointer_started_y);
+            if (distance < nearest_distance) {
+                nearest_distance = distance;
+                nearest_row = line.chart_row;
+            }
+        }
+        if (nearest_row != 0) {
+            state.beat_fit_drag_active = true;
+            state.beat_fit_chart_row = nearest_row;
+            state.beat_fit_chart_id = view->chart_id;
+            state.beat_fit_revision = view->document_revision;
+            state.beat_fit_asset_id = view->selected_audio_asset_id;
+            state.beat_fit_sample_rate = view->waveform_overview_sample_rate;
+            state.beat_fit_anchor_screen_y = left_button.clicked_pos.y;
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN, 0.0,
+                                 pointer_started_y, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, nearest_row);
+            beat_fit_pointer_consumed = true;
+        }
+    }
     if (state.timing_stage_drag_active) {
         if (!window_focused || !view->scene_available || !timing_view->stage_active ||
             timing_view->stage_existing_object_id == 0 || (!left_down && !left_released)) {
@@ -2056,7 +2143,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
         state.pointer_hold_active || state.lane_hold_active || state.note_move_active ||
         state.area_selection_active || state.timing_stage_drag_active ||
-        state.waveform_beat_zero_drag_active;
+        state.waveform_beat_zero_drag_active || beat_fit_pointer_consumed;
     action->compose_has_pointer_hover = !state.action_overflowed && window_focused &&
                                         view->scene_available && pointer_in_note_field &&
                                         !compose_pointer_captured;
@@ -2148,12 +2235,11 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             compose_note_double_click_in_view = true;
         }
     }
-    bool paint_pointer_consumed = state.note_paint_pointer_active ||
-                                  state.bmson_razor_pointer_active ||
-                                  state.bmson_marker_move_candidate_active ||
-                                  state.bmson_marker_move_active ||
-                                  state.semantic_layer_paint_pointer_active ||
-                                  compose_action_has_cancel(action);
+    bool paint_pointer_consumed =
+        state.note_paint_pointer_active || beat_fit_pointer_consumed ||
+        state.bmson_razor_pointer_active || state.bmson_marker_move_candidate_active ||
+        state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
+        compose_action_has_cancel(action);
     if (!paint_pointer_consumed &&
         state.resource_pointer_mode != worm_ui_nuklear_compose_resource_pointer_mode_t::off &&
         view->scene_available && pointer_started_in_view && window_focused &&
@@ -2718,6 +2804,23 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                 }
             }
         }
+        if (view->beat_fit_drag_active) {
+            const auto top = std::clamp(
+                viewport.y + static_cast<float>(view->beat_fit_anchor_y_pixels) * viewport.h /
+                                 static_cast<float>(view->viewport_height_pixels),
+                viewport.y, viewport.y + viewport.h);
+            const auto bottom = std::clamp(
+                viewport.y + static_cast<float>(view->beat_fit_beat_y_pixels) * viewport.h /
+                                 static_cast<float>(view->viewport_height_pixels),
+                viewport.y, viewport.y + viewport.h);
+            if (bottom > top) {
+                const auto right =
+                    viewport.x + static_cast<float>(view->playable_field_right_pixels) *
+                                     viewport.w / static_cast<float>(view->viewport_width_pixels);
+                nk_fill_rect(canvas, nk_rect(field_left, top, right - field_left, bottom - top),
+                             0.0f, nk_rgba(255, 207, 104, 22));
+            }
+        }
         for (size_t index = 0; index < view->difference_count; ++index) {
             compose_fill_rect(canvas, &view->differences[index].bounds, view, viewport,
                               nk_rgba(229, 190, 58, 74));
@@ -2741,6 +2844,14 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                 color = nk_rgb(52, 61, 78);
             }
             nk_stroke_line(canvas, viewport.x, y, viewport.x + viewport.w, y, thickness, color);
+            if (view->waveform_row_count != 0 && !view->waveform_timing_locked &&
+                line.chart_row != 0 && (line.kind == 1 || line.kind == 3)) {
+                nk_fill_rect(canvas, nk_rect(rail.x + rail.w - 13.0f, y - 3.0f, 7.0f, 6.0f), 1.0f,
+                             line.chart_row == view->beat_fit_chart_row &&
+                                     view->beat_fit_drag_active
+                                 ? nk_rgb(255, 207, 104)
+                                 : nk_rgb(165, 177, 195));
+            }
             if (line.measure_number != 0 && y + 15.0f <= viewport.y + viewport.h) {
                 char label[20]{};
                 const auto length = snprintf(label, sizeof(label), "M%u", line.measure_number);
@@ -2761,6 +2872,29 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                                                   : nk_rgba(255, 207, 104, 75);
             nk_stroke_line(canvas, viewport.x, y, viewport.x + viewport.w, y,
                            line.kind == 3 ? 1.6f : 1.0f, color);
+        }
+        if (view->beat_fit_drag_active) {
+            const auto y = viewport.y + static_cast<float>(view->beat_fit_target_y_pixels) *
+                                            viewport.h /
+                                            static_cast<float>(view->viewport_height_pixels);
+            if (y >= viewport.y && y <= viewport.y + viewport.h) {
+                nk_stroke_line(canvas, viewport.x, y, viewport.x + viewport.w, y, 1.3f,
+                               nk_rgba(110, 222, 236, 215));
+            }
+            char label[140]{};
+            const auto length =
+                snprintf(label, sizeof(label), "Fit %lld/%llu -> %lld/%llu BPM · frame %llu",
+                         static_cast<long long>(view->beat_fit_original_bpm_numerator),
+                         static_cast<unsigned long long>(view->beat_fit_original_bpm_denominator),
+                         static_cast<long long>(view->beat_fit_proposed_bpm_numerator),
+                         static_cast<unsigned long long>(view->beat_fit_proposed_bpm_denominator),
+                         static_cast<unsigned long long>(view->beat_fit_target_sample_frame));
+            if (length > 0) {
+                const auto bounds = nk_rect(viewport.x + rail.w + 4.0f, viewport.y + 18.0f,
+                                            std::min(310.0f, viewport.w - rail.w - 8.0f), 18.0f);
+                nk_draw_text(canvas, bounds, label, static_cast<int>(strlen(label)),
+                             context->style.font, nk_rgba(18, 21, 29, 235), nk_rgb(255, 219, 148));
+            }
         }
         for (size_t index = 0; index < view->timing_marker_count; ++index) {
             const auto& marker = view->timing_markers[index];

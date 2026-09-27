@@ -153,6 +153,15 @@ struct sample_frame_result_t {
                              timing_boundary_side_t side = timing_boundary_side_t::event)
     -> timing_query_result_t;
 
+// Resolve a pointer position on the fixed chart waveform to its nearest
+// source frame. Fractional rows are retained to one millionth of a row before
+// exact timing and sample-frame rounding are applied.
+[[nodiscard]] auto sample_frame_at_chart_y(const timing_index_t& index,
+                                           double viewport_scroll_pixels,
+                                           double pixels_per_standard_measure, double y_pixels,
+                                           double viewport_height_pixels, std::uint32_t sample_rate)
+    -> std::optional<std::uint64_t>;
+
 [[nodiscard]] auto timing_at(const timing_index_t& index, const measure_index_t& measures,
                              local_position_t position,
                              timing_boundary_side_t side = timing_boundary_side_t::event)

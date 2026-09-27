@@ -104,6 +104,18 @@ TEST_CASE("fractional grid rows retain exact timing across tempo and warp bounda
     CHECK(*inside.seconds == signed_rational_t{2, 1});
 }
 
+TEST_CASE("chart waveform pointer resolves fractional rows to source frames",
+          "[unit][core][timing][waveform-pointer]") {
+    const auto built = build_timing_index(base_chart());
+    REQUIRE(built);
+    const auto& timing = *built.index;
+    CHECK(sample_frame_at_chart_y(timing, 0.0, 240.0, 60.0, 300.0, 48'000) == 72'000);
+    CHECK(sample_frame_at_chart_y(timing, 0.0, 240.0, 90.0, 300.0, 48'000) == 84'000);
+    CHECK(sample_frame_at_chart_y(timing, 240.0, 240.0, 60.0, 300.0, 48'000) == 192'000);
+    CHECK_FALSE(sample_frame_at_chart_y(timing, 0.0, 240.0, -1.0, 300.0, 48'000));
+    CHECK_FALSE(sample_frame_at_chart_y(timing, 0.0, 240.0, 60.0, 300.0, 0));
+}
+
 TEST_CASE("interval beat fitting solves exact source frames across pauses and warps",
           "[unit][core][timing][beat-fit]") {
     auto chart = base_chart();

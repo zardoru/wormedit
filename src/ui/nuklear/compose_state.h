@@ -83,6 +83,13 @@ struct worm_ui_nuklear_compose_state_t {
     bool timing_stage_drag_active{};
     bool waveform_overview_drag_active{};
     bool waveform_beat_zero_drag_active{};
+    bool beat_fit_drag_active{};
+    std::uint64_t beat_fit_chart_row{};
+    std::uint64_t beat_fit_chart_id{};
+    std::uint64_t beat_fit_revision{};
+    std::uint64_t beat_fit_asset_id{};
+    std::uint32_t beat_fit_sample_rate{};
+    float beat_fit_anchor_screen_y{};
     float waveform_beat_zero_drag_anchor_y{};
     float waveform_beat_zero_drag_height{};
     std::uint64_t waveform_beat_zero_drag_total_frames{};

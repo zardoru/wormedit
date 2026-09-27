@@ -170,3 +170,71 @@ TEST_CASE("BMSON BGM marker deletion removes its source event and is undoable",
                                   return event.id == *bgm.sound_channel_event;
                               }));
 }
+
+TEST_CASE("BMSON marker insertion links a new source pulse and BGM in one undoable edit",
+          "[unit][core][bmson][marker]") {
+    auto song = fixture();
+    song.audio_assets.front().stream = {48'000, 2, 200'000, true};
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto& original = history.document.charts.front();
+    const auto chart_id = original.id;
+    const auto source_count = original.sound_channels.front().events.size();
+    const auto source_measure = std::ranges::find_if(original.measures, [](const auto& item) {
+        return !item.bgm_events.empty();
+    });
+    REQUIRE(source_measure != original.measures.end());
+    const auto reference = source_measure->bgm_events.front();
+    const wormedit::local_position_t target{reference.position.measure,
+                                             reference.position.row - 120};
+    const auto revision = history.document.revision;
+    REQUIRE(wormedit::insert_bmson_bgm_marker(
+        history, revision, chart_id, reference.id, target, true));
+    const auto& changed = history.document.charts.front();
+    const auto& source = changed.sound_channels.front().events.back();
+    CHECK(source.position == target);
+    CHECK_FALSE(source.playable);
+    CHECK_FALSE(source.continuation);
+    CHECK(source.id != *reference.sound_channel_event);
+    CHECK(changed.sound_channels.front().events.size() == source_count + 1);
+    const auto changed_measure = std::ranges::find(changed.measures, target.measure,
+                                                   &wormedit::measure_chunk_t::id);
+    REQUIRE(changed_measure != changed.measures.end());
+    const auto semantic = std::ranges::find_if(changed_measure->bgm_events,
+        [&](const auto& event) { return event.sound_channel_event == source.id; });
+    REQUIRE(semantic != changed_measure->bgm_events.end());
+    CHECK(semantic->id != reference.id);
+    CHECK(semantic->position == target);
+    CHECK(semantic->source_lane == reference.source_lane);
+    CHECK(semantic->sound == reference.sound);
+    CHECK(wormedit::validate_document(history.document).empty());
+    const auto slices = wormedit::derive_sound_channel_slices(
+        changed, changed.sound_channels.front(), 48'000, 200'000);
+    REQUIRE(slices);
+    CHECK(std::ranges::any_of(slices.slices, [&](const auto& slice) {
+        return slice.restart && std::ranges::find(slice.events, source.id) != slice.events.end();
+    }));
+    const auto written = wormedit::write_bmson(history.document);
+    REQUIRE(written.json.has_value());
+    const auto reparsed = wormedit::parse_bmson_bytes(
+        std::as_bytes(std::span{written.json->data(), written.json->size()}));
+    REQUIRE(reparsed.song.has_value());
+    CHECK(std::ranges::any_of(reparsed.song->charts.front().sound_channels.front().events,
+                              [&](const auto& event) {
+                                  return event.position == target && !event.playable &&
+                                         !event.continuation;
+                              }));
+
+    CHECK_FALSE(wormedit::insert_bmson_bgm_marker(
+        history, history.document.revision, chart_id, reference.id, target, false));
+    CHECK_FALSE(wormedit::insert_bmson_bgm_marker(
+        history, history.document.revision, chart_id, reference.id,
+        changed.sound_channels.front().events.front().position, false));
+    CHECK_FALSE(wormedit::insert_bmson_bgm_marker(
+        history, revision, chart_id, reference.id,
+        {target.measure, target.row + 1}, false));
+    REQUIRE(wormedit::undo_document_command(history));
+    CHECK(history.document.charts.front().sound_channels.front().events.size() == source_count);
+    REQUIRE(wormedit::insert_bmson_bgm_marker(
+        history, history.document.revision, chart_id, reference.id, target, false));
+    CHECK(history.document.charts.front().sound_channels.front().events.back().continuation);
+}

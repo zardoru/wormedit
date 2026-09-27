@@ -5195,6 +5195,31 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         }
         return "BMSON BGM marker moved to the edit cursor.";
     }
+    case WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_CONTINUE_AT_CURSOR:
+    case WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before inserting a BMSON marker.";
+        }
+        const object_id_t event{action.compose_bmson_bgm_event_id};
+        if (state.selected_objects.size() != 1 ||
+            state.selected_objects.front().kind != editor_selection_object_kind_t::bgm_event ||
+            state.selected_objects.front().id != event) {
+            return "Select one BMSON BGM marker to choose its sound channel.";
+        }
+        const auto inserted = insert_bmson_bgm_marker(
+            history, action.compose_input_document_revision, state.chart, event, state.cursor,
+            action.compose_action == WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR);
+        if (!inserted.diagnostics.empty()) {
+            return inserted.diagnostics.front().message;
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty()
+                       ? "BMSON marker inserted, but workspace rebinding failed."
+                       : rebound.diagnostics.front().message;
+        }
+        return "BMSON BGM marker inserted at the edit cursor.";
+    }
     case WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER: {
         if (editor_interaction_has_pending_gesture(state)) {
             return "Finish or cancel the active Compose gesture before deleting a BMSON marker.";

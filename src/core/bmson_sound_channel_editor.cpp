@@ -3,6 +3,7 @@
 #include <wormedit/core/sound_slice.h>
 
 #include <algorithm>
+#include <limits>
 #include <ranges>
 
 namespace wormedit {
@@ -160,6 +161,133 @@ auto move_bmson_bgm_marker(document_history_t& history, std::uint64_t expected_r
         }
     }
     return commit_document_command(history, std::move(proposed), "Move BMSON BGM marker");
+}
+
+auto insert_bmson_bgm_marker(document_history_t& history, std::uint64_t expected_revision,
+                             chart_id_t chart, object_id_t reference_bgm_event,
+                             local_position_t target, bool restart)
+    -> document_command_result_t {
+    if (expected_revision != history.document.revision) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BMSON marker insertion has a stale document revision");
+    }
+    const auto found_chart = std::ranges::find(history.document.charts, chart,
+                                                &chart_document_t::id);
+    if (!chart || found_chart == history.document.charts.end() ||
+        found_chart->source_family != format_family_t::bmson || !reference_bgm_event) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BMSON marker insertion requires a known chart and BGM event");
+    }
+    const auto measures = build_measure_index(*found_chart);
+    if (!std::holds_alternative<measure_index_t>(measures) ||
+        !absolute_row(std::get<measure_index_t>(measures), target)) {
+        return rejected(history.document.revision, diagnostic_code_t::row_out_of_range,
+                        "BMSON marker target is outside exact chart geometry");
+    }
+    const bgm_event_t* reference{};
+    for (const auto& measure : found_chart->measures) {
+        const auto item = std::ranges::find(measure.bgm_events, reference_bgm_event,
+                                            &bgm_event_t::id);
+        if (item != measure.bgm_events.end()) {
+            reference = &*item;
+            break;
+        }
+    }
+    if (!reference || !reference->sound_channel_event || !reference->sound) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "Reference BGM marker has no retained BMSON sound event");
+    }
+    const auto channel = std::ranges::find_if(found_chart->sound_channels,
+        [&](const auto& candidate) {
+            return std::ranges::any_of(candidate.events, [&](const auto& event) {
+                return event.id == *reference->sound_channel_event;
+            });
+        });
+    if (channel == found_chart->sound_channels.end()) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "Reference BGM source event is unavailable");
+    }
+    const auto source = std::ranges::find(channel->events, *reference->sound_channel_event,
+                                           &sound_channel_event_t::id);
+    if (source == channel->events.end() || source->playable ||
+        source->position != reference->position) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "Reference BGM marker and retained source event disagree");
+    }
+    if (std::ranges::any_of(channel->events, [&](const auto& event) {
+            return event.position == target;
+        })) {
+        return rejected(history.document.revision, diagnostic_code_t::collision,
+                        "Another event in this BMSON sound channel occupies the target row");
+    }
+
+    std::uint64_t largest{};
+    std::size_t count{};
+    const auto scan = [&](const auto& values) {
+        for (const auto& value : values) {
+            largest = std::max(largest, value.id.value);
+            ++count;
+        }
+    };
+    scan(found_chart->bgm_source_lanes);
+    scan(found_chart->lane_layouts);
+    scan(found_chart->bpms);
+    scan(found_chart->pauses);
+    scan(found_chart->warps);
+    scan(found_chart->scrolls);
+    scan(found_chart->speeds);
+    scan(found_chart->kiai);
+    scan(found_chart->timing_anchors);
+    scan(found_chart->bookmarks);
+    scan(found_chart->sections);
+    scan(found_chart->bga_events);
+    scan(found_chart->sound_channels);
+    for (const auto& item : found_chart->sound_channels) {
+        scan(item.events);
+    }
+    for (const auto& measure : found_chart->measures) {
+        scan(measure.notes);
+        scan(measure.bgm_events);
+    }
+    if (count > 999'998 || largest >= std::numeric_limits<std::uint64_t>::max() - 2) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BMSON chart object ID space is exhausted");
+    }
+
+    auto proposed = history.document;
+    const auto chart_offset = static_cast<std::size_t>(found_chart - history.document.charts.begin());
+    auto& changed_chart = proposed.charts[chart_offset];
+    const auto channel_offset = static_cast<std::size_t>(channel - found_chart->sound_channels.begin());
+    auto& changed_channel = changed_chart.sound_channels[channel_offset];
+    const object_id_t source_id{largest + 1};
+    const object_id_t bgm_id{largest + 2};
+    changed_channel.events.push_back({.id = source_id, .position = target,
+                                      .end = std::nullopt, .lane = {},
+                                      .continuation = !restart, .playable = false,
+                                      .provenance = {}});
+    const auto destination = std::ranges::find(changed_chart.measures, target.measure,
+                                                &measure_chunk_t::id);
+    if (destination == changed_chart.measures.end()) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_measure,
+                        "BMSON marker destination measure is unavailable");
+    }
+    destination->bgm_events.push_back({.id = bgm_id, .position = target,
+                                       .source_lane = reference->source_lane,
+                                       .sound = reference->sound,
+                                       .sound_channel_event = source_id,
+                                       .structural_slot = 0, .branch = std::nullopt,
+                                       .provenance = {}});
+    const auto asset = std::ranges::find(proposed.audio_assets,
+        changed_channel.source_clip.source, &audio_asset_t::id);
+    if (asset != proposed.audio_assets.end() && asset->stream.sample_rate != 0) {
+        const auto slices = derive_sound_channel_slices(changed_chart, changed_channel,
+            asset->stream.sample_rate, asset->stream.frame_count);
+        if (!slices) {
+            return rejected(history.document.revision, diagnostic_code_t::invalid_resolution,
+                            slices.diagnostics.front().message);
+        }
+    }
+    return commit_document_command(history, std::move(proposed), "Insert BMSON BGM marker");
 }
 
 auto delete_bmson_bgm_marker(document_history_t& history,

@@ -295,6 +295,22 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         action->compose_bmson_bgm_event_id = view->selected_bmson_bgm_event_id;
         action->compose_action = WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER;
     }
+    nk_layout_row_dynamic(context, 24, 2);
+    if (!can_move_bmson) {
+        nk_widget_disable_begin(context);
+    }
+    const auto insert_continue_clicked = nk_button_label(context, "Insert continue at cursor");
+    const auto insert_restart_clicked = nk_button_label(context, "Insert restart at cursor");
+    if (!can_move_bmson) {
+        nk_widget_disable_end(context);
+    }
+    if ((insert_continue_clicked || insert_restart_clicked) && can_move_bmson &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->compose_bmson_bgm_event_id = view->selected_bmson_bgm_event_id;
+        action->compose_action = insert_restart_clicked
+            ? WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR
+            : WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_CONTINUE_AT_CURSOR;
+    }
 
     {
         nk_layout_row_dynamic(context, 24, 1);

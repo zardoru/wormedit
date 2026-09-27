@@ -195,6 +195,7 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
     }
     if (disarm_clicked) {
         state->armed_resource_id = 0;
+        state->auto_increment_on_place = false;
         state->resource_pointer_mode =
             worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     }
@@ -259,6 +260,19 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
                     worm_ui_nuklear_compose_resource_pointer_mode_t::replace
                 ? worm_ui_nuklear_compose_resource_pointer_mode_t::off
                 : worm_ui_nuklear_compose_resource_pointer_mode_t::replace;
+    }
+    nk_layout_row_dynamic(context, 23, 1);
+    if (!can_place) {
+        nk_widget_disable_begin(context);
+    }
+    const auto auto_clicked = nk_button_label(
+        context, state->auto_increment_on_place ? "Auto next after place: On"
+                                                : "Auto next after place: Off");
+    if (!can_place) {
+        nk_widget_disable_end(context);
+    }
+    if (auto_clicked && can_place) {
+        state->auto_increment_on_place = !state->auto_increment_on_place;
     }
 
     {

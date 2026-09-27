@@ -28,6 +28,13 @@ struct create_resource_action_t {
     bool allocate_bms_identifier{};
 };
 
+// Returns the next usable catalog entry in document order for a placement
+// role. The picker stops at the end; it never wraps to the first resource.
+[[nodiscard]] auto next_eligible_placement_resource(const song_document_t& document,
+                                                    resource_id_t current,
+                                                    resource_role_t role)
+    -> std::optional<resource_id_t>;
+
 struct import_resource_asset_action_t {
     std::filesystem::path source_path;
     resource_role_t role{resource_role_t::sample};

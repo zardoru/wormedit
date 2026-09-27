@@ -4551,6 +4551,12 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                                         ? object_id_t{input.lane_id}
                                         : object_id_t{},
                      .kind = kind});
+                if (applied.applied) {
+                    const auto next = next_eligible_placement_resource(
+                        history.document, resource_id_t{input.object_id}, required_role);
+                    worm_ui_frontend_resource_placed(input.object_id,
+                                                     next.value_or(resource_id_t{}).value);
+                }
             }
             const auto unchanged = replacing && !applied.applied &&
                                    applied.diagnostics.empty();
@@ -5087,6 +5093,18 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         if (!applied.diagnostics.empty()) {
             return applied.diagnostics.front().message;
         }
+        if (!applied.applied) {
+            return "Resource placement made no document change.";
+        }
+        const auto role = kind == resource_placement_kind_t::sample_note
+                              ? resource_role_t::sample
+                          : kind == resource_placement_kind_t::bgm_event
+                              ? resource_role_t::bgm
+                              : resource_role_t::bga;
+        const auto next = next_eligible_placement_resource(
+            history.document, resource_id_t{action.compose_resource_id}, role);
+        worm_ui_frontend_resource_placed(action.compose_resource_id,
+                                         next.value_or(resource_id_t{}).value);
         const auto rebound = rebind_workspace(workspace, history);
         if (!rebound) {
             return rebound.diagnostics.empty()

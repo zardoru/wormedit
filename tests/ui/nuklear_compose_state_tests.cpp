@@ -27,6 +27,7 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     state.resource_search[0] = 'x';
     state.resource_import_path[0] = '/';
     state.armed_resource_id = 42;
+    state.auto_increment_on_place = true;
     state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::replace;
 
     worm_ui_nuklear_reset_compose_state();
@@ -53,7 +54,29 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     CHECK(state.resource_search[0] == '\0');
     CHECK(state.resource_import_path[0] == '\0');
     CHECK(state.armed_resource_id == 0);
+    CHECK_FALSE(state.auto_increment_on_place);
     CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+}
+
+TEST_CASE("Compose placement picker advances only when armed and stops at exhaustion",
+          "[unit][frontend][compose]") {
+    worm_ui_nuklear_reset_compose_state();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.armed_resource_id = 4;
+    state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::place;
+    worm_ui_nuklear_advance_resource_picker(4, 5);
+    CHECK(state.armed_resource_id == 4);
+    state.auto_increment_on_place = true;
+    worm_ui_nuklear_advance_resource_picker(3, 5);
+    CHECK(state.armed_resource_id == 4);
+    worm_ui_nuklear_advance_resource_picker(4, 5);
+    CHECK(state.armed_resource_id == 5);
+    CHECK(state.auto_increment_on_place);
+    worm_ui_nuklear_advance_resource_picker(5, 0);
+    CHECK(state.armed_resource_id == 5);
+    CHECK_FALSE(state.auto_increment_on_place);
+    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+    worm_ui_nuklear_reset_compose_state();
 }
 
 TEST_CASE("Compose file picker ignores stale callbacks after frontend reset",

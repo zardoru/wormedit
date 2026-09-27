@@ -64,6 +64,21 @@ auto worm_ui_nuklear_compose_state() noexcept -> worm_ui_nuklear_compose_state_t
     return state;
 }
 
+void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
+                                              std::uint64_t next_resource_id) {
+    auto& state = worm_ui_nuklear_compose_state();
+    if (!state.auto_increment_on_place || placed_resource_id == 0 ||
+        state.armed_resource_id != placed_resource_id) {
+        return;
+    }
+    if (next_resource_id == 0) {
+        state.auto_increment_on_place = false;
+        state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+    } else {
+        state.armed_resource_id = next_resource_id;
+    }
+}
+
 void worm_ui_nuklear_reset_compose_state() {
     auto& dialog = compose_file_dialog_state();
     {

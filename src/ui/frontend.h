@@ -1261,4 +1261,5 @@ void worm_ui_frontend_begin_input(void);
 bool worm_ui_frontend_handle_event(const SDL_Event* event);
 void worm_ui_frontend_end_input(void);
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view);
+void worm_ui_frontend_resource_placed(uint64_t placed_resource_id, uint64_t next_resource_id);
 void worm_ui_frontend_render(int window_width, int window_height);

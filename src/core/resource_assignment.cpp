@@ -334,6 +334,36 @@ auto apply_resource_placement(document_history_t& history, std::uint64_t expecte
     return commit_document_command(history, std::move(proposed), "Place resource");
 }
 
+auto next_eligible_placement_resource(const song_document_t& document,
+                                      resource_id_t current, resource_role_t role)
+    -> std::optional<resource_id_t> {
+    if (!current || (role != resource_role_t::sample && role != resource_role_t::bgm &&
+                     role != resource_role_t::bga)) {
+        return std::nullopt;
+    }
+    const auto start = std::ranges::find(document.resources, current, &resource_entry_t::id);
+    if (start == document.resources.end()) {
+        return std::nullopt;
+    }
+    for (auto it = start + 1; it != document.resources.end(); ++it) {
+        if (it->missing || !it->id || !it->asset ||
+            std::ranges::find(it->roles, role) == it->roles.end()) {
+            continue;
+        }
+        const auto valid_asset = role == resource_role_t::bga
+            ? std::ranges::any_of(document.visual_assets, [&](const auto& asset) {
+                  return asset.id == it->asset && asset.kind == asset_kind_t::image;
+              })
+            : std::ranges::any_of(document.audio_assets, [&](const auto& asset) {
+                  return asset.id == it->asset;
+              });
+        if (valid_asset) {
+            return it->id;
+        }
+    }
+    return std::nullopt;
+}
+
 auto apply_resource_creation(document_history_t& history, std::uint64_t expected_revision,
                              const create_resource_action_t& action) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};

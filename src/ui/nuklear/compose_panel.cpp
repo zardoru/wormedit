@@ -858,6 +858,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
         const auto revision_changed = state.last_document_revision != view->document_revision;
         if (project_changed) {
             state.armed_resource_id = 0;
+            state.auto_increment_on_place = false;
             state.resource_pointer_mode =
                 worm_ui_nuklear_compose_resource_pointer_mode_t::off;
             state.last_project_id = view->project_id;

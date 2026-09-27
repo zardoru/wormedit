@@ -5,6 +5,7 @@
 #include "ui/nuklear/audio_panel.h"
 #include "ui/nuklear/audio_state.h"
 #include "ui/nuklear/compose_panel.h"
+#include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/image_quad.h"
 #include "ui/nuklear/metadata_panel.h"
 #include "ui/nuklear/metadata_state.h"
@@ -639,6 +640,10 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
                           compose_lane_focused ? view->compose.cursor->lane_id : 0);
     g_audio.offset_escape_pending = false;
     return action;
+}
+
+void worm_ui_frontend_resource_placed(uint64_t placed_resource_id, uint64_t next_resource_id) {
+    worm_ui_nuklear_advance_resource_picker(placed_resource_id, next_resource_id);
 }
 
 void worm_ui_frontend_render(int window_width, int window_height) {

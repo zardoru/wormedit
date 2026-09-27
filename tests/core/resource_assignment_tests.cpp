@@ -71,6 +71,25 @@ auto has_code(const document_command_result_t& result, diagnostic_code_t code) -
 
 } // namespace
 
+TEST_CASE("resource placement picker advances in eligible catalog order without wrapping",
+          "[unit][core][resources]") {
+    auto song = assignment_song();
+    CHECK(next_eligible_placement_resource(song, resource_id_t{1}, resource_role_t::sample) ==
+          resource_id_t{2});
+    CHECK_FALSE(next_eligible_placement_resource(song, resource_id_t{2},
+                                                 resource_role_t::sample));
+    CHECK(next_eligible_placement_resource(song, resource_id_t{3}, resource_role_t::bga) ==
+          resource_id_t{4});
+    CHECK_FALSE(next_eligible_placement_resource(song, resource_id_t{4}, resource_role_t::bga));
+    CHECK_FALSE(next_eligible_placement_resource(song, resource_id_t{99},
+                                                 resource_role_t::sample));
+    song.resources.insert(song.resources.begin() + 1,
+                          {.id = resource_id_t{6}, .asset = asset_id_t{99},
+                           .roles = {resource_role_t::sample}});
+    CHECK(next_eligible_placement_resource(song, resource_id_t{1}, resource_role_t::sample) ==
+          resource_id_t{2});
+}
+
 TEST_CASE("resource creation assigns stable IDs and independent BMS namespaces",
           "[unit][core][resources]") {
     auto song = assignment_song();

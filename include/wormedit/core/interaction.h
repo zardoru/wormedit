@@ -571,6 +571,12 @@ struct editor_interaction_result_t {
                                            double viewport_height_pixels = 1.0)
     -> editor_interaction_setup_t;
 
+// Restore a valid authored cursor after undo or another document edit removes
+// the cursor's measure, retaining the viewport when its extent still exists.
+[[nodiscard]] auto recover_editor_interaction(const document_history_t& history,
+                                              const editor_interaction_state_t& previous)
+    -> editor_interaction_setup_t;
+
 // Maps an exact chart position into backend-neutral vertical pixels for a view.
 [[nodiscard]] auto editor_position_y_pixels(const chart_document_t& chart,
                                             const editor_interaction_view_model_t& view,

@@ -148,6 +148,27 @@ TEST_CASE("BMS view scrolls through #999 without authoring empty measures",
     CHECK(history.undo.empty());
 }
 
+TEST_CASE("undoing a virtual BMS edit recovers the cursor without moving the viewport",
+          "[unit][core][interaction][virtual-canvas]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto scrolled =
+        dispatch_editor_action(history, state, scroll_editor_view_action_t{1'000'000.0});
+    REQUIRE(scrolled);
+    const auto saved_scroll = state.viewport_scroll_pixels;
+    REQUIRE(dispatch_editor_action(
+        history, state, place_virtual_bms_tap_action_t{959'040, lane_id_t{1}}));
+    REQUIRE(undo_document_command(history));
+    const auto recovered = recover_editor_interaction(history, state);
+    REQUIRE(recovered);
+    CHECK(recovered.state->cursor.measure == measure_id_t{1});
+    CHECK(recovered.view->viewport_scroll_pixels == saved_scroll);
+    CHECK(history.document.charts.front().measures.size() == 2);
+    CHECK(history.undo.empty());
+}
+
 TEST_CASE(
     "headless editor actions cycle exact snaps, step across measures, and place undoable taps",
     "[unit][core][interaction]") {

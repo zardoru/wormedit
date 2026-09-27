@@ -1280,6 +1280,70 @@ auto make_editor_interaction(const document_history_t& history, chart_id_t chart
     return result;
 }
 
+auto recover_editor_interaction(const document_history_t& history,
+                                const editor_interaction_state_t& previous)
+    -> editor_interaction_setup_t {
+    editor_interaction_setup_t result;
+    const auto* chart = find_chart(history.document, previous.chart);
+    if (chart == nullptr) {
+        result.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
+                                           "editor interaction refers to an unknown chart"));
+        return result;
+    }
+    const auto built_index = build_measure_index(*chart);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_index)) {
+        result.diagnostics = *diagnostics;
+        return result;
+    }
+    const auto& index = std::get<measure_index_t>(built_index);
+    std::optional<local_position_t> cursor;
+    lane_id_t lane;
+    auto first_row = std::numeric_limits<std::uint64_t>::max();
+    for (const auto& segment : chart->lane_layouts) {
+        const auto row = absolute_row(index, segment.position);
+        if (!row || *row >= first_row)
+            continue;
+        const auto editable = std::ranges::find_if(segment.layout.lanes, editable_lane);
+        if (editable == segment.layout.lanes.end())
+            continue;
+        first_row = *row;
+        cursor = segment.position;
+        lane = editable->id;
+    }
+    if (!cursor) {
+        result.diagnostics.push_back(error(diagnostic_code_t::unknown_lane,
+                                           "chart has no editable lane for a recovered cursor"));
+        return result;
+    }
+    result = make_editor_interaction(history, previous.chart, lane, *cursor,
+                                     previous.supported_snap_denominators,
+                                     previous.active_snap_denominator,
+                                     previous.viewport_height_pixels);
+    if (!result)
+        return result;
+    if (std::isfinite(previous.pixels_per_standard_measure) &&
+        previous.pixels_per_standard_measure >= minimum_pixels_per_standard_measure &&
+        previous.pixels_per_standard_measure <= maximum_pixels_per_standard_measure) {
+        result.state->pixels_per_standard_measure = previous.pixels_per_standard_measure;
+    }
+    const auto maximum_scroll = maximum_viewport_scroll(
+        *chart, index, result.state->pixels_per_standard_measure,
+        result.state->viewport_height_pixels);
+    if (maximum_scroll && std::isfinite(previous.viewport_scroll_pixels)) {
+        result.state->viewport_scroll_pixels =
+            std::clamp(previous.viewport_scroll_pixels, 0.0, *maximum_scroll);
+    }
+    const auto view = make_view(history, *result.state);
+    if (const auto* recovered = std::get_if<editor_interaction_view_model_t>(&view)) {
+        result.view = *recovered;
+    } else {
+        result.state.reset();
+        result.view.reset();
+        result.diagnostics = std::get<diagnostic_list_t>(view);
+    }
+    return result;
+}
+
 auto editor_position_y_pixels(const chart_document_t& chart,
                               const editor_interaction_view_model_t& view,
                               local_position_t position) -> std::optional<double> {

@@ -3003,7 +3003,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
             .proposed_span_bottom_y_pixels = 0.0,
         };
     }
-    if (!retained_state || retained_state->chart != chart.id) {
+    const auto initial_interaction = [&]() -> wormedit::editor_interaction_setup_t {
         std::optional<wormedit::local_position_t> initial_cursor;
         std::optional<wormedit::lane_id_t> initial_lane;
         std::uint64_t earliest_layout_row = std::numeric_limits<std::uint64_t>::max();
@@ -3020,17 +3020,21 @@ void populate_compose_view(flattened_workspace_t& flattened,
             initial_lane = lane->id;
         }
         if (!initial_cursor || !initial_lane) {
-            flattened.compose_status_storage = "This difficulty has no editable lanes to display.";
-            view.status_text = flattened.compose_status_storage.c_str();
-            return;
+            return {};
         }
-        const auto initial = wormedit::make_editor_interaction(
+        return wormedit::make_editor_interaction(
             history, chart.id, *initial_lane, *initial_cursor, chart_snap_preferences,
             requested_snap_denominator(application_state, chart.id), view.viewport_height_pixels);
+    };
+    if (!retained_state || retained_state->chart != chart.id) {
+        const auto initial = initial_interaction();
         if (!initial.state || !initial.view) {
-            flattened.compose_status_storage = initial.diagnostics.empty()
-                                                   ? "The chart field view could not be created."
-                                                   : initial.diagnostics.front().message;
+            if (!initial.diagnostics.empty()) {
+                flattened.compose_status_storage = initial.diagnostics.front().message;
+            } else {
+                flattened.compose_status_storage =
+                    "This difficulty has no editable lanes to display.";
+            }
             view.status_text = flattened.compose_status_storage.c_str();
             return;
         }
@@ -3060,11 +3064,19 @@ void populate_compose_view(flattened_workspace_t& flattened,
         retained_state->supported_snap_denominators, retained_state->active_snap_denominator,
         view.viewport_height_pixels);
     if (!interaction.view) {
-        // Undo, recovery, or an upstream chart edit may invalidate a retained cursor.
-        retained_state.reset();
-        flattened.compose_status_storage = "The retained chart cursor is no longer valid.";
-        view.status_text = flattened.compose_status_storage.c_str();
-        return;
+        // Undoing the first edit in a virtual measure can remove the cursor's
+        // measure. Rebind it immediately and keep the virtual viewport in place.
+        auto recovered = wormedit::recover_editor_interaction(history, *retained_state);
+        if (!recovered.state || !recovered.view) {
+            retained_state.reset();
+            flattened.compose_status_storage = recovered.diagnostics.empty()
+                                                   ? "The chart field view could not be recovered."
+                                                   : recovered.diagnostics.front().message;
+            view.status_text = flattened.compose_status_storage.c_str();
+            return;
+        }
+        retained_state = std::move(*recovered.state);
+        interaction = std::move(recovered);
     }
     auto interaction_view = *interaction.view;
     interaction_view.pixels_per_standard_measure = retained_state->pixels_per_standard_measure;

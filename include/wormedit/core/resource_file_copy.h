@@ -70,6 +70,13 @@ struct project_asset_copy_result_t {
                                                    std::stop_token stop = {})
     -> project_asset_copy_result_t;
 
+// Read-only check for a project asset destination. A missing directory or
+// destination returns not_staged; identical bytes return reused; differing
+// bytes or unsafe path components reject without creating files.
+[[nodiscard]] auto inspect_project_asset_copy(const project_asset_copy_request_t& request,
+                                              std::stop_token stop = {})
+    -> project_asset_copy_result_t;
+
 // Stages a resource beside one output group's chart under its assets folder.
 // The result's relative path is project-relative. No document reference is
 // changed; the exporter may use the path relative to the output directory.

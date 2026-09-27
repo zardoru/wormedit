@@ -198,7 +198,7 @@ static auto copy_resource_file_to_relative_directory(
             error.clear();
             if (inspect_only)
                 return failure(project_asset_copy_status_t::not_staged,
-                               "Export asset copy is not staged.");
+                               "Asset copy destination is available.");
             if (!fs::create_directory(directory, error) && error) {
                 return failure(project_asset_copy_status_t::io_error,
                                "Could not create the asset destination directory.");
@@ -242,7 +242,8 @@ static auto copy_resource_file_to_relative_directory(
     }
     error.clear();
     if (inspect_only)
-        return failure(project_asset_copy_status_t::not_staged, "Export asset copy is not staged.");
+        return failure(project_asset_copy_status_t::not_staged,
+                       "Asset copy destination is available.");
     static std::atomic<std::uint64_t> sequence{0};
     const auto temporary =
         directory / (".wormedit-copy-" +
@@ -293,6 +294,11 @@ static auto copy_resource_file_to_relative_directory(
 auto copy_resource_file_into_project(const project_asset_copy_request_t& request,
                                      std::stop_token stop) -> project_asset_copy_result_t {
     return copy_resource_file_to_relative_directory(request, "assets", stop);
+}
+
+auto inspect_project_asset_copy(const project_asset_copy_request_t& request, std::stop_token stop)
+    -> project_asset_copy_result_t {
+    return copy_resource_file_to_relative_directory(request, "assets", stop, true);
 }
 
 auto export_asset_directory(const std::filesystem::path& relative_output_path)

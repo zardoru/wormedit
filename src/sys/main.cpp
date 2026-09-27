@@ -6050,6 +6050,92 @@ struct pending_project_resource_copy_t {
     bool export_copy{};
 };
 
+struct metadata_copy_preview_key_t {
+    wormedit::song_id_t song;
+    std::uint64_t revision{};
+    wormedit::chart_id_t chart;
+    wormedit::asset_id_t asset;
+    std::filesystem::path source_path;
+    std::filesystem::path output_path;
+    std::size_t output_group_index{};
+    bool export_copy{};
+};
+
+struct pending_metadata_copy_preview_t {
+    wormedit::task_graph_handle_t graph;
+    wormedit::task_id_t task;
+};
+
+struct metadata_copy_preview_runtime_t {
+    wormedit::task_scheduler_t scheduler{1, 1};
+    std::optional<pending_metadata_copy_preview_t> pending;
+    std::optional<metadata_copy_preview_key_t> key;
+    std::string message;
+};
+
+auto start_metadata_copy_preview(const WormUiWorkspaceAction& action,
+                                 const wormedit::document_history_t& history,
+                                 const wormedit::workspace_controller_t& workspace,
+                                 const std::filesystem::path& asset_base,
+                                 metadata_copy_preview_runtime_t& runtime) -> std::string {
+    using namespace wormedit;
+    if (workspace.active_tab != workspace_tab_t::metadata || !workspace.selected_chart ||
+        workspace.selected_chart->value != action.compose_input_chart_id ||
+        history.document.revision != action.compose_input_document_revision)
+        return "Metadata copy inspection expired after the chart or document changed.";
+    if (asset_base.empty())
+        return "Open a saved native project before inspecting asset copies.";
+    if (runtime.pending)
+        return "Wait for the current copy inspection to finish.";
+    const asset_id_t asset{action.compose_resource_asset_id};
+    const auto audio = std::ranges::find(history.document.audio_assets, asset, &audio_asset_t::id);
+    if (!asset || audio == history.document.audio_assets.end())
+        return "Selected music asset is no longer available.";
+    std::filesystem::path output_path;
+    if (action.metadata_inspect_export) {
+        if (action.compose_output_group_index >= history.document.output_groups.size())
+            return "The selected output group is no longer available.";
+        const auto& group = history.document.output_groups[action.compose_output_group_index];
+        if (std::ranges::find(group.charts, *workspace.selected_chart) == group.charts.end())
+            return "The selected output group no longer includes this difficulty.";
+        output_path = group.relative_output_path;
+    }
+    const project_asset_copy_request_t request{
+        .project_directory = asset_base, .source_path = audio->source_path, .asset = asset};
+    task_graph_t graph{1};
+    const auto added = graph.add_task({}, [request, export_copy = action.metadata_inspect_export,
+                                           output_path](std::span<const task_result_t>,
+                                                        std::stop_token stop) {
+        auto inspected = std::make_shared<const project_asset_copy_result_t>(
+            export_copy ? inspect_export_asset_copy({.project_directory = request.project_directory,
+                                                     .source_path = request.source_path,
+                                                     .relative_output_path = output_path,
+                                                     .asset = request.asset,
+                                                     .maximum_bytes = request.maximum_bytes},
+                                                    stop)
+                        : inspect_project_asset_copy(request, stop));
+        return task_result_t::success(make_task_value(std::move(inspected)));
+    });
+    if (!added)
+        return added.error ? added.error->message : "Copy inspection could not start.";
+    auto submitted = runtime.scheduler.submit(std::move(graph));
+    if (!submitted)
+        return submitted.error ? submitted.error->message : "Copy inspection could not start.";
+    runtime.pending =
+        pending_metadata_copy_preview_t{.graph = std::move(submitted.graph), .task = *added.id};
+    runtime.key =
+        metadata_copy_preview_key_t{.song = history.document.id,
+                                    .revision = history.document.revision,
+                                    .chart = *workspace.selected_chart,
+                                    .asset = asset,
+                                    .source_path = audio->source_path,
+                                    .output_path = output_path,
+                                    .output_group_index = action.compose_output_group_index,
+                                    .export_copy = action.metadata_inspect_export};
+    runtime.message = "Inspecting destination bytes in the background...";
+    return "Copy destination inspection started.";
+}
+
 struct output_group_export_task_result_t {
     bool published{};
     std::string message;
@@ -8131,6 +8217,7 @@ int main(int argc, char** argv) {
                                : std::filesystem::path{};
     wormedit::task_scheduler_t resource_copy_scheduler(1, 1);
     std::optional<pending_project_resource_copy_t> pending_resource_copy;
+    metadata_copy_preview_runtime_t metadata_copy_preview;
     output_group_export_runtime_t export_runtime;
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
     wormedit::visual::image_cache_t player_image_cache;
@@ -8501,6 +8588,30 @@ int main(int argc, char** argv) {
         if (workspace.active_tab != wormedit::workspace_tab_t::metadata) {
             metadata_dropped_music_path.clear();
             metadata_dropped_music_target = {};
+        }
+        if (metadata_copy_preview.pending) {
+            if (const auto completed = metadata_copy_preview.pending->graph.result(
+                    metadata_copy_preview.pending->task)) {
+                metadata_copy_preview.pending.reset();
+                const auto inspected =
+                    wormedit::task_value_cast<wormedit::project_asset_copy_result_t>(*completed);
+                if (!completed->succeeded() || !inspected) {
+                    metadata_copy_preview.message =
+                        completed->error ? completed->error->message
+                                         : "Copy inspection returned no result.";
+                } else {
+                    using copy_status_t = wormedit::project_asset_copy_status_t;
+                    metadata_copy_preview.message =
+                        inspected->status == copy_status_t::not_staged
+                            ? "Destination is free; copy will create it."
+                        : inspected->status == copy_status_t::reused
+                            ? "Identical file exists; copy will reuse it."
+                        : inspected->status == copy_status_t::destination_collision
+                            ? "Different file occupies destination; copy will preserve it."
+                        : inspected->message.empty() ? "Copy destination cannot be used."
+                                                     : inspected->message;
+                }
+            }
         }
         if (pending_resource_copy) {
             if (const auto completed =
@@ -8975,6 +9086,21 @@ int main(int argc, char** argv) {
                     }
                 }
                 metadata.output_groups = flattened.metadata_output_group_storage.data();
+                if (metadata_copy_preview.key &&
+                    metadata_copy_preview.key->song == history.document.id &&
+                    metadata_copy_preview.key->revision == history.document.revision &&
+                    metadata_copy_preview.key->chart.value == metadata.chart_id &&
+                    metadata_copy_preview.key->asset.value == metadata.selected_music_asset_id &&
+                    metadata.selected_music_source &&
+                    metadata_copy_preview.key->source_path.generic_string() ==
+                        metadata.selected_music_source) {
+                    metadata.copy_preview_text = metadata_copy_preview.message.c_str();
+                    metadata.copy_preview_pending = metadata_copy_preview.pending.has_value();
+                    metadata.copy_preview_export = metadata_copy_preview.key->export_copy;
+                    metadata.copy_preview_group_index =
+                        metadata_copy_preview.key->output_group_index;
+                    metadata.copy_preview_asset_id = metadata_copy_preview.key->asset.value;
+                }
                 for (std::size_t group_index = 0;
                      group_index < history.document.output_groups.size(); ++group_index) {
                     const auto& group = history.document.output_groups[group_index];
@@ -9593,6 +9719,9 @@ int main(int argc, char** argv) {
             } else if (action.metadata_edit != WORM_UI_METADATA_EDIT_NONE) {
                 status = dispatch_metadata_ui_action(action, history, workspace,
                                                      application_command_state.timing_locked);
+            } else if (action.metadata_inspect_copy) {
+                status = start_metadata_copy_preview(action, history, workspace, asset_base,
+                                                     metadata_copy_preview);
             } else if (action.timing_meter_action != WORM_UI_TIMING_METER_ACTION_NONE) {
                 const bool binding_matches =
                     action.timing_meter_action == WORM_UI_TIMING_METER_ACTION_APPLY &&
@@ -9825,6 +9954,8 @@ int main(int argc, char** argv) {
                 if (metadata_path_action && workspace.selected_chart)
                     metadata_interaction.chart = *workspace.selected_chart;
                 if (compose_interaction_state || metadata_path_action) {
+                    if (metadata_path_action)
+                        metadata_copy_preview.key.reset();
                     status = dispatch_compose_view_action(
                         action, history, workspace,
                         metadata_path_action ? metadata_interaction : *compose_interaction_state,
@@ -9868,9 +9999,12 @@ int main(int argc, char** argv) {
     if (pending_resource_copy) {
         pending_resource_copy->graph.cancel();
     }
+    if (metadata_copy_preview.pending)
+        metadata_copy_preview.pending->graph.cancel();
     if (export_runtime.pending)
         export_runtime.pending->graph.cancel();
     resource_copy_scheduler.shutdown();
+    metadata_copy_preview.scheduler.shutdown();
     export_runtime.scheduler.shutdown();
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     preview_output.close();

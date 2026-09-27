@@ -77,6 +77,34 @@ TEST_CASE("project asset copy rejects collisions without replacing the existing 
     CHECK(read_text(directory.path / "assets/12-kick.wav") == "old bytes");
 }
 
+TEST_CASE("project asset inspection reports availability and conflicts without writing",
+          "[unit][core][resources]") {
+    temporary_directory_t directory;
+    const auto source = directory.path / "kick.wav";
+    write_text(source, "audio bytes");
+    const wormedit::project_asset_copy_request_t request{.project_directory = directory.path,
+                                                         .source_path = source,
+                                                         .asset = wormedit::asset_id_t{12}};
+    CHECK(wormedit::inspect_project_asset_copy(request).status ==
+          wormedit::project_asset_copy_status_t::not_staged);
+    CHECK_FALSE(std::filesystem::exists(directory.path / "assets"));
+    const auto copied = wormedit::copy_resource_file_into_project(request);
+    REQUIRE(copied);
+    CHECK(wormedit::inspect_project_asset_copy(request).status ==
+          wormedit::project_asset_copy_status_t::reused);
+    write_text(source, "different bytes");
+    CHECK(wormedit::inspect_project_asset_copy(request).status ==
+          wormedit::project_asset_copy_status_t::destination_collision);
+    CHECK(read_text(copied.absolute_path) == "audio bytes");
+    std::error_code error;
+    std::filesystem::remove(copied.absolute_path, error);
+    REQUIRE_FALSE(error);
+    std::filesystem::create_symlink(source, copied.absolute_path, error);
+    if (!error)
+        CHECK(wormedit::inspect_project_asset_copy(request).status ==
+              wormedit::project_asset_copy_status_t::destination_collision);
+}
+
 TEST_CASE("project asset copy validates relative sources, limits, and cancellation",
           "[unit][core][resources]") {
     temporary_directory_t directory;

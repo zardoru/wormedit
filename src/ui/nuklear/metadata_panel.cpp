@@ -447,6 +447,35 @@ static void set_metadata_music_import_action(WormUiWorkspaceAction* action,
     action->compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET;
 }
 
+static void metadata_copy_inspection_button(struct nk_context* context,
+                                            const WormUiMetadataView* metadata,
+                                            WormUiWorkspaceAction* action, bool export_copy,
+                                            size_t group_index) {
+    nk_layout_row_dynamic(context, 25, 1);
+    if (metadata->copy_preview_pending)
+        nk_widget_disable_begin(context);
+    const auto inspect = nk_button_label(context, export_copy ? "Inspect export destination"
+                                                              : "Inspect project destination");
+    if (metadata->copy_preview_pending)
+        nk_widget_disable_end(context);
+    if (inspect && !metadata->copy_preview_pending && !action->metadata_inspect_copy &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->metadata_inspect_copy = true;
+        action->metadata_inspect_export = export_copy;
+        action->compose_resource_asset_id = metadata->selected_music_asset_id;
+        action->compose_output_group_index = group_index;
+        action->compose_input_chart_id = metadata->chart_id;
+        action->compose_input_document_revision = metadata->document_revision;
+    }
+    if (metadata->copy_preview_text &&
+        metadata->copy_preview_asset_id == metadata->selected_music_asset_id &&
+        metadata->copy_preview_export == export_copy &&
+        (!export_copy || metadata->copy_preview_group_index == group_index)) {
+        nk_layout_row_dynamic(context, 19, 1);
+        nk_label(context, metadata->copy_preview_text, NK_TEXT_LEFT);
+    }
+}
+
 static void render_metadata_paths(struct nk_context* context, const WormUiMetadataView* metadata,
                                   WormUiWorkspaceAction* action) {
     worm_ui_nuklear_clear_metadata_drop_targets();
@@ -572,13 +601,16 @@ static void render_metadata_paths(struct nk_context* context, const WormUiMetada
                                       selected_source.filename().string());
             metadata_read_only_path(context, "Normalized project-relative destination",
                                     relative_destination.generic_string());
+            metadata_copy_inspection_button(context, metadata, action,
+                                            destination == WORM_UI_METADATA_DROP_EXPORT,
+                                            dropped_group ? dropped_group->document_index : 0);
             nk_layout_row_dynamic(context, 25, 1);
             const bool copy =
                 nk_button_label(context, destination == WORM_UI_METADATA_DROP_PROJECT
                                              ? "Confirm drop: copy selected music to project"
                                              : "Confirm drop: copy selected music to export");
-            if (copy && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE &&
-                metadata->has_chart) {
+            if (copy && !action->metadata_inspect_copy &&
+                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE && metadata->has_chart) {
                 action->compose_resource_asset_id = metadata->selected_music_asset_id;
                 action->compose_input_chart_id = metadata->chart_id;
                 action->compose_input_document_revision = metadata->document_revision;
@@ -635,8 +667,10 @@ static void render_metadata_paths(struct nk_context* context, const WormUiMetada
             context,
             "Project copy relinks this asset after publication; different files are preserved.",
             NK_TEXT_LEFT);
+        metadata_copy_inspection_button(context, metadata, action, false, 0);
         nk_layout_row_dynamic(context, 25, 1);
         if (nk_button_label(context, "Copy music into project assets") &&
+            !action->metadata_inspect_copy &&
             action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
             action->compose_resource_asset_id = metadata->selected_music_asset_id;
             action->compose_input_chart_id = metadata->chart_id;
@@ -692,8 +726,11 @@ static void render_metadata_paths(struct nk_context* context, const WormUiMetada
             nk_layout_row_dynamic(context, 19, 1);
             nk_label(context, "Export copy is verified at export; different files are preserved.",
                      NK_TEXT_LEFT);
+            metadata_copy_inspection_button(context, metadata, action, true,
+                                            selected->document_index);
             nk_layout_row_dynamic(context, 25, 1);
             if (nk_button_label(context, "Copy music into selected export folder") &&
+                !action->metadata_inspect_copy &&
                 action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
                 action->compose_resource_asset_id = metadata->selected_music_asset_id;
                 action->compose_output_group_index = selected->document_index;

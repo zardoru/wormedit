@@ -6253,6 +6253,18 @@ auto start_metadata_asset_import(
             if (!completed->stream && completed->decode_error.empty())
                 completed->decode_error = "Published audio has invalid stream geometry.";
         }
+        if (stop.stop_requested() &&
+            completed->copy.status == project_asset_copy_status_t::copied) {
+            if (export_copy)
+                (void)discard_unlinked_export_asset_copy(
+                    {.project_directory = copy_request.project_directory,
+                     .source_path = copy_request.source_path,
+                     .relative_output_path = output_path,
+                     .asset = copy_request.asset},
+                    completed->copy);
+            else
+                (void)discard_unlinked_project_asset_copy(copy_request, completed->copy);
+        }
         return task_result_t::success(make_task_value(
             std::shared_ptr<const metadata_asset_import_task_result_t>{std::move(completed)}));
     });
@@ -8762,6 +8774,7 @@ int main(int argc, char** argv) {
                 pending_metadata_asset_import.reset();
                 const auto imported =
                     wormedit::task_value_cast<metadata_asset_import_task_result_t>(*completed);
+                bool import_linked = false;
                 if (!completed->succeeded() || !imported) {
                     status = completed->error ? completed->error->message
                                               : "Project import-copy returned no result.";
@@ -8775,8 +8788,7 @@ int main(int argc, char** argv) {
                            history.document.revision != request.revision ||
                            !workspace.selected_chart ||
                            *workspace.selected_chart != request.chart) {
-                    status =
-                        "Audio copy was published, but the document changed; it was not linked.";
+                    status = "Document changed before copied audio could be linked.";
                 } else {
                     auto name = request.source_path.filename().generic_string();
                     if (name.size() > 255)
@@ -8798,6 +8810,7 @@ int main(int argc, char** argv) {
                     } else if (!applied.applied) {
                         status = "Copied audio could not be registered.";
                     } else {
+                        import_linked = true;
                         const auto rebound = rebind_workspace(workspace, history);
                         if (!rebound) {
                             status = rebound.diagnostics.empty()
@@ -8812,6 +8825,25 @@ int main(int argc, char** argv) {
                                          : "Audio copied into project assets and linked as BGM.";
                         }
                     }
+                }
+                if (imported && imported->copy.status ==
+                                    wormedit::project_asset_copy_status_t::copied &&
+                    !import_linked) {
+                    const wormedit::project_asset_copy_request_t copy_request{
+                        .project_directory = asset_base,
+                        .source_path = request.source_path,
+                        .asset = request.asset};
+                    const bool discarded = request.export_copy
+                                               ? wormedit::discard_unlinked_export_asset_copy(
+                                                     {.project_directory = asset_base,
+                                                      .source_path = request.source_path,
+                                                      .relative_output_path = request.output_path,
+                                                      .asset = request.asset},
+                                                     imported->copy)
+                                               : wormedit::discard_unlinked_project_asset_copy(
+                                                     copy_request, imported->copy);
+                    if (!discarded)
+                        status += " Published copy remains; review it before removal.";
                 }
             }
         }
@@ -10225,6 +10257,30 @@ int main(int argc, char** argv) {
     if (export_runtime.pending)
         export_runtime.pending->graph.cancel();
     resource_copy_scheduler.shutdown();
+    if (pending_metadata_asset_import) {
+        if (const auto completed = pending_metadata_asset_import->graph.result(
+                pending_metadata_asset_import->task);
+            completed && completed->succeeded()) {
+            const auto imported =
+                wormedit::task_value_cast<metadata_asset_import_task_result_t>(*completed);
+            if (imported && imported->copy.status == wormedit::project_asset_copy_status_t::copied) {
+                const auto& request = *pending_metadata_asset_import;
+                if (request.export_copy)
+                    (void)wormedit::discard_unlinked_export_asset_copy(
+                        {.project_directory = asset_base,
+                         .source_path = request.source_path,
+                         .relative_output_path = request.output_path,
+                         .asset = request.asset},
+                        imported->copy);
+                else
+                    (void)wormedit::discard_unlinked_project_asset_copy(
+                        {.project_directory = asset_base,
+                         .source_path = request.source_path,
+                         .asset = request.asset},
+                        imported->copy);
+            }
+        }
+    }
     metadata_copy_preview.scheduler.shutdown();
     export_runtime.scheduler.shutdown();
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)

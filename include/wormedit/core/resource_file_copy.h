@@ -61,12 +61,30 @@ struct project_asset_copy_result_t {
     std::filesystem::path relative_path;
     std::filesystem::path absolute_path;
     std::string message;
+    // Filled only for a newly published file. Used to discard an unlinked
+    // import without removing a reused or subsequently replaced file.
+    struct published_identity_t {
+        std::uint64_t volume{};
+        std::uint64_t file{};
+        std::uintmax_t size{};
+        std::filesystem::file_time_type modified{};
+    };
+    std::optional<published_identity_t> published_identity;
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return status == project_asset_copy_status_t::copied ||
                status == project_asset_copy_status_t::reused;
     }
 };
+
+// Discards a newly published, still byte-identical copy when an import cannot
+// be linked. Returns false and leaves the file alone if ownership is uncertain.
+[[nodiscard]] auto discard_unlinked_project_asset_copy(const project_asset_copy_request_t& request,
+                                                       const project_asset_copy_result_t& copy)
+    -> bool;
+[[nodiscard]] auto discard_unlinked_export_asset_copy(const export_asset_copy_request_t& request,
+                                                      const project_asset_copy_result_t& copy)
+    -> bool;
 
 // Publishes a byte-identical copy under project_directory/assets with a
 // deterministic asset-ID-prefixed filename. A same-directory temporary is

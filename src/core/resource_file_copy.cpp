@@ -13,6 +13,7 @@
 #include <windows.h>
 #else
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -21,8 +22,11 @@ namespace {
 
 auto failure(project_asset_copy_status_t status, std::string message)
     -> project_asset_copy_result_t {
-    return {
-        .status = status, .relative_path = {}, .absolute_path = {}, .message = std::move(message)};
+    return {.status = status,
+            .relative_path = {},
+            .absolute_path = {},
+            .message = std::move(message),
+            .published_identity = std::nullopt};
 }
 
 auto valid_relative(const std::filesystem::path& path) -> bool {
@@ -60,6 +64,86 @@ auto same_bytes(const std::filesystem::path& first, const std::filesystem::path&
         }
     }
     return false;
+}
+
+auto published_identity(const std::filesystem::path& path)
+    -> std::optional<project_asset_copy_result_t::published_identity_t> {
+    namespace fs = std::filesystem;
+    std::error_code error;
+    const auto status = fs::symlink_status(path, error);
+    if (error || fs::is_symlink(status) || !fs::is_regular_file(status))
+        return std::nullopt;
+    project_asset_copy_result_t::published_identity_t identity;
+#if defined(_WIN32)
+    const HANDLE handle = CreateFileW(
+        path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+        return std::nullopt;
+    BY_HANDLE_FILE_INFORMATION info{};
+    const bool valid = GetFileInformationByHandle(handle, &info) != 0 &&
+                       (info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) == 0;
+    CloseHandle(handle);
+    if (!valid)
+        return std::nullopt;
+    identity.volume = info.dwVolumeSerialNumber;
+    identity.file = (static_cast<std::uint64_t>(info.nFileIndexHigh) << 32) | info.nFileIndexLow;
+#else
+    struct stat info{};
+    if (::lstat(path.c_str(), &info) != 0 || !S_ISREG(info.st_mode))
+        return std::nullopt;
+    identity.volume = static_cast<std::uint64_t>(info.st_dev);
+    identity.file = static_cast<std::uint64_t>(info.st_ino);
+#endif
+    identity.size = fs::file_size(path, error);
+    if (error)
+        return std::nullopt;
+    identity.modified = fs::last_write_time(path, error);
+    return error ? std::nullopt : std::optional{identity};
+}
+
+auto same_identity(const project_asset_copy_result_t::published_identity_t& first,
+                   const project_asset_copy_result_t::published_identity_t& second) -> bool {
+    return first.volume == second.volume && first.file == second.file &&
+           first.size == second.size && first.modified == second.modified;
+}
+
+auto discard_unlinked_copy(const project_asset_copy_request_t& request,
+                           const std::filesystem::path& relative_directory,
+                           const project_asset_copy_result_t& copy) -> bool {
+    namespace fs = std::filesystem;
+    if (copy.status != project_asset_copy_status_t::copied || !copy.published_identity ||
+        !request.project_directory.is_absolute() || !valid_relative(relative_directory) ||
+        request.source_path.filename().empty())
+        return false;
+    const auto relative = relative_directory / (std::to_string(request.asset.value) + "-" +
+                                                request.source_path.filename().string());
+    if (copy.relative_path != relative ||
+        copy.absolute_path != request.project_directory / relative)
+        return false;
+    std::error_code error;
+    const auto root = fs::symlink_status(request.project_directory, error);
+    if (error || fs::is_symlink(root) || !fs::is_directory(root))
+        return false;
+    auto directory = request.project_directory;
+    for (const auto& component : relative_directory) {
+        directory /= component;
+        const auto status = fs::symlink_status(directory, error);
+        if (error || fs::is_symlink(status) || !fs::is_directory(status))
+            return false;
+    }
+    const auto identity = published_identity(copy.absolute_path);
+    if (!identity || !same_identity(*identity, *copy.published_identity))
+        return false;
+    const auto source = request.source_path.is_absolute()
+                            ? request.source_path
+                            : request.project_directory / request.source_path;
+    if (!same_bytes(source, copy.absolute_path, {}))
+        return false;
+    const auto final_identity = published_identity(copy.absolute_path);
+    if (!final_identity || !same_identity(*final_identity, *copy.published_identity))
+        return false;
+    return fs::remove(copy.absolute_path, error) && !error;
 }
 
 auto write_flushed(const std::filesystem::path& path, const std::filesystem::path& source,
@@ -221,7 +305,11 @@ static auto copy_resource_file_to_relative_directory(
         return project_asset_copy_result_t{.status = status,
                                            .relative_path = relative,
                                            .absolute_path = destination,
-                                           .message = {}};
+                                           .message = {},
+                                           .published_identity =
+                                               status == project_asset_copy_status_t::copied
+                                                   ? published_identity(destination)
+                                                   : std::nullopt};
     };
     if (stop.stop_requested()) {
         return failure(project_asset_copy_status_t::cancelled, "Copy cancelled.");
@@ -365,6 +453,23 @@ auto inspect_export_asset_copy(const export_asset_copy_request_t& request, std::
                                                .asset = request.asset,
                                                .maximum_bytes = request.maximum_bytes};
     return copy_resource_file_to_relative_directory(inspect, *directory, stop, true);
+}
+
+auto discard_unlinked_project_asset_copy(const project_asset_copy_request_t& request,
+                                         const project_asset_copy_result_t& copy) -> bool {
+    return discard_unlinked_copy(request, "assets", copy);
+}
+
+auto discard_unlinked_export_asset_copy(const export_asset_copy_request_t& request,
+                                        const project_asset_copy_result_t& copy) -> bool {
+    const auto directory = export_asset_directory(request.relative_output_path);
+    if (!directory)
+        return false;
+    return discard_unlinked_copy({.project_directory = request.project_directory,
+                                  .source_path = request.source_path,
+                                  .asset = request.asset,
+                                  .maximum_bytes = request.maximum_bytes},
+                                 *directory, copy);
 }
 
 } // namespace wormedit

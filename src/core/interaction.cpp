@@ -157,11 +157,13 @@ auto notes_from_objects(const std::vector<editor_selection_object_t>& objects)
 
 auto set_selected_objects(editor_interaction_state_t& state,
                           std::vector<editor_selection_object_t> objects) -> void {
+    state.selected_canvas_measure.reset();
     state.selected_notes = notes_from_objects(objects);
     state.selected_objects = std::move(objects);
 }
 
 auto set_selected_notes(editor_interaction_state_t& state, std::vector<object_id_t> notes) -> void {
+    state.selected_canvas_measure.reset();
     std::vector<editor_selection_object_t> objects;
     objects.reserve(notes.size());
     for (const auto id : notes)
@@ -320,6 +322,12 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "virtual cursor requires a BMS chart")};
     }
+    if (state.selected_canvas_measure &&
+        (chart->source_family != format_family_t::bms ||
+         *state.selected_canvas_measure >= bms_addressable_measure_count)) {
+        return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
+                                       "selected BMS measure is outside #000-#999")};
+    }
     const auto lane_position = state.virtual_bms_cursor_row && !index.entries.empty()
                                    ? local_position_t{index.entries.back().id,
                                                       index.entries.back().row_capacity - 1}
@@ -461,6 +469,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .pending_space_range_selection = std::move(space_range_preview),
         .retained_selection_range = retained_selection_range,
         .retained_canvas_selection_range = state.retained_canvas_selection_range,
+        .selected_canvas_measure = state.selected_canvas_measure,
         .selected_notes = state.selected_notes,
         .selected_objects = state.selected_objects,
         .can_move_backward = *absolute >= step,
@@ -2682,6 +2691,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         !std::holds_alternative<move_edit_cursor_action_t>(action) &&
         !std::holds_alternative<page_edit_cursor_action_t>(action) &&
         !std::holds_alternative<jump_edit_cursor_action_t>(action) &&
+        !std::holds_alternative<select_bms_canvas_measure_action_t>(action) &&
         !std::holds_alternative<cycle_edit_snap_action_t>(action) &&
         !std::holds_alternative<place_virtual_bms_tap_action_t>(action) &&
         !std::holds_alternative<place_virtual_bms_hold_action_t>(action) &&
@@ -4088,6 +4098,71 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                     .accepted = true,
                     .view = std::get<editor_interaction_view_model_t>(next_view),
                 };
+            } else if constexpr (std::is_same_v<action_t,
+                                                select_bms_canvas_measure_action_t>) {
+                if (chart->source_family != format_family_t::bms ||
+                    typed_action.number >= bms_addressable_measure_count) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::row_out_of_range,
+                                                    "BMS measure selection is outside #000-#999")});
+                }
+                const auto built_canvas = build_virtual_canvas(*chart);
+                if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas))
+                    return diagnostic_result(history, state, *diagnostics);
+                const auto& canvas = std::get<virtual_canvas_t>(built_canvas);
+                const auto measure = canvas.measure_at(typed_action.number);
+                if (!measure || measure->row_capacity == 0) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::row_out_of_range,
+                                                    "BMS measure selection has no geometry")});
+                }
+                auto proposed_state = state;
+                proposed_state.selected_canvas_measure = typed_action.number;
+                proposed_state.retained_canvas_selection_range = canvas_row_span_t{
+                    measure->begin_row, measure->begin_row + measure->row_capacity - 1};
+                proposed_state.selected_notes.clear();
+                proposed_state.selected_objects.clear();
+                if (measure->authored) {
+                    const auto first = position_at(index, measure->begin_row);
+                    const auto last = position_at(
+                        index, measure->begin_row + measure->row_capacity - 1);
+                    if (!first || !last) {
+                        return diagnostic_result(history, state,
+                                                 {error(diagnostic_code_t::row_out_of_range,
+                                                        "selected measure is missing authored geometry")});
+                    }
+                    proposed_state.cursor = *first;
+                    proposed_state.virtual_bms_cursor_row.reset();
+                    proposed_state.retained_selection_range =
+                        normalized_position_span(index, *first, *last);
+                } else {
+                    proposed_state.virtual_bms_cursor_row = measure->begin_row;
+                    proposed_state.retained_selection_range.reset();
+                }
+                if (!keep_cursor_visible(proposed_state)) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::invalid_resolution,
+                                                    "measure selection cannot keep the viewport valid")});
+                }
+                auto next_view = make_view(history, proposed_state);
+                if (std::holds_alternative<diagnostic_list_t>(next_view)) {
+                    const auto target = measure->authored
+                                            ? proposed_state.cursor
+                                            : local_position_t{
+                                                  index.entries.back().id,
+                                                  index.entries.back().row_capacity - 1};
+                    const auto replacement = transition_lane(
+                        *chart, index, state.cursor, target, state.active_lane);
+                    if (replacement) {
+                        proposed_state.active_lane = *replacement;
+                        next_view = make_view(history, proposed_state);
+                    }
+                }
+                if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&next_view))
+                    return diagnostic_result(history, state, *diagnostics);
+                state = std::move(proposed_state);
+                return {.accepted = true,
+                        .view = std::get<editor_interaction_view_model_t>(next_view)};
             } else if constexpr (std::is_same_v<action_t, cycle_edit_snap_action_t>) {
                 if (typed_action.direction != interaction_direction_t::backward &&
                     typed_action.direction != interaction_direction_t::forward) {

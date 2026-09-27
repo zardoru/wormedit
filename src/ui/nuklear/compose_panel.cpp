@@ -2550,6 +2550,12 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     }
 
     if (!state.action_overflowed && !paint_pointer_consumed && view->scene_available &&
+        view->bms_measure_labels && pointer_clicked && pointer_inside && pointer_x < 42.0 &&
+        window_focused && !state.pointer_hold_active && !state.lane_hold_active &&
+        !state.note_move_active && !state.area_selection_active &&
+        !state.timing_stage_drag_active) {
+        append_compose_input(action, WORM_UI_COMPOSE_INPUT_MEASURE_SELECT, pointer_x, pointer_y);
+    } else if (!state.action_overflowed && !paint_pointer_consumed && view->scene_available &&
         pointer_started_in_note_field && alt_down && !state.pointer_hold_active && window_focused &&
         !compose_note_double_click_in_view) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_ALT_POINTER_BEGIN, pointer_x, pointer_y);
@@ -2910,6 +2916,9 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                 if (length > 0) {
                     const auto label_bounds =
                         nk_rect(rail.x + 3.0f, y + 2.0f, std::max(1.0f, rail.w - 6.0f), 14.0f);
+                    if (view->selected_bms_measure_number_plus_one == line.measure_number) {
+                        nk_fill_rect(canvas, label_bounds, 2.0f, nk_rgb(67, 93, 135));
+                    }
                     nk_draw_text(canvas, label_bounds, label, static_cast<int>(strlen(label)),
                                  context->style.font, nk_rgb(18, 21, 29), nk_rgb(174, 185, 203));
                 }

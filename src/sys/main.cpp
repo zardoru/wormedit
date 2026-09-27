@@ -2589,6 +2589,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.playable_field_left_pixels = compose_measure_rail_width_pixels;
     view.playable_field_right_pixels = view.viewport_width_pixels;
     view.bms_measure_labels = false;
+    view.selected_bms_measure_number_plus_one = 0;
     view.timing_document_begin_fraction = 0.0;
     view.timing_document_end_fraction = 1.0;
     view.truncated = false;
@@ -3392,6 +3393,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
     }
     flattened.compose_interaction_view_storage = interaction_view;
     view.bms_measure_labels = chart.source_family == wormedit::format_family_t::bms;
+    view.selected_bms_measure_number_plus_one =
+        interaction_view.selected_canvas_measure
+            ? static_cast<std::uint32_t>(*interaction_view.selected_canvas_measure + 1)
+            : 0;
     std::size_t lane_key_binding_count{};
     bool lane_key_bindings_truncated{};
     for (const auto& binding : chart.input_profile.bindings) {
@@ -5893,6 +5898,43 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 accepted =
                     result.document_changed ? "Tap note toggled." : "Tap note was not changed.";
             }
+            break;
+        }
+        case WORM_UI_COMPOSE_INPUT_MEASURE_SELECT: {
+            const auto chart =
+                std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+            const auto current_view = compose_view_for_state(history, state);
+            if (chart == history.document.charts.end() || !current_view ||
+                chart->source_family != format_family_t::bms ||
+                !std::isfinite(input.y_pixels) || input.y_pixels < 0.0 ||
+                input.y_pixels >= current_view->viewport_height_pixels ||
+                input.x_pixels < 0.0 || input.x_pixels >= compose_measure_rail_width_pixels) {
+                return "Click inside a BMS measure number to select its measure.";
+            }
+            const auto built = build_virtual_canvas(*chart);
+            const auto* canvas = std::get_if<virtual_canvas_t>(&built);
+            if (!canvas) {
+                return "The BMS measure canvas is unavailable.";
+            }
+            const auto exact_row =
+                (static_cast<long double>(current_view->viewport_scroll_pixels) +
+                 input.y_pixels) *
+                chart->divisions_per_standard_measure /
+                current_view->pixels_per_standard_measure;
+            if (!std::isfinite(exact_row) || exact_row < 0.0L ||
+                exact_row >= static_cast<long double>(canvas->total_rows)) {
+                return "The measure number is outside #000-#999.";
+            }
+            const auto row = std::min(
+                static_cast<std::uint64_t>(std::floor(exact_row + 0.5L)),
+                canvas->total_rows - 1);
+            const auto measure = canvas->measure_containing(row);
+            if (!measure) {
+                return "The selected BMS measure is unavailable.";
+            }
+            result = dispatch_editor_action(
+                history, state, select_bms_canvas_measure_action_t{measure->number});
+            accepted = "BMS measure selected.";
             break;
         }
         case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE:

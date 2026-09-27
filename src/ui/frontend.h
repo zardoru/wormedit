@@ -597,6 +597,7 @@ typedef struct WormUiComposeView {
     bool visible;
     bool scene_available;
     bool bms_measure_labels;
+    uint32_t selected_bms_measure_number_plus_one;
     bool truncated;
     bool note_paint_mode_active;
     bool semantic_layer_paint_mode_active;
@@ -1221,6 +1222,7 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD,
     WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD,
     WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
+    WORM_UI_COMPOSE_INPUT_MEASURE_SELECT,
     WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE,
     WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE,
     WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK,

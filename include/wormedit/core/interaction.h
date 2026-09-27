@@ -44,6 +44,10 @@ struct jump_edit_cursor_action_t {
     std::uint64_t expected_document_revision{};
 };
 
+struct select_bms_canvas_measure_action_t {
+    std::size_t number{};
+};
+
 struct cycle_edit_snap_action_t {
     interaction_direction_t direction{interaction_direction_t::forward};
 };
@@ -348,6 +352,7 @@ struct scroll_editor_view_action_t {
 
 using editor_ui_action_t = std::variant<
     move_edit_cursor_action_t, page_edit_cursor_action_t, jump_edit_cursor_action_t,
+    select_bms_canvas_measure_action_t,
     cycle_edit_snap_action_t, place_tap_action_t, place_virtual_bms_tap_action_t,
     place_virtual_bms_hold_action_t,
     begin_hold_action_t, update_hold_preview_action_t,
@@ -537,6 +542,7 @@ struct editor_interaction_state_t {
     // future frontends can consume the same exact chart span.
     std::optional<position_span_t> retained_selection_range;
     std::optional<canvas_row_span_t> retained_canvas_selection_range;
+    std::optional<std::size_t> selected_canvas_measure;
     std::vector<object_id_t> selected_notes;
     std::vector<editor_selection_object_t> selected_objects;
 };
@@ -568,6 +574,7 @@ struct editor_interaction_view_model_t {
     std::optional<space_range_selection_preview_t> pending_space_range_selection;
     std::optional<position_span_t> retained_selection_range;
     std::optional<canvas_row_span_t> retained_canvas_selection_range;
+    std::optional<std::size_t> selected_canvas_measure;
     std::vector<object_id_t> selected_notes;
     std::vector<editor_selection_object_t> selected_objects;
     bool can_move_backward{};

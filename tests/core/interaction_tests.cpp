@@ -452,6 +452,38 @@ TEST_CASE("Space selection crosses into virtual BMS measures without authoring t
     CHECK(history.document.charts.front().measures.size() == 2);
 }
 
+TEST_CASE("BMS measure rail selects #999 without materializing it",
+          "[unit][core][interaction][virtual-canvas][selection]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto selected = dispatch_editor_action(
+        history, state, select_bms_canvas_measure_action_t{999});
+    REQUIRE(selected);
+    REQUIRE(selected.view);
+    CHECK(state.selected_canvas_measure == 999);
+    CHECK(selected.view->selected_canvas_measure == 999);
+    CHECK(state.virtual_bms_cursor_row == 959'040);
+    CHECK((state.retained_canvas_selection_range ==
+           canvas_row_span_t{959'040, 959'999}));
+    CHECK_FALSE(state.retained_selection_range);
+    CHECK(history.document.charts.front().measures.size() == 2);
+    CHECK(history.undo.empty());
+    CHECK_FALSE(dispatch_editor_action(
+        history, state, select_bms_canvas_measure_action_t{1'000}));
+    CHECK(state.selected_canvas_measure == 999);
+
+    const auto authored = dispatch_editor_action(
+        history, state, select_bms_canvas_measure_action_t{0});
+    REQUIRE(authored);
+    CHECK_FALSE(state.virtual_bms_cursor_row);
+    CHECK(state.selected_canvas_measure == 0);
+    CHECK((state.cursor == local_position_t{measure_id_t{1}, 0}));
+    CHECK((state.retained_canvas_selection_range == canvas_row_span_t{0, 959}));
+    CHECK(history.document.charts.front().measures.size() == 2);
+}
+
 TEST_CASE(
     "headless editor actions cycle exact snaps, step across measures, and place undoable taps",
     "[unit][core][interaction]") {

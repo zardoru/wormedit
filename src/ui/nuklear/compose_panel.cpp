@@ -579,6 +579,9 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            ((view->selected_bmson_bgm_event_id == 0) ==
             (view->selected_bmson_source_lane_id == 0)) &&
            view->staged_bmson_marker_count <= 256 &&
+           (view->staged_bmson_marker_count == 0 ||
+            (view->staged_bmson_marker_playable_lanes != nullptr &&
+             view->staged_bmson_marker_restarts != nullptr)) &&
            view->bmson_marker_draft_count <= view->staged_bmson_marker_count &&
            (view->bmson_marker_draft_count == 0 || view->bmson_marker_drafts != nullptr) &&
            view->lane_count <= WORM_UI_COMPOSE_LANE_CAPACITY &&
@@ -1148,10 +1151,40 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         nk_layout_row_dynamic(context, 24, 1);
         nk_property_int(context, "Region", 1, &state.bmson_audition_index,
                         static_cast<int>(view->staged_bmson_marker_count), 1, 1.0f);
+        const auto selected_index = static_cast<std::size_t>(state.bmson_audition_index - 1);
+        const auto assigned_lane = view->staged_bmson_marker_playable_lanes[selected_index];
+        nk_labelf(context, NK_TEXT_LEFT, "%s · %s",
+                  view->staged_bmson_marker_restarts[selected_index] ? "Restart" : "Continue",
+                  assigned_lane == 0 ? "BGM" : "Playable key lane");
         if (nk_button_label(context, "Audition staged region")) {
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT,
                                  0.0, 0.0, 0, false,
                                  WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                 static_cast<std::uint64_t>(state.bmson_audition_index));
+        }
+        nk_layout_row_dynamic(context, 24, 2);
+        if (nk_button_label(context, "Assign active key lane")) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_ACTIVE_LANE,
+                                 0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                 static_cast<std::uint64_t>(state.bmson_audition_index));
+        }
+        if (nk_button_label(context, "Assign BGM")) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_BGM, 0.0, 0.0,
+                                 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                 static_cast<std::uint64_t>(state.bmson_audition_index));
+        }
+        if (nk_button_label(context, "Toggle restart")) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_TOGGLE_DRAFT_RESTART, 0.0, 0.0,
+                                 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                 static_cast<std::uint64_t>(state.bmson_audition_index));
+        }
+        if (nk_button_label(context, "Remove region")) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT, 0.0, 0.0, 0,
+                                 false, WORM_UI_COMPOSE_SELECTION_REPLACE,
                                  WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
                                  static_cast<std::uint64_t>(state.bmson_audition_index));
         }
@@ -2488,7 +2521,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             if (rect.w <= 0.0f || rect.h <= 0.0f) {
                 continue;
             }
-            nk_fill_rect(canvas, rect, 1.5f, nk_rgba(240, 171, 71, 94));
+            nk_fill_rect(canvas, rect, 1.5f,
+                         marker.playable ? nk_rgba(85, 184, 245, 106) : nk_rgba(240, 171, 71, 94));
             nk_stroke_rect(canvas, rect, 1.5f, 2.0f,
                            marker.restart ? nk_rgb(255, 188, 94) : nk_rgb(119, 231, 226));
         }

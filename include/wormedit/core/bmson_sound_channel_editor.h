@@ -29,9 +29,11 @@ namespace wormedit {
                                            local_position_t target, bool restart)
     -> document_command_result_t;
 
-struct bmson_bgm_marker_insertion_t {
+struct bmson_sound_marker_insertion_t {
     local_position_t position;
     bool restart{};
+    // Empty selects autoplay; a lane assigns this new slice to a playable tap.
+    std::optional<lane_id_t> playable_lane;
 };
 
 struct bmson_razor_path_t {
@@ -48,10 +50,12 @@ struct bmson_razor_path_t {
     std::uint64_t snap_denominator, std::size_t maximum_positions = 256)
     -> bmson_razor_path_t;
 
-// Commits up to 256 markers in one history step after validating every target.
-[[nodiscard]] auto insert_bmson_bgm_markers(
-    document_history_t& history, std::uint64_t expected_revision, chart_id_t chart,
-    object_id_t reference_bgm_event, std::span<const bmson_bgm_marker_insertion_t> markers)
+// Commits up to 256 BGM/playable markers in one history step after validating
+// every target and linked source-channel pulse.
+[[nodiscard]] auto
+insert_bmson_sound_markers(document_history_t& history, std::uint64_t expected_revision,
+                           chart_id_t chart, object_id_t reference_bgm_event,
+                           std::span<const bmson_sound_marker_insertion_t> markers)
     -> document_command_result_t;
 
 // Removes the linked semantic BGM marker and retained source event atomically.

@@ -77,9 +77,8 @@ struct audition_resolve_result_t {
 // containing the complete pending batch. The caller's document is unchanged.
 [[nodiscard]] auto resolve_bmson_draft_audition(
     const song_document_t& song, std::uint64_t expected_revision, chart_id_t chart,
-    object_id_t reference_bgm_event,
-    std::span<const bmson_bgm_marker_insertion_t> markers, std::size_t marker_index,
-    std::span<const audition_source_binding_t> bindings,
+    object_id_t reference_bgm_event, std::span<const bmson_sound_marker_insertion_t> markers,
+    std::size_t marker_index, std::span<const audition_source_binding_t> bindings,
     audition_resolve_options_t options = {}) -> audition_resolve_result_t;
 
 // Resolves all playable/BGM objects referenced by an immutable preview

@@ -183,6 +183,8 @@ struct flattened_workspace_t {
     std::vector<WormUiComposeBgmLaneView> compose_bgm_lane_storage;
     std::vector<WormUiComposeBgmEventView> compose_bgm_event_storage;
     std::vector<WormUiComposeBgmDraftView> compose_bgm_draft_storage;
+    std::vector<std::uint64_t> compose_bmson_draft_playable_lane_storage;
+    std::vector<std::uint8_t> compose_bmson_draft_restart_storage;
     std::optional<WormUiComposeBgmMovePreviewView> compose_bgm_move_storage;
     std::optional<WormUiComposeCursorView> compose_cursor_storage;
     std::array<WormUiComposeSemanticLayerView, WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY>
@@ -291,7 +293,7 @@ struct bmson_draft_audition_request_t {
     wormedit::chart_id_t chart;
     std::uint64_t revision{};
     wormedit::object_id_t reference;
-    std::vector<wormedit::bmson_bgm_marker_insertion_t> markers;
+    std::vector<wormedit::bmson_sound_marker_insertion_t> markers;
     std::size_t marker_index{};
 };
 
@@ -321,7 +323,7 @@ struct application_command_state_t {
         wormedit::chart_id_t chart;
         std::uint64_t revision{};
         wormedit::object_id_t reference;
-        std::vector<wormedit::bmson_bgm_marker_insertion_t> markers;
+        std::vector<wormedit::bmson_sound_marker_insertion_t> markers;
     };
     std::optional<bmson_marker_draft_t> bmson_marker_draft;
     struct bmson_razor_stroke_t {
@@ -2513,6 +2515,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.selected_bmson_note_event_id = 0;
     view.selected_bmson_source_lane_id = 0;
     view.staged_bmson_marker_count = 0;
+    view.staged_bmson_marker_playable_lanes = nullptr;
+    view.staged_bmson_marker_restarts = nullptr;
     view.bmson_marker_drafts = nullptr;
     view.bmson_marker_draft_count = 0;
     view.bmson_marker_move_preview = nullptr;
@@ -3042,6 +3046,18 @@ void populate_compose_view(flattened_workspace_t& flattened,
     }
     if (application_state.bmson_marker_draft) {
         view.staged_bmson_marker_count = application_state.bmson_marker_draft->markers.size();
+        flattened.compose_bmson_draft_playable_lane_storage.clear();
+        flattened.compose_bmson_draft_restart_storage.clear();
+        flattened.compose_bmson_draft_playable_lane_storage.reserve(view.staged_bmson_marker_count);
+        flattened.compose_bmson_draft_restart_storage.reserve(view.staged_bmson_marker_count);
+        for (const auto& marker : application_state.bmson_marker_draft->markers) {
+            flattened.compose_bmson_draft_playable_lane_storage.push_back(
+                marker.playable_lane.value_or(wormedit::lane_id_t{}).value);
+            flattened.compose_bmson_draft_restart_storage.push_back(marker.restart ? 1 : 0);
+        }
+        view.staged_bmson_marker_playable_lanes =
+            flattened.compose_bmson_draft_playable_lane_storage.data();
+        view.staged_bmson_marker_restarts = flattened.compose_bmson_draft_restart_storage.data();
     }
     if (application_state.bmson_marker_move_preview &&
         (application_state.bmson_marker_move_preview->chart != chart.id ||
@@ -3490,22 +3506,37 @@ void populate_compose_view(flattened_workspace_t& flattened,
             const auto lane = std::ranges::find_if(scene.bgm_lanes, [&](const auto& candidate) {
                 return candidate.source_lane == reference->source_lane;
             });
-            if (lane != scene.bgm_lanes.end()) {
-                for (const auto& marker : draft.markers) {
-                    const auto row = wormedit::absolute_row(cache.index->measures,
-                                                             marker.position);
-                    if (!row) {
-                        continue;
-                    }
-                    const auto y = static_cast<double>(*row) * pixels_per_row -
-                                   interaction_view.viewport_scroll_pixels;
-                    if (y < -8.0 || y > view.viewport_height_pixels + 8.0) {
-                        continue;
-                    }
-                    flattened.compose_bgm_draft_storage.push_back({
-                        .bounds = {lane->bounds.left, y - 8.0, lane->bounds.right, y + 8.0},
-                        .restart = marker.restart});
+            for (const auto& marker : draft.markers) {
+                const auto row = wormedit::absolute_row(cache.index->measures, marker.position);
+                if (!row) {
+                    continue;
                 }
+                const auto y = static_cast<double>(*row) * pixels_per_row -
+                               interaction_view.viewport_scroll_pixels;
+                if (y < -8.0 || y > view.viewport_height_pixels + 8.0) {
+                    continue;
+                }
+                const wormedit::editor_field_rect_t* bounds{};
+                if (marker.playable_lane) {
+                    const auto playable =
+                        std::ranges::find_if(scene.lanes, [&](const auto& candidate) {
+                            return candidate.lane == *marker.playable_lane &&
+                                   y >= candidate.bounds.top - 8.0 &&
+                                   y <= candidate.bounds.bottom + 8.0;
+                        });
+                    if (playable != scene.lanes.end()) {
+                        bounds = &playable->bounds;
+                    }
+                } else if (lane != scene.bgm_lanes.end()) {
+                    bounds = &lane->bounds;
+                }
+                if (!bounds) {
+                    continue;
+                }
+                flattened.compose_bgm_draft_storage.push_back(
+                    {.bounds = {bounds->left, y - 8.0, bounds->right, y + 8.0},
+                     .restart = marker.restart,
+                     .playable = marker.playable_lane.has_value()});
             }
         }
     }
@@ -3989,12 +4020,12 @@ auto dispatch_compose_navigation_actions(const wormedit::editor_navigation_actio
     return status;
 }
 
-auto stage_bmson_bgm_markers(
-    const wormedit::document_history_t& history,
-    const wormedit::editor_interaction_state_t& state,
-    application_command_state_t& application_state,
-    wormedit::object_id_t reference,
-    std::span<const wormedit::bmson_bgm_marker_insertion_t> markers) -> std::string {
+auto stage_bmson_bgm_markers(const wormedit::document_history_t& history,
+                             const wormedit::editor_interaction_state_t& state,
+                             application_command_state_t& application_state,
+                             wormedit::object_id_t reference,
+                             std::span<const wormedit::bmson_sound_marker_insertion_t> markers)
+    -> std::string {
     using namespace wormedit;
     if (markers.empty()) {
         return "BMSON razor remains on the current snapped row.";
@@ -4087,7 +4118,7 @@ auto stage_bmson_bgm_marker(const wormedit::document_history_t& history,
                             application_command_state_t& application_state,
                             wormedit::object_id_t reference, wormedit::local_position_t position,
                             bool restart) -> std::string {
-    const std::array markers{wormedit::bmson_bgm_marker_insertion_t{position, restart}};
+    const std::array markers{wormedit::bmson_sound_marker_insertion_t{position, restart}};
     return stage_bmson_bgm_markers(history, state, application_state, reference, markers);
 }
 
@@ -4853,7 +4884,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             if (!path) {
                 return path.diagnostics.front().message;
             }
-            std::vector<bmson_bgm_marker_insertion_t> pending;
+            std::vector<bmson_sound_marker_insertion_t> pending;
             pending.reserve(path.positions.size());
             for (const auto candidate : path.positions) {
                 const auto& draft = application_state.bmson_marker_draft;
@@ -4889,6 +4920,60 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 draft->chart, draft->revision, draft->reference, draft->markers,
                 static_cast<std::size_t>(input.object_id - 1)};
             status = "Preparing staged BMSON region audition.";
+            continue;
+        }
+        case WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_ACTIVE_LANE:
+        case WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_BGM:
+        case WORM_UI_COMPOSE_INPUT_BMSON_TOGGLE_DRAFT_RESTART:
+        case WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT: {
+            if (gesture_active) {
+                return "Finish or cancel the active Compose gesture before editing a staged BMSON "
+                       "region.";
+            }
+            auto& draft = application_state.bmson_marker_draft;
+            if (!draft || draft->chart != state.chart ||
+                draft->revision != history.document.revision || input.object_id == 0 ||
+                input.object_id > draft->markers.size()) {
+                return "The staged BMSON region edit expired.";
+            }
+            auto proposed = draft->markers;
+            const auto selected_index = static_cast<std::size_t>(input.object_id - 1);
+            if (input.kind == WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT) {
+                proposed.erase(proposed.begin() + selected_index);
+                if (proposed.empty()) {
+                    draft.reset();
+                    status = "The last staged BMSON region was removed.";
+                    continue;
+                }
+            } else if (input.kind == WORM_UI_COMPOSE_INPUT_BMSON_TOGGLE_DRAFT_RESTART) {
+                proposed[selected_index].restart = !proposed[selected_index].restart;
+            } else {
+                const auto lane =
+                    input.kind == WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_ACTIVE_LANE
+                        ? std::optional<lane_id_t>{state.active_lane}
+                        : std::nullopt;
+                if (proposed[selected_index].playable_lane == lane) {
+                    status = "Staged BMSON region already has that assignment.";
+                    continue;
+                }
+                proposed[selected_index].playable_lane = lane;
+            }
+            auto temporary = make_document_history(history.document, 1);
+            const auto checked = insert_bmson_sound_markers(
+                temporary, temporary.document.revision, draft->chart, draft->reference, proposed);
+            if (!checked) {
+                return checked.diagnostics.empty()
+                           ? "Staged BMSON region edit could not be validated."
+                           : checked.diagnostics.front().message;
+            }
+            draft->markers = std::move(proposed);
+            status = input.kind == WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT
+                         ? "Staged BMSON region removed."
+                     : input.kind == WORM_UI_COMPOSE_INPUT_BMSON_TOGGLE_DRAFT_RESTART
+                         ? "Staged BMSON region continuation/restart toggled."
+                     : input.kind == WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_ACTIVE_LANE
+                         ? "Staged BMSON region assigned to the active key lane."
+                         : "Staged BMSON region assigned to BGM.";
             continue;
         }
         case WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE: {
@@ -5733,8 +5818,8 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
             draft.reset();
             return "The BMSON marker batch is no longer available for this chart revision.";
         }
-        const auto inserted = insert_bmson_bgm_markers(
-            history, draft->revision, draft->chart, draft->reference, draft->markers);
+        const auto inserted = insert_bmson_sound_markers(history, draft->revision, draft->chart,
+                                                         draft->reference, draft->markers);
         if (!inserted.diagnostics.empty()) {
             return inserted.diagnostics.front().message;
         }

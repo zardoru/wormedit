@@ -348,6 +348,7 @@ typedef struct WormUiComposeBgmEventView {
 typedef struct WormUiComposeBgmDraftView {
     WormUiComposeRect bounds;
     bool restart;
+    bool playable;
 } WormUiComposeBgmDraftView;
 
 typedef struct WormUiComposeBgmMovePreviewView {
@@ -521,6 +522,8 @@ typedef struct WormUiComposeView {
     uint64_t selected_bmson_note_event_id;
     uint64_t selected_bmson_source_lane_id;
     size_t staged_bmson_marker_count;
+    const uint64_t* staged_bmson_marker_playable_lanes;
+    const uint8_t* staged_bmson_marker_restarts;
     bool beat_marker_navigation_available;
     bool audio_marker_navigation_available;
     bool audio_marker_transport_available;
@@ -1102,6 +1105,10 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE,
     WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_CANCEL,
     WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT,
+    WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_ACTIVE_LANE,
+    WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_BGM,
+    WORM_UI_COMPOSE_INPUT_BMSON_TOGGLE_DRAFT_RESTART,
+    WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT,
     WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK,
     WORM_UI_COMPOSE_INPUT_DELETE_NOTES,
     WORM_UI_COMPOSE_INPUT_UNDO,

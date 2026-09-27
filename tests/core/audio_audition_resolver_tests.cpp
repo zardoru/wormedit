@@ -193,8 +193,8 @@ TEST_CASE("BMSON draft audition resolves a staged region without editing the son
     const auto original_bgm_count = bgm_measure->bgm_events.size();
     const auto revision = song.revision;
     const std::array markers{
-        wormedit::bmson_bgm_marker_insertion_t{{reference.position.measure, 600}, false},
-        wormedit::bmson_bgm_marker_insertion_t{{reference.position.measure, 840}, true}};
+        wormedit::bmson_sound_marker_insertion_t{{reference.position.measure, 600}, false},
+        wormedit::bmson_sound_marker_insertion_t{{reference.position.measure, 840}, true}};
     const std::array bindings{runtime_binding(asset)};
 
     const auto first = wormedit::audio::resolve_bmson_draft_audition(
@@ -212,6 +212,14 @@ TEST_CASE("BMSON draft audition resolves a staged region without editing the son
     REQUIRE(second.clips.size() == 1);
     CHECK(second.clips.front().source_start_frame == 143'325);
     CHECK(second.clips.front().frame_count == 56'675);
+    auto mixed_markers = markers;
+    mixed_markers[0].playable_lane = chart.lane_layouts.front().layout.lanes.front().id;
+    const auto playable = wormedit::audio::resolve_bmson_draft_audition(
+        song, revision, chart.id, reference.id, mixed_markers, 0, bindings);
+    REQUIRE(playable);
+    REQUIRE(playable.clips.size() == 1);
+    CHECK(playable.clips.front().source_start_frame == first.clips.front().source_start_frame);
+    CHECK(playable.clips.front().frame_count == first.clips.front().frame_count);
     CHECK(song.revision == revision);
     CHECK(song.charts.front().sound_channels.front().events.size() == original_source_count);
     CHECK(bgm_measure->bgm_events.size() == original_bgm_count);

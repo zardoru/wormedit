@@ -368,32 +368,31 @@ TEST_CASE("BMSON marker batch validates every pulse and commits one history step
     const auto source_count = chart.sound_channels.front().events.size();
     const auto bgm_count = chart.measures.front().bgm_events.size() +
                            reference_measure->bgm_events.size();
-    const std::vector<wormedit::bmson_bgm_marker_insertion_t> markers{
+    const std::vector<wormedit::bmson_sound_marker_insertion_t> markers{
         {{chart.measures.front().id, 480}, false},
         {{reference_measure_id, 600}, true},
         {{reference_measure_id, 840}, false},
     };
     const auto revision = history.document.revision;
-    const std::vector<wormedit::bmson_bgm_marker_insertion_t> too_many(257, markers.front());
-    CHECK_FALSE(wormedit::insert_bmson_bgm_markers(
-        history, revision, chart_id, reference, too_many));
+    const std::vector<wormedit::bmson_sound_marker_insertion_t> too_many(257, markers.front());
+    CHECK_FALSE(
+        wormedit::insert_bmson_sound_markers(history, revision, chart_id, reference, too_many));
     auto duplicates = markers;
     duplicates.push_back(markers.front());
-    CHECK_FALSE(wormedit::insert_bmson_bgm_markers(
-        history, revision, chart_id, reference, duplicates));
+    CHECK_FALSE(
+        wormedit::insert_bmson_sound_markers(history, revision, chart_id, reference, duplicates));
     CHECK(history.document.revision == revision);
     auto outside = markers;
     outside[2].position.row = 999'999;
-    CHECK_FALSE(wormedit::insert_bmson_bgm_markers(
-        history, revision, chart_id, reference, outside));
+    CHECK_FALSE(
+        wormedit::insert_bmson_sound_markers(history, revision, chart_id, reference, outside));
     CHECK(history.document.revision == revision);
     auto occupied = markers;
     occupied[2].position = chart.sound_channels.front().events.front().position;
-    CHECK_FALSE(wormedit::insert_bmson_bgm_markers(
-        history, revision, chart_id, reference, occupied));
+    CHECK_FALSE(
+        wormedit::insert_bmson_sound_markers(history, revision, chart_id, reference, occupied));
     CHECK(history.document.revision == revision);
-    REQUIRE(wormedit::insert_bmson_bgm_markers(
-        history, revision, chart_id, reference, markers));
+    REQUIRE(wormedit::insert_bmson_sound_markers(history, revision, chart_id, reference, markers));
     const auto& changed = history.document.charts.front();
     CHECK(changed.sound_channels.front().events.size() == source_count + markers.size());
     const auto changed_reference = std::ranges::find(changed.measures,
@@ -420,11 +419,82 @@ TEST_CASE("BMSON marker batch validates every pulse and commits one history step
     REQUIRE(reparsed.song.has_value());
     CHECK(reparsed.song->charts.front().sound_channels.front().events.size() ==
           source_count + markers.size());
-    CHECK_FALSE(wormedit::insert_bmson_bgm_markers(
-        history, revision, chart_id, reference, markers));
+    CHECK_FALSE(
+        wormedit::insert_bmson_sound_markers(history, revision, chart_id, reference, markers));
     REQUIRE(wormedit::undo_document_command(history));
     CHECK(history.document.charts.front().sound_channels.front().events.size() == source_count);
     CHECK(history.undo.empty());
+}
+
+TEST_CASE("BMSON marker batch assigns playable and BGM slices atomically",
+          "[unit][core][bmson][marker][assignment]") {
+    auto song = fixture();
+    song.audio_assets.front().stream = {48'000, 2, 200'000, true};
+    const auto& original = song.charts.front();
+    const auto chart_id = original.id;
+    const auto lane = original.lane_layouts.front().layout.lanes.front().id;
+    const auto reference_measure = std::ranges::find_if(
+        original.measures, [](const auto& measure) { return !measure.bgm_events.empty(); });
+    REQUIRE(reference_measure != original.measures.end());
+    const auto reference = reference_measure->bgm_events.front().id;
+    const auto reference_sound = reference_measure->bgm_events.front().sound;
+    const auto source_count = original.sound_channels.front().events.size();
+    const std::array markers{
+        wormedit::bmson_sound_marker_insertion_t{{original.measures.front().id, 480}, false, lane},
+        wormedit::bmson_sound_marker_insertion_t{{reference_measure->id, 600}, true, std::nullopt}};
+    auto blocked_song = song;
+    blocked_song.charts.front().measures.front().notes.push_back(
+        {.id = wormedit::object_id_t{999'999}, .position = markers.front().position, .lane = lane});
+    auto blocked = wormedit::make_document_history(std::move(blocked_song));
+    const auto blocked_revision = blocked.document.revision;
+    CHECK_FALSE(wormedit::insert_bmson_sound_markers(blocked, blocked_revision, chart_id, reference,
+                                                     markers));
+    CHECK(blocked.document.revision == blocked_revision);
+    CHECK(blocked.document.charts.front().sound_channels.front().events.size() == source_count);
+
+    auto invalid_lane = markers;
+    invalid_lane.front().playable_lane = wormedit::lane_id_t{999'999};
+    auto invalid_history = wormedit::make_document_history(song);
+    CHECK_FALSE(wormedit::insert_bmson_sound_markers(
+        invalid_history, invalid_history.document.revision, chart_id, reference, invalid_lane));
+    CHECK(invalid_history.document.charts.front().sound_channels.front().events.size() ==
+          source_count);
+
+    auto history = wormedit::make_document_history(std::move(song));
+    const auto revision = history.document.revision;
+    REQUIRE(wormedit::insert_bmson_sound_markers(history, revision, chart_id, reference, markers));
+    const auto& changed = history.document.charts.front();
+    REQUIRE(changed.sound_channels.front().events.size() == source_count + 2);
+    const auto& playable_source = changed.sound_channels.front().events[source_count];
+    const auto& bgm_source = changed.sound_channels.front().events[source_count + 1];
+    CHECK(playable_source.playable);
+    CHECK(playable_source.lane == lane);
+    CHECK_FALSE(bgm_source.playable);
+    const auto playable =
+        std::ranges::find_if(changed.measures.front().notes, [&](const auto& note) {
+            return note.sound_channel_event == playable_source.id;
+        });
+    REQUIRE(playable != changed.measures.front().notes.end());
+    CHECK(playable->position == markers.front().position);
+    CHECK(playable->sound == reference_sound);
+    const auto bgm_measure = std::ranges::find(changed.measures, markers.back().position.measure,
+                                               &wormedit::measure_chunk_t::id);
+    REQUIRE(bgm_measure != changed.measures.end());
+    CHECK(std::ranges::any_of(bgm_measure->bgm_events, [&](const auto& event) {
+        return event.sound_channel_event == bgm_source.id;
+    }));
+    CHECK(wormedit::validate_document(history.document).empty());
+    const auto written = wormedit::write_bmson(history.document);
+    REQUIRE(written.json);
+    const auto reparsed = wormedit::parse_bmson_bytes(
+        std::as_bytes(std::span{written.json->data(), written.json->size()}));
+    REQUIRE(reparsed.song);
+    const auto& round_trip = reparsed.song->charts.front();
+    CHECK(std::ranges::any_of(round_trip.measures.front().notes, [&](const auto& note) {
+        return note.position == markers.front().position;
+    }));
+    REQUIRE(wormedit::undo_document_command(history));
+    CHECK(history.document.charts.front().sound_channels.front().events.size() == source_count);
 }
 
 TEST_CASE("BMSON razor path fills exact grid cells across measures in pointer order",

@@ -121,6 +121,95 @@ TEST_CASE("resource creation rejects stale revisions and wrong asset types atomi
     CHECK(history.undo.empty());
 }
 
+TEST_CASE("resource placement adds typed events with collision and lane allocation",
+          "[unit][core][resources]") {
+    auto history = make_document_history(assignment_song());
+    const auto sample = apply_resource_placement(
+        history, 4, {.chart = chart_id_t{2}, .resource = resource_id_t{2},
+                     .position = {measure_id_t{3}, 480}, .lane = lane_id_t{1},
+                     .kind = resource_placement_kind_t::sample_note});
+    REQUIRE(sample);
+    CHECK(history.document.charts.front().measures.front().notes.back().sound ==
+          resource_id_t{2});
+
+    const auto bgm = apply_resource_placement(
+        history, 5, {.chart = chart_id_t{2}, .resource = resource_id_t{2},
+                     .position = {measure_id_t{3}, 240},
+                     .kind = resource_placement_kind_t::bgm_event});
+    REQUIRE(bgm);
+    const auto& chart = history.document.charts.front();
+    REQUIRE(chart.bgm_source_lanes.size() == 2);
+    CHECK(chart.measures.front().bgm_events.back().source_lane ==
+          chart.bgm_source_lanes.back().id);
+    const auto reused = apply_resource_placement(
+        history, 6, {.chart = chart_id_t{2}, .resource = resource_id_t{2},
+                     .position = {measure_id_t{3}, 480},
+                     .kind = resource_placement_kind_t::bgm_event});
+    REQUIRE(reused);
+    CHECK(history.document.charts.front().bgm_source_lanes.size() == 2);
+    CHECK(history.document.charts.front().measures.front().bgm_events.back().source_lane ==
+          object_id_t{20});
+
+    const auto bga = apply_resource_placement(
+        history, 7, {.chart = chart_id_t{2}, .resource = resource_id_t{4},
+                     .position = {measure_id_t{3}, 240},
+                     .kind = resource_placement_kind_t::bga_background});
+    REQUIRE(bga);
+    CHECK(history.document.charts.front().bga_events.back().resource == resource_id_t{4});
+    CHECK(history.undo.size() == 4);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().bga_events.size() == 1);
+}
+
+TEST_CASE("resource placement rejects stale incompatible and occupied targets atomically",
+          "[unit][core][resources]") {
+    auto history = make_document_history(assignment_song());
+    const auto sample = place_resource_action_t{
+        .chart = chart_id_t{2}, .resource = resource_id_t{2},
+        .position = {measure_id_t{3}, 120}, .lane = lane_id_t{1},
+        .kind = resource_placement_kind_t::sample_note};
+    CHECK(has_code(apply_resource_placement(history, 3, sample),
+                   diagnostic_code_t::invalid_id));
+    CHECK(has_code(apply_resource_placement(history, 4, sample),
+                   diagnostic_code_t::collision));
+    auto incompatible = sample;
+    incompatible.resource = resource_id_t{4};
+    CHECK(has_code(apply_resource_placement(history, 4, incompatible),
+                   diagnostic_code_t::unsupported_feature));
+    auto missing = sample;
+    missing.resource = resource_id_t{5};
+    CHECK(has_code(apply_resource_placement(history, 4, missing),
+                   diagnostic_code_t::dangling_resource));
+    auto visual = place_resource_action_t{
+        .chart = chart_id_t{2}, .resource = resource_id_t{4},
+        .position = {measure_id_t{3}, 360},
+        .kind = resource_placement_kind_t::bga_background};
+    CHECK(has_code(apply_resource_placement(history, 4, visual),
+                   diagnostic_code_t::collision));
+    CHECK(history.document.revision == 4);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("BGM placement creates the first source lane when the chart has none",
+          "[unit][core][resources]") {
+    auto song = assignment_song();
+    song.charts.front().measures.front().bgm_events.clear();
+    song.charts.front().bgm_source_lanes.clear();
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    const auto applied = apply_resource_placement(
+        history, 4, {.chart = chart_id_t{2}, .resource = resource_id_t{2},
+                     .position = {measure_id_t{3}, 240},
+                     .kind = resource_placement_kind_t::bgm_event});
+    REQUIRE(applied);
+    REQUIRE(history.document.charts.front().bgm_source_lanes.size() == 1);
+    REQUIRE(history.document.charts.front().measures.front().bgm_events.size() == 1);
+    CHECK(history.document.charts.front().measures.front().bgm_events.front().source_lane ==
+          history.document.charts.front().bgm_source_lanes.front().id);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().bgm_source_lanes.empty());
+}
+
 TEST_CASE("resource assignment changes typed note and BGM references atomically",
           "[unit][core][resources]") {
     auto history = make_document_history(assignment_song());

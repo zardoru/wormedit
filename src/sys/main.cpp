@@ -4779,6 +4779,36 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         }
         return "Resource created from the selected audio asset.";
     }
+    case WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before placing a resource.";
+        }
+        const auto kind =
+            action.compose_resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE
+                ? resource_placement_kind_t::sample_note
+                : action.compose_resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM
+                      ? resource_placement_kind_t::bgm_event
+                      : action.compose_resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGA
+                            ? resource_placement_kind_t::bga_background
+                            : static_cast<resource_placement_kind_t>(255);
+        const auto applied = apply_resource_placement(
+            history, action.compose_input_document_revision,
+            {.chart = state.chart,
+             .resource = resource_id_t{action.compose_resource_id},
+             .position = state.cursor,
+             .lane = state.active_lane,
+             .kind = kind});
+        if (!applied.diagnostics.empty()) {
+            return applied.diagnostics.front().message;
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty()
+                       ? "Resource placed, but workspace rebinding failed."
+                       : rebound.diagnostics.front().message;
+        }
+        return "Resource placed at the edit cursor.";
+    }
     case WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL:
     case WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL: {
         if (editor_interaction_has_pending_gesture(state)) {

@@ -136,6 +136,31 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         state->armed_resource_id = 0;
     }
 
+    nk_layout_row_dynamic(context, 24, 1);
+    const auto placement_role = filter_role(state->resource_filter);
+    const auto can_place = view->scene_available && armed && !armed->missing &&
+                           (armed->roles & placement_role) != 0;
+    if (!can_place) {
+        nk_widget_disable_begin(context);
+    }
+    const auto place_clicked =
+        nk_button_label(context, state->resource_filter ==
+                                     worm_ui_nuklear_compose_resource_filter_t::sample
+                                 ? "Place Sample at cursor"
+                                 : state->resource_filter ==
+                                           worm_ui_nuklear_compose_resource_filter_t::bgm
+                                       ? "Place BGM at cursor"
+                                       : "Place BGA background at cursor");
+    if (!can_place) {
+        nk_widget_disable_end(context);
+    }
+    if (place_clicked && can_place &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->compose_resource_id = armed->resource_id;
+        action->compose_resource_role = placement_role;
+        action->compose_action = WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE;
+    }
+
     if (state->resource_filter != worm_ui_nuklear_compose_resource_filter_t::bga) {
         nk_layout_row_dynamic(context, 24, 1);
         const auto can_create = view->selected_audio_asset_id != 0;

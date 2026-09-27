@@ -27,6 +27,27 @@ struct create_resource_action_t {
     bool allocate_bms_identifier{};
 };
 
+enum class resource_placement_kind_t {
+    sample_note,
+    bgm_event,
+    bga_background,
+};
+
+struct place_resource_action_t {
+    chart_id_t chart;
+    resource_id_t resource;
+    local_position_t position;
+    lane_id_t lane;
+    resource_placement_kind_t kind{resource_placement_kind_t::sample_note};
+};
+
+// Inserts one resource-backed event at an exact chart row. BGM placement
+// reuses the first unoccupied source lane or appends one in the same command.
+[[nodiscard]] auto apply_resource_placement(document_history_t& history,
+                                            std::uint64_t expected_revision,
+                                            const place_resource_action_t& action)
+    -> document_command_result_t;
+
 // Creates a catalog entry for an already registered asset. Optional BMS
 // allocation uses the first free nonzero two-digit ID in its WAV/BMP namespace.
 [[nodiscard]] auto apply_resource_creation(document_history_t& history,

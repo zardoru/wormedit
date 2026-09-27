@@ -224,6 +224,7 @@ struct flattened_workspace_t {
         compose_output_group_asset_directory_storage;
     std::string metadata_project_directory_storage;
     std::string metadata_music_source_storage;
+    std::string metadata_copy_preview_source_storage;
     std::array<WormUiComposeOutputGroupView, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
         metadata_output_group_storage{};
     std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
@@ -6078,6 +6079,7 @@ struct metadata_copy_preview_key_t {
     std::filesystem::path output_path;
     std::size_t output_group_index{};
     bool export_copy{};
+    bool import_copy{};
 };
 
 struct pending_metadata_copy_preview_t {
@@ -6106,10 +6108,26 @@ auto start_metadata_copy_preview(const WormUiWorkspaceAction& action,
         return "Open a saved native project before inspecting asset copies.";
     if (runtime.pending)
         return "Wait for the current copy inspection to finish.";
+    const bool import_copy = action.metadata_inspect_import;
     const asset_id_t asset{action.compose_resource_asset_id};
-    const auto audio = std::ranges::find(history.document.audio_assets, asset, &audio_asset_t::id);
-    if (!asset || audio == history.document.audio_assets.end())
-        return "Selected music asset is no longer available.";
+    std::filesystem::path source_path;
+    if (import_copy) {
+        const auto reserved = next_resource_asset_id(history.document);
+        source_path = std::filesystem::path{action.compose_import_path}.lexically_normal();
+        if (!reserved || *reserved != asset || !source_path.is_absolute() ||
+            source_path.filename().empty())
+            return "External audio or its reserved asset ID changed before inspection.";
+        if (std::ranges::any_of(history.document.audio_assets, [&](const auto& audio) {
+                return audio.source_path.lexically_normal() == source_path;
+            }))
+            return "This external audio is already linked; inspect its existing asset.";
+    } else {
+        const auto audio =
+            std::ranges::find(history.document.audio_assets, asset, &audio_asset_t::id);
+        if (!asset || audio == history.document.audio_assets.end())
+            return "Selected music asset is no longer available.";
+        source_path = audio->source_path;
+    }
     std::filesystem::path output_path;
     if (action.metadata_inspect_export) {
         if (action.compose_output_group_index >= history.document.output_groups.size())
@@ -6120,7 +6138,7 @@ auto start_metadata_copy_preview(const WormUiWorkspaceAction& action,
         output_path = group.relative_output_path;
     }
     const project_asset_copy_request_t request{
-        .project_directory = asset_base, .source_path = audio->source_path, .asset = asset};
+        .project_directory = asset_base, .source_path = source_path, .asset = asset};
     task_graph_t graph{1};
     const auto added = graph.add_task({}, [request, export_copy = action.metadata_inspect_export,
                                            output_path](std::span<const task_result_t>,
@@ -6147,10 +6165,11 @@ auto start_metadata_copy_preview(const WormUiWorkspaceAction& action,
                                     .revision = history.document.revision,
                                     .chart = *workspace.selected_chart,
                                     .asset = asset,
-                                    .source_path = audio->source_path,
+                                    .source_path = source_path,
                                     .output_path = output_path,
                                     .output_group_index = action.compose_output_group_index,
-                                    .export_copy = action.metadata_inspect_export};
+                                    .export_copy = action.metadata_inspect_export,
+                                    .import_copy = import_copy};
     runtime.message = "Inspecting destination bytes in the background...";
     return "Copy destination inspection started.";
 }
@@ -9331,16 +9350,24 @@ int main(int argc, char** argv) {
                     metadata_copy_preview.key->song == history.document.id &&
                     metadata_copy_preview.key->revision == history.document.revision &&
                     metadata_copy_preview.key->chart.value == metadata.chart_id &&
-                    metadata_copy_preview.key->asset.value == metadata.selected_music_asset_id &&
-                    metadata.selected_music_source &&
-                    metadata_copy_preview.key->source_path.generic_string() ==
-                        metadata.selected_music_source) {
+                    (metadata_copy_preview.key->import_copy
+                         ? metadata_copy_preview.key->asset.value == metadata.next_import_asset_id
+                         : metadata_copy_preview.key->asset.value ==
+                                   metadata.selected_music_asset_id &&
+                               metadata.selected_music_source &&
+                               metadata_copy_preview.key->source_path.generic_string() ==
+                                   metadata.selected_music_source)) {
                     metadata.copy_preview_text = metadata_copy_preview.message.c_str();
                     metadata.copy_preview_pending = metadata_copy_preview.pending.has_value();
                     metadata.copy_preview_export = metadata_copy_preview.key->export_copy;
+                    metadata.copy_preview_import = metadata_copy_preview.key->import_copy;
                     metadata.copy_preview_group_index =
                         metadata_copy_preview.key->output_group_index;
                     metadata.copy_preview_asset_id = metadata_copy_preview.key->asset.value;
+                    flattened.metadata_copy_preview_source_storage =
+                        metadata_copy_preview.key->source_path.generic_string();
+                    metadata.copy_preview_source =
+                        flattened.metadata_copy_preview_source_storage.c_str();
                 }
                 for (std::size_t group_index = 0;
                      group_index < history.document.output_groups.size(); ++group_index) {

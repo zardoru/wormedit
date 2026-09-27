@@ -469,7 +469,7 @@ static void metadata_copy_inspection_button(struct nk_context* context,
         action->compose_input_chart_id = metadata->chart_id;
         action->compose_input_document_revision = metadata->document_revision;
     }
-    if (metadata->copy_preview_text &&
+    if (metadata->copy_preview_text && !metadata->copy_preview_import &&
         metadata->copy_preview_asset_id == metadata->selected_music_asset_id &&
         metadata->copy_preview_export == export_copy &&
         (!export_copy || metadata->copy_preview_group_index == group_index)) {
@@ -508,6 +508,34 @@ metadata_external_copy_button(struct nk_context* context, const WormUiMetadataVi
              export_copy ? "Export-copy: validate, stage, then link external BGM."
                          : "Import-copy: validate, publish, then add one BGM resource.",
              NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 25, 1);
+    if (!can_copy || metadata->copy_preview_pending)
+        nk_widget_disable_begin(context);
+    const bool inspect = nk_button_label(context, export_copy ? "Inspect external export copy"
+                                                              : "Inspect external project copy");
+    if (!can_copy || metadata->copy_preview_pending)
+        nk_widget_disable_end(context);
+    if (inspect && can_copy && !metadata->copy_preview_pending &&
+        !action->metadata_inspect_copy && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        std::snprintf(action->compose_import_path, sizeof(action->compose_import_path), "%s",
+                      source_path);
+        action->metadata_inspect_copy = true;
+        action->metadata_inspect_import = true;
+        action->metadata_inspect_export = export_copy;
+        action->compose_resource_asset_id = metadata->next_import_asset_id;
+        action->compose_output_group_index = export_copy ? export_group->document_index : 0;
+        action->compose_input_chart_id = metadata->chart_id;
+        action->compose_input_document_revision = metadata->document_revision;
+    }
+    if (metadata->copy_preview_text && metadata->copy_preview_import &&
+        metadata->copy_preview_asset_id == metadata->next_import_asset_id &&
+        metadata->copy_preview_export == export_copy &&
+        (!export_copy || metadata->copy_preview_group_index == export_group->document_index) &&
+        metadata->copy_preview_source &&
+        std::filesystem::path{metadata->copy_preview_source} == source.lexically_normal()) {
+        nk_layout_row_dynamic(context, 19, 1);
+        nk_label(context, metadata->copy_preview_text, NK_TEXT_LEFT);
+    }
     nk_layout_row_dynamic(context, 25, 1);
     if (!can_copy)
         nk_widget_disable_begin(context);
@@ -695,6 +723,9 @@ static void render_metadata_paths(struct nk_context* context, const WormUiMetada
             if (destination == WORM_UI_METADATA_DROP_PROJECT)
                 metadata_external_copy_button(context, metadata, action,
                                               metadata->dropped_music_path);
+            else if (destination == WORM_UI_METADATA_DROP_EXPORT && dropped_group)
+                metadata_external_copy_button(context, metadata, action,
+                                              metadata->dropped_music_path, dropped_group);
         }
     }
     if (!metadata->project_directory || !metadata->project_directory[0]) {
@@ -782,11 +813,6 @@ static void render_metadata_paths(struct nk_context* context, const WormUiMetada
         if (state.external_music_path[0])
             metadata_external_copy_button(context, metadata, action,
                                           state.external_music_path.data(), selected);
-        if (metadata->dropped_music_path && metadata->dropped_music_path[0] &&
-            metadata->dropped_music_target.destination == WORM_UI_METADATA_DROP_EXPORT &&
-            metadata->dropped_music_target.output_group_index == selected->document_index)
-            metadata_external_copy_button(context, metadata, action, metadata->dropped_music_path,
-                                          selected);
         if (has_music) {
             metadata_read_only_path(
                 context, "Export copy destination",

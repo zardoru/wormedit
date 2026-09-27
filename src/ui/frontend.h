@@ -252,8 +252,10 @@ typedef struct WormUiMetadataView {
     const char* copy_preview_text;
     bool copy_preview_pending;
     bool copy_preview_export;
+    bool copy_preview_import;
     size_t copy_preview_group_index;
     uint64_t copy_preview_asset_id;
+    const char* copy_preview_source;
 } WormUiMetadataView;
 
 typedef struct WormUiAudioSlicesView {
@@ -1346,6 +1348,7 @@ typedef struct WormUiWorkspaceAction {
     size_t metadata_search_tag_count;
     bool metadata_inspect_copy;
     bool metadata_inspect_export;
+    bool metadata_inspect_import;
     bool metadata_import_copy_project;
     bool metadata_import_copy_export;
     bool metadata_format_chart_scoped;

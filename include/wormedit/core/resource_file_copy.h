@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <stop_token>
 #include <string>
 
@@ -26,6 +27,20 @@ struct project_asset_copy_request_t {
     std::uintmax_t maximum_bytes{64ULL * 1024ULL * 1024ULL * 1024ULL};
 };
 
+struct export_asset_copy_request_t {
+    std::filesystem::path project_directory;
+    std::filesystem::path source_path;
+    // The selected output group's project-relative file or directory path.
+    // A path with a filename extension names a chart file; otherwise it names
+    // the output directory.
+    std::filesystem::path relative_output_path;
+    asset_id_t asset;
+    std::uintmax_t maximum_bytes{64ULL * 1024ULL * 1024ULL * 1024ULL};
+};
+
+[[nodiscard]] auto export_asset_directory(const std::filesystem::path& relative_output_path)
+    -> std::optional<std::filesystem::path>;
+
 struct project_asset_copy_result_t {
     project_asset_copy_status_t status{project_asset_copy_status_t::invalid_request};
     std::filesystem::path relative_path;
@@ -45,6 +60,13 @@ struct project_asset_copy_result_t {
 // commits the returned relative path through apply_resource_asset_relink.
 [[nodiscard]] auto copy_resource_file_into_project(
     const project_asset_copy_request_t& request, std::stop_token stop = {})
+    -> project_asset_copy_result_t;
+
+// Stages a resource beside one output group's chart under its assets folder.
+// The result's relative path is project-relative. No document reference is
+// changed; the exporter may use the path relative to the output directory.
+[[nodiscard]] auto copy_resource_file_into_export(const export_asset_copy_request_t& request,
+                                                  std::stop_token stop = {})
     -> project_asset_copy_result_t;
 
 } // namespace wormedit

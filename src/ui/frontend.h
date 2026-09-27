@@ -51,6 +51,7 @@
 #define WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY 9
 #define WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY 128
 #define WORM_UI_COMPOSE_RESOURCE_CAPACITY 128
+#define WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY 32
 #define WORM_UI_TIMING_SPEED_CAPACITY 4096
 #define WORM_UI_TIMING_MARKER_CAPACITY 16384
 #define WORM_UI_TIMING_GRID_CAPACITY 16384
@@ -550,6 +551,13 @@ typedef struct WormUiComposeResourceView {
     const char* source_name;
 } WormUiComposeResourceView;
 
+typedef struct WormUiComposeOutputGroupView {
+    size_t document_index;
+    const char* name;
+    const char* relative_output_path;
+    const char* relative_asset_directory;
+} WormUiComposeOutputGroupView;
+
 // Renderer-neutral field primitives projected into bounded scalar storage.
 // Coordinates are relative to the scene viewport; no chart/core types cross
 // the private frontend boundary.
@@ -647,6 +655,9 @@ typedef struct WormUiComposeView {
     size_t resource_count;
     size_t resource_total_count;
     bool resources_truncated;
+    const WormUiComposeOutputGroupView* output_groups;
+    size_t output_group_count;
+    bool output_groups_truncated;
     const WormUiComposeDifferenceView* differences;
     size_t difference_count;
     const WormUiComposeHoldView* hold_bodies;
@@ -1115,6 +1126,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_CREATE_RESOURCE,
     WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET,
     WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT,
+    WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT,
     WORM_UI_COMPOSE_ACTION_MOVE_BMSON_BGM_TO_CURSOR,
     WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_CONTINUE_AT_CURSOR,
     WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR,
@@ -1332,6 +1344,7 @@ typedef struct WormUiWorkspaceAction {
     uint64_t compose_resource_id;
     uint64_t compose_bmson_bgm_event_id;
     uint64_t compose_resource_asset_id;
+    size_t compose_output_group_index;
     uint8_t compose_resource_role;
     char compose_import_path[WORM_UI_COMPOSE_IMPORT_PATH_BYTES + 1];
     uint8_t compose_timing_lane;

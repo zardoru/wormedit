@@ -212,6 +212,14 @@ struct flattened_workspace_t {
     std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> compose_resource_index_storage;
     std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> compose_resource_name_storage;
     std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> compose_resource_path_storage;
+    std::array<WormUiComposeOutputGroupView, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
+        compose_output_group_storage{};
+    std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
+        compose_output_group_name_storage;
+    std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
+        compose_output_group_path_storage;
+    std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
+        compose_output_group_asset_directory_storage;
     std::array<WormUiComposeLaneKeyBinding, WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY>
         compose_lane_key_storage{};
     std::optional<wormedit::editor_interaction_view_model_t> compose_interaction_view_storage;
@@ -842,6 +850,34 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                 compose.resource_count = resource_catalog.entries.size();
                 compose.resource_total_count = resource_catalog.total_count;
                 compose.resources_truncated = resource_catalog.truncated;
+                compose.output_groups = result.compose_output_group_storage.data();
+                compose.output_group_count = 0;
+                compose.output_groups_truncated = false;
+                for (std::size_t group_index = 0; group_index < document.output_groups.size();
+                     ++group_index) {
+                    const auto& group = document.output_groups[group_index];
+                    if (std::ranges::find(group.charts, tab.chart) == group.charts.end())
+                        continue;
+                    if (compose.output_group_count >= WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY) {
+                        compose.output_groups_truncated = true;
+                        continue;
+                    }
+                    const auto slot = compose.output_group_count++;
+                    result.compose_output_group_name_storage[slot] = group.name;
+                    result.compose_output_group_path_storage[slot] =
+                        group.relative_output_path.generic_string();
+                    const auto asset_directory =
+                        wormedit::export_asset_directory(group.relative_output_path);
+                    result.compose_output_group_asset_directory_storage[slot] =
+                        asset_directory ? asset_directory->generic_string() : std::string{};
+                    result.compose_output_group_storage[slot] = {
+                        .document_index = group_index,
+                        .name = result.compose_output_group_name_storage[slot].c_str(),
+                        .relative_output_path =
+                            result.compose_output_group_path_storage[slot].c_str(),
+                        .relative_asset_directory =
+                            result.compose_output_group_asset_directory_storage[slot].c_str()};
+                }
                 for (std::size_t index = 0; index < resource_catalog.entries.size(); ++index) {
                     const auto& resource = resource_catalog.entries[index];
                     std::uint8_t roles{};
@@ -5998,6 +6034,7 @@ struct pending_project_resource_copy_t {
     wormedit::song_id_t song;
     std::uint64_t revision{};
     std::filesystem::path source_path;
+    bool export_copy{};
 };
 
 auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
@@ -6257,7 +6294,10 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         }
         return "External file linked as a resource.";
     }
-    case WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT: {
+    case WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT:
+    case WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT: {
+        const auto export_copy =
+            action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT;
         if (pending_resource_copy) {
             return "A resource copy is already running.";
         }
@@ -6279,19 +6319,36 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         const auto& source_path = audio != history.document.audio_assets.end()
                                       ? audio->source_path : visual->source_path;
         const auto source_name = source_path.filename().string();
-        if (!source_path.is_absolute() && source_path.parent_path() == "assets" &&
+        if (!export_copy && !source_path.is_absolute() && source_path.parent_path() == "assets" &&
             source_name.starts_with(std::to_string(id.value) + "-")) {
             return "Resource source is already in the project assets directory.";
+        }
+        std::filesystem::path output_path;
+        if (export_copy) {
+            if (action.compose_output_group_index >= history.document.output_groups.size())
+                return "The selected output group is no longer available.";
+            const auto& group = history.document.output_groups[action.compose_output_group_index];
+            if (std::ranges::find(group.charts, state.chart) == group.charts.end())
+                return "The selected output group does not include this chart.";
+            output_path = group.relative_output_path;
         }
         task_graph_t graph{1};
         const project_asset_copy_request_t request{
             .project_directory = asset_base, .source_path = source_path, .asset = id};
-        const auto added = graph.add_task({}, [request](std::span<const task_result_t>,
-                                                        std::stop_token stop) {
-            auto copied = std::make_shared<const project_asset_copy_result_t>(
-                copy_resource_file_into_project(request, stop));
-            return task_result_t::success(make_task_value(std::move(copied)));
-        });
+        const auto added =
+            graph.add_task({}, [request, export_copy, output_path](std::span<const task_result_t>,
+                                                                   std::stop_token stop) {
+                auto copied = std::make_shared<const project_asset_copy_result_t>(
+                    export_copy ? copy_resource_file_into_export(
+                                      {.project_directory = request.project_directory,
+                                       .source_path = request.source_path,
+                                       .relative_output_path = output_path,
+                                       .asset = request.asset,
+                                       .maximum_bytes = request.maximum_bytes},
+                                      stop)
+                                : copy_resource_file_into_project(request, stop));
+                return task_result_t::success(make_task_value(std::move(copied)));
+            });
         if (!added) {
             return added.error ? added.error->message : "Resource copy could not start.";
         }
@@ -6299,11 +6356,16 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         if (!submitted) {
             return submitted.error ? submitted.error->message : "Resource copy could not start.";
         }
-        pending_resource_copy = pending_project_resource_copy_t{
-            .graph = std::move(submitted.graph), .task = *added.id, .asset = id,
-            .song = history.document.id, .revision = history.document.revision,
-            .source_path = source_path};
-        return "Resource copy started in the background.";
+        pending_resource_copy =
+            pending_project_resource_copy_t{.graph = std::move(submitted.graph),
+                                            .task = *added.id,
+                                            .asset = id,
+                                            .song = history.document.id,
+                                            .revision = history.document.revision,
+                                            .source_path = source_path,
+                                            .export_copy = export_copy};
+        return export_copy ? "Export copy started in the background."
+                           : "Resource copy started in the background.";
     }
     case WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE: {
         if (editor_interaction_has_pending_gesture(state)) {
@@ -8304,6 +8366,10 @@ int main(int argc, char** argv) {
                                               : "Resource copy returned no result.";
                 } else if (!*copied) {
                     status = copied->message.empty() ? "Resource copy failed." : copied->message;
+                } else if (request.export_copy) {
+                    status = copied->status == wormedit::project_asset_copy_status_t::reused
+                                 ? "Identical resource already staged in the export folder."
+                                 : "Resource copied into the export folder.";
                 } else if (history.document.id != request.song ||
                            history.document.revision != request.revision) {
                     status = "Resource copy finished, but the document changed; source was not relinked.";

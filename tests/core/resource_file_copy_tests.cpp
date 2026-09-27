@@ -105,3 +105,66 @@ TEST_CASE("project asset copy validates relative sources, limits, and cancellati
           wormedit::project_asset_copy_status_t::cancelled);
     CHECK_FALSE(std::filesystem::exists(directory.path / "assets/6-kick.wav"));
 }
+
+TEST_CASE("export asset copy stages beside an output group without changing project assets",
+          "[unit][core][resources]") {
+    temporary_directory_t directory;
+    write_text(directory.path / "kick.wav", "first audio bytes");
+    const wormedit::export_asset_copy_request_t request{.project_directory = directory.path,
+                                                        .source_path = "kick.wav",
+                                                        .relative_output_path =
+                                                            "exports/bms/chart.bms",
+                                                        .asset = wormedit::asset_id_t{12}};
+    const auto copied = wormedit::copy_resource_file_into_export(request);
+    REQUIRE(copied);
+    CHECK(copied.relative_path == std::filesystem::path{"exports/bms/assets/12-kick.wav"});
+    CHECK(read_text(copied.absolute_path) == "first audio bytes");
+    CHECK_FALSE(std::filesystem::exists(directory.path / "assets/12-kick.wav"));
+    CHECK(wormedit::copy_resource_file_into_export(request).status ==
+          wormedit::project_asset_copy_status_t::reused);
+    write_text(directory.path / "kick.wav", "changed audio bytes");
+    CHECK(wormedit::copy_resource_file_into_export(request).status ==
+          wormedit::project_asset_copy_status_t::destination_collision);
+    CHECK(read_text(copied.absolute_path) == "first audio bytes");
+}
+
+TEST_CASE("export asset copy rejects traversal and symlinked output directories",
+          "[unit][core][resources]") {
+    temporary_directory_t directory;
+    write_text(directory.path / "kick.wav", "source data");
+    wormedit::export_asset_copy_request_t request{.project_directory = directory.path,
+                                                  .source_path = "kick.wav",
+                                                  .relative_output_path = "exports/chart.bms",
+                                                  .asset = wormedit::asset_id_t{5}};
+    request.relative_output_path = "../outside/chart.bms";
+    CHECK(wormedit::copy_resource_file_into_export(request).status ==
+          wormedit::project_asset_copy_status_t::invalid_request);
+    request.relative_output_path = directory.path / "outside/chart.bms";
+    CHECK(wormedit::copy_resource_file_into_export(request).status ==
+          wormedit::project_asset_copy_status_t::invalid_request);
+    request.relative_output_path = "exports/chart.bms";
+    std::filesystem::create_directory(directory.path / "actual");
+    std::error_code error;
+    std::filesystem::create_directory_symlink(directory.path / "actual", directory.path / "exports",
+                                              error);
+    if (!error) {
+        CHECK(wormedit::copy_resource_file_into_export(request).status ==
+              wormedit::project_asset_copy_status_t::invalid_request);
+        CHECK_FALSE(std::filesystem::exists(directory.path / "actual/assets/5-kick.wav"));
+    }
+}
+
+TEST_CASE("export asset copy accepts an output group directory path", "[unit][core][resources]") {
+    temporary_directory_t directory;
+    write_text(directory.path / "kick.wav", "source data");
+    const wormedit::export_asset_copy_request_t request{.project_directory = directory.path,
+                                                        .source_path = "kick.wav",
+                                                        .relative_output_path = "charts",
+                                                        .asset = wormedit::asset_id_t{5}};
+    CHECK(wormedit::export_asset_directory(request.relative_output_path) ==
+          std::filesystem::path{"charts/assets"});
+    const auto copied = wormedit::copy_resource_file_into_export(request);
+    REQUIRE(copied);
+    CHECK(copied.relative_path == std::filesystem::path{"charts/assets/5-kick.wav"});
+    CHECK(read_text(copied.absolute_path) == "source data");
+}

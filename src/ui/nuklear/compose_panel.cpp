@@ -408,6 +408,7 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         view->audio_section_count > WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY ||
         view->timing_marker_count > WORM_UI_TIMING_MARKER_CAPACITY ||
         view->resource_count > WORM_UI_COMPOSE_RESOURCE_CAPACITY ||
+        view->output_group_count > WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY ||
         view->resource_total_count < view->resource_count ||
         (view->semantic_layer_page_count == 0
              ? view->semantic_layer_page != 0 || view->semantic_layer_total_count != 0 ||
@@ -429,7 +430,8 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         (view->audio_bookmark_count != 0 && !view->audio_bookmarks) ||
         (view->audio_section_count != 0 && !view->audio_sections) ||
         (view->timing_marker_count != 0 && !view->timing_markers) ||
-        (view->resource_count != 0 && !view->resources))
+        (view->resource_count != 0 && !view->resources) ||
+        (view->output_group_count != 0 && !view->output_groups))
         return 0;
     if ((view->area_selection_preview_visible &&
          (!compose_rect_valid(&view->area_selection_preview_bounds) ||
@@ -499,6 +501,12 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
             !resource.name || !resource.source_name) {
             return 0;
         }
+    }
+    for (size_t index = 0; index < view->output_group_count; ++index) {
+        const auto& group = view->output_groups[index];
+        if (!group.name || !group.relative_output_path || !group.relative_asset_directory ||
+            (index != 0 && group.document_index <= view->output_groups[index - 1].document_index))
+            return 0;
     }
     for (size_t index = 0; index < view->difference_count; ++index) {
         if (!compose_rect_valid(&view->differences[index].bounds))

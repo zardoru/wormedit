@@ -123,6 +123,48 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         return;
     }
 
+    const WormUiComposeOutputGroupView* export_group = nullptr;
+    for (size_t index = 0; index < view->output_group_count; ++index) {
+        if (view->output_groups[index].document_index == state->export_group_document_index) {
+            export_group = &view->output_groups[index];
+            break;
+        }
+    }
+    if (!export_group && view->output_group_count != 0) {
+        export_group = &view->output_groups[0];
+        state->export_group_document_index = export_group->document_index;
+    }
+    nk_layout_row_dynamic(context, 22, 1);
+    if (export_group) {
+        std::array<char, 180> selected_label{};
+        std::snprintf(selected_label.data(), selected_label.size(), "Export: %s",
+                      export_group->name[0] ? export_group->name
+                                            : export_group->relative_output_path);
+        if (nk_combo_begin_label(context, selected_label.data(),
+                                 nk_vec2(nk_widget_width(context), 220.0f))) {
+            nk_layout_row_dynamic(context, 22, 1);
+            for (size_t index = 0; index < view->output_group_count; ++index) {
+                const auto& candidate = view->output_groups[index];
+                if (nk_combo_item_label(context,
+                                        candidate.name[0] ? candidate.name
+                                                          : candidate.relative_output_path,
+                                        NK_TEXT_LEFT)) {
+                    state->export_group_document_index = candidate.document_index;
+                    export_group = &candidate;
+                }
+            }
+            nk_combo_end(context);
+        }
+        nk_layout_row_dynamic(context, 17, 1);
+        nk_label(context, export_group->relative_output_path, NK_TEXT_LEFT);
+    } else {
+        nk_label(context, "No output group for this chart", NK_TEXT_LEFT);
+    }
+    if (view->output_groups_truncated) {
+        nk_layout_row_dynamic(context, 17, 1);
+        nk_label(context, "Additional output groups are hidden by the view cap.", NK_TEXT_LEFT);
+    }
+
     nk_layout_row_dynamic(context, 24, 3);
     constexpr std::array filters{
         worm_ui_nuklear_compose_resource_filter_t::sample,
@@ -585,6 +627,25 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
                 action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
                 action->compose_resource_asset_id = resource.asset_id;
                 action->compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
+            }
+            if (export_group && export_group->relative_asset_directory[0] != '\0') {
+                const auto destination =
+                    std::filesystem::path(export_group->relative_asset_directory) /
+                    (std::to_string(resource.asset_id) + "-" +
+                     std::filesystem::path(resource.source_name).filename().string());
+                const auto destination_text = destination.generic_string();
+                std::array<char, 200> destination_label{};
+                std::snprintf(destination_label.data(), destination_label.size(), "Export copy: %s",
+                              destination_text.c_str());
+                nk_layout_row_dynamic(context, 17, 1);
+                nk_label(context, destination_label.data(), NK_TEXT_LEFT);
+                nk_layout_row_dynamic(context, 22, 1);
+                if (nk_button_label(context, "Copy source into export folder") &&
+                    action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                    action->compose_resource_asset_id = resource.asset_id;
+                    action->compose_output_group_index = export_group->document_index;
+                    action->compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT;
+                }
             }
         }
         if (resource.missing) {

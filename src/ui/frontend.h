@@ -350,6 +350,11 @@ typedef struct WormUiComposeBgmDraftView {
     bool restart;
 } WormUiComposeBgmDraftView;
 
+typedef struct WormUiComposeBgmMovePreviewView {
+    WormUiComposeRect bounds;
+    bool valid;
+} WormUiComposeBgmMovePreviewView;
+
 // A visible palette slot. The application retains stable IDs, names, and
 // colors; the frontend must return the ID rather than a transient index.
 typedef struct WormUiComposeSemanticLayerView {
@@ -601,6 +606,7 @@ typedef struct WormUiComposeView {
     size_t bgm_event_count;
     const WormUiComposeBgmDraftView* bmson_marker_drafts;
     size_t bmson_marker_draft_count;
+    const WormUiComposeBgmMovePreviewView* bmson_marker_move_preview;
     const WormUiComposeCursorView* cursor;
     bool area_selection_preview_visible;
     WormUiComposeRect area_selection_preview_bounds;
@@ -1088,6 +1094,10 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE,
     WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_CONTINUE,
     WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_RESTART,
+    WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_BEGIN,
+    WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_UPDATE,
+    WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE,
+    WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_CANCEL,
     WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK,
     WORM_UI_COMPOSE_INPUT_DELETE_NOTES,
     WORM_UI_COMPOSE_INPUT_UNDO,

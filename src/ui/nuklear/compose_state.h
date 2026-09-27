@@ -67,6 +67,13 @@ struct worm_ui_nuklear_compose_state_t {
     bool note_paint_pointer_active{};
     bool bmson_razor_pointer_active{};
     double bmson_razor_last_y_pixels{};
+    bool bmson_marker_move_candidate_active{};
+    bool bmson_marker_move_active{};
+    std::uint64_t bmson_marker_move_event_id{};
+    double bmson_marker_move_anchor_x{};
+    double bmson_marker_move_anchor_y{};
+    float bmson_marker_move_anchor_screen_x{};
+    float bmson_marker_move_anchor_screen_y{};
     bool semantic_layer_paint_pointer_active{};
     bool lane_hold_active{};
     bool space_range_hold_active{};

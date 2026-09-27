@@ -11,6 +11,9 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     state.pointer_hold_active = true;
     state.bmson_razor_pointer_active = true;
     state.bmson_razor_last_y_pixels = 42.0;
+    state.bmson_marker_move_candidate_active = true;
+    state.bmson_marker_move_active = true;
+    state.bmson_marker_move_event_id = 42;
     state.note_move_active = true;
     state.timing_stage_drag_active = true;
     state.area_selection_active = true;
@@ -41,6 +44,9 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     CHECK_FALSE(state.pointer_hold_active);
     CHECK_FALSE(state.bmson_razor_pointer_active);
     CHECK(state.bmson_razor_last_y_pixels == 0.0);
+    CHECK_FALSE(state.bmson_marker_move_candidate_active);
+    CHECK_FALSE(state.bmson_marker_move_active);
+    CHECK(state.bmson_marker_move_event_id == 0);
     CHECK_FALSE(state.note_move_active);
     CHECK_FALSE(state.timing_stage_drag_active);
     CHECK_FALSE(state.area_selection_active);

@@ -173,6 +173,37 @@ TEST_CASE("field scene composes split layout bands, exact grid, holds, selection
     CHECK(zoomed.scene->hold_bodies[0].bounds.bottom == Catch::Approx(192.0));
 }
 
+TEST_CASE("field scene can project the last sparse BMS measure with its active lanes",
+          "[unit][core][editor-scene][virtual-canvas]") {
+    auto chart = scene_chart();
+    chart.source_family = wormedit::format_family_t::bms;
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    const auto& indexed = std::get<wormedit::editor_field_scene_index_t>(built);
+    auto visible = view();
+    visible.viewport_scroll_pixels = 999.0 * visible.pixels_per_standard_measure;
+    const wormedit::editor_field_scene_request_t request{
+        .field_left_pixels = 10.0, .field_width_pixels = 200.0, .include_virtual_bms_tail = true};
+    const auto projected = wormedit::make_editor_field_scene(chart, indexed, visible, request);
+    REQUIRE(projected);
+    const auto& scene = *projected.scene;
+    CHECK(scene.visible_begin_row == 959'040);
+    CHECK(scene.visible_end_row == 960'000);
+    REQUIRE(scene.layout_bands.size() == 1);
+    CHECK(scene.layout_bands.front().profile_id == "second");
+    CHECK(scene.layout_bands.front().end_row == 960'000);
+    CHECK(scene.lanes.size() == 2);
+    CHECK(std::ranges::any_of(scene.grid_lines, [](const auto& line) {
+        return line.kind == wormedit::editor_grid_line_kind_t::measure &&
+               line.chart_row.whole_rows == 959'040;
+    }));
+    CHECK(chart.measures.size() == 2);
+    CHECK(indexed.measures.entries.size() == 2);
+    auto authored_only = request;
+    authored_only.include_virtual_bms_tail = false;
+    CHECK_FALSE(wormedit::make_editor_field_scene(chart, indexed, visible, authored_only));
+}
+
 TEST_CASE("field scene resolves semantic layer colors by visible palette order",
           "[unit][core][editor-scene][semantic-layer]") {
     auto chart = scene_chart();

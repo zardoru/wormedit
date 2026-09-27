@@ -1,4 +1,5 @@
 #include <wormedit/core/editor_scene.h>
+#include <wormedit/core/virtual_canvas.h>
 
 #include <algorithm>
 #include <cmath>
@@ -390,10 +391,19 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         return result;
     }
 
+    auto canvas_rows = index.measures.total_rows;
+    if (request.include_virtual_bms_tail && chart.source_family == format_family_t::bms) {
+        auto built_canvas = build_virtual_canvas(chart);
+        if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas)) {
+            result.diagnostics = *diagnostics;
+            return result;
+        }
+        canvas_rows = std::get<virtual_canvas_t>(built_canvas).total_rows;
+    }
+
     const auto pixels_per_row = static_cast<long double>(view.pixels_per_standard_measure) /
                                 chart.divisions_per_standard_measure;
-    const auto content_height =
-        static_cast<long double>(index.measures.total_rows) * pixels_per_row;
+    const auto content_height = static_cast<long double>(canvas_rows) * pixels_per_row;
     const auto maximum_scroll =
         std::max(0.0L, content_height - static_cast<long double>(view.viewport_height_pixels));
     if (static_cast<long double>(view.viewport_scroll_pixels) > maximum_scroll) {
@@ -445,18 +455,18 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         return (pixel + static_cast<long double>(view.viewport_scroll_pixels)) / pixels_per_row;
     };
     const auto visible_low =
-        std::clamp(row_at_pixel(0), 0.0L, static_cast<long double>(index.measures.total_rows));
+        std::clamp(row_at_pixel(0), 0.0L, static_cast<long double>(canvas_rows));
     const auto visible_high = std::clamp(row_at_pixel(view.viewport_height_pixels), 0.0L,
-                                         static_cast<long double>(index.measures.total_rows));
+                                         static_cast<long double>(canvas_rows));
     const auto overscan_rows =
         static_cast<long double>(request.note_head_height_pixels) / (2.0L * pixels_per_row);
     const auto query_low = std::max(0.0L, visible_low - overscan_rows);
     const auto query_high =
-        std::min(static_cast<long double>(index.measures.total_rows), visible_high + overscan_rows);
+        std::min(static_cast<long double>(canvas_rows), visible_high + overscan_rows);
     auto visible_begin = static_cast<std::uint64_t>(std::floor(visible_low));
     auto visible_end = static_cast<std::uint64_t>(std::ceil(visible_high));
-    visible_begin = std::min(visible_begin, index.measures.total_rows - 1);
-    visible_end = std::clamp(visible_end, visible_begin + 1, index.measures.total_rows);
+    visible_begin = std::min(visible_begin, canvas_rows - 1);
+    visible_end = std::clamp(visible_end, visible_begin + 1, canvas_rows);
 
     editor_field_scene_t scene{.visible_begin_row = visible_begin, .visible_end_row = visible_end};
     std::size_t primitive_count{};
@@ -482,7 +492,8 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
 
     std::vector<visible_band_t> visible_bands;
     for (const auto& source : index.layouts) {
-        if (static_cast<long double>(source.end_row) <= query_low ||
+        const auto source_end = &source == &index.layouts.back() ? canvas_rows : source.end_row;
+        if (static_cast<long double>(source_end) <= query_low ||
             static_cast<long double>(source.begin_row) >= query_high) {
             continue;
         }
@@ -519,7 +530,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         const auto lane_width =
             (request.field_width_pixels - gutter) / static_cast<double>(lanes.size());
         const auto clipped_begin = std::max(query_low, static_cast<long double>(source.begin_row));
-        const auto clipped_end = std::min(query_high, static_cast<long double>(source.end_row));
+        const auto clipped_end = std::min(query_high, static_cast<long double>(source_end));
         if (!consume(1 + lanes.size())) {
             result.diagnostics.push_back(
                 error(diagnostic_code_t::invalid_resolution,
@@ -528,13 +539,13 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         }
         const auto scene_band = scene.layout_bands.size();
         scene.layout_bands.push_back({.begin_row = source.begin_row,
-                                      .end_row = source.end_row,
+                                      .end_row = source_end,
                                       .top_pixels = y_for_row(clipped_begin),
                                       .bottom_pixels = y_for_row(clipped_end),
                                       .profile_id = source.layout.profile_id,
                                       .split_stage = source.layout.split_stage});
         visible_band_t band{.begin_row = source.begin_row,
-                            .end_row = source.end_row,
+                            .end_row = source_end,
                             .clipped_begin_row = clipped_begin,
                             .clipped_end_row = clipped_end,
                             .scene_band = scene_band};
@@ -688,6 +699,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         chart, {.visible_begin_row = visible_begin,
                 .visible_end_row = visible_end,
                 .active_snap_denominator = view.active_snap_denominator,
+                .include_virtual_bms_tail = request.include_virtual_bms_tail,
                 .pixels_per_standard_measure = view.pixels_per_standard_measure,
                 .density = request.grid_density,
                 .authored_groupings = request.authored_groupings,

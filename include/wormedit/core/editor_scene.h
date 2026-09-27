@@ -182,6 +182,7 @@ struct editor_field_scene_request_t {
     double bgm_lane_width_pixels{36.0};
     double bgm_horizontal_scroll_pixels{};
     editor_grid_density_t grid_density;
+    bool include_virtual_bms_tail{};
     std::vector<editor_grid_grouping_t> authored_groupings;
     std::vector<local_position_t> comparison_difference_rows;
     // When set, compose only notes carrying this stable layer ID. This is a

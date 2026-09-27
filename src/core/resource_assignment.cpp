@@ -564,6 +564,91 @@ auto apply_virtual_bms_resource_placement(
                                    "Place resource in virtual BMS measure");
 }
 
+auto apply_virtual_bms_bgm_event_move(
+    document_history_t& history, std::uint64_t expected_revision,
+    const move_virtual_bms_bgm_event_action_t& action) -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "virtual BGM move document revision is stale");
+        return result;
+    }
+    const auto source_chart = std::ranges::find(history.document.charts, action.chart,
+                                                &chart_document_t::id);
+    if (!action.chart || source_chart == history.document.charts.end() ||
+        source_chart->source_family != format_family_t::bms) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "virtual BGM move requires a BMS chart");
+        return result;
+    }
+    const auto built = build_virtual_canvas(*source_chart);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built)) {
+        result.diagnostics = *diagnostics;
+        return result;
+    }
+    const auto& canvas = std::get<virtual_canvas_t>(built);
+    if (action.canvas_row >= canvas.total_rows ||
+        (action.snap_denominator != 0 &&
+         source_chart->divisions_per_standard_measure % action.snap_denominator != 0)) {
+        reject(result, diagnostic_code_t::row_out_of_range,
+               "virtual BGM move row or snap is invalid");
+        return result;
+    }
+    auto snapped_row = action.canvas_row;
+    if (action.snap_denominator != 0) {
+        const auto step = source_chart->divisions_per_standard_measure /
+                          action.snap_denominator;
+        const auto remainder = snapped_row % step;
+        snapped_row -= remainder;
+        if (remainder > step - remainder) {
+            if (step - remainder >
+                std::numeric_limits<std::uint64_t>::max() - snapped_row) {
+                reject(result, diagnostic_code_t::row_out_of_range,
+                       "virtual BGM move snap row overflows");
+                return result;
+            }
+            snapped_row += step;
+        }
+    }
+    const auto destination = canvas.measure_containing(snapped_row);
+    if (!destination || destination->authored ||
+        destination->number >= bms_addressable_measure_count) {
+        reject(result, diagnostic_code_t::row_out_of_range,
+               "virtual BGM move requires an unmaterialized BMS measure");
+        return result;
+    }
+    auto proposed = history.document;
+    auto& chart = proposed.charts[static_cast<std::size_t>(
+        source_chart - history.document.charts.begin())];
+    const auto required = destination->number + 1 - chart.measures.size();
+    std::uint64_t last_measure_id{};
+    for (const auto& measure : chart.measures)
+        last_measure_id = std::max(last_measure_id, measure.id.value);
+    if (required > std::numeric_limits<std::uint64_t>::max() - last_measure_id) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "virtual BGM move measure ID sequence is exhausted");
+        return result;
+    }
+    chart.measures.reserve(destination->number + 1);
+    for (std::size_t added = 0; added < required; ++added) {
+        chart.measures.push_back({.id = measure_id_t{++last_measure_id},
+                                  .definition = {{1, 1}, meter_t{4, 4}}});
+    }
+    const local_position_t position{chart.measures[destination->number].id,
+                                    snapped_row - destination->begin_row};
+    auto staged = make_document_history(std::move(proposed));
+    const auto moved = apply_bgm_event_move(
+        staged, staged.document.revision,
+        {.chart = action.chart, .event = action.event, .position = position,
+         .source_lane = action.source_lane});
+    if (!moved) {
+        result.diagnostics = moved.diagnostics;
+        return result;
+    }
+    return commit_document_command(history, std::move(staged.document),
+                                   "Move BGM event into virtual BMS measure");
+}
+
 auto next_eligible_placement_resource(const song_document_t& document,
                                       resource_id_t current, resource_role_t role)
     -> std::optional<resource_id_t> {

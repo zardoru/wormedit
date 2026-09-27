@@ -140,6 +140,50 @@ TEST_CASE("BGM move appends a lane only when needed and rejects linked markers",
     CHECK(linked_history.undo.empty());
 }
 
+TEST_CASE("virtual BMS BGM move materializes destination with one undo step",
+          "[unit][core][resources][bgm-move][virtual-canvas]") {
+    auto song = assignment_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    const auto revision = history.document.revision;
+    const auto moved = apply_virtual_bms_bgm_event_move(history, revision,
+        {.chart = chart_id_t{2}, .event = object_id_t{11},
+         .canvas_row = 959'061, .source_lane = object_id_t{20},
+         .snap_denominator = 4});
+    REQUIRE(moved);
+    CHECK(history.undo.size() == 1);
+    const auto& chart = history.document.charts.front();
+    REQUIRE(chart.measures.size() == 1'000);
+    CHECK(chart.measures.front().bgm_events.empty());
+    REQUIRE(chart.measures.back().bgm_events.size() == 1);
+    const auto& event = chart.measures.back().bgm_events.front();
+    CHECK(event.id == object_id_t{11});
+    CHECK(event.sound == resource_id_t{1});
+    CHECK(event.source_lane == object_id_t{20});
+    CHECK(event.position.row == 0);
+    CHECK(validate_document(history.document).empty());
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().measures.size() == 1);
+    CHECK(history.document.charts.front().measures.front().bgm_events.front().id ==
+          object_id_t{11});
+}
+
+TEST_CASE("invalid virtual BGM move leaves authored extent unchanged",
+          "[unit][core][resources][bgm-move][virtual-canvas]") {
+    auto song = assignment_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    const auto revision = history.document.revision;
+    CHECK_FALSE(apply_virtual_bms_bgm_event_move(history, revision - 1,
+        {.chart = chart_id_t{2}, .event = object_id_t{11}, .canvas_row = 959'040}));
+    CHECK_FALSE(apply_virtual_bms_bgm_event_move(history, revision,
+        {.chart = chart_id_t{2}, .event = object_id_t{999}, .canvas_row = 959'040}));
+    CHECK_FALSE(apply_virtual_bms_bgm_event_move(history, revision,
+        {.chart = chart_id_t{2}, .event = object_id_t{11}, .canvas_row = 960'000}));
+    CHECK(history.document.charts.front().measures.size() == 1);
+    CHECK(history.undo.empty());
+}
+
 TEST_CASE("virtual BMS BGM and BGA placement commit geometry with the event",
           "[unit][core][resources][virtual-canvas]") {
     for (const auto kind : {resource_placement_kind_t::bgm_event,

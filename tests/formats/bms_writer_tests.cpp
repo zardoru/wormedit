@@ -219,6 +219,32 @@ TEST_CASE("virtual BMS BGM and BGA resources export at #999",
     }
 }
 
+TEST_CASE("moved BGM event exports in virtual BMS measure #999",
+          "[unit][format][bms][writer][virtual-canvas][bgm-move]") {
+    constexpr std::string_view source =
+        "#PLAYER 1\n#TITLE Move BGM\n#WAV01 click.wav\n#00001:01\n";
+    const auto imported = parse(source, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(imported.song);
+    const auto& source_chart = imported.song->charts.front();
+    REQUIRE(source_chart.measures.front().bgm_events.size() == 1);
+    const auto event = source_chart.measures.front().bgm_events.front().id;
+    auto history = wormedit::make_document_history(*imported.song);
+    REQUIRE(wormedit::apply_virtual_bms_bgm_event_move(
+        history, history.document.revision,
+        {.chart = source_chart.id, .event = event, .canvas_row = 959'040}));
+    const auto written = wormedit::write_bms(history.document);
+    REQUIRE(written.bytes);
+    CHECK_FALSE(written.has_errors());
+    CHECK(written.bytes->find("#99901:01") != std::string::npos);
+    CHECK(written.bytes->find("#00001:01") == std::string::npos);
+    CHECK(written.bytes->find("#998") == std::string::npos);
+    const auto reloaded = parse(*written.bytes,
+                                {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(reloaded.song);
+    REQUIRE(reloaded.song->charts.front().measures.size() == 1'000);
+    CHECK(reloaded.song->charts.front().measures.back().bgm_events.size() == 1);
+}
+
 TEST_CASE("BMS writer preserves unchanged source bytes exactly", "[unit][format][bms][writer]") {
     constexpr std::string_view source = "#TITLE Keep bytes\r\n#BPM 120\r\n";
     const auto imported = parse(source);

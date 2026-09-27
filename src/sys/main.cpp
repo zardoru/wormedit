@@ -404,6 +404,7 @@ struct application_command_state_t {
         bool linked_bmson{};
         std::uint64_t snap_denominator{};
         wormedit::local_position_t target;
+        std::optional<std::uint64_t> virtual_canvas_row;
         bool valid{};
     };
     std::optional<bmson_marker_move_preview_t> bmson_marker_move_preview;
@@ -3820,7 +3821,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
         const auto lane = std::ranges::find_if(scene.bgm_lanes, [&](const auto& candidate) {
             return candidate.source_lane == preview.source_lane;
         });
-        const auto row = wormedit::absolute_row(cache.index->measures, preview.target);
+        const auto row = preview.virtual_canvas_row
+            ? preview.virtual_canvas_row
+            : wormedit::absolute_row(cache.index->measures, preview.target);
         if (lane != scene.bgm_lanes.end() && row) {
             const auto y = static_cast<double>(*row) * pixels_per_row -
                            interaction_view.viewport_scroll_pixels;
@@ -5645,7 +5648,38 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                                                           input.y_pixels);
             const auto target = raw ? resolve_resource_placement_position(
                 *chart, *raw, preview->snap_denominator) : std::nullopt;
-            if (!target) {
+            preview->virtual_canvas_row.reset();
+            if (!target && !preview->linked_bmson) {
+                if (const auto raw_canvas_row =
+                        virtual_bms_row_at(*chart, *current_view, input.y_pixels)) {
+                    const auto built_canvas = build_virtual_canvas(*chart);
+                    const auto* canvas = std::get_if<virtual_canvas_t>(&built_canvas);
+                    if (canvas && (preview->snap_denominator == 0 ||
+                                   chart->divisions_per_standard_measure %
+                                           preview->snap_denominator == 0)) {
+                        auto snapped = *raw_canvas_row;
+                        bool snapped_valid = true;
+                        if (preview->snap_denominator != 0) {
+                            const auto step = chart->divisions_per_standard_measure /
+                                              preview->snap_denominator;
+                            const auto remainder = snapped % step;
+                            snapped -= remainder;
+                            if (remainder > step - remainder) {
+                                snapped_valid = step <=
+                                    std::numeric_limits<std::uint64_t>::max() - snapped;
+                                if (snapped_valid)
+                                    snapped += step;
+                            }
+                        }
+                        const auto destination = snapped_valid
+                            ? canvas->measure_containing(snapped)
+                            : std::nullopt;
+                        if (destination && !destination->authored)
+                            preview->virtual_canvas_row = snapped;
+                    }
+                }
+            }
+            if (!target && !preview->virtual_canvas_row) {
                 preview->valid = false;
                 if (input.kind == WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE) {
                     preview.reset();
@@ -5654,7 +5688,8 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 status = "BGM event drag cannot snap to this chart row.";
                 continue;
             }
-            preview->target = *target;
+            if (target)
+                preview->target = *target;
             if (preview->linked_bmson) {
                 const auto source = find_bmson_marker_source(*chart, event);
                 if (!source) {
@@ -5677,6 +5712,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 continue;
             }
             const auto destination = preview->target;
+            const auto virtual_destination = preview->virtual_canvas_row;
             const auto destination_lane = preview->source_lane;
             const auto linked_bmson = preview->linked_bmson;
             const auto valid = preview->valid;
@@ -5687,10 +5723,16 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             const auto moved = linked_bmson
                 ? move_bmson_bgm_marker(history, ui_action.compose_input_document_revision,
                                          state.chart, event, destination)
-                : apply_bgm_event_move(history, ui_action.compose_input_document_revision,
-                                       {.chart = state.chart, .event = event,
-                                        .position = destination,
-                                        .source_lane = destination_lane});
+                : virtual_destination
+                    ? apply_virtual_bms_bgm_event_move(
+                          history, ui_action.compose_input_document_revision,
+                          {.chart = state.chart, .event = event,
+                           .canvas_row = *virtual_destination,
+                           .source_lane = destination_lane})
+                    : apply_bgm_event_move(history, ui_action.compose_input_document_revision,
+                                           {.chart = state.chart, .event = event,
+                                            .position = destination,
+                                            .source_lane = destination_lane});
             if (!moved.diagnostics.empty()) {
                 return moved.diagnostics.front().message;
             }

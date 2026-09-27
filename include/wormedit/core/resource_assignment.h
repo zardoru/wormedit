@@ -112,12 +112,26 @@ struct move_bgm_event_action_t {
     std::uint64_t snap_denominator{};
 };
 
+struct move_virtual_bms_bgm_event_action_t {
+    chart_id_t chart;
+    object_id_t event;
+    std::uint64_t canvas_row{};
+    object_id_t source_lane;
+    std::uint64_t snap_denominator{};
+};
+
 // Moves one ordinary BGM event, preserving its ID and sound. Linked BMSON
 // markers and BMS branch-owned events use their source-aware editors.
 [[nodiscard]] auto apply_bgm_event_move(document_history_t& history,
                                         std::uint64_t expected_revision,
                                         const move_bgm_event_action_t& action)
     -> document_command_result_t;
+
+// Materializes a virtual BMS destination and moves the BGM event in one undo
+// command. Rejections leave both the chart and its authored extent untouched.
+[[nodiscard]] auto apply_virtual_bms_bgm_event_move(
+    document_history_t& history, std::uint64_t expected_revision,
+    const move_virtual_bms_bgm_event_action_t& action) -> document_command_result_t;
 
 [[nodiscard]] auto resolve_resource_placement_position(const chart_document_t& chart,
                                                        local_position_t position,

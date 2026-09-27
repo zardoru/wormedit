@@ -26,7 +26,7 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
     state.resource_search[0] = 'x';
     state.armed_resource_id = 42;
-    state.resource_pointer_placement_active = true;
+    state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::replace;
 
     worm_ui_nuklear_reset_compose_state();
 
@@ -51,5 +51,5 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     CHECK(state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample);
     CHECK(state.resource_search[0] == '\0');
     CHECK(state.armed_resource_id == 0);
-    CHECK_FALSE(state.resource_pointer_placement_active);
+    CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
 }

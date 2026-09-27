@@ -843,7 +843,8 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
         if (state.cancel_pending) {
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
             state.cancel_pending = false;
-            state.resource_pointer_placement_active = false;
+            state.resource_pointer_mode =
+                worm_ui_nuklear_compose_resource_pointer_mode_t::off;
             state.note_paint_pointer_active = false;
             state.semantic_layer_paint_pointer_active = false;
             state.space_range_hold_active = false;
@@ -857,7 +858,8 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
         const auto revision_changed = state.last_document_revision != view->document_revision;
         if (project_changed) {
             state.armed_resource_id = 0;
-            state.resource_pointer_placement_active = false;
+            state.resource_pointer_mode =
+                worm_ui_nuklear_compose_resource_pointer_mode_t::off;
             state.last_project_id = view->project_id;
         }
         if (chart_changed || revision_changed) {
@@ -882,7 +884,8 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             cancel_compose_navigation(action);
         }
         if (chart_changed) {
-            state.resource_pointer_placement_active = false;
+            state.resource_pointer_mode =
+                worm_ui_nuklear_compose_resource_pointer_mode_t::off;
         }
         if (chart_changed) {
             // Events received before the first frame for another chart still
@@ -1469,8 +1472,12 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     nk_label(context,
              state.timing_stage_drag_active
                  ? "Move timing event · release to keep staged position · Apply to commit"
-             : state.resource_pointer_placement_active
+             : state.resource_pointer_mode ==
+                       worm_ui_nuklear_compose_resource_pointer_mode_t::place
                  ? "Resource placement armed · click a chart lane · Esc disarms"
+             : state.resource_pointer_mode ==
+                       worm_ui_nuklear_compose_resource_pointer_mode_t::replace
+                 ? "Resource replacement armed · click an existing object · Esc disarms"
              : timing_view->stage_active && timing_view->stage_existing_object_id != 0
                  ? "Drag outlined timing marker to resnap · edit/apply in side inspector"
              : view->semantic_layer_paint_mode_active
@@ -1742,7 +1749,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     bool paint_pointer_consumed = state.note_paint_pointer_active ||
                                   state.semantic_layer_paint_pointer_active ||
                                   compose_action_has_cancel(action);
-    if (!paint_pointer_consumed && state.resource_pointer_placement_active &&
+    if (!paint_pointer_consumed &&
+        state.resource_pointer_mode != worm_ui_nuklear_compose_resource_pointer_mode_t::off &&
         view->scene_available && pointer_started_in_view && window_focused &&
         shortcut_event_count == 0 && (pointer_modifiers & any_pointer_modifier) == 0 &&
         !compose_note_double_click_in_view && !compose_pointer_captured &&
@@ -1772,8 +1780,15 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             in_placement_pane = pointer_started_in_note_field;
         }
         if (in_placement_pane) {
+            const auto replacing = state.resource_pointer_mode ==
+                worm_ui_nuklear_compose_resource_pointer_mode_t::replace;
+            if (replacing && role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM) {
+                target_lane_id =
+                    compose_bgm_event_at(view, pointer_started_x, pointer_started_y);
+            }
             append_compose_input(
-                action, WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE,
+                action, replacing ? WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE
+                                  : WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE,
                 pointer_started_x, pointer_started_y, target_lane_id, false,
                 WORM_UI_COMPOSE_SELECTION_REPLACE,
                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,

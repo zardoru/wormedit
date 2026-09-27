@@ -79,7 +79,8 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
                       selected ? " *" : "");
         if (nk_button_label(context, label.data())) {
             if (state->resource_filter != candidate) {
-                state->resource_pointer_placement_active = false;
+                state->resource_pointer_mode =
+                    worm_ui_nuklear_compose_resource_pointer_mode_t::off;
             }
             state->resource_filter = candidate;
         }
@@ -137,7 +138,8 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
     }
     if (disarm_clicked) {
         state->armed_resource_id = 0;
-        state->resource_pointer_placement_active = false;
+        state->resource_pointer_mode =
+            worm_ui_nuklear_compose_resource_pointer_mode_t::off;
     }
 
     nk_layout_row_dynamic(context, 24, 1);
@@ -164,7 +166,6 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         action->compose_resource_role = placement_role;
         action->compose_action = WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE;
     }
-    nk_layout_row_dynamic(context, 24, 1);
     const auto can_pointer_place = can_place && !view->note_paint_mode_active &&
                                    !view->semantic_layer_paint_mode_active &&
                                    !view->timing_stage_active &&
@@ -172,19 +173,35 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
                                         worm_ui_nuklear_compose_resource_filter_t::bgm ||
                                     view->bgm_lane_count != 0);
     if (!can_pointer_place) {
-        state->resource_pointer_placement_active = false;
+        state->resource_pointer_mode =
+            worm_ui_nuklear_compose_resource_pointer_mode_t::off;
         nk_widget_disable_begin(context);
     }
-    const auto pointer_tool_clicked = nk_button_label(
-        context, state->resource_pointer_placement_active
-                     ? "Pointer placement: On"
-                     : "Pointer placement: Off");
+    nk_layout_row_dynamic(context, 24, 2);
+    const auto place_mode_clicked = nk_button_label(
+        context, state->resource_pointer_mode ==
+                         worm_ui_nuklear_compose_resource_pointer_mode_t::place
+                     ? "Place: On"
+                     : "Place: Off");
+    const auto replace_mode_clicked = nk_button_label(
+        context, state->resource_pointer_mode ==
+                         worm_ui_nuklear_compose_resource_pointer_mode_t::replace
+                     ? "Replace: On"
+                     : "Replace: Off");
     if (!can_pointer_place) {
         nk_widget_disable_end(context);
     }
-    if (pointer_tool_clicked && can_pointer_place) {
-        state->resource_pointer_placement_active =
-            !state->resource_pointer_placement_active;
+    if (place_mode_clicked && can_pointer_place) {
+        state->resource_pointer_mode =
+            state->resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place
+                ? worm_ui_nuklear_compose_resource_pointer_mode_t::off
+                : worm_ui_nuklear_compose_resource_pointer_mode_t::place;
+    } else if (replace_mode_clicked && can_pointer_place) {
+        state->resource_pointer_mode =
+            state->resource_pointer_mode ==
+                    worm_ui_nuklear_compose_resource_pointer_mode_t::replace
+                ? worm_ui_nuklear_compose_resource_pointer_mode_t::off
+                : worm_ui_nuklear_compose_resource_pointer_mode_t::replace;
     }
 
     if (state->resource_filter != worm_ui_nuklear_compose_resource_filter_t::bga) {
@@ -291,7 +308,8 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         }
         if (arm_clicked) {
             state->armed_resource_id = resource.resource_id;
-            state->resource_pointer_placement_active = false;
+            state->resource_pointer_mode =
+                worm_ui_nuklear_compose_resource_pointer_mode_t::off;
         }
         nk_layout_row_end(context);
         if (resource.missing) {

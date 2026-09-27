@@ -37,6 +37,12 @@ enum class worm_ui_nuklear_compose_resource_filter_t : std::uint8_t {
     bga,
 };
 
+enum class worm_ui_nuklear_compose_resource_pointer_mode_t : std::uint8_t {
+    off,
+    place,
+    replace,
+};
+
 struct worm_ui_nuklear_compose_state_t {
     std::array<worm_ui_nuklear_compose_key_event_t, 64> key_events{};
     std::size_t key_event_count{};
@@ -96,7 +102,8 @@ struct worm_ui_nuklear_compose_state_t {
         worm_ui_nuklear_compose_resource_filter_t::sample};
     std::array<char, 96> resource_search{};
     std::uint64_t armed_resource_id{};
-    bool resource_pointer_placement_active{};
+    worm_ui_nuklear_compose_resource_pointer_mode_t resource_pointer_mode{
+        worm_ui_nuklear_compose_resource_pointer_mode_t::off};
 };
 
 [[nodiscard]] auto worm_ui_nuklear_compose_state() noexcept -> worm_ui_nuklear_compose_state_t&;

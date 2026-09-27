@@ -4440,10 +4440,13 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             }
             break;
         }
-        case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE: {
+        case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE:
+        case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE: {
             if (gesture_active) {
-                return "Finish or cancel the active Compose gesture before placing a resource.";
+                return "Finish or cancel the active Compose gesture before editing a resource.";
             }
+            const auto replacing =
+                input.kind == WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE;
             const auto chart =
                 std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
             const auto current_view = compose_view_for_state(history, state);
@@ -4462,8 +4465,23 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             if (kind == static_cast<resource_placement_kind_t>(255)) {
                 return "Resource pointer placement used an unknown role.";
             }
+            const auto resource = std::ranges::find(history.document.resources,
+                                                    resource_id_t{input.object_id},
+                                                    &resource_entry_t::id);
+            const auto required_role =
+                kind == resource_placement_kind_t::sample_note
+                    ? resource_role_t::sample
+                    : kind == resource_placement_kind_t::bgm_event
+                          ? resource_role_t::bgm
+                          : resource_role_t::bga;
+            if (resource == history.document.resources.end() ||
+                std::ranges::find(resource->roles, required_role) ==
+                    resource->roles.end()) {
+                return "The armed resource cannot be used in this catalog lane.";
+            }
             std::optional<local_position_t> raw_position;
             lane_id_t target_lane{};
+            std::optional<object_id_t> note_target;
             if (kind == resource_placement_kind_t::sample_note) {
                 const auto target =
                     hit_target_at(*chart, *current_view, input.x_pixels, input.y_pixels);
@@ -4472,6 +4490,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 }
                 raw_position = target->position;
                 target_lane = target->lane;
+                note_target = target->note;
             } else {
                 raw_position =
                     editor_position_at_y_pixels(*chart, *current_view, input.y_pixels);
@@ -4483,26 +4502,61 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             if (!position) {
                 return "Pointer placement could not snap to a valid chart row.";
             }
-            const auto applied = apply_resource_placement(
-                history, ui_action.compose_input_document_revision,
-                {.chart = state.chart,
-                 .resource = resource_id_t{input.object_id},
-                 .position = *position,
-                 .lane = target_lane,
-                 .source_lane = kind == resource_placement_kind_t::bgm_event
-                                    ? object_id_t{input.lane_id}
-                                    : object_id_t{},
-                 .kind = kind});
-            result.accepted = applied.applied;
+            document_command_result_t applied;
+            if (replacing) {
+                std::optional<editor_selection_object_t> target;
+                if (kind == resource_placement_kind_t::sample_note && note_target) {
+                    target = {editor_selection_object_kind_t::note, *note_target};
+                } else if (kind == resource_placement_kind_t::bgm_event &&
+                           input.lane_id != 0) {
+                    target = {editor_selection_object_kind_t::bgm_event,
+                              object_id_t{input.lane_id}};
+                } else if (kind == resource_placement_kind_t::bga_background) {
+                    for (const auto& event : chart->bga_events) {
+                        if (event.kind != visual_event_kind_t::background ||
+                            event.position != *position) {
+                            continue;
+                        }
+                        if (target) {
+                            return "More than one BGA background occupies this row.";
+                        }
+                        target = {editor_selection_object_kind_t::bga_event, event.id};
+                    }
+                }
+                if (!target) {
+                    return "Click an existing object in the selected resource lane to replace it.";
+                }
+                applied = apply_resource_assignment(
+                    history, ui_action.compose_input_document_revision,
+                    {.chart = state.chart,
+                     .resource = resource_id_t{input.object_id},
+                     .objects = {*target}});
+            } else {
+                applied = apply_resource_placement(
+                    history, ui_action.compose_input_document_revision,
+                    {.chart = state.chart,
+                     .resource = resource_id_t{input.object_id},
+                     .position = *position,
+                     .lane = target_lane,
+                     .source_lane = kind == resource_placement_kind_t::bgm_event
+                                        ? object_id_t{input.lane_id}
+                                        : object_id_t{},
+                     .kind = kind});
+            }
+            const auto unchanged = replacing && !applied.applied &&
+                                   applied.diagnostics.empty();
+            result.accepted = applied.applied || unchanged;
             result.document_changed = applied.applied;
             result.diagnostics = applied.diagnostics;
-            if (applied.applied) {
+            if (result.accepted) {
                 state.cursor = *position;
                 if (target_lane) {
                     state.active_lane = target_lane;
                 }
             }
-            accepted = "Resource placed at the pointer.";
+            accepted = unchanged ? "Object already uses the armed resource."
+                                 : replacing ? "Object resource replaced at the pointer."
+                                             : "Resource placed at the pointer.";
             break;
         }
         case WORM_UI_COMPOSE_INPUT_UNDO:

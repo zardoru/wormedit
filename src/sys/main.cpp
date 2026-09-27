@@ -28,6 +28,7 @@
 #include <wormedit/core/rational.h>
 #include <wormedit/core/recovery_controller.h>
 #include <wormedit/core/resource_assignment.h>
+#include <wormedit/core/resource_file_copy.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/startup_session.h>
 #include <wormedit/core/sv_recipe.h>
@@ -4749,7 +4750,8 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                                   wormedit::workspace_controller_t& workspace,
                                   wormedit::editor_interaction_state_t& state,
                                   double viewport_height,
-                                  application_command_state_t& application_state) -> std::string {
+                                  application_command_state_t& application_state,
+                                  const std::filesystem::path& asset_base) -> std::string {
     using namespace wormedit;
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id ||
@@ -4990,6 +4992,50 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                 workspace_select_audio_asset_action_t{imported_asset});
         }
         return "External file linked as a resource.";
+    }
+    case WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT: {
+        if (asset_base.empty()) {
+            return "Save the native project before copying resource files into it.";
+        }
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before copying a resource.";
+        }
+        const asset_id_t id{action.compose_resource_asset_id};
+        const auto audio = std::ranges::find(history.document.audio_assets, id,
+                                              &audio_asset_t::id);
+        const auto visual = std::ranges::find(history.document.visual_assets, id,
+                                               &visual_asset_t::id);
+        if (!id || (audio == history.document.audio_assets.end() &&
+                    visual == history.document.visual_assets.end())) {
+            return "The selected resource asset is no longer available.";
+        }
+        const auto& source_path = audio != history.document.audio_assets.end()
+                                      ? audio->source_path : visual->source_path;
+        const auto source_name = source_path.filename().string();
+        if (!source_path.is_absolute() && source_path.parent_path() == "assets" &&
+            source_name.starts_with(std::to_string(id.value) + "-")) {
+            return "Resource source is already in the project assets directory.";
+        }
+        const auto copied = copy_resource_file_into_project(
+            {.project_directory = asset_base, .source_path = source_path, .asset = id});
+        if (!copied) {
+            return copied.message.empty() ? "Resource copy failed." : copied.message;
+        }
+        const auto relinked = apply_resource_asset_relink(
+            history, action.compose_input_document_revision,
+            {.asset = id, .source_path = copied.relative_path});
+        if (!relinked.diagnostics.empty()) {
+            return relinked.diagnostics.front().message;
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty()
+                       ? "Resource copied, but workspace rebinding failed."
+                       : rebound.diagnostics.front().message;
+        }
+        return copied.status == project_asset_copy_status_t::reused
+                   ? "Existing project copy linked to the resource."
+                   : "Resource copied into the project and linked.";
     }
     case WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE: {
         if (editor_interaction_has_pending_gesture(state)) {
@@ -6465,7 +6511,8 @@ int main(int argc, char** argv) {
     std::optional<wormedit::audio_offset_drag_t> audio_offset_drag;
     std::optional<wormedit::workspace_tab_t> audio_offset_drag_tab;
     const auto asset_base =
-        startup.loaded_primary ? requested_primary_path.parent_path() : std::filesystem::path{};
+        startup.loaded_primary ? std::filesystem::absolute(requested_primary_path).parent_path()
+                               : std::filesystem::path{};
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
     wormedit::visual::image_cache_t player_image_cache;
     wormedit::task_scheduler_t player_image_scheduler(1, 4);
@@ -7590,7 +7637,8 @@ int main(int argc, char** argv) {
                 if (compose_interaction_state) {
                     status = dispatch_compose_view_action(
                         action, history, workspace, *compose_interaction_state,
-                        flattened.view.compose.viewport_height_pixels, application_command_state);
+                        flattened.view.compose.viewport_height_pixels, application_command_state,
+                        asset_base);
                 }
             } else if (action.kind >= WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT &&
                        action.kind <= WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE) {

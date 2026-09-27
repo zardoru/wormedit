@@ -425,6 +425,14 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
                 worm_ui_nuklear_compose_resource_pointer_mode_t::off;
         }
         nk_layout_row_end(context);
+        if (!resource.missing && resource.asset_id != 0) {
+            nk_layout_row_dynamic(context, 22, 1);
+            if (nk_button_label(context, "Copy source into project") &&
+                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                action->compose_resource_asset_id = resource.asset_id;
+                action->compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
+            }
+        }
         if (resource.missing) {
             nk_layout_row_dynamic(context, 17, 1);
             nk_label(context, "Missing source", NK_TEXT_LEFT);

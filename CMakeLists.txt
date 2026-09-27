@@ -67,6 +67,7 @@ add_library(wormedit_core
     src/core/rational.cpp
     src/core/recovery_controller.cpp
     src/core/resource_assignment.cpp
+    src/core/resource_file_copy.cpp
     src/core/scroll_speed_editor.cpp
     src/core/semantic_layer_editor.cpp
     src/core/shortcut_profile_storage.cpp

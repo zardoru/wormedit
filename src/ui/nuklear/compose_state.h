@@ -81,6 +81,7 @@ struct worm_ui_nuklear_compose_state_t {
     bool note_move_candidate_active{};
     bool note_move_active{};
     bool timing_stage_drag_active{};
+    bool waveform_overview_drag_active{};
     double note_move_anchor_x{};
     double note_move_anchor_y{};
     float note_move_anchor_screen_x{};

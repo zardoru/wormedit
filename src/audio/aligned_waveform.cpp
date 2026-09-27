@@ -136,4 +136,78 @@ auto project_aligned_waveform(const waveform_t& waveform, const timing_index_t& 
     return result;
 }
 
+auto project_waveform_overview(const waveform_t& waveform, const timing_index_t& timing,
+                               aligned_waveform_request_t viewport, std::size_t maximum_rows)
+    -> waveform_overview_result_t {
+    waveform_overview_result_t result;
+    if (!std::isfinite(viewport.viewport_scroll_pixels) ||
+        !std::isfinite(viewport.viewport_height_pixels) ||
+        !std::isfinite(viewport.pixels_per_standard_measure) ||
+        viewport.viewport_scroll_pixels < 0.0 || viewport.viewport_height_pixels <= 0.0 ||
+        viewport.pixels_per_standard_measure <= 0.0 || maximum_rows == 0) {
+        return result;
+    }
+    if (timing.divisions_per_standard_measure == 0 || timing.total_rows == 0 ||
+        timing.rows.empty()) {
+        result.status = aligned_waveform_status_t::invalid_timing;
+        return result;
+    }
+    if (waveform.sample_rate == 0 || waveform.total_frames == 0 ||
+        waveform.total_frames >
+            static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        result.status = aligned_waveform_status_t::invalid_waveform;
+        return result;
+    }
+    if (maximum_rows > maximum_waveform_overview_rows) {
+        result.status = aligned_waveform_status_t::capacity_exceeded;
+        return result;
+    }
+    const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
+                                viewport.pixels_per_standard_measure;
+    const auto first_row = std::clamp(
+        std::floor(static_cast<long double>(viewport.viewport_scroll_pixels) * rows_per_pixel),
+        0.0L, static_cast<long double>(timing.total_rows));
+    const auto last_row =
+        std::clamp(std::ceil((static_cast<long double>(viewport.viewport_scroll_pixels) +
+                              viewport.viewport_height_pixels) *
+                             rows_per_pixel),
+                   0.0L, static_cast<long double>(timing.total_rows));
+    const auto begin_time = timing_at(timing, static_cast<std::uint64_t>(first_row),
+                                      timing_boundary_side_t::before_delays);
+    const auto end_time = timing_at(timing, static_cast<std::uint64_t>(last_row),
+                                    timing_boundary_side_t::after_stops);
+    if (!begin_time || !end_time) {
+        result.status = aligned_waveform_status_t::invalid_timing;
+        return result;
+    }
+    const auto begin = frame_at(*begin_time.seconds, waveform.sample_rate, waveform.total_frames,
+                                sample_rounding_t::floor);
+    const auto end = frame_at(*end_time.seconds, waveform.sample_rate, waveform.total_frames,
+                              sample_rounding_t::ceil);
+    if (!begin || !end) {
+        result.status = aligned_waveform_status_t::invalid_timing;
+        return result;
+    }
+    result.visible_begin_fraction = static_cast<double>(*begin) / waveform.total_frames;
+    result.visible_end_fraction = static_cast<double>(*end) / waveform.total_frames;
+    const auto projection = project_waveform(waveform, {.begin_frame = 0,
+                                                        .end_frame = waveform.total_frames,
+                                                        .pixel_width = maximum_rows,
+                                                        .maximum_columns = maximum_rows});
+    if (!projection) {
+        result.status = projection.status == waveform_projection_status_t::capacity_exceeded
+                            ? aligned_waveform_status_t::capacity_exceeded
+                            : aligned_waveform_status_t::invalid_waveform;
+        return result;
+    }
+    result.rows.reserve(projection.columns.size());
+    for (const auto& column : projection.columns) {
+        const auto midpoint = column.begin_frame + (column.end_frame - column.begin_frame) / 2U;
+        result.rows.push_back({static_cast<double>(midpoint) / waveform.total_frames,
+                               std::max(column.absolute_peak[0], column.absolute_peak[1])});
+    }
+    result.status = aligned_waveform_status_t::projected;
+    return result;
+}
+
 } // namespace wormedit::audio

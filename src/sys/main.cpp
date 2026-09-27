@@ -184,6 +184,7 @@ struct flattened_workspace_t {
     std::vector<WormUiComposeBgmLaneView> compose_bgm_lane_storage;
     std::vector<WormUiComposeBgmEventView> compose_bgm_event_storage;
     std::vector<WormUiComposeWaveformRowView> compose_waveform_storage;
+    std::vector<WormUiComposeWaveformOverviewRowView> compose_waveform_overview_storage;
     std::vector<WormUiComposeBgmDraftView> compose_bgm_draft_storage;
     std::vector<std::uint64_t> compose_bmson_draft_playable_lane_storage;
     std::vector<std::uint8_t> compose_bmson_draft_restart_storage;
@@ -306,6 +307,8 @@ struct compose_scene_cache_t {
     std::optional<wormedit::editor_field_scene_index_t> index;
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
     std::optional<wormedit::timing_index_t> marker_timing_index;
+    std::uint64_t waveform_overview_total_frames{};
+    std::uint32_t waveform_overview_sample_rate{};
     std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
     std::optional<wormedit::editor_object_hover_state_t> hover;
     std::optional<wormedit::editor_object_audition_request_t> audition_request;
@@ -2524,6 +2527,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.bmson_marker_move_preview = nullptr;
     view.waveform_rows = nullptr;
     view.waveform_row_count = 0;
+    view.waveform_overview_rows = nullptr;
+    view.waveform_overview_row_count = 0;
+    view.waveform_overview_visible_begin_fraction = 0.0;
+    view.waveform_overview_visible_end_fraction = 0.0;
     view.waveform_analysis_pending = false;
     view.beat_marker_navigation_available = false;
     view.audio_marker_navigation_available = false;
@@ -4316,6 +4323,46 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
         editor_interaction_result_t result;
         std::string_view accepted = "Compose interaction applied.";
         switch (input.kind) {
+        case WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK: {
+            if (!std::isfinite(input.audio_fraction) || input.audio_fraction < 0.0 ||
+                input.audio_fraction > 1.0 || !scene_cache.marker_timing_index ||
+                scene_cache.waveform_overview_total_frames == 0 ||
+                scene_cache.waveform_overview_sample_rate == 0 ||
+                input_chart == history.document.charts.end()) {
+                return "Waveform overview seek is unavailable.";
+            }
+            if (editor_interaction_has_pending_gesture(state)) {
+                return "Finish or cancel the active gesture before navigating the waveform.";
+            }
+            const auto& timing = *scene_cache.marker_timing_index;
+            const auto frame = static_cast<std::int64_t>(
+                input.audio_fraction *
+                static_cast<long double>(scene_cache.waveform_overview_total_frames - 1));
+            const auto seconds =
+                signed_rational_t{frame, scene_cache.waveform_overview_sample_rate};
+            const auto musical = musical_position_at(timing, seconds);
+            long double row = 0.0L;
+            if (musical && musical.absolute_row && musical.absolute_row->denominator != 0) {
+                row = static_cast<long double>(musical.absolute_row->numerator) /
+                      musical.absolute_row->denominator;
+            } else {
+                const auto chart_end = timing_at(timing, timing.total_rows);
+                if (chart_end && chart_end.seconds) {
+                    const auto end = static_cast<long double>(chart_end.seconds->numerator) /
+                                     chart_end.seconds->denominator;
+                    const auto audio =
+                        static_cast<long double>(frame) / scene_cache.waveform_overview_sample_rate;
+                    row = audio >= end ? static_cast<long double>(timing.total_rows) : 0.0L;
+                }
+            }
+            const auto target = static_cast<double>(row * state.pixels_per_standard_measure /
+                                                        timing.divisions_per_standard_measure -
+                                                    state.viewport_height_pixels * 0.5);
+            result = dispatch_editor_action(
+                history, state, scroll_editor_view_action_t{target - state.viewport_scroll_pixels});
+            accepted = "Compose waveform overview navigated.";
+            break;
+        }
         case WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS: {
             const auto navigation = compose_navigation_action(input.navigation_action);
             if (!navigation) {
@@ -8086,6 +8133,8 @@ int main(int argc, char** argv) {
                                   compose_window_width, compose_window_height,
                                   compose_interaction_state, application_command_state,
                                   timing_stage ? &*timing_stage : nullptr);
+            compose_scene_cache.waveform_overview_total_frames = 0;
+            compose_scene_cache.waveform_overview_sample_rate = 0;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
             if (flattened.view.compose.visible && workspace.transport.audio_asset) {
                 auto& compose = flattened.view.compose;
@@ -8114,6 +8163,33 @@ int main(int argc, char** argv) {
                         }
                         compose.waveform_rows = flattened.compose_waveform_storage.data();
                         compose.waveform_row_count = flattened.compose_waveform_storage.size();
+                    }
+                    const auto overview = wormedit::audio::project_waveform_overview(
+                        *waveform_analysis->waveform, *compose_scene_cache.marker_timing_index,
+                        {.viewport_scroll_pixels =
+                             compose_interaction_state->viewport_scroll_pixels,
+                         .viewport_height_pixels = compose.viewport_height_pixels,
+                         .pixels_per_standard_measure = compose.pixels_per_standard_measure});
+                    if (overview) {
+                        flattened.compose_waveform_overview_storage.reserve(overview.rows.size());
+                        for (const auto& row : overview.rows) {
+                            flattened.compose_waveform_overview_storage.push_back({
+                                .audio_fraction = row.audio_fraction,
+                                .absolute_peak = std::clamp(row.absolute_peak, 0.0f, 1.0f),
+                            });
+                        }
+                        compose.waveform_overview_rows =
+                            flattened.compose_waveform_overview_storage.data();
+                        compose.waveform_overview_row_count =
+                            flattened.compose_waveform_overview_storage.size();
+                        compose.waveform_overview_visible_begin_fraction =
+                            overview.visible_begin_fraction;
+                        compose.waveform_overview_visible_end_fraction =
+                            overview.visible_end_fraction;
+                        compose_scene_cache.waveform_overview_total_frames =
+                            waveform_analysis->waveform->total_frames;
+                        compose_scene_cache.waveform_overview_sample_rate =
+                            waveform_analysis->waveform->sample_rate;
                     }
                 }
             }

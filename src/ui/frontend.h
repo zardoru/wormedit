@@ -31,6 +31,7 @@
 #define WORM_UI_COMPOSE_BGM_LANE_CAPACITY 4096
 #define WORM_UI_COMPOSE_BGM_EVENT_CAPACITY 32768
 #define WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY 4096
+#define WORM_UI_COMPOSE_WAVEFORM_OVERVIEW_CAPACITY 512
 #define WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY 32768
 #define WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY 128
 #define WORM_UI_COMPOSE_NOTE_LABEL_BYTES 4096
@@ -358,6 +359,11 @@ typedef struct WormUiComposeWaveformRowView {
     float rms[2];
 } WormUiComposeWaveformRowView;
 
+typedef struct WormUiComposeWaveformOverviewRowView {
+    double audio_fraction;
+    float absolute_peak;
+} WormUiComposeWaveformOverviewRowView;
+
 typedef struct WormUiComposeBgmMovePreviewView {
     WormUiComposeRect bounds;
     bool valid;
@@ -617,6 +623,10 @@ typedef struct WormUiComposeView {
     size_t bgm_event_count;
     const WormUiComposeWaveformRowView* waveform_rows;
     size_t waveform_row_count;
+    const WormUiComposeWaveformOverviewRowView* waveform_overview_rows;
+    size_t waveform_overview_row_count;
+    double waveform_overview_visible_begin_fraction;
+    double waveform_overview_visible_end_fraction;
     bool waveform_analysis_pending;
     const WormUiComposeBgmDraftView* bmson_marker_drafts;
     size_t bmson_marker_draft_count;
@@ -1145,6 +1155,7 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS,
     WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE,
     WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL,
+    WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK,
 } WormUiComposeInputKind;
 
 typedef enum WormUiComposeNavigationAction {
@@ -1165,6 +1176,7 @@ typedef struct WormUiComposeInputAction {
     WormUiComposeNavigationAction navigation_action;
     double x_pixels;
     double y_pixels;
+    double audio_fraction;
 } WormUiComposeInputAction;
 
 typedef enum WormUiComposeViewportInputKind {

@@ -57,6 +57,7 @@ static void append_compose_input(
             .navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
             .x_pixels = 0.0,
             .y_pixels = 0.0,
+            .audio_fraction = 0.0,
         };
         action->compose_input_count = WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY;
         state.cancel_pending = false;
@@ -93,6 +94,7 @@ static void append_compose_input(
         .navigation_action = navigation_action,
         .x_pixels = x_pixels,
         .y_pixels = y_pixels,
+        .audio_fraction = 0.0,
     };
 }
 
@@ -491,6 +493,14 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
             }
         }
     }
+    for (size_t index = 0; index < view->waveform_overview_row_count; ++index) {
+        const auto& row = view->waveform_overview_rows[index];
+        if (!std::isfinite(row.audio_fraction) || row.audio_fraction < 0.0 ||
+            row.audio_fraction > 1.0 || !std::isfinite(row.absolute_peak) ||
+            row.absolute_peak < 0.0f || row.absolute_peak > 1.0f) {
+            return 0;
+        }
+    }
     for (size_t index = 0; index < view->bmson_marker_draft_count; ++index) {
         if (!compose_rect_valid(&view->bmson_marker_drafts[index].bounds)) {
             return 0;
@@ -607,6 +617,13 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            view->bgm_lane_count <= WORM_UI_COMPOSE_BGM_LANE_CAPACITY &&
            view->bgm_event_count <= WORM_UI_COMPOSE_BGM_EVENT_CAPACITY &&
            view->waveform_row_count <= WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY &&
+           view->waveform_overview_row_count <= WORM_UI_COMPOSE_WAVEFORM_OVERVIEW_CAPACITY &&
+           std::isfinite(view->waveform_overview_visible_begin_fraction) &&
+           std::isfinite(view->waveform_overview_visible_end_fraction) &&
+           view->waveform_overview_visible_begin_fraction >= 0.0 &&
+           view->waveform_overview_visible_end_fraction <= 1.0 &&
+           view->waveform_overview_visible_begin_fraction <=
+               view->waveform_overview_visible_end_fraction &&
            view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY &&
            view->lane_key_binding_count <= WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY &&
            view->branch_row_count <= WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY &&
@@ -621,6 +638,7 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            (view->bgm_lane_count == 0 || view->bgm_lanes) &&
            (view->bgm_event_count == 0 || view->bgm_events) &&
            (view->waveform_row_count == 0 || view->waveform_rows) &&
+           (view->waveform_overview_row_count == 0 || view->waveform_overview_rows) &&
            (view->semantic_layer_count == 0 || view->semantic_layers) &&
            (view->lane_key_binding_count == 0 || view->lane_key_bindings) &&
            (view->branch_choice_count == 0 || view->branch_choices) &&
@@ -1613,10 +1631,19 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
 
     const auto group_bounds = nk_window_get_content_region(context);
     const auto surface_height = std::max(32.0f, group_bounds.h - 24.0f);
-    nk_layout_space_begin(context, NK_DYNAMIC, surface_height, 1);
-    nk_layout_space_push(context, nk_rect(0.0f, 0.0f, 1.0f, 1.0f));
+    const bool overview_available = view->waveform_overview_row_count != 0;
+    const auto overview_fraction =
+        overview_available ? std::min(0.08f, 26.0f / std::max(group_bounds.w, 1.0f)) : 0.0f;
+    nk_layout_space_begin(context, NK_DYNAMIC, surface_height, overview_available ? 2 : 1);
+    nk_layout_space_push(context, nk_rect(0.0f, 0.0f, 1.0f - overview_fraction, 1.0f));
     struct nk_rect viewport{};
     const auto widget_state = nk_widget(&viewport, context);
+    struct nk_rect overview_rect{};
+    if (overview_available) {
+        nk_layout_space_push(context,
+                             nk_rect(1.0f - overview_fraction, 0.0f, overview_fraction, 1.0f));
+        nk_widget(&overview_rect, context);
+    }
     nk_layout_space_end(context);
     if (widget_state == NK_WIDGET_INVALID || viewport.w <= 1.0f || viewport.h <= 1.0f)
         return;
@@ -1625,10 +1652,54 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     if (!canvas)
         return;
 
+    if (overview_available && overview_rect.w > 1.0f && overview_rect.h > 1.0f) {
+        nk_fill_rect(canvas, overview_rect, 0.0f, nk_rgb(22, 31, 42));
+        const auto center = overview_rect.x + overview_rect.w * 0.5f;
+        const auto half_width = overview_rect.w * 0.43f;
+        for (size_t index = 0; index < view->waveform_overview_row_count; ++index) {
+            const auto& row = view->waveform_overview_rows[index];
+            const auto y =
+                overview_rect.y + static_cast<float>(row.audio_fraction) * overview_rect.h;
+            nk_stroke_line(canvas, center - row.absolute_peak * half_width, y,
+                           center + row.absolute_peak * half_width, y, 1.0f,
+                           nk_rgba(114, 222, 239, 190));
+        }
+        const auto thumb_top =
+            overview_rect.y +
+            static_cast<float>(view->waveform_overview_visible_begin_fraction) * overview_rect.h;
+        const auto thumb_bottom =
+            overview_rect.y +
+            static_cast<float>(view->waveform_overview_visible_end_fraction) * overview_rect.h;
+        const auto thumb_height = std::max(6.0f, thumb_bottom - thumb_top);
+        const auto thumb_y = std::min(thumb_top, overview_rect.y + overview_rect.h - thumb_height);
+        const auto thumb =
+            nk_rect(overview_rect.x + 1.0f, thumb_y, overview_rect.w - 2.0f, thumb_height);
+        nk_fill_rect(canvas, thumb, 0.0f, nk_rgba(99, 173, 221, 55));
+        nk_stroke_rect(canvas, thumb, 0.0f, 1.0f, nk_rgba(139, 210, 255, 180));
+    }
+
     const bool pointer_inside = nk_input_is_mouse_hovering_rect(&context->input, viewport);
     const bool pointer_clicked =
         nk_input_is_mouse_click_in_rect(&context->input, NK_BUTTON_LEFT, viewport);
     const auto& left_button = context->input.mouse.buttons[NK_BUTTON_LEFT];
+    const bool overview_pressed =
+        overview_available &&
+        nk_input_is_mouse_click_in_rect(&context->input, NK_BUTTON_LEFT, overview_rect);
+    if (overview_pressed && window_focused && view->scene_available) {
+        state.waveform_overview_drag_active = true;
+        state.keyboard_focus = true;
+    }
+    if (!window_focused || !left_button.down) {
+        state.waveform_overview_drag_active = false;
+    }
+    if (state.waveform_overview_drag_active && action &&
+        (overview_pressed || nk_input_is_mouse_moved(&context->input)) &&
+        action->compose_input_count < WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {
+        append_compose_input(action, WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK);
+        action->compose_inputs[action->compose_input_count - 1].audio_fraction = std::clamp(
+            (static_cast<double>(context->input.mouse.pos.y) - overview_rect.y) / overview_rect.h,
+            0.0, 1.0);
+    }
     const bool pointer_pressed_in_view = left_button.down && left_button.clicked != 0 &&
                                          left_button.clicked_pos.x >= viewport.x &&
                                          left_button.clicked_pos.x <= viewport.x + viewport.w &&
@@ -1638,7 +1709,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         state.keyboard_focus = true;
     } else if (nk_input_any_mouse_click_in_rect(&context->input,
                                                 nk_rect(0.0f, 0.0f, 1000000.0f, 1000000.0f)) &&
-               !pointer_inside) {
+               !pointer_inside &&
+               !nk_input_is_mouse_hovering_rect(&context->input, overview_rect)) {
         state.keyboard_focus = false;
         if (!state.pointer_navigation_active) {
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL);

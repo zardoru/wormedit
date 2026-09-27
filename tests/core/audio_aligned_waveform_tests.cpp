@@ -90,3 +90,47 @@ TEST_CASE("aligned waveform follows chart timing, offset, and viewport scroll",
     CHECK(wormedit::audio::project_aligned_waveform(waveform, *timing.index, too_tall).status ==
           wormedit::audio::aligned_waveform_status_t::capacity_exceeded);
 }
+
+TEST_CASE("song overview retains source peaks while its window follows chart timing",
+          "[unit][audio][waveform][aligned]") {
+    auto chart = chart_fixture();
+    const auto waveform = pulse_waveform();
+    const wormedit::audio::aligned_waveform_request_t viewport{
+        .viewport_scroll_pixels = 0.0,
+        .viewport_height_pixels = 480.0,
+        .pixels_per_standard_measure = 960.0,
+    };
+    const auto timing = wormedit::build_timing_index(chart);
+    REQUIRE(timing);
+    const auto base =
+        wormedit::audio::project_waveform_overview(waveform, *timing.index, viewport, 200);
+    REQUIRE(base);
+    REQUIRE(base.rows.size() == 200);
+    const auto loudest = std::ranges::max_element(
+        base.rows, {}, &wormedit::audio::waveform_overview_row_t::absolute_peak);
+    CHECK(loudest->audio_fraction >= 0.49);
+    CHECK(loudest->audio_fraction <= 0.51);
+    CHECK(base.visible_begin_fraction == 0.0);
+    CHECK(base.visible_end_fraction == 0.5);
+
+    chart.beat_zero_audio_offset_seconds = {1, 2};
+    const auto shifted_timing = wormedit::build_timing_index(chart);
+    REQUIRE(shifted_timing);
+    const auto shifted =
+        wormedit::audio::project_waveform_overview(waveform, *shifted_timing.index, viewport, 200);
+    REQUIRE(shifted);
+    CHECK(shifted.visible_begin_fraction == 0.25);
+    CHECK(shifted.visible_end_fraction == 0.75);
+    CHECK(shifted.rows[100].absolute_peak == base.rows[100].absolute_peak);
+
+    auto scrolled = viewport;
+    scrolled.viewport_scroll_pixels = 240.0;
+    const auto moved =
+        wormedit::audio::project_waveform_overview(waveform, *timing.index, scrolled, 200);
+    REQUIRE(moved);
+    CHECK(moved.visible_begin_fraction == 0.25);
+    CHECK(moved.visible_end_fraction == 0.75);
+    CHECK(
+        wormedit::audio::project_waveform_overview(waveform, *timing.index, viewport, 513).status ==
+        wormedit::audio::aligned_waveform_status_t::capacity_exceeded);
+}

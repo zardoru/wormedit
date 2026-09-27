@@ -91,6 +91,7 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK,
     WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET,
+    WORM_UI_WORKSPACE_ACTION_SELECT_VISUAL_ASSET,
     WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW,
     WORM_UI_WORKSPACE_ACTION_SELECT_PLAYER_PREVIEW_SKIN,
     WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER,
@@ -485,6 +486,8 @@ typedef struct WormUiComposeResourceView {
     uint8_t roles;
     bool audio_asset;
     bool selected_audio_asset;
+    bool image_asset;
+    bool selected_visual_asset;
     bool missing;
     const char* target_index;
     const char* name;
@@ -572,6 +575,7 @@ typedef struct WormUiComposeView {
     double timing_stage_y_pixels;
     const WormUiComposeResourceView* resources;
     uint64_t selected_audio_asset_id;
+    uint64_t selected_visual_asset_id;
     size_t resource_count;
     size_t resource_total_count;
     bool resources_truncated;
@@ -1138,6 +1142,7 @@ typedef struct WormUiWorkspaceAction {
     uint64_t recovery_scan_generation;
     uint64_t transport_seek_frame;
     uint64_t audio_asset_id;
+    uint64_t visual_asset_id;
     WormUiPlayerPreviewSkin player_preview_skin;
     WormUiStepmaniaFileProfile stepmania_file_profile;
     WormUiStepmaniaTimingSyntax stepmania_timing_syntax;

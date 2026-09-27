@@ -764,6 +764,13 @@ auto rebind_workspace(workspace_controller_t& workspace, const song_document_t& 
             focus = {};
         }
     }
+    if (workspace.selected_visual_asset &&
+        std::ranges::none_of(document.visual_assets, [&](const auto& asset) {
+            return asset.id == *workspace.selected_visual_asset &&
+                   asset.kind == asset_kind_t::image;
+        })) {
+        workspace.selected_visual_asset.reset();
+    }
 
     if (workspace.transport.audio_asset.has_value() &&
         find_audio_asset(document, *workspace.transport.audio_asset) == nullptr) {
@@ -898,6 +905,18 @@ auto apply_workspace_action(workspace_controller_t& workspace, const song_docume
                     proposal.transport = {};
                     proposal.transport.audio_asset = typed_action.asset;
                 }
+            } else if constexpr (std::is_same_v<action_t, workspace_select_visual_asset_action_t>) {
+                if (typed_action.asset &&
+                    (!*typed_action.asset ||
+                     std::ranges::none_of(document.visual_assets, [&](const auto& asset) {
+                         return asset.id == *typed_action.asset &&
+                                asset.kind == asset_kind_t::image;
+                     }))) {
+                    reject(diagnostic_code_t::invalid_id,
+                           "selected image asset does not exist in the bound document");
+                } else {
+                    proposal.selected_visual_asset = typed_action.asset;
+                }
             } else if constexpr (std::is_same_v<action_t, workspace_select_clip_action_t>) {
                 if (!typed_action.clip.has_value()) {
                     proposal.transport.selected_clip.reset();
@@ -1030,6 +1049,7 @@ auto make_workspace_view(const workspace_controller_t& workspace, const song_doc
         .tab_enabled = workspace_tab_enabled(requested_tab),
         .selected_difficulty = selected_difficulty,
         .transport = workspace.transport,
+        .selected_visual_asset = workspace.selected_visual_asset,
         .history = workspace.history,
         .focus = focus,
     };

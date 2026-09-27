@@ -7,7 +7,9 @@ namespace wormedit::sys {
 
 auto make_compose_resource_catalog(const song_document_t& document,
                                    std::optional<asset_id_t> selected_audio_asset,
-                                   std::size_t maximum_entries) -> compose_resource_catalog_t {
+                                   std::size_t maximum_entries,
+                                   std::optional<asset_id_t> selected_visual_asset)
+    -> compose_resource_catalog_t {
     compose_resource_catalog_t result;
     result.entries.reserve(std::min(maximum_entries, document.resources.size()));
     for (const auto& resource : document.resources) {
@@ -45,6 +47,10 @@ auto make_compose_resource_catalog(const song_document_t& document,
         entry.bga = bga;
         entry.audio_asset = audio != document.audio_assets.end();
         entry.selected_audio_asset = entry.audio_asset && selected_audio_asset == resource.asset;
+        entry.image_asset = visual != document.visual_assets.end() &&
+                            visual->kind == asset_kind_t::image;
+        entry.selected_visual_asset = entry.image_asset &&
+                                      selected_visual_asset == resource.asset;
         entry.missing = resource.missing || (audio == document.audio_assets.end() &&
                                              visual == document.visual_assets.end());
         entry.target_index = target == resource.target_identities.end()

@@ -756,8 +756,11 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                 auto& compose = result.view.compose;
                 compose.selected_audio_asset_id =
                     source.transport.audio_asset.value_or(wormedit::asset_id_t{}).value;
+                compose.selected_visual_asset_id =
+                    source.selected_visual_asset.value_or(wormedit::asset_id_t{}).value;
                 const auto resource_catalog = wormedit::sys::make_compose_resource_catalog(
-                    document, source.transport.audio_asset, WORM_UI_COMPOSE_RESOURCE_CAPACITY);
+                    document, source.transport.audio_asset, WORM_UI_COMPOSE_RESOURCE_CAPACITY,
+                    source.selected_visual_asset);
                 compose.resources = result.compose_resource_storage.data();
                 compose.resource_count = resource_catalog.entries.size();
                 compose.resource_total_count = resource_catalog.total_count;
@@ -780,6 +783,8 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                         .roles = roles,
                         .audio_asset = resource.audio_asset,
                         .selected_audio_asset = resource.selected_audio_asset,
+                        .image_asset = resource.image_asset,
+                        .selected_visual_asset = resource.selected_visual_asset,
                         .missing = resource.missing,
                         .target_index = target_index.c_str(),
                         .name = name.c_str(),
@@ -4913,7 +4918,9 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                        ? "Resource created, but workspace rebinding failed."
                        : rebound.diagnostics.front().message;
         }
-        return "Resource created from the selected audio asset.";
+        return role == resource_role_t::bga
+                   ? "BGA resource created from the selected image."
+                   : "Resource created from the selected audio asset.";
     }
     case WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET: {
         if (editor_interaction_has_pending_gesture(state)) {
@@ -5003,6 +5010,10 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
             (void)apply_workspace_action(
                 workspace, history.document, history.document.revision,
                 workspace_select_audio_asset_action_t{imported_asset});
+        } else {
+            (void)apply_workspace_action(
+                workspace, history.document, history.document.revision,
+                workspace_select_visual_asset_action_t{imported_asset});
         }
         return "External file linked as a resource.";
     }
@@ -7462,6 +7473,15 @@ int main(int argc, char** argv) {
                 status = applied
                              ? "Audio asset selected; waveform analysis scheduled."
                              : (applied.diagnostics.empty() ? "Audio asset selection rejected."
+                                                            : applied.diagnostics.front().message);
+            } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SELECT_VISUAL_ASSET) {
+                const auto applied = wormedit::apply_workspace_action(
+                    workspace, history.document, history.document.revision,
+                    wormedit::workspace_select_visual_asset_action_t{
+                        wormedit::asset_id_t{action.visual_asset_id}});
+                status = applied
+                             ? "Image asset selected."
+                             : (applied.diagnostics.empty() ? "Image asset selection rejected."
                                                             : applied.diagnostics.front().message);
             } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB) {
                 const auto applied = wormedit::apply_workspace_action(

@@ -19,6 +19,8 @@ struct compose_resource_entry_t {
     bool bga{};
     bool audio_asset{};
     bool selected_audio_asset{};
+    bool image_asset{};
+    bool selected_visual_asset{};
     bool missing{};
     std::string target_index;
     std::string name;
@@ -33,7 +35,8 @@ struct compose_resource_catalog_t {
 
 [[nodiscard]] auto make_compose_resource_catalog(const song_document_t& document,
                                                  std::optional<asset_id_t> selected_audio_asset,
-                                                 std::size_t maximum_entries)
+                                                 std::size_t maximum_entries,
+                                                 std::optional<asset_id_t> selected_visual_asset = {})
     -> compose_resource_catalog_t;
 
 [[nodiscard]] auto find_compose_resource_uses(const chart_document_t& chart, resource_id_t resource)

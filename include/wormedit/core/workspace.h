@@ -81,6 +81,7 @@ struct workspace_controller_t {
     std::uint64_t document_revision{};
     workspace_tab_t active_tab{workspace_tab_t::setup};
     std::optional<chart_id_t> selected_chart;
+    std::optional<asset_id_t> selected_visual_asset;
     std::vector<chart_id_t> comparison_charts;
     workspace_transport_t transport;
     workspace_history_summary_t history;
@@ -126,6 +127,9 @@ struct workspace_clear_focus_action_t {
 struct workspace_select_audio_asset_action_t {
     std::optional<asset_id_t> asset;
 };
+struct workspace_select_visual_asset_action_t {
+    std::optional<asset_id_t> asset;
+};
 struct workspace_select_clip_action_t {
     std::optional<clip_id_t> clip;
 };
@@ -143,6 +147,7 @@ using workspace_action_t =
     std::variant<workspace_switch_tab_action_t, workspace_select_chart_action_t,
                  workspace_set_comparison_charts_action_t, workspace_set_focus_action_t,
                  workspace_clear_focus_action_t, workspace_select_audio_asset_action_t,
+                 workspace_select_visual_asset_action_t,
                  workspace_select_clip_action_t, workspace_seek_action_t,
                  workspace_set_playing_action_t, workspace_set_loop_action_t>;
 
@@ -281,6 +286,7 @@ struct workspace_view_t {
     bool tab_enabled{true};
     std::optional<workspace_chart_option_t> selected_difficulty;
     workspace_transport_t transport;
+    std::optional<asset_id_t> selected_visual_asset;
     workspace_history_summary_t history;
     workspace_tab_focus_t focus;
     workspace_tab_view_t tab_view;

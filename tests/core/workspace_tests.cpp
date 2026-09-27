@@ -192,6 +192,8 @@ TEST_CASE("workspace tabs retain chart, transport, and isolated logical focus",
         workspace_set_focus_action_t{workspace_tab_t::timing, "timing.events", object_id_t{5}}));
     REQUIRE(apply(workspace, song, workspace_select_chart_action_t{chart_id_t{2}}));
     REQUIRE(apply(workspace, song, workspace_select_audio_asset_action_t{asset_id_t{20}}));
+    REQUIRE(apply(workspace, song, workspace_select_visual_asset_action_t{asset_id_t{21}}));
+    CHECK(workspace.selected_visual_asset == asset_id_t{21});
     REQUIRE(apply(workspace, song, workspace_seek_action_t{640}));
     REQUIRE(apply(workspace, song, workspace_set_playing_action_t{true}));
     REQUIRE(apply(workspace, song,
@@ -244,6 +246,10 @@ TEST_CASE("workspace rejects stale revisions and rebinds stable context atomical
     auto& workspace = *bound.workspace;
     REQUIRE(apply(workspace, song, workspace_select_chart_action_t{chart_id_t{2}}));
     REQUIRE(apply(workspace, song, workspace_select_audio_asset_action_t{asset_id_t{20}}));
+    REQUIRE(apply(workspace, song, workspace_select_visual_asset_action_t{asset_id_t{21}}));
+    CHECK_FALSE(apply(workspace, song,
+                      workspace_select_visual_asset_action_t{asset_id_t{20}}));
+    CHECK(workspace.selected_visual_asset == asset_id_t{21});
     REQUIRE(apply(workspace, song, workspace_seek_action_t{700}));
     REQUIRE(apply(
         workspace, song,
@@ -262,6 +268,7 @@ TEST_CASE("workspace rejects stale revisions and rebinds stable context atomical
     CHECK(workspace.document_revision == 8);
     CHECK(workspace.selected_chart == chart_id_t{2});
     CHECK(workspace.transport.audio_asset == asset_id_t{20});
+    CHECK(workspace.selected_visual_asset == asset_id_t{21});
     CHECK(workspace.transport.position_frame == 700);
     CHECK(workspace.tab_focus[static_cast<std::size_t>(workspace_tab_t::metadata)].target ==
           workspace_focus_target_t{chart_id_t{2}});
@@ -270,9 +277,11 @@ TEST_CASE("workspace rejects stale revisions and rebinds stable context atomical
     removed.revision = 9;
     removed.charts.erase(removed.charts.begin() + 1);
     removed.audio_assets.clear();
+    removed.visual_assets.clear();
     REQUIRE(rebind_workspace(workspace, removed));
     CHECK(workspace.selected_chart == chart_id_t{1});
     CHECK_FALSE(workspace.transport.audio_asset.has_value());
+    CHECK_FALSE(workspace.selected_visual_asset.has_value());
     CHECK(workspace.tab_focus[static_cast<std::size_t>(workspace_tab_t::metadata)].region.empty());
     CHECK(workspace.comparison_charts.size() < 2);
 }

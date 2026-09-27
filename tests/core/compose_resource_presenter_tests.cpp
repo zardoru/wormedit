@@ -32,7 +32,8 @@ TEST_CASE("Compose resource catalog retains indexed roles selection and missing 
          .roles = {resource_role_t::music}},
     };
 
-    const auto catalog = sys::make_compose_resource_catalog(document, asset_id_t{1}, 2);
+    const auto catalog = sys::make_compose_resource_catalog(document, asset_id_t{1}, 2,
+                                                             asset_id_t{2});
 
     REQUIRE(catalog.entries.size() == 2);
     CHECK(catalog.total_count == 3);
@@ -46,6 +47,8 @@ TEST_CASE("Compose resource catalog retains indexed roles selection and missing 
     CHECK(catalog.entries[0].source_name == "kick.wav");
     CHECK(catalog.entries[1].bga);
     CHECK_FALSE(catalog.entries[1].audio_asset);
+    CHECK(catalog.entries[1].image_asset);
+    CHECK(catalog.entries[1].selected_visual_asset);
     CHECK(catalog.entries[1].target_index == "#BMPA1");
     CHECK(catalog.entries[1].source_name == "bg.png");
 }

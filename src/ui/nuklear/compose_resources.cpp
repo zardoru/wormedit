@@ -261,24 +261,31 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
                 : worm_ui_nuklear_compose_resource_pointer_mode_t::replace;
     }
 
-    if (state->resource_filter != worm_ui_nuklear_compose_resource_filter_t::bga) {
+    {
         nk_layout_row_dynamic(context, 24, 1);
-        const auto can_create = view->selected_audio_asset_id != 0;
+        const auto visual_role =
+            state->resource_filter == worm_ui_nuklear_compose_resource_filter_t::bga;
+        const auto selected_asset = visual_role ? view->selected_visual_asset_id
+                                                : view->selected_audio_asset_id;
+        const auto can_create = selected_asset != 0;
         if (!can_create) {
             nk_widget_disable_begin(context);
         }
         const auto create_clicked = nk_button_label(
-            context, state->resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample
-                         ? "Create Sample from waveform"
-                         : "Create BGM from waveform");
+            context, visual_role ? "Create BGA from selected image"
+                                 : state->resource_filter ==
+                                           worm_ui_nuklear_compose_resource_filter_t::sample
+                                       ? "Create Sample from waveform"
+                                       : "Create BGM from waveform");
         if (!can_create) {
             nk_widget_disable_end(context);
         }
         if (create_clicked && can_create &&
             action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-            action->compose_resource_asset_id = view->selected_audio_asset_id;
+            action->compose_resource_asset_id = selected_asset;
             action->compose_resource_role =
-                state->resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample
+                visual_role ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGA
+                : state->resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample
                     ? WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE
                     : WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
             action->compose_action = WORM_UI_COMPOSE_ACTION_CREATE_RESOURCE;
@@ -373,11 +380,12 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         }
         std::array<char, 320> label{};
         std::snprintf(label.data(), label.size(), "%s%s%s · %s",
-                      resource.selected_audio_asset ? "> " : "", resource.target_index,
+                      resource.selected_audio_asset || resource.selected_visual_asset ? "> " : "",
+                      resource.target_index,
                       state->armed_resource_id == resource.resource_id ? " *" : "",
                       resource.name);
         nk_layout_row_dynamic(context, 25, 1);
-        if (resource.audio_asset) {
+        if (resource.audio_asset || resource.image_asset) {
             if (resource.missing) {
                 nk_widget_disable_begin(context);
             }
@@ -386,9 +394,16 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
                 nk_widget_disable_end(context);
             }
             if (clicked && !resource.missing && !resource.selected_audio_asset &&
+                !resource.selected_visual_asset &&
                 action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
-                action->kind = WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET;
-                action->audio_asset_id = resource.asset_id;
+                action->kind = resource.audio_asset
+                                   ? WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET
+                                   : WORM_UI_WORKSPACE_ACTION_SELECT_VISUAL_ASSET;
+                if (resource.audio_asset) {
+                    action->audio_asset_id = resource.asset_id;
+                } else {
+                    action->visual_asset_id = resource.asset_id;
+                }
             }
         } else {
             nk_label(context, label.data(), NK_TEXT_LEFT);
@@ -446,6 +461,11 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         state->resource_filter != worm_ui_nuklear_compose_resource_filter_t::bga) {
         nk_layout_row_dynamic(context, 18, 1);
         nk_label(context, "Click audio to select its waveform.", NK_TEXT_LEFT);
+    }
+    if (matched_count != 0 &&
+        state->resource_filter == worm_ui_nuklear_compose_resource_filter_t::bga) {
+        nk_layout_row_dynamic(context, 18, 1);
+        nk_label(context, "Click an image to select it for BGA creation.", NK_TEXT_LEFT);
     }
     if (matched_count != 0) {
         nk_layout_row_dynamic(context, 18, 1);

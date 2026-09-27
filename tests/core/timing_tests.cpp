@@ -104,6 +104,77 @@ TEST_CASE("fractional grid rows retain exact timing across tempo and warp bounda
     CHECK(*inside.seconds == signed_rational_t{2, 1});
 }
 
+TEST_CASE("interval beat fitting solves exact source frames across pauses and warps",
+          "[unit][core][timing][beat-fit]") {
+    auto chart = base_chart();
+    const auto beat = local_position_t{measure_id_t{1}, 480};
+    const auto fit = [&](std::uint64_t frame) {
+        return fit_beat_interval(chart, object_id_t{10}, beat, frame, 48'000);
+    };
+    auto proposed = fit(3 * 48'000);
+    REQUIRE(proposed);
+    CHECK(proposed.beats_per_minute == signed_rational_t{60, 1});
+    proposed = fit(112'000);
+    REQUIRE(proposed);
+    CHECK(proposed.beats_per_minute == signed_rational_t{90, 1});
+
+    chart.pauses.push_back({.id = object_id_t{19},
+                            .position = {measure_id_t{1}, 0},
+                            .kind = pause_kind_t::delay,
+                            .duration = {1, 1},
+                            .source_unit = pause_unit_t::beats});
+    proposed = fit(4 * 48'000);
+    REQUIRE(proposed);
+    CHECK(proposed.beats_per_minute == signed_rational_t{60, 1});
+    chart.pauses.clear();
+
+    chart.pauses.push_back({.id = object_id_t{20},
+                            .position = {measure_id_t{1}, 240},
+                            .kind = pause_kind_t::stop,
+                            .duration = {1, 1},
+                            .source_unit = pause_unit_t::seconds});
+    proposed = fit(4 * 48'000);
+    REQUIRE(proposed);
+    CHECK(proposed.beats_per_minute == signed_rational_t{60, 1});
+
+    chart.pauses.front().duration = {48, 1};
+    chart.pauses.front().source_unit = pause_unit_t::bms_stop_ticks;
+    proposed = fit(4 * 48'000);
+    REQUIRE(proposed);
+    CHECK(proposed.beats_per_minute == signed_rational_t{60, 1});
+
+    chart.pauses.clear();
+    chart.warps.push_back(
+        {.id = object_id_t{21}, .span = {{measure_id_t{1}, 240}, {measure_id_t{1}, 480}}});
+    proposed = fit(2 * 48'000);
+    REQUIRE(proposed);
+    CHECK(proposed.beats_per_minute == signed_rational_t{60, 1});
+}
+
+TEST_CASE("interval beat fitting rejects conflicts and unreachable targets",
+          "[unit][core][timing][beat-fit]") {
+    auto chart = base_chart();
+    const auto beat = local_position_t{measure_id_t{1}, 480};
+    chart.timing_anchors.push_back({.id = object_id_t{30},
+                                    .position = beat,
+                                    .source_sample_frame = 2 * 48'000,
+                                    .locked = true});
+    auto fit = fit_beat_interval(chart, object_id_t{10}, beat, 3 * 48'000, 48'000);
+    REQUIRE_FALSE(fit);
+    REQUIRE(fit.error);
+    CHECK(fit.error->code == timing_error_code_t::locked_anchor_conflict);
+
+    chart.timing_anchors.clear();
+    fit = fit_beat_interval(chart, object_id_t{10}, beat, 48'000, 48'000);
+    REQUIRE_FALSE(fit);
+    REQUIRE(fit.error);
+    CHECK(fit.error->code == timing_error_code_t::invalid_fit);
+    fit = fit_beat_interval(chart, object_id_t{10}, {measure_id_t{2}, 240}, 4 * 48'000, 48'000);
+    REQUIRE_FALSE(fit);
+    REQUIRE(fit.error);
+    CHECK(fit.error->code == timing_error_code_t::invalid_fit);
+}
+
 TEST_CASE("warps consume no elapsed time and suppress interior pauses and events",
           "[unit][core][timing][warp]") {
     auto chart = base_chart();

@@ -971,6 +971,115 @@ auto timing_at(const timing_index_t& index, const measure_index_t& measures,
     return timing_at(index, *row, side);
 }
 
+auto fit_beat_interval(const chart_document_t& chart, object_id_t bpm_event, local_position_t beat,
+                       std::uint64_t target_sample_frame, std::uint32_t sample_rate)
+    -> beat_interval_fit_result_t {
+    const auto reject = [](timing_error_code_t code,
+                           std::string message) -> beat_interval_fit_result_t {
+        return {.error = error(code, std::move(message))};
+    };
+    if (sample_rate == 0 || target_sample_frame > maximum_i64_magnitude) {
+        return reject(timing_error_code_t::invalid_fit,
+                      "beat fit requires a representable target source frame and sample rate");
+    }
+    const auto measure_build = build_measure_index(chart);
+    if (!std::holds_alternative<measure_index_t>(measure_build)) {
+        return reject(timing_error_code_t::invalid_document,
+                      "beat fit requires valid chart measure geometry");
+    }
+    const auto& measures = std::get<measure_index_t>(measure_build);
+    const auto selected = std::ranges::find(chart.bpms, bpm_event, &bpm_event_t::id);
+    if (!bpm_event || selected == chart.bpms.end() ||
+        std::ranges::count(chart.bpms, bpm_event, &bpm_event_t::id) != 1) {
+        return reject(timing_error_code_t::invalid_fit, "beat fit requires one selected BPM event");
+    }
+    const auto anchor_row = absolute_row(measures, selected->position);
+    const auto beat_row = absolute_row(measures, beat);
+    if (!anchor_row || !beat_row || *anchor_row >= *beat_row) {
+        return reject(timing_error_code_t::position_out_of_range,
+                      "fitted beat must follow the selected BPM event");
+    }
+    for (const auto& event : chart.bpms) {
+        if (event.id == bpm_event)
+            continue;
+        const auto row = absolute_row(measures, event.position);
+        if (!row || (*row >= *anchor_row && *row <= *beat_row)) {
+            return reject(timing_error_code_t::invalid_fit,
+                          "selected BPM event is not the last unambiguous change before beat");
+        }
+    }
+    const auto original_build = build_timing_index(chart);
+    if (!original_build) {
+        return reject(timing_error_code_t::invalid_document,
+                      "beat fit requires a valid timing index");
+    }
+    auto candidate = chart;
+    const auto selected_index = static_cast<std::size_t>(selected - chart.bpms.begin());
+    const auto time_at_bpm = [&](std::int64_t bpm) -> std::optional<signed_rational_t> {
+        candidate.bpms[selected_index].beats_per_minute = {bpm, 1};
+        const auto built = build_timing_index(candidate);
+        if (!built)
+            return std::nullopt;
+        const auto end = timing_at(*built.index, *beat_row);
+        return end ? end.seconds : std::nullopt;
+    };
+    const auto at_sixty = time_at_bpm(60);
+    const auto at_one_twenty = time_at_bpm(120);
+    const auto varying =
+        at_sixty && at_one_twenty ? subtract_exact(*at_sixty, *at_one_twenty) : std::nullopt;
+    const auto scaled = varying ? multiply_exact(*varying, {120, 1}) : std::nullopt;
+    const auto twice_fast = at_one_twenty ? multiply_exact(*at_one_twenty, {2, 1}) : std::nullopt;
+    const auto fixed =
+        twice_fast && at_sixty ? subtract_exact(*twice_fast, *at_sixty) : std::nullopt;
+    const auto target_time =
+        signed_rational_t{static_cast<std::int64_t>(target_sample_frame), sample_rate};
+    const auto available = fixed ? subtract_exact(target_time, *fixed) : std::nullopt;
+    if (!scaled || !available) {
+        return reject(timing_error_code_t::arithmetic_overflow,
+                      "beat fit exceeds exact rational arithmetic bounds");
+    }
+    if (scaled->numerator <= 0 || available->numerator <= 0) {
+        return reject(timing_error_code_t::invalid_fit,
+                      "target frame leaves no positive BPM interval");
+    }
+    const auto fitted_bpm =
+        positive_fraction({static_cast<std::uint64_t>(scaled->numerator), available->denominator},
+                          {scaled->denominator, static_cast<std::uint64_t>(available->numerator)});
+    if (!fitted_bpm || fitted_bpm->numerator <= 0) {
+        return reject(timing_error_code_t::arithmetic_overflow,
+                      "fitted BPM exceeds exact rational arithmetic bounds");
+    }
+    candidate.bpms[selected_index].beats_per_minute = *fitted_bpm;
+    const auto fitted_build = build_timing_index(candidate);
+    if (!fitted_build) {
+        return reject(timing_error_code_t::invalid_fit,
+                      "fitted BPM does not produce a valid timing index");
+    }
+    const auto fitted_beat = timing_at(*fitted_build.index, *beat_row);
+    const auto matched =
+        fitted_beat ? compare_exact(*fitted_beat.seconds, target_time) : std::nullopt;
+    if (!matched || *matched != 0) {
+        return reject(timing_error_code_t::invalid_fit,
+                      "fitted BPM does not reach the exact target frame");
+    }
+    for (const auto& anchor : chart.timing_anchors) {
+        if (!anchor.locked)
+            continue;
+        const auto row = absolute_row(measures, anchor.position);
+        if (!row || *row < *anchor_row)
+            continue;
+        const auto at = timing_at(*fitted_build.index, *row);
+        const auto frame =
+            at ? sample_frame_at(*at.seconds, sample_rate, sample_rounding_t::nearest_ties_to_even)
+               : sample_frame_result_t{};
+        if (!frame || *frame.frame != anchor.source_sample_frame) {
+            return reject(timing_error_code_t::locked_anchor_conflict,
+                          "beat fit would move a locked timing anchor");
+        }
+    }
+    return {.beats_per_minute = *fitted_bpm};
+}
+
 auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
                          timing_inverse_options_t options) -> timing_position_query_result_t {
     const auto query = normalized(seconds);

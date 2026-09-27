@@ -63,4 +63,39 @@ using bpm_edit_action_t =
                                   const bpm_edit_action_t& action, bpm_edit_limits_t limits = {})
     -> document_command_result_t;
 
+struct beat_interval_drag_t {
+    chart_id_t chart;
+    std::uint64_t document_revision{};
+    object_id_t bpm_event;
+    local_position_t original_bpm_position;
+    local_position_t beat;
+    std::uint32_t sample_rate{};
+    std::uint64_t original_sample_frame{};
+    std::uint64_t proposed_sample_frame{};
+    signed_rational_t original_bpm;
+    signed_rational_t proposed_bpm;
+};
+
+struct beat_interval_drag_result_t {
+    std::optional<beat_interval_drag_t> drag;
+    diagnostic_list_t diagnostics;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return drag.has_value() && diagnostics.empty();
+    }
+};
+
+[[nodiscard]] auto begin_beat_interval_drag(const song_document_t& document, chart_id_t chart,
+                                            object_id_t bpm_event, local_position_t beat,
+                                            std::uint32_t sample_rate, bool timing_locked = false)
+    -> beat_interval_drag_result_t;
+[[nodiscard]] auto
+update_beat_interval_drag(const song_document_t& document, const beat_interval_drag_t& drag,
+                          std::uint64_t target_sample_frame, bool timing_locked = false)
+    -> beat_interval_drag_result_t;
+[[nodiscard]] auto commit_beat_interval_drag(document_history_t& history,
+                                             const beat_interval_drag_t& drag,
+                                             bool timing_locked = false)
+    -> document_command_result_t;
+
 } // namespace wormedit

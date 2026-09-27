@@ -27,6 +27,8 @@ enum class timing_error_code_t {
     position_out_of_range,
     negative_sample_frame,
     capacity_exceeded,
+    invalid_fit,
+    locked_anchor_conflict,
 };
 
 struct timing_diagnostic_t {
@@ -155,6 +157,23 @@ struct sample_frame_result_t {
                              local_position_t position,
                              timing_boundary_side_t side = timing_boundary_side_t::event)
     -> timing_query_result_t;
+
+struct beat_interval_fit_result_t {
+    std::optional<signed_rational_t> beats_per_minute;
+    std::optional<timing_diagnostic_t> error;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return beats_per_minute.has_value();
+    }
+};
+
+// Fit the constant-BPM interval from the selected last BPM event through a
+// later beat to an exact source frame. Fixed-duration pauses, BPM-scaled pauses,
+// and warps are evaluated by the timing engine. Rejects a fit that would move
+// a locked anchor; downstream compensation is a separate operation.
+[[nodiscard]] auto fit_beat_interval(const chart_document_t& chart, object_id_t bpm_event,
+                                     local_position_t beat, std::uint64_t target_sample_frame,
+                                     std::uint32_t sample_rate) -> beat_interval_fit_result_t;
 
 [[nodiscard]] auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
                                        timing_inverse_options_t options = {})

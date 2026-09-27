@@ -73,6 +73,39 @@ TEST_CASE("BPM text parsing is decimal-first and retains a lossless fraction",
                                 bpm_step_direction_t::increment));
 }
 
+TEST_CASE("interval beat drag previews by source frame and commits one undoable BPM edit",
+          "[unit][core][bpm-editor][beat-fit]") {
+    auto history = make_document_history(bpm_song());
+    const auto beat = local_position_t{measure_id_t{3}, 480};
+    const auto begun =
+        begin_beat_interval_drag(history.document, chart_id_t{2}, object_id_t{10}, beat, 48'000);
+    REQUIRE(begun);
+    CHECK(begun.drag->original_sample_frame == 48'000);
+    const auto proposed = update_beat_interval_drag(history.document, *begun.drag, 96'000);
+    REQUIRE(proposed);
+    CHECK(proposed.drag->proposed_bpm == signed_rational_t{60, 1});
+    CHECK(history.document.revision == 4);
+    CHECK(history.document.charts.front().bpms.front().beats_per_minute ==
+          signed_rational_t{120, 1});
+
+    const auto committed = commit_beat_interval_drag(history, *proposed.drag);
+    REQUIRE(committed);
+    CHECK(history.document.revision == 5);
+    CHECK(history.document.charts.front().bpms.front().id == object_id_t{10});
+    CHECK(history.document.charts.front().bpms.front().beats_per_minute ==
+          signed_rational_t{60, 1});
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().bpms.front().beats_per_minute ==
+          signed_rational_t{120, 1});
+    REQUIRE(redo_document_command(history));
+    CHECK(history.document.charts.front().bpms.front().beats_per_minute ==
+          signed_rational_t{60, 1});
+
+    const auto stale = commit_beat_interval_drag(history, *proposed.drag);
+    CHECK_FALSE(stale);
+    CHECK(has_code(stale, diagnostic_code_t::invalid_id));
+}
+
 TEST_CASE("BPM insert update and delete are undoable and retain exact identity and source order",
           "[unit][core][bpm-editor]") {
     auto song = bpm_song();

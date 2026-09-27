@@ -42,6 +42,7 @@ enum class conversion_publication_stage_t {
     copy_existing,
     write_output,
     validate_staging,
+    update_manifest,
     exchange_directory,
 };
 
@@ -53,12 +54,15 @@ struct conversion_publication_options_t {
 
 struct conversion_publication_result_t {
     bool published{};
+    std::size_t pruned_files{};
     std::vector<std::string> errors;
     std::vector<std::string> warnings;
 };
 
 // Replans at execution time, builds a complete sibling directory, then makes
-// it visible in one rename/exchange. Existing-directory exchange currently
+// it visible in one rename/exchange. A bounded in-directory ownership manifest
+// tracks generated chart names for safe stale-file pruning on later exports.
+// Existing-directory exchange currently
 // requires Linux renameat2 or macOS renameatx_np; unsupported platforms fail
 // before changing the destination. The output group must have a non-root
 // directory with an existing parent.

@@ -3,8 +3,16 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <charconv>
 #include <chrono>
+#include <cstdint>
 #include <fstream>
+#include <iterator>
+#include <limits>
+#include <map>
+#include <optional>
+#include <set>
+#include <string_view>
 #include <system_error>
 
 #if defined(_WIN32)
@@ -22,6 +30,170 @@
 namespace wormedit {
 namespace {
 namespace fs = std::filesystem;
+
+constexpr std::string_view manifest_name = ".wormedit-output-set";
+constexpr std::string_view manifest_header = "wormedit-output-set-v2\n";
+constexpr std::uintmax_t maximum_manifest_bytes = 1024 * 1024;
+constexpr std::size_t maximum_manifest_entries = 8192;
+
+struct file_identity_t {
+    std::uintmax_t bytes{};
+    std::uint64_t hash{};
+    auto operator==(const file_identity_t&) const -> bool = default;
+};
+
+using output_ownership_t = std::map<std::string, std::map<std::string, file_identity_t>>;
+
+auto sync_file(const fs::path& path) -> bool;
+auto same_bytes(const fs::path& path, const std::string& expected) -> bool;
+
+auto file_identity(const fs::path& path) -> std::optional<file_identity_t> {
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream)
+        return std::nullopt;
+    std::array<char, 64 * 1024> buffer{};
+    file_identity_t identity{.bytes = 0, .hash = 14695981039346656037ULL};
+    while (true) {
+        stream.read(buffer.data(), buffer.size());
+        const auto count = stream.gcount();
+        if (count < 0 || identity.bytes > std::numeric_limits<std::uintmax_t>::max() -
+                                              static_cast<std::uintmax_t>(count))
+            return std::nullopt;
+        identity.bytes += static_cast<std::uintmax_t>(count);
+        for (std::streamsize index = 0; index < count; ++index) {
+            identity.hash ^= static_cast<unsigned char>(buffer[static_cast<std::size_t>(index)]);
+            identity.hash *= 1099511628211ULL;
+        }
+        if (stream.eof())
+            return identity;
+        if (stream.bad() || stream.fail())
+            return std::nullopt;
+    }
+}
+
+auto hex_hash(std::uint64_t value) -> std::string {
+    constexpr std::string_view digits = "0123456789abcdef";
+    std::string result(16, '0');
+    for (int index = 15; index >= 0; --index) {
+        result[static_cast<std::size_t>(index)] = digits[value & 15U];
+        value >>= 4U;
+    }
+    return result;
+}
+
+auto safe_field(std::string_view value) -> bool {
+    return !value.empty() && value.size() <= 4096 &&
+           std::ranges::none_of(value, [](unsigned char c) { return c < 0x20 || c == 0x7f; });
+}
+
+auto safe_name(std::string_view value) -> bool {
+    const fs::path path{value};
+    return value.size() <= 240 && safe_field(value) && value != manifest_name &&
+           !path.is_absolute() && !path.has_root_name() && !path.has_parent_path() &&
+           path.filename() == path && path != "." && path != "..";
+}
+
+auto read_ownership(const fs::path& directory, output_ownership_t& owners, std::string& failure)
+    -> bool {
+    const auto path = directory / manifest_name;
+    std::error_code error;
+    const auto status = fs::symlink_status(path, error);
+    if (error == std::errc::no_such_file_or_directory)
+        return true;
+    if (error || !fs::is_regular_file(status)) {
+        failure = "Output ownership manifest is unsafe or exceeds its size limit.";
+        return false;
+    }
+    const auto measured_size = fs::file_size(path, error);
+    if (error || measured_size > maximum_manifest_bytes) {
+        failure = "Output ownership manifest is unsafe or exceeds its size limit.";
+        return false;
+    }
+    std::ifstream stream(path, std::ios::binary);
+    const std::string bytes{std::istreambuf_iterator<char>{stream},
+                            std::istreambuf_iterator<char>{}};
+    if (stream.bad() || bytes.size() != measured_size || !bytes.starts_with(manifest_header)) {
+        failure = "Output ownership manifest has an invalid header or could not be read.";
+        return false;
+    }
+    std::set<std::string> globally_owned;
+    std::size_t count{};
+    std::size_t position = manifest_header.size();
+    while (position < bytes.size()) {
+        const auto end = bytes.find('\n', position);
+        const auto first_tab = bytes.find('\t', position);
+        const auto second_tab =
+            first_tab == std::string::npos ? std::string::npos : bytes.find('\t', first_tab + 1);
+        const auto third_tab =
+            second_tab == std::string::npos ? std::string::npos : bytes.find('\t', second_tab + 1);
+        if (end == std::string::npos || first_tab == std::string::npos ||
+            second_tab == std::string::npos || third_tab == std::string::npos || third_tab >= end ||
+            ++count > maximum_manifest_entries) {
+            failure = "Output ownership manifest has an invalid or excessive record.";
+            return false;
+        }
+        const auto group = bytes.substr(position, first_tab - position);
+        const auto filename = bytes.substr(first_tab + 1, second_tab - first_tab - 1);
+        const auto size_text =
+            std::string_view{bytes}.substr(second_tab + 1, third_tab - second_tab - 1);
+        const auto hash_text = std::string_view{bytes}.substr(third_tab + 1, end - third_tab - 1);
+        file_identity_t identity;
+        const auto size_parse =
+            std::from_chars(size_text.data(), size_text.data() + size_text.size(), identity.bytes);
+        const auto hash_parse = std::from_chars(
+            hash_text.data(), hash_text.data() + hash_text.size(), identity.hash, 16);
+        if (!safe_field(group) || !safe_name(filename) || size_parse.ec != std::errc{} ||
+            size_parse.ptr != size_text.data() + size_text.size() || hash_text.size() != 16 ||
+            hash_parse.ec != std::errc{} || hash_parse.ptr != hash_text.data() + hash_text.size() ||
+            hex_hash(identity.hash) != hash_text ||
+            !owners[group].emplace(filename, identity).second ||
+            !globally_owned.insert(filename).second) {
+            failure = "Output ownership manifest contains an unsafe or duplicate path.";
+            return false;
+        }
+        position = end + 1;
+    }
+    return true;
+}
+
+auto write_ownership(const fs::path& directory, const output_ownership_t& owners,
+                     std::string& failure) -> bool {
+    std::string bytes{manifest_header};
+    std::size_t count{};
+    for (const auto& [group, filenames] : owners) {
+        if (!safe_field(group)) {
+            failure = "Output ownership group path is invalid.";
+            return false;
+        }
+        for (const auto& [filename, identity] : filenames) {
+            if (!safe_name(filename) || ++count > maximum_manifest_entries) {
+                failure = "Output ownership record is invalid or exceeds its entry limit.";
+                return false;
+            }
+            bytes += group + "\t" + filename + "\t" + std::to_string(identity.bytes) + "\t" +
+                     hex_hash(identity.hash) + "\n";
+            if (bytes.size() > maximum_manifest_bytes) {
+                failure = "Output ownership manifest exceeds its size limit.";
+                return false;
+            }
+        }
+    }
+    const auto path = directory / manifest_name;
+    {
+        std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+        stream.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        stream.flush();
+        if (!stream) {
+            failure = "Could not write the output ownership manifest.";
+            return false;
+        }
+    }
+    if (!sync_file(path) || !same_bytes(path, bytes)) {
+        failure = "Could not flush or verify the output ownership manifest.";
+        return false;
+    }
+    return true;
+}
 
 struct temporary_directory_t {
     fs::path path;
@@ -267,6 +439,70 @@ auto publish_conversion_group_atomic(const fs::path& project_directory, const ou
                                                 : failure);
         return result;
     }
+    output_ownership_t ownership;
+    if (!read_ownership(staging.path, ownership, failure)) {
+        result.errors.push_back(std::move(failure));
+        return result;
+    }
+    const auto group_key = group.relative_output_path.generic_string();
+    std::set<std::string> current_files;
+    for (const auto& file : plan.files) {
+        const auto relative = file.project_relative_path.lexically_relative(relative_directory);
+        const auto filename = relative.generic_string();
+        if (!safe_name(filename) || !current_files.insert(filename).second) {
+            result.errors.emplace_back("A generated chart filename cannot be tracked safely.");
+            return result;
+        }
+    }
+    for (const auto& [other_group, filenames] : ownership) {
+        if (other_group == group_key)
+            continue;
+        for (const auto& filename : current_files) {
+            if (filenames.contains(filename)) {
+                result.errors.emplace_back("A chart filename is owned by another output group.");
+                return result;
+            }
+        }
+    }
+    std::size_t pruned_files{};
+    if (const auto previous = ownership.find(group_key); previous != ownership.end()) {
+        for (const auto& [filename, recorded] : previous->second) {
+            const auto old_path = staging.path / filename;
+            const auto old_status = fs::symlink_status(old_path, error);
+            if (error == std::errc::no_such_file_or_directory) {
+                error.clear();
+                continue;
+            }
+            if (error || !fs::is_regular_file(old_status)) {
+                result.errors.emplace_back(
+                    "A tracked generated chart is no longer a regular file.");
+                return result;
+            }
+            const auto actual = file_identity(old_path);
+            if (!actual) {
+                result.errors.emplace_back("Could not verify an earlier generated chart.");
+                return result;
+            }
+            if (*actual != recorded) {
+                if (current_files.contains(filename)) {
+                    result.errors.emplace_back("A generated chart was edited since publication; "
+                                               "move it before replacing.");
+                    return result;
+                }
+                continue;
+            }
+            if (current_files.contains(filename))
+                continue;
+            const auto removed = fs::remove(old_path, error);
+            if (error) {
+                result.errors.emplace_back(
+                    "Could not remove a stale generated chart from staging.");
+                return result;
+            }
+            pruned_files += removed ? 1 : 0;
+        }
+    }
+    ownership[group_key].clear();
     for (const auto& file : plan.files) {
         if (!allowed(options, conversion_publication_stage_t::write_output)) {
             result.errors.emplace_back("Output writing was interrupted.");
@@ -293,6 +529,12 @@ auto publish_conversion_group_atomic(const fs::path& project_directory, const ou
             result.errors.emplace_back("Staged chart bytes could not be flushed or verified.");
             return result;
         }
+        const auto identity = file_identity(path);
+        if (!identity || identity->bytes != bytes.size()) {
+            result.errors.emplace_back("Could not identify a staged chart file.");
+            return result;
+        }
+        ownership[group_key].emplace(relative.generic_string(), *identity);
     }
     if (!allowed(options, conversion_publication_stage_t::validate_staging)) {
         result.errors.emplace_back("Staging validation was interrupted.");
@@ -304,6 +546,12 @@ auto publish_conversion_group_atomic(const fs::path& project_directory, const ou
             result.errors.emplace_back("A staged asset was absent from the complete output set.");
             return result;
         }
+    }
+    if (!allowed(options, conversion_publication_stage_t::update_manifest) ||
+        !write_ownership(staging.path, ownership, failure)) {
+        result.errors.push_back(failure.empty() ? "Output ownership update was interrupted."
+                                                : failure);
+        return result;
     }
     if (!sync_tree_directories(staging.path) ||
         !allowed(options, conversion_publication_stage_t::exchange_directory)) {
@@ -325,6 +573,7 @@ auto publish_conversion_group_atomic(const fs::path& project_directory, const ou
         staging.path.clear();
     }
     result.published = true;
+    result.pruned_files = pruned_files;
     if (destination_exists) {
         fs::remove_all(staging.path, error);
         if (error)

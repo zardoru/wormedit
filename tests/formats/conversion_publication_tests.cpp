@@ -172,6 +172,7 @@ TEST_CASE("conversion publication fault stages preserve the previous output set"
     for (const auto stage : {wormedit::conversion_publication_stage_t::copy_existing,
                              wormedit::conversion_publication_stage_t::write_output,
                              wormedit::conversion_publication_stage_t::validate_staging,
+                             wormedit::conversion_publication_stage_t::update_manifest,
                              wormedit::conversion_publication_stage_t::exchange_directory}) {
         wormedit::conversion_publication_options_t options;
         options.allow_stage = [stage](auto candidate) { return candidate != stage; };
@@ -227,4 +228,104 @@ TEST_CASE("conversion publication rejects symlinks in the existing output tree",
         wormedit::publish_conversion_group_atomic(temporary.path, group, request, converted());
     CHECK_FALSE(result.published);
     CHECK(read(temporary.path / "exports/song.bmson") == "old");
+}
+
+TEST_CASE("conversion publication prunes only earlier charts owned by its group",
+          "[unit][format][publication]") {
+    temporary_directory_t temporary;
+    std::filesystem::create_directories(temporary.path / "exports/assets");
+    std::ofstream(temporary.path / "exports/manual.txt") << "keep";
+    std::ofstream(temporary.path / "exports/assets/5-tone.wav") << "audio";
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
+                                         .relative_output_path = "exports"};
+    const wormedit::conversion_request_t first_request{
+        .target = wormedit::format_family_t::bmson,
+        .staged_assets = {{wormedit::asset_id_t{5}, "assets/5-tone.wav"}}};
+    REQUIRE(wormedit::publish_conversion_group_atomic(temporary.path, group, first_request,
+                                                      converted("old.bmson"))
+                .published);
+    REQUIRE(std::filesystem::exists(temporary.path / "exports/old.bmson"));
+    const auto previous_manifest = read(temporary.path / "exports/.wormedit-output-set");
+    wormedit::conversion_publication_options_t fault;
+    fault.allow_stage = [](auto stage) {
+        return stage != wormedit::conversion_publication_stage_t::update_manifest;
+    };
+    const auto interrupted = wormedit::publish_conversion_group_atomic(
+        temporary.path, group, first_request, converted("new.bmson"), fault);
+    CHECK_FALSE(interrupted.published);
+    CHECK(read(temporary.path / "exports/old.bmson") == "{}");
+    CHECK_FALSE(std::filesystem::exists(temporary.path / "exports/new.bmson"));
+    CHECK(read(temporary.path / "exports/.wormedit-output-set") == previous_manifest);
+    const auto second = wormedit::publish_conversion_group_atomic(
+        temporary.path, group, first_request, converted("new.bmson"));
+    INFO((second.errors.empty() ? "" : second.errors.front()));
+    REQUIRE(second.published);
+    CHECK(second.pruned_files == 1);
+    CHECK_FALSE(std::filesystem::exists(temporary.path / "exports/old.bmson"));
+    CHECK(read(temporary.path / "exports/new.bmson") == "{}");
+    CHECK(read(temporary.path / "exports/manual.txt") == "keep");
+    CHECK(read(temporary.path / "exports/assets/5-tone.wav") == "audio");
+    CHECK(read(temporary.path / "exports/.wormedit-output-set").find("exports\tnew.bmson\t") !=
+          std::string::npos);
+}
+
+TEST_CASE("conversion publication protects another group's generated filename",
+          "[unit][format][publication]") {
+    temporary_directory_t temporary;
+    const wormedit::output_group_t first{.family = wormedit::format_family_t::bmson,
+                                         .relative_output_path = "exports"};
+    const wormedit::conversion_request_t create{.target = wormedit::format_family_t::bmson};
+    REQUIRE(wormedit::publish_conversion_group_atomic(temporary.path, first, create, converted())
+                .published);
+    const wormedit::output_group_t second{.family = wormedit::format_family_t::bmson,
+                                          .relative_output_path = "exports/song.bmson"};
+    const wormedit::conversion_request_t replace{.target = wormedit::format_family_t::bmson,
+                                                 .overwrite = true};
+    const auto rejected = wormedit::publish_conversion_group_atomic(temporary.path, second, replace,
+                                                                    converted("different.bmson"));
+    CHECK_FALSE(rejected.published);
+    CHECK(read(temporary.path / "exports/song.bmson") == "{}");
+}
+
+TEST_CASE("conversion publication rejects a tampered ownership manifest",
+          "[unit][format][publication]") {
+    temporary_directory_t temporary;
+    std::filesystem::create_directories(temporary.path / "exports");
+    std::ofstream(temporary.path / "exports/song.bmson") << "old";
+    std::ofstream(temporary.path / "exports/.wormedit-output-set")
+        << "wormedit-output-set-v2\nexports\t../outside.bmson\t0\tcbf29ce484222325\n";
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
+                                         .relative_output_path = "exports"};
+    const wormedit::conversion_request_t request{.target = wormedit::format_family_t::bmson,
+                                                 .overwrite = true};
+    const auto rejected =
+        wormedit::publish_conversion_group_atomic(temporary.path, group, request, converted());
+    CHECK_FALSE(rejected.published);
+    CHECK(read(temporary.path / "exports/song.bmson") == "old");
+}
+
+TEST_CASE(
+    "conversion publication retains edited generated charts and rejects same-name replacement",
+    "[unit][format][publication]") {
+    temporary_directory_t temporary;
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
+                                         .relative_output_path = "exports"};
+    const wormedit::conversion_request_t create{.target = wormedit::format_family_t::bmson};
+    REQUIRE(wormedit::publish_conversion_group_atomic(temporary.path, group, create,
+                                                      converted("old.bmson"))
+                .published);
+    std::ofstream(temporary.path / "exports/old.bmson") << "hand edited";
+    const wormedit::conversion_request_t replace{.target = wormedit::format_family_t::bmson,
+                                                 .overwrite = true};
+    const auto rejected = wormedit::publish_conversion_group_atomic(temporary.path, group, replace,
+                                                                    converted("old.bmson"));
+    CHECK_FALSE(rejected.published);
+    CHECK(read(temporary.path / "exports/old.bmson") == "hand edited");
+    const auto renamed = wormedit::publish_conversion_group_atomic(temporary.path, group, replace,
+                                                                   converted("new.bmson"));
+    INFO((renamed.errors.empty() ? "" : renamed.errors.front()));
+    REQUIRE(renamed.published);
+    CHECK(renamed.pruned_files == 0);
+    CHECK(read(temporary.path / "exports/old.bmson") == "hand edited");
+    CHECK(read(temporary.path / "exports/new.bmson") == "{}");
 }

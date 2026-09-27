@@ -222,6 +222,16 @@ struct flattened_workspace_t {
         compose_output_group_path_storage;
     std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
         compose_output_group_asset_directory_storage;
+    std::string metadata_project_directory_storage;
+    std::string metadata_music_source_storage;
+    std::array<WormUiComposeOutputGroupView, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
+        metadata_output_group_storage{};
+    std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
+        metadata_output_group_name_storage;
+    std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
+        metadata_output_group_path_storage;
+    std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
+        metadata_output_group_asset_directory_storage;
     std::array<WormUiComposeLaneKeyBinding, WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY>
         compose_lane_key_storage{};
     std::optional<wormedit::editor_interaction_view_model_t> compose_interaction_view_storage;
@@ -6065,7 +6075,13 @@ auto dispatch_compose_view_action(
     std::optional<pending_project_resource_copy_t>& pending_resource_copy,
     output_group_export_runtime_t& export_runtime) -> std::string {
     using namespace wormedit;
-    if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
+    const bool metadata_path_action =
+        workspace.active_tab == workspace_tab_t::metadata &&
+        (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET ||
+         action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT ||
+         action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT);
+    if ((workspace.active_tab != workspace_tab_t::compose && !metadata_path_action) ||
+        !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id ||
         state.chart.value != action.compose_input_chart_id ||
         history.document.revision != action.compose_input_document_revision) {
@@ -8448,6 +8464,7 @@ int main(int argc, char** argv) {
         status += " " + shortcut_startup.diagnostics.front().message;
     }
     bool running = true;
+    std::string metadata_dropped_music_path;
     auto compose_viewport_last_ticks = static_cast<std::uint64_t>(SDL_GetTicks());
     while (running) {
         SDL_Event event;
@@ -8456,12 +8473,24 @@ int main(int argc, char** argv) {
             if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
                 running = false;
             }
+            if (event.type == SDL_EVENT_DROP_FILE && event.drop.data &&
+                workspace.active_tab == wormedit::workspace_tab_t::metadata) {
+                const std::string_view dropped{event.drop.data};
+                if (dropped.size() <= WORM_UI_COMPOSE_IMPORT_PATH_BYTES &&
+                    std::filesystem::path{dropped}.is_absolute()) {
+                    metadata_dropped_music_path.assign(dropped);
+                } else {
+                    status = "Drop an absolute local file path within the import limit.";
+                }
+            }
             worm_ui_frontend_handle_event(&event);
         }
         worm_ui_frontend_end_input();
+        if (workspace.active_tab != wormedit::workspace_tab_t::metadata)
+            metadata_dropped_music_path.clear();
         if (pending_resource_copy) {
-            if (const auto completed = pending_resource_copy->graph.result(
-                    pending_resource_copy->task)) {
+            if (const auto completed =
+                    pending_resource_copy->graph.result(pending_resource_copy->task)) {
                 const auto request = std::move(*pending_resource_copy);
                 pending_resource_copy.reset();
                 const auto copied =
@@ -8899,10 +8928,53 @@ int main(int argc, char** argv) {
                     flattened.compose_branch_diagnostic_storage[diagnostic].c_str();
             }
             if (flattened.view.metadata.visible) {
-                flattened.view.metadata.search_tags =
-                    flattened.view.metadata.search_tags_editable
-                        ? flattened.metadata_search_tag_storage.data()
-                        : nullptr;
+                auto& metadata = flattened.view.metadata;
+                flattened.metadata_project_directory_storage = asset_base.generic_string();
+                metadata.project_directory = flattened.metadata_project_directory_storage.c_str();
+                metadata.dropped_music_path = metadata_dropped_music_path.c_str();
+                if (workspace.transport.audio_asset) {
+                    const auto audio = std::ranges::find(history.document.audio_assets,
+                                                         *workspace.transport.audio_asset,
+                                                         &wormedit::audio_asset_t::id);
+                    if (audio != history.document.audio_assets.end()) {
+                        metadata.selected_music_asset_id = audio->id.value;
+                        flattened.metadata_music_source_storage =
+                            audio->source_path.generic_string();
+                        metadata.selected_music_source =
+                            flattened.metadata_music_source_storage.c_str();
+                    }
+                }
+                metadata.output_groups = flattened.metadata_output_group_storage.data();
+                for (std::size_t group_index = 0;
+                     group_index < history.document.output_groups.size(); ++group_index) {
+                    const auto& group = history.document.output_groups[group_index];
+                    if (!workspace.selected_chart ||
+                        std::ranges::find(group.charts, *workspace.selected_chart) ==
+                            group.charts.end())
+                        continue;
+                    if (metadata.output_group_count >= WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY) {
+                        metadata.output_groups_truncated = true;
+                        continue;
+                    }
+                    const auto slot = metadata.output_group_count++;
+                    flattened.metadata_output_group_name_storage[slot] = group.name;
+                    flattened.metadata_output_group_path_storage[slot] =
+                        group.relative_output_path.generic_string();
+                    const auto asset_directory =
+                        wormedit::export_asset_directory(group.relative_output_path);
+                    flattened.metadata_output_group_asset_directory_storage[slot] =
+                        asset_directory ? asset_directory->generic_string() : std::string{};
+                    flattened.metadata_output_group_storage[slot] = {
+                        .document_index = group_index,
+                        .name = flattened.metadata_output_group_name_storage[slot].c_str(),
+                        .relative_output_path =
+                            flattened.metadata_output_group_path_storage[slot].c_str(),
+                        .relative_asset_directory =
+                            flattened.metadata_output_group_asset_directory_storage[slot].c_str()};
+                }
+                metadata.search_tags = flattened.view.metadata.search_tags_editable
+                                           ? flattened.metadata_search_tag_storage.data()
+                                           : nullptr;
                 flattened.view.metadata.search_tag_bytes =
                     flattened.view.metadata.search_tags_editable
                         ? flattened.metadata_search_tag_length_storage.data()
@@ -9714,11 +9786,23 @@ int main(int argc, char** argv) {
                 status = dispatch_bms_branch_choice_action(action, history, workspace,
                                                            compose_interaction_state);
             } else if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
-                if (compose_interaction_state) {
+                const bool metadata_path_action =
+                    workspace.active_tab == wormedit::workspace_tab_t::metadata &&
+                    (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET ||
+                     action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT ||
+                     action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT);
+                wormedit::editor_interaction_state_t metadata_interaction{};
+                if (metadata_path_action && workspace.selected_chart)
+                    metadata_interaction.chart = *workspace.selected_chart;
+                if (compose_interaction_state || metadata_path_action) {
                     status = dispatch_compose_view_action(
-                        action, history, workspace, *compose_interaction_state,
+                        action, history, workspace,
+                        metadata_path_action ? metadata_interaction : *compose_interaction_state,
                         flattened.view.compose.viewport_height_pixels, application_command_state,
                         asset_base, resource_copy_scheduler, pending_resource_copy, export_runtime);
+                    if (workspace.active_tab == wormedit::workspace_tab_t::metadata &&
+                        action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET)
+                        metadata_dropped_music_path.clear();
                 }
             } else if (action.kind >= WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT &&
                        action.kind <= WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE) {

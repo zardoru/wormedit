@@ -226,6 +226,13 @@ typedef struct WormUiMetadataView {
     size_t format_field_count;
     const WormUiMetadataFormatTargetView* format_targets;
     size_t format_target_count;
+    const char* project_directory;
+    const char* selected_music_source;
+    uint64_t selected_music_asset_id;
+    const struct WormUiComposeOutputGroupView* output_groups;
+    size_t output_group_count;
+    bool output_groups_truncated;
+    const char* dropped_music_path;
 } WormUiMetadataView;
 
 typedef struct WormUiAudioSlicesView {

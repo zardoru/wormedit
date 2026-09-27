@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <limits>
 #include <optional>
 #include <string>
@@ -378,6 +379,146 @@ static void set_metadata_format_action(WormUiWorkspaceAction* action,
     action->metadata_format_value = needs_text ? state.format_value.data() : nullptr;
 }
 
+static void metadata_read_only_path(struct nk_context* context, const char* label,
+                                    const std::string& path) {
+    nk_layout_row_dynamic(context, 18, 1);
+    nk_label(context, label, NK_TEXT_LEFT);
+    std::vector<char> buffer(path.begin(), path.end());
+    buffer.push_back('\0');
+    nk_layout_row_dynamic(context, 25, 1);
+    (void)nk_edit_string_zero_terminated(
+        context, static_cast<nk_flags>(NK_EDIT_FIELD) | static_cast<nk_flags>(NK_EDIT_READ_ONLY),
+        buffer.data(), buffer.size(), nk_filter_default);
+}
+
+static void render_metadata_paths(struct nk_context* context, const WormUiMetadataView* metadata,
+                                  WormUiWorkspaceAction* action) {
+    nk_layout_row_dynamic(context, 24, 1);
+    nk_label(context, "Music and output paths", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 19, 1);
+    nk_label(context, "Drop an audio file on Metadata to link it as BGM.", NK_TEXT_LEFT);
+    if (metadata->dropped_music_path && metadata->dropped_music_path[0]) {
+        metadata_read_only_path(context, "Dropped audio file", metadata->dropped_music_path);
+        const bool can_link = metadata->has_chart && std::strlen(metadata->dropped_music_path) <=
+                                                         WORM_UI_COMPOSE_IMPORT_PATH_BYTES;
+        nk_layout_row_dynamic(context, 25, 1);
+        if (!can_link)
+            nk_widget_disable_begin(context);
+        const auto link = nk_button_label(context, "Link dropped file as BGM");
+        if (!can_link)
+            nk_widget_disable_end(context);
+        if (link && can_link && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+            std::snprintf(action->compose_import_path, sizeof(action->compose_import_path), "%s",
+                          metadata->dropped_music_path);
+            action->compose_resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
+            action->compose_input_chart_id = metadata->chart_id;
+            action->compose_input_document_revision = metadata->document_revision;
+            action->compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET;
+        }
+    }
+    if (!metadata->project_directory || !metadata->project_directory[0]) {
+        nk_layout_row_dynamic(context, 19, 1);
+        nk_label(context, "Save and reopen a native project to copy resource files.", NK_TEXT_LEFT);
+        return;
+    }
+    const std::filesystem::path project{metadata->project_directory};
+    metadata_read_only_path(context, "Project directory", project.generic_string());
+    const bool has_music = metadata->selected_music_asset_id && metadata->selected_music_source;
+    std::string destination_name;
+    if (!has_music) {
+        nk_layout_row_dynamic(context, 19, 1);
+        nk_label(context, "Select a music asset for project or export copies.", NK_TEXT_LEFT);
+    } else {
+        const std::filesystem::path source{metadata->selected_music_source};
+        metadata_read_only_path(context, "Selected music source",
+                                source.is_absolute()
+                                    ? source.generic_string()
+                                    : (project / source).lexically_normal().generic_string());
+        destination_name =
+            std::to_string(metadata->selected_music_asset_id) + "-" + source.filename().string();
+        metadata_read_only_path(context, "Project copy destination",
+                                (project / "assets" / destination_name).generic_string());
+        nk_layout_row_dynamic(context, 19, 1);
+        nk_label(
+            context,
+            "Project copy relinks this asset after publication; different files are preserved.",
+            NK_TEXT_LEFT);
+        nk_layout_row_dynamic(context, 25, 1);
+        if (nk_button_label(context, "Copy music into project assets") &&
+            action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+            action->compose_resource_asset_id = metadata->selected_music_asset_id;
+            action->compose_input_chart_id = metadata->chart_id;
+            action->compose_input_document_revision = metadata->document_revision;
+            action->compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
+        }
+    }
+    if (metadata->output_group_count == 0) {
+        nk_layout_row_dynamic(context, 19, 1);
+        nk_label(context, "No output group includes this difficulty.", NK_TEXT_LEFT);
+        return;
+    }
+    const WormUiComposeOutputGroupView* selected = nullptr;
+    for (size_t index = 0; index < metadata->output_group_count; ++index) {
+        if (metadata->output_groups[index].document_index == state.selected_output_group_index) {
+            selected = &metadata->output_groups[index];
+            break;
+        }
+    }
+    if (!selected) {
+        selected = &metadata->output_groups[0];
+        state.selected_output_group_index = selected->document_index;
+    }
+    nk_layout_row_dynamic(context, 24, 1);
+    if (nk_combo_begin_label(context,
+                             selected->name[0] ? selected->name : selected->relative_output_path,
+                             nk_vec2(nk_widget_width(context), 180.0f))) {
+        nk_layout_row_dynamic(context, 22, 1);
+        for (size_t index = 0; index < metadata->output_group_count; ++index) {
+            const auto& group = metadata->output_groups[index];
+            if (nk_combo_item_label(context,
+                                    group.name[0] ? group.name : group.relative_output_path,
+                                    NK_TEXT_LEFT)) {
+                selected = &group;
+                state.selected_output_group_index = group.document_index;
+            }
+        }
+        nk_combo_end(context);
+    }
+    if (selected->relative_asset_directory[0]) {
+        metadata_read_only_path(
+            context, "Output group directory",
+            (project / std::filesystem::path{selected->relative_asset_directory}.parent_path())
+                .lexically_normal()
+                .generic_string());
+        if (has_music) {
+            metadata_read_only_path(
+                context, "Export copy destination",
+                (project / selected->relative_asset_directory / destination_name)
+                    .lexically_normal()
+                    .generic_string());
+            nk_layout_row_dynamic(context, 19, 1);
+            nk_label(context, "Export copy is verified at export; different files are preserved.",
+                     NK_TEXT_LEFT);
+            nk_layout_row_dynamic(context, 25, 1);
+            if (nk_button_label(context, "Copy music into selected export folder") &&
+                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                action->compose_resource_asset_id = metadata->selected_music_asset_id;
+                action->compose_output_group_index = selected->document_index;
+                action->compose_input_chart_id = metadata->chart_id;
+                action->compose_input_document_revision = metadata->document_revision;
+                action->compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT;
+            }
+        }
+    } else {
+        nk_layout_row_dynamic(context, 19, 1);
+        nk_label(context, "The output group has no safe asset directory.", NK_TEXT_LEFT);
+    }
+    if (metadata->output_groups_truncated) {
+        nk_layout_row_dynamic(context, 19, 1);
+        nk_label(context, "Additional output groups exceed the visible limit.", NK_TEXT_LEFT);
+    }
+}
+
 void worm_ui_nuklear_render_metadata_panel(struct nk_context* context,
                                            const WormUiMetadataView* metadata,
                                            WormUiWorkspaceAction* action, bool window_focused) {
@@ -394,6 +535,7 @@ void worm_ui_nuklear_render_metadata_panel(struct nk_context* context,
                        metadata->song_fields_editable && state.song_buffers_valid);
     metadata_input_row(context, "Artist", state.artist.data(), state.artist.size(),
                        metadata->song_fields_editable && state.song_buffers_valid);
+    render_metadata_paths(context, metadata, action);
 
     nk_layout_row_dynamic(context, 24, 1);
     nk_labelf(context, NK_TEXT_LEFT, "Ordered search tags (%zu; duplicates are preserved)",

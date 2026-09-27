@@ -38,6 +38,7 @@ struct worm_ui_nuklear_metadata_state_t {
     bool format_buffers_valid{};
     std::vector<char> format_name;
     std::vector<char> format_value;
+    std::size_t selected_output_group_index{std::numeric_limits<std::size_t>::max()};
 };
 
 [[nodiscard]] auto worm_ui_nuklear_metadata_state() noexcept -> worm_ui_nuklear_metadata_state_t&;

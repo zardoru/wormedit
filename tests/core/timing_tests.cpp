@@ -116,6 +116,37 @@ TEST_CASE("chart waveform pointer resolves fractional rows to source frames",
     CHECK_FALSE(sample_frame_at_chart_y(timing, 0.0, 240.0, 60.0, 300.0, 0));
 }
 
+TEST_CASE("timing preview projects rows onto the fixed source waveform",
+          "[unit][core][timing][preview-projection]") {
+    auto chart = base_chart();
+    const auto original = build_timing_index(chart);
+    REQUIRE(original);
+    chart.bpms.front().beats_per_minute = {60, 1};
+    const auto proposed = build_timing_index(chart);
+    REQUIRE(proposed);
+    CHECK(proposed_timing_y_on_fixed_waveform(*original.index, *proposed.index, {480, {}}, 0.0,
+                                              240.0) == 240.0);
+    CHECK(proposed_timing_y_on_fixed_waveform(*original.index, *proposed.index, {240, {}}, 30.0,
+                                              240.0) == 90.0);
+
+    chart = base_chart();
+    chart.beat_zero_audio_offset_seconds = {2, 1};
+    const auto offset = build_timing_index(chart);
+    REQUIRE(offset);
+    CHECK(proposed_timing_y_on_fixed_waveform(*original.index, *offset.index, {240, {}}, 0.0,
+                                              240.0) == 180.0);
+
+    chart = base_chart();
+    chart.warps.push_back(
+        {.id = object_id_t{30}, .span = {{measure_id_t{1}, 480}, {measure_id_t{2}, 0}}});
+    const auto warped = build_timing_index(chart);
+    REQUIRE(warped);
+    CHECK(proposed_timing_y_on_fixed_waveform(*warped.index, *warped.index, {720, {1, 2}}, 0.0,
+                                              240.0) == 180.125);
+    CHECK_FALSE(
+        proposed_timing_y_on_fixed_waveform(*original.index, *proposed.index, {480, {}}, 0.0, 0.0));
+}
+
 TEST_CASE("interval beat fitting solves exact source frames across pauses and warps",
           "[unit][core][timing][beat-fit]") {
     auto chart = base_chart();

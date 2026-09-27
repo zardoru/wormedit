@@ -290,6 +290,11 @@ typedef struct WormUiComposeGridLineView {
     uint64_t chart_row;
 } WormUiComposeGridLineView;
 
+typedef struct WormUiComposeTimingPreviewRectView {
+    WormUiComposeRect bounds;
+    uint8_t kind; // 0 note endpoint, 1 BGM event, 2 hold body
+} WormUiComposeTimingPreviewRectView;
+
 typedef struct WormUiComposeDifferenceView {
     WormUiComposeRect bounds;
 } WormUiComposeDifferenceView;
@@ -500,6 +505,7 @@ typedef struct WormUiTimingMarkerView {
     double marker_y_pixels;
     double marker_left_fraction;
     double marker_right_fraction;
+    uint64_t chart_row;
     WormUiTimingLaneKind lane;
 } WormUiTimingMarkerView;
 
@@ -603,6 +609,10 @@ typedef struct WormUiComposeView {
     size_t grid_line_count;
     const WormUiComposeGridLineView* proposed_grid_lines;
     size_t proposed_grid_line_count;
+    const WormUiComposeTimingPreviewRectView* timing_preview_rects;
+    size_t timing_preview_rect_count;
+    const WormUiTimingMarkerView* timing_preview_markers;
+    size_t timing_preview_marker_count;
     const WormUiTimingMarkerView* timing_markers;
     size_t timing_marker_count;
     uint8_t timing_lane_visibility_mask;

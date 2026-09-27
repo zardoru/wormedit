@@ -992,6 +992,41 @@ auto sample_frame_at_chart_y(const timing_index_t& index, double viewport_scroll
     return frame ? frame.frame : std::nullopt;
 }
 
+auto proposed_timing_y_on_fixed_waveform(const timing_index_t& original,
+                                         const timing_index_t& proposed,
+                                         exact_chart_row_t chart_row, double viewport_scroll_pixels,
+                                         double pixels_per_standard_measure)
+    -> std::optional<double> {
+    if (!std::isfinite(viewport_scroll_pixels) || !std::isfinite(pixels_per_standard_measure) ||
+        pixels_per_standard_measure <= 0.0 || original.divisions_per_standard_measure == 0 ||
+        chart_row.fractional_rows.denominator == 0) {
+        return std::nullopt;
+    }
+    const auto proposed_time = timing_at(proposed, chart_row);
+    if (!proposed_time)
+        return std::nullopt;
+    const auto original_time = timing_at(original, chart_row);
+    long double displayed_row{};
+    if (original_time && original_time.seconds == proposed_time.seconds) {
+        displayed_row =
+            chart_row.whole_rows + static_cast<long double>(chart_row.fractional_rows.numerator) /
+                                       chart_row.fractional_rows.denominator;
+    } else {
+        const auto position = musical_position_at(original, *proposed_time.seconds,
+                                                  {.extrapolate_before_chart = true});
+        if (!position || position.absolute_row->denominator == 0)
+            return std::nullopt;
+        displayed_row = static_cast<long double>(position.absolute_row->numerator) /
+                        position.absolute_row->denominator;
+    }
+    const auto y =
+        displayed_row * pixels_per_standard_measure / original.divisions_per_standard_measure -
+        viewport_scroll_pixels;
+    if (!std::isfinite(y) || std::abs(y) > 10000000.0L)
+        return std::nullopt;
+    return static_cast<double>(y);
+}
+
 auto timing_at(const timing_index_t& index, const measure_index_t& measures,
                local_position_t position, timing_boundary_side_t side) -> timing_query_result_t {
     const auto row = absolute_row(measures, position);

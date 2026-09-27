@@ -181,6 +181,8 @@ struct flattened_workspace_t {
     std::vector<WormUiComposeGridLineView> compose_grid_storage;
     std::vector<wormedit::exact_chart_row_t> compose_grid_row_storage;
     std::vector<WormUiComposeGridLineView> compose_proposed_grid_storage;
+    std::vector<WormUiComposeTimingPreviewRectView> compose_timing_preview_rect_storage;
+    std::vector<WormUiTimingMarkerView> compose_timing_preview_marker_storage;
     std::vector<WormUiTimingMarkerView> compose_timing_marker_storage;
     std::vector<WormUiComposeDifferenceView> compose_difference_storage;
     std::vector<WormUiComposeHoldView> compose_hold_storage;
@@ -317,6 +319,7 @@ struct compose_scene_cache_t {
     std::uint64_t revision{};
     bool attempted{};
     std::optional<wormedit::editor_field_scene_index_t> index;
+    std::unordered_map<std::uint64_t, std::uint64_t> bgm_rows_by_id;
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
     std::optional<wormedit::timing_index_t> marker_timing_index;
     std::optional<wormedit::timing_index_t> proposed_offset_timing_index;
@@ -2067,6 +2070,7 @@ void populate_timing_view(flattened_workspace_t& flattened,
                 .source_order = source_order,
                 .storage_order = storage_order,
                 .marker_y_pixels = row_to_pixels(static_cast<long double>(*row)),
+                .chart_row = *row,
                 .lane = lane,
             });
         };
@@ -2573,6 +2577,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.beat_fit_drag_active = false;
     view.proposed_grid_lines = nullptr;
     view.proposed_grid_line_count = 0;
+    view.timing_preview_rects = nullptr;
+    view.timing_preview_rect_count = 0;
+    view.timing_preview_markers = nullptr;
+    view.timing_preview_marker_count = 0;
     view.waveform_proposed_beat_zero_visible = false;
     view.waveform_proposed_beat_zero_fraction = 0.0;
     view.waveform_proposed_audio_offset_numerator = 0;
@@ -2735,6 +2743,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     if (!cache.attempted || cache.chart != chart.id ||
         cache.revision != history.document.revision) {
         cache.index.reset();
+        cache.bgm_rows_by_id.clear();
         cache.hit_test_index.reset();
         cache.marker_timing_index.reset();
         cache.proposed_offset_timing_index.reset();
@@ -2762,6 +2771,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
             wormedit::build_editor_field_scene_index(chart, history.document.revision);
         if (std::holds_alternative<wormedit::editor_field_scene_index_t>(built)) {
             cache.index = std::get<wormedit::editor_field_scene_index_t>(built);
+            cache.bgm_rows_by_id.reserve(cache.index->bgm_events.size());
+            for (const auto& event : cache.index->bgm_events) {
+                cache.bgm_rows_by_id.emplace(event.event.value, event.row);
+            }
         } else {
             const auto& diagnostics = std::get<wormedit::diagnostic_list_t>(built);
             cache.status = diagnostics.empty() ? "The field layout could not be indexed."
@@ -3322,6 +3335,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
             .marker_y_pixels = y,
             .marker_left_fraction = 0.0,
             .marker_right_fraction = 1.0,
+            .chart_row = *row,
             .lane = lane,
         });
     };
@@ -3946,6 +3960,7 @@ auto dispatch_metadata_ui_action(const WormUiWorkspaceAction& action,
 }
 
 void project_compose_proposed_grid(flattened_workspace_t& flattened,
+                                   const compose_scene_cache_t& cache,
                                    const wormedit::timing_index_t& original,
                                    const wormedit::timing_index_t& proposed,
                                    const wormedit::editor_interaction_state_t& interaction) {
@@ -3954,26 +3969,117 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
     output.clear();
     output.reserve(flattened.compose_grid_row_storage.size());
     for (std::size_t index = 0; index < flattened.compose_grid_row_storage.size(); ++index) {
-        const auto at = wormedit::timing_at(proposed, flattened.compose_grid_row_storage[index]);
-        if (!at)
-            continue;
-        const auto position = wormedit::musical_position_at(original, *at.seconds,
-                                                            {.extrapolate_before_chart = true});
-        if (!position)
-            continue;
-        const auto& row = *position.absolute_row;
-        const auto y = (static_cast<long double>(row.numerator) / row.denominator) *
-                           view.pixels_per_standard_measure /
-                           original.divisions_per_standard_measure -
-                       interaction.viewport_scroll_pixels;
-        if (!std::isfinite(y) || y < 0.0L || y > view.viewport_height_pixels)
+        const auto y = wormedit::proposed_timing_y_on_fixed_waveform(
+            original, proposed, flattened.compose_grid_row_storage[index],
+            interaction.viewport_scroll_pixels, view.pixels_per_standard_measure);
+        if (!y || *y < 0.0 || *y > view.viewport_height_pixels)
             continue;
         auto line = flattened.compose_grid_storage[index];
-        line.y_pixels = static_cast<double>(y);
+        line.y_pixels = *y;
         output.push_back(line);
     }
     view.proposed_grid_lines = output.data();
     view.proposed_grid_line_count = output.size();
+
+    if (!cache.index)
+        return;
+    const auto proposed_y = [&](std::uint64_t row) {
+        return wormedit::proposed_timing_y_on_fixed_waveform(original, proposed, {row, {}},
+                                                             interaction.viewport_scroll_pixels,
+                                                             view.pixels_per_standard_measure);
+    };
+    auto& preview_rects = flattened.compose_timing_preview_rect_storage;
+    preview_rects.clear();
+    preview_rects.reserve(flattened.compose_note_storage.size() +
+                          flattened.compose_bgm_event_storage.size());
+    const auto append_rect = [&](WormUiComposeRect bounds, std::uint64_t row, std::uint8_t kind) {
+        if (preview_rects.size() >= WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY) {
+            view.truncated = true;
+            return;
+        }
+        const auto y = proposed_y(row);
+        if (!y)
+            return;
+        const auto old_y = (bounds.top + bounds.bottom) * 0.5;
+        const auto half_height = (bounds.bottom - bounds.top) * 0.5;
+        if (std::abs(*y - old_y) < 0.5 || *y + half_height < 0.0 ||
+            *y - half_height > view.viewport_height_pixels)
+            return;
+        bounds.top = *y - half_height;
+        bounds.bottom = *y + half_height;
+        if (std::abs(bounds.top) > 10000000.0 || std::abs(bounds.bottom) > 10000000.0)
+            return;
+        preview_rects.push_back({.bounds = bounds, .kind = kind});
+    };
+    for (const auto& note : flattened.compose_note_storage) {
+        const auto source = cache.index->note_indices_by_id.find(note.note_id);
+        if (source == cache.index->note_indices_by_id.end() || note.proposal_ghost)
+            continue;
+        const auto& indexed = cache.index->notes[source->second];
+        append_rect(note.bounds, note.tail ? indexed.end_row : indexed.begin_row, 0);
+    }
+    for (const auto& event : flattened.compose_bgm_event_storage) {
+        const auto row = cache.bgm_rows_by_id.find(event.event_id);
+        if (row != cache.bgm_rows_by_id.end())
+            append_rect(event.bounds, row->second, 1);
+    }
+    const auto projected_geometry_y = [&](double old_y) -> std::optional<double> {
+        const auto row = (static_cast<long double>(old_y) + interaction.viewport_scroll_pixels) *
+                         original.divisions_per_standard_measure / view.pixels_per_standard_measure;
+        if (!std::isfinite(row) || row < 0.0L || row > original.total_rows)
+            return std::nullopt;
+        constexpr std::uint64_t fractional_scale = 1'000'000;
+        auto whole = static_cast<std::uint64_t>(std::floor(row));
+        auto fractional = static_cast<std::uint64_t>(
+            std::llround((row - static_cast<long double>(whole)) * fractional_scale));
+        if (fractional == fractional_scale) {
+            ++whole;
+            fractional = 0;
+        }
+        return wormedit::proposed_timing_y_on_fixed_waveform(
+            original, proposed, {whole, {fractional, fractional_scale}},
+            interaction.viewport_scroll_pixels, view.pixels_per_standard_measure);
+    };
+    for (const auto& hold : flattened.compose_hold_storage) {
+        if (preview_rects.size() >= WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY) {
+            view.truncated = true;
+            break;
+        }
+        const auto top = projected_geometry_y(hold.bounds.top);
+        const auto bottom = projected_geometry_y(hold.bounds.bottom);
+        if (!top || !bottom || *bottom <= *top ||
+            (std::abs(*top - hold.bounds.top) < 0.5 &&
+             std::abs(*bottom - hold.bounds.bottom) < 0.5) ||
+            *bottom < 0.0 || *top > view.viewport_height_pixels)
+            continue;
+        auto bounds = hold.bounds;
+        bounds.top = *top;
+        bounds.bottom = *bottom;
+        if (std::abs(bounds.top) > 10000000.0 || std::abs(bounds.bottom) > 10000000.0)
+            continue;
+        preview_rects.push_back({.bounds = bounds, .kind = 2});
+    }
+    view.timing_preview_rects = preview_rects.data();
+    view.timing_preview_rect_count = preview_rects.size();
+
+    auto& preview_markers = flattened.compose_timing_preview_marker_storage;
+    preview_markers.clear();
+    preview_markers.reserve(flattened.compose_timing_marker_storage.size());
+    for (const auto& marker : flattened.compose_timing_marker_storage) {
+        if (preview_markers.size() >= WORM_UI_TIMING_MARKER_CAPACITY) {
+            view.truncated = true;
+            break;
+        }
+        const auto y = proposed_y(marker.chart_row);
+        if (!y || std::abs(*y - marker.marker_y_pixels) < 0.5 || *y < 0.0 ||
+            *y > view.viewport_height_pixels)
+            continue;
+        auto ghost = marker;
+        ghost.marker_y_pixels = *y;
+        preview_markers.push_back(ghost);
+    }
+    view.timing_preview_markers = preview_markers.data();
+    view.timing_preview_marker_count = preview_markers.size();
 }
 
 auto dispatch_audio_offset_drag_action(const WormUiWorkspaceAction& action,
@@ -8525,7 +8631,8 @@ int main(int argc, char** argv) {
                             }
                             if (compose_scene_cache.proposed_offset_timing_index) {
                                 project_compose_proposed_grid(
-                                    flattened, *compose_scene_cache.marker_timing_index,
+                                    flattened, compose_scene_cache,
+                                    *compose_scene_cache.marker_timing_index,
                                     *compose_scene_cache.proposed_offset_timing_index,
                                     *compose_interaction_state);
                             }
@@ -8604,7 +8711,8 @@ int main(int argc, char** argv) {
                                 }
                                 if (compose_scene_cache.proposed_beat_timing_index) {
                                     project_compose_proposed_grid(
-                                        flattened, *compose_scene_cache.marker_timing_index,
+                                        flattened, compose_scene_cache,
+                                        *compose_scene_cache.marker_timing_index,
                                         *compose_scene_cache.proposed_beat_timing_index,
                                         *compose_interaction_state);
                                 }

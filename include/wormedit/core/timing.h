@@ -162,6 +162,13 @@ struct sample_frame_result_t {
                                            double viewport_height_pixels, std::uint32_t sample_rate)
     -> std::optional<std::uint64_t>;
 
+// Show when a proposed musical row would sound against the original chart's
+// fixed waveform/viewport. The row itself stays unchanged in the document.
+[[nodiscard]] auto
+proposed_timing_y_on_fixed_waveform(const timing_index_t& original, const timing_index_t& proposed,
+                                    exact_chart_row_t chart_row, double viewport_scroll_pixels,
+                                    double pixels_per_standard_measure) -> std::optional<double>;
+
 [[nodiscard]] auto timing_at(const timing_index_t& index, const measure_index_t& measures,
                              local_position_t position,
                              timing_boundary_side_t side = timing_boundary_side_t::event)

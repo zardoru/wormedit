@@ -463,6 +463,18 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
             view->proposed_grid_lines[index].y_pixels > view->viewport_height_pixels)
             return 0;
     }
+    for (size_t index = 0; index < view->timing_preview_rect_count; ++index) {
+        if (!compose_rect_valid(&view->timing_preview_rects[index].bounds) ||
+            view->timing_preview_rects[index].kind > 2)
+            return 0;
+    }
+    for (size_t index = 0; index < view->timing_preview_marker_count; ++index) {
+        const auto& marker = view->timing_preview_markers[index];
+        if (!std::isfinite(marker.marker_y_pixels) || marker.marker_y_pixels < 0.0 ||
+            marker.marker_y_pixels > view->viewport_height_pixels ||
+            marker.lane < WORM_UI_TIMING_LANE_BPM || marker.lane > WORM_UI_TIMING_LANE_ANCHOR)
+            return 0;
+    }
     for (size_t index = 0; index < view->timing_marker_count; ++index) {
         const auto& marker = view->timing_markers[index];
         if (marker.object_id == 0 || !std::isfinite(marker.marker_y_pixels) ||
@@ -655,8 +667,12 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            view->lane_count <= WORM_UI_COMPOSE_LANE_CAPACITY &&
            view->grid_line_count <= WORM_UI_COMPOSE_GRID_CAPACITY &&
            view->proposed_grid_line_count <= WORM_UI_COMPOSE_GRID_CAPACITY &&
+           view->timing_preview_rect_count <= WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY &&
+           view->timing_preview_marker_count <= WORM_UI_TIMING_MARKER_CAPACITY &&
            (view->proposed_grid_line_count == 0 || view->waveform_offset_drag_active ||
             view->beat_fit_drag_active) &&
+           ((view->timing_preview_rect_count == 0 && view->timing_preview_marker_count == 0) ||
+            view->waveform_offset_drag_active || view->beat_fit_drag_active) &&
            (!view->beat_fit_drag_active ||
             (view->beat_fit_chart_row != 0 && view->waveform_overview_sample_rate != 0 &&
              view->beat_fit_original_bpm_denominator != 0 &&
@@ -706,6 +722,8 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            (view->band_count == 0 || view->bands) && (view->lane_count == 0 || view->lanes) &&
            (view->grid_line_count == 0 || view->grid_lines) &&
            (view->proposed_grid_line_count == 0 || view->proposed_grid_lines) &&
+           (view->timing_preview_rect_count == 0 || view->timing_preview_rects) &&
+           (view->timing_preview_marker_count == 0 || view->timing_preview_markers) &&
            (view->timing_marker_count == 0 || view->timing_markers) &&
            (view->difference_count == 0 || view->differences) &&
            (view->hold_body_count == 0 || view->hold_bodies) &&
@@ -2896,6 +2914,14 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                              context->style.font, nk_rgba(18, 21, 29, 235), nk_rgb(255, 219, 148));
             }
         }
+        if (view->timing_preview_rect_count != 0) {
+            const char* legend = "Outlines: proposed notes/holds in cyan, BGM in purple";
+            const auto bounds = nk_rect(viewport.x + rail.w + 4.0f,
+                                        viewport.y + (view->beat_fit_drag_active ? 38.0f : 18.0f),
+                                        std::min(380.0f, viewport.w - rail.w - 8.0f), 17.0f);
+            nk_draw_text(canvas, bounds, legend, static_cast<int>(strlen(legend)),
+                         context->style.font, nk_rgba(18, 21, 29, 220), nk_rgb(194, 227, 238));
+        }
         for (size_t index = 0; index < view->timing_marker_count; ++index) {
             const auto& marker = view->timing_markers[index];
             const auto lane_index = static_cast<size_t>(marker.lane);
@@ -2913,6 +2939,17 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                             static_cast<float>(view->viewport_height_pixels);
             nk_fill_rect(canvas, nk_rect(left, y - 2.5f, std::max(1.0f, right - left), 5.0f),
                          0.0f, timing_colors[lane_index]);
+        }
+        for (size_t index = 0; index < view->timing_preview_marker_count; ++index) {
+            const auto& marker = view->timing_preview_markers[index];
+            const auto lane_index = static_cast<size_t>(marker.lane);
+            if (lane_index >= timing_lanes.size() || timing_lanes[lane_index].w <= 0.0f)
+                continue;
+            const auto& lane = timing_lanes[lane_index];
+            const auto y = viewport.y + static_cast<float>(marker.marker_y_pixels) * viewport.h /
+                                            static_cast<float>(view->viewport_height_pixels);
+            nk_stroke_line(canvas, lane.x + 2.0f, y, lane.x + lane.w - 2.0f, y, 2.0f,
+                           nk_rgba(255, 207, 104, 215));
         }
         if (view->timing_stage_active) {
             const auto lane_index = static_cast<size_t>(view->timing_stage_lane);
@@ -3129,6 +3166,18 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                     nk_stroke_line(canvas, tip_x, tip_y, last_x, last_y, 2.0f, arrow_color);
                 }
             }
+        }
+        for (size_t index = 0; index < view->timing_preview_rect_count; ++index) {
+            const auto& preview = view->timing_preview_rects[index];
+            const auto rect = compose_screen_rect(&preview.bounds, view, viewport);
+            if (rect.w <= 0.0f || rect.h <= 0.0f)
+                continue;
+            const auto color =
+                preview.kind == 1 ? nk_rgba(220, 164, 244, 200) : nk_rgba(110, 222, 236, 195);
+            nk_fill_rect(canvas, rect, 0.0f,
+                         preview.kind == 1 ? nk_rgba(220, 164, 244, 38)
+                                           : nk_rgba(110, 222, 236, 34));
+            nk_stroke_rect(canvas, rect, 0.0f, 1.5f, color);
         }
         if (view->playhead_visible) {
             const auto y = viewport.y + static_cast<float>(view->playhead_y_pixels) * viewport.h /

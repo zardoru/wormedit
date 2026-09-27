@@ -1,4 +1,5 @@
 #include <wormedit/core/grid.h>
+#include <wormedit/core/virtual_canvas.h>
 
 #include <algorithm>
 #include <cmath>
@@ -309,7 +310,17 @@ auto make_editor_grid_lines(const chart_document_t& chart, const editor_grid_req
         return result;
     }
     const auto& measure_index = std::get<measure_index_t>(built_index);
-    result.diagnostics = error_if_invalid(chart, request, measure_index.total_rows);
+    std::optional<virtual_canvas_t> virtual_canvas;
+    if (request.include_virtual_bms_tail && chart.source_family == format_family_t::bms) {
+        auto built_canvas = build_virtual_canvas(chart);
+        if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas)) {
+            result.diagnostics = *diagnostics;
+            return result;
+        }
+        virtual_canvas = std::get<virtual_canvas_t>(std::move(built_canvas));
+    }
+    const auto total_rows = virtual_canvas ? virtual_canvas->total_rows : measure_index.total_rows;
+    result.diagnostics = error_if_invalid(chart, request, total_rows);
     if (!result.diagnostics.empty()) {
         return result;
     }
@@ -356,15 +367,15 @@ auto make_editor_grid_lines(const chart_document_t& chart, const editor_grid_req
                                     static_cast<long double>(request.pixels_per_standard_measure));
     std::uint64_t candidate_begin{};
     std::uint64_t candidate_end{};
-    if (!std::isfinite(overscan) || overscan >= measure_index.total_rows) {
+    if (!std::isfinite(overscan) || overscan >= total_rows) {
         candidate_begin = 0;
-        candidate_end = measure_index.total_rows;
+        candidate_end = total_rows;
     } else {
         const auto margin = static_cast<std::uint64_t>(std::max(0.0L, overscan));
         candidate_begin =
             request.visible_begin_row > margin ? request.visible_begin_row - margin : 0;
-        candidate_end = request.visible_end_row > measure_index.total_rows - margin
-                            ? measure_index.total_rows
+        candidate_end = request.visible_end_row > total_rows - margin
+                            ? total_rows
                             : request.visible_end_row + margin;
     }
 
@@ -491,6 +502,59 @@ auto make_editor_grid_lines(const chart_document_t& chart, const editor_grid_req
         }
     }
 
+    if (virtual_canvas && candidate_end > measure_index.total_rows) {
+        const auto first_number = candidate_begin < measure_index.total_rows
+                                      ? measure_index.entries.size()
+                                      : virtual_canvas->measure_containing(candidate_begin)->number;
+        const auto divisions = chart.divisions_per_standard_measure;
+        const auto beat_spacing = request.pixels_per_standard_measure / static_cast<double>(4);
+        for (auto number = first_number; number < virtual_canvas->measure_count; ++number) {
+            const auto measure = virtual_canvas->measure_at(number);
+            if (!measure || measure->begin_row >= candidate_end)
+                break;
+            const measure_index_entry_t entry{.id = {},
+                                              .absolute_begin_row = measure->begin_row,
+                                              .row_capacity = measure->row_capacity};
+            if (!add_candidate(candidates, entry, {}, editor_grid_line_kind_t::measure,
+                               request.maximum_line_count, result.diagnostics))
+                return result;
+            if (beat_spacing >= request.density.minimum_beat_spacing_pixels) {
+                const auto first = first_visible_beat(divisions, 4, entry, candidate_begin, 3);
+                if (first) {
+                    for (auto beat = *first; beat <= 3; ++beat) {
+                        const auto offset = offset_for_beat(beat, divisions, 4);
+                        if (!offset) {
+                            result.diagnostics.push_back(
+                                error(diagnostic_code_t::invalid_measure,
+                                      "virtual BMS beat overflows exact chart coordinates"));
+                            return result;
+                        }
+                        const auto absolute = absolute_position(entry.absolute_begin_row, *offset);
+                        if (!absolute || absolute->whole_rows >= candidate_end)
+                            break;
+                        if (!add_candidate(candidates, entry, *offset,
+                                           editor_grid_line_kind_t::beat,
+                                           request.maximum_line_count, result.diagnostics))
+                            return result;
+                    }
+                }
+            }
+            const auto group = offset_for_beat(2, divisions, 4);
+            if (!group) {
+                result.diagnostics.push_back(
+                    error(diagnostic_code_t::invalid_measure,
+                          "virtual BMS group overflows exact chart coordinates"));
+                return result;
+            }
+            const auto group_row = absolute_position(entry.absolute_begin_row, *group);
+            if (group_row && group_row->whole_rows >= candidate_begin &&
+                group_row->whole_rows < candidate_end &&
+                !add_candidate(candidates, entry, *group, editor_grid_line_kind_t::group,
+                               request.maximum_line_count, result.diagnostics))
+                return result;
+        }
+    }
+
     if (request.active_snap_denominator.has_value() &&
         request.pixels_per_standard_measure /
                 static_cast<double>(*request.active_snap_denominator) >=
@@ -503,8 +567,18 @@ auto make_editor_grid_lines(const chart_document_t& chart, const editor_grid_req
         if (multiple <= maximum / step) {
             auto absolute_row = multiple * step;
             while (absolute_row < candidate_end) {
-                if (const auto* entry = locate_measure(measure_index, absolute_row);
-                    entry != nullptr) {
+                auto* entry = locate_measure(measure_index, absolute_row);
+                std::optional<measure_index_entry_t> virtual_entry;
+                if (!entry && virtual_canvas) {
+                    if (const auto measure = virtual_canvas->measure_containing(absolute_row);
+                        measure && !measure->authored) {
+                        virtual_entry = {.id = {},
+                                         .absolute_begin_row = measure->begin_row,
+                                         .row_capacity = measure->row_capacity};
+                        entry = &*virtual_entry;
+                    }
+                }
+                if (entry) {
                     if (!add_candidate(candidates, *entry,
                                        {.whole = absolute_row - entry->absolute_begin_row},
                                        editor_grid_line_kind_t::active_snap,

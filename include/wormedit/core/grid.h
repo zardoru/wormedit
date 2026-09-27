@@ -20,6 +20,7 @@ struct exact_chart_row_t {
 };
 
 struct editor_grid_position_t {
+    // Zero identifies a virtual, unmaterialized BMS measure.
     measure_id_t measure;
     std::uint64_t whole_rows{};
     rational_t fractional_rows{};
@@ -69,6 +70,7 @@ struct editor_grid_request_t {
     std::uint64_t visible_begin_row{};
     std::uint64_t visible_end_row{};
     std::optional<std::uint64_t> active_snap_denominator;
+    bool include_virtual_bms_tail{};
     double pixels_per_standard_measure{192.0};
     editor_grid_density_t density;
     std::vector<editor_grid_grouping_t> authored_groupings;

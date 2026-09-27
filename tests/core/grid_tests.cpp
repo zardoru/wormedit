@@ -167,3 +167,51 @@ TEST_CASE("dense grid thinning retains stable representatives instead of hiding 
     CHECK(groups > 0);
     CHECK(groups < 6);
 }
+
+TEST_CASE("BMS grid projects the final virtual measure without materializing it",
+          "[unit][core][grid][virtual-canvas]") {
+    auto chart = make_chart(960, {{.id = measure_id_t{1}}});
+    chart.source_family = format_family_t::bms;
+    const auto request = editor_grid_request_t{.visible_begin_row = 959'000,
+                                               .visible_end_row = 959'520,
+                                               .active_snap_denominator = 4,
+                                               .include_virtual_bms_tail = true,
+                                               .density = {0.0, 0.0, 0.0}};
+    const auto projected = make_editor_grid_lines(chart, request);
+    REQUIRE(projected);
+    const auto* final_measure = line_at(projected, 959'040);
+    REQUIRE(final_measure);
+    CHECK(final_measure->kind == editor_grid_line_kind_t::measure);
+    CHECK(final_measure->position.measure == measure_id_t{});
+    const auto* beat = line_at(projected, 959'280);
+    REQUIRE(beat);
+    CHECK(beat->kind == editor_grid_line_kind_t::beat);
+    CHECK(beat->position.measure == measure_id_t{});
+    CHECK(std::ranges::none_of(
+        projected.lines, [](const auto& line) { return line.chart_row.whole_rows >= 959'520; }));
+    CHECK(projected.lines.size() < 24);
+    CHECK(chart.measures.size() == 1);
+    auto authored_only = request;
+    authored_only.include_virtual_bms_tail = false;
+    CHECK_FALSE(make_editor_grid_lines(chart, authored_only));
+}
+
+TEST_CASE("virtual BMS beats retain exact fractions when note rows are coarse",
+          "[unit][core][grid][virtual-canvas]") {
+    auto chart = make_chart(3, {{.id = measure_id_t{1}}});
+    chart.source_family = format_family_t::bms;
+    const auto grid = make_editor_grid_lines(chart, {.visible_begin_row = 3,
+                                                     .visible_end_row = 6,
+                                                     .include_virtual_bms_tail = true,
+                                                     .density = {0.0, 0.0, 0.0}});
+    REQUIRE(grid);
+    const auto beat = std::ranges::find_if(grid.lines, [](const auto& line) {
+        return line.kind == editor_grid_line_kind_t::beat && line.chart_row.whole_rows == 3 &&
+               line.chart_row.fractional_rows == rational_t{3, 4};
+    });
+    REQUIRE(beat != grid.lines.end());
+    CHECK(beat->position.measure == measure_id_t{});
+    CHECK(beat->position.whole_rows == 0);
+    CHECK(beat->position.fractional_rows == rational_t{3, 4});
+    CHECK(chart.measures.size() == 1);
+}

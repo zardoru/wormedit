@@ -182,6 +182,7 @@ TEST_CASE("field scene can project the last sparse BMS measure with its active l
     const auto& indexed = std::get<wormedit::editor_field_scene_index_t>(built);
     auto visible = view();
     visible.viewport_scroll_pixels = 999.0 * visible.pixels_per_standard_measure;
+    visible.virtual_bms_cursor_row = 959'040;
     const wormedit::editor_field_scene_request_t request{
         .field_left_pixels = 10.0, .field_width_pixels = 200.0, .include_virtual_bms_tail = true};
     const auto projected = wormedit::make_editor_field_scene(chart, indexed, visible, request);
@@ -193,6 +194,8 @@ TEST_CASE("field scene can project the last sparse BMS measure with its active l
     CHECK(scene.layout_bands.front().profile_id == "second");
     CHECK(scene.layout_bands.front().end_row == 960'000);
     CHECK(scene.lanes.size() == 2);
+    REQUIRE(scene.cursor);
+    CHECK(scene.cursor->bounds.top == Catch::Approx(-1.0));
     CHECK(std::ranges::any_of(scene.grid_lines, [](const auto& line) {
         return line.kind == wormedit::editor_grid_line_kind_t::measure &&
                line.chart_row.whole_rows == 959'040;

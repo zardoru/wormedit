@@ -1388,7 +1388,9 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         }
     }
 
-    const auto cursor_row = absolute_row(index.measures, view.cursor);
+    const auto cursor_row = view.virtual_bms_cursor_row
+                                ? view.virtual_bms_cursor_row
+                                : absolute_row(index.measures, view.cursor);
     if (cursor_row && static_cast<long double>(*cursor_row) >= query_low &&
         static_cast<long double>(*cursor_row) <= query_high) {
         if (const auto* band = visible_band_for_row(*cursor_row); band != nullptr) {

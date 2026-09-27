@@ -287,12 +287,35 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         return std::get<diagnostic_list_t>(built_index);
     }
     const auto& index = std::get<measure_index_t>(built_index);
-    const auto absolute = absolute_row(index, state.cursor);
+    auto absolute = absolute_row(index, state.cursor);
     if (!absolute.has_value()) {
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "editor cursor lies outside chart geometry")};
     }
-    const auto* lane = find_active_lane(*chart, index, state.cursor, state.active_lane);
+    auto canvas_rows = index.total_rows;
+    if (chart->source_family == format_family_t::bms) {
+        const auto built_canvas = build_virtual_canvas(*chart);
+        if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas))
+            return *diagnostics;
+        const auto& canvas = std::get<virtual_canvas_t>(built_canvas);
+        canvas_rows = canvas.total_rows;
+        if (state.virtual_bms_cursor_row) {
+            const auto measure = canvas.measure_containing(*state.virtual_bms_cursor_row);
+            if (!measure || measure->authored) {
+                return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
+                                               "virtual cursor lies outside the BMS tail")};
+            }
+            absolute = *state.virtual_bms_cursor_row;
+        }
+    } else if (state.virtual_bms_cursor_row) {
+        return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
+                                       "virtual cursor requires a BMS chart")};
+    }
+    const auto lane_position = state.virtual_bms_cursor_row && !index.entries.empty()
+                                   ? local_position_t{index.entries.back().id,
+                                                      index.entries.back().row_capacity - 1}
+                                   : state.cursor;
+    const auto* lane = find_active_lane(*chart, index, lane_position, state.active_lane);
     if (lane == nullptr) {
         return diagnostic_list_t{error(diagnostic_code_t::unknown_lane,
                                        "active editor lane is unavailable at the cursor")};
@@ -364,6 +387,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .active_lane = state.active_lane,
         .active_lane_name = lane->name,
         .cursor = state.cursor,
+        .virtual_bms_cursor_row = state.virtual_bms_cursor_row,
         .active_snap_denominator = state.active_snap_denominator,
         .supported_snap_denominators = state.supported_snap_denominators,
         .document_revision = history.document.revision,
@@ -404,7 +428,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .selected_notes = state.selected_notes,
         .selected_objects = state.selected_objects,
         .can_move_backward = *absolute >= step,
-        .can_move_forward = step < index.total_rows - *absolute,
+        .can_move_forward = step < canvas_rows - *absolute,
     };
 }
 
@@ -1218,6 +1242,12 @@ auto diagnostic_result(const document_history_t& history, const editor_interacti
 }
 
 } // namespace
+
+auto inspect_editor_interaction(const document_history_t& history,
+                                const editor_interaction_state_t& state)
+    -> std::variant<editor_interaction_view_model_t, diagnostic_list_t> {
+    return make_view(history, state);
+}
 
 auto paint_cell_hash_t::operator()(paint_cell_key_t cell) const noexcept -> std::size_t {
     const auto lane_hash = std::hash<std::uint64_t>{}(cell.lane.value);
@@ -2476,6 +2506,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         state.pending_semantic_layer_paint_gesture.reset();
         state.pending_editor_area_selection.reset();
         state.pending_space_range_selection.reset();
+        state.pending_virtual_lane_key.reset();
         const auto recovered_view = make_view(history, state);
         return {
             .accepted = true,
@@ -2489,6 +2520,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
     }
     if (std::holds_alternative<cancel_hold_action_t>(action)) {
         state.pending_hold.reset();
+        state.pending_virtual_lane_key.reset();
         const auto recovered_view = make_view(history, state);
         return {
             .accepted = true,
@@ -2518,6 +2550,11 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "Space range selection is stale after a document edit")});
+    }
+    if (state.pending_virtual_lane_key) {
+        return diagnostic_result(history, state,
+                                 {error(diagnostic_code_t::invalid_hold,
+                                        "release or cancel the virtual BMS lane key first")});
     }
     if (state.pending_hold.has_value() && state.pending_hold->gesture_source.has_value()) {
         const auto source = *state.pending_hold->gesture_source;
@@ -2588,6 +2625,19 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
             {error(diagnostic_code_t::invalid_hold,
                    "finish or cancel the active Space range selection first")});
     }
+    if (state.virtual_bms_cursor_row &&
+        !std::holds_alternative<move_edit_cursor_action_t>(action) &&
+        !std::holds_alternative<page_edit_cursor_action_t>(action) &&
+        !std::holds_alternative<jump_edit_cursor_action_t>(action) &&
+        !std::holds_alternative<cycle_edit_snap_action_t>(action) &&
+        !std::holds_alternative<place_virtual_bms_tap_action_t>(action) &&
+        !std::holds_alternative<select_editor_lane_action_t>(action) &&
+        !std::holds_alternative<adjust_editor_zoom_action_t>(action) &&
+        !std::holds_alternative<scroll_editor_view_action_t>(action)) {
+        return diagnostic_result(history, state,
+                                 {error(diagnostic_code_t::row_out_of_range,
+                                        "this edit requires a materialized cursor measure")});
+    }
     const auto initial_view = make_view(history, state);
     if (std::holds_alternative<diagnostic_list_t>(initial_view)) {
         return diagnostic_result(history, state, std::get<diagnostic_list_t>(initial_view));
@@ -2595,9 +2645,11 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
     const auto* chart = find_chart(history.document, state.chart);
     const auto built_index = build_measure_index(*chart);
     const auto& index = std::get<measure_index_t>(built_index);
-    const auto absolute = *absolute_row(index, state.cursor);
+    const auto absolute = state.virtual_bms_cursor_row.value_or(*absolute_row(index, state.cursor));
     const auto keep_cursor_visible = [&](editor_interaction_state_t& candidate) {
-        const auto cursor_row = absolute_row(index, candidate.cursor);
+        const auto cursor_row = candidate.virtual_bms_cursor_row
+                                    ? candidate.virtual_bms_cursor_row
+                                    : absolute_row(index, candidate.cursor);
         const auto maximum_scroll = maximum_viewport_scroll(
             *chart, index, candidate.pixels_per_standard_measure, candidate.viewport_height_pixels);
         if (!cursor_row || !maximum_scroll) {
@@ -3766,29 +3818,51 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                 const auto step =
                     chart->divisions_per_standard_measure / state.active_snap_denominator;
                 const auto remainder = absolute % step;
-                std::optional<local_position_t> next;
+                auto canvas_rows = index.total_rows;
+                if (chart->source_family == format_family_t::bms) {
+                    const auto built_canvas = build_virtual_canvas(*chart);
+                    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas))
+                        return diagnostic_result(history, state, *diagnostics);
+                    canvas_rows = std::get<virtual_canvas_t>(built_canvas).total_rows;
+                }
+                std::optional<std::uint64_t> next_row;
                 if (typed_action.direction == interaction_direction_t::backward) {
                     const auto distance = remainder == 0 ? step : remainder;
                     if (absolute >= distance) {
-                        next = position_at(index, absolute - distance);
+                        next_row = absolute - distance;
                     }
                 } else {
                     const auto distance = remainder == 0 ? step : step - remainder;
-                    if (distance < index.total_rows - absolute) {
-                        next = position_at(index, absolute + distance);
+                    if (distance < canvas_rows - absolute) {
+                        next_row = absolute + distance;
                     }
                 }
-                if (!next.has_value()) {
+                if (!next_row) {
                     return diagnostic_result(history, state,
                                              {error(diagnostic_code_t::row_out_of_range,
                                                     "cursor movement would leave chart geometry")});
                 }
+                const auto next = *next_row < index.total_rows
+                                      ? position_at(index, *next_row)
+                                      : std::nullopt;
+                if (!next && state.pending_space_range_selection) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::row_out_of_range,
+                                                    "Space selection requires authored geometry")});
+                }
                 if (state.pending_hold.has_value() &&
                     state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) {
+                    if (!next) {
+                        return diagnostic_result(history, state,
+                                                 {error(diagnostic_code_t::row_out_of_range,
+                                                        "hold movement requires authored geometry")});
+                    }
                     return update_hold_gesture(hold_gesture_source_t::keyboard_lane, *next);
                 }
                 auto proposed_state = state;
-                proposed_state.cursor = *next;
+                proposed_state.virtual_bms_cursor_row = next ? std::nullopt : next_row;
+                if (next)
+                    proposed_state.cursor = *next;
                 if (!keep_cursor_visible(proposed_state)) {
                     return diagnostic_result(
                         history, state,
@@ -3796,7 +3870,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                "cursor movement cannot keep the viewport valid")});
                 }
                 auto next_view = make_view(history, proposed_state);
-                if (std::holds_alternative<diagnostic_list_t>(next_view)) {
+                if (next && std::holds_alternative<diagnostic_list_t>(next_view)) {
                     const auto replacement =
                         transition_lane(*chart, index, state.cursor, *next, state.active_lane);
                     if (replacement.has_value()) {
@@ -3826,18 +3900,19 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                         {error(diagnostic_code_t::invalid_resolution,
                                "cursor paging requires a positive measure count")});
                 }
-                const auto source = std::ranges::find(index.entries, state.cursor.measure,
-                                                      &measure_index_entry_t::id);
-                if (source == index.entries.end() || source->row_capacity == 0 ||
-                    state.cursor.row >= source->row_capacity) {
+                const auto built_canvas = build_virtual_canvas(*chart);
+                if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas))
+                    return diagnostic_result(history, state, *diagnostics);
+                const auto& canvas = std::get<virtual_canvas_t>(built_canvas);
+                const auto source = canvas.measure_containing(absolute);
+                if (!source || source->row_capacity == 0) {
                     return diagnostic_result(
                         history, state,
                         {error(diagnostic_code_t::row_out_of_range,
                                "cursor page source lies outside measure geometry")});
                 }
-                const auto source_index =
-                    static_cast<std::size_t>(std::distance(index.entries.begin(), source));
-                const auto last_index = index.entries.size() - 1;
+                const auto source_index = source->number;
+                const auto last_index = canvas.measure_count - 1;
                 const auto available = typed_action.direction == interaction_direction_t::backward
                                            ? source_index
                                            : last_index - source_index;
@@ -3847,27 +3922,48 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                     typed_action.direction == interaction_direction_t::backward
                         ? source_index - offset
                         : source_index + offset;
-                const auto& target_measure = index.entries[target_index];
-                const auto scaled =
-                    static_cast<unsigned __int128>(state.cursor.row) * target_measure.row_capacity;
+                const auto target_measure = canvas.measure_at(target_index);
+                if (!target_measure) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::row_out_of_range,
+                                                    "cursor page target is unavailable")});
+                }
+                const auto scaled = static_cast<unsigned __int128>(absolute - source->begin_row) *
+                                    target_measure->row_capacity;
                 const auto quotient = scaled / source->row_capacity;
                 const auto remainder = scaled % source->row_capacity;
                 const auto rounded =
                     quotient + (remainder > source->row_capacity - remainder ? 1U : 0U);
-                if (rounded >= target_measure.row_capacity) {
+                if (rounded >= target_measure->row_capacity) {
                     return diagnostic_result(
                         history, state,
                         {error(diagnostic_code_t::row_out_of_range,
                                "cursor page target cannot represent its fractional row")});
                 }
-                const auto target =
-                    local_position_t{target_measure.id, static_cast<std::uint64_t>(rounded)};
+                const auto target_row = target_measure->begin_row +
+                                        static_cast<std::uint64_t>(rounded);
+                const auto target = target_measure->authored
+                                        ? position_at(index, target_row)
+                                        : std::nullopt;
+                if (!target && state.pending_space_range_selection) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::row_out_of_range,
+                                                    "Space selection requires authored geometry")});
+                }
                 if (state.pending_hold.has_value() &&
                     state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) {
-                    return update_hold_gesture(hold_gesture_source_t::keyboard_lane, target);
+                    if (!target) {
+                        return diagnostic_result(history, state,
+                                                 {error(diagnostic_code_t::row_out_of_range,
+                                                        "hold paging requires authored geometry")});
+                    }
+                    return update_hold_gesture(hold_gesture_source_t::keyboard_lane, *target);
                 }
                 auto proposed_state = state;
-                proposed_state.cursor = target;
+                proposed_state.virtual_bms_cursor_row =
+                    target ? std::nullopt : std::optional{target_row};
+                if (target)
+                    proposed_state.cursor = *target;
                 if (!keep_cursor_visible(proposed_state)) {
                     return diagnostic_result(
                         history, state,
@@ -3875,9 +3971,9 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                "cursor paging cannot keep the viewport valid")});
                 }
                 auto next_view = make_view(history, proposed_state);
-                if (std::holds_alternative<diagnostic_list_t>(next_view)) {
+                if (target && std::holds_alternative<diagnostic_list_t>(next_view)) {
                     const auto replacement =
-                        transition_lane(*chart, index, state.cursor, target, state.active_lane);
+                        transition_lane(*chart, index, state.cursor, *target, state.active_lane);
                     if (replacement.has_value()) {
                         proposed_state.active_lane = *replacement;
                         next_view = make_view(history, proposed_state);
@@ -3908,6 +4004,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
 
                 auto proposed_state = state;
                 proposed_state.cursor = typed_action.position;
+                proposed_state.virtual_bms_cursor_row.reset();
                 if (!keep_cursor_visible(proposed_state)) {
                     return diagnostic_result(history, state,
                                              {error(diagnostic_code_t::invalid_resolution,
@@ -4064,6 +4161,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                     return diagnostic_result(history, state, std::move(command.diagnostics));
                 state.active_lane = typed_action.lane;
                 state.cursor = position;
+                state.virtual_bms_cursor_row.reset();
                 const auto next_view = make_view(history, state);
                 return {.accepted = true,
                         .document_changed = true,

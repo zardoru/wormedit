@@ -3059,11 +3059,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
     }
 
     retained_state->viewport_height_pixels = view.viewport_height_pixels;
-    auto interaction = wormedit::make_editor_interaction(
-        history, chart.id, retained_state->active_lane, retained_state->cursor,
-        retained_state->supported_snap_denominators, retained_state->active_snap_denominator,
-        view.viewport_height_pixels);
-    if (!interaction.view) {
+    auto inspected = wormedit::inspect_editor_interaction(history, *retained_state);
+    if (!std::holds_alternative<wormedit::editor_interaction_view_model_t>(inspected)) {
         // Undoing the first edit in a virtual measure can remove the cursor's
         // measure. Rebind it immediately and keep the virtual viewport in place.
         auto recovered = wormedit::recover_editor_interaction(history, *retained_state);
@@ -3076,11 +3073,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
             return;
         }
         retained_state = std::move(*recovered.state);
-        interaction = std::move(recovered);
+        inspected = std::move(*recovered.view);
     }
-    auto interaction_view = *interaction.view;
-    interaction_view.pixels_per_standard_measure = retained_state->pixels_per_standard_measure;
-    interaction_view.viewport_scroll_pixels = retained_state->viewport_scroll_pixels;
+    auto interaction_view =
+        std::get<wormedit::editor_interaction_view_model_t>(std::move(inspected));
     const auto beat_pixels_per_row =
         interaction_view.pixels_per_standard_measure / chart.divisions_per_standard_measure;
     const auto visible_beat_y = [&](std::uint64_t row) -> std::optional<double> {
@@ -4545,19 +4541,12 @@ auto compose_result_status(const wormedit::editor_interaction_result_t& result,
 auto compose_view_for_state(const wormedit::document_history_t& history,
                             const wormedit::editor_interaction_state_t& state)
     -> std::optional<wormedit::editor_interaction_view_model_t> {
-    const auto setup = wormedit::make_editor_interaction(
-        history, state.chart, state.active_lane, state.cursor, state.supported_snap_denominators,
-        state.active_snap_denominator, state.viewport_height_pixels);
-    if (!setup.view) {
-        return std::nullopt;
+    const auto inspected = wormedit::inspect_editor_interaction(history, state);
+    if (const auto* view =
+            std::get_if<wormedit::editor_interaction_view_model_t>(&inspected)) {
+        return *view;
     }
-    auto view = *setup.view;
-    view.pixels_per_standard_measure = state.pixels_per_standard_measure;
-    view.viewport_scroll_pixels = state.viewport_scroll_pixels;
-    view.pending_hold = state.pending_hold;
-    view.selected_notes = state.selected_notes;
-    view.selected_objects = state.selected_objects;
-    return view;
+    return std::nullopt;
 }
 
 auto compose_navigation_action(WormUiComposeNavigationAction action)
@@ -4941,6 +4930,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
     const auto chart =
         std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     const auto gesture_active = state.pending_hold.has_value() ||
+                                state.pending_virtual_lane_key.has_value() ||
                                 state.pending_note_duration_gesture.has_value() ||
                                 state.pending_note_move_gesture.has_value() ||
                                 state.pending_note_paint_gesture.has_value() ||
@@ -5164,13 +5154,36 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 accepted = input.successive ? "Next selected note assigned to lane."
                                             : "Selected notes assigned to lane.";
             } else {
-                result = dispatch_editor_action(
-                    history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{input.lane_id}});
-                accepted = "Lane hold started; move the edit cursor and release the key to finish.";
+                if (state.virtual_bms_cursor_row) {
+                    state.pending_virtual_lane_key =
+                        editor_interaction_state_t::virtual_lane_key_t{
+                            *state.virtual_bms_cursor_row, lane_id_t{input.lane_id},
+                            history.document.revision};
+                    result.accepted = true;
+                    accepted = "Virtual BMS lane key captured; release it to place a tap.";
+                } else {
+                    result = dispatch_editor_action(
+                        history, state,
+                        begin_lane_key_hold_gesture_action_t{lane_id_t{input.lane_id}});
+                    accepted =
+                        "Lane hold started; move the edit cursor and release the key to finish.";
+                }
             }
             break;
         case WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE:
-            if (state.pending_hold.has_value() &&
+            if (state.pending_virtual_lane_key) {
+                const auto pending = *state.pending_virtual_lane_key;
+                state.pending_virtual_lane_key.reset();
+                if (pending.document_revision != history.document.revision ||
+                    state.virtual_bms_cursor_row != pending.canvas_row ||
+                    pending.lane != lane_id_t{input.lane_id}) {
+                    return "Virtual BMS lane key was canceled after the cursor or chart changed.";
+                }
+                result = dispatch_editor_action(
+                    history, state,
+                    place_virtual_bms_tap_action_t{pending.canvas_row, pending.lane});
+                accepted = "Virtual BMS tap placed from the lane key.";
+            } else if (state.pending_hold.has_value() &&
                 state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) {
                 result = dispatch_editor_action(history, state,
                                                 release_lane_key_hold_gesture_action_t{});
@@ -5197,6 +5210,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                  *target->note_kind == note_kind_t::hold)) {
                 state.active_lane = target->lane;
                 state.cursor = target->position;
+                state.virtual_bms_cursor_row.reset();
                 result = dispatch_editor_action(
                     history, state, begin_note_duration_gesture_action_t{*target->note});
                 accepted = "Note resize started; drag to change duration and release to finish.";
@@ -5409,6 +5423,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 }
                 state.active_lane = target->lane;
                 state.cursor = target->position;
+                state.virtual_bms_cursor_row.reset();
                 result = dispatch_editor_action(history, state,
                                                 begin_note_move_gesture_action_t{*target->note});
                 accepted = "Selected-note move started.";
@@ -5841,6 +5856,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             }
             state.active_lane = target->lane;
             state.cursor = target->position;
+            state.virtual_bms_cursor_row.reset();
             if (target->note && target->note_kind != note_kind_t::tap) {
                 result = dispatch_editor_action(
                     history, state,
@@ -6022,6 +6038,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             result.diagnostics = applied.diagnostics;
             if (result.accepted) {
                 state.cursor = *position;
+                state.virtual_bms_cursor_row.reset();
                 if (target_lane) {
                     state.active_lane = target_lane;
                 }
@@ -6934,18 +6951,39 @@ auto dispatch_compose_view_action(
                       : action.compose_resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGA
                             ? resource_placement_kind_t::bga_background
                             : static_cast<resource_placement_kind_t>(255);
-        const auto applied = apply_resource_placement(
-            history, action.compose_input_document_revision,
-            {.chart = state.chart,
-             .resource = resource_id_t{action.compose_resource_id},
-             .position = state.cursor,
-             .lane = state.active_lane,
-             .kind = kind});
+        const auto virtual_row = state.virtual_bms_cursor_row;
+        const auto applied = virtual_row
+                                 ? apply_virtual_bms_resource_placement(
+                                       history, action.compose_input_document_revision,
+                                       {.chart = state.chart,
+                                        .resource = resource_id_t{action.compose_resource_id},
+                                        .canvas_row = *virtual_row,
+                                        .lane = state.active_lane,
+                                        .kind = kind})
+                                 : apply_resource_placement(
+                                       history, action.compose_input_document_revision,
+                                       {.chart = state.chart,
+                                        .resource = resource_id_t{action.compose_resource_id},
+                                        .position = state.cursor,
+                                        .lane = state.active_lane,
+                                        .kind = kind});
         if (!applied.diagnostics.empty()) {
             return applied.diagnostics.front().message;
         }
         if (!applied.applied) {
             return "Resource placement made no document change.";
+        }
+        if (virtual_row) {
+            const auto* updated_chart = selected_chart(history, workspace);
+            if (updated_chart) {
+                const auto built = build_measure_index(*updated_chart);
+                if (const auto* index = std::get_if<measure_index_t>(&built)) {
+                    if (const auto position = timing_position_at_row(*index, *virtual_row)) {
+                        state.cursor = *position;
+                    }
+                }
+            }
+            state.virtual_bms_cursor_row.reset();
         }
         const auto role = kind == resource_placement_kind_t::sample_note
                               ? resource_role_t::sample
@@ -7151,6 +7189,11 @@ auto dispatch_compose_view_action(
     case WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK:
     case WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION:
     case WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK: {
+        if (state.virtual_bms_cursor_row &&
+            (action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK ||
+             action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION)) {
+            return "Beat bookmarks require a materialized cursor measure.";
+        }
         if (editor_interaction_has_pending_gesture(state)) {
             return "Finish or cancel the active Compose gesture before editing bookmarks.";
         }
@@ -7226,6 +7269,12 @@ auto dispatch_compose_view_action(
     case WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN:
     case WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_END:
     case WORM_UI_COMPOSE_ACTION_DELETE_BEAT_SECTION: {
+        if (state.virtual_bms_cursor_row &&
+            (action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION ||
+             action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN ||
+             action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_END)) {
+            return "Beat sections require a materialized cursor measure.";
+        }
         if (editor_interaction_has_pending_gesture(state)) {
             return "Finish or cancel the active Compose gesture before editing sections.";
         }
@@ -7988,7 +8037,8 @@ auto dispatch_compose_view_action(
 
 auto editor_interaction_has_pending_gesture(const wormedit::editor_interaction_state_t& state)
     -> bool {
-    return state.pending_hold.has_value() || state.pending_note_duration_gesture.has_value() ||
+    return state.pending_hold.has_value() || state.pending_virtual_lane_key.has_value() ||
+           state.pending_note_duration_gesture.has_value() ||
            state.pending_note_move_gesture.has_value() ||
            state.pending_note_paint_gesture.has_value() ||
            state.pending_semantic_layer_paint_gesture.has_value() ||

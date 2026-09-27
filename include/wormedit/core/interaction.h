@@ -495,6 +495,13 @@ struct editor_interaction_state_t {
     chart_id_t chart;
     lane_id_t active_lane;
     local_position_t cursor;
+    std::optional<std::uint64_t> virtual_bms_cursor_row;
+    struct virtual_lane_key_t {
+        std::uint64_t canvas_row{};
+        lane_id_t lane;
+        std::uint64_t document_revision{};
+    };
+    std::optional<virtual_lane_key_t> pending_virtual_lane_key;
     std::vector<std::uint64_t> supported_snap_denominators;
     std::uint64_t active_snap_denominator{};
     bool active_snap_was_fallback{};
@@ -521,6 +528,7 @@ struct editor_interaction_view_model_t {
     lane_id_t active_lane;
     std::string active_lane_name;
     local_position_t cursor;
+    std::optional<std::uint64_t> virtual_bms_cursor_row;
     std::uint64_t active_snap_denominator{};
     std::vector<std::uint64_t> supported_snap_denominators;
     std::uint64_t document_revision{};
@@ -576,6 +584,10 @@ struct editor_interaction_result_t {
 [[nodiscard]] auto recover_editor_interaction(const document_history_t& history,
                                               const editor_interaction_state_t& previous)
     -> editor_interaction_setup_t;
+
+[[nodiscard]] auto inspect_editor_interaction(const document_history_t& history,
+                                              const editor_interaction_state_t& state)
+    -> std::variant<editor_interaction_view_model_t, diagnostic_list_t>;
 
 // Maps an exact chart position into backend-neutral vertical pixels for a view.
 [[nodiscard]] auto editor_position_y_pixels(const chart_document_t& chart,

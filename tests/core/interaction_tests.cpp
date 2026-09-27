@@ -169,6 +169,84 @@ TEST_CASE("undoing a virtual BMS edit recovers the cursor without moving the vie
     CHECK(history.undo.empty());
 }
 
+TEST_CASE("BMS cursor crosses authored boundary and pages through virtual #999",
+          "[unit][core][interaction][virtual-canvas]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto authored = dispatch_editor_action(
+        history, state,
+        jump_edit_cursor_action_t{{measure_id_t{2}, 720}, history.document.revision});
+    REQUIRE(authored);
+    const auto virtual_start = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    REQUIRE(virtual_start);
+    REQUIRE(virtual_start.view);
+    CHECK(state.virtual_bms_cursor_row == 1'920);
+    CHECK(virtual_start.view->virtual_bms_cursor_row == 1'920);
+    const auto last = dispatch_editor_action(
+        history, state,
+        page_edit_cursor_action_t{interaction_direction_t::forward, 1'000});
+    REQUIRE(last);
+    CHECK(state.virtual_bms_cursor_row == 959'040);
+    CHECK(last.view->can_move_forward);
+    state.pending_virtual_lane_key =
+        editor_interaction_state_t::virtual_lane_key_t{959'040, lane_id_t{1},
+                                                        history.document.revision};
+    CHECK_FALSE(dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward}));
+    CHECK(state.virtual_bms_cursor_row == 959'040);
+    REQUIRE(dispatch_editor_action(history, state, cancel_editor_gesture_action_t{}));
+    CHECK_FALSE(state.pending_virtual_lane_key);
+    CHECK(history.document.charts.front().measures.size() == 2);
+    CHECK(history.undo.empty());
+    CHECK_FALSE(dispatch_editor_action(history, state,
+                                       place_tap_action_t{{measure_id_t{2}, 720}}));
+    const auto previous = dispatch_editor_action(
+        history, state,
+        page_edit_cursor_action_t{interaction_direction_t::backward, 998});
+    REQUIRE(previous);
+    CHECK_FALSE(state.virtual_bms_cursor_row);
+    CHECK((state.cursor == local_position_t{measure_id_t{2}, 0}));
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        page_edit_cursor_action_t{interaction_direction_t::forward, 998}));
+    REQUIRE(state.virtual_bms_cursor_row);
+    const auto placed = dispatch_editor_action(
+        history, state,
+        place_virtual_bms_tap_action_t{*state.virtual_bms_cursor_row, lane_id_t{1}});
+    REQUIRE(placed);
+    CHECK_FALSE(state.virtual_bms_cursor_row);
+    CHECK(history.document.charts.front().measures.size() == 1'000);
+}
+
+TEST_CASE("BMS paging preserves fractional position across an imported short measure",
+          "[unit][core][interaction][virtual-canvas]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    chart.measures.front().definition = {{1, 2}, meter_t{2, 4}};
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{std::uint64_t{4}};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                         {measure_id_t{1}, 240}, snaps, 4);
+    REQUIRE(setup);
+    auto state = *setup.state;
+    const auto forward = dispatch_editor_action(
+        history, state,
+        page_edit_cursor_action_t{interaction_direction_t::forward, 2});
+    REQUIRE(forward);
+    CHECK(state.virtual_bms_cursor_row == 1'920);
+    const auto backward = dispatch_editor_action(
+        history, state,
+        page_edit_cursor_action_t{interaction_direction_t::backward, 2});
+    REQUIRE(backward);
+    CHECK_FALSE(state.virtual_bms_cursor_row);
+    CHECK((state.cursor == local_position_t{measure_id_t{1}, 240}));
+    CHECK(history.document.charts.front().measures.size() == 2);
+}
+
 TEST_CASE(
     "headless editor actions cycle exact snaps, step across measures, and place undoable taps",
     "[unit][core][interaction]") {

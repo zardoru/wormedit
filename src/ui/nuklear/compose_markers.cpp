@@ -126,23 +126,20 @@ void render_audio_navigation(struct nk_context* context, const WormUiComposeView
                              WormUiWorkspaceAction& action) {
     const auto enabled = view.scene_available && view.audio_marker_navigation_available &&
                          view.audio_marker_transport_available;
-    nk_layout_row_begin(context, NK_DYNAMIC, 25, 3);
+    nk_layout_row_dynamic(context, 25, 2);
     if (!enabled)
         nk_widget_disable_begin(context);
-    nk_layout_row_push(context, 0.22F);
     const auto previous_clicked = nk_button_label(context, "Previous audio marker");
-    nk_layout_row_push(context, 0.22F);
     const auto next_clicked = nk_button_label(context, "Next audio marker");
     if (!enabled)
         nk_widget_disable_end(context);
-    nk_layout_row_push(context, 0.56F);
+    nk_layout_row_dynamic(context, 18, 1);
     const auto* explanation = !view.audio_marker_navigation_available
                                   ? "No audio-time bookmarks or section boundaries"
                               : !view.audio_marker_transport_available
                                   ? "Start preview once to compile its seekable timeline"
                                   : "Navigate against the exact preview clock";
     nk_label(context, explanation, NK_TEXT_LEFT);
-    nk_layout_row_end(context);
 
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
         return;
@@ -166,9 +163,8 @@ void render_audio_bookmarks(struct nk_context* context, const WormUiComposeView&
                       view.audio_bookmarks_truncated ? " (first 64 shown)" : "");
     }
 
-    nk_layout_row_begin(context, NK_DYNAMIC, 25, 5);
-    nk_layout_row_push(context, 0.25F);
-    if (nk_combo_begin_label(context, header, nk_vec2(440.0F, 280.0F))) {
+    nk_layout_row_dynamic(context, 25, 1);
+    if (nk_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
         nk_layout_row_dynamic(context, 22, 1);
         if (nk_combo_item_label(context, "New audio-time bookmark", NK_TEXT_LEFT)) {
             state.audio_bookmark_id = 0;
@@ -189,25 +185,25 @@ void render_audio_bookmarks(struct nk_context* context, const WormUiComposeView&
         nk_combo_end(context);
     }
     const auto enabled = view.scene_available;
-    nk_layout_row_push(context, 0.29F);
     if (!enabled)
         nk_widget_disable_begin(context);
+    nk_layout_row_dynamic(context, 25, 1);
     (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_bookmark_label.data(),
                                          state.audio_bookmark_label.size(), nk_filter_default);
-    nk_layout_row_push(context, 0.17F);
+    nk_layout_row_dynamic(context, 18, 1);
+    nk_label(context, "Audio time (ms)", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 25, 1);
     (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_bookmark_time.data(),
                                          state.audio_bookmark_time.size(), nk_filter_default);
-    nk_layout_row_push(context, 0.17F);
+    nk_layout_row_dynamic(context, 25, 2);
     const auto apply_clicked = nk_button_label(context, selected ? "Apply" : "Add");
     if (!enabled)
         nk_widget_disable_end(context);
-    nk_layout_row_push(context, 0.12F);
     if (!enabled || !selected)
         nk_widget_disable_begin(context);
     const auto delete_clicked = nk_button_label(context, "Delete");
     if (!enabled || !selected)
         nk_widget_disable_end(context);
-    nk_layout_row_end(context);
 
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
         return;
@@ -239,9 +235,8 @@ void render_audio_sections(struct nk_context* context, const WormUiComposeView& 
                       view.audio_sections_truncated ? " (first 64 shown)" : "");
     }
 
-    nk_layout_row_begin(context, NK_DYNAMIC, 25, 6);
-    nk_layout_row_push(context, 0.22F);
-    if (nk_combo_begin_label(context, header, nk_vec2(480.0F, 280.0F))) {
+    nk_layout_row_dynamic(context, 25, 1);
+    if (nk_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
         nk_layout_row_dynamic(context, 22, 1);
         if (nk_combo_item_label(context, "New audio-time section", NK_TEXT_LEFT)) {
             state.audio_section_id = 0;
@@ -265,28 +260,28 @@ void render_audio_sections(struct nk_context* context, const WormUiComposeView& 
         nk_combo_end(context);
     }
     const auto enabled = view.scene_available;
-    nk_layout_row_push(context, 0.23F);
     if (!enabled)
         nk_widget_disable_begin(context);
+    nk_layout_row_dynamic(context, 25, 1);
     (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_section_label.data(),
                                          state.audio_section_label.size(), nk_filter_default);
-    nk_layout_row_push(context, 0.13F);
+    nk_layout_row_dynamic(context, 18, 2);
+    nk_label(context, "Start (ms)", NK_TEXT_LEFT);
+    nk_label(context, "End (ms)", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 25, 2);
     (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_section_begin.data(),
                                          state.audio_section_begin.size(), nk_filter_default);
-    nk_layout_row_push(context, 0.13F);
     (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_section_end.data(),
                                          state.audio_section_end.size(), nk_filter_default);
-    nk_layout_row_push(context, 0.17F);
+    nk_layout_row_dynamic(context, 25, 2);
     const auto apply_clicked = nk_button_label(context, selected ? "Apply" : "Add");
     if (!enabled)
         nk_widget_disable_end(context);
-    nk_layout_row_push(context, 0.12F);
     if (!enabled || !selected)
         nk_widget_disable_begin(context);
     const auto delete_clicked = nk_button_label(context, "Delete");
     if (!enabled || !selected)
         nk_widget_disable_end(context);
-    nk_layout_row_end(context);
 
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
         return;
@@ -320,9 +315,8 @@ void render_bookmarks(struct nk_context* context, const WormUiComposeView& view,
                       view.beat_bookmarks_truncated ? " (first 64 shown)" : "");
     }
 
-    nk_layout_row_begin(context, NK_DYNAMIC, 25, 5);
-    nk_layout_row_push(context, 0.28F);
-    if (nk_combo_begin_label(context, header, nk_vec2(440.0F, 280.0F))) {
+    nk_layout_row_dynamic(context, 25, 1);
+    if (nk_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
         nk_layout_row_dynamic(context, 22, 1);
         if (nk_combo_item_label(context, "New bookmark at cursor", NK_TEXT_LEFT)) {
             state.bookmark_id = 0;
@@ -341,29 +335,26 @@ void render_bookmarks(struct nk_context* context, const WormUiComposeView& view,
         }
         nk_combo_end(context);
     }
-    nk_layout_row_push(context, 0.34F);
     if (!view.scene_available) {
         nk_widget_disable_begin(context);
     }
+    nk_layout_row_dynamic(context, 25, 1);
     (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.bookmark_label.data(),
                                          state.bookmark_label.size(), nk_filter_default);
-    nk_layout_row_push(context, 0.16F);
+    nk_layout_row_dynamic(context, 25, 3);
     const auto apply_clicked =
         nk_button_label(context, selected ? "Apply rename" : "Add at cursor");
     if (!view.scene_available) {
         nk_widget_disable_end(context);
     }
-    nk_layout_row_push(context, 0.11F);
     if (!view.scene_available || !selected) {
         nk_widget_disable_begin(context);
     }
     const auto move_clicked = nk_button_label(context, "Move here");
-    nk_layout_row_push(context, 0.11F);
     const auto delete_clicked = nk_button_label(context, "Delete");
     if (!view.scene_available || !selected) {
         nk_widget_disable_end(context);
     }
-    nk_layout_row_end(context);
 
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
         return;
@@ -408,9 +399,8 @@ void render_sections(struct nk_context* context, const WormUiComposeView& view,
         }
     }
 
-    nk_layout_row_begin(context, NK_DYNAMIC, 25, 6);
-    nk_layout_row_push(context, 0.25F);
-    if (nk_combo_begin_label(context, header, nk_vec2(480.0F, 280.0F))) {
+    nk_layout_row_dynamic(context, 25, 1);
+    if (nk_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
         nk_layout_row_dynamic(context, 22, 1);
         const auto* new_section_label = view.beat_section_selection_span_available
                                             ? "New section from selected span"
@@ -434,13 +424,13 @@ void render_sections(struct nk_context* context, const WormUiComposeView& view,
         }
         nk_combo_end(context);
     }
-    nk_layout_row_push(context, 0.29F);
     if (!view.scene_available) {
         nk_widget_disable_begin(context);
     }
+    nk_layout_row_dynamic(context, 25, 1);
     (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.section_label.data(),
                                          state.section_label.size(), nk_filter_default);
-    nk_layout_row_push(context, 0.16F);
+    nk_layout_row_dynamic(context, 25, 2);
     const auto apply_clicked =
         nk_button_label(context, selected                                     ? "Apply rename"
                                  : view.beat_section_selection_span_available ? "Add selected span"
@@ -448,19 +438,16 @@ void render_sections(struct nk_context* context, const WormUiComposeView& view,
     if (!view.scene_available) {
         nk_widget_disable_end(context);
     }
-    nk_layout_row_push(context, 0.10F);
     if (!view.scene_available || !selected) {
         nk_widget_disable_begin(context);
     }
     const auto set_begin_clicked = nk_button_label(context, "Set start");
-    nk_layout_row_push(context, 0.10F);
+    nk_layout_row_dynamic(context, 25, 2);
     const auto set_end_clicked = nk_button_label(context, "Set end");
-    nk_layout_row_push(context, 0.10F);
     const auto delete_clicked = nk_button_label(context, "Delete");
     if (!view.scene_available || !selected) {
         nk_widget_disable_end(context);
     }
-    nk_layout_row_end(context);
 
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
         return;

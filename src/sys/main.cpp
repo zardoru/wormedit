@@ -191,6 +191,8 @@ struct flattened_workspace_t {
     std::vector<WormUiComposeNoteView> compose_note_storage;
     std::vector<WormUiComposeBgmLaneView> compose_bgm_lane_storage;
     std::vector<WormUiComposeBgmEventView> compose_bgm_event_storage;
+    std::unordered_map<std::uint64_t, std::pair<std::string, std::string>>
+        compose_bgm_sound_labels;
     std::vector<WormUiComposeWaveformRowView> compose_waveform_storage;
     std::vector<WormUiComposeWaveformOverviewRowView> compose_waveform_overview_storage;
     std::vector<WormUiComposeBgmDraftView> compose_bgm_draft_storage;
@@ -3678,9 +3680,36 @@ void populate_compose_view(flattened_workspace_t& flattened,
     const auto& bgm_events = scene.bgm_events;
     const auto bgm_event_count =
         std::min(bgm_events.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BGM_EVENT_CAPACITY));
+    std::unordered_set<std::uint64_t> visible_sound_ids;
+    visible_sound_ids.reserve(bgm_event_count);
+    for (std::size_t index = 0; index < bgm_event_count; ++index) {
+        if (bgm_events[index].sound)
+            visible_sound_ids.insert(bgm_events[index].sound->value);
+    }
+    flattened.compose_bgm_sound_labels.reserve(visible_sound_ids.size());
+    for (const auto& resource : history.document.resources) {
+        if (!visible_sound_ids.contains(resource.id.value))
+            continue;
+        const auto bms_identity =
+            std::ranges::find_if(resource.target_identities, [](const auto& identity) {
+                return identity.family == wormedit::format_family_t::bms;
+            });
+        const auto name = resource.name.empty()
+                              ? "Resource " + std::to_string(resource.id.value)
+                              : resource.name;
+        const auto label = bms_identity != resource.target_identities.end()
+                               ? bms_identity->identifier
+                               : std::filesystem::path{name}.stem().string();
+        flattened.compose_bgm_sound_labels.emplace(
+            resource.id.value,
+            std::pair{label.empty() ? std::to_string(resource.id.value) : label, name});
+    }
     flattened.compose_bgm_event_storage.reserve(bgm_event_count);
     for (std::size_t index = 0; index < bgm_event_count; ++index) {
         const auto& event = bgm_events[index];
+        const auto sound = event.sound
+                               ? flattened.compose_bgm_sound_labels.find(event.sound->value)
+                               : flattened.compose_bgm_sound_labels.end();
         flattened.compose_bgm_event_storage.push_back(
             {.bounds = convert_rect(event.bounds),
              .event_id = event.event.value,
@@ -3689,7 +3718,13 @@ void populate_compose_view(flattened_workspace_t& flattened,
              .has_sound = event.sound.has_value(),
              .bmson_slice = event.bmson_restart.has_value(),
              .bmson_restart = event.bmson_restart.value_or(false),
-             .selected = event.selected});
+             .selected = event.selected,
+             .sound_label = sound == flattened.compose_bgm_sound_labels.end()
+                                ? (event.sound ? "?" : "")
+                                : sound->second.first.c_str(),
+             .sound_detail = sound == flattened.compose_bgm_sound_labels.end()
+                                 ? (event.sound ? "Unknown sound resource" : "Unbound BGM slot")
+                                 : sound->second.second.c_str()});
     }
     if (application_state.bmson_marker_draft && pixels_per_row > 0.0) {
         const auto& draft = *application_state.bmson_marker_draft;

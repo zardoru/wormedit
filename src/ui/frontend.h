@@ -384,6 +384,8 @@ typedef struct WormUiComposeBgmEventView {
     bool bmson_slice;
     bool bmson_restart;
     bool selected;
+    const char* sound_label;
+    const char* sound_detail;
 } WormUiComposeBgmEventView;
 
 typedef struct WormUiComposeBgmDraftView {

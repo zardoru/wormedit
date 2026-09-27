@@ -3105,6 +3105,9 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                 }
             }
         }
+        const char* hovered_bgm_detail = nullptr;
+        bool hovered_bgm_restart = false;
+        bool hovered_bgm_slice = false;
         for (size_t index = 0; index < view->bgm_event_count; ++index) {
             const auto& event = view->bgm_events[index];
             const auto rect = compose_screen_rect(&event.bounds, view, viewport);
@@ -3119,6 +3122,21 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                                         : nk_rgb(119, 231, 226);
                 nk_stroke_line(canvas, rect.x + 3.0f, rect.y + 2.0f,
                                rect.x + 3.0f, rect.y + rect.h - 2.0f, 2.0f, color);
+            }
+            if (event.sound_label && event.sound_label[0] && rect.w >= 18.0f &&
+                rect.h >= 13.0f) {
+                const auto text_rect =
+                    nk_rect(rect.x + (event.bmson_slice ? 6.0f : 3.0f), rect.y + 2.0f,
+                            std::max(1.0f, rect.w - (event.bmson_slice ? 8.0f : 5.0f)),
+                            std::min(15.0f, rect.h - 3.0f));
+                nk_draw_text(canvas, text_rect, event.sound_label,
+                             static_cast<int>(strlen(event.sound_label)), context->style.font,
+                             fill, nk_rgb(255, 245, 255));
+            }
+            if (event.sound_detail && nk_input_is_mouse_hovering_rect(&context->input, rect)) {
+                hovered_bgm_detail = event.sound_detail;
+                hovered_bgm_slice = event.bmson_slice;
+                hovered_bgm_restart = event.bmson_restart;
             }
         }
         for (size_t index = 0; index < view->bmson_marker_draft_count; ++index) {
@@ -3150,7 +3168,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                 continue;
             }
             char label[20]{};
-            const auto length = snprintf(label, sizeof(label), "BGM %zu", index + 1);
+            const auto length = snprintf(label, sizeof(label), "BGM %zu",
+                                         view->bgm_lanes[index].source_order + 1);
             if (length > 0) {
                 const auto title = nk_rect(rect.x + 2.0f, viewport.y + 2.0f,
                                            std::max(1.0f, rect.w - 4.0f), 14.0f);
@@ -3358,6 +3377,29 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             nk_draw_text(canvas, tooltip_bounds, view->hover_tooltip,
                          static_cast<int>(strlen(view->hover_tooltip)), context->style.font,
                          nk_rgb(12, 16, 24), nk_rgb(255, 244, 192));
+        }
+        if (hovered_bgm_detail) {
+            const auto detail_bounds =
+                nk_rect(viewport.x + 8.0f, viewport.y + 34.0f,
+                        std::min(420.0f, std::max(120.0f, viewport.w - 16.0f)), 24.0f);
+            nk_fill_rect(canvas, detail_bounds, 3.0f, nk_rgba(12, 16, 24, 235));
+            nk_stroke_rect(canvas, detail_bounds, 3.0f, 1.0f, nk_rgb(232, 190, 247));
+            auto name_bounds = detail_bounds;
+            if (hovered_bgm_slice) {
+                constexpr float mode_width = 76.0f;
+                const auto* mode = hovered_bgm_restart ? "Restart" : "Continue";
+                nk_draw_text(canvas, nk_rect(detail_bounds.x, detail_bounds.y, mode_width,
+                                             detail_bounds.h),
+                             mode, static_cast<int>(strlen(mode)), context->style.font,
+                             nk_rgb(12, 16, 24),
+                             hovered_bgm_restart ? nk_rgb(255, 205, 138)
+                                                   : nk_rgb(155, 243, 237));
+                name_bounds.x += mode_width;
+                name_bounds.w = std::max(1.0f, name_bounds.w - mode_width);
+            }
+            nk_draw_text(canvas, name_bounds, hovered_bgm_detail,
+                         static_cast<int>(strlen(hovered_bgm_detail)), context->style.font,
+                         nk_rgb(12, 16, 24), nk_rgb(245, 227, 255));
         }
     }
     nk_push_scissor(canvas, parent_clip);

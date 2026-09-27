@@ -493,6 +493,46 @@ TEST_CASE("BMS writer round trips holds, repeated BGM lanes, structural zeros, a
           }) == 2);
 }
 
+TEST_CASE("Deleting a selected imported BGM event updates repeated BMS channel lines",
+          "[unit][format][bms][writer][interaction][delete]") {
+    constexpr std::string_view source =
+        "#PLAYER 1\n#TITLE BGM deletion\n#BPM 120\n"
+        "#WAV01 first.wav\n#WAV02 second.wav\n"
+        "#00001:01\n#00001:02\n";
+    const auto imported = parse(source, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(imported.song);
+    REQUIRE_FALSE(imported.has_errors());
+    auto history = wormedit::make_document_history(*imported.song);
+    const auto& chart = history.document.charts.front();
+    REQUIRE(chart.measures.front().bgm_events.size() == 2);
+    const auto removed = chart.measures.front().bgm_events.front().id;
+    const auto retained = chart.measures.front().bgm_events.back().id;
+    const auto lane = chart.lane_layouts.front().layout.lanes.front().id;
+    const std::array snaps{std::uint64_t{1}};
+    const auto setup = wormedit::make_editor_interaction(
+        history, chart.id, lane, {chart.measures.front().id, 0}, snaps, 1);
+    REQUIRE(setup);
+    auto state = *setup.state;
+    REQUIRE(wormedit::dispatch_editor_action(
+        history, state,
+        wormedit::select_editor_objects_action_t{
+            {{wormedit::editor_selection_object_kind_t::bgm_event, removed}}}));
+    REQUIRE(wormedit::dispatch_editor_action(
+        history, state, wormedit::delete_editor_selection_action_t{}));
+    REQUIRE(history.document.charts.front().measures.front().bgm_events.size() == 1);
+    CHECK(history.document.charts.front().measures.front().bgm_events.front().id == retained);
+    const auto written = wormedit::write_bms(
+        history.document, {.lane_profile_id = "bme-7k-outside-scratch",
+                           .preserve_unchanged_source = false});
+    REQUIRE(written.bytes);
+    CHECK_FALSE(written.has_errors());
+    CHECK(written.bytes->find("#00001:02") != std::string::npos);
+    CHECK(written.bytes->find("#00001:01") == std::string::npos);
+    const auto reparsed = parse(*written.bytes, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(reparsed.song);
+    CHECK(reparsed.song->charts.front().measures.front().bgm_events.size() == 1);
+}
+
 TEST_CASE("BMS writer supports authored BGM lanes across measures", "[unit][format][bms][writer]") {
     auto song = *simple_chart().song;
     auto& chart = song.charts.front();

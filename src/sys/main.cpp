@@ -5155,9 +5155,9 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
             accepted = "Edit cursor moved forward.";
             break;
-        case WORM_UI_COMPOSE_INPUT_DELETE_NOTES:
-            result = dispatch_editor_action(history, state, delete_editor_notes_action_t{});
-            accepted = result.document_changed ? "Note deleted." : "No note at the cursor.";
+        case WORM_UI_COMPOSE_INPUT_DELETE_SELECTION:
+            result = dispatch_editor_action(history, state, delete_editor_selection_action_t{});
+            accepted = result.document_changed ? "Selection deleted." : "No object at the cursor.";
             break;
         case WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS:
             if (input.lane_id == 0) {
@@ -8221,10 +8221,11 @@ auto invoke_application_command(
         if (!state) {
             return reject_application_command(status, "Delete requires the active Compose chart.");
         }
-        const auto result = dispatch_editor_action(history, *state, delete_editor_notes_action_t{});
+        const auto result = dispatch_editor_action(history, *state,
+                                                   delete_editor_selection_action_t{});
         auto invocation_result = accept_editor_command(
             result, status,
-            result.document_changed ? "Note deletion applied." : "No note at the cursor.");
+            result.document_changed ? "Selection deleted." : "No object at the cursor.");
         if (result.document_changed) {
             const auto rebound = rebind_after_edit();
             if (!rebound) {

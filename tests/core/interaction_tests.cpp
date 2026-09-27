@@ -1,4 +1,5 @@
 #include <wormedit/core/interaction.h>
+#include <wormedit/formats/bmson.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -6,9 +7,13 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <iterator>
 #include <limits>
 #include <ranges>
+#include <span>
+#include <string>
 
 using namespace wormedit;
 
@@ -3165,7 +3170,7 @@ TEST_CASE("editor deletion removes a cursor note or selected notes atomically",
     auto state = make_state(history);
 
     const auto cursor_delete =
-        dispatch_editor_action(history, state, delete_editor_notes_action_t{});
+        dispatch_editor_action(history, state, delete_editor_selection_action_t{});
     REQUIRE(cursor_delete);
     CHECK(cursor_delete.document_changed);
     CHECK(note_count(history) == 2);
@@ -3183,7 +3188,7 @@ TEST_CASE("editor deletion removes a cursor note or selected notes atomically",
     CHECK(selected.view->selected_notes ==
           std::vector<object_id_t>{object_id_t{102}, object_id_t{103}});
     const auto selection_delete =
-        dispatch_editor_action(history, state, delete_editor_notes_action_t{});
+        dispatch_editor_action(history, state, delete_editor_selection_action_t{});
     REQUIRE(selection_delete);
     CHECK(selection_delete.document_changed);
     CHECK(selection_delete.view->selected_notes.empty());
@@ -3198,6 +3203,150 @@ TEST_CASE("editor deletion removes a cursor note or selected notes atomically",
     CHECK(has_code(unknown.diagnostics, diagnostic_code_t::invalid_id));
     CHECK(state.selected_notes.empty());
     CHECK(note_count(history) == 3);
+}
+
+TEST_CASE("Delete uses typed BGM selection instead of removing a cursor note",
+          "[unit][core][interaction][selection][delete][bgm]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    chart.bgm_source_lanes.push_back({.id = object_id_t{200}, .name = "BGM 1"});
+    chart.measures.front().notes.push_back(
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 840}, .lane = lane_id_t{1}});
+    chart.measures.front().bgm_events.push_back(
+        {.id = object_id_t{201},
+         .position = {measure_id_t{1}, 840},
+         .source_lane = object_id_t{200}});
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{{{editor_selection_object_kind_t::bgm_event,
+                                         object_id_t{201}}}}));
+    const auto bgm_delete = dispatch_editor_action(
+        history, state, delete_editor_selection_action_t{});
+    REQUIRE(bgm_delete);
+    CHECK(bgm_delete.document_changed);
+    CHECK(history.document.charts.front().measures.front().bgm_events.empty());
+    CHECK(note_count(history) == 1);
+    CHECK(state.selected_objects.empty());
+    REQUIRE(undo_document_command(history));
+
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{
+            {{editor_selection_object_kind_t::note, object_id_t{101}},
+             {editor_selection_object_kind_t::bgm_event, object_id_t{201}}}}));
+    const auto mixed_delete = dispatch_editor_action(
+        history, state, delete_editor_selection_action_t{});
+    REQUIRE(mixed_delete);
+    CHECK(mixed_delete.document_changed);
+    CHECK(history.document.charts.front().measures.front().bgm_events.empty());
+    CHECK(note_count(history) == 0);
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().measures.front().bgm_events.size() == 1);
+    CHECK(note_count(history) == 1);
+
+    state.virtual_bms_cursor_row = 1'920;
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{{{editor_selection_object_kind_t::bgm_event,
+                                         object_id_t{201}}}}));
+    REQUIRE(dispatch_editor_action(
+        history, state, delete_editor_selection_action_t{}));
+    CHECK(state.virtual_bms_cursor_row == 1'920);
+    CHECK(history.document.charts.front().measures.front().bgm_events.empty());
+    CHECK(note_count(history) == 1);
+}
+
+TEST_CASE("Delete routes a linked BMSON BGM marker through its sound channel",
+          "[unit][core][interaction][selection][delete][bmson]") {
+    std::ifstream input(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" /
+                            "published-vox-slicing.bmson", std::ios::binary);
+    const std::string bytes{std::istreambuf_iterator<char>(input),
+                            std::istreambuf_iterator<char>()};
+    const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
+    REQUIRE(parsed.song);
+    auto song = *parsed.song;
+    song.audio_assets.front().stream = {48'000, 2, 200'000, true};
+    auto history = make_document_history(std::move(song));
+    const auto& chart = history.document.charts.front();
+    const auto measure = std::ranges::find_if(chart.measures, [](const auto& item) {
+        return !item.bgm_events.empty();
+    });
+    REQUIRE(measure != chart.measures.end());
+    const auto bgm = measure->bgm_events.front();
+    REQUIRE(bgm.sound_channel_event);
+    const auto lane = chart.lane_layouts.front().layout.lanes.front().id;
+    const std::array snaps{std::uint64_t{1}};
+    const auto setup = make_editor_interaction(
+        history, chart.id, lane, {chart.measures.front().id, 0}, snaps, 1);
+    REQUIRE(setup);
+    auto state = *setup.state;
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{{{editor_selection_object_kind_t::bgm_event, bgm.id}}}));
+    const auto deleted = dispatch_editor_action(
+        history, state, delete_editor_selection_action_t{});
+    REQUIRE(deleted);
+    CHECK(deleted.document_changed);
+    CHECK(state.selected_objects.empty());
+    CHECK(std::ranges::none_of(history.document.charts.front().measures,
+                               [id = bgm.id](const auto& item) {
+                                   return std::ranges::any_of(item.bgm_events,
+                                                              [id](const auto& event) {
+                                                                  return event.id == id;
+                                                              });
+                               }));
+    CHECK(std::ranges::none_of(history.document.charts.front().sound_channels.front().events,
+                               [id = *bgm.sound_channel_event](const auto& event) {
+                                   return event.id == id;
+                               }));
+    REQUIRE(undo_document_command(history));
+    CHECK(std::ranges::any_of(history.document.charts.front().measures,
+                              [id = bgm.id](const auto& item) {
+                                  return std::ranges::any_of(item.bgm_events,
+                                                             [id](const auto& event) {
+                                                                 return event.id == id;
+                                                             });
+                              }));
+}
+
+TEST_CASE("Delete preserves a branch-owned BMS BGM source statement",
+          "[unit][core][interaction][selection][delete][bms]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    chart.bgm_source_lanes.push_back({.id = object_id_t{200}, .name = "Branch BGM"});
+    chart.measures.front().bgm_events.push_back(
+        {.id = object_id_t{201},
+         .position = {measure_id_t{1}, 0},
+         .source_lane = object_id_t{200},
+         .provenance = {.family = format_family_t::bms,
+                        .source_spelling = "01",
+                        .source_order = 7}});
+    chart.bms_control_tree = bms_control_node_t{
+        .id = branch_id_t{1},
+        .kind = bms_control_kind_t::root,
+        .children = {{.id = branch_id_t{2},
+                      .kind = bms_control_kind_t::random,
+                      .children = {{.id = branch_id_t{3},
+                                    .kind = bms_control_kind_t::raw_statement,
+                                    .source_order = 7}}}}};
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{{{editor_selection_object_kind_t::bgm_event,
+                                         object_id_t{201}}}}));
+    const auto rejected = dispatch_editor_action(
+        history, state, delete_editor_selection_action_t{});
+    CHECK_FALSE(rejected);
+    CHECK(has_code(rejected.diagnostics, diagnostic_code_t::unsupported_feature));
+    CHECK(history.document.charts.front().measures.front().bgm_events.size() == 1);
+    CHECK(history.undo.empty());
 }
 
 TEST_CASE("bare lane assignment moves every selected note and retains selection",

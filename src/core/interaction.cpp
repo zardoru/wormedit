@@ -1,5 +1,6 @@
 #include <wormedit/core/interaction.h>
 
+#include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/virtual_canvas.h>
@@ -68,6 +69,30 @@ auto find_chart(song_document_t& song, chart_id_t id) -> chart_document_t* {
     const auto found =
         std::ranges::find_if(song.charts, [id](const auto& chart) { return chart.id == id; });
     return found == song.charts.end() ? nullptr : &*found;
+}
+
+auto bms_branch_source_orders(const chart_document_t& chart)
+    -> std::unordered_set<std::size_t> {
+    std::unordered_set<std::size_t> orders;
+    if (!chart.bms_control_tree)
+        return orders;
+    const auto visit = [&](const auto& self, const bms_control_node_t& node,
+                           bool inside_branch) -> void {
+        if (inside_branch)
+            orders.insert(node.source_order);
+        const auto boundary = node.kind == bms_control_kind_t::random ||
+                              node.kind == bms_control_kind_t::switch_block ||
+                              node.kind == bms_control_kind_t::if_group ||
+                              node.kind == bms_control_kind_t::if_branch ||
+                              node.kind == bms_control_kind_t::else_if_branch ||
+                              node.kind == bms_control_kind_t::else_branch ||
+                              node.kind == bms_control_kind_t::case_branch ||
+                              node.kind == bms_control_kind_t::default_branch;
+        for (const auto& child : node.children)
+            self(self, child, inside_branch || boundary);
+    };
+    visit(visit, *chart.bms_control_tree, false);
+    return orders;
 }
 
 auto position_at(const measure_index_t& index, std::uint64_t absolute)
@@ -2731,6 +2756,10 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         !std::holds_alternative<update_editor_area_selection_action_t>(action) &&
         !std::holds_alternative<commit_editor_area_selection_action_t>(action) &&
         !std::holds_alternative<space_range_selection_action_t>(action) &&
+        !std::holds_alternative<select_editor_notes_action_t>(action) &&
+        !std::holds_alternative<select_editor_objects_action_t>(action) &&
+        !(std::holds_alternative<delete_editor_selection_action_t>(action) &&
+          (!state.selected_objects.empty() || !state.selected_notes.empty())) &&
         !std::holds_alternative<select_editor_lane_action_t>(action) &&
         !std::holds_alternative<adjust_editor_zoom_action_t>(action) &&
         !std::holds_alternative<scroll_editor_view_action_t>(action)) {
@@ -5021,71 +5050,146 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                           history.document.revision, state.chart, selected.front()}}
                                     : std::nullopt,
                 };
-            } else if constexpr (std::is_same_v<action_t, delete_editor_notes_action_t>) {
-                std::unordered_set<std::uint64_t> selected_ids;
-                if (!state.selected_notes.empty()) {
-                    const auto available_ids = chart_note_ids(*chart);
-                    selected_ids.reserve(state.selected_notes.size());
-                    for (const auto id : state.selected_notes) {
-                        if (!available_ids.contains(id.value)) {
-                            return diagnostic_result(history, state,
-                                                     {error(diagnostic_code_t::invalid_id,
-                                                            "selected note no longer exists", id)});
+            } else if constexpr (std::is_same_v<action_t, delete_editor_selection_action_t>) {
+                std::unordered_set<std::uint64_t> note_ids;
+                std::unordered_set<std::uint64_t> bgm_ids;
+                if (!state.selected_objects.empty()) {
+                    for (const auto object : state.selected_objects) {
+                        auto* ids = object.kind == editor_selection_object_kind_t::note
+                                        ? &note_ids
+                                    : object.kind == editor_selection_object_kind_t::bgm_event
+                                        ? &bgm_ids
+                                        : nullptr;
+                        if (!ids) {
+                            return diagnostic_result(
+                                history, state,
+                                {error(diagnostic_code_t::unsupported_feature,
+                                       "Delete does not support this selected object type",
+                                       object.id)});
                         }
-                        if (!selected_ids.insert(id.value).second) {
+                        if (!object.id || !ids->insert(object.id.value).second) {
                             return diagnostic_result(
                                 history, state,
                                 {error(diagnostic_code_t::duplicate_id,
-                                       "selected note list contains a duplicate", id)});
+                                       "Delete selection contains a duplicate or empty identity",
+                                       object.id)});
                         }
                     }
+                } else {
+                    for (const auto id : state.selected_notes) {
+                        if (!id || !note_ids.insert(id.value).second) {
+                            return diagnostic_result(
+                                history, state,
+                                {error(diagnostic_code_t::duplicate_id,
+                                       "selected note list contains a duplicate or empty identity",
+                                       id)});
+                        }
+                    }
+                }
+                if (!note_ids.empty()) {
+                    const auto available_ids = chart_note_ids(*chart);
+                    for (const auto id : note_ids) {
+                        if (!available_ids.contains(id)) {
+                            return diagnostic_result(
+                                history, state,
+                                {error(diagnostic_code_t::invalid_id,
+                                       "selected note no longer exists", object_id_t{id})});
+                        }
+                    }
+                }
+                std::optional<object_id_t> linked_bmson_event;
+                std::size_t found_bgm{};
+                const auto branch_source_orders = bgm_ids.empty()
+                                                      ? std::unordered_set<std::size_t>{}
+                                                      : bms_branch_source_orders(*chart);
+                for (const auto& measure : chart->measures) {
+                    for (const auto& event : measure.bgm_events) {
+                        if (!bgm_ids.contains(event.id.value))
+                            continue;
+                        ++found_bgm;
+                        if (event.sound_channel_event) {
+                            if (note_ids.size() + bgm_ids.size() != 1) {
+                                return diagnostic_result(
+                                    history, state,
+                                    {error(diagnostic_code_t::unsupported_feature,
+                                           "delete linked BMSON markers one at a time", event.id)});
+                            }
+                            linked_bmson_event = event.id;
+                        } else if (event.provenance.family == format_family_t::bms &&
+                                   !event.provenance.source_spelling.empty() &&
+                                   branch_source_orders.contains(
+                                       event.provenance.source_order)) {
+                            return diagnostic_result(
+                                history, state,
+                                {error(diagnostic_code_t::unsupported_feature,
+                                       "branch-owned BMS BGM events need a source-aware delete",
+                                       event.id)});
+                        }
+                    }
+                }
+                if (found_bgm != bgm_ids.size()) {
+                    return diagnostic_result(
+                        history, state,
+                        {error(diagnostic_code_t::invalid_id,
+                               "selected BGM event no longer exists")});
+                }
+                const auto finish_delete = [&]() -> editor_interaction_result_t {
+                    state.selected_notes.clear();
+                    state.selected_objects.clear();
+                    const auto next_view = make_view(history, state);
+                    return {
+                        .accepted = true,
+                        .document_changed = true,
+                        .view =
+                            std::holds_alternative<editor_interaction_view_model_t>(next_view)
+                                ? std::optional{std::get<editor_interaction_view_model_t>(next_view)}
+                                : std::nullopt,
+                        .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
+                                           ? std::get<diagnostic_list_t>(next_view)
+                                           : diagnostic_list_t{},
+                    };
+                };
+                if (linked_bmson_event) {
+                    auto command = delete_bmson_bgm_marker(
+                        history, history.document.revision, state.chart, *linked_bmson_event);
+                    if (!command)
+                        return diagnostic_result(history, state, std::move(command.diagnostics));
+                    return finish_delete();
                 }
                 auto proposed = history.document;
                 auto* proposed_chart = find_chart(proposed, state.chart);
                 std::size_t removed{};
+                const bool selected = !note_ids.empty() || !bgm_ids.empty();
                 for (auto& measure : proposed_chart->measures) {
-                    if (state.selected_notes.empty()) {
+                    if (selected) {
                         removed += std::erase_if(measure.notes, [&](const auto& note) {
-                            return note.position == state.cursor && note.lane == state.active_lane;
+                            return note_ids.contains(note.id.value);
+                        });
+                        removed += std::erase_if(measure.bgm_events, [&](const auto& event) {
+                            return bgm_ids.contains(event.id.value);
                         });
                     } else {
                         removed += std::erase_if(measure.notes, [&](const auto& note) {
-                            return selected_ids.contains(note.id.value);
+                            return note.position == state.cursor && note.lane == state.active_lane;
                         });
                     }
                 }
                 if (removed == 0) {
-                    return {
-                        .accepted = true,
-                        .view = std::get<editor_interaction_view_model_t>(initial_view),
-                    };
+                    return {.accepted = true,
+                            .view = std::get<editor_interaction_view_model_t>(initial_view)};
                 }
-                if (!state.selected_notes.empty() && removed != state.selected_notes.size()) {
+                if (selected && removed != note_ids.size() + bgm_ids.size()) {
                     return diagnostic_result(
                         history, state,
                         {error(diagnostic_code_t::invalid_id,
-                               "selected note deletion did not resolve every note")});
+                               "selected deletion did not resolve every object")});
                 }
                 auto command = commit_document_command(
                     history, std::move(proposed),
-                    state.selected_notes.empty() ? "Delete note" : "Delete selected notes");
-                if (!command) {
+                    selected ? "Delete selected chart objects" : "Delete note");
+                if (!command)
                     return diagnostic_result(history, state, std::move(command.diagnostics));
-                }
-                state.selected_notes.clear();
-                state.selected_objects.clear();
-                const auto next_view = make_view(history, state);
-                return {
-                    .accepted = true,
-                    .document_changed = true,
-                    .view =
-                        std::holds_alternative<editor_interaction_view_model_t>(next_view)
-                            ? std::optional{std::get<editor_interaction_view_model_t>(next_view)}
-                            : std::nullopt,
-                    .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
-                                       ? std::get<diagnostic_list_t>(next_view)
-                                       : diagnostic_list_t{},
-                };
+                return finish_delete();
             } else if constexpr (std::is_same_v<action_t, resize_note_durations_action_t>) {
                 const auto* reference = find_note(*chart, typed_action.reference_note);
                 if (reference == nullptr ||

@@ -513,6 +513,7 @@ typedef struct WormUiComposeView {
     size_t selected_note_count;
     size_t selected_object_count;
     uint64_t selected_bmson_bgm_event_id;
+    uint64_t selected_bmson_source_lane_id;
     size_t staged_bmson_marker_count;
     bool beat_marker_navigation_available;
     bool audio_marker_navigation_available;
@@ -1085,6 +1086,8 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE,
     WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK,
     WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE,
+    WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_CONTINUE,
+    WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_RESTART,
     WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK,
     WORM_UI_COMPOSE_INPUT_DELETE_NOTES,
     WORM_UI_COMPOSE_INPUT_UNDO,

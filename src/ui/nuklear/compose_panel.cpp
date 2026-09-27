@@ -54,6 +54,7 @@ static void append_compose_input(
         state.cancel_pending = false;
         state.pointer_hold_active = false;
         state.note_paint_pointer_active = false;
+        state.bmson_razor_pointer_active = false;
         state.semantic_layer_paint_pointer_active = false;
         state.lane_hold_active = false;
         state.space_range_hold_active = false;
@@ -184,6 +185,7 @@ void worm_ui_nuklear_queue_compose_key(std::uint32_t keycode, std::uint32_t scan
         state.cancel_pending = true;
         state.pointer_hold_active = false;
         state.note_paint_pointer_active = false;
+        state.bmson_razor_pointer_active = false;
         state.semantic_layer_paint_pointer_active = false;
         state.lane_hold_active = false;
         state.space_range_hold_active = false;
@@ -216,6 +218,7 @@ void worm_ui_nuklear_queue_compose_wheel(double delta_x, double delta_y, double 
         state.key_event_count = 0;
         state.pointer_hold_active = false;
         state.note_paint_pointer_active = false;
+        state.bmson_razor_pointer_active = false;
         state.semantic_layer_paint_pointer_active = false;
         state.lane_hold_active = false;
         state.space_range_hold_active = false;
@@ -253,6 +256,7 @@ void worm_ui_nuklear_compose_handle_focus_lost() {
     state.middle_click_pending = false;
     state.keyboard_focus = false;
     state.pointer_hold_active = false;
+    state.bmson_razor_pointer_active = false;
     // Keep paint capture until Compose can deliver the pending cancel.
     state.lane_hold_active = false;
     state.space_range_hold_active = false;
@@ -554,6 +558,11 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
 int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
     return view && view->band_count <= WORM_UI_COMPOSE_BAND_CAPACITY &&
            (view->selected_bmson_bgm_event_id == 0 || view->selected_object_count == 1) &&
+           ((view->selected_bmson_bgm_event_id == 0) ==
+            (view->selected_bmson_source_lane_id == 0)) &&
+           view->staged_bmson_marker_count <= 256 &&
+           view->bmson_marker_draft_count <= view->staged_bmson_marker_count &&
+           (view->bmson_marker_draft_count == 0 || view->bmson_marker_drafts != nullptr) &&
            view->lane_count <= WORM_UI_COMPOSE_LANE_CAPACITY &&
            view->grid_line_count <= WORM_UI_COMPOSE_GRID_CAPACITY &&
            view->timing_marker_count <= WORM_UI_TIMING_MARKER_CAPACITY &&
@@ -731,6 +740,7 @@ static void process_compose_key_events(struct nk_context* context, const WormUiC
         }
         const bool shortcut = compose_shortcut_modifier(key_event.modifiers);
         if (key_event.keycode == static_cast<uint32_t>(SDLK_ESCAPE)) {
+            state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
             if (state.space_range_hold_active) {
                 append_compose_cancel_once(action);
                 state.space_range_hold_active = false;
@@ -851,7 +861,9 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             state.cancel_pending = false;
             state.resource_pointer_mode =
                 worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+            state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
             state.note_paint_pointer_active = false;
+            state.bmson_razor_pointer_active = false;
             state.semantic_layer_paint_pointer_active = false;
             state.space_range_hold_active = false;
             state.space_range_hold_moved = false;
@@ -867,6 +879,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             state.auto_increment_on_place = false;
             state.resource_pointer_mode =
                 worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+            state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
             state.last_project_id = view->project_id;
         }
         if (chart_changed || revision_changed) {
@@ -876,6 +889,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             }
             state.pointer_hold_active = false;
             state.note_paint_pointer_active = false;
+            state.bmson_razor_pointer_active = false;
             state.semantic_layer_paint_pointer_active = false;
             state.lane_hold_active = false;
             state.space_range_hold_active = false;
@@ -893,6 +907,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
         if (chart_changed) {
             state.resource_pointer_mode =
                 worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+            state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
         }
         if (chart_changed) {
             // Events received before the first frame for another chart still
@@ -1485,6 +1500,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
              : state.resource_pointer_mode ==
                        worm_ui_nuklear_compose_resource_pointer_mode_t::replace
                  ? "Resource replacement armed · click an existing object · Esc disarms"
+             : state.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off
+                 ? "BMSON razor armed · click/drag in selected BGM lane · Esc disarms"
              : timing_view->stage_active && timing_view->stage_existing_object_id != 0
                  ? "Drag outlined timing marker to resnap · edit/apply in side inspector"
              : view->semantic_layer_paint_mode_active
@@ -1658,6 +1675,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         }
     }
     const auto compose_pointer_captured = state.note_paint_pointer_active ||
+                                          state.bmson_razor_pointer_active ||
                                           state.semantic_layer_paint_pointer_active ||
                                           state.pointer_hold_active || state.lane_hold_active ||
                                           state.note_move_active || state.area_selection_active ||
@@ -1754,6 +1772,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         }
     }
     bool paint_pointer_consumed = state.note_paint_pointer_active ||
+                                  state.bmson_razor_pointer_active ||
                                   state.semantic_layer_paint_pointer_active ||
                                   compose_action_has_cancel(action);
     if (!paint_pointer_consumed &&
@@ -1802,6 +1821,61 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                 state.armed_resource_id, role);
             paint_pointer_consumed = true;
         }
+    }
+    const auto in_selected_bmson_lane = [&](double x, double y) {
+        for (size_t index = 0; index < view->bgm_lane_count; ++index) {
+            const auto& lane = view->bgm_lanes[index];
+            if (lane.source_lane_id == view->selected_bmson_source_lane_id &&
+                x >= lane.bounds.left && x < lane.bounds.right &&
+                y >= lane.bounds.top && y < lane.bounds.bottom) {
+                return true;
+            }
+        }
+        return false;
+    };
+    const auto razor_input_kind = state.bmson_razor_mode ==
+        worm_ui_nuklear_bmson_razor_mode_t::restart
+            ? WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_RESTART
+            : WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_CONTINUE;
+    if (state.bmson_razor_pointer_active) {
+        paint_pointer_consumed = true;
+        if (!window_focused || !view->scene_available ||
+            state.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off ||
+            shortcut_event_count != 0 || (pointer_modifiers & any_pointer_modifier) != 0 ||
+            (!left_down && !left_released)) {
+            state.bmson_razor_pointer_active = false;
+        } else if (left_released) {
+            if (pointer_inside && in_selected_bmson_lane(pointer_x, pointer_y) &&
+                std::abs(pointer_y - state.bmson_razor_last_y_pixels) > 0.1) {
+                append_compose_input(action, razor_input_kind, pointer_x, pointer_y, 0, false,
+                                     WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                     WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                     view->selected_bmson_bgm_event_id);
+            }
+            state.bmson_razor_pointer_active = false;
+        } else if (left_down && nk_input_is_mouse_moved(&context->input) && pointer_inside &&
+                   in_selected_bmson_lane(pointer_x, pointer_y) &&
+                   std::abs(pointer_y - state.bmson_razor_last_y_pixels) > 0.1) {
+            append_compose_input(action, razor_input_kind, pointer_x, pointer_y, 0, false,
+                                 WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                 view->selected_bmson_bgm_event_id);
+            state.bmson_razor_last_y_pixels = pointer_y;
+        }
+    } else if (!paint_pointer_consumed && !compose_pointer_captured && view->scene_available &&
+               window_focused && shortcut_event_count == 0 && left_down &&
+               pointer_started_in_view &&
+               state.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off &&
+               view->selected_bmson_bgm_event_id != 0 &&
+               (pointer_modifiers & any_pointer_modifier) == 0 &&
+               in_selected_bmson_lane(pointer_started_x, pointer_started_y)) {
+        append_compose_input(action, razor_input_kind, pointer_started_x, pointer_started_y,
+                             0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                             view->selected_bmson_bgm_event_id);
+        state.bmson_razor_pointer_active = !state.action_overflowed;
+        state.bmson_razor_last_y_pixels = pointer_started_y;
+        paint_pointer_consumed = true;
     }
     if (!state.action_overflowed && state.semantic_layer_paint_pointer_active) {
         if (!window_focused || !view->scene_available || !view->semantic_layer_paint_mode_active ||
@@ -1914,21 +1988,36 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                window_focused && !state.pointer_hold_active && !state.note_move_active &&
                !state.note_move_candidate_active && !state.area_selection_active &&
                !state.area_selection_candidate_active) {
-        const auto event_id = compose_bgm_event_at(view, pointer_x, pointer_y);
-        if (event_id != 0) {
-            const auto event = std::find_if(view->bgm_events,
-                                             view->bgm_events + view->bgm_event_count,
-                                             [event_id](const auto& item) {
-                                                 return item.event_id == event_id;
-                                             });
-            const auto shift_restart = event != view->bgm_events + view->bgm_event_count &&
-                event->bmson_slice && (pointer_modifiers & SDL_KMOD_SHIFT) != 0 &&
-                (pointer_modifiers & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI)) == 0;
-            append_compose_input(action, shift_restart
-                                             ? WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE
-                                             : WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK, pointer_x,
-                                 pointer_y, 0, false, compose_selection_mode(pointer_modifiers),
-                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, event_id);
+        if (state.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off &&
+            view->selected_bmson_bgm_event_id != 0 &&
+            in_selected_bmson_lane(pointer_x, pointer_y) &&
+            (pointer_modifiers & any_pointer_modifier) == 0) {
+            append_compose_input(
+                action,
+                state.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::restart
+                    ? WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_RESTART
+                    : WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_CONTINUE,
+                pointer_x, pointer_y, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                view->selected_bmson_bgm_event_id);
+        } else {
+            const auto event_id = compose_bgm_event_at(view, pointer_x, pointer_y);
+            if (event_id != 0) {
+                const auto event = std::find_if(view->bgm_events,
+                                                 view->bgm_events + view->bgm_event_count,
+                                                 [event_id](const auto& item) {
+                                                     return item.event_id == event_id;
+                                                 });
+                const auto shift_restart = event != view->bgm_events + view->bgm_event_count &&
+                    event->bmson_slice && (pointer_modifiers & SDL_KMOD_SHIFT) != 0 &&
+                    (pointer_modifiers & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI)) == 0;
+                append_compose_input(action, shift_restart
+                                                 ? WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE
+                                                 : WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK,
+                                     pointer_x, pointer_y, 0, false,
+                                     compose_selection_mode(pointer_modifiers),
+                                     WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, event_id);
+            }
         }
     }
 

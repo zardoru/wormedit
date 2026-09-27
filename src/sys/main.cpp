@@ -2482,6 +2482,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.timing_lane_visibility_mask = application_state.compose_timing_lane_visibility_mask;
     view.selected_note_count = 0;
     view.selected_bmson_bgm_event_id = 0;
+    view.selected_bmson_source_lane_id = 0;
     view.staged_bmson_marker_count = 0;
     view.bmson_marker_drafts = nullptr;
     view.bmson_marker_draft_count = 0;
@@ -3021,6 +3022,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                                   &wormedit::bgm_event_t::id);
             if (event != measure.bgm_events.end() && event->sound_channel_event) {
                 view.selected_bmson_bgm_event_id = selected.value;
+                view.selected_bmson_source_lane_id = event->source_lane.value;
                 break;
             }
         }
@@ -3929,6 +3931,77 @@ auto dispatch_compose_navigation_actions(const wormedit::editor_navigation_actio
     return status;
 }
 
+auto stage_bmson_bgm_marker(const wormedit::document_history_t& history,
+                            const wormedit::editor_interaction_state_t& state,
+                            application_command_state_t& application_state,
+                            wormedit::object_id_t reference, wormedit::local_position_t position,
+                            bool restart) -> std::string {
+    using namespace wormedit;
+    if (state.selected_objects.size() != 1 ||
+        state.selected_objects.front().kind != editor_selection_object_kind_t::bgm_event ||
+        state.selected_objects.front().id != reference) {
+        return "Select one BMSON BGM marker to choose its sound channel.";
+    }
+    const auto chart = std::ranges::find(history.document.charts, state.chart,
+                                         &chart_document_t::id);
+    if (chart == history.document.charts.end() ||
+        chart->source_family != format_family_t::bmson) {
+        return "The selected chart is not a BMSON chart.";
+    }
+    const auto measures = build_measure_index(*chart);
+    if (!std::holds_alternative<measure_index_t>(measures) ||
+        !absolute_row(std::get<measure_index_t>(measures), position)) {
+        return "BMSON marker target is outside exact chart geometry.";
+    }
+    const bgm_event_t* semantic{};
+    for (const auto& measure : chart->measures) {
+        const auto event = std::ranges::find(measure.bgm_events, reference, &bgm_event_t::id);
+        if (event != measure.bgm_events.end()) {
+            semantic = &*event;
+            break;
+        }
+    }
+    if (!semantic || !semantic->sound_channel_event) {
+        return "The selected BGM marker has no retained BMSON sound event.";
+    }
+    const auto channel = std::ranges::find_if(chart->sound_channels, [&](const auto& candidate) {
+        return std::ranges::any_of(candidate.events, [&](const auto& event) {
+            return event.id == *semantic->sound_channel_event;
+        });
+    });
+    if (channel == chart->sound_channels.end()) {
+        return "The selected BMSON sound channel is unavailable.";
+    }
+    if (std::ranges::any_of(channel->events, [&](const auto& event) {
+            return event.position == position;
+        })) {
+        return "A marker or playable event already occupies this sound-channel pulse.";
+    }
+    auto& draft = application_state.bmson_marker_draft;
+    if (draft && (draft->chart != state.chart ||
+                  draft->revision != history.document.revision)) {
+        draft.reset();
+    }
+    if (draft && draft->reference != reference) {
+        return "Commit or cancel the current BMSON marker batch before choosing another channel.";
+    }
+    if (draft && draft->markers.size() >= 256) {
+        return "A BMSON marker batch can contain at most 256 pulses.";
+    }
+    if (draft && std::ranges::any_of(draft->markers, [&](const auto& marker) {
+            return marker.position == position;
+        })) {
+        return "That BMSON pulse is already staged.";
+    }
+    if (!draft) {
+        draft = application_command_state_t::bmson_marker_draft_t{
+            .chart = state.chart, .revision = history.document.revision,
+            .reference = reference, .markers = {}};
+    }
+    draft->markers.push_back({.position = position, .restart = restart});
+    return "BMSON marker staged at the exact snapped row.";
+}
+
 auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                                    wormedit::document_history_t& history,
                                    wormedit::workspace_controller_t& workspace,
@@ -4492,6 +4565,29 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                     true});
             accepted = "BGM event selected.";
             break;
+        case WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_CONTINUE:
+        case WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_RESTART: {
+            if (gesture_active) {
+                return "Finish or cancel the active Compose gesture before using the BMSON razor.";
+            }
+            const auto chart = std::ranges::find(history.document.charts, state.chart,
+                                                 &chart_document_t::id);
+            const auto current_view = compose_view_for_state(history, state);
+            if (chart == history.document.charts.end() || !current_view ||
+                !std::isfinite(input.y_pixels)) {
+                return "The BMSON chart field is no longer available.";
+            }
+            const auto raw = editor_position_at_y_pixels(*chart, *current_view,
+                                                          input.y_pixels);
+            const auto position = raw ? resolve_resource_placement_position(
+                *chart, *raw, state.active_snap_denominator) : std::nullopt;
+            if (!position) {
+                return "BMSON razor could not snap to a valid chart row.";
+            }
+            return stage_bmson_bgm_marker(
+                history, state, application_state, object_id_t{input.object_id}, *position,
+                input.kind == WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_RESTART);
+        }
         case WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE: {
             if (gesture_active) {
                 return "Finish or cancel the active Compose gesture before editing a BMSON reset.";
@@ -5280,39 +5376,10 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         if (editor_interaction_has_pending_gesture(state)) {
             return "Finish or cancel the active Compose gesture before staging a BMSON marker.";
         }
-        const object_id_t reference{action.compose_bmson_bgm_event_id};
-        if (state.selected_objects.size() != 1 ||
-            state.selected_objects.front().kind != editor_selection_object_kind_t::bgm_event ||
-            state.selected_objects.front().id != reference) {
-            return "Select one BMSON BGM marker to choose its sound channel.";
-        }
-        auto& draft = application_state.bmson_marker_draft;
-        if (draft && (draft->chart != state.chart ||
-                      draft->revision != history.document.revision)) {
-            draft.reset();
-        }
-        if (draft && draft->reference != reference) {
-            return "Commit or cancel the current BMSON marker batch before choosing another channel.";
-        }
-        if (!draft) {
-            draft = application_command_state_t::bmson_marker_draft_t{
-                .chart = state.chart, .revision = history.document.revision,
-                .reference = reference, .markers = {}};
-        }
-        if (draft->markers.size() >= 256) {
-            return "A BMSON marker batch can contain at most 256 pulses.";
-        }
-        const auto previous = std::ranges::find_if(draft->markers, [&](const auto& marker) {
-            return marker.position == state.cursor;
-        });
-        if (previous != draft->markers.end()) {
-            return "That BMSON pulse is already staged.";
-        }
-        draft->markers.push_back({
-            .position = state.cursor,
-            .restart = action.compose_action ==
-                       WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_RESTART_AT_CURSOR});
-        return "BMSON marker staged at the edit cursor.";
+        return stage_bmson_bgm_marker(
+            history, state, application_state,
+            object_id_t{action.compose_bmson_bgm_event_id}, state.cursor,
+            action.compose_action == WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_RESTART_AT_CURSOR);
     }
     case WORM_UI_COMPOSE_ACTION_COMMIT_STAGED_BMSON_BGM: {
         if (editor_interaction_has_pending_gesture(state)) {

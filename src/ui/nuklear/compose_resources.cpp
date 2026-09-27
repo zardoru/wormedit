@@ -254,12 +254,14 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
             state->resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place
                 ? worm_ui_nuklear_compose_resource_pointer_mode_t::off
                 : worm_ui_nuklear_compose_resource_pointer_mode_t::place;
+        state->bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
     } else if (replace_mode_clicked && can_pointer_place) {
         state->resource_pointer_mode =
             state->resource_pointer_mode ==
                     worm_ui_nuklear_compose_resource_pointer_mode_t::replace
                 ? worm_ui_nuklear_compose_resource_pointer_mode_t::off
                 : worm_ui_nuklear_compose_resource_pointer_mode_t::replace;
+        state->bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
     }
     nk_layout_row_dynamic(context, 23, 1);
     if (!can_place) {
@@ -329,6 +331,35 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         action->compose_action = stage_restart_clicked
             ? WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_RESTART_AT_CURSOR
             : WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_CONTINUE_AT_CURSOR;
+    }
+    const auto can_razor = can_move_bmson && view->selected_bmson_source_lane_id != 0 &&
+                           !view->note_paint_mode_active &&
+                           !view->semantic_layer_paint_mode_active &&
+                           !view->timing_stage_active;
+    if (!can_razor) {
+        state->bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
+        nk_widget_disable_begin(context);
+    }
+    nk_layout_row_dynamic(context, 24, 2);
+    const auto razor_continue_clicked = nk_button_label(
+        context, state->bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::continuation
+                     ? "Razor continue: On" : "Razor continue: Off");
+    const auto razor_restart_clicked = nk_button_label(
+        context, state->bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::restart
+                     ? "Razor restart: On" : "Razor restart: Off");
+    if (!can_razor) {
+        nk_widget_disable_end(context);
+    }
+    if (can_razor && (razor_continue_clicked || razor_restart_clicked)) {
+        const auto choice = razor_restart_clicked
+            ? worm_ui_nuklear_bmson_razor_mode_t::restart
+            : worm_ui_nuklear_bmson_razor_mode_t::continuation;
+        state->bmson_razor_mode = state->bmson_razor_mode == choice
+            ? worm_ui_nuklear_bmson_razor_mode_t::off : choice;
+        if (state->bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off) {
+            state->resource_pointer_mode =
+                worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+        }
     }
     nk_layout_row_dynamic(context, 24, 2);
     if (view->staged_bmson_marker_count == 0) {

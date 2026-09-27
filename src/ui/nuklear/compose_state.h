@@ -45,6 +45,12 @@ enum class worm_ui_nuklear_compose_resource_pointer_mode_t : std::uint8_t {
     replace,
 };
 
+enum class worm_ui_nuklear_bmson_razor_mode_t : std::uint8_t {
+    off,
+    continuation,
+    restart,
+};
+
 struct worm_ui_nuklear_compose_state_t {
     std::array<worm_ui_nuklear_compose_key_event_t, 64> key_events{};
     std::size_t key_event_count{};
@@ -59,6 +65,8 @@ struct worm_ui_nuklear_compose_state_t {
     bool action_overflowed{};
     bool pointer_hold_active{};
     bool note_paint_pointer_active{};
+    bool bmson_razor_pointer_active{};
+    double bmson_razor_last_y_pixels{};
     bool semantic_layer_paint_pointer_active{};
     bool lane_hold_active{};
     bool space_range_hold_active{};
@@ -109,6 +117,8 @@ struct worm_ui_nuklear_compose_state_t {
     bool auto_increment_on_place{};
     worm_ui_nuklear_compose_resource_pointer_mode_t resource_pointer_mode{
         worm_ui_nuklear_compose_resource_pointer_mode_t::off};
+    worm_ui_nuklear_bmson_razor_mode_t bmson_razor_mode{
+        worm_ui_nuklear_bmson_razor_mode_t::off};
 };
 
 [[nodiscard]] auto worm_ui_nuklear_compose_state() noexcept -> worm_ui_nuklear_compose_state_t&;

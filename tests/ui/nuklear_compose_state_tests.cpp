@@ -9,6 +9,8 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     state.wheel_event_count = 1;
     state.cancel_pending = true;
     state.pointer_hold_active = true;
+    state.bmson_razor_pointer_active = true;
+    state.bmson_razor_last_y_pixels = 42.0;
     state.note_move_active = true;
     state.timing_stage_drag_active = true;
     state.area_selection_active = true;
@@ -29,6 +31,7 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     state.armed_resource_id = 42;
     state.auto_increment_on_place = true;
     state.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::replace;
+    state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::restart;
 
     worm_ui_nuklear_reset_compose_state();
 
@@ -36,6 +39,8 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     CHECK(state.wheel_event_count == 0);
     CHECK_FALSE(state.cancel_pending);
     CHECK_FALSE(state.pointer_hold_active);
+    CHECK_FALSE(state.bmson_razor_pointer_active);
+    CHECK(state.bmson_razor_last_y_pixels == 0.0);
     CHECK_FALSE(state.note_move_active);
     CHECK_FALSE(state.timing_stage_drag_active);
     CHECK_FALSE(state.area_selection_active);
@@ -56,6 +61,7 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     CHECK(state.armed_resource_id == 0);
     CHECK_FALSE(state.auto_increment_on_place);
     CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
+    CHECK(state.bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::off);
 }
 
 TEST_CASE("Compose placement picker advances only when armed and stops at exhaustion",

@@ -59,6 +59,7 @@ struct place_tap_action_t {
 struct place_virtual_bms_tap_action_t {
     std::uint64_t canvas_row{};
     lane_id_t lane;
+    std::optional<resource_id_t> sample;
 };
 
 // Hold authoring is a two-step gesture. Beginning stores an exact snapped

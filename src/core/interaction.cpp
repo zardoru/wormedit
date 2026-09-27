@@ -3916,6 +3916,18 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                              {error(diagnostic_code_t::invalid_resolution,
                                                     "virtual tap requires a BMS chart and valid snap")});
                 }
+                if (typed_action.sample) {
+                    const auto resource = std::ranges::find(history.document.resources,
+                                                            *typed_action.sample,
+                                                            &resource_entry_t::id);
+                    if (resource == history.document.resources.end() ||
+                        std::ranges::find(resource->roles, resource_role_t::sample) ==
+                            resource->roles.end()) {
+                        return diagnostic_result(history, state,
+                                                 {error(diagnostic_code_t::invalid_id,
+                                                        "virtual tap sample is unavailable")});
+                    }
+                }
                 const auto built_canvas = build_virtual_canvas(*chart);
                 if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas))
                     return diagnostic_result(history, state, *diagnostics);
@@ -3980,7 +3992,8 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                     {.id = *note_id,
                      .position = position,
                      .lane = typed_action.lane,
-                     .kind = note_kind_t::tap});
+                     .kind = note_kind_t::tap,
+                     .sound = typed_action.sample});
                 auto command = commit_document_command(history, std::move(proposed),
                                                        "Place tap in virtual BMS measure");
                 if (!command)

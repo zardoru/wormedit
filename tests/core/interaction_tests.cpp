@@ -123,6 +123,9 @@ TEST_CASE("invalid virtual BMS taps leave document and cursor untouched",
         history, state, place_virtual_bms_tap_action_t{960'000, lane_id_t{1}}));
     CHECK_FALSE(dispatch_editor_action(
         history, state, place_virtual_bms_tap_action_t{2'400, lane_id_t{99}}));
+    CHECK_FALSE(dispatch_editor_action(
+        history, state,
+        place_virtual_bms_tap_action_t{2'400, lane_id_t{1}, resource_id_t{99}}));
     CHECK(history.document.charts.front().measures.size() == 2);
     CHECK(history.undo.empty());
     CHECK(state.cursor == cursor);

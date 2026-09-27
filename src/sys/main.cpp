@@ -4873,6 +4873,47 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                                 .field_left_pixels = field_left_pixels,
                                 .field_width_pixels = field_width_pixels});
     };
+    const auto virtual_bms_hit_at =
+        [&](const chart_document_t& chart, const editor_interaction_view_model_t& view,
+            double x_pixels, double y_pixels)
+        -> std::optional<std::pair<std::uint64_t, lane_id_t>> {
+        if (chart.source_family != format_family_t::bms || !scene_cache.index ||
+            !std::isfinite(y_pixels) || y_pixels < 0.0 ||
+            y_pixels >= view.viewport_height_pixels) {
+            return std::nullopt;
+        }
+        const auto canvas = build_virtual_canvas(chart);
+        const auto* virtual_canvas = std::get_if<virtual_canvas_t>(&canvas);
+        if (!virtual_canvas) {
+            return std::nullopt;
+        }
+        const auto exact_row = (static_cast<long double>(view.viewport_scroll_pixels) +
+                                y_pixels) *
+                               chart.divisions_per_standard_measure /
+                               view.pixels_per_standard_measure;
+        if (!std::isfinite(exact_row) || exact_row < 0.0L ||
+            exact_row >= static_cast<long double>(virtual_canvas->total_rows)) {
+            return std::nullopt;
+        }
+        const auto canvas_row = static_cast<std::uint64_t>(std::floor(exact_row + 0.5L));
+        const auto measure = virtual_canvas->measure_containing(canvas_row);
+        if (!measure || measure->authored) {
+            return std::nullopt;
+        }
+        auto request = scene_cache.preview_scene_request;
+        request.include_virtual_bms_tail = true;
+        const auto composed = make_editor_field_scene(chart, *scene_cache.index, view, request);
+        if (!composed.scene || composed.has_errors()) {
+            return std::nullopt;
+        }
+        for (const auto& lane : composed.scene->lanes) {
+            if (x_pixels >= lane.bounds.left && x_pixels < lane.bounds.right &&
+                y_pixels >= lane.bounds.top && y_pixels < lane.bounds.bottom) {
+                return std::pair{canvas_row, lane.lane};
+            }
+        }
+        return std::nullopt;
+    };
     const auto chart =
         std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
     const auto gesture_active = state.pending_hold.has_value() ||
@@ -5764,49 +5805,13 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             const auto target =
                 hit_target_at(*chart, *current_view, input.x_pixels, input.y_pixels);
             if (!target) {
-                if (chart->source_family == wormedit::format_family_t::bms &&
-                    scene_cache.index && std::isfinite(input.y_pixels) &&
-                    input.y_pixels >= 0.0 &&
-                    input.y_pixels < current_view->viewport_height_pixels) {
-                    const auto canvas = wormedit::build_virtual_canvas(*chart);
-                    if (const auto* virtual_canvas =
-                            std::get_if<wormedit::virtual_canvas_t>(&canvas)) {
-                        const auto exact_row =
-                            (static_cast<long double>(current_view->viewport_scroll_pixels) +
-                             input.y_pixels) *
-                            chart->divisions_per_standard_measure /
-                            current_view->pixels_per_standard_measure;
-                        if (std::isfinite(exact_row) && exact_row >= 0.0L &&
-                            exact_row < static_cast<long double>(virtual_canvas->total_rows)) {
-                            const auto canvas_row = static_cast<std::uint64_t>(
-                                std::floor(exact_row + 0.5L));
-                            const auto measure =
-                                virtual_canvas->measure_containing(canvas_row);
-                            if (measure && !measure->authored) {
-                                const auto composed = wormedit::make_editor_field_scene(
-                                    *chart, *scene_cache.index, *current_view,
-                                    scene_cache.preview_scene_request);
-                                if (composed.scene && !composed.has_errors()) {
-                                    for (const auto& lane : composed.scene->lanes) {
-                                        if (input.x_pixels >= lane.bounds.left &&
-                                            input.x_pixels < lane.bounds.right &&
-                                            input.y_pixels >= lane.bounds.top &&
-                                            input.y_pixels < lane.bounds.bottom) {
-                                            result = dispatch_editor_action(
-                                                history, state,
-                                                place_virtual_bms_tap_action_t{canvas_row,
-                                                                               lane.lane});
-                                            accepted = "Tap note placed in BMS measure.";
-                                            break;
-                                        }
-                                    }
-                                    if (result.accepted || !result.diagnostics.empty()) {
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
+                if (const auto virtual_hit = virtual_bms_hit_at(
+                        *chart, *current_view, input.x_pixels, input.y_pixels)) {
+                    result = dispatch_editor_action(
+                        history, state,
+                        place_virtual_bms_tap_action_t{virtual_hit->first, virtual_hit->second});
+                    accepted = "Tap note placed in BMS measure.";
+                    break;
                 }
                 return "Click inside an editable lane to place or select a note.";
             }
@@ -5874,6 +5879,26 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 const auto target =
                     hit_target_at(*chart, *current_view, input.x_pixels, input.y_pixels);
                 if (!target) {
+                    if (!replacing) {
+                        if (const auto virtual_hit = virtual_bms_hit_at(
+                                *chart, *current_view, input.x_pixels, input.y_pixels)) {
+                            result = dispatch_editor_action(
+                                history, state,
+                                place_virtual_bms_tap_action_t{
+                                    virtual_hit->first, virtual_hit->second,
+                                    resource_id_t{input.object_id}});
+                            if (result.document_changed) {
+                                const auto next = next_eligible_placement_resource(
+                                    history.document, resource_id_t{input.object_id},
+                                    required_role);
+                                worm_ui_frontend_resource_placed(
+                                    input.object_id,
+                                    next.value_or(resource_id_t{}).value);
+                            }
+                            accepted = "Sample placed in BMS measure.";
+                            break;
+                        }
+                    }
                     return "Click inside an editable playable lane to place a Sample.";
                 }
                 raw_position = target->position;

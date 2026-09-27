@@ -143,11 +143,10 @@ TEST_CASE("virtual BMS #999 remains sparse until an edit and round-trips its mea
     REQUIRE(setup);
     auto state = std::move(*setup.state);
     const auto placed = wormedit::dispatch_editor_action(
-        history, state, wormedit::place_virtual_bms_tap_action_t{958'560, lane});
+        history, state, wormedit::place_virtual_bms_tap_action_t{958'560, lane, *sound});
     REQUIRE(placed);
     REQUIRE(history.document.charts.front().measures.size() == 1'000);
-    auto& last_note = history.document.charts.front().measures.back().notes.front();
-    last_note.sound = sound;
+    REQUIRE(history.document.charts.front().measures.back().notes.front().sound == sound);
 
     const auto written = wormedit::write_bms(history.document);
     REQUIRE(written.bytes);

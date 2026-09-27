@@ -32,6 +32,7 @@
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/startup_session.h>
 #include <wormedit/core/sv_recipe.h>
+#include <wormedit/core/task_graph.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/timing_lane_controller.h>
 #include <wormedit/core/viewport_input.h>
@@ -4745,13 +4746,25 @@ auto dispatch_bms_branch_choice_action(
                : "BMS branch choice cleared and its semantics were rematerialized.";
 }
 
+struct pending_project_resource_copy_t {
+    wormedit::task_graph_handle_t graph;
+    wormedit::task_id_t task;
+    wormedit::asset_id_t asset;
+    wormedit::song_id_t song;
+    std::uint64_t revision{};
+    std::filesystem::path source_path;
+};
+
 auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                                   wormedit::document_history_t& history,
                                   wormedit::workspace_controller_t& workspace,
                                   wormedit::editor_interaction_state_t& state,
                                   double viewport_height,
                                   application_command_state_t& application_state,
-                                  const std::filesystem::path& asset_base) -> std::string {
+                                  const std::filesystem::path& asset_base,
+                                  wormedit::task_scheduler_t& resource_copy_scheduler,
+                                  std::optional<pending_project_resource_copy_t>& pending_resource_copy)
+    -> std::string {
     using namespace wormedit;
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id ||
@@ -4994,6 +5007,9 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
         return "External file linked as a resource.";
     }
     case WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT: {
+        if (pending_resource_copy) {
+            return "A resource copy is already running.";
+        }
         if (asset_base.empty()) {
             return "Save the native project before copying resource files into it.";
         }
@@ -5016,26 +5032,27 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
             source_name.starts_with(std::to_string(id.value) + "-")) {
             return "Resource source is already in the project assets directory.";
         }
-        const auto copied = copy_resource_file_into_project(
-            {.project_directory = asset_base, .source_path = source_path, .asset = id});
-        if (!copied) {
-            return copied.message.empty() ? "Resource copy failed." : copied.message;
+        task_graph_t graph{1};
+        const project_asset_copy_request_t request{
+            .project_directory = asset_base, .source_path = source_path, .asset = id};
+        const auto added = graph.add_task({}, [request](std::span<const task_result_t>,
+                                                        std::stop_token stop) {
+            auto copied = std::make_shared<const project_asset_copy_result_t>(
+                copy_resource_file_into_project(request, stop));
+            return task_result_t::success(make_task_value(std::move(copied)));
+        });
+        if (!added) {
+            return added.error ? added.error->message : "Resource copy could not start.";
         }
-        const auto relinked = apply_resource_asset_relink(
-            history, action.compose_input_document_revision,
-            {.asset = id, .source_path = copied.relative_path});
-        if (!relinked.diagnostics.empty()) {
-            return relinked.diagnostics.front().message;
+        auto submitted = resource_copy_scheduler.submit(std::move(graph));
+        if (!submitted) {
+            return submitted.error ? submitted.error->message : "Resource copy could not start.";
         }
-        const auto rebound = rebind_workspace(workspace, history);
-        if (!rebound) {
-            return rebound.diagnostics.empty()
-                       ? "Resource copied, but workspace rebinding failed."
-                       : rebound.diagnostics.front().message;
-        }
-        return copied.status == project_asset_copy_status_t::reused
-                   ? "Existing project copy linked to the resource."
-                   : "Resource copied into the project and linked.";
+        pending_resource_copy = pending_project_resource_copy_t{
+            .graph = std::move(submitted.graph), .task = *added.id, .asset = id,
+            .song = history.document.id, .revision = history.document.revision,
+            .source_path = source_path};
+        return "Resource copy started in the background.";
     }
     case WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE: {
         if (editor_interaction_has_pending_gesture(state)) {
@@ -6513,6 +6530,8 @@ int main(int argc, char** argv) {
     const auto asset_base =
         startup.loaded_primary ? std::filesystem::absolute(requested_primary_path).parent_path()
                                : std::filesystem::path{};
+    wormedit::task_scheduler_t resource_copy_scheduler(1, 1);
+    std::optional<pending_project_resource_copy_t> pending_resource_copy;
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
     wormedit::visual::image_cache_t player_image_cache;
     wormedit::task_scheduler_t player_image_scheduler(1, 4);
@@ -6849,6 +6868,51 @@ int main(int argc, char** argv) {
             worm_ui_frontend_handle_event(&event);
         }
         worm_ui_frontend_end_input();
+        if (pending_resource_copy) {
+            if (const auto completed = pending_resource_copy->graph.result(
+                    pending_resource_copy->task)) {
+                const auto request = std::move(*pending_resource_copy);
+                pending_resource_copy.reset();
+                const auto copied =
+                    wormedit::task_value_cast<wormedit::project_asset_copy_result_t>(*completed);
+                if (!completed->succeeded() || !copied) {
+                    status = completed->error ? completed->error->message
+                                              : "Resource copy returned no result.";
+                } else if (!*copied) {
+                    status = copied->message.empty() ? "Resource copy failed." : copied->message;
+                } else if (history.document.id != request.song ||
+                           history.document.revision != request.revision) {
+                    status = "Resource copy finished, but the document changed; source was not relinked.";
+                } else {
+                    const auto audio = std::ranges::find(history.document.audio_assets,
+                                                          request.asset, &wormedit::audio_asset_t::id);
+                    const auto visual = std::ranges::find(history.document.visual_assets,
+                                                           request.asset, &wormedit::visual_asset_t::id);
+                    const auto current_path = audio != history.document.audio_assets.end()
+                                                  ? audio->source_path
+                                              : visual != history.document.visual_assets.end()
+                                                  ? visual->source_path
+                                                  : std::filesystem::path{};
+                    if (current_path != request.source_path) {
+                        status = "Resource copy finished, but its source changed; it was not relinked.";
+                    } else {
+                        const auto relinked = wormedit::apply_resource_asset_relink(
+                            history, request.revision,
+                            {.asset = request.asset, .source_path = copied->relative_path});
+                        if (!relinked.diagnostics.empty()) {
+                            status = relinked.diagnostics.front().message;
+                        } else {
+                            const auto rebound = rebind_workspace(workspace, history);
+                            status = !rebound
+                                         ? "Resource copied, but workspace rebinding failed."
+                                         : copied->status == wormedit::project_asset_copy_status_t::reused
+                                               ? "Existing project copy linked to the resource."
+                                               : "Resource copied into the project and linked.";
+                        }
+                    }
+                }
+            }
+        }
         const auto compose_viewport_now_ticks = static_cast<std::uint64_t>(SDL_GetTicks());
         const auto compose_viewport_delta_seconds =
             compose_viewport_now_ticks >= compose_viewport_last_ticks
@@ -7638,7 +7702,7 @@ int main(int argc, char** argv) {
                     status = dispatch_compose_view_action(
                         action, history, workspace, *compose_interaction_state,
                         flattened.view.compose.viewport_height_pixels, application_command_state,
-                        asset_base);
+                        asset_base, resource_copy_scheduler, pending_resource_copy);
                 }
             } else if (action.kind >= WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT &&
                        action.kind <= WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE) {
@@ -7667,6 +7731,10 @@ int main(int argc, char** argv) {
         SDL_Delay(1);
     }
 
+    if (pending_resource_copy) {
+        pending_resource_copy->graph.cancel();
+    }
+    resource_copy_scheduler.shutdown();
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     preview_output.close();
     audition_output.close();

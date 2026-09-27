@@ -235,6 +235,10 @@ auto copy_resource_file_into_project(const project_asset_copy_request_t& request
                             : project_asset_copy_status_t::source_unavailable;
         return failure(status, "Source changed, copy failed, or copy was cancelled.");
     }
+    if (stop.stop_requested()) {
+        fs::remove(temporary, error);
+        return failure(project_asset_copy_status_t::cancelled, "Copy cancelled.");
+    }
 #if defined(_WIN32)
     const auto installed = MoveFileExW(temporary.c_str(), destination.c_str(),
                                        MOVEFILE_WRITE_THROUGH) != 0;

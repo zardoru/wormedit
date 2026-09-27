@@ -1,3 +1,4 @@
+#include <wormedit/core/resource_file_copy.h>
 #include <wormedit/formats/conversion_publication.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -60,6 +61,53 @@ TEST_CASE("conversion publication resolves chart and staged asset paths",
     CHECK(plan.files.front().project_relative_path == "exports/song.bmson");
     REQUIRE(plan.assets.size() == 1);
     CHECK(plan.assets.front().project_relative_path == "exports/assets/5-tone.wav");
+}
+
+TEST_CASE("export asset discovery recovers verified resource copies after session state is lost",
+          "[unit][format][publication]") {
+    temporary_directory_t temporary;
+    std::ofstream(temporary.path / "tone.wav") << "audio";
+    std::ofstream(temporary.path / "bgm.wav") << "background";
+    wormedit::song_document_t song;
+    song.audio_assets.push_back({.id = wormedit::asset_id_t{5}, .source_path = "tone.wav"});
+    song.audio_assets.push_back({.id = wormedit::asset_id_t{6}, .source_path = "bgm.wav"});
+    song.resources.push_back(
+        {.id = wormedit::resource_id_t{7}, .name = "tone.wav", .asset = wormedit::asset_id_t{5}});
+    song.charts.push_back({.id = wormedit::chart_id_t{1}});
+    song.charts.front().sound_channels.push_back(
+        {.id = wormedit::object_id_t{9},
+         .name = "bgm.wav",
+         .source_clip = {.id = wormedit::clip_id_t{10}, .source = wormedit::asset_id_t{6}}});
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
+                                         .charts = {wormedit::chart_id_t{1}},
+                                         .relative_output_path = "exports/chart.bmson"};
+    const auto absent = wormedit::discover_staged_export_assets(song, group, temporary.path);
+    REQUIRE(absent);
+    CHECK(absent.mappings.empty());
+    const auto copied = wormedit::copy_resource_file_into_export(
+        {.project_directory = temporary.path,
+         .source_path = "tone.wav",
+         .relative_output_path = group.relative_output_path,
+         .asset = wormedit::asset_id_t{5}});
+    REQUIRE(copied);
+    const auto recovered = wormedit::discover_staged_export_assets(song, group, temporary.path);
+    REQUIRE(recovered);
+    REQUIRE(recovered.mappings.size() == 1);
+    CHECK(recovered.mappings.front().asset == wormedit::asset_id_t{5});
+    CHECK(recovered.mappings.front().relative_path == "assets/5-tone.wav");
+    REQUIRE(wormedit::copy_resource_file_into_export(
+        {.project_directory = temporary.path,
+         .source_path = "bgm.wav",
+         .relative_output_path = group.relative_output_path,
+         .asset = wormedit::asset_id_t{6}}));
+    const auto both = wormedit::discover_staged_export_assets(song, group, temporary.path);
+    REQUIRE(both);
+    REQUIRE(both.mappings.size() == 2);
+    CHECK(both.mappings.back().relative_path == "assets/6-bgm.wav");
+    std::ofstream(temporary.path / "tone.wav") << "changed";
+    const auto stale = wormedit::discover_staged_export_assets(song, group, temporary.path);
+    CHECK_FALSE(stale);
+    CHECK(stale.mappings.empty());
 }
 
 TEST_CASE("conversion publication rejects collisions and unsafe destinations",

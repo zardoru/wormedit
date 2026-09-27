@@ -21,8 +21,8 @@ namespace {
 
 auto failure(project_asset_copy_status_t status, std::string message)
     -> project_asset_copy_result_t {
-    return {.status = status, .relative_path = {}, .absolute_path = {},
-            .message = std::move(message)};
+    return {
+        .status = status, .relative_path = {}, .absolute_path = {}, .message = std::move(message)};
 }
 
 auto valid_relative(const std::filesystem::path& path) -> bool {
@@ -156,10 +156,9 @@ auto write_flushed(const std::filesystem::path& path, const std::filesystem::pat
 
 } // namespace
 
-static auto
-copy_resource_file_to_relative_directory(const project_asset_copy_request_t& request,
-                                         const std::filesystem::path& relative_directory,
-                                         std::stop_token stop) -> project_asset_copy_result_t {
+static auto copy_resource_file_to_relative_directory(
+    const project_asset_copy_request_t& request, const std::filesystem::path& relative_directory,
+    std::stop_token stop, bool inspect_only = false) -> project_asset_copy_result_t {
     namespace fs = std::filesystem;
     if (!request.asset || !request.project_directory.is_absolute() || request.source_path.empty() ||
         request.maximum_bytes == 0 ||
@@ -176,6 +175,11 @@ copy_resource_file_to_relative_directory(const project_asset_copy_request_t& req
                             ? request.source_path
                             : request.project_directory / request.source_path;
     std::error_code error;
+    const auto root_status = fs::symlink_status(request.project_directory, error);
+    if (error || fs::is_symlink(root_status) || !fs::is_directory(root_status)) {
+        return failure(project_asset_copy_status_t::invalid_request,
+                       "Project directory is unavailable or is a symlink.");
+    }
     if (!fs::is_regular_file(source, error) || error) {
         return failure(project_asset_copy_status_t::source_unavailable,
                        "Source file is unavailable.");
@@ -192,6 +196,9 @@ copy_resource_file_to_relative_directory(const project_asset_copy_request_t& req
         const auto status = fs::symlink_status(directory, error);
         if (error == std::errc::no_such_file_or_directory) {
             error.clear();
+            if (inspect_only)
+                return failure(project_asset_copy_status_t::not_staged,
+                               "Export asset copy is not staged.");
             if (!fs::create_directory(directory, error) && error) {
                 return failure(project_asset_copy_status_t::io_error,
                                "Could not create the asset destination directory.");
@@ -213,15 +220,15 @@ copy_resource_file_to_relative_directory(const project_asset_copy_request_t& req
     auto success = [&](project_asset_copy_status_t status) {
         return project_asset_copy_result_t{.status = status,
                                            .relative_path = relative,
-                                           .absolute_path = destination, .message = {}};
+                                           .absolute_path = destination,
+                                           .message = {}};
     };
     if (stop.stop_requested()) {
         return failure(project_asset_copy_status_t::cancelled, "Copy cancelled.");
     }
-    if (fs::exists(destination, error)) {
-        const auto destination_status = fs::symlink_status(destination, error);
-        if (!error && !fs::is_symlink(destination_status) &&
-            fs::is_regular_file(destination_status) &&
+    const auto destination_status = fs::symlink_status(destination, error);
+    if (!error) {
+        if (!fs::is_symlink(destination_status) && fs::is_regular_file(destination_status) &&
             same_bytes(source, destination, stop)) {
             return success(project_asset_copy_status_t::reused);
         }
@@ -229,22 +236,26 @@ copy_resource_file_to_relative_directory(const project_asset_copy_request_t& req
                                              : project_asset_copy_status_t::destination_collision,
                        "Asset destination filename already contains different data.");
     }
-    if (error) {
+    if (error != std::errc::no_such_file_or_directory) {
         return failure(project_asset_copy_status_t::io_error,
                        "Could not inspect the asset destination.");
     }
+    error.clear();
+    if (inspect_only)
+        return failure(project_asset_copy_status_t::not_staged, "Export asset copy is not staged.");
     static std::atomic<std::uint64_t> sequence{0};
-    const auto temporary = directory /
-        (".wormedit-copy-" +
-         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" +
-         std::to_string(sequence.fetch_add(1, std::memory_order_relaxed)));
+    const auto temporary =
+        directory / (".wormedit-copy-" +
+                     std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+                     "-" + std::to_string(sequence.fetch_add(1, std::memory_order_relaxed)));
     const auto copied = write_flushed(temporary, source, request.maximum_bytes, stop);
     if (copied != project_asset_copy_status_t::copied || stop.stop_requested() ||
         !same_bytes(source, temporary, stop)) {
         fs::remove(temporary, error);
         const auto status = stop.stop_requested() ? project_asset_copy_status_t::cancelled
-                            : copied != project_asset_copy_status_t::copied ? copied
-                            : project_asset_copy_status_t::source_unavailable;
+                            : copied != project_asset_copy_status_t::copied
+                                ? copied
+                                : project_asset_copy_status_t::source_unavailable;
         return failure(status, "Source changed, copy failed, or copy was cancelled.");
     }
     if (stop.stop_requested()) {
@@ -252,8 +263,8 @@ copy_resource_file_to_relative_directory(const project_asset_copy_request_t& req
         return failure(project_asset_copy_status_t::cancelled, "Copy cancelled.");
     }
 #if defined(_WIN32)
-    const auto installed = MoveFileExW(temporary.c_str(), destination.c_str(),
-                                       MOVEFILE_WRITE_THROUGH) != 0;
+    const auto installed =
+        MoveFileExW(temporary.c_str(), destination.c_str(), MOVEFILE_WRITE_THROUGH) != 0;
 #else
     const auto installed = ::link(temporary.c_str(), destination.c_str()) == 0;
 #endif
@@ -261,8 +272,7 @@ copy_resource_file_to_relative_directory(const project_asset_copy_request_t& req
     if (!installed) {
         const auto destination_status = fs::symlink_status(destination, error);
         if (!error && !fs::is_symlink(destination_status) &&
-            fs::is_regular_file(destination_status) &&
-            same_bytes(source, destination, stop)) {
+            fs::is_regular_file(destination_status) && same_bytes(source, destination, stop)) {
             return success(project_asset_copy_status_t::reused);
         }
         return failure(fs::exists(destination, error)
@@ -318,6 +328,19 @@ auto copy_resource_file_into_export(const export_asset_copy_request_t& request,
                                             .asset = request.asset,
                                             .maximum_bytes = request.maximum_bytes};
     return copy_resource_file_to_relative_directory(copy, *directory, stop);
+}
+
+auto inspect_export_asset_copy(const export_asset_copy_request_t& request, std::stop_token stop)
+    -> project_asset_copy_result_t {
+    const auto directory = export_asset_directory(request.relative_output_path);
+    if (!directory)
+        return failure(project_asset_copy_status_t::invalid_request,
+                       "Export output path must be a project-relative file or directory.");
+    const project_asset_copy_request_t inspect{.project_directory = request.project_directory,
+                                               .source_path = request.source_path,
+                                               .asset = request.asset,
+                                               .maximum_bytes = request.maximum_bytes};
+    return copy_resource_file_to_relative_directory(inspect, *directory, stop, true);
 }
 
 } // namespace wormedit

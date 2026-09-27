@@ -73,6 +73,72 @@ auto safe_existing_components(const std::filesystem::path& root,
 
 } // namespace
 
+auto discover_staged_export_assets(const song_document_t& song, const output_group_t& group,
+                                   const std::filesystem::path& project_directory,
+                                   std::stop_token stop) -> staged_asset_discovery_t {
+    staged_asset_discovery_t result;
+    if (group.family != format_family_t::bms && group.family != format_family_t::bmson &&
+        group.family != format_family_t::osu_mania)
+        return result;
+    if (!project_directory.is_absolute() || !export_asset_directory(group.relative_output_path)) {
+        result.errors.emplace_back("Export asset directory is invalid.");
+        return result;
+    }
+    std::set<asset_id_t> referenced;
+    for (const auto& resource : song.resources)
+        if (resource.asset)
+            referenced.insert(resource.asset);
+    for (const auto chart_id : group.charts) {
+        const auto chart = std::ranges::find(song.charts, chart_id, &chart_document_t::id);
+        if (chart == song.charts.end()) {
+            result.errors.emplace_back("Output group refers to a missing chart.");
+            return result;
+        }
+        for (const auto& channel : chart->sound_channels)
+            if (channel.source_clip.source)
+                referenced.insert(channel.source_clip.source);
+    }
+    for (const auto asset_id : referenced) {
+        if (stop.stop_requested()) {
+            result.errors.emplace_back("Export asset discovery was cancelled.");
+            result.mappings.clear();
+            return result;
+        }
+        const auto audio = std::ranges::find(song.audio_assets, asset_id, &audio_asset_t::id);
+        const auto visual = std::ranges::find(song.visual_assets, asset_id, &visual_asset_t::id);
+        if ((audio == song.audio_assets.end()) == (visual == song.visual_assets.end())) {
+            result.errors.emplace_back("A resource has no unique source asset.");
+            result.mappings.clear();
+            return result;
+        }
+        const auto& source =
+            audio != song.audio_assets.end() ? audio->source_path : visual->source_path;
+        const auto inspected =
+            inspect_export_asset_copy({.project_directory = project_directory,
+                                       .source_path = source,
+                                       .relative_output_path = group.relative_output_path,
+                                       .asset = asset_id},
+                                      stop);
+        if (inspected.status == project_asset_copy_status_t::not_staged)
+            continue;
+        if (inspected.status != project_asset_copy_status_t::reused) {
+            result.errors.push_back("Export asset #" + std::to_string(asset_id.value) + ": " +
+                                    inspected.message);
+            result.mappings.clear();
+            return result;
+        }
+        const auto relative =
+            export_asset_reference_path(group.relative_output_path, inspected.relative_path);
+        if (!relative) {
+            result.errors.emplace_back("Verified export asset has an invalid chart-relative path.");
+            result.mappings.clear();
+            return result;
+        }
+        result.mappings.push_back({asset_id, *relative});
+    }
+    return result;
+}
+
 auto plan_conversion_publication(const std::filesystem::path& project_directory,
                                  const output_group_t& group, const conversion_request_t& request,
                                  const conversion_result_t& converted)

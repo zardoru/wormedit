@@ -6040,14 +6040,6 @@ struct pending_project_resource_copy_t {
     bool export_copy{};
 };
 
-struct staged_export_asset_t {
-    wormedit::song_id_t song;
-    std::filesystem::path output_path;
-    wormedit::asset_id_t asset;
-    std::filesystem::path source_path;
-    std::filesystem::path relative_path;
-};
-
 struct output_group_export_task_result_t {
     bool published{};
     std::string message;
@@ -6063,7 +6055,6 @@ struct pending_output_group_export_t {
 struct output_group_export_runtime_t {
     wormedit::task_scheduler_t scheduler{1, 1};
     std::optional<pending_output_group_export_t> pending;
-    std::vector<staged_export_asset_t> staged_assets;
 };
 
 auto dispatch_compose_view_action(
@@ -6423,30 +6414,25 @@ auto dispatch_compose_view_action(
             if (extension == ".bme" || extension == ".bml" || extension == ".pms")
                 request.target_profile = extension.substr(1);
         }
-        for (const auto& staged : export_runtime.staged_assets) {
-            if (staged.song != history.document.id ||
-                staged.output_path != group.relative_output_path)
-                continue;
-            const auto audio =
-                std::ranges::find(history.document.audio_assets, staged.asset, &audio_asset_t::id);
-            const auto visual = std::ranges::find(history.document.visual_assets, staged.asset,
-                                                  &visual_asset_t::id);
-            const auto current_path =
-                audio != history.document.audio_assets.end()     ? audio->source_path
-                : visual != history.document.visual_assets.end() ? visual->source_path
-                                                                 : std::filesystem::path{};
-            if (current_path == staged.source_path)
-                request.staged_assets.push_back({staged.asset, staged.relative_path});
-        }
         auto snapshot = history.document;
         task_graph_t graph{1};
-        const auto added = graph.add_task({}, [snapshot = std::move(snapshot), group, request,
+        const auto added = graph.add_task({}, [snapshot = std::move(snapshot), group,
+                                               request = std::move(request),
                                                asset_base](std::span<const task_result_t>,
-                                                           std::stop_token stop) {
+                                                           std::stop_token stop) mutable {
             auto completed = std::make_shared<output_group_export_task_result_t>();
             if (stop.stop_requested()) {
                 completed->message = "Export cancelled before conversion.";
             } else {
+                const auto discovered =
+                    discover_staged_export_assets(snapshot, group, asset_base, stop);
+                if (!discovered) {
+                    completed->message = discovered.errors.front();
+                    return task_result_t::success(make_task_value(
+                        std::shared_ptr<const output_group_export_task_result_t>{
+                            std::move(completed)}));
+                }
+                request.staged_assets = discovered.mappings;
                 const auto converted = convert_document(snapshot, request);
                 if (!converted) {
                     const auto error =
@@ -8488,32 +8474,11 @@ int main(int argc, char** argv) {
                 } else if (request.export_copy) {
                     const auto reference = wormedit::export_asset_reference_path(
                         request.output_path, copied->relative_path);
-                    const auto audio = std::ranges::find(
-                        history.document.audio_assets, request.asset, &wormedit::audio_asset_t::id);
-                    const auto visual =
-                        std::ranges::find(history.document.visual_assets, request.asset,
-                                          &wormedit::visual_asset_t::id);
-                    const auto current_path =
-                        audio != history.document.audio_assets.end()     ? audio->source_path
-                        : visual != history.document.visual_assets.end() ? visual->source_path
-                                                                         : std::filesystem::path{};
-                    if (history.document.id != request.song ||
-                        current_path != request.source_path || !reference) {
-                        status = "Export copy finished, but the project or asset changed; it was "
-                                 "not staged for conversion.";
-                    } else {
-                        std::erase_if(export_runtime.staged_assets, [&](const auto& staged) {
-                            return staged.song == request.song &&
-                                   staged.output_path == request.output_path &&
-                                   staged.asset == request.asset;
-                        });
-                        export_runtime.staged_assets.push_back({request.song, request.output_path,
-                                                                request.asset, request.source_path,
-                                                                *reference});
-                        status = copied->status == wormedit::project_asset_copy_status_t::reused
-                                     ? "Identical resource staged for export conversion."
-                                     : "Resource copied and staged for export conversion.";
-                    }
+                    status = !reference
+                                 ? "Export copy finished, but its chart-relative path is invalid."
+                             : copied->status == wormedit::project_asset_copy_status_t::reused
+                                 ? "Identical export resource is available; export will verify it."
+                                 : "Resource copied into the export folder; export will verify it.";
                 } else if (history.document.id != request.song ||
                            history.document.revision != request.revision) {
                     status = "Resource copy finished, but the document changed; source was not relinked.";

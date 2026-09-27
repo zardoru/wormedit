@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,24 @@ struct conversion_publication_plan_t {
         return errors.empty();
     }
 };
+
+struct staged_asset_discovery_t {
+    std::vector<conversion_request_t::staged_asset_t> mappings;
+    std::vector<std::string> errors;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return errors.empty();
+    }
+};
+
+// Rebuilds chart-relative asset mappings from byte-identical copies already
+// present beside the output group. Reads resource and selected sound-channel assets; missing
+// or changed source files reject rather than silently exporting stale copies.
+[[nodiscard]] auto discover_staged_export_assets(const song_document_t& song,
+                                                 const output_group_t& group,
+                                                 const std::filesystem::path& project_directory,
+                                                 std::stop_token stop = {})
+    -> staged_asset_discovery_t;
 
 // Resolves the complete converted output set against one selected output group.
 // This is a read-only preflight: it checks the already-staged asset files and

@@ -13,6 +13,7 @@ namespace wormedit {
 enum class project_asset_copy_status_t {
     copied,
     reused,
+    not_staged,
     invalid_request,
     source_unavailable,
     destination_collision,
@@ -65,8 +66,8 @@ struct project_asset_copy_result_t {
 // flushed and atomically installed without replacing an existing destination.
 // Existing identical files are reused; differing files reject. The caller
 // commits the returned relative path through apply_resource_asset_relink.
-[[nodiscard]] auto copy_resource_file_into_project(
-    const project_asset_copy_request_t& request, std::stop_token stop = {})
+[[nodiscard]] auto copy_resource_file_into_project(const project_asset_copy_request_t& request,
+                                                   std::stop_token stop = {})
     -> project_asset_copy_result_t;
 
 // Stages a resource beside one output group's chart under its assets folder.
@@ -74,6 +75,13 @@ struct project_asset_copy_result_t {
 // changed; the exporter may use the path relative to the output directory.
 [[nodiscard]] auto copy_resource_file_into_export(const export_asset_copy_request_t& request,
                                                   std::stop_token stop = {})
+    -> project_asset_copy_result_t;
+
+// Read-only check for the deterministic export copy. Returns reused with its
+// path only when source and staged bytes still match; missing destinations
+// return not_staged and no directories or files are created.
+[[nodiscard]] auto inspect_export_asset_copy(const export_asset_copy_request_t& request,
+                                             std::stop_token stop = {})
     -> project_asset_copy_result_t;
 
 } // namespace wormedit

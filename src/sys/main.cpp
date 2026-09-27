@@ -401,6 +401,7 @@ struct application_command_state_t {
         std::uint64_t revision{};
         wormedit::object_id_t event;
         wormedit::object_id_t source_lane;
+        bool linked_bmson{};
         std::uint64_t snap_denominator{};
         wormedit::local_position_t target;
         bool valid{};
@@ -2604,6 +2605,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.timing_stage_y_pixels = 0.0;
     view.timing_lane_visibility_mask = application_state.compose_timing_lane_visibility_mask;
     view.selected_note_count = 0;
+    view.selected_bgm_event_id = 0;
     view.selected_bmson_bgm_event_id = 0;
     view.selected_bmson_note_event_id = 0;
     view.selected_bmson_source_lane_id = 0;
@@ -3271,17 +3273,20 @@ void populate_compose_view(flattened_workspace_t& flattened,
          application_state.bmson_marker_move_preview->revision != history.document.revision)) {
         application_state.bmson_marker_move_preview.reset();
     }
-    if (chart.source_family == wormedit::format_family_t::bmson &&
-        retained_state->selected_objects.size() == 1 &&
+    if (retained_state->selected_objects.size() == 1 &&
         retained_state->selected_objects.front().kind ==
             wormedit::editor_selection_object_kind_t::bgm_event) {
         const auto selected = retained_state->selected_objects.front().id;
         for (const auto& measure : chart.measures) {
             const auto event = std::ranges::find(measure.bgm_events, selected,
                                                   &wormedit::bgm_event_t::id);
-            if (event != measure.bgm_events.end() && event->sound_channel_event) {
-                view.selected_bmson_bgm_event_id = selected.value;
-                view.selected_bmson_source_lane_id = event->source_lane.value;
+            if (event != measure.bgm_events.end()) {
+                view.selected_bgm_event_id = selected.value;
+                if (chart.source_family == wormedit::format_family_t::bmson &&
+                    event->sound_channel_event) {
+                    view.selected_bmson_bgm_event_id = selected.value;
+                    view.selected_bmson_source_lane_id = event->source_lane.value;
+                }
                 break;
             }
         }
@@ -5580,30 +5585,43 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             break;
         case WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_BEGIN: {
             if (gesture_active) {
-                return "Finish or cancel the active Compose gesture before moving a BMSON marker.";
+                return "Finish or cancel the active Compose gesture before moving a BGM event.";
             }
             const object_id_t event{input.object_id};
             if (state.selected_objects.size() != 1 ||
                 state.selected_objects.front().kind != editor_selection_object_kind_t::bgm_event ||
                 state.selected_objects.front().id != event) {
-                return "Select one linked BMSON BGM marker before dragging it.";
+                return "Select one BGM event before dragging it.";
             }
             const auto chart = std::ranges::find(history.document.charts, state.chart,
                                                  &chart_document_t::id);
             if (chart == history.document.charts.end()) {
-                return "The selected BMSON chart is no longer available.";
+                return "The selected chart is no longer available.";
             }
             const auto source = find_bmson_marker_source(*chart, event);
+            const bgm_event_t* ordinary{};
             if (!source) {
-                return "The selected BGM marker has no retained BMSON source event.";
+                for (const auto& measure : chart->measures) {
+                    const auto found = std::ranges::find(measure.bgm_events, event,
+                                                         &bgm_event_t::id);
+                    if (found != measure.bgm_events.end()) {
+                        ordinary = &*found;
+                        break;
+                    }
+                }
+                if (!ordinary || ordinary->sound_channel_event)
+                    return "The selected BGM event cannot use this move gesture.";
             }
             application_state.bmson_marker_move_preview =
                 application_command_state_t::bmson_marker_move_preview_t{
                     .chart = state.chart, .revision = history.document.revision,
-                    .event = event, .source_lane = source->source_lane,
+                    .event = event,
+                    .source_lane = source ? source->source_lane : ordinary->source_lane,
+                    .linked_bmson = source.has_value(),
                     .snap_denominator = state.active_snap_denominator,
-                    .target = source->position, .valid = true};
-            status = "BMSON BGM marker drag started.";
+                    .target = source ? source->position : ordinary->position,
+                    .valid = true};
+            status = "BGM event drag started.";
             continue;
         }
         case WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_UPDATE:
@@ -5613,7 +5631,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             if (!preview || preview->chart != state.chart ||
                 preview->revision != history.document.revision || preview->event != event) {
                 preview.reset();
-                return "BMSON BGM marker drag expired before release.";
+                return "BGM event drag expired before release.";
             }
             const auto chart = std::ranges::find(history.document.charts, state.chart,
                                                  &chart_document_t::id);
@@ -5621,7 +5639,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             if (chart == history.document.charts.end() || !current_view ||
                 !std::isfinite(input.y_pixels)) {
                 preview.reset();
-                return "BMSON BGM marker drag lost its chart field.";
+                return "BGM event drag lost its chart field.";
             }
             const auto raw = editor_position_at_y_pixels(*chart, *current_view,
                                                           input.y_pixels);
@@ -5631,49 +5649,61 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 preview->valid = false;
                 if (input.kind == WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE) {
                     preview.reset();
-                    return "BMSON BGM marker drag cannot snap to this chart row.";
+                    return "BGM event drag cannot snap to this chart row.";
                 }
-                status = "BMSON BGM marker drag cannot snap to this chart row.";
+                status = "BGM event drag cannot snap to this chart row.";
                 continue;
             }
-            const auto source = find_bmson_marker_source(*chart, event);
-            if (!source) {
-                preview.reset();
-                return "BMSON BGM marker source event is unavailable.";
-            }
             preview->target = *target;
-            preview->valid = std::ranges::none_of(source->channel->events,
-                [&](const auto& candidate) {
-                    return candidate.id != source->source_event &&
-                           candidate.position == *target;
-                });
+            if (preview->linked_bmson) {
+                const auto source = find_bmson_marker_source(*chart, event);
+                if (!source) {
+                    preview.reset();
+                    return "BMSON BGM marker source event is unavailable.";
+                }
+                preview->valid = std::ranges::none_of(source->channel->events,
+                    [&](const auto& candidate) {
+                        return candidate.id != source->source_event &&
+                               candidate.position == *target;
+                    });
+            } else {
+                preview->source_lane = object_id_t{input.lane_id};
+                preview->valid = std::ranges::any_of(chart->bgm_source_lanes,
+                    [&](const auto& lane) { return lane.id == preview->source_lane; });
+            }
             if (input.kind == WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_UPDATE) {
-                status = preview->valid ? "BMSON BGM marker drag preview updated."
-                                        : "Another event occupies this sound-channel pulse.";
+                status = preview->valid ? "BGM event drag preview updated."
+                                        : "BGM move target is unavailable.";
                 continue;
             }
             const auto destination = preview->target;
+            const auto destination_lane = preview->source_lane;
+            const auto linked_bmson = preview->linked_bmson;
             const auto valid = preview->valid;
             preview.reset();
             if (!valid) {
-                return "Another event occupies this sound-channel pulse; marker was not moved.";
+                return "BGM move target is unavailable.";
             }
-            const auto moved = move_bmson_bgm_marker(
-                history, ui_action.compose_input_document_revision,
-                state.chart, event, destination);
+            const auto moved = linked_bmson
+                ? move_bmson_bgm_marker(history, ui_action.compose_input_document_revision,
+                                         state.chart, event, destination)
+                : apply_bgm_event_move(history, ui_action.compose_input_document_revision,
+                                       {.chart = state.chart, .event = event,
+                                        .position = destination,
+                                        .source_lane = destination_lane});
             if (!moved.diagnostics.empty()) {
                 return moved.diagnostics.front().message;
             }
             if (!moved.applied) {
-                return "BMSON BGM marker remained at its original row.";
+                return "BGM event remained at its original position.";
             }
             const auto rebound = rebind_workspace(workspace, history);
             if (!rebound) {
                 return rebound.diagnostics.empty()
-                           ? "BMSON BGM marker moved, but workspace rebinding failed."
+                           ? "BGM event moved, but workspace rebinding failed."
                            : rebound.diagnostics.front().message;
             }
-            return "BMSON BGM marker moved to the snapped row.";
+            return "BGM event moved to the snapped row.";
         }
         case WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_CANCEL:
             application_state.bmson_marker_move_preview.reset();

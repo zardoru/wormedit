@@ -96,6 +96,30 @@ auto snap_placement_position(const chart_document_t& chart, const measure_index_
     return local_position_t{entry->id, snapped - entry->absolute_begin_row};
 }
 
+auto branch_source_orders(const chart_document_t& chart)
+    -> std::unordered_set<std::size_t> {
+    std::unordered_set<std::size_t> orders;
+    if (!chart.bms_control_tree)
+        return orders;
+    const auto visit = [&](const auto& self, const bms_control_node_t& node,
+                           bool inside_branch) -> void {
+        if (inside_branch)
+            orders.insert(node.source_order);
+        const auto boundary = node.kind == bms_control_kind_t::random ||
+                              node.kind == bms_control_kind_t::switch_block ||
+                              node.kind == bms_control_kind_t::if_group ||
+                              node.kind == bms_control_kind_t::if_branch ||
+                              node.kind == bms_control_kind_t::else_if_branch ||
+                              node.kind == bms_control_kind_t::else_branch ||
+                              node.kind == bms_control_kind_t::case_branch ||
+                              node.kind == bms_control_kind_t::default_branch;
+        for (const auto& child : node.children)
+            self(self, child, inside_branch || boundary);
+    };
+    visit(visit, *chart.bms_control_tree, false);
+    return orders;
+}
+
 } // namespace
 
 auto resolve_resource_placement_position(const chart_document_t& chart,
@@ -333,6 +357,122 @@ auto apply_resource_placement(document_history_t& history, std::uint64_t expecte
     }
     }
     return commit_document_command(history, std::move(proposed), "Place resource");
+}
+
+auto apply_bgm_event_move(document_history_t& history, std::uint64_t expected_revision,
+                          const move_bgm_event_action_t& action) -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id, "BGM move document revision is stale");
+        return result;
+    }
+    const auto source_chart = std::ranges::find(history.document.charts, action.chart,
+                                                &chart_document_t::id);
+    if (!action.chart || source_chart == history.document.charts.end() || !action.event) {
+        reject(result, diagnostic_code_t::invalid_id, "BGM move chart or event is missing");
+        return result;
+    }
+    const auto built = build_measure_index(*source_chart);
+    if (!std::holds_alternative<measure_index_t>(built)) {
+        reject(result, diagnostic_code_t::invalid_measure, "BGM move chart index is invalid");
+        return result;
+    }
+    const auto target = snap_placement_position(*source_chart,
+                                                std::get<measure_index_t>(built),
+                                                action.position, action.snap_denominator);
+    if (!target) {
+        reject(result, diagnostic_code_t::row_out_of_range, "BGM move row is outside the chart");
+        return result;
+    }
+    const bgm_event_t* original{};
+    for (const auto& measure : source_chart->measures) {
+        const auto found = std::ranges::find(measure.bgm_events, action.event, &bgm_event_t::id);
+        if (found != measure.bgm_events.end()) {
+            original = &*found;
+            break;
+        }
+    }
+    if (!original) {
+        reject(result, diagnostic_code_t::invalid_id, "BGM move event no longer exists");
+        return result;
+    }
+    if (original->sound_channel_event || original->branch ||
+        (original->provenance.family == format_family_t::bms &&
+         !original->provenance.source_spelling.empty() &&
+         branch_source_orders(*source_chart).contains(original->provenance.source_order))) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "BGM move requires an ordinary root event");
+        return result;
+    }
+    const auto preferred = action.source_lane ? action.source_lane : original->source_lane;
+    const auto preferred_lane = std::ranges::find(source_chart->bgm_source_lanes, preferred,
+                                                 &bgm_source_lane_t::id);
+    if (preferred_lane == source_chart->bgm_source_lanes.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "BGM move source lane is missing");
+        return result;
+    }
+    std::unordered_set<std::uint64_t> occupied;
+    for (const auto& measure : source_chart->measures)
+        for (const auto& event : measure.bgm_events)
+            if (event.id != action.event && event.position == *target)
+                occupied.insert(event.source_lane.value);
+    std::vector<const bgm_source_lane_t*> lanes;
+    lanes.reserve(source_chart->bgm_source_lanes.size());
+    for (const auto& lane : source_chart->bgm_source_lanes)
+        lanes.push_back(&lane);
+    std::ranges::sort(lanes, [](const auto* left, const auto* right) {
+        return std::tie(left->source_order, left->id.value) <
+               std::tie(right->source_order, right->id.value);
+    });
+    const auto start = std::ranges::find(lanes, &*preferred_lane);
+    object_id_t destination_lane{};
+    for (auto it = start; it != lanes.end(); ++it) {
+        if (!occupied.contains((*it)->id.value)) {
+            destination_lane = (*it)->id;
+            break;
+        }
+    }
+    if (*target == original->position && destination_lane == original->source_lane)
+        return result;
+    auto proposed = history.document;
+    auto& chart = proposed.charts[static_cast<std::size_t>(source_chart - history.document.charts.begin())];
+    if (!destination_lane) {
+        const auto new_id = next_chart_object_id(chart);
+        if (!new_id || chart.bgm_source_lanes.size() >= 1'000'000) {
+            reject(result, diagnostic_code_t::invalid_id, "BGM source lane ID space is exhausted");
+            return result;
+        }
+        std::size_t next_order{};
+        for (const auto& lane : chart.bgm_source_lanes) {
+            if (lane.source_order == std::numeric_limits<std::size_t>::max()) {
+                reject(result, diagnostic_code_t::invalid_id,
+                       "BGM source lane order space is exhausted");
+                return result;
+            }
+            next_order = std::max(next_order, lane.source_order + 1);
+        }
+        destination_lane = *new_id;
+        chart.bgm_source_lanes.push_back({.id = destination_lane,
+                                          .name = "BGM " + std::to_string(chart.bgm_source_lanes.size() + 1),
+                                          .source_order = next_order});
+    }
+    bgm_event_t moved;
+    for (auto& measure : chart.measures) {
+        const auto found = std::ranges::find(measure.bgm_events, action.event, &bgm_event_t::id);
+        if (found == measure.bgm_events.end())
+            continue;
+        moved = std::move(*found);
+        measure.bgm_events.erase(found);
+        break;
+    }
+    moved.position = *target;
+    moved.source_lane = destination_lane;
+    moved.structural_slot = 0;
+    moved.provenance = {};
+    const auto destination = std::ranges::find(chart.measures, target->measure,
+                                               &measure_chunk_t::id);
+    destination->bgm_events.push_back(std::move(moved));
+    return commit_document_command(history, std::move(proposed), "Move BGM event");
 }
 
 auto apply_virtual_bms_resource_placement(

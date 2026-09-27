@@ -607,6 +607,7 @@ typedef struct WormUiComposeView {
     bool semantic_layer_paint_mode_active;
     size_t selected_note_count;
     size_t selected_object_count;
+    uint64_t selected_bgm_event_id;
     uint64_t selected_bmson_bgm_event_id;
     uint64_t selected_bmson_note_event_id;
     uint64_t selected_bmson_source_lane_id;

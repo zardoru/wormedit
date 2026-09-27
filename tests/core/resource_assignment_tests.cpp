@@ -71,6 +71,75 @@ auto has_code(const document_command_result_t& result, diagnostic_code_t code) -
 
 } // namespace
 
+TEST_CASE("ordinary BGM move preserves identity and advances occupied source lanes",
+          "[unit][core][resources][bgm-move]") {
+    auto song = assignment_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    chart.measures.push_back({.id = measure_id_t{4}});
+    chart.bgm_source_lanes.push_back({.id = object_id_t{23}, .name = "BGM 2",
+                                      .source_order = 1});
+    chart.measures.back().bgm_events.push_back({.id = object_id_t{24},
+                                                .position = {measure_id_t{4}, 120},
+                                                .source_lane = object_id_t{20},
+                                                .sound = resource_id_t{2}});
+    auto history = make_document_history(std::move(song));
+    const auto revision = history.document.revision;
+    const auto moved = apply_bgm_event_move(history, revision,
+        {.chart = chart_id_t{2}, .event = object_id_t{11},
+         .position = {measure_id_t{4}, 120}, .source_lane = object_id_t{20}});
+    REQUIRE(moved);
+    REQUIRE(history.undo.size() == 1);
+    const auto& destination = history.document.charts.front().measures.back();
+    REQUIRE(destination.bgm_events.size() == 2);
+    const auto found = std::ranges::find(destination.bgm_events, object_id_t{11},
+                                         &bgm_event_t::id);
+    REQUIRE(found != destination.bgm_events.end());
+    CHECK(found->position == (local_position_t{measure_id_t{4}, 120}));
+    CHECK(found->source_lane == object_id_t{23});
+    CHECK(found->sound == resource_id_t{1});
+    CHECK(validate_document(history.document).empty());
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().measures.front().bgm_events.front().id ==
+          object_id_t{11});
+}
+
+TEST_CASE("BGM move appends a lane only when needed and rejects linked markers",
+          "[unit][core][resources][bgm-move]") {
+    auto song = assignment_song();
+    auto history = make_document_history(std::move(song));
+    const auto revision = history.document.revision;
+    CHECK_FALSE(apply_bgm_event_move(history, revision,
+        {.chart = chart_id_t{2}, .event = object_id_t{11},
+         .position = {measure_id_t{3}, 240}}).applied);
+    CHECK(history.undo.empty());
+    history.document.charts.front().measures.front().bgm_events.push_back(
+        {.id = object_id_t{23}, .position = {measure_id_t{3}, 360},
+         .source_lane = object_id_t{20}, .sound = resource_id_t{2}});
+    const auto moved = apply_bgm_event_move(history, revision,
+        {.chart = chart_id_t{2}, .event = object_id_t{11},
+         .position = {measure_id_t{3}, 360}});
+    REQUIRE(moved);
+    const auto& chart = history.document.charts.front();
+    REQUIRE(chart.bgm_source_lanes.size() == 2);
+    const auto relocated = std::ranges::find(chart.measures.front().bgm_events,
+                                             object_id_t{11}, &bgm_event_t::id);
+    REQUIRE(relocated != chart.measures.front().bgm_events.end());
+    CHECK(relocated->source_lane == chart.bgm_source_lanes.back().id);
+    CHECK_FALSE(apply_bgm_event_move(history, revision,
+        {.chart = chart_id_t{2}, .event = object_id_t{11},
+         .position = {measure_id_t{3}, 400}}));
+    auto linked_song = assignment_song();
+    linked_song.charts.front().measures.front().bgm_events.front().sound_channel_event =
+        object_id_t{99};
+    auto linked_history = make_document_history(std::move(linked_song));
+    CHECK(has_code(apply_bgm_event_move(linked_history, linked_history.document.revision,
+        {.chart = chart_id_t{2}, .event = object_id_t{11},
+         .position = {measure_id_t{3}, 400}}),
+        diagnostic_code_t::unsupported_feature));
+    CHECK(linked_history.undo.empty());
+}
+
 TEST_CASE("virtual BMS BGM and BGA placement commit geometry with the event",
           "[unit][core][resources][virtual-canvas]") {
     for (const auto kind : {resource_placement_kind_t::bgm_event,

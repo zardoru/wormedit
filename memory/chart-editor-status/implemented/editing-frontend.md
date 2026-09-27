@@ -2,6 +2,8 @@
 
 [Back to the implemented-capability index](../implemented.md).
 
+Compose now scrolls the full BMS `#000`–`#999` canvas and composes its virtual grid and lane geometry without adding document measures. The left rail labels those measures with source-facing numbers. A tap click in an empty virtual BMS measure creates the intervening default geometry and note in one undoable command; core interaction tests cover the last measure, invalid targets, undo/redo, and scrolling without mutation. Other virtual editing gestures, selection, and export/reload coverage remain to be added.
+
 The SDL renderer now establishes a logical presentation matching the current logical window size before every Nuklear draw. Fractional high-DPI backbuffers therefore scale the complete UI and clear rather than leaving unpainted right/bottom bands, while Nuklear geometry and SDL pointer input remain in the same coordinate space. The architecture check guards this resize mapping. The workspace now omits the complete recovery block when the controller has neither a candidate nor a diagnostic, returning that otherwise inert height to the active editor.
 
 During Compose waveform offset and beat-interval drags, the proposed timing preview now queries the source rows that can sound inside the fixed waveform viewport. It composes grid lines, filtered note heads and hold bodies, and BGM events for that expanded interval, then projects timing-lane markers from their source rows. Elements entering from outside the original chart viewport therefore appear in the preview. The scene and frontend primitive caps still bound this work; a cap failure marks the view truncated.

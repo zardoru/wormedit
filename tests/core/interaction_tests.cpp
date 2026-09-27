@@ -6,6 +6,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <ranges>
 
@@ -80,6 +81,69 @@ auto has_code(const diagnostic_list_t& diagnostics, diagnostic_code_t code) -> b
 }
 
 } // namespace
+
+TEST_CASE("first tap in virtual BMS #999 commits geometry and note as one undo step",
+          "[unit][core][interaction][virtual-canvas]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto before = history.document.revision;
+    const auto placed = dispatch_editor_action(
+        history, state, place_virtual_bms_tap_action_t{959'050, lane_id_t{1}});
+    REQUIRE(placed);
+    CHECK(placed.document_changed);
+    CHECK(history.document.revision > before);
+    CHECK(history.undo.size() == 1);
+    const auto& chart = history.document.charts.front();
+    REQUIRE(chart.measures.size() == 1'000);
+    CHECK(chart.measures.front().id == measure_id_t{1});
+    CHECK(chart.measures[1].id == measure_id_t{2});
+    CHECK(chart.measures.back().id == measure_id_t{1'000});
+    REQUIRE(chart.measures.back().notes.size() == 1);
+    CHECK((chart.measures.back().notes.front().position ==
+           local_position_t{measure_id_t{1'000}, 0}));
+    CHECK((state.cursor == local_position_t{measure_id_t{1'000}, 0}));
+    CHECK(std::ranges::all_of(chart.measures.begin(), std::prev(chart.measures.end()),
+                              [](const auto& measure) { return measure.notes.empty(); }));
+    CHECK(undo_document_command(history));
+    CHECK(history.document.charts.front().measures.size() == 2);
+    CHECK(redo_document_command(history));
+    CHECK(history.document.charts.front().measures.size() == 1'000);
+}
+
+TEST_CASE("invalid virtual BMS taps leave document and cursor untouched",
+          "[unit][core][interaction][virtual-canvas]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto cursor = state.cursor;
+    CHECK_FALSE(dispatch_editor_action(
+        history, state, place_virtual_bms_tap_action_t{960'000, lane_id_t{1}}));
+    CHECK_FALSE(dispatch_editor_action(
+        history, state, place_virtual_bms_tap_action_t{2'400, lane_id_t{99}}));
+    CHECK(history.document.charts.front().measures.size() == 2);
+    CHECK(history.undo.empty());
+    CHECK(state.cursor == cursor);
+}
+
+TEST_CASE("BMS view scrolls through #999 without authoring empty measures",
+          "[unit][core][interaction][virtual-canvas]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto scrolled =
+        dispatch_editor_action(history, state, scroll_editor_view_action_t{1'000'000.0});
+    REQUIRE(scrolled);
+    REQUIRE(scrolled.view);
+    CHECK(scrolled.view->viewport_scroll_pixels ==
+          960'000.0 * state.pixels_per_standard_measure / 960.0 -
+              state.viewport_height_pixels);
+    CHECK(history.document.charts.front().measures.size() == 2);
+    CHECK(history.undo.empty());
+}
 
 TEST_CASE(
     "headless editor actions cycle exact snaps, step across measures, and place undoable taps",

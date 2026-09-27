@@ -54,6 +54,13 @@ struct place_tap_action_t {
     local_position_t position;
 };
 
+// Absolute row in the sparse BMS canvas. A successful first edit extends the
+// required default geometry and places one tap in the same undoable command.
+struct place_virtual_bms_tap_action_t {
+    std::uint64_t canvas_row{};
+    lane_id_t lane;
+};
+
 // Hold authoring is a two-step gesture. Beginning stores an exact snapped
 // preview anchor without changing the document; committing publishes one
 // validated command. A rejected commit leaves the preview available to retry.
@@ -334,7 +341,8 @@ struct scroll_editor_view_action_t {
 
 using editor_ui_action_t = std::variant<
     move_edit_cursor_action_t, page_edit_cursor_action_t, jump_edit_cursor_action_t,
-    cycle_edit_snap_action_t, place_tap_action_t, begin_hold_action_t, update_hold_preview_action_t,
+    cycle_edit_snap_action_t, place_tap_action_t, place_virtual_bms_tap_action_t,
+    begin_hold_action_t, update_hold_preview_action_t,
     commit_hold_action_t, cancel_hold_action_t, begin_lane_key_hold_gesture_action_t,
     release_lane_key_hold_gesture_action_t, begin_alt_pointer_hold_gesture_action_t,
     update_alt_pointer_hold_gesture_action_t, release_alt_pointer_hold_gesture_action_t,

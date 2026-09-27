@@ -2,6 +2,7 @@
 
 #include <wormedit/core/rational.h>
 #include <wormedit/core/semantic_layer_editor.h>
+#include <wormedit/core/virtual_canvas.h>
 
 #include <algorithm>
 #include <cmath>
@@ -223,7 +224,15 @@ auto transition_lane(const chart_document_t& chart, const measure_index_t& index
 
 auto maximum_viewport_scroll(const chart_document_t& chart, const measure_index_t& index,
                              double scale, double viewport_height) -> std::optional<double> {
-    const auto content_height = static_cast<double>(index.total_rows) * scale /
+    auto total_rows = index.total_rows;
+    if (chart.source_family == format_family_t::bms) {
+        const auto canvas = build_virtual_canvas(chart);
+        if (!std::holds_alternative<virtual_canvas_t>(canvas)) {
+            return std::nullopt;
+        }
+        total_rows = std::get<virtual_canvas_t>(canvas).total_rows;
+    }
+    const auto content_height = static_cast<double>(total_rows) * scale /
                                 static_cast<double>(chart.divisions_per_standard_measure);
     if (!std::isfinite(content_height) || content_height < 0.0 || !std::isfinite(viewport_height) ||
         viewport_height <= 0.0) {
@@ -3899,6 +3908,94 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                        ? std::get<diagnostic_list_t>(next_view)
                                        : diagnostic_list_t{},
                 };
+            } else if constexpr (std::is_same_v<action_t, place_virtual_bms_tap_action_t>) {
+                if (chart->source_family != format_family_t::bms || !typed_action.lane ||
+                    state.active_snap_denominator == 0 ||
+                    chart->divisions_per_standard_measure % state.active_snap_denominator != 0) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::invalid_resolution,
+                                                    "virtual tap requires a BMS chart and valid snap")});
+                }
+                const auto built_canvas = build_virtual_canvas(*chart);
+                if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas))
+                    return diagnostic_result(history, state, *diagnostics);
+                const auto& canvas = std::get<virtual_canvas_t>(built_canvas);
+                if (typed_action.canvas_row >= canvas.total_rows) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::row_out_of_range,
+                                                    "virtual tap lies outside #000-#999")});
+                }
+                const auto step = chart->divisions_per_standard_measure /
+                                  state.active_snap_denominator;
+                const auto remainder = typed_action.canvas_row % step;
+                auto snapped_row = typed_action.canvas_row - remainder;
+                if (remainder > step - remainder) {
+                    if (step - remainder >
+                        std::numeric_limits<std::uint64_t>::max() - typed_action.canvas_row) {
+                        return diagnostic_result(history, state,
+                                                 {error(diagnostic_code_t::row_out_of_range,
+                                                        "virtual snap row overflows")});
+                    }
+                    snapped_row += step;
+                }
+                const auto destination = canvas.measure_containing(snapped_row);
+                if (!destination || destination->authored ||
+                    destination->number >= bms_addressable_measure_count ||
+                    index.entries.empty() ||
+                    find_active_lane(*chart, index,
+                                     {index.entries.back().id,
+                                      index.entries.back().row_capacity - 1},
+                                     typed_action.lane) == nullptr) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::row_out_of_range,
+                                                    "virtual tap cannot use this measure or lane")});
+                }
+                auto proposed = history.document;
+                auto* proposed_chart = find_chart(proposed, state.chart);
+                const auto required = destination->number + 1 - proposed_chart->measures.size();
+                std::uint64_t last_measure_id{};
+                for (const auto& measure : proposed_chart->measures)
+                    last_measure_id = std::max(last_measure_id, measure.id.value);
+                if (required > std::numeric_limits<std::uint64_t>::max() - last_measure_id) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::invalid_id,
+                                                    "virtual measure ID sequence is exhausted")});
+                }
+                proposed_chart->measures.reserve(destination->number + 1);
+                for (std::size_t added = 0; added < required; ++added) {
+                    proposed_chart->measures.push_back(
+                        {.id = measure_id_t{++last_measure_id},
+                         .definition = {{1, 1}, meter_t{4, 4}}});
+                }
+                const auto note_id = next_object_id(*proposed_chart);
+                if (!note_id) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::invalid_id,
+                                                    "virtual tap object ID sequence is exhausted")});
+                }
+                const local_position_t position{
+                    proposed_chart->measures[destination->number].id,
+                    snapped_row - destination->begin_row};
+                proposed_chart->measures[destination->number].notes.push_back(
+                    {.id = *note_id,
+                     .position = position,
+                     .lane = typed_action.lane,
+                     .kind = note_kind_t::tap});
+                auto command = commit_document_command(history, std::move(proposed),
+                                                       "Place tap in virtual BMS measure");
+                if (!command)
+                    return diagnostic_result(history, state, std::move(command.diagnostics));
+                state.active_lane = typed_action.lane;
+                state.cursor = position;
+                const auto next_view = make_view(history, state);
+                return {.accepted = true,
+                        .document_changed = true,
+                        .view = std::holds_alternative<editor_interaction_view_model_t>(next_view)
+                                    ? std::optional{std::get<editor_interaction_view_model_t>(next_view)}
+                                    : std::nullopt,
+                        .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
+                                           ? std::get<diagnostic_list_t>(next_view)
+                                           : diagnostic_list_t{}};
             } else if constexpr (std::is_same_v<action_t, place_tap_action_t>) {
                 const auto snapped = snapped_position(*chart, index, typed_action.position,
                                                       state.active_snap_denominator);

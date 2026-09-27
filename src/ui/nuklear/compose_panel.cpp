@@ -2902,7 +2902,11 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             }
             if (line.measure_number != 0 && y + 15.0f <= viewport.y + viewport.h) {
                 char label[20]{};
-                const auto length = snprintf(label, sizeof(label), "M%u", line.measure_number);
+                const auto length = view->bms_measure_labels
+                                        ? snprintf(label, sizeof(label), "#%03u",
+                                                   line.measure_number - 1)
+                                        : snprintf(label, sizeof(label), "M%u",
+                                                   line.measure_number);
                 if (length > 0) {
                     const auto label_bounds =
                         nk_rect(rail.x + 3.0f, y + 2.0f, std::max(1.0f, rail.w - 6.0f), 14.0f);

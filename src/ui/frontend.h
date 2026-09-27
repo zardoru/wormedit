@@ -596,6 +596,7 @@ typedef struct WormUiComposeOutputGroupView {
 typedef struct WormUiComposeView {
     bool visible;
     bool scene_available;
+    bool bms_measure_labels;
     bool truncated;
     bool note_paint_mode_active;
     bool semantic_layer_paint_mode_active;

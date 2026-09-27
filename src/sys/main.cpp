@@ -38,6 +38,7 @@
 #include <wormedit/formats/stepmania.h>
 
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
+#include <wormedit/visual/image_decoder.h>
 #include <wormedit/visual/image_job.h>
 #endif
 #if defined(WORMEDIT_HAS_VIDEO_DECODER)
@@ -45,6 +46,7 @@
 #endif
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+#include <wormedit/audio/decoder.h>
 #include "sys/sdl_audition_output.h"
 #include "sys/sdl_preview_output.h"
 
@@ -4897,6 +4899,97 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                        : rebound.diagnostics.front().message;
         }
         return "Resource created from the selected audio asset.";
+    }
+    case WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before importing a resource.";
+        }
+        const auto role = action.compose_resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE
+                              ? resource_role_t::sample
+                              : action.compose_resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM
+                                    ? resource_role_t::bgm
+                                    : action.compose_resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGA
+                                          ? resource_role_t::bga
+                                          : resource_role_t::music;
+        if (role == resource_role_t::music) {
+            return "Resource import used an unknown catalog role.";
+        }
+        const std::filesystem::path source_path{action.compose_import_path};
+        const auto path = source_path.lexically_normal();
+        std::error_code file_error;
+        if (!path.is_absolute() || !std::filesystem::is_regular_file(path, file_error) ||
+            file_error) {
+            return "Resource import requires an existing absolute file path.";
+        }
+        std::optional<audio_stream_info_t> audio_stream;
+        std::optional<std::pair<std::uint32_t, std::uint32_t>> image_geometry;
+        if (role == resource_role_t::bga) {
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+            const auto decoded = visual::load_image_rgba(
+                {.kind = asset_kind_t::image, .path = path});
+            if (!decoded) {
+                return decoded.message.empty() ? "The image could not be decoded."
+                                               : decoded.message;
+            }
+            image_geometry = std::pair{decoded.image->width, decoded.image->height};
+#else
+            return "Image import is unavailable in this build.";
+#endif
+        } else {
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+            audio::decoder_t decoder;
+            std::string decode_error;
+            if (!decoder.open(path, &decode_error)) {
+                return decode_error.empty() ? "The audio file could not be decoded."
+                                            : decode_error;
+            }
+            const auto info = decoder.info();
+            if (!info) {
+                return "The audio decoder did not report source geometry.";
+            }
+            audio_stream = {.sample_rate = info->source_sample_rate,
+                            .channels = info->source_channel_count,
+                            .frame_count = info->source_frame_count,
+                            .seekable = info->seekable};
+#else
+            return "Audio import is unavailable in this build.";
+#endif
+        }
+        const auto chart = std::ranges::find(history.document.charts, state.chart,
+                                             &chart_document_t::id);
+        auto name = path.filename().generic_string();
+        if (name.size() > 255) {
+            name.clear();
+        }
+        const auto applied = apply_resource_asset_import(
+            history, action.compose_input_document_revision,
+            {.source_path = path,
+             .role = role,
+             .name = std::move(name),
+             .allocate_bms_identifier =
+                 chart != history.document.charts.end() &&
+                 chart->source_family == format_family_t::bms,
+             .audio_stream = audio_stream,
+             .image_geometry = image_geometry});
+        if (!applied.diagnostics.empty()) {
+            return applied.diagnostics.front().message;
+        }
+        if (!applied.applied) {
+            return "Resource import made no document change.";
+        }
+        const auto imported_asset = history.document.resources.back().asset;
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty()
+                       ? "Resource imported, but workspace rebinding failed."
+                       : rebound.diagnostics.front().message;
+        }
+        if (role != resource_role_t::bga) {
+            (void)apply_workspace_action(
+                workspace, history.document, history.document.revision,
+                workspace_select_audio_asset_action_t{imported_asset});
+        }
+        return "External file linked as a resource.";
     }
     case WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE: {
         if (editor_interaction_has_pending_gesture(state)) {

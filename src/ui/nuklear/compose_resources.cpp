@@ -227,6 +227,34 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
             action->compose_action = WORM_UI_COMPOSE_ACTION_CREATE_RESOURCE;
         }
     }
+    nk_layout_row_dynamic(context, 18, 1);
+    nk_label(context, "External file (absolute path)", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 24, 1);
+    (void)nk_edit_string_zero_terminated(
+        context, NK_EDIT_FIELD, state->resource_import_path.data(),
+        state->resource_import_path.size(), nk_filter_default);
+    nk_layout_row_dynamic(context, 24, 1);
+    const auto can_import = state->resource_import_path[0] != '\0';
+    if (!can_import) {
+        nk_widget_disable_begin(context);
+    }
+    const auto import_clicked = nk_button_label(
+        context, state->resource_filter == worm_ui_nuklear_compose_resource_filter_t::bga
+                     ? "Link image as BGA"
+                     : state->resource_filter ==
+                               worm_ui_nuklear_compose_resource_filter_t::bgm
+                           ? "Link audio as BGM"
+                           : "Link audio as Sample");
+    if (!can_import) {
+        nk_widget_disable_end(context);
+    }
+    if (import_clicked && can_import &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        std::snprintf(action->compose_import_path, sizeof(action->compose_import_path),
+                      "%s", state->resource_import_path.data());
+        action->compose_resource_role = filter_role(state->resource_filter);
+        action->compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET;
+    }
 
     const auto role = filter_role(state->resource_filter);
     std::size_t role_count{};

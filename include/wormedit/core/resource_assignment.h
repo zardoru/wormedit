@@ -28,6 +28,22 @@ struct create_resource_action_t {
     bool allocate_bms_identifier{};
 };
 
+struct import_resource_asset_action_t {
+    std::filesystem::path source_path;
+    resource_role_t role{resource_role_t::sample};
+    std::string name;
+    bool allocate_bms_identifier{};
+    std::optional<audio_stream_info_t> audio_stream;
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> image_geometry;
+};
+
+// Registers one externally validated absolute source file and its first
+// catalog entry in one history command. File probing belongs to the caller.
+[[nodiscard]] auto apply_resource_asset_import(document_history_t& history,
+                                               std::uint64_t expected_revision,
+                                               const import_resource_asset_action_t& action)
+    -> document_command_result_t;
+
 enum class resource_placement_kind_t {
     sample_note,
     bgm_event,

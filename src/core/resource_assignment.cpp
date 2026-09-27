@@ -373,8 +373,18 @@ auto apply_resource_creation(document_history_t& history, std::uint64_t expected
         reject(result, diagnostic_code_t::invalid_id, "resource ID space is exhausted");
         return result;
     }
+    auto name = action.name;
+    if (name.empty()) {
+        const auto& source_path = audio_role ? audio->source_path : visual->source_path;
+        name = source_path.filename().generic_string();
+    }
+    if (name.size() > 255 || name.find('\0') != std::string::npos) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "resource source filename exceeds the bounded name limit");
+        return result;
+    }
     resource_entry_t resource{.id = resource_id_t{largest_id + 1},
-                              .name = action.name,
+                              .name = std::move(name),
                               .asset = action.asset,
                               .roles = {action.role},
                               .target_identities = {},
@@ -430,6 +440,114 @@ auto apply_resource_creation(document_history_t& history, std::uint64_t expected
     auto proposed = document;
     proposed.resources.push_back(std::move(resource));
     return commit_document_command(history, std::move(proposed), "Create resource");
+}
+
+auto apply_resource_asset_import(document_history_t& history, std::uint64_t expected_revision,
+                                 const import_resource_asset_action_t& action)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "resource import document revision is stale");
+        return result;
+    }
+    const auto path = action.source_path.lexically_normal();
+    const auto path_text = path.generic_string();
+    if (!path.is_absolute() || path.filename().empty() || path_text.size() > 4096 ||
+        path_text.find('\0') != std::string::npos) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "resource import requires a bounded absolute source file path");
+        return result;
+    }
+    const auto audio_role = action.role == resource_role_t::sample ||
+                            action.role == resource_role_t::bgm;
+    const auto visual_role = action.role == resource_role_t::bga;
+    if ((!audio_role && !visual_role) ||
+        (audio_role && (!action.audio_stream || action.image_geometry)) ||
+        (visual_role && (!action.image_geometry || action.audio_stream))) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "resource import role and decoded source type do not match");
+        return result;
+    }
+    if ((audio_role &&
+         (action.audio_stream->sample_rate == 0 || action.audio_stream->channels == 0 ||
+          action.audio_stream->channels > 32)) ||
+        (visual_role &&
+         (action.image_geometry->first == 0 || action.image_geometry->second == 0 ||
+          action.image_geometry->first > 16'384 ||
+          action.image_geometry->second > 16'384))) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "resource import decoded source geometry is invalid");
+        return result;
+    }
+    const auto& document = history.document;
+    asset_id_t asset{};
+    if (audio_role) {
+        const auto existing = std::ranges::find_if(document.audio_assets, [&](const auto& item) {
+            return item.source_path.lexically_normal() == path;
+        });
+        if (existing != document.audio_assets.end()) {
+            asset = existing->id;
+        }
+    } else {
+        const auto existing = std::ranges::find_if(document.visual_assets, [&](const auto& item) {
+            return item.kind == asset_kind_t::image &&
+                   item.source_path.lexically_normal() == path;
+        });
+        if (existing != document.visual_assets.end()) {
+            asset = existing->id;
+        }
+    }
+    auto proposed = document;
+    if (!asset) {
+        const auto asset_count = proposed.audio_assets.size() + proposed.visual_assets.size() +
+                                 proposed.midi_assets.size();
+        if (asset_count >= 100'000) {
+            reject(result, diagnostic_code_t::invalid_resolution,
+                   "resource import asset catalog is full");
+            return result;
+        }
+        std::uint64_t largest{};
+        for (const auto& item : proposed.audio_assets) {
+            largest = std::max(largest, item.id.value);
+        }
+        for (const auto& item : proposed.visual_assets) {
+            largest = std::max(largest, item.id.value);
+        }
+        for (const auto& item : proposed.midi_assets) {
+            largest = std::max(largest, item.id.value);
+        }
+        if (largest == std::numeric_limits<std::uint64_t>::max()) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "resource import asset ID space is exhausted");
+            return result;
+        }
+        asset = asset_id_t{largest + 1};
+        if (audio_role) {
+            proposed.audio_assets.push_back({.id = asset,
+                                             .source_path = path,
+                                             .stream = *action.audio_stream,
+                                             .waveform_cache_path = std::nullopt});
+        } else {
+            proposed.visual_assets.push_back({.id = asset,
+                                              .kind = asset_kind_t::image,
+                                              .source_path = path,
+                                              .width = action.image_geometry->first,
+                                              .height = action.image_geometry->second});
+        }
+    }
+    auto draft = make_document_history(std::move(proposed), 1, false);
+    const auto created = apply_resource_creation(
+        draft, draft.document.revision,
+        {.asset = asset,
+         .role = action.role,
+         .name = action.name,
+         .allocate_bms_identifier = action.allocate_bms_identifier});
+    if (!created.applied) {
+        result.diagnostics = created.diagnostics;
+        return result;
+    }
+    return commit_document_command(history, std::move(draft.document), "Import resource asset");
 }
 
 auto apply_resource_assignment(document_history_t& history, std::uint64_t expected_revision,

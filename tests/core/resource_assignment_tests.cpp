@@ -94,6 +94,7 @@ TEST_CASE("resource creation assigns stable IDs and independent BMS namespaces",
                      .allocate_bms_identifier = true});
     REQUIRE(visual);
     CHECK(history.document.resources.back().id == resource_id_t{7});
+    CHECK(history.document.resources.back().name == "one.png");
     CHECK(history.document.resources.back().target_identities.front().identifier == "01");
     CHECK(history.document.resources.back().target_identities.front().namespace_name == "BMP");
     REQUIRE(undo_document_command(history));
@@ -119,6 +120,86 @@ TEST_CASE("resource creation rejects stale revisions and wrong asset types atomi
                    diagnostic_code_t::unsupported_feature));
     CHECK(history.document.resources.size() == 5);
     CHECK(history.undo.empty());
+}
+
+TEST_CASE("resource import registers decoded asset and catalog entry in one history command",
+          "[unit][core][resources]") {
+    auto history = make_document_history(assignment_song());
+    const auto imported = apply_resource_asset_import(
+        history, 4,
+        {.source_path = "/tmp/new-audio.wav",
+         .role = resource_role_t::sample,
+         .name = "New audio",
+         .allocate_bms_identifier = true,
+         .audio_stream = audio_stream_info_t{48'000, 2, 48'000, true}});
+    REQUIRE(imported);
+    REQUIRE(history.document.audio_assets.size() == 4);
+    REQUIRE(history.document.resources.size() == 6);
+    CHECK(history.document.resources.back().asset == history.document.audio_assets.back().id);
+    CHECK(history.document.resources.back().target_identities.front().identifier == "01");
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.audio_assets.size() == 3);
+    CHECK(history.document.resources.size() == 5);
+    REQUIRE(redo_document_command(history));
+    CHECK(history.document.resources.size() == 6);
+
+    const auto reused = apply_resource_asset_import(
+        history, history.document.revision,
+        {.source_path = "/tmp/new-audio.wav",
+         .role = resource_role_t::bgm,
+         .audio_stream = audio_stream_info_t{48'000, 2, 48'000, true}});
+    REQUIRE(reused);
+    CHECK(history.document.audio_assets.size() == 4);
+    CHECK(history.document.resources.back().asset == history.document.audio_assets.back().id);
+}
+
+TEST_CASE("resource import rejects path and decoded-type errors without partial assets",
+          "[unit][core][resources]") {
+    auto history = make_document_history(assignment_song());
+    CHECK(has_code(apply_resource_asset_import(
+                       history, 3,
+                       {.source_path = "/tmp/new.png",
+                        .role = resource_role_t::bga,
+                        .image_geometry = std::pair{640U, 480U}}),
+                   diagnostic_code_t::invalid_id));
+    CHECK(has_code(apply_resource_asset_import(
+                       history, 4,
+                       {.source_path = "relative.png",
+                        .role = resource_role_t::bga,
+                        .image_geometry = std::pair{640U, 480U}}),
+                   diagnostic_code_t::invalid_id));
+    CHECK(has_code(apply_resource_asset_import(
+                       history, 4,
+                       {.source_path = "/tmp/new.png",
+                        .role = resource_role_t::bga,
+                        .audio_stream = audio_stream_info_t{48'000, 2, 100, true}}),
+                   diagnostic_code_t::unsupported_feature));
+    CHECK(history.document.visual_assets.size() == 2);
+    CHECK(history.document.resources.size() == 5);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("visual resource import records decoded geometry and BMP identity",
+          "[unit][core][resources]") {
+    auto history = make_document_history(assignment_song());
+    const auto imported = apply_resource_asset_import(
+        history, 4,
+        {.source_path = "/tmp/new-background.png",
+         .role = resource_role_t::bga,
+         .allocate_bms_identifier = true,
+         .image_geometry = std::pair{640U, 480U}});
+    REQUIRE(imported);
+    REQUIRE(history.document.visual_assets.size() == 3);
+    REQUIRE(history.document.resources.size() == 6);
+    const auto& asset = history.document.visual_assets.back();
+    CHECK(asset.kind == asset_kind_t::image);
+    CHECK(asset.width == 640);
+    CHECK(asset.height == 480);
+    CHECK(history.document.resources.back().asset == asset.id);
+    CHECK(history.document.resources.back().target_identities.front().namespace_name == "BMP");
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.visual_assets.size() == 2);
 }
 
 TEST_CASE("resource placement adds typed events with collision and lane allocation",

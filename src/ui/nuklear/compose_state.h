@@ -101,6 +101,7 @@ struct worm_ui_nuklear_compose_state_t {
     worm_ui_nuklear_compose_resource_filter_t resource_filter{
         worm_ui_nuklear_compose_resource_filter_t::sample};
     std::array<char, 96> resource_search{};
+    std::array<char, WORM_UI_COMPOSE_IMPORT_PATH_BYTES + 1> resource_import_path{};
     std::uint64_t armed_resource_id{};
     worm_ui_nuklear_compose_resource_pointer_mode_t resource_pointer_mode{
         worm_ui_nuklear_compose_resource_pointer_mode_t::off};

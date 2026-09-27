@@ -31,6 +31,7 @@
 #define WORM_UI_COMPOSE_BGM_LANE_CAPACITY 4096
 #define WORM_UI_COMPOSE_BGM_EVENT_CAPACITY 32768
 #define WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY 4096
+#define WORM_UI_COMPOSE_CHANNEL_WAVEFORM_ROW_CAPACITY 4096
 #define WORM_UI_COMPOSE_WAVEFORM_OVERVIEW_CAPACITY 512
 #define WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY 32768
 #define WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY 128
@@ -624,6 +625,9 @@ typedef struct WormUiComposeView {
     size_t bgm_event_count;
     const WormUiComposeWaveformRowView* waveform_rows;
     size_t waveform_row_count;
+    const WormUiComposeWaveformRowView* channel_waveform_rows;
+    size_t channel_waveform_row_count;
+    uint64_t channel_waveform_source_lane_id;
     const WormUiComposeWaveformOverviewRowView* waveform_overview_rows;
     size_t waveform_overview_row_count;
     double waveform_overview_visible_begin_fraction;

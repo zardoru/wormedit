@@ -149,6 +149,17 @@ auto decoded_source_registry_t::bindings() const -> std::vector<decoded_source_b
     return result;
 }
 
+auto decoded_source_registry_t::binding(asset_id_t asset) const
+    -> std::optional<decoded_source_binding_t> {
+    if (!asset)
+        return std::nullopt;
+    const std::scoped_lock lock(mutex_);
+    const auto found = std::ranges::find_if(
+        entries_, [asset](const auto& entry) { return entry->binding.asset == asset; });
+    return found == entries_.end() ? std::nullopt
+                                   : std::optional<decoded_source_binding_t>{(*found)->binding};
+}
+
 auto decoded_source_registry_t::decode_block(transport_t& transport, session_token_t token,
                                              audio_block_key_t key) -> block_decode_result_t {
     if (!valid_source(key.source)) {

@@ -55,6 +55,7 @@ TEST_CASE("decoded source registry exposes authoritative geometry and exact iden
         transport, *token, {.source = {"fixture:unknown", "missing:v1"}, .block_index = 0});
     CHECK(unknown.status == block_decode_status_t::invalid_key);
     CHECK(registry.remove(wormedit::asset_id_t{7}));
+    CHECK_FALSE(registry.binding(wormedit::asset_id_t{7}));
     CHECK_FALSE(registry.remove(wormedit::asset_id_t{7}));
     CHECK(registry.size() == 0);
 }
@@ -98,6 +99,9 @@ TEST_CASE("registered decoder bindings prepare a revision-bound semantic object 
     decoded_source_registry_t registry;
     const auto added = registry.register_source(registration(asset_id_t{7}, "keysound-c4.ogg"));
     REQUIRE(added);
+    REQUIRE(registry.binding(asset_id_t{7}));
+    CHECK(registry.binding(asset_id_t{7}) == added.binding);
+    CHECK_FALSE(registry.binding(asset_id_t{8}));
 
     song_document_t song{.id = song_id_t{1}, .revision = 4};
     song.audio_assets.push_back({.id = asset_id_t{7}});

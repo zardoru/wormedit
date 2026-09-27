@@ -493,6 +493,18 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
             }
         }
     }
+    for (size_t index = 0; index < view->channel_waveform_row_count; ++index) {
+        const auto& row = view->channel_waveform_rows[index];
+        if (!std::isfinite(row.y_pixels) || row.y_pixels < 0.0 ||
+            row.y_pixels > view->viewport_height_pixels)
+            return 0;
+        for (size_t channel = 0; channel < 2; ++channel) {
+            if (!std::isfinite(row.absolute_peak[channel]) || !std::isfinite(row.rms[channel]) ||
+                row.absolute_peak[channel] < 0.0f || row.absolute_peak[channel] > 1.0f ||
+                row.rms[channel] < 0.0f || row.rms[channel] > 1.0f)
+                return 0;
+        }
+    }
     for (size_t index = 0; index < view->waveform_overview_row_count; ++index) {
         const auto& row = view->waveform_overview_rows[index];
         if (!std::isfinite(row.audio_fraction) || row.audio_fraction < 0.0 ||
@@ -617,6 +629,7 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            view->bgm_lane_count <= WORM_UI_COMPOSE_BGM_LANE_CAPACITY &&
            view->bgm_event_count <= WORM_UI_COMPOSE_BGM_EVENT_CAPACITY &&
            view->waveform_row_count <= WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY &&
+           view->channel_waveform_row_count <= WORM_UI_COMPOSE_CHANNEL_WAVEFORM_ROW_CAPACITY &&
            view->waveform_overview_row_count <= WORM_UI_COMPOSE_WAVEFORM_OVERVIEW_CAPACITY &&
            std::isfinite(view->waveform_overview_visible_begin_fraction) &&
            std::isfinite(view->waveform_overview_visible_end_fraction) &&
@@ -645,6 +658,9 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            (view->bgm_lane_count == 0 || view->bgm_lanes) &&
            (view->bgm_event_count == 0 || view->bgm_events) &&
            (view->waveform_row_count == 0 || view->waveform_rows) &&
+           (view->channel_waveform_row_count == 0 ||
+            (view->channel_waveform_rows && view->channel_waveform_source_lane_id != 0 &&
+             view->bgm_lane_count != 0)) &&
            (view->waveform_overview_row_count == 0 || view->waveform_overview_rows) &&
            (view->semantic_layer_count == 0 || view->semantic_layers) &&
            (view->lane_key_binding_count == 0 || view->lane_key_bindings) &&
@@ -2541,6 +2557,31 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                1.0f, nk_rgba(114, 222, 239, 142));
                 nk_stroke_line(canvas, center, y, center + row.absolute_peak[1] * half_width, y,
                                1.0f, nk_rgba(114, 222, 239, 142));
+            }
+        }
+        if (view->channel_waveform_row_count != 0) {
+            const auto selected_lane = std::find_if(
+                view->bgm_lanes, view->bgm_lanes + view->bgm_lane_count, [&](const auto& lane) {
+                    return lane.source_lane_id == view->channel_waveform_source_lane_id;
+                });
+            if (selected_lane != view->bgm_lanes + view->bgm_lane_count) {
+                const auto rect = compose_screen_rect(&selected_lane->bounds, view, viewport);
+                if (rect.w > 1.0f && rect.h > 0.0f) {
+                    const auto center = rect.x + rect.w * 0.5f;
+                    const auto half_width = rect.w * 0.43f;
+                    for (size_t index = 0; index < view->channel_waveform_row_count; ++index) {
+                        const auto& row = view->channel_waveform_rows[index];
+                        const auto y =
+                            viewport.y + static_cast<float>(row.y_pixels) * viewport.h /
+                                             static_cast<float>(view->viewport_height_pixels);
+                        nk_stroke_line(canvas, center - row.rms[0] * half_width, y,
+                                       center + row.rms[1] * half_width, y, 2.0f,
+                                       nk_rgba(87, 157, 196, 126));
+                        nk_stroke_line(canvas, center - row.absolute_peak[0] * half_width, y,
+                                       center + row.absolute_peak[1] * half_width, y, 1.0f,
+                                       nk_rgba(146, 230, 251, 224));
+                    }
+                }
             }
         }
         for (size_t index = 0; index < view->difference_count; ++index) {

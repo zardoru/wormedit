@@ -31,6 +31,7 @@
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/core/semantic_layer_editor.h>
+#include <wormedit/core/sound_slice.h>
 #include <wormedit/core/startup_session.h>
 #include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/task_graph.h>
@@ -52,6 +53,7 @@
 #include "sys/sdl_audition_output.h"
 #include "sys/sdl_preview_output.h"
 #include <wormedit/audio/aligned_waveform.h>
+#include <wormedit/audio/channel_waveform.h>
 #include <wormedit/audio/decoder.h>
 
 #include <wormedit/audio/object_audition.h>
@@ -301,12 +303,30 @@ struct bmson_draft_audition_request_t {
 };
 
 struct compose_scene_cache_t {
+    struct channel_waveform_selection_t {
+        wormedit::chart_id_t chart;
+        std::uint64_t revision{};
+        wormedit::object_id_t bgm_event;
+        wormedit::object_id_t channel;
+        wormedit::object_id_t source_lane;
+        wormedit::asset_id_t asset;
+    };
     wormedit::chart_id_t chart;
     std::uint64_t revision{};
     bool attempted{};
     std::optional<wormedit::editor_field_scene_index_t> index;
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
     std::optional<wormedit::timing_index_t> marker_timing_index;
+    std::optional<channel_waveform_selection_t> channel_waveform_selection;
+    wormedit::object_id_t channel_waveform_channel;
+    const void* channel_waveform_source{};
+    std::uint64_t channel_waveform_source_generation{};
+    std::optional<wormedit::sound_slice_result_t> channel_waveform_slices;
+    double channel_waveform_scroll_pixels{};
+    double channel_waveform_height_pixels{};
+    double channel_waveform_pixels_per_measure{};
+    bool channel_waveform_projection_valid{};
+    std::vector<WormUiComposeWaveformRowView> channel_waveform_rows;
     std::uint64_t waveform_overview_total_frames{};
     std::uint32_t waveform_overview_sample_rate{};
     std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
@@ -2527,6 +2547,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.bmson_marker_move_preview = nullptr;
     view.waveform_rows = nullptr;
     view.waveform_row_count = 0;
+    view.channel_waveform_rows = nullptr;
+    view.channel_waveform_row_count = 0;
+    view.channel_waveform_source_lane_id = 0;
     view.waveform_overview_rows = nullptr;
     view.waveform_overview_row_count = 0;
     view.waveform_overview_visible_begin_fraction = 0.0;
@@ -2696,6 +2719,12 @@ void populate_compose_view(flattened_workspace_t& flattened,
         cache.index.reset();
         cache.hit_test_index.reset();
         cache.marker_timing_index.reset();
+        cache.channel_waveform_channel = {};
+        cache.channel_waveform_source = nullptr;
+        cache.channel_waveform_source_generation = 0;
+        cache.channel_waveform_slices.reset();
+        cache.channel_waveform_projection_valid = false;
+        cache.channel_waveform_rows.clear();
         cache.interaction_view.reset();
         cache.hover.reset();
         cache.focus_note_label_editor = false;
@@ -4202,6 +4231,28 @@ auto find_bmson_marker_source(const wormedit::chart_document_t& chart,
         }
     }
     return std::nullopt;
+}
+
+auto selected_bmson_waveform_source(compose_scene_cache_t& cache,
+                                    const wormedit::chart_document_t& chart, std::uint64_t revision,
+                                    wormedit::object_id_t bgm_event)
+    -> std::optional<compose_scene_cache_t::channel_waveform_selection_t> {
+    if (cache.channel_waveform_selection && cache.channel_waveform_selection->chart == chart.id &&
+        cache.channel_waveform_selection->revision == revision &&
+        cache.channel_waveform_selection->bgm_event == bgm_event)
+        return cache.channel_waveform_selection;
+    cache.channel_waveform_selection.reset();
+    const auto marker = find_bmson_marker_source(chart, bgm_event);
+    if (marker) {
+        cache.channel_waveform_selection = compose_scene_cache_t::channel_waveform_selection_t{
+            .chart = chart.id,
+            .revision = revision,
+            .bgm_event = bgm_event,
+            .channel = marker->channel->id,
+            .source_lane = marker->source_lane,
+            .asset = marker->channel->source_clip.source};
+    }
+    return cache.channel_waveform_selection;
 }
 
 auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
@@ -7414,11 +7465,15 @@ int main(int argc, char** argv) {
     wormedit::audio::decoded_source_registry_t audition_sources;
     wormedit::audio::decoded_block_cache_t waveform_blocks;
     wormedit::audio::waveform_cache_t waveform_cache;
-    wormedit::task_scheduler_t waveform_scheduler(1, 4);
+    wormedit::task_scheduler_t waveform_scheduler(2, 4);
     wormedit::audio::waveform_job_t waveform_job{audition_sources, waveform_blocks, waveform_cache,
                                                  waveform_scheduler};
+    wormedit::audio::waveform_job_t channel_waveform_job{audition_sources, waveform_blocks,
+                                                         waveform_cache, waveform_scheduler};
     std::optional<wormedit::asset_id_t> waveform_job_asset;
     std::shared_ptr<const wormedit::audio::waveform_analysis_result_t> waveform_analysis;
+    std::optional<wormedit::asset_id_t> channel_waveform_job_asset;
+    std::shared_ptr<const wormedit::audio::waveform_analysis_result_t> channel_waveform_analysis;
     wormedit::audio::decoded_block_cache_t audition_cache;
     wormedit::audio::transport_t audition_transport{audition_cache};
     wormedit::audio::audition_transport_bridge_t audition_bridge{audition_transport};
@@ -7469,6 +7524,9 @@ int main(int argc, char** argv) {
         waveform_job.cancel();
         waveform_job_asset.reset();
         waveform_analysis.reset();
+        channel_waveform_job.cancel();
+        channel_waveform_job_asset.reset();
+        channel_waveform_analysis.reset();
         audition_sources.clear();
         waveform_blocks.clear();
         waveform_cache.clear();
@@ -7887,6 +7945,50 @@ int main(int argc, char** argv) {
                 status = completed->task_error->message;
             }
         }
+        std::optional<wormedit::asset_id_t> selected_channel_waveform_asset;
+        if (workspace.active_tab == wormedit::workspace_tab_t::compose &&
+            workspace.selected_chart && compose_interaction_state &&
+            compose_interaction_state->chart == *workspace.selected_chart &&
+            compose_interaction_state->selected_objects.size() == 1 &&
+            compose_interaction_state->selected_objects.front().kind ==
+                wormedit::editor_selection_object_kind_t::bgm_event) {
+            const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
+                                                 &wormedit::chart_document_t::id);
+            if (chart != history.document.charts.end()) {
+                const auto selection = selected_bmson_waveform_source(
+                    compose_scene_cache, *chart, history.document.revision,
+                    compose_interaction_state->selected_objects.front().id);
+                if (selection)
+                    selected_channel_waveform_asset = selection->asset;
+            }
+        }
+        if (selected_channel_waveform_asset == workspace.transport.audio_asset)
+            selected_channel_waveform_asset.reset();
+        if (selected_channel_waveform_asset != channel_waveform_job_asset) {
+            channel_waveform_job.cancel();
+            channel_waveform_job_asset.reset();
+            channel_waveform_analysis.reset();
+            if (selected_channel_waveform_asset) {
+                const auto started =
+                    channel_waveform_job.request(*selected_channel_waveform_asset, 256);
+                if (started)
+                    channel_waveform_job_asset = selected_channel_waveform_asset;
+                else if (started.status !=
+                         wormedit::audio::waveform_job_start_status_t::capacity_exceeded)
+                    status = started.message.empty() ? "Channel waveform analysis could not start."
+                                                     : started.message;
+            }
+        }
+        if (const auto completed = channel_waveform_job.poll();
+            completed && channel_waveform_job_asset == completed->asset) {
+            if (*completed) {
+                channel_waveform_analysis = completed->analysis;
+                if (!channel_waveform_analysis->waveform)
+                    status = "Selected BMSON channel waveform could not be analyzed.";
+            } else if (completed->task_error) {
+                status = completed->task_error->message;
+            }
+        }
 #endif
 
         if (compose_interaction_state) {
@@ -8230,6 +8332,113 @@ int main(int argc, char** argv) {
                             waveform_analysis->waveform->total_frames;
                         compose_scene_cache.waveform_overview_sample_rate =
                             waveform_analysis->waveform->sample_rate;
+                    }
+                }
+            }
+            if (flattened.view.compose.visible &&
+                flattened.view.compose.selected_bmson_bgm_event_id != 0 &&
+                flattened.view.compose.scene_available && workspace.selected_chart &&
+                compose_interaction_state && compose_scene_cache.marker_timing_index) {
+                const auto chart =
+                    std::ranges::find(history.document.charts, *workspace.selected_chart,
+                                      &wormedit::chart_document_t::id);
+                if (chart != history.document.charts.end()) {
+                    const auto selection = selected_bmson_waveform_source(
+                        compose_scene_cache, *chart, history.document.revision,
+                        wormedit::object_id_t{flattened.view.compose.selected_bmson_bgm_event_id});
+                    const auto channel =
+                        selection ? std::ranges::find(chart->sound_channels, selection->channel,
+                                                      &wormedit::sound_channel_t::id)
+                                  : chart->sound_channels.end();
+                    if (selection && channel != chart->sound_channels.end()) {
+                        const auto asset = selection->asset;
+                        const auto binding = audition_sources.binding(asset);
+                        const auto stored_asset = std::ranges::find(
+                            history.document.audio_assets, asset, &wormedit::audio_asset_t::id);
+                        const auto geometry_matches =
+                            binding && stored_asset != history.document.audio_assets.end() &&
+                            (stored_asset->stream.sample_rate == 0 ||
+                             stored_asset->stream.sample_rate == binding->source_sample_rate) &&
+                            (!stored_asset->stream.frame_count ||
+                             stored_asset->stream.frame_count == binding->source_frame_count);
+                        const auto& analysis =
+                            asset == workspace.transport.audio_asset && waveform_job_asset == asset
+                                ? waveform_analysis
+                            : channel_waveform_job_asset == asset
+                                ? channel_waveform_analysis
+                                : std::shared_ptr<
+                                      const wormedit::audio::waveform_analysis_result_t>{};
+                        if (analysis && analysis->waveform && geometry_matches &&
+                            binding->source_sample_rate != 0 &&
+                            binding->output_sample_rate == analysis->waveform->sample_rate &&
+                            binding->output_frame_count == analysis->waveform->total_frames) {
+                            auto& cache = compose_scene_cache;
+                            const auto& waveform = *analysis->waveform;
+                            const wormedit::audio::channel_waveform_source_geometry_t source{
+                                .sample_rate = binding->source_sample_rate,
+                                .total_frames = binding->source_frame_count};
+                            if (cache.channel_waveform_channel != channel->id ||
+                                cache.channel_waveform_source != &*analysis->waveform ||
+                                cache.channel_waveform_source_generation !=
+                                    audition_source_generation) {
+                                cache.channel_waveform_channel = channel->id;
+                                cache.channel_waveform_source = &*analysis->waveform;
+                                cache.channel_waveform_source_generation =
+                                    audition_source_generation;
+                                cache.channel_waveform_slices =
+                                    wormedit::derive_sound_channel_slices(
+                                        *chart, *channel, source.sample_rate, source.total_frames);
+                                cache.channel_waveform_projection_valid = false;
+                                cache.channel_waveform_rows.clear();
+                            }
+                            const auto scroll = compose_interaction_state->viewport_scroll_pixels;
+                            const auto height = flattened.view.compose.viewport_height_pixels;
+                            const auto scale = flattened.view.compose.pixels_per_standard_measure;
+                            if (!cache.channel_waveform_projection_valid ||
+                                cache.channel_waveform_scroll_pixels != scroll ||
+                                cache.channel_waveform_height_pixels != height ||
+                                cache.channel_waveform_pixels_per_measure != scale) {
+                                cache.channel_waveform_rows.clear();
+                                if (cache.channel_waveform_slices &&
+                                    *cache.channel_waveform_slices) {
+                                    const auto projected =
+                                        wormedit::audio::project_channel_waveform(
+                                            waveform, *channel, *cache.marker_timing_index,
+                                            {.viewport_scroll_pixels = scroll,
+                                             .viewport_height_pixels = height,
+                                             .pixels_per_standard_measure = scale,
+                                             .maximum_rows =
+                                                 WORM_UI_COMPOSE_CHANNEL_WAVEFORM_ROW_CAPACITY},
+                                            *cache.channel_waveform_slices, source);
+                                    if (projected) {
+                                        cache.channel_waveform_rows.reserve(projected.rows.size());
+                                        for (const auto& row : projected.rows) {
+                                            cache.channel_waveform_rows.push_back({
+                                                .y_pixels = row.y_pixels,
+                                                .absolute_peak = {std::clamp(row.absolute_peak[0],
+                                                                             0.0f, 1.0f),
+                                                                  std::clamp(row.absolute_peak[1],
+                                                                             0.0f, 1.0f)},
+                                                .rms = {std::clamp(row.rms[0], 0.0f, 1.0f),
+                                                        std::clamp(row.rms[1], 0.0f, 1.0f)},
+                                            });
+                                        }
+                                    }
+                                }
+                                cache.channel_waveform_scroll_pixels = scroll;
+                                cache.channel_waveform_height_pixels = height;
+                                cache.channel_waveform_pixels_per_measure = scale;
+                                cache.channel_waveform_projection_valid = true;
+                            }
+                            if (!cache.channel_waveform_rows.empty()) {
+                                flattened.view.compose.channel_waveform_rows =
+                                    cache.channel_waveform_rows.data();
+                                flattened.view.compose.channel_waveform_row_count =
+                                    cache.channel_waveform_rows.size();
+                                flattened.view.compose.channel_waveform_source_lane_id =
+                                    selection->source_lane.value;
+                            }
+                        }
                     }
                 }
             }

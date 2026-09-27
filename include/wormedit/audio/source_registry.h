@@ -73,6 +73,7 @@ class decoded_source_registry_t {
     void clear();
 
     [[nodiscard]] auto bindings() const -> std::vector<decoded_source_binding_t>;
+    [[nodiscard]] auto binding(asset_id_t asset) const -> std::optional<decoded_source_binding_t>;
     [[nodiscard]] auto decode_block(transport_t& transport, session_token_t token,
                                     audio_block_key_t key) -> block_decode_result_t;
     [[nodiscard]] auto analyze_waveform(asset_id_t asset, decoded_block_cache_t& block_cache,

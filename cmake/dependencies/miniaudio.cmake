@@ -20,6 +20,7 @@ endif()
 
 add_library(wormedit_audio_decoder
     "${CMAKE_SOURCE_DIR}/src/audio/aligned_waveform.cpp"
+    "${CMAKE_SOURCE_DIR}/src/audio/channel_waveform.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/audition_bridge.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/audition_pump.cpp"
     "${CMAKE_SOURCE_DIR}/src/audio/audition_resolver.cpp"

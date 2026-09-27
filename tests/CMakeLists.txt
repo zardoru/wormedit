@@ -56,6 +56,7 @@ add_executable(wormedit_core_tests
     formats/bmson_tests.cpp
     formats/bmson_writer_tests.cpp
     formats/conversion_tests.cpp
+    formats/conversion_publication_tests.cpp
     formats/native_project_tests.cpp
     formats/native_project_storage_tests.cpp
     formats/osu_mania_tests.cpp

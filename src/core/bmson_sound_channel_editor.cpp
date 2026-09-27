@@ -22,6 +22,70 @@ auto rejected(std::uint64_t revision, diagnostic_code_t code, std::string messag
 
 } // namespace
 
+auto interpolate_bmson_razor_path(const chart_document_t& chart,
+                                  local_position_t from, local_position_t to,
+                                  std::uint64_t snap_denominator,
+                                  std::size_t maximum_positions) -> bmson_razor_path_t {
+    bmson_razor_path_t result;
+    const auto reject_path = [&](diagnostic_code_t code, std::string message) {
+        result.diagnostics.push_back({.severity = diagnostic_severity_t::error,
+                                      .code = code, .message = std::move(message),
+                                      .object = std::nullopt});
+    };
+    if (chart.source_family != format_family_t::bmson) {
+        reject_path(diagnostic_code_t::invalid_id,
+                    "BMSON razor path requires a BMSON chart");
+        return result;
+    }
+    maximum_positions = std::min<std::size_t>(maximum_positions, 256);
+    const auto built = build_measure_index(chart);
+    if (!std::holds_alternative<measure_index_t>(built)) {
+        reject_path(diagnostic_code_t::invalid_measure,
+                    "BMSON razor path requires valid chart measure geometry");
+        return result;
+    }
+    const auto& index = std::get<measure_index_t>(built);
+    const auto first = absolute_row(index, from);
+    const auto last = absolute_row(index, to);
+    if (!first || !last) {
+        reject_path(diagnostic_code_t::row_out_of_range,
+                    "BMSON razor path endpoint is outside exact chart geometry");
+        return result;
+    }
+    if (chart.divisions_per_standard_measure == 0 ||
+        (snap_denominator != 0 &&
+         chart.divisions_per_standard_measure % snap_denominator != 0)) {
+        reject_path(diagnostic_code_t::invalid_resolution,
+                    "BMSON razor path has an unsupported snap denominator");
+        return result;
+    }
+    const auto step = snap_denominator == 0
+        ? std::uint64_t{1}
+        : chart.divisions_per_standard_measure / snap_denominator;
+    if (step == 0 || *first % step != 0 || *last % step != 0 ||
+        (*first > *last ? *first - *last : *last - *first) / step > maximum_positions) {
+        reject_path(diagnostic_code_t::invalid_resolution,
+                    "BMSON razor path exceeds its grid or marker capacity");
+        return result;
+    }
+    const auto count = (*first > *last ? *first - *last : *last - *first) / step;
+    result.positions.reserve(static_cast<std::size_t>(count));
+    for (std::uint64_t offset = 1; offset <= count; ++offset) {
+        const auto row = *first < *last ? *first + offset * step : *first - offset * step;
+        const auto after = std::ranges::upper_bound(index.entries, row, {},
+                                                     &measure_index_entry_t::absolute_begin_row);
+        if (after == index.entries.begin()) {
+            reject_path(diagnostic_code_t::invalid_measure,
+                        "BMSON razor path cannot resolve a measure boundary");
+            result.positions.clear();
+            return result;
+        }
+        const auto entry = std::prev(after);
+        result.positions.push_back({entry->id, row - entry->absolute_begin_row});
+    }
+    return result;
+}
+
 auto toggle_bmson_sound_channel_restart(document_history_t& history,
                                         std::uint64_t expected_revision, chart_id_t chart,
                                         object_id_t sound_channel_event)

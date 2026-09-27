@@ -3,6 +3,7 @@
 #include <wormedit/core/command.h>
 
 #include <span>
+#include <vector>
 
 namespace wormedit {
 
@@ -31,6 +32,20 @@ struct bmson_bgm_marker_insertion_t {
     local_position_t position;
     bool restart{};
 };
+
+struct bmson_razor_path_t {
+    std::vector<local_position_t> positions;
+    diagnostic_list_t diagnostics;
+
+    [[nodiscard]] explicit operator bool() const noexcept { return diagnostics.empty(); }
+};
+
+// Enumerates exact grid cells after `from` through `to`, in pointer order.
+// Both endpoints must already be snapped to the captured denominator.
+[[nodiscard]] auto interpolate_bmson_razor_path(
+    const chart_document_t& chart, local_position_t from, local_position_t to,
+    std::uint64_t snap_denominator, std::size_t maximum_positions = 256)
+    -> bmson_razor_path_t;
 
 // Commits up to 256 markers in one history step after validating every target.
 [[nodiscard]] auto insert_bmson_bgm_markers(

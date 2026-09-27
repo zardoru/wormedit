@@ -1129,6 +1129,7 @@ typedef struct WormUiComposeInputAction {
     uint64_t object_id;
     uint8_t resource_role;
     bool successive;
+    bool razor_stroke_start;
     WormUiComposeSelectionMode selection_mode;
     WormUiComposeNavigationAction navigation_action;
     double x_pixels;

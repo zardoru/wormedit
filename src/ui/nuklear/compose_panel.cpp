@@ -34,7 +34,8 @@ static void append_compose_input(
     double y_pixels = 0.0, uint64_t lane_id = 0, bool successive = false,
     WormUiComposeSelectionMode selection_mode = WORM_UI_COMPOSE_SELECTION_REPLACE,
     WormUiComposeNavigationAction navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-    uint64_t object_id = 0, uint8_t resource_role = 0) {
+    uint64_t object_id = 0, uint8_t resource_role = 0,
+    bool razor_stroke_start = false) {
     if (!action) {
         return;
     }
@@ -45,6 +46,7 @@ static void append_compose_input(
             .object_id = 0,
             .resource_role = 0,
             .successive = false,
+            .razor_stroke_start = false,
             .selection_mode = WORM_UI_COMPOSE_SELECTION_REPLACE,
             .navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
             .x_pixels = 0.0,
@@ -79,6 +81,7 @@ static void append_compose_input(
         .object_id = object_id,
         .resource_role = resource_role,
         .successive = successive,
+        .razor_stroke_start = razor_stroke_start,
         .selection_mode = selection_mode,
         .navigation_action = navigation_action,
         .x_pixels = x_pixels,
@@ -1872,7 +1875,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         append_compose_input(action, razor_input_kind, pointer_started_x, pointer_started_y,
                              0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
                              WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                             view->selected_bmson_bgm_event_id);
+                             view->selected_bmson_bgm_event_id, 0, true);
         state.bmson_razor_pointer_active = !state.action_overflowed;
         state.bmson_razor_last_y_pixels = pointer_started_y;
         paint_pointer_consumed = true;
@@ -1999,7 +2002,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                     : WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_CONTINUE,
                 pointer_x, pointer_y, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                view->selected_bmson_bgm_event_id);
+                view->selected_bmson_bgm_event_id, 0, true);
         } else {
             const auto event_id = compose_bgm_event_at(view, pointer_x, pointer_y);
             if (event_id != 0) {

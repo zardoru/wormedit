@@ -313,3 +313,28 @@ TEST_CASE("BMSON marker batch validates every pulse and commits one history step
     CHECK(history.document.charts.front().sound_channels.front().events.size() == source_count);
     CHECK(history.undo.empty());
 }
+
+TEST_CASE("BMSON razor path fills exact grid cells across measures in pointer order",
+          "[unit][core][bmson][razor]") {
+    const auto chart = fixture().charts.front();
+    REQUIRE(chart.measures.size() >= 2);
+    const wormedit::local_position_t begin{chart.measures[0].id, 720};
+    const wormedit::local_position_t end{chart.measures[1].id, 240};
+    const auto forward = wormedit::interpolate_bmson_razor_path(chart, begin, end, 8);
+    REQUIRE(forward);
+    const std::vector<wormedit::local_position_t> expected{
+        {chart.measures[0].id, 840}, {chart.measures[1].id, 0},
+        {chart.measures[1].id, 120}, {chart.measures[1].id, 240}};
+    CHECK(forward.positions == expected);
+    const auto backward = wormedit::interpolate_bmson_razor_path(chart, end, begin, 8);
+    REQUIRE(backward);
+    CHECK(backward.positions == (std::vector<wormedit::local_position_t>{
+        {chart.measures[1].id, 120}, {chart.measures[1].id, 0},
+        {chart.measures[0].id, 840}, {chart.measures[0].id, 720}}));
+    const auto still = wormedit::interpolate_bmson_razor_path(chart, begin, begin, 8);
+    REQUIRE(still);
+    CHECK(still.positions.empty());
+    CHECK_FALSE(wormedit::interpolate_bmson_razor_path(chart, begin, end, 8, 3));
+    CHECK_FALSE(wormedit::interpolate_bmson_razor_path(
+        chart, {chart.measures[0].id, 721}, end, 8));
+}

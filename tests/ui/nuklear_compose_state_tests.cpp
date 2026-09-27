@@ -16,6 +16,8 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     state.navigation_key_active = true;
     state.navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
     state.last_chart_id = 42;
+    state.last_project_id = 42;
+    state.label_project_id = 42;
     state.label_chart_id = 42;
     state.note_label[0] = 'x';
     state.semantic_layer_name_revision = 42;
@@ -23,6 +25,7 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     state.inspector_visible = false;
     state.resource_filter = worm_ui_nuklear_compose_resource_filter_t::bga;
     state.resource_search[0] = 'x';
+    state.armed_resource_id = 42;
 
     worm_ui_nuklear_reset_compose_state();
 
@@ -37,6 +40,8 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     CHECK_FALSE(state.navigation_key_active);
     CHECK(state.navigation_action == WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD);
     CHECK(state.last_chart_id == 0);
+    CHECK(state.last_project_id == 0);
+    CHECK(state.label_project_id == std::numeric_limits<std::uint64_t>::max());
     CHECK(state.label_chart_id == std::numeric_limits<std::uint64_t>::max());
     CHECK(state.note_label[0] == '\0');
     CHECK(state.semantic_layer_name_revision == std::numeric_limits<std::uint64_t>::max());
@@ -44,4 +49,5 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     CHECK(state.inspector_visible);
     CHECK(state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample);
     CHECK(state.resource_search[0] == '\0');
+    CHECK(state.armed_resource_id == 0);
 }

@@ -12,6 +12,7 @@
 namespace {
 
 struct compose_marker_state_t {
+    std::uint64_t project_id{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t chart_id{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t document_revision{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t bookmark_id{};
@@ -85,7 +86,11 @@ auto selected_audio_section(const WormUiComposeView& view) -> const WormUiCompos
 }
 
 void synchronize(const WormUiComposeView& view) {
-    if (state.chart_id == view.chart_id && state.document_revision == view.document_revision) {
+    if (state.project_id != view.project_id || state.chart_id != view.chart_id) {
+        state = {};
+    }
+    if (state.project_id == view.project_id && state.chart_id == view.chart_id &&
+        state.document_revision == view.document_revision) {
         return;
     }
     if (const auto* bookmark = selected_bookmark(view)) {
@@ -118,6 +123,7 @@ void synchronize(const WormUiComposeView& view) {
         copy_time(state.audio_section_begin, 0);
         copy_time(state.audio_section_end, 1'000);
     }
+    state.project_id = view.project_id;
     state.chart_id = view.chart_id;
     state.document_revision = view.document_revision;
 }

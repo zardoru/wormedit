@@ -78,7 +78,9 @@ struct worm_ui_nuklear_compose_state_t {
     WormUiComposeNavigationAction pointer_navigation_action{
         WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD};
     std::uint64_t last_chart_id{};
+    std::uint64_t last_project_id{};
     std::uint64_t last_document_revision{};
+    std::uint64_t label_project_id{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t label_chart_id{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t label_document_revision{std::numeric_limits<std::uint64_t>::max()};
     std::uint64_t label_note_id{std::numeric_limits<std::uint64_t>::max()};
@@ -93,6 +95,7 @@ struct worm_ui_nuklear_compose_state_t {
     worm_ui_nuklear_compose_resource_filter_t resource_filter{
         worm_ui_nuklear_compose_resource_filter_t::sample};
     std::array<char, 96> resource_search{};
+    std::uint64_t armed_resource_id{};
 };
 
 [[nodiscard]] auto worm_ui_nuklear_compose_state() noexcept -> worm_ui_nuklear_compose_state_t&;

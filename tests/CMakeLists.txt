@@ -32,6 +32,7 @@ add_executable(wormedit_core_tests
     core/quantize_tests.cpp
     core/rational_tests.cpp
     core/recovery_controller_tests.cpp
+    core/resource_assignment_tests.cpp
     core/scroll_speed_editor_tests.cpp
     core/semantic_layer_editor_tests.cpp
     core/shortcut_profile_storage_tests.cpp

@@ -27,6 +27,7 @@
 #include <wormedit/core/player_preview.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/recovery_controller.h>
+#include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/startup_session.h>
 #include <wormedit/core/sv_recipe.h>
@@ -2540,6 +2541,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     }
     view.semantic_layer_paint_mode_active = application_state.semantic_layer_paint_mode_active;
     view.semantic_layer_solo_active = application_state.semantic_layer_solo_active;
+    view.project_id = history.document.id.value;
     view.chart_id = chart.id.value;
     view.document_revision = history.document.revision;
     if (!cache.attempted || cache.chart != chart.id ||
@@ -2976,6 +2978,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
         }
     }
     view.selected_note_count = retained_state->selected_notes.size();
+    view.selected_object_count = retained_state->selected_objects.size();
     if (retained_state->selected_notes.size() == 1) {
         const auto note_id = retained_state->selected_notes.front();
         for (const auto& measure : chart.measures) {
@@ -4719,6 +4722,29 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                                       (use_count == 1 ? " resource use selected."
                                                       : " resource uses selected.");
         break;
+    }
+    case WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before assigning a resource.";
+        }
+        const auto applied = apply_resource_assignment(
+            history, action.compose_input_document_revision,
+            {.chart = state.chart,
+             .resource = resource_id_t{action.compose_resource_id},
+             .objects = state.selected_objects});
+        if (!applied.diagnostics.empty()) {
+            return applied.diagnostics.front().message;
+        }
+        if (!applied.applied) {
+            return "Selected objects already use that resource.";
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty()
+                       ? "Resource assigned, but workspace rebinding failed."
+                       : rebound.diagnostics.front().message;
+        }
+        return "Resource assigned to selected objects.";
     }
     case WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL:
     case WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL: {

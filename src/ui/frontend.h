@@ -500,6 +500,7 @@ typedef struct WormUiComposeView {
     bool note_paint_mode_active;
     bool semantic_layer_paint_mode_active;
     size_t selected_note_count;
+    size_t selected_object_count;
     bool beat_marker_navigation_available;
     bool audio_marker_navigation_available;
     bool audio_marker_transport_available;
@@ -531,6 +532,7 @@ typedef struct WormUiComposeView {
     bool semantic_layer_target_required_filter;
     bool semantic_layer_target_excluded_filter;
     bool semantic_layer_solo_active;
+    uint64_t project_id;
     uint64_t chart_id;
     uint64_t document_revision;
     double viewport_width_pixels;
@@ -1000,6 +1002,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE,
     WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY,
     WORM_UI_COMPOSE_ACTION_SELECT_RESOURCE_USES,
+    WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION,
     WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK,

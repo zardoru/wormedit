@@ -94,6 +94,48 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
     }
     nk_layout_row_end(context);
 
+    const WormUiComposeResourceView* armed = nullptr;
+    for (std::size_t index = 0; index < view->resource_count; ++index) {
+        if (view->resources[index].resource_id == state->armed_resource_id) {
+            armed = &view->resources[index];
+            break;
+        }
+    }
+    nk_layout_row_dynamic(context, 19, 1);
+    if (state->armed_resource_id == 0) {
+        nk_label(context, "Armed: none", NK_TEXT_LEFT);
+    } else if (armed) {
+        nk_labelf(context, NK_TEXT_LEFT, "Armed: %s · %s · %zu selected",
+                  armed->target_index, armed->name, view->selected_object_count);
+    } else {
+        nk_labelf(context, NK_TEXT_LEFT, "Armed resource #%llu is unavailable",
+                  static_cast<unsigned long long>(state->armed_resource_id));
+    }
+    nk_layout_row_dynamic(context, 24, 2);
+    const auto can_assign = view->scene_available && view->selected_object_count != 0 &&
+                            armed && !armed->missing;
+    if (!can_assign) {
+        nk_widget_disable_begin(context);
+    }
+    const auto assign_clicked = nk_button_label(context, "Assign selected");
+    if (!can_assign) {
+        nk_widget_disable_end(context);
+    }
+    if (assign_clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->compose_resource_id = state->armed_resource_id;
+        action->compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION;
+    }
+    if (state->armed_resource_id == 0) {
+        nk_widget_disable_begin(context);
+    }
+    const auto disarm_clicked = nk_button_label(context, "Disarm");
+    if (state->armed_resource_id == 0) {
+        nk_widget_disable_end(context);
+    }
+    if (disarm_clicked) {
+        state->armed_resource_id = 0;
+    }
+
     const auto role = filter_role(state->resource_filter);
     std::size_t role_count{};
     std::size_t matched_count{};
@@ -125,12 +167,13 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
             continue;
         }
         std::array<char, 320> label{};
-        std::snprintf(label.data(), label.size(), "%s%s · %s%s%s",
+        std::snprintf(label.data(), label.size(), "%s%s%s · %s%s%s",
                       resource.selected_audio_asset ? "> " : "", resource.target_index,
+                      state->armed_resource_id == resource.resource_id ? " *" : "",
                       resource.name, resource.source_name[0] == '\0' ? "" : " · ",
                       resource.source_name);
-        nk_layout_row_begin(context, NK_DYNAMIC, 25, 2);
-        nk_layout_row_push(context, 0.76f);
+        nk_layout_row_begin(context, NK_DYNAMIC, 25, 3);
+        nk_layout_row_push(context, 0.58f);
         if (resource.audio_asset) {
             if (resource.missing) {
                 nk_widget_disable_begin(context);
@@ -147,7 +190,7 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         } else {
             nk_label(context, label.data(), NK_TEXT_LEFT);
         }
-        nk_layout_row_push(context, 0.24f);
+        nk_layout_row_push(context, 0.20f);
         if (!view->scene_available) {
             nk_widget_disable_begin(context);
         }
@@ -158,6 +201,18 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         if (uses_clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
             action->compose_resource_id = resource.resource_id;
             action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_RESOURCE_USES;
+        }
+        nk_layout_row_push(context, 0.22f);
+        if (resource.missing) {
+            nk_widget_disable_begin(context);
+        }
+        const auto arm_clicked = nk_button_label(
+            context, state->armed_resource_id == resource.resource_id ? "Armed" : "Arm");
+        if (resource.missing) {
+            nk_widget_disable_end(context);
+        }
+        if (arm_clicked) {
+            state->armed_resource_id = resource.resource_id;
         }
         nk_layout_row_end(context);
         if (resource.missing) {
@@ -173,6 +228,10 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         state->resource_filter != worm_ui_nuklear_compose_resource_filter_t::bga) {
         nk_layout_row_dynamic(context, 18, 1);
         nk_label(context, "Click audio to select its waveform.", NK_TEXT_LEFT);
+    }
+    if (matched_count != 0) {
+        nk_layout_row_dynamic(context, 18, 1);
+        nk_label(context, "Arm a resource, then Assign selected.", NK_TEXT_LEFT);
     }
     nk_tree_pop(context);
 }

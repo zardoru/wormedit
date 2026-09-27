@@ -849,8 +849,13 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             state.note_move_active = false;
             state.timing_stage_drag_active = false;
         }
-        const auto chart_changed = state.last_chart_id != view->chart_id;
+        const auto project_changed = state.last_project_id != view->project_id;
+        const auto chart_changed = project_changed || state.last_chart_id != view->chart_id;
         const auto revision_changed = state.last_document_revision != view->document_revision;
+        if (project_changed) {
+            state.armed_resource_id = 0;
+            state.last_project_id = view->project_id;
+        }
         if (chart_changed || revision_changed) {
             if (state.note_paint_pointer_active || state.semantic_layer_paint_pointer_active ||
                 state.space_range_hold_active || state.note_move_active) {
@@ -935,7 +940,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         (double_click_count != 0 && !double_clicks)) {
         return;
     }
-    if (state.label_chart_id != view->chart_id ||
+    if (state.label_project_id != view->project_id || state.label_chart_id != view->chart_id ||
         state.label_document_revision != view->document_revision ||
         state.label_note_id != view->selected_note_label_note_id) {
         state.note_label.fill('\0');
@@ -945,6 +950,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             memcpy(state.note_label.data(), view->selected_note_label, length);
             state.note_label[length] = '\0';
         }
+        state.label_project_id = view->project_id;
         state.label_chart_id = view->chart_id;
         state.label_document_revision = view->document_revision;
         state.label_note_id = view->selected_note_label_note_id;

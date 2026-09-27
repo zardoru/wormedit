@@ -2531,6 +2531,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.waveform_overview_row_count = 0;
     view.waveform_overview_visible_begin_fraction = 0.0;
     view.waveform_overview_visible_end_fraction = 0.0;
+    view.waveform_beat_zero_visible = false;
+    view.waveform_beat_zero_fraction = 0.0;
     view.waveform_overview_sample_rate = 0;
     view.waveform_audio_offset_numerator = 0;
     view.waveform_audio_offset_denominator = 1;
@@ -8218,6 +8220,10 @@ int main(int argc, char** argv) {
                             overview.visible_begin_fraction;
                         compose.waveform_overview_visible_end_fraction =
                             overview.visible_end_fraction;
+                        compose.waveform_beat_zero_visible =
+                            overview.beat_zero_fraction.has_value();
+                        compose.waveform_beat_zero_fraction =
+                            overview.beat_zero_fraction.value_or(0.0);
                         compose.waveform_overview_sample_rate =
                             waveform_analysis->waveform->sample_rate;
                         compose_scene_cache.waveform_overview_total_frames =

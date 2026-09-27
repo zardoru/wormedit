@@ -628,6 +628,8 @@ typedef struct WormUiComposeView {
     size_t waveform_overview_row_count;
     double waveform_overview_visible_begin_fraction;
     double waveform_overview_visible_end_fraction;
+    bool waveform_beat_zero_visible;
+    double waveform_beat_zero_fraction;
     uint32_t waveform_overview_sample_rate;
     int64_t waveform_audio_offset_numerator;
     uint64_t waveform_audio_offset_denominator;

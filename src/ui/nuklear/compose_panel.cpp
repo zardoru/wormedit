@@ -624,6 +624,10 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            view->waveform_overview_visible_end_fraction <= 1.0 &&
            view->waveform_overview_visible_begin_fraction <=
                view->waveform_overview_visible_end_fraction &&
+           (!view->waveform_beat_zero_visible ||
+            (std::isfinite(view->waveform_beat_zero_fraction) &&
+             view->waveform_beat_zero_fraction >= 0.0 &&
+             view->waveform_beat_zero_fraction <= 1.0)) &&
            (view->waveform_overview_row_count == 0 ||
             (view->waveform_overview_sample_rate != 0 &&
              view->waveform_audio_offset_denominator != 0)) &&
@@ -1720,6 +1724,14 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             nk_rect(overview_rect.x + 1.0f, thumb_y, overview_rect.w - 2.0f, thumb_height);
         nk_fill_rect(canvas, thumb, 0.0f, nk_rgba(99, 173, 221, 55));
         nk_stroke_rect(canvas, thumb, 0.0f, 1.0f, nk_rgba(139, 210, 255, 180));
+        if (view->waveform_beat_zero_visible) {
+            const auto zero_y =
+                std::min(overview_rect.y + static_cast<float>(view->waveform_beat_zero_fraction) *
+                                               overview_rect.h,
+                         overview_rect.y + overview_rect.h - 1.0f);
+            nk_stroke_line(canvas, overview_rect.x, zero_y, overview_rect.x + overview_rect.w,
+                           zero_y, 2.0f, nk_rgb(255, 207, 104));
+        }
     }
 
     const bool pointer_inside = nk_input_is_mouse_hovering_rect(&context->input, viewport);

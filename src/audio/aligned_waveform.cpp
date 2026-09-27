@@ -190,6 +190,18 @@ auto project_waveform_overview(const waveform_t& waveform, const timing_index_t&
     }
     result.visible_begin_fraction = static_cast<double>(*begin) / waveform.total_frames;
     result.visible_end_fraction = static_cast<double>(*end) / waveform.total_frames;
+    const auto beat_zero = timing_at(timing, 0, timing_boundary_side_t::before_delays);
+    if (!beat_zero || !beat_zero.seconds || beat_zero.seconds->denominator == 0) {
+        result.status = aligned_waveform_status_t::invalid_timing;
+        return result;
+    }
+    const auto beat_zero_fraction = static_cast<long double>(beat_zero.seconds->numerator) *
+                                    waveform.sample_rate / beat_zero.seconds->denominator /
+                                    waveform.total_frames;
+    if (std::isfinite(beat_zero_fraction) && beat_zero_fraction >= 0.0L &&
+        beat_zero_fraction <= 1.0L) {
+        result.beat_zero_fraction = static_cast<double>(beat_zero_fraction);
+    }
     const auto projection = project_waveform(waveform, {.begin_frame = 0,
                                                         .end_frame = waveform.total_frames,
                                                         .pixel_width = maximum_rows,

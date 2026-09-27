@@ -112,6 +112,8 @@ TEST_CASE("song overview retains source peaks while its window follows chart tim
     CHECK(loudest->audio_fraction <= 0.51);
     CHECK(base.visible_begin_fraction == 0.0);
     CHECK(base.visible_end_fraction == 0.5);
+    REQUIRE(base.beat_zero_fraction);
+    CHECK(*base.beat_zero_fraction == 0.0);
 
     chart.beat_zero_audio_offset_seconds = {1, 2};
     const auto shifted_timing = wormedit::build_timing_index(chart);
@@ -121,7 +123,17 @@ TEST_CASE("song overview retains source peaks while its window follows chart tim
     REQUIRE(shifted);
     CHECK(shifted.visible_begin_fraction == 0.25);
     CHECK(shifted.visible_end_fraction == 0.75);
+    REQUIRE(shifted.beat_zero_fraction);
+    CHECK(*shifted.beat_zero_fraction == 0.25);
     CHECK(shifted.rows[100].absolute_peak == base.rows[100].absolute_peak);
+
+    chart.beat_zero_audio_offset_seconds = {-1, 2};
+    const auto early_timing = wormedit::build_timing_index(chart);
+    REQUIRE(early_timing);
+    const auto early =
+        wormedit::audio::project_waveform_overview(waveform, *early_timing.index, viewport, 200);
+    REQUIRE(early);
+    CHECK_FALSE(early.beat_zero_fraction);
 
     auto scrolled = viewport;
     scrolled.viewport_scroll_pixels = 240.0;

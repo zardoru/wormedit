@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstddef>
+#include <optional>
 #include <vector>
 
 namespace wormedit::audio {
@@ -51,6 +52,7 @@ struct waveform_overview_result_t {
     aligned_waveform_status_t status{aligned_waveform_status_t::invalid_request};
     double visible_begin_fraction{};
     double visible_end_fraction{};
+    std::optional<double> beat_zero_fraction;
     std::vector<waveform_overview_row_t> rows;
 
     [[nodiscard]] explicit operator bool() const noexcept {

@@ -563,8 +563,12 @@ struct editor_interaction_view_model_t {
     struct virtual_hold_preview_t {
         std::uint64_t anchor_row{};
         std::uint64_t end_row{};
+        std::uint64_t head_row{};
+        std::optional<std::uint64_t> tail_row;
         lane_id_t lane;
         std::uint64_t document_revision{};
+        std::shared_ptr<const std::vector<object_id_t>> removals;
+        bool adds_note{};
     };
     std::optional<virtual_hold_preview_t> pending_virtual_hold;
     std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;

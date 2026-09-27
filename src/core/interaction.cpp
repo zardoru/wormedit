@@ -87,6 +87,73 @@ auto position_at(const measure_index_t& index, std::uint64_t absolute)
     };
 }
 
+struct hold_row_plan_t {
+    std::uint64_t head_row{};
+    std::uint64_t tail_row{};
+    std::vector<object_id_t> removals;
+    bool adds_note{};
+};
+
+auto is_plain_editable_note(const note_t& note) -> bool {
+    const auto plain_kind = (note.kind == note_kind_t::tap && !note.end.has_value()) ||
+                            (note.kind == note_kind_t::hold && note.end.has_value());
+    return plain_kind && !note.sound.has_value() && note.semantic_layers.empty() &&
+           !note.label.has_value() && !note.branch.has_value();
+}
+
+auto plan_hold_rows(const chart_document_t& chart, const measure_index_t& index,
+                    lane_id_t lane, std::uint64_t anchor_row, std::uint64_t moving_row)
+    -> std::variant<hold_row_plan_t, diagnostic_list_t> {
+    auto begin_row = std::min(anchor_row, moving_row);
+    auto end_row = std::max(anchor_row, moving_row);
+    std::unordered_set<std::uint64_t> removals;
+    const auto intersects = [](std::uint64_t left_begin, std::uint64_t left_end,
+                               std::uint64_t right_begin, std::uint64_t right_end) {
+        return left_begin <= right_end && left_end >= right_begin;
+    };
+
+    auto expanded = true;
+    while (expanded) {
+        expanded = false;
+        for (const auto& measure : chart.measures) {
+            for (const auto& note : measure.notes) {
+                if (note.lane != lane)
+                    continue;
+                const auto note_begin = absolute_row(index, note.position);
+                const auto note_end = note.end ? absolute_row(index, *note.end) : note_begin;
+                if (!note_begin || !note_end || *note_end < *note_begin ||
+                    !intersects(*note_begin, *note_end, begin_row, end_row)) {
+                    continue;
+                }
+                if (!is_plain_editable_note(note)) {
+                    return diagnostic_list_t{
+                        error(diagnostic_code_t::collision,
+                              "hold placement overlaps a non-editable same-lane note", note.id)};
+                }
+                removals.insert(note.id.value);
+                if (note.kind == note_kind_t::hold) {
+                    const auto old_begin = begin_row;
+                    const auto old_end = end_row;
+                    begin_row = std::min(begin_row, *note_begin);
+                    end_row = std::max(end_row, *note_end);
+                    expanded = expanded || begin_row != old_begin || end_row != old_end;
+                }
+            }
+        }
+    }
+    hold_row_plan_t result{
+        .head_row = begin_row,
+        .tail_row = end_row,
+        .removals = {},
+        .adds_note = begin_row != end_row || removals.empty(),
+    };
+    result.removals.reserve(removals.size());
+    for (const auto id : removals)
+        result.removals.push_back(object_id_t{id});
+    std::ranges::sort(result.removals, {}, &object_id_t::value);
+    return result;
+}
+
 auto normalized_position_span(const measure_index_t& index, local_position_t first,
                               local_position_t second) -> std::optional<position_span_t> {
     const auto first_row = absolute_row(index, first);
@@ -417,10 +484,21 @@ auto make_view(const document_history_t& history, const editor_interaction_state
             return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                            "virtual BMS lane-key preview is stale or invalid")};
         }
+        auto planned = plan_hold_rows(*chart, index, pending.lane, pending.canvas_row, *absolute);
+        if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
+            return *diagnostics;
+        auto rows = std::get<hold_row_plan_t>(std::move(planned));
         virtual_hold_preview = {.anchor_row = pending.canvas_row,
                                 .end_row = *absolute,
+                                .head_row = rows.head_row,
+                                .tail_row = rows.head_row == rows.tail_row
+                                                ? std::optional<std::uint64_t>{}
+                                                : std::optional{rows.tail_row},
                                 .lane = pending.lane,
-                                .document_revision = pending.document_revision};
+                                .document_revision = pending.document_revision,
+                                .removals = std::make_shared<const std::vector<object_id_t>>(
+                                    std::move(rows.removals)),
+                                .adds_note = rows.adds_note};
     }
 
     const auto step = chart->divisions_per_standard_measure / state.active_snap_denominator;
@@ -546,13 +624,6 @@ auto hold_placement_preview(const hold_placement_plan_t& plan) -> pending_hold_p
             .adds_note = plan.adds_note};
 }
 
-auto is_plain_editable_note(const note_t& note) -> bool {
-    const auto plain_kind = (note.kind == note_kind_t::tap && !note.end.has_value()) ||
-                            (note.kind == note_kind_t::hold && note.end.has_value());
-    return plain_kind && !note.sound.has_value() && note.semantic_layers.empty() &&
-           !note.label.has_value() && !note.branch.has_value();
-}
-
 auto plan_hold_placement(const chart_document_t& chart, const measure_index_t& index,
                          lane_id_t lane, local_position_t anchor, local_position_t moving)
     -> std::variant<hold_placement_plan_t, diagnostic_list_t> {
@@ -563,62 +634,23 @@ auto plan_hold_placement(const chart_document_t& chart, const measure_index_t& i
                                        "hold endpoints lie outside chart geometry")};
     }
 
-    auto begin_row = std::min(*anchor_row, *moving_row);
-    auto end_row = std::max(*anchor_row, *moving_row);
-    std::unordered_set<std::uint64_t> removals;
-    const auto intersects = [](std::uint64_t left_begin, std::uint64_t left_end,
-                               std::uint64_t right_begin, std::uint64_t right_end) {
-        return left_begin <= right_end && left_end >= right_begin;
-    };
-
-    auto expanded = true;
-    while (expanded) {
-        expanded = false;
-        for (const auto& measure : chart.measures) {
-            for (const auto& note : measure.notes) {
-                if (note.lane != lane) {
-                    continue;
-                }
-                const auto note_begin = absolute_row(index, note.position);
-                const auto note_end = note.end ? absolute_row(index, *note.end) : note_begin;
-                if (!note_begin.has_value() || !note_end.has_value() || *note_end < *note_begin ||
-                    !intersects(*note_begin, *note_end, begin_row, end_row)) {
-                    continue;
-                }
-                if (!is_plain_editable_note(note)) {
-                    return diagnostic_list_t{
-                        error(diagnostic_code_t::collision,
-                              "hold placement overlaps a non-editable same-lane note", note.id)};
-                }
-                removals.insert(note.id.value);
-                if (note.kind == note_kind_t::hold) {
-                    const auto old_begin = begin_row;
-                    const auto old_end = end_row;
-                    begin_row = std::min(begin_row, *note_begin);
-                    end_row = std::max(end_row, *note_end);
-                    expanded = expanded || begin_row != old_begin || end_row != old_end;
-                }
-            }
-        }
-    }
-
-    const auto head = position_at(index, begin_row);
-    const auto tail = position_at(index, end_row);
+    auto planned = plan_hold_rows(chart, index, lane, *anchor_row, *moving_row);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
+        return *diagnostics;
+    auto rows = std::get<hold_row_plan_t>(std::move(planned));
+    const auto head = position_at(index, rows.head_row);
+    const auto tail = position_at(index, rows.tail_row);
     if (!head.has_value() || !tail.has_value()) {
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "normalized hold endpoints lie outside chart geometry")};
     }
     hold_placement_plan_t result{
         .head = *head,
-        .tail = begin_row == end_row ? std::optional<local_position_t>{} : std::optional{*tail},
-        .removals = {},
-        .adds_note = begin_row != end_row || removals.empty(),
+        .tail = rows.head_row == rows.tail_row ? std::optional<local_position_t>{}
+                                               : std::optional{*tail},
+        .removals = std::move(rows.removals),
+        .adds_note = rows.adds_note,
     };
-    result.removals.reserve(removals.size());
-    for (const auto id : removals) {
-        result.removals.push_back(object_id_t{id});
-    }
-    std::ranges::sort(result.removals, {}, &object_id_t::value);
     return result;
 }
 

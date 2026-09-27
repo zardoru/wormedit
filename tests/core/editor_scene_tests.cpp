@@ -204,7 +204,14 @@ TEST_CASE("field scene can project the last sparse BMS measure with its active l
     CHECK(indexed.measures.entries.size() == 2);
     visible.pending_virtual_hold =
         wormedit::editor_interaction_view_model_t::virtual_hold_preview_t{
-            959'040, 959'280, wormedit::lane_id_t{1}, 7};
+            .anchor_row = 959'040,
+            .end_row = 959'280,
+            .head_row = 959'040,
+            .tail_row = 959'280,
+            .lane = wormedit::lane_id_t{1},
+            .document_revision = 7,
+            .removals = std::make_shared<const std::vector<wormedit::object_id_t>>(),
+            .adds_note = true};
     const auto with_hold = wormedit::make_editor_field_scene(chart, indexed, visible, request);
     REQUIRE(with_hold);
     CHECK(std::ranges::any_of(with_hold.scene->hold_bodies, [](const auto& body) {
@@ -214,6 +221,54 @@ TEST_CASE("field scene can project the last sparse BMS measure with its active l
     auto authored_only = request;
     authored_only.include_virtual_bms_tail = false;
     CHECK_FALSE(wormedit::make_editor_field_scene(chart, indexed, visible, authored_only));
+}
+
+TEST_CASE("virtual BMS hold preview draws its normalized union and subdued origins",
+          "[unit][core][editor-scene][virtual-canvas][hold-preview]") {
+    auto chart = scene_chart();
+    chart.source_family = wormedit::format_family_t::bms;
+    chart.measures[1].notes.push_back({.id = wormedit::object_id_t{200},
+                                       .position = {wormedit::measure_id_t{2}, 600},
+                                       .lane = wormedit::lane_id_t{1},
+                                       .kind = wormedit::note_kind_t::hold,
+                                       .end = wormedit::local_position_t{
+                                           wormedit::measure_id_t{2}, 900}});
+    chart.measures[1].notes.push_back({.id = wormedit::object_id_t{201},
+                                       .position = {wormedit::measure_id_t{2}, 480},
+                                       .lane = wormedit::lane_id_t{1},
+                                       .kind = wormedit::note_kind_t::hold,
+                                       .end = wormedit::local_position_t{
+                                           wormedit::measure_id_t{2}, 600}});
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    auto visible = view();
+    visible.viewport_scroll_pixels = 288.0;
+    visible.virtual_bms_cursor_row = 1'920;
+    visible.pending_virtual_hold =
+        wormedit::editor_interaction_view_model_t::virtual_hold_preview_t{
+            .anchor_row = 1'920,
+            .end_row = 1'680,
+            .head_row = 1'440,
+            .tail_row = 1'920,
+            .lane = wormedit::lane_id_t{1},
+            .document_revision = 7,
+            .removals = std::make_shared<const std::vector<wormedit::object_id_t>>(
+                std::vector<wormedit::object_id_t>{wormedit::object_id_t{200},
+                                                   wormedit::object_id_t{201}}),
+            .adds_note = true};
+    const auto projected = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), visible,
+        {.field_left_pixels = 10.0,
+         .field_width_pixels = 200.0,
+         .include_virtual_bms_tail = true});
+    REQUIRE(projected);
+    CHECK(std::ranges::any_of(projected.scene->hold_bodies, [](const auto& body) {
+        return body.proposal_ghost && body.bounds.top == Catch::Approx(0.0) &&
+               body.bounds.bottom == Catch::Approx(96.0);
+    }));
+    CHECK(std::ranges::any_of(projected.scene->note_endpoints, [](const auto& endpoint) {
+        return endpoint.note == wormedit::object_id_t{201} && endpoint.proposal_origin;
+    }));
 }
 
 TEST_CASE("field scene resolves semantic layer colors by visible palette order",

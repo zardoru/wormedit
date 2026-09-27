@@ -1002,13 +1002,46 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                                                "virtual BMS hold preview is stale or invalid"));
             return result;
         }
-        const auto first = std::min(pending.anchor_row, pending.end_row);
-        const auto last = std::max(pending.anchor_row, pending.end_row);
+        const auto final_tail = pending.tail_row.value_or(pending.head_row);
+        if (pending.head_row > std::min(pending.anchor_row, pending.end_row) ||
+            final_tail < std::max(pending.anchor_row, pending.end_row) ||
+            (pending.tail_row && *pending.tail_row <= pending.head_row) ||
+            !pending.removals ||
+            (!pending.adds_note && (pending.tail_row || pending.removals->empty())) ||
+            (pending.adds_note && !pending.tail_row && !pending.removals->empty())) {
+            result.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
+                                               "virtual BMS hold preview is malformed"));
+            return result;
+        }
+        hold_origin_notes.reserve(pending.removals->size());
+        for (const auto note : *pending.removals) {
+            if (!operate() || note.value == 0 || !hold_origin_notes.insert(note.value).second) {
+                result.diagnostics.push_back(error(
+                    diagnostic_code_t::invalid_id,
+                    "virtual BMS hold preview contains duplicate note identities"));
+                return result;
+            }
+            const auto found = index.note_indices_by_id.find(note.value);
+            if (found == index.note_indices_by_id.end()) {
+                result.diagnostics.push_back(error(
+                    diagnostic_code_t::invalid_id,
+                    "virtual BMS hold preview refers to an unknown note"));
+                return result;
+            }
+            const auto& source = index.notes[found->second];
+            if ((source.kind != note_kind_t::tap && source.kind != note_kind_t::hold) ||
+                source.lane != pending.lane || source.begin_row > final_tail ||
+                source.end_row < pending.head_row) {
+                result.diagnostics.push_back(error(
+                    diagnostic_code_t::invalid_hold,
+                    "virtual BMS hold preview removes an unrelated note", note));
+                return result;
+            }
+        }
         hold_proposal = {.lane = pending.lane,
-                         .head_row = first,
-                         .tail_row = first == last ? std::optional<std::uint64_t>{}
-                                                  : std::optional{last},
-                         .adds_note = true};
+                         .head_row = pending.head_row,
+                         .tail_row = pending.tail_row,
+                         .adds_note = pending.adds_note};
     }
     const auto after_candidates = std::ranges::upper_bound(
         index.notes, query_high,

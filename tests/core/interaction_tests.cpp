@@ -337,6 +337,55 @@ TEST_CASE("virtual BMS hold extends backward into authored geometry and merges a
     CHECK(history.document.charts.front().measures[1].notes.front().id == object_id_t{200});
 }
 
+TEST_CASE("virtual BMS hold preview shows transitive authored unions before commit",
+          "[unit][core][interaction][virtual-canvas][hold-preview]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    chart.measures[1].notes.push_back({.id = object_id_t{200},
+                                       .position = {measure_id_t{2}, 600},
+                                       .lane = lane_id_t{1},
+                                       .kind = note_kind_t::hold,
+                                       .end = local_position_t{measure_id_t{2}, 900}});
+    chart.measures[1].notes.push_back({.id = object_id_t{201},
+                                       .position = {measure_id_t{2}, 480},
+                                       .lane = lane_id_t{1},
+                                       .kind = note_kind_t::hold,
+                                       .end = local_position_t{measure_id_t{2}, 600}});
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        jump_edit_cursor_action_t{{measure_id_t{2}, 720}, history.document.revision}));
+    REQUIRE(dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward}));
+    REQUIRE(state.virtual_bms_cursor_row == 1'920);
+    state.pending_virtual_lane_key =
+        editor_interaction_state_t::virtual_lane_key_t{1'920, lane_id_t{1},
+                                                       history.document.revision};
+    const auto moved = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
+    REQUIRE(moved);
+    REQUIRE(moved.view);
+    REQUIRE(moved.view->pending_virtual_hold);
+    const auto& preview = *moved.view->pending_virtual_hold;
+    CHECK(preview.end_row == 1'680);
+    CHECK(preview.head_row == 1'440);
+    CHECK(preview.tail_row == 1'920);
+    REQUIRE(preview.removals);
+    CHECK((*preview.removals == std::vector<object_id_t>{object_id_t{200}, object_id_t{201}}));
+    CHECK(preview.adds_note);
+    CHECK(history.document.charts.front().measures.size() == 2);
+    CHECK(history.undo.empty());
+    state.pending_virtual_lane_key.reset();
+    REQUIRE(dispatch_editor_action(
+        history, state, place_virtual_bms_hold_action_t{1'920, 1'680, lane_id_t{1}}));
+    REQUIRE(history.document.charts.front().measures[1].notes.size() == 1);
+    const auto& placed = history.document.charts.front().measures[1].notes.front();
+    CHECK((placed.position == local_position_t{measure_id_t{2}, 480}));
+    CHECK((placed.end == local_position_t{measure_id_t{3}, 0}));
+}
+
 TEST_CASE("virtual BMS hold rejects a protected authored collision atomically",
           "[unit][core][interaction][virtual-canvas]") {
     auto song = make_song();
@@ -355,6 +404,34 @@ TEST_CASE("virtual BMS hold rejects a protected authored collision atomically",
     CHECK(history.document.charts.front().measures.size() == 2);
     CHECK(history.undo.empty());
     CHECK(state.cursor == cursor);
+}
+
+TEST_CASE("virtual BMS hold preview rejects a protected authored collision",
+          "[unit][core][interaction][virtual-canvas][hold-preview]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    chart.measures[1].notes.push_back({.id = object_id_t{200},
+                                       .position = {measure_id_t{2}, 720},
+                                       .lane = lane_id_t{1},
+                                       .label = "protected"});
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        jump_edit_cursor_action_t{{measure_id_t{2}, 720}, history.document.revision}));
+    REQUIRE(dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward}));
+    state.pending_virtual_lane_key =
+        editor_interaction_state_t::virtual_lane_key_t{1'920, lane_id_t{1},
+                                                       history.document.revision};
+    const auto rejected = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
+    CHECK_FALSE(rejected);
+    CHECK(has_code(rejected.diagnostics, diagnostic_code_t::collision));
+    CHECK(state.virtual_bms_cursor_row == 1'920);
+    CHECK(history.document.charts.front().measures.size() == 2);
+    CHECK(history.undo.empty());
 }
 
 TEST_CASE("area selection in virtual BMS space excludes authored boundary events",

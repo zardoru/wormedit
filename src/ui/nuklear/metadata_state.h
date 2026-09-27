@@ -43,11 +43,23 @@ struct worm_ui_nuklear_metadata_state_t {
     std::size_t selected_output_group_index{std::numeric_limits<std::size_t>::max()};
     std::array<char, WORM_UI_COMPOSE_IMPORT_PATH_BYTES + 1> external_music_path{};
     std::array<char, 192> external_music_error{};
+    struct drop_rectangle_t {
+        float x{};
+        float y{};
+        float width{};
+        float height{};
+    } project_drop_rectangle, export_drop_rectangle;
+    std::size_t export_drop_group_index{};
 };
 
 [[nodiscard]] auto worm_ui_nuklear_metadata_state() noexcept -> worm_ui_nuklear_metadata_state_t&;
 
 void worm_ui_nuklear_reset_metadata_state();
+void worm_ui_nuklear_clear_metadata_drop_targets();
+void worm_ui_nuklear_set_metadata_drop_target(
+    WormUiMetadataDropTarget target, worm_ui_nuklear_metadata_state_t::drop_rectangle_t rect);
+[[nodiscard]] auto worm_ui_nuklear_metadata_drop_target(float x, float y)
+    -> WormUiMetadataDropTarget;
 
 struct worm_ui_nuklear_metadata_file_dialog_result_t {
     std::string path;

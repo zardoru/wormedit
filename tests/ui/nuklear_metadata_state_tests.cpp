@@ -61,3 +61,23 @@ TEST_CASE("Metadata file picker discards stale callbacks and reset generations",
     CHECK_FALSE(worm_ui_nuklear_metadata_file_dialog_open());
     CHECK_FALSE(worm_ui_nuklear_metadata_file_dialog_take());
 }
+
+TEST_CASE("Metadata drop targets keep the selected output group and visible bounds",
+          "[unit][frontend][metadata]") {
+    worm_ui_nuklear_reset_metadata_state();
+    worm_ui_nuklear_set_metadata_drop_target({WORM_UI_METADATA_DROP_PROJECT, 0},
+                                             {.x = 10, .y = 20, .width = 100, .height = 25});
+    worm_ui_nuklear_set_metadata_drop_target({WORM_UI_METADATA_DROP_EXPORT, 7},
+                                             {.x = 10, .y = 60, .width = 100, .height = 25});
+    CHECK(worm_ui_nuklear_metadata_drop_target(10, 20).destination ==
+          WORM_UI_METADATA_DROP_PROJECT);
+    CHECK(worm_ui_nuklear_metadata_drop_target(109, 44).destination ==
+          WORM_UI_METADATA_DROP_PROJECT);
+    const auto output = worm_ui_nuklear_metadata_drop_target(50, 70);
+    CHECK(output.destination == WORM_UI_METADATA_DROP_EXPORT);
+    CHECK(output.output_group_index == 7);
+    CHECK(worm_ui_nuklear_metadata_drop_target(110, 70).destination == WORM_UI_METADATA_DROP_NONE);
+    CHECK(worm_ui_nuklear_metadata_drop_target(50, 85).destination == WORM_UI_METADATA_DROP_NONE);
+    worm_ui_nuklear_clear_metadata_drop_targets();
+    CHECK(worm_ui_nuklear_metadata_drop_target(50, 70).destination == WORM_UI_METADATA_DROP_NONE);
+}

@@ -182,6 +182,17 @@ typedef struct WormUiAudioWaveformColumnView {
     float rms[2];
 } WormUiAudioWaveformColumnView;
 
+typedef enum WormUiMetadataDropDestination {
+    WORM_UI_METADATA_DROP_NONE,
+    WORM_UI_METADATA_DROP_PROJECT,
+    WORM_UI_METADATA_DROP_EXPORT,
+} WormUiMetadataDropDestination;
+
+typedef struct WormUiMetadataDropTarget {
+    WormUiMetadataDropDestination destination;
+    size_t output_group_index;
+} WormUiMetadataDropTarget;
+
 typedef struct WormUiMetadataView {
     bool visible;
     bool song_fields_editable;
@@ -229,10 +240,13 @@ typedef struct WormUiMetadataView {
     const char* project_directory;
     const char* selected_music_source;
     uint64_t selected_music_asset_id;
+    size_t selected_music_resource_count;
+    size_t selected_music_channel_count;
     const struct WormUiComposeOutputGroupView* output_groups;
     size_t output_group_count;
     bool output_groups_truncated;
     const char* dropped_music_path;
+    WormUiMetadataDropTarget dropped_music_target;
 } WormUiMetadataView;
 
 typedef struct WormUiAudioSlicesView {
@@ -1414,6 +1428,8 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer);
 void worm_ui_frontend_shutdown(void);
 void worm_ui_frontend_begin_input(void);
 bool worm_ui_frontend_handle_event(const SDL_Event* event);
+WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(SDL_WindowID window_id, float x,
+                                                                float y);
 void worm_ui_frontend_end_input(void);
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view);
 void worm_ui_frontend_resource_placed(uint64_t placed_resource_id, uint64_t next_resource_id);

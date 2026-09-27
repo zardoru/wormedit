@@ -257,6 +257,15 @@ void worm_ui_frontend_begin_input(void) {
     }
 }
 
+WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(SDL_WindowID window_id, float x,
+                                                                float y) {
+    if (!g_context || !g_window ||
+        (window_id != 0 && window_id != SDL_GetWindowID(g_window)) || !std::isfinite(x) ||
+        !std::isfinite(y))
+        return {};
+    return worm_ui_nuklear_metadata_drop_target(x, y);
+}
+
 bool worm_ui_frontend_handle_event(const SDL_Event* event) {
     if (!g_context || !event) {
         return false;

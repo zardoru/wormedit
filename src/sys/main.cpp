@@ -8465,6 +8465,9 @@ int main(int argc, char** argv) {
     }
     bool running = true;
     std::string metadata_dropped_music_path;
+    WormUiMetadataDropTarget metadata_dropped_music_target{};
+    std::uint64_t metadata_dropped_music_revision{};
+    std::uint64_t metadata_dropped_chart_id{};
     auto compose_viewport_last_ticks = static_cast<std::uint64_t>(SDL_GetTicks());
     while (running) {
         SDL_Event event;
@@ -8474,20 +8477,31 @@ int main(int argc, char** argv) {
                 running = false;
             }
             if (event.type == SDL_EVENT_DROP_FILE && event.drop.data &&
+                (event.drop.windowID == 0 ||
+                 event.drop.windowID == SDL_GetWindowID(window.handle)) &&
                 workspace.active_tab == wormedit::workspace_tab_t::metadata) {
                 const std::string_view dropped{event.drop.data};
                 if (dropped.size() <= WORM_UI_COMPOSE_IMPORT_PATH_BYTES &&
                     std::filesystem::path{dropped}.is_absolute()) {
                     metadata_dropped_music_path.assign(dropped);
+                    metadata_dropped_music_target = worm_ui_frontend_metadata_drop_target(
+                        event.drop.windowID, event.drop.x, event.drop.y);
+                    metadata_dropped_music_revision = history.document.revision;
+                    metadata_dropped_chart_id =
+                        workspace.selected_chart ? workspace.selected_chart->value : 0;
                 } else {
+                    metadata_dropped_music_path.clear();
+                    metadata_dropped_music_target = {};
                     status = "Drop an absolute local file path within the import limit.";
                 }
             }
             worm_ui_frontend_handle_event(&event);
         }
         worm_ui_frontend_end_input();
-        if (workspace.active_tab != wormedit::workspace_tab_t::metadata)
+        if (workspace.active_tab != wormedit::workspace_tab_t::metadata) {
             metadata_dropped_music_path.clear();
+            metadata_dropped_music_target = {};
+        }
         if (pending_resource_copy) {
             if (const auto completed =
                     pending_resource_copy->graph.result(pending_resource_copy->task)) {
@@ -8929,9 +8943,16 @@ int main(int argc, char** argv) {
             }
             if (flattened.view.metadata.visible) {
                 auto& metadata = flattened.view.metadata;
+                if (!metadata_dropped_music_path.empty() &&
+                    (metadata_dropped_music_revision != history.document.revision ||
+                     metadata_dropped_chart_id != metadata.chart_id)) {
+                    metadata_dropped_music_path.clear();
+                    metadata_dropped_music_target = {};
+                }
                 flattened.metadata_project_directory_storage = asset_base.generic_string();
                 metadata.project_directory = flattened.metadata_project_directory_storage.c_str();
                 metadata.dropped_music_path = metadata_dropped_music_path.c_str();
+                metadata.dropped_music_target = metadata_dropped_music_target;
                 if (workspace.transport.audio_asset) {
                     const auto audio = std::ranges::find(history.document.audio_assets,
                                                          *workspace.transport.audio_asset,
@@ -8942,6 +8963,15 @@ int main(int argc, char** argv) {
                             audio->source_path.generic_string();
                         metadata.selected_music_source =
                             flattened.metadata_music_source_storage.c_str();
+                        metadata.selected_music_resource_count =
+                            std::ranges::count(history.document.resources, audio->id,
+                                               &wormedit::resource_entry_t::asset);
+                        for (const auto& chart : history.document.charts) {
+                            metadata.selected_music_channel_count += std::ranges::count_if(
+                                chart.sound_channels, [&](const auto& channel) {
+                                    return channel.source_clip.source == audio->id;
+                                });
+                        }
                     }
                 }
                 metadata.output_groups = flattened.metadata_output_group_storage.data();
@@ -9801,8 +9831,12 @@ int main(int argc, char** argv) {
                         flattened.view.compose.viewport_height_pixels, application_command_state,
                         asset_base, resource_copy_scheduler, pending_resource_copy, export_runtime);
                     if (workspace.active_tab == wormedit::workspace_tab_t::metadata &&
-                        action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET)
+                        (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET ||
+                         action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT ||
+                         action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT)) {
                         metadata_dropped_music_path.clear();
+                        metadata_dropped_music_target = {};
+                    }
                 }
             } else if (action.kind >= WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT &&
                        action.kind <= WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE) {

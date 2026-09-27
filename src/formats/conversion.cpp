@@ -42,6 +42,27 @@ auto result_has_errors(const conversion_result_t& result) -> bool {
 
 auto selected_chart_ids(const song_document_t& song, const conversion_request_t& request,
                         conversion_result_t& result) -> std::vector<chart_id_t> {
+    if (request.chart && !request.charts.empty()) {
+        add_diagnostic(result, diagnostic_severity_t::error,
+                       conversion_diagnostic_code_t::invalid_request, conversion_stage_t::request,
+                       request.target, request.chart,
+                       "Select either one chart or an ordered chart set");
+        return {};
+    }
+    if (!request.charts.empty()) {
+        std::unordered_set<std::uint64_t> seen;
+        for (const auto id : request.charts) {
+            const auto count = std::ranges::count(song.charts, id, &chart_document_t::id);
+            if (!id || !seen.insert(id.value).second || count != 1) {
+                add_diagnostic(result, diagnostic_severity_t::error,
+                               conversion_diagnostic_code_t::invalid_request,
+                               conversion_stage_t::request, request.target, id,
+                               "Chart set contains a duplicate, missing, or ambiguous identity");
+                return {};
+            }
+        }
+        return request.charts;
+    }
     if (request.chart) {
         const auto count = std::ranges::count(song.charts, *request.chart, &chart_document_t::id);
         if (count != 1) {
@@ -60,14 +81,12 @@ auto selected_chart_ids(const song_document_t& song, const conversion_request_t&
         ids.push_back(chart.id);
     if (ids.empty())
         add_diagnostic(result, diagnostic_severity_t::error,
-                       conversion_diagnostic_code_t::chart_not_found,
-                       conversion_stage_t::request, request.target, std::nullopt,
-                       "Conversion requires at least one chart");
+                       conversion_diagnostic_code_t::chart_not_found, conversion_stage_t::request,
+                       request.target, std::nullopt, "Conversion requires at least one chart");
     return ids;
 }
 
-auto slug(std::string_view source, std::string_view fallback, std::size_t capacity)
-    -> std::string {
+auto slug(std::string_view source, std::string_view fallback, std::size_t capacity) -> std::string {
     std::string result;
     result.reserve(std::min(source.size(), capacity));
     bool separator{};
@@ -146,6 +165,15 @@ auto prepare_document(const song_document_t& song, const conversion_request_t& r
                       const std::vector<chart_id_t>& charts, conversion_result_t& result)
     -> std::optional<song_document_t> {
     auto prepared = song;
+    if (!request.charts.empty() && request.target == format_family_t::stepmania) {
+        std::vector<chart_document_t> selected;
+        selected.reserve(charts.size());
+        for (const auto id : charts) {
+            const auto found = std::ranges::find(prepared.charts, id, &chart_document_t::id);
+            selected.push_back(*found);
+        }
+        prepared.charts = std::move(selected);
+    }
     if (!request.staged_assets.empty()) {
         std::unordered_map<std::uint64_t, std::size_t> known_assets;
         known_assets.reserve(prepared.audio_assets.size() + prepared.visual_assets.size());
@@ -343,10 +371,11 @@ auto convert_document(const song_document_t& song, const conversion_request_t& r
                        "Output text encoding is currently a BMS-family policy");
         return result;
     }
-    if (request.target == format_family_t::native_project && request.chart) {
+    if (request.target == format_family_t::native_project &&
+        (request.chart || !request.charts.empty())) {
         add_diagnostic(result, diagnostic_severity_t::error,
-                       conversion_diagnostic_code_t::invalid_request,
-                       conversion_stage_t::request, request.target, request.chart,
+                       conversion_diagnostic_code_t::invalid_request, conversion_stage_t::request,
+                       request.target, request.chart,
                        "Native project conversion preserves the whole project; chart selection "
                        "is not applicable");
         return result;

@@ -39,6 +39,8 @@
 #include <wormedit/core/timing_lane_controller.h>
 #include <wormedit/core/viewport_input.h>
 #include <wormedit/core/workspace.h>
+#include <wormedit/formats/conversion.h>
+#include <wormedit/formats/conversion_publication.h>
 #include <wormedit/formats/stepmania.h>
 
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
@@ -6034,19 +6036,43 @@ struct pending_project_resource_copy_t {
     wormedit::song_id_t song;
     std::uint64_t revision{};
     std::filesystem::path source_path;
+    std::filesystem::path output_path;
     bool export_copy{};
 };
 
-auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
-                                  wormedit::document_history_t& history,
-                                  wormedit::workspace_controller_t& workspace,
-                                  wormedit::editor_interaction_state_t& state,
-                                  double viewport_height,
-                                  application_command_state_t& application_state,
-                                  const std::filesystem::path& asset_base,
-                                  wormedit::task_scheduler_t& resource_copy_scheduler,
-                                  std::optional<pending_project_resource_copy_t>& pending_resource_copy)
-    -> std::string {
+struct staged_export_asset_t {
+    wormedit::song_id_t song;
+    std::filesystem::path output_path;
+    wormedit::asset_id_t asset;
+    std::filesystem::path source_path;
+    std::filesystem::path relative_path;
+};
+
+struct output_group_export_task_result_t {
+    bool published{};
+    std::string message;
+};
+
+struct pending_output_group_export_t {
+    wormedit::task_graph_handle_t graph;
+    wormedit::task_id_t task;
+    wormedit::song_id_t song;
+    std::uint64_t revision{};
+};
+
+struct output_group_export_runtime_t {
+    wormedit::task_scheduler_t scheduler{1, 1};
+    std::optional<pending_output_group_export_t> pending;
+    std::vector<staged_export_asset_t> staged_assets;
+};
+
+auto dispatch_compose_view_action(
+    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+    wormedit::workspace_controller_t& workspace, wormedit::editor_interaction_state_t& state,
+    double viewport_height, application_command_state_t& application_state,
+    const std::filesystem::path& asset_base, wormedit::task_scheduler_t& resource_copy_scheduler,
+    std::optional<pending_project_resource_copy_t>& pending_resource_copy,
+    output_group_export_runtime_t& export_runtime) -> std::string {
     using namespace wormedit;
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id ||
@@ -6298,11 +6324,11 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
     case WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT: {
         const auto export_copy =
             action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT;
-        if (pending_resource_copy) {
-            return "A resource copy is already running.";
+        if (pending_resource_copy || export_runtime.pending) {
+            return "Wait for the current resource copy or export to finish.";
         }
         if (asset_base.empty()) {
-            return "Save the native project before copying resource files into it.";
+            return "Open a saved native project before copying resource files into it.";
         }
         if (editor_interaction_has_pending_gesture(state)) {
             return "Finish or cancel the active Compose gesture before copying a resource.";
@@ -6363,9 +6389,101 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                                             .song = history.document.id,
                                             .revision = history.document.revision,
                                             .source_path = source_path,
+                                            .output_path = output_path,
                                             .export_copy = export_copy};
         return export_copy ? "Export copy started in the background."
                            : "Resource copy started in the background.";
+    }
+    case WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP: {
+        if (asset_base.empty())
+            return "Open a saved native project before exporting an output group.";
+        if (pending_resource_copy || export_runtime.pending)
+            return "Wait for the current resource copy or export to finish.";
+        if (editor_interaction_has_pending_gesture(state))
+            return "Finish or cancel the active Compose gesture before exporting.";
+        if (action.compose_output_group_index >= history.document.output_groups.size())
+            return "The selected output group is no longer available.";
+        const auto group = history.document.output_groups[action.compose_output_group_index];
+        if (group.charts.empty() ||
+            std::ranges::find(group.charts, state.chart) == group.charts.end())
+            return "The selected output group has no matching charts.";
+        conversion_request_t request;
+        request.target = group.family;
+        if (group.family != format_family_t::native_project)
+            request.charts = group.charts;
+        request.overwrite = action.compose_export_overwrite;
+        request.loss_policy = loss_policy_t::reject;
+        if (group.family == format_family_t::stepmania) {
+            const auto extension = group.relative_output_path.extension();
+            request.stepmania = stepmania_export_policy_t{
+                .file_profile =
+                    extension == ".sm" ? stepmania_profile_t::sm : stepmania_profile_t::ssc};
+        } else if (group.family == format_family_t::bms) {
+            const auto extension = group.relative_output_path.extension().string();
+            if (extension == ".bme" || extension == ".bml" || extension == ".pms")
+                request.target_profile = extension.substr(1);
+        }
+        for (const auto& staged : export_runtime.staged_assets) {
+            if (staged.song != history.document.id ||
+                staged.output_path != group.relative_output_path)
+                continue;
+            const auto audio =
+                std::ranges::find(history.document.audio_assets, staged.asset, &audio_asset_t::id);
+            const auto visual = std::ranges::find(history.document.visual_assets, staged.asset,
+                                                  &visual_asset_t::id);
+            const auto current_path =
+                audio != history.document.audio_assets.end()     ? audio->source_path
+                : visual != history.document.visual_assets.end() ? visual->source_path
+                                                                 : std::filesystem::path{};
+            if (current_path == staged.source_path)
+                request.staged_assets.push_back({staged.asset, staged.relative_path});
+        }
+        auto snapshot = history.document;
+        task_graph_t graph{1};
+        const auto added = graph.add_task({}, [snapshot = std::move(snapshot), group, request,
+                                               asset_base](std::span<const task_result_t>,
+                                                           std::stop_token stop) {
+            auto completed = std::make_shared<output_group_export_task_result_t>();
+            if (stop.stop_requested()) {
+                completed->message = "Export cancelled before conversion.";
+            } else {
+                const auto converted = convert_document(snapshot, request);
+                if (!converted) {
+                    const auto error =
+                        std::ranges::find_if(converted.diagnostics, [](const auto& diagnostic) {
+                            return diagnostic.severity == diagnostic_severity_t::error;
+                        });
+                    completed->message = error == converted.diagnostics.end()
+                                             ? "Output conversion failed."
+                                             : error->message;
+                } else if (stop.stop_requested()) {
+                    completed->message = "Export cancelled before publication.";
+                } else {
+                    const auto published =
+                        publish_conversion_group_atomic(asset_base, group, request, converted);
+                    completed->published = published.published;
+                    completed->message =
+                        published.published ? "Output group published from the selected revision."
+                        : published.errors.empty() ? "Output group publication failed."
+                                                   : published.errors.front();
+                    if (published.published && !published.warnings.empty())
+                        completed->message += " " + published.warnings.front();
+                }
+            }
+            return task_result_t::success(make_task_value(
+                std::shared_ptr<const output_group_export_task_result_t>{std::move(completed)}));
+        });
+        if (!added)
+            return added.error ? added.error->message : "Export could not start.";
+        auto submitted = export_runtime.scheduler.submit(std::move(graph));
+        if (!submitted)
+            return submitted.error ? submitted.error->message : "Export could not start.";
+        export_runtime.pending =
+            pending_output_group_export_t{.graph = std::move(submitted.graph),
+                                          .task = *added.id,
+                                          .song = history.document.id,
+                                          .revision = history.document.revision};
+        return "Output group conversion started in the background.";
     }
     case WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE: {
         if (editor_interaction_has_pending_gesture(state)) {
@@ -8011,6 +8129,7 @@ int main(int argc, char** argv) {
                                : std::filesystem::path{};
     wormedit::task_scheduler_t resource_copy_scheduler(1, 1);
     std::optional<pending_project_resource_copy_t> pending_resource_copy;
+    output_group_export_runtime_t export_runtime;
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
     wormedit::visual::image_cache_t player_image_cache;
     wormedit::task_scheduler_t player_image_scheduler(1, 4);
@@ -8367,9 +8486,34 @@ int main(int argc, char** argv) {
                 } else if (!*copied) {
                     status = copied->message.empty() ? "Resource copy failed." : copied->message;
                 } else if (request.export_copy) {
-                    status = copied->status == wormedit::project_asset_copy_status_t::reused
-                                 ? "Identical resource already staged in the export folder."
-                                 : "Resource copied into the export folder.";
+                    const auto reference = wormedit::export_asset_reference_path(
+                        request.output_path, copied->relative_path);
+                    const auto audio = std::ranges::find(
+                        history.document.audio_assets, request.asset, &wormedit::audio_asset_t::id);
+                    const auto visual =
+                        std::ranges::find(history.document.visual_assets, request.asset,
+                                          &wormedit::visual_asset_t::id);
+                    const auto current_path =
+                        audio != history.document.audio_assets.end()     ? audio->source_path
+                        : visual != history.document.visual_assets.end() ? visual->source_path
+                                                                         : std::filesystem::path{};
+                    if (history.document.id != request.song ||
+                        current_path != request.source_path || !reference) {
+                        status = "Export copy finished, but the project or asset changed; it was "
+                                 "not staged for conversion.";
+                    } else {
+                        std::erase_if(export_runtime.staged_assets, [&](const auto& staged) {
+                            return staged.song == request.song &&
+                                   staged.output_path == request.output_path &&
+                                   staged.asset == request.asset;
+                        });
+                        export_runtime.staged_assets.push_back({request.song, request.output_path,
+                                                                request.asset, request.source_path,
+                                                                *reference});
+                        status = copied->status == wormedit::project_asset_copy_status_t::reused
+                                     ? "Identical resource staged for export conversion."
+                                     : "Resource copied and staged for export conversion.";
+                    }
                 } else if (history.document.id != request.song ||
                            history.document.revision != request.revision) {
                     status = "Resource copy finished, but the document changed; source was not relinked.";
@@ -8401,6 +8545,24 @@ int main(int argc, char** argv) {
                         }
                     }
                 }
+            }
+        }
+        if (export_runtime.pending) {
+            if (const auto completed =
+                    export_runtime.pending->graph.result(export_runtime.pending->task)) {
+                const auto exported_song = export_runtime.pending->song;
+                const auto exported_revision = export_runtime.pending->revision;
+                export_runtime.pending.reset();
+                const auto exported =
+                    wormedit::task_value_cast<output_group_export_task_result_t>(*completed);
+                status = !completed->succeeded() || !exported
+                             ? completed->error ? completed->error->message
+                                                : "Output group export returned no result."
+                             : exported->message;
+                if (exported && exported->published &&
+                    (history.document.id != exported_song ||
+                     history.document.revision != exported_revision))
+                    status += " The editor session changed after this export started.";
             }
         }
         const auto compose_viewport_now_ticks = static_cast<std::uint64_t>(SDL_GetTicks());
@@ -9591,7 +9753,7 @@ int main(int argc, char** argv) {
                     status = dispatch_compose_view_action(
                         action, history, workspace, *compose_interaction_state,
                         flattened.view.compose.viewport_height_pixels, application_command_state,
-                        asset_base, resource_copy_scheduler, pending_resource_copy);
+                        asset_base, resource_copy_scheduler, pending_resource_copy, export_runtime);
                 }
             } else if (action.kind >= WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT &&
                        action.kind <= WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE) {
@@ -9623,7 +9785,10 @@ int main(int argc, char** argv) {
     if (pending_resource_copy) {
         pending_resource_copy->graph.cancel();
     }
+    if (export_runtime.pending)
+        export_runtime.pending->graph.cancel();
     resource_copy_scheduler.shutdown();
+    export_runtime.scheduler.shutdown();
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     preview_output.close();
     audition_output.close();

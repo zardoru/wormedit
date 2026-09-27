@@ -45,6 +45,9 @@ struct conversion_request_t {
     std::string target_profile;
     std::optional<stepmania_export_policy_t> stepmania;
     std::optional<chart_id_t> chart;
+    // Ordered subset for one output group. Mutually exclusive with chart.
+    // Empty means every chart in the document.
+    std::vector<chart_id_t> charts;
     branch_projection_t branches{branch_projection_t::preserve_tree};
     std::optional<text_encoding_t> encoding;
     std::optional<quantize_request_t> quantization;

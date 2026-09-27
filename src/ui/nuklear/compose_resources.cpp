@@ -152,6 +152,17 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
                     state->export_group_document_index = candidate.document_index;
                     export_group = &candidate;
                 }
+        int overwrite = state->export_overwrite ? 1 : 0;
+        nk_layout_row_dynamic(context, 20, 1);
+        nk_checkbox_label(context, "Replace existing chart files", &overwrite);
+        state->export_overwrite = overwrite != 0;
+        nk_layout_row_dynamic(context, 24, 1);
+        if (nk_button_label(context, "Export selected group") &&
+            action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+            action->compose_output_group_index = export_group->document_index;
+            action->compose_export_overwrite = state->export_overwrite;
+            action->compose_action = WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
+        }
             }
             nk_combo_end(context);
         }

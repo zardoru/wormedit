@@ -71,6 +71,44 @@ TEST_CASE("conversion prepares grouped StepMania output and validates reimport",
     CHECK(parsed.song->charts.size() == 2);
 }
 
+TEST_CASE("conversion limits grouped StepMania output to an ordered chart subset",
+          "[unit][format][conversion]") {
+    auto song = stepmania_song();
+    auto second = song.charts.front();
+    second.id = wormedit::chart_id_t{second.id.value + 100};
+    second.metadata.name = "Selected second chart";
+    song.charts.push_back(second);
+    const wormedit::conversion_request_t request{.target = wormedit::format_family_t::stepmania,
+                                                 .stepmania = wormedit::stepmania_export_policy_t{},
+                                                 .charts = {second.id},
+                                                 .loss_policy = wormedit::loss_policy_t::warn};
+    const auto result = wormedit::convert_document(song, request);
+    REQUIRE(result);
+    REQUIRE(result.outputs.size() == 1);
+    const auto parsed = wormedit::parse_stepmania_bytes(
+        std::as_bytes(
+            std::span{result.outputs.front().bytes.data(), result.outputs.front().bytes.size()}),
+        {.profile = wormedit::stepmania_profile_t::ssc,
+         .source_timing_syntax = wormedit::stepmania_timing_syntax_t::native_warps});
+    REQUIRE(parsed.song.has_value());
+    REQUIRE(parsed.song->charts.size() == 1);
+    CHECK(parsed.song->charts.front().metadata.name == "Selected second chart");
+}
+
+TEST_CASE("conversion rejects ambiguous chart-set selection", "[unit][format][conversion]") {
+    const auto song = stepmania_song();
+    wormedit::conversion_request_t request{
+        .target = wormedit::format_family_t::stepmania,
+        .stepmania = wormedit::stepmania_export_policy_t{},
+        .charts = {song.charts.front().id, song.charts.front().id}};
+    CHECK_FALSE(wormedit::convert_document(song, request));
+    request.charts = {wormedit::chart_id_t{999999}};
+    CHECK_FALSE(wormedit::convert_document(song, request));
+    request.charts = {song.charts.front().id};
+    request.chart = song.charts.front().id;
+    CHECK_FALSE(wormedit::convert_document(song, request));
+}
+
 TEST_CASE("conversion rejects incompatible policy and publishes no partial output",
           "[unit][format][conversion]") {
     const auto song = stepmania_song();

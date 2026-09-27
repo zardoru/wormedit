@@ -2556,9 +2556,15 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.waveform_overview_visible_end_fraction = 0.0;
     view.waveform_beat_zero_visible = false;
     view.waveform_beat_zero_fraction = 0.0;
+    view.waveform_overview_total_frames = 0;
     view.waveform_overview_sample_rate = 0;
     view.waveform_audio_offset_numerator = 0;
     view.waveform_audio_offset_denominator = 1;
+    view.waveform_offset_drag_active = false;
+    view.waveform_proposed_beat_zero_visible = false;
+    view.waveform_proposed_beat_zero_fraction = 0.0;
+    view.waveform_proposed_audio_offset_numerator = 0;
+    view.waveform_proposed_audio_offset_denominator = 1;
     view.waveform_timing_locked = application_state.timing_locked;
     view.waveform_analysis_pending = false;
     view.beat_marker_navigation_available = false;
@@ -8328,6 +8334,30 @@ int main(int argc, char** argv) {
                             overview.beat_zero_fraction.value_or(0.0);
                         compose.waveform_overview_sample_rate =
                             waveform_analysis->waveform->sample_rate;
+                        compose.waveform_overview_total_frames =
+                            waveform_analysis->waveform->total_frames;
+                        if (audio_offset_drag && audio_offset_drag_tab &&
+                            *audio_offset_drag_tab == wormedit::workspace_tab_t::compose &&
+                            audio_offset_drag->chart == *workspace.selected_chart &&
+                            audio_offset_drag->document_revision == history.document.revision) {
+                            compose.waveform_offset_drag_active = true;
+                            compose.waveform_proposed_audio_offset_numerator =
+                                audio_offset_drag->proposed_offset_seconds.numerator;
+                            compose.waveform_proposed_audio_offset_denominator =
+                                audio_offset_drag->proposed_offset_seconds.denominator;
+                            const auto proposed_fraction =
+                                static_cast<long double>(
+                                    audio_offset_drag->proposed_offset_seconds.numerator) *
+                                waveform_analysis->waveform->sample_rate /
+                                audio_offset_drag->proposed_offset_seconds.denominator /
+                                waveform_analysis->waveform->total_frames;
+                            compose.waveform_proposed_beat_zero_visible =
+                                std::isfinite(proposed_fraction) && proposed_fraction >= 0.0L &&
+                                proposed_fraction <= 1.0L;
+                            if (compose.waveform_proposed_beat_zero_visible)
+                                compose.waveform_proposed_beat_zero_fraction =
+                                    static_cast<double>(proposed_fraction);
+                        }
                         compose_scene_cache.waveform_overview_total_frames =
                             waveform_analysis->waveform->total_frames;
                         compose_scene_cache.waveform_overview_sample_rate =

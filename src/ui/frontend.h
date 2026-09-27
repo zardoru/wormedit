@@ -634,9 +634,15 @@ typedef struct WormUiComposeView {
     double waveform_overview_visible_end_fraction;
     bool waveform_beat_zero_visible;
     double waveform_beat_zero_fraction;
+    uint64_t waveform_overview_total_frames;
     uint32_t waveform_overview_sample_rate;
     int64_t waveform_audio_offset_numerator;
     uint64_t waveform_audio_offset_denominator;
+    bool waveform_offset_drag_active;
+    bool waveform_proposed_beat_zero_visible;
+    double waveform_proposed_beat_zero_fraction;
+    int64_t waveform_proposed_audio_offset_numerator;
+    uint64_t waveform_proposed_audio_offset_denominator;
     bool waveform_timing_locked;
     bool waveform_analysis_pending;
     const WormUiComposeBgmDraftView* bmson_marker_drafts;

@@ -30,6 +30,23 @@ static void reset_bmson_marker_move_capture() {
     state.bmson_marker_move_event_id = 0;
 }
 
+static void set_waveform_offset_drag_action(WormUiWorkspaceAction* action,
+                                            WormUiAudioOffsetDragAction kind,
+                                            std::int64_t delta_frames) {
+    if (!action || action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE)
+        return;
+    action->audio_offset_drag_action = kind;
+    action->audio_offset_drag_chart_id = state.waveform_beat_zero_drag_chart_id;
+    action->audio_offset_drag_document_revision = state.waveform_beat_zero_drag_revision;
+    action->audio_offset_drag_sample_rate = state.waveform_beat_zero_drag_sample_rate;
+    action->audio_offset_drag_delta_frames = delta_frames;
+}
+
+static void reset_waveform_offset_drag() {
+    state.waveform_beat_zero_drag_active = false;
+    state.waveform_beat_zero_drag_delta_frames = 0;
+}
+
 void worm_ui_nuklear_reset_compose_panel() {
     worm_ui_nuklear_reset_compose_markers();
     worm_ui_nuklear_reset_compose_state();
@@ -641,8 +658,16 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
             (std::isfinite(view->waveform_beat_zero_fraction) &&
              view->waveform_beat_zero_fraction >= 0.0 &&
              view->waveform_beat_zero_fraction <= 1.0)) &&
+           (!view->waveform_proposed_beat_zero_visible ||
+            (view->waveform_offset_drag_active &&
+             std::isfinite(view->waveform_proposed_beat_zero_fraction) &&
+             view->waveform_proposed_beat_zero_fraction >= 0.0 &&
+             view->waveform_proposed_beat_zero_fraction <= 1.0)) &&
+           (!view->waveform_offset_drag_active ||
+            view->waveform_proposed_audio_offset_denominator != 0) &&
            (view->waveform_overview_row_count == 0 ||
-            (view->waveform_overview_sample_rate != 0 &&
+            (view->waveform_overview_total_frames != 0 &&
+             view->waveform_overview_sample_rate != 0 &&
              view->waveform_audio_offset_denominator != 0)) &&
            view->semantic_layer_count <= WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY &&
            view->lane_key_binding_count <= WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY &&
@@ -818,6 +843,11 @@ static void process_compose_key_events(struct nk_context* context, const WormUiC
         }
         const bool shortcut = compose_shortcut_modifier(key_event.modifiers);
         if (key_event.keycode == static_cast<uint32_t>(SDLK_ESCAPE)) {
+            if (state.waveform_beat_zero_drag_active) {
+                set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
+                                                state.waveform_beat_zero_drag_delta_frames);
+                reset_waveform_offset_drag();
+            }
             state.bmson_razor_mode = worm_ui_nuklear_bmson_razor_mode_t::off;
             if (state.bmson_marker_move_active) {
                 append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_CANCEL);
@@ -939,6 +969,12 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             cancel_compose_navigation(action);
         }
         if (state.cancel_pending) {
+            if (state.waveform_beat_zero_drag_active) {
+                set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
+                                                state.waveform_beat_zero_drag_delta_frames);
+                reset_waveform_offset_drag();
+            }
+            state.waveform_overview_drag_active = false;
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
             state.cancel_pending = false;
             state.resource_pointer_mode =
@@ -966,6 +1002,12 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             state.last_project_id = view->project_id;
         }
         if (chart_changed || revision_changed) {
+            if (state.waveform_beat_zero_drag_active) {
+                set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
+                                                state.waveform_beat_zero_drag_delta_frames);
+                reset_waveform_offset_drag();
+            }
+            state.waveform_overview_drag_active = false;
             if (state.note_paint_pointer_active || state.semantic_layer_paint_pointer_active ||
                 state.space_range_hold_active || state.note_move_active ||
                 state.bmson_marker_move_active) {
@@ -1628,35 +1670,42 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     const auto render_compose_editor = [&]() {
 
     nk_layout_row_dynamic(context, 18, 1);
-    nk_label(context,
-             state.timing_stage_drag_active
-                 ? "Move timing event · release to keep staged position · Apply to commit"
-             : state.bmson_marker_move_active
-                 ? "Move BMSON BGM marker · release to commit · Esc cancels"
-             : state.resource_pointer_mode ==
-                       worm_ui_nuklear_compose_resource_pointer_mode_t::place
-                 ? "Resource placement armed · click a chart lane · Esc disarms"
-             : state.resource_pointer_mode ==
-                       worm_ui_nuklear_compose_resource_pointer_mode_t::replace
-                 ? "Resource replacement armed · click an existing object · Esc disarms"
-             : state.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off
-                 ? "BMSON razor armed · click/drag in selected BGM lane · Esc disarms"
-             : timing_view->stage_active && timing_view->stage_existing_object_id != 0
-                 ? "Drag outlined timing marker to resnap · edit/apply in side inspector"
-             : view->semantic_layer_paint_mode_active
-                 ? "Layer paint armed · click/drag toggles layer · Esc cancels"
-             : view->semantic_layer_solo_active
-                 ? "Layer solo active · only selected-layer notes shown"
-             : view->note_paint_mode_active
-                 ? "Paint armed · click/drag draws or erases · Esc cancels"
-                 : "↑/↓ move · drag selects/moves · Alt-drag hold · drag BMSON BGM to move",
-             NK_TEXT_LEFT);
+    nk_label(
+        context,
+        state.timing_stage_drag_active
+            ? "Move timing event · release to keep staged position · Apply to commit"
+        : state.waveform_beat_zero_drag_active
+            ? "Move beat zero on waveform overview · release to commit · Esc cancels"
+        : state.bmson_marker_move_active ? "Move BMSON BGM marker · release to commit · Esc cancels"
+        : state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place
+            ? "Resource placement armed · click a chart lane · Esc disarms"
+        : state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::replace
+            ? "Resource replacement armed · click an existing object · Esc disarms"
+        : state.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off
+            ? "BMSON razor armed · click/drag in selected BGM lane · Esc disarms"
+        : timing_view->stage_active && timing_view->stage_existing_object_id != 0
+            ? "Drag outlined timing marker to resnap · edit/apply in side inspector"
+        : view->semantic_layer_paint_mode_active
+            ? "Layer paint armed · click/drag toggles layer · Esc cancels"
+        : view->semantic_layer_solo_active ? "Layer solo active · only selected-layer notes shown"
+        : view->note_paint_mode_active
+            ? "Paint armed · click/drag draws or erases · Esc cancels"
+            : "↑/↓ move · drag selects/moves · Alt-drag hold · drag BMSON BGM to move",
+        NK_TEXT_LEFT);
 
     const bool overview_available = view->waveform_overview_row_count != 0;
     const auto group_bounds = nk_window_get_content_region(context);
     if (overview_available) {
-        const auto offset_seconds = static_cast<double>(view->waveform_audio_offset_numerator) /
-                                    static_cast<double>(view->waveform_audio_offset_denominator);
+        const auto displayed_numerator = view->waveform_offset_drag_active
+                                             ? view->waveform_proposed_audio_offset_numerator
+                                             : view->waveform_audio_offset_numerator;
+        const auto displayed_denominator = view->waveform_offset_drag_active
+                                               ? view->waveform_proposed_audio_offset_denominator
+                                               : view->waveform_audio_offset_denominator;
+        const auto offset_seconds =
+            static_cast<double>(displayed_numerator) / static_cast<double>(displayed_denominator);
+        const bool controls_disabled =
+            view->waveform_timing_locked || view->waveform_offset_drag_active;
         const auto ten_milliseconds =
             static_cast<int64_t>(std::max(1U, view->waveform_overview_sample_rate / 100U));
         const auto nudge = [&](int64_t frames) {
@@ -1669,7 +1718,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             }
         };
         nk_layout_row_begin(context, NK_DYNAMIC, 22, 5);
-        if (view->waveform_timing_locked)
+        if (controls_disabled)
             nk_widget_disable_begin(context);
         nk_layout_row_push(context, 0.13f);
         if (nk_button_label(context, "-10ms"))
@@ -1677,12 +1726,14 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         nk_layout_row_push(context, 0.10f);
         if (nk_button_label(context, "-1f"))
             nudge(-1);
-        if (view->waveform_timing_locked)
+        if (controls_disabled)
             nk_widget_disable_end(context);
         nk_layout_row_push(context, 0.54f);
         nk_labelf(context, NK_TEXT_CENTERED, "Offset %+.6f s%s", offset_seconds,
-                  view->waveform_timing_locked ? " · locked" : "");
-        if (view->waveform_timing_locked)
+                  view->waveform_timing_locked        ? " · locked"
+                  : view->waveform_offset_drag_active ? " · preview"
+                                                      : "");
+        if (controls_disabled)
             nk_widget_disable_begin(context);
         nk_layout_row_push(context, 0.10f);
         if (nk_button_label(context, "+1f"))
@@ -1690,7 +1741,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         nk_layout_row_push(context, 0.13f);
         if (nk_button_label(context, "+10ms"))
             nudge(ten_milliseconds);
-        if (view->waveform_timing_locked)
+        if (controls_disabled)
             nk_widget_disable_end(context);
         nk_layout_row_end(context);
     }
@@ -1746,7 +1797,17 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                                overview_rect.h,
                          overview_rect.y + overview_rect.h - 1.0f);
             nk_stroke_line(canvas, overview_rect.x, zero_y, overview_rect.x + overview_rect.w,
-                           zero_y, 2.0f, nk_rgb(255, 207, 104));
+                           zero_y, view->waveform_offset_drag_active ? 1.0f : 2.0f,
+                           view->waveform_offset_drag_active ? nk_rgba(255, 207, 104, 110)
+                                                             : nk_rgb(255, 207, 104));
+        }
+        if (view->waveform_proposed_beat_zero_visible) {
+            const auto proposed_y = std::min(
+                overview_rect.y + static_cast<float>(view->waveform_proposed_beat_zero_fraction) *
+                                      overview_rect.h,
+                overview_rect.y + overview_rect.h - 1.0f);
+            nk_stroke_line(canvas, overview_rect.x, proposed_y, overview_rect.x + overview_rect.w,
+                           proposed_y, 2.0f, nk_rgb(255, 237, 143));
         }
     }
 
@@ -1755,22 +1816,10 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         nk_input_is_mouse_click_in_rect(&context->input, NK_BUTTON_LEFT, viewport);
     const auto& left_button = context->input.mouse.buttons[NK_BUTTON_LEFT];
     const bool overview_pressed =
-        overview_available &&
+        overview_available && overview_rect.w > 1.0f && overview_rect.h > 1.0f &&
         nk_input_is_mouse_click_in_rect(&context->input, NK_BUTTON_LEFT, overview_rect);
     if (overview_pressed && window_focused && view->scene_available) {
-        state.waveform_overview_drag_active = true;
         state.keyboard_focus = true;
-    }
-    if (!window_focused || !left_button.down) {
-        state.waveform_overview_drag_active = false;
-    }
-    if (state.waveform_overview_drag_active && action &&
-        (overview_pressed || nk_input_is_mouse_moved(&context->input)) &&
-        action->compose_input_count < WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {
-        append_compose_input(action, WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK);
-        action->compose_inputs[action->compose_input_count - 1].audio_fraction = std::clamp(
-            (static_cast<double>(context->input.mouse.pos.y) - overview_rect.y) / overview_rect.h,
-            0.0, 1.0);
     }
     const bool pointer_pressed_in_view = left_button.down && left_button.clicked != 0 &&
                                          left_button.clicked_pos.x >= viewport.x &&
@@ -1794,6 +1843,83 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         }
     }
     process_compose_key_events(context, view, action, window_focused, ime_composition_active);
+    if (view->waveform_offset_drag_active && !state.waveform_beat_zero_drag_active &&
+        action->audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE)
+        action->audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
+
+    const auto offset_drag_delta = [&]() -> std::int64_t {
+        if (state.waveform_beat_zero_drag_height <= 0.0f)
+            return 0;
+        const auto frames = (static_cast<long double>(context->input.mouse.pos.y) -
+                             state.waveform_beat_zero_drag_anchor_y) /
+                            state.waveform_beat_zero_drag_height *
+                            state.waveform_beat_zero_drag_total_frames;
+        const auto minimum = static_cast<long double>(std::numeric_limits<std::int64_t>::min());
+        const auto maximum = static_cast<long double>(std::numeric_limits<std::int64_t>::max());
+        if (frames <= minimum)
+            return std::numeric_limits<std::int64_t>::min();
+        if (frames >= maximum)
+            return std::numeric_limits<std::int64_t>::max();
+        return static_cast<std::int64_t>(std::round(frames));
+    };
+    if (state.waveform_beat_zero_drag_active) {
+        const bool matches =
+            overview_available && window_focused && view->scene_available &&
+            !view->waveform_timing_locked &&
+            view->chart_id == state.waveform_beat_zero_drag_chart_id &&
+            view->document_revision == state.waveform_beat_zero_drag_revision &&
+            view->selected_audio_asset_id == state.waveform_beat_zero_drag_asset_id &&
+            view->waveform_overview_total_frames == state.waveform_beat_zero_drag_total_frames &&
+            view->waveform_overview_sample_rate == state.waveform_beat_zero_drag_sample_rate &&
+            overview_rect.h == state.waveform_beat_zero_drag_height &&
+            (view->waveform_offset_drag_active || overview_pressed);
+        if (!matches ||
+            (!left_button.down && !nk_input_is_mouse_released(&context->input, NK_BUTTON_LEFT))) {
+            set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
+                                            state.waveform_beat_zero_drag_delta_frames);
+            reset_waveform_offset_drag();
+        } else if (nk_input_is_mouse_released(&context->input, NK_BUTTON_LEFT)) {
+            const auto delta = offset_drag_delta();
+            set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_COMMIT, delta);
+            reset_waveform_offset_drag();
+        } else if (left_button.down && nk_input_is_mouse_moved(&context->input)) {
+            const auto delta = offset_drag_delta();
+            state.waveform_beat_zero_drag_delta_frames = delta;
+            set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_UPDATE, delta);
+        }
+    } else if (overview_pressed && window_focused && view->scene_available &&
+               view->waveform_beat_zero_visible && !view->waveform_timing_locked &&
+               !view->waveform_offset_drag_active &&
+               action->audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE &&
+               std::abs(static_cast<double>(left_button.clicked_pos.y) -
+                        (overview_rect.y + view->waveform_beat_zero_fraction * overview_rect.h)) <=
+                   7.0) {
+        state.waveform_overview_drag_active = false;
+        state.waveform_beat_zero_drag_active = true;
+        state.waveform_beat_zero_drag_anchor_y = left_button.clicked_pos.y;
+        state.waveform_beat_zero_drag_height = overview_rect.h;
+        state.waveform_beat_zero_drag_total_frames = view->waveform_overview_total_frames;
+        state.waveform_beat_zero_drag_chart_id = view->chart_id;
+        state.waveform_beat_zero_drag_revision = view->document_revision;
+        state.waveform_beat_zero_drag_asset_id = view->selected_audio_asset_id;
+        state.waveform_beat_zero_drag_sample_rate = view->waveform_overview_sample_rate;
+        state.waveform_beat_zero_drag_delta_frames = 0;
+        set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_BEGIN, 0);
+    } else if (overview_pressed && window_focused && view->scene_available &&
+               !view->waveform_offset_drag_active &&
+               action->audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
+        state.waveform_overview_drag_active = true;
+    }
+    if (!window_focused || !left_button.down)
+        state.waveform_overview_drag_active = false;
+    if (state.waveform_overview_drag_active && action &&
+        (overview_pressed || nk_input_is_mouse_moved(&context->input)) &&
+        action->compose_input_count < WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {
+        append_compose_input(action, WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK);
+        action->compose_inputs[action->compose_input_count - 1].audio_fraction = std::clamp(
+            (static_cast<double>(context->input.mouse.pos.y) - overview_rect.y) / overview_rect.h,
+            0.0, 1.0);
+    }
 
     const auto pointer_x = (static_cast<double>(context->input.mouse.pos.x) - viewport.x) *
                            view->viewport_width_pixels / viewport.w;
@@ -1916,13 +2042,12 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             }
         }
     }
-    const auto compose_pointer_captured = state.note_paint_pointer_active ||
-                                          state.bmson_razor_pointer_active ||
-                                          state.bmson_marker_move_active ||
-                                          state.semantic_layer_paint_pointer_active ||
-                                          state.pointer_hold_active || state.lane_hold_active ||
-                                          state.note_move_active || state.area_selection_active ||
-                                          state.timing_stage_drag_active;
+    const auto compose_pointer_captured =
+        state.note_paint_pointer_active || state.bmson_razor_pointer_active ||
+        state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
+        state.pointer_hold_active || state.lane_hold_active || state.note_move_active ||
+        state.area_selection_active || state.timing_stage_drag_active ||
+        state.waveform_beat_zero_drag_active;
     action->compose_has_pointer_hover = !state.action_overflowed && window_focused &&
                                         view->scene_available && pointer_in_note_field &&
                                         !compose_pointer_captured;

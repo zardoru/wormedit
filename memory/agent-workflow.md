@@ -4,8 +4,8 @@ Use this workflow when collaboration agents are available.
 
 ## Roles
 
-- **Coordinator:** `gpt-5.6-sol`, high reasoning. Owns scope decomposition, requirement traceability, file ownership, source selection, acceptance criteria, and review. It does not hand an ambiguous design problem to the executor.
-- **Executor:** `gpt-5.6-luna`, high reasoning. Receives a narrow written brief, edits the assigned files, runs the specified checks, and reports exact changes, evidence, and unresolved issues.
+- **Coordinator:** `gpt-6-sol`, medium reasoning. Owns scope decomposition, requirement traceability, file ownership, source selection, acceptance criteria, and review. It does not hand an ambiguous design problem to the executor.
+- **Executor:** `gpt-6-luna`, medium reasoning. Receives a narrow written brief, edits the assigned files, runs the specified checks, and reports exact changes, evidence, and unresolved issues.
 - **Root integrator:** owns the user conversation, resolves cross-task decisions, prevents conflicting edits, checks the coordinator's review, and updates the owning slice linked from [`chart-editor-status.md`](chart-editor-status.md).
 
 ## Cycle

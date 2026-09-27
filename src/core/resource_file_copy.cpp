@@ -263,6 +263,23 @@ static auto copy_resource_file_to_relative_directory(
         fs::remove(temporary, error);
         return failure(project_asset_copy_status_t::cancelled, "Copy cancelled.");
     }
+    if (request.validate_temporary) {
+        bool valid{};
+        try {
+            valid = request.validate_temporary(temporary);
+        } catch (...) {
+            valid = false;
+        }
+        if (!valid) {
+            fs::remove(temporary, error);
+            return failure(project_asset_copy_status_t::validation_failed,
+                           "Copied asset failed validation before publication.");
+        }
+    }
+    if (stop.stop_requested()) {
+        fs::remove(temporary, error);
+        return failure(project_asset_copy_status_t::cancelled, "Copy cancelled.");
+    }
 #if defined(_WIN32)
     const auto installed =
         MoveFileExW(temporary.c_str(), destination.c_str(), MOVEFILE_WRITE_THROUGH) != 0;
@@ -332,7 +349,8 @@ auto copy_resource_file_into_export(const export_asset_copy_request_t& request,
     const project_asset_copy_request_t copy{.project_directory = request.project_directory,
                                             .source_path = request.source_path,
                                             .asset = request.asset,
-                                            .maximum_bytes = request.maximum_bytes};
+                                            .maximum_bytes = request.maximum_bytes,
+                                            .validate_temporary = request.validate_temporary};
     return copy_resource_file_to_relative_directory(copy, *directory, stop);
 }
 

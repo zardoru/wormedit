@@ -1,4 +1,5 @@
 #include <wormedit/audio/decoder.h>
+#include <wormedit/core/resource_file_copy.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -7,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <filesystem>
 #include <numbers>
 #include <span>
@@ -50,8 +52,35 @@ auto fixture_audio_path(std::string_view name, std::string_view extension)
            (std::string(name) + "." + std::string(extension));
 }
 
-auto open_fixture(wormedit::audio::decoder_t& decoder,
-                  const std::filesystem::path& path) -> bool {
+TEST_CASE("audio import-copy validates the byte-verified temporary before publication",
+          "[unit][audio][resources]") {
+    const auto root = std::filesystem::temp_directory_path() /
+                      ("wormedit-audio-import-copy-" +
+                       std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    REQUIRE(std::filesystem::create_directory(root));
+    for (const auto extension : {"ogg", "mp3"}) {
+        wormedit::project_asset_copy_request_t request{
+            .project_directory = root,
+            .source_path = fixture_audio_path("keysound-c4", extension),
+            .asset = wormedit::asset_id_t{extension[0] == 'o' ? 1U : 2U}};
+        bool validated{};
+        request.validate_temporary = [&](const std::filesystem::path& temporary) {
+            wormedit::audio::decoder_t decoder;
+            validated = decoder.open(temporary);
+            return validated;
+        };
+        const auto copied = wormedit::copy_resource_file_into_project(request);
+        INFO("extension: " << extension << ", status: " << static_cast<int>(copied.status)
+                           << ", message: " << copied.message);
+        CHECK(validated);
+        CHECK(copied);
+    }
+    std::error_code error;
+    std::filesystem::remove_all(root, error);
+    CHECK_FALSE(error);
+}
+
+auto open_fixture(wormedit::audio::decoder_t& decoder, const std::filesystem::path& path) -> bool {
     std::string error;
     const auto opened = decoder.open(path, &error);
     INFO("decoder open error: " << error);

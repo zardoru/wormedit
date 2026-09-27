@@ -240,6 +240,8 @@ typedef struct WormUiMetadataView {
     const char* project_directory;
     const char* selected_music_source;
     uint64_t selected_music_asset_id;
+    uint64_t next_import_asset_id;
+    bool import_copy_pending;
     size_t selected_music_resource_count;
     size_t selected_music_channel_count;
     const struct WormUiComposeOutputGroupView* output_groups;
@@ -1344,6 +1346,8 @@ typedef struct WormUiWorkspaceAction {
     size_t metadata_search_tag_count;
     bool metadata_inspect_copy;
     bool metadata_inspect_export;
+    bool metadata_import_copy_project;
+    bool metadata_import_copy_export;
     bool metadata_format_chart_scoped;
     uint8_t metadata_format_family;
     size_t metadata_format_index;

@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <stop_token>
 #include <string>
@@ -18,6 +19,7 @@ enum class project_asset_copy_status_t {
     source_unavailable,
     destination_collision,
     io_error,
+    validation_failed,
     cancelled,
 };
 
@@ -26,6 +28,10 @@ struct project_asset_copy_request_t {
     std::filesystem::path source_path;
     asset_id_t asset;
     std::uintmax_t maximum_bytes{64ULL * 1024ULL * 1024ULL * 1024ULL};
+    // Runs on the private, byte-verified temporary before publication. A
+    // failed validator removes that temporary and leaves the destination
+    // untouched. Existing identical destinations do not need publication.
+    std::function<bool(const std::filesystem::path&)> validate_temporary{};
 };
 
 struct export_asset_copy_request_t {
@@ -37,6 +43,7 @@ struct export_asset_copy_request_t {
     std::filesystem::path relative_output_path;
     asset_id_t asset;
     std::uintmax_t maximum_bytes{64ULL * 1024ULL * 1024ULL * 1024ULL};
+    std::function<bool(const std::filesystem::path&)> validate_temporary{};
 };
 
 [[nodiscard]] auto export_asset_directory(const std::filesystem::path& relative_output_path)

@@ -105,6 +105,42 @@ TEST_CASE("project asset inspection reports availability and conflicts without w
               wormedit::project_asset_copy_status_t::destination_collision);
 }
 
+TEST_CASE("project asset validation rejects a temporary before publishing its name",
+          "[unit][core][resources]") {
+    temporary_directory_t directory;
+    const auto source = directory.path / "music.wav";
+    write_text(source, "audio bytes");
+    bool examined{};
+    const wormedit::project_asset_copy_request_t request{
+        .project_directory = directory.path,
+        .source_path = source,
+        .asset = wormedit::asset_id_t{17},
+        .validate_temporary = [&](const std::filesystem::path& temporary) {
+            examined = true;
+            return read_text(temporary) == "different bytes";
+        }};
+    const auto rejected = wormedit::copy_resource_file_into_project(request);
+    CHECK(examined);
+    CHECK(rejected.status == wormedit::project_asset_copy_status_t::validation_failed);
+    CHECK_FALSE(std::filesystem::exists(directory.path / "assets/17-music.wav"));
+    CHECK(std::filesystem::is_empty(directory.path / "assets"));
+    std::stop_source cancelled;
+    auto interrupted = request;
+    interrupted.validate_temporary = [&](const auto&) {
+        cancelled.request_stop();
+        return true;
+    };
+    CHECK(wormedit::copy_resource_file_into_project(interrupted, cancelled.get_token()).status ==
+          wormedit::project_asset_copy_status_t::cancelled);
+    CHECK(std::filesystem::is_empty(directory.path / "assets"));
+    auto accepted = request;
+    accepted.validate_temporary = [](const auto& temporary) {
+        return read_text(temporary) == "audio bytes";
+    };
+    CHECK(wormedit::copy_resource_file_into_project(accepted).status ==
+          wormedit::project_asset_copy_status_t::copied);
+}
+
 TEST_CASE("project asset copy validates relative sources, limits, and cancellation",
           "[unit][core][resources]") {
     temporary_directory_t directory;
@@ -189,6 +225,23 @@ TEST_CASE("export asset inspection recovers identical staged copies without writ
     if (!error)
         CHECK(wormedit::inspect_export_asset_copy(request).status ==
               wormedit::project_asset_copy_status_t::destination_collision);
+}
+
+TEST_CASE("export asset validation rejects a temporary before publication",
+          "[unit][core][resources]") {
+    temporary_directory_t directory;
+    const auto source = directory.path / "music.ogg";
+    write_text(source, "audio bytes");
+    const wormedit::export_asset_copy_request_t request{
+        .project_directory = directory.path,
+        .source_path = source,
+        .relative_output_path = "exports/chart.bmson",
+        .asset = wormedit::asset_id_t{19},
+        .validate_temporary = [](const auto&) { return false; }};
+    CHECK(wormedit::copy_resource_file_into_export(request).status ==
+          wormedit::project_asset_copy_status_t::validation_failed);
+    CHECK_FALSE(std::filesystem::exists(directory.path / "exports/assets/19-music.ogg"));
+    CHECK(std::filesystem::is_empty(directory.path / "exports/assets"));
 }
 
 TEST_CASE("export asset copy rejects traversal and symlinked output directories",

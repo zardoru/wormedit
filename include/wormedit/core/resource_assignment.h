@@ -31,18 +31,28 @@ struct create_resource_action_t {
 // Returns the next usable catalog entry in document order for a placement
 // role. The picker stops at the end; it never wraps to the first resource.
 [[nodiscard]] auto next_eligible_placement_resource(const song_document_t& document,
-                                                    resource_id_t current,
-                                                    resource_role_t role)
+                                                    resource_id_t current, resource_role_t role)
     -> std::optional<resource_id_t>;
 
 struct import_resource_asset_action_t {
     std::filesystem::path source_path;
+    // Optional project-relative path of a validated, published import copy.
+    // An export copy may leave this empty and register the external source.
+    // Both copied workflows reserve an asset ID before background publication.
+    std::optional<std::filesystem::path> copied_project_relative_path;
+    std::optional<asset_id_t> expected_new_asset_id;
     resource_role_t role{resource_role_t::sample};
     std::string name;
     bool allocate_bms_identifier{};
     std::optional<audio_stream_info_t> audio_stream;
     std::optional<std::pair<std::uint32_t, std::uint32_t>> image_geometry;
 };
+
+// Returns the ID the next imported asset will receive, subject to the catalog
+// limit. A background copy can use it as a reservation; the import command
+// checks it again against the expected document revision before committing.
+[[nodiscard]] auto next_resource_asset_id(const song_document_t& document)
+    -> std::optional<asset_id_t>;
 
 // Registers one externally validated absolute source file and its first
 // catalog entry in one history command. File probing belongs to the caller.

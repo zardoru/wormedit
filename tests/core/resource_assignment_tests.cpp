@@ -144,13 +144,13 @@ TEST_CASE("resource creation rejects stale revisions and wrong asset types atomi
 TEST_CASE("resource import registers decoded asset and catalog entry in one history command",
           "[unit][core][resources]") {
     auto history = make_document_history(assignment_song());
-    const auto imported = apply_resource_asset_import(
-        history, 4,
-        {.source_path = "/tmp/new-audio.wav",
-         .role = resource_role_t::sample,
-         .name = "New audio",
-         .allocate_bms_identifier = true,
-         .audio_stream = audio_stream_info_t{48'000, 2, 48'000, true}});
+    const auto imported =
+        apply_resource_asset_import(history, 4,
+                                    {.source_path = "/tmp/new-audio.wav",
+                                     .role = resource_role_t::sample,
+                                     .name = "New audio",
+                                     .allocate_bms_identifier = true,
+                                     .audio_stream = audio_stream_info_t{48'000, 2, 48'000, true}});
     REQUIRE(imported);
     REQUIRE(history.document.audio_assets.size() == 4);
     REQUIRE(history.document.resources.size() == 6);
@@ -163,11 +163,11 @@ TEST_CASE("resource import registers decoded asset and catalog entry in one hist
     REQUIRE(redo_document_command(history));
     CHECK(history.document.resources.size() == 6);
 
-    const auto reused = apply_resource_asset_import(
-        history, history.document.revision,
-        {.source_path = "/tmp/new-audio.wav",
-         .role = resource_role_t::bgm,
-         .audio_stream = audio_stream_info_t{48'000, 2, 48'000, true}});
+    const auto reused =
+        apply_resource_asset_import(history, history.document.revision,
+                                    {.source_path = "/tmp/new-audio.wav",
+                                     .role = resource_role_t::bgm,
+                                     .audio_stream = audio_stream_info_t{48'000, 2, 48'000, true}});
     REQUIRE(reused);
     CHECK(history.document.audio_assets.size() == 4);
     CHECK(history.document.resources.back().asset == history.document.audio_assets.back().id);
@@ -176,27 +176,79 @@ TEST_CASE("resource import registers decoded asset and catalog entry in one hist
 TEST_CASE("resource import rejects path and decoded-type errors without partial assets",
           "[unit][core][resources]") {
     auto history = make_document_history(assignment_song());
-    CHECK(has_code(apply_resource_asset_import(
-                       history, 3,
-                       {.source_path = "/tmp/new.png",
-                        .role = resource_role_t::bga,
-                        .image_geometry = std::pair{640U, 480U}}),
+    CHECK(has_code(apply_resource_asset_import(history, 3,
+                                               {.source_path = "/tmp/new.png",
+                                                .role = resource_role_t::bga,
+                                                .image_geometry = std::pair{640U, 480U}}),
                    diagnostic_code_t::invalid_id));
-    CHECK(has_code(apply_resource_asset_import(
-                       history, 4,
-                       {.source_path = "relative.png",
-                        .role = resource_role_t::bga,
-                        .image_geometry = std::pair{640U, 480U}}),
+    CHECK(has_code(apply_resource_asset_import(history, 4,
+                                               {.source_path = "relative.png",
+                                                .role = resource_role_t::bga,
+                                                .image_geometry = std::pair{640U, 480U}}),
                    diagnostic_code_t::invalid_id));
-    CHECK(has_code(apply_resource_asset_import(
-                       history, 4,
-                       {.source_path = "/tmp/new.png",
-                        .role = resource_role_t::bga,
-                        .audio_stream = audio_stream_info_t{48'000, 2, 100, true}}),
-                   diagnostic_code_t::unsupported_feature));
+    CHECK(has_code(
+        apply_resource_asset_import(history, 4,
+                                    {.source_path = "/tmp/new.png",
+                                     .role = resource_role_t::bga,
+                                     .audio_stream = audio_stream_info_t{48'000, 2, 100, true}}),
+        diagnostic_code_t::unsupported_feature));
     CHECK(history.document.visual_assets.size() == 2);
     CHECK(history.document.resources.size() == 5);
     CHECK(history.undo.empty());
+}
+
+TEST_CASE("copied resource import binds a reserved project path in one undo command",
+          "[unit][core][resources]") {
+    auto history = make_document_history(assignment_song());
+    const auto reserved = next_resource_asset_id(history.document);
+    REQUIRE(reserved);
+    const auto relative =
+        std::filesystem::path{"assets"} / (std::to_string(reserved->value) + "-new-audio.wav");
+    const import_resource_asset_action_t action{.source_path = "/tmp/new-audio.wav",
+                                                .copied_project_relative_path = relative,
+                                                .expected_new_asset_id = *reserved,
+                                                .role = resource_role_t::bgm,
+                                                .name = "Copied audio",
+                                                .audio_stream =
+                                                    audio_stream_info_t{48'000, 2, 48'000, true}};
+    const auto imported = apply_resource_asset_import(history, history.document.revision, action);
+    REQUIRE(imported);
+    CHECK(history.document.audio_assets.back().id == *reserved);
+    CHECK(history.document.audio_assets.back().source_path == relative);
+    CHECK(history.document.resources.back().asset == *reserved);
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.audio_assets.size() == 3);
+    CHECK(history.document.resources.size() == 5);
+    REQUIRE(redo_document_command(history));
+    CHECK(history.document.audio_assets.back().source_path == relative);
+
+    auto invalid = action;
+    invalid.copied_project_relative_path = "assets/../outside.wav";
+    CHECK(has_code(apply_resource_asset_import(history, history.document.revision, invalid),
+                   diagnostic_code_t::invalid_id));
+    invalid = action;
+    invalid.expected_new_asset_id = asset_id_t{reserved->value + 8};
+    CHECK(has_code(apply_resource_asset_import(history, history.document.revision, invalid),
+                   diagnostic_code_t::invalid_id));
+}
+
+TEST_CASE("export-staged import reserves a new asset while retaining its external source",
+          "[unit][core][resources]") {
+    auto history = make_document_history(assignment_song());
+    const auto reserved = next_resource_asset_id(history.document);
+    REQUIRE(reserved);
+    const import_resource_asset_action_t action{.source_path = "/tmp/export-audio.ogg",
+                                                .expected_new_asset_id = *reserved,
+                                                .role = resource_role_t::bgm,
+                                                .audio_stream =
+                                                    audio_stream_info_t{44'100, 2, 22'050, true}};
+    REQUIRE(apply_resource_asset_import(history, history.document.revision, action));
+    CHECK(history.document.audio_assets.back().id == *reserved);
+    CHECK(history.document.audio_assets.back().source_path == action.source_path);
+    CHECK(history.undo.size() == 1);
+    CHECK(has_code(apply_resource_asset_import(history, history.document.revision, action),
+                   diagnostic_code_t::invalid_id));
 }
 
 TEST_CASE("visual resource import records decoded geometry and BMP identity",

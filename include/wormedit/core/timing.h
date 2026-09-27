@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/grid.h>
 #include <wormedit/core/timing_discontinuity.h>
 
 #include <algorithm>
@@ -143,6 +144,10 @@ struct sample_frame_result_t {
                                       timing_build_options_t options = {}) -> timing_build_result_t;
 
 [[nodiscard]] auto timing_at(const timing_index_t& index, std::uint64_t absolute_row,
+                             timing_boundary_side_t side = timing_boundary_side_t::event)
+    -> timing_query_result_t;
+
+[[nodiscard]] auto timing_at(const timing_index_t& index, exact_chart_row_t absolute_row,
                              timing_boundary_side_t side = timing_boundary_side_t::event)
     -> timing_query_result_t;
 

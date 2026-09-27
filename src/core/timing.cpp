@@ -938,6 +938,29 @@ auto timing_at(const timing_index_t& index, std::uint64_t absolute_row, timing_b
     return {.seconds = *seconds};
 }
 
+auto timing_at(const timing_index_t& index, exact_chart_row_t absolute_row,
+               timing_boundary_side_t side) -> timing_query_result_t {
+    if (absolute_row.fractional_rows.numerator == 0 &&
+        absolute_row.fractional_rows.denominator != 0) {
+        return timing_at(index, absolute_row.whole_rows, side);
+    }
+    if (absolute_row.whole_rows > maximum_i64_magnitude ||
+        absolute_row.fractional_rows.numerator > maximum_i64_magnitude ||
+        absolute_row.fractional_rows.denominator == 0 ||
+        absolute_row.fractional_rows.numerator >= absolute_row.fractional_rows.denominator) {
+        return {.error = error(timing_error_code_t::position_out_of_range,
+                               "fractional timing row lies outside chart geometry")};
+    }
+    const auto row = add_exact({static_cast<std::int64_t>(absolute_row.whole_rows), 1},
+                               {static_cast<std::int64_t>(absolute_row.fractional_rows.numerator),
+                                absolute_row.fractional_rows.denominator});
+    if (!row) {
+        return {.error = error(timing_error_code_t::arithmetic_overflow,
+                               "fractional timing row exceeds exact arithmetic bounds")};
+    }
+    return timing_seconds_at_row(index, *row, side);
+}
+
 auto timing_at(const timing_index_t& index, const measure_index_t& measures,
                local_position_t position, timing_boundary_side_t side) -> timing_query_result_t {
     const auto row = absolute_row(measures, position);

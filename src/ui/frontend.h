@@ -600,6 +600,8 @@ typedef struct WormUiComposeView {
     size_t lane_count;
     const WormUiComposeGridLineView* grid_lines;
     size_t grid_line_count;
+    const WormUiComposeGridLineView* proposed_grid_lines;
+    size_t proposed_grid_line_count;
     const WormUiTimingMarkerView* timing_markers;
     size_t timing_marker_count;
     uint8_t timing_lane_visibility_mask;

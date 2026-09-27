@@ -448,6 +448,12 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
             std::abs(view->grid_lines[index].y_pixels) > 10000000.0)
             return 0;
     }
+    for (size_t index = 0; index < view->proposed_grid_line_count; ++index) {
+        if (!std::isfinite(view->proposed_grid_lines[index].y_pixels) ||
+            view->proposed_grid_lines[index].y_pixels < 0.0 ||
+            view->proposed_grid_lines[index].y_pixels > view->viewport_height_pixels)
+            return 0;
+    }
     for (size_t index = 0; index < view->timing_marker_count; ++index) {
         const auto& marker = view->timing_markers[index];
         if (marker.object_id == 0 || !std::isfinite(marker.marker_y_pixels) ||
@@ -639,6 +645,8 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            (view->bmson_marker_draft_count == 0 || view->bmson_marker_drafts != nullptr) &&
            view->lane_count <= WORM_UI_COMPOSE_LANE_CAPACITY &&
            view->grid_line_count <= WORM_UI_COMPOSE_GRID_CAPACITY &&
+           view->proposed_grid_line_count <= WORM_UI_COMPOSE_GRID_CAPACITY &&
+           (view->proposed_grid_line_count == 0 || view->waveform_offset_drag_active) &&
            view->timing_marker_count <= WORM_UI_TIMING_MARKER_CAPACITY &&
            view->difference_count <= WORM_UI_COMPOSE_DIFFERENCE_CAPACITY &&
            view->hold_body_count <= WORM_UI_COMPOSE_HOLD_CAPACITY &&
@@ -676,6 +684,7 @@ int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
            view->branch_diagnostic_count <= WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY &&
            (view->band_count == 0 || view->bands) && (view->lane_count == 0 || view->lanes) &&
            (view->grid_line_count == 0 || view->grid_lines) &&
+           (view->proposed_grid_line_count == 0 || view->proposed_grid_lines) &&
            (view->timing_marker_count == 0 || view->timing_markers) &&
            (view->difference_count == 0 || view->differences) &&
            (view->hold_body_count == 0 || view->hold_bodies) &&
@@ -2742,6 +2751,16 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                  context->style.font, nk_rgb(18, 21, 29), nk_rgb(174, 185, 203));
                 }
             }
+        }
+        for (size_t index = 0; index < view->proposed_grid_line_count; ++index) {
+            const auto& line = view->proposed_grid_lines[index];
+            const auto y = viewport.y + static_cast<float>(line.y_pixels) * viewport.h /
+                                            static_cast<float>(view->viewport_height_pixels);
+            const auto color = line.kind == 3                     ? nk_rgba(255, 207, 104, 230)
+                               : line.kind == 1 || line.kind == 2 ? nk_rgba(255, 207, 104, 155)
+                                                                  : nk_rgba(255, 207, 104, 75);
+            nk_stroke_line(canvas, viewport.x, y, viewport.x + viewport.w, y,
+                           line.kind == 3 ? 1.6f : 1.0f, color);
         }
         for (size_t index = 0; index < view->timing_marker_count; ++index) {
             const auto& marker = view->timing_markers[index];

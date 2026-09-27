@@ -79,6 +79,31 @@ TEST_CASE("exact timing distinguishes delay event and stop departure boundaries"
     CHECK(seconds_at(timing, 1'200) == signed_rational_t{5, 1});
 }
 
+TEST_CASE("fractional grid rows retain exact timing across tempo and warp boundaries",
+          "[unit][core][timing][grid]") {
+    auto chart = base_chart();
+    const auto built = build_timing_index(chart);
+    REQUIRE(built);
+    const auto& timing = *built.index;
+    const auto before_change = timing_at(timing, exact_chart_row_t{959, {1, 2}});
+    const auto after_change = timing_at(timing, exact_chart_row_t{960, {1, 2}});
+    REQUIRE(before_change);
+    REQUIRE(after_change);
+    CHECK(*before_change.seconds == signed_rational_t{2'879, 960});
+    CHECK(*after_change.seconds == signed_rational_t{1'441, 480});
+    CHECK_FALSE(timing_at(timing, exact_chart_row_t{960, {1, 0}}));
+    CHECK_FALSE(timing_at(timing, exact_chart_row_t{960, {2, 2}}));
+
+    chart.warps.push_back(
+        {.id = object_id_t{30}, .span = {{measure_id_t{1}, 480}, {measure_id_t{2}, 0}}});
+    const auto warped = build_timing_index(chart);
+    REQUIRE(warped);
+    const auto inside = timing_at(*warped.index, exact_chart_row_t{720, {1, 2}});
+    REQUIRE(inside);
+    CHECK(inside.inside_warp);
+    CHECK(*inside.seconds == signed_rational_t{2, 1});
+}
+
 TEST_CASE("warps consume no elapsed time and suppress interior pauses and events",
           "[unit][core][timing][warp]") {
     auto chart = base_chart();

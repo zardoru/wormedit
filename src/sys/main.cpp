@@ -179,6 +179,8 @@ struct flattened_workspace_t {
     std::vector<WormUiComposeBandView> compose_band_storage;
     std::vector<WormUiComposeLaneView> compose_lane_storage;
     std::vector<WormUiComposeGridLineView> compose_grid_storage;
+    std::vector<wormedit::exact_chart_row_t> compose_grid_row_storage;
+    std::vector<WormUiComposeGridLineView> compose_proposed_grid_storage;
     std::vector<WormUiTimingMarkerView> compose_timing_marker_storage;
     std::vector<WormUiComposeDifferenceView> compose_difference_storage;
     std::vector<WormUiComposeHoldView> compose_hold_storage;
@@ -317,6 +319,8 @@ struct compose_scene_cache_t {
     std::optional<wormedit::editor_field_scene_index_t> index;
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
     std::optional<wormedit::timing_index_t> marker_timing_index;
+    std::optional<wormedit::timing_index_t> proposed_offset_timing_index;
+    std::optional<wormedit::signed_rational_t> proposed_offset_seconds;
     std::optional<channel_waveform_selection_t> channel_waveform_selection;
     wormedit::object_id_t channel_waveform_channel;
     const void* channel_waveform_source{};
@@ -2561,6 +2565,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.waveform_audio_offset_numerator = 0;
     view.waveform_audio_offset_denominator = 1;
     view.waveform_offset_drag_active = false;
+    view.proposed_grid_lines = nullptr;
+    view.proposed_grid_line_count = 0;
     view.waveform_proposed_beat_zero_visible = false;
     view.waveform_proposed_beat_zero_fraction = 0.0;
     view.waveform_proposed_audio_offset_numerator = 0;
@@ -2725,6 +2731,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
         cache.index.reset();
         cache.hit_test_index.reset();
         cache.marker_timing_index.reset();
+        cache.proposed_offset_timing_index.reset();
+        cache.proposed_offset_seconds.reset();
         cache.channel_waveform_channel = {};
         cache.channel_waveform_source = nullptr;
         cache.channel_waveform_source_generation = 0;
@@ -3448,8 +3456,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                 static_cast<std::uint32_t>(measure + 1));
     }
     flattened.compose_grid_storage.reserve(line_count);
+    flattened.compose_grid_row_storage.reserve(line_count);
     for (std::size_t index = 0; index < line_count; ++index) {
         const auto& line = lines[index];
+        flattened.compose_grid_row_storage.push_back(line.chart_row);
         const auto measure = measure_numbers.find(line.chart_row.whole_rows);
         flattened.compose_grid_storage.push_back(
             {.y_pixels = line.y_pixels,
@@ -8341,6 +8351,58 @@ int main(int argc, char** argv) {
                             audio_offset_drag->chart == *workspace.selected_chart &&
                             audio_offset_drag->document_revision == history.document.revision) {
                             compose.waveform_offset_drag_active = true;
+                            if (compose_scene_cache.proposed_offset_seconds !=
+                                audio_offset_drag->proposed_offset_seconds) {
+                                compose_scene_cache.proposed_offset_timing_index.reset();
+                                compose_scene_cache.proposed_offset_seconds =
+                                    audio_offset_drag->proposed_offset_seconds;
+                                const auto chart = std::ranges::find(
+                                    history.document.charts, *workspace.selected_chart,
+                                    &wormedit::chart_document_t::id);
+                                if (chart != history.document.charts.end()) {
+                                    auto candidate = *chart;
+                                    candidate.beat_zero_audio_offset_seconds =
+                                        audio_offset_drag->proposed_offset_seconds;
+                                    auto built = wormedit::build_timing_index(candidate);
+                                    if (built) {
+                                        compose_scene_cache.proposed_offset_timing_index =
+                                            std::move(*built.index);
+                                    }
+                                }
+                            }
+                            if (compose_scene_cache.proposed_offset_timing_index) {
+                                auto& proposed = flattened.compose_proposed_grid_storage;
+                                proposed.reserve(flattened.compose_grid_row_storage.size());
+                                const auto& original = *compose_scene_cache.marker_timing_index;
+                                const auto& updated =
+                                    *compose_scene_cache.proposed_offset_timing_index;
+                                for (std::size_t index = 0;
+                                     index < flattened.compose_grid_row_storage.size(); ++index) {
+                                    const auto at = wormedit::timing_at(
+                                        updated, flattened.compose_grid_row_storage[index]);
+                                    if (!at)
+                                        continue;
+                                    const auto position = wormedit::musical_position_at(
+                                        original, *at.seconds, {.extrapolate_before_chart = true});
+                                    if (!position)
+                                        continue;
+                                    const auto& row = *position.absolute_row;
+                                    const auto y =
+                                        (static_cast<long double>(row.numerator) /
+                                         row.denominator) *
+                                            compose.pixels_per_standard_measure /
+                                            original.divisions_per_standard_measure -
+                                        compose_interaction_state->viewport_scroll_pixels;
+                                    if (!std::isfinite(y) || y < 0.0L ||
+                                        y > compose.viewport_height_pixels)
+                                        continue;
+                                    auto line = flattened.compose_grid_storage[index];
+                                    line.y_pixels = static_cast<double>(y);
+                                    proposed.push_back(line);
+                                }
+                                compose.proposed_grid_lines = proposed.data();
+                                compose.proposed_grid_line_count = proposed.size();
+                            }
                             compose.waveform_proposed_audio_offset_numerator =
                                 audio_offset_drag->proposed_offset_seconds.numerator;
                             compose.waveform_proposed_audio_offset_denominator =

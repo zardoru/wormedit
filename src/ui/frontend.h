@@ -518,6 +518,7 @@ typedef struct WormUiComposeView {
     size_t selected_note_count;
     size_t selected_object_count;
     uint64_t selected_bmson_bgm_event_id;
+    uint64_t selected_bmson_note_event_id;
     uint64_t selected_bmson_source_lane_id;
     size_t staged_bmson_marker_count;
     bool beat_marker_navigation_available;
@@ -1038,6 +1039,8 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_COMMIT_STAGED_BMSON_BGM,
     WORM_UI_COMPOSE_ACTION_CANCEL_STAGED_BMSON_BGM,
     WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER,
+    WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE,
+    WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_NOTE_TO_BGM,
     WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE,
     WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL,

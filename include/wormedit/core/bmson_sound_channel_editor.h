@@ -2,6 +2,7 @@
 
 #include <wormedit/core/command.h>
 
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -57,6 +58,14 @@ struct bmson_razor_path_t {
 [[nodiscard]] auto delete_bmson_bgm_marker(document_history_t& history,
                                            std::uint64_t expected_revision,
                                            chart_id_t chart, object_id_t bgm_event)
+    -> document_command_result_t;
+
+// Reassigns one linked BMSON tap between autoplay and a playable lane while
+// retaining its semantic and source-event IDs. A null lane selects BGM.
+[[nodiscard]] auto assign_bmson_sound_event(document_history_t& history,
+                                            std::uint64_t expected_revision, chart_id_t chart,
+                                            object_id_t semantic_event,
+                                            std::optional<lane_id_t> playable_lane)
     -> document_command_result_t;
 
 } // namespace wormedit

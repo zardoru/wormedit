@@ -298,6 +298,27 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         action->compose_action = WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER;
     }
     nk_layout_row_dynamic(context, 24, 2);
+    if (!can_move_bmson)
+        nk_widget_disable_begin(context);
+    const auto assign_to_key_clicked = nk_button_label(context, "BGM to active key lane");
+    if (!can_move_bmson)
+        nk_widget_disable_end(context);
+    const auto can_assign_to_bgm = view->selected_bmson_note_event_id != 0;
+    if (!can_assign_to_bgm)
+        nk_widget_disable_begin(context);
+    const auto assign_to_bgm_clicked = nk_button_label(context, "Selected tap to BGM");
+    if (!can_assign_to_bgm)
+        nk_widget_disable_end(context);
+    if (action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        if (assign_to_key_clicked && can_move_bmson) {
+            action->compose_bmson_bgm_event_id = view->selected_bmson_bgm_event_id;
+            action->compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE;
+        } else if (assign_to_bgm_clicked && can_assign_to_bgm) {
+            action->compose_bmson_bgm_event_id = view->selected_bmson_note_event_id;
+            action->compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_NOTE_TO_BGM;
+        }
+    }
+    nk_layout_row_dynamic(context, 24, 2);
     if (!can_move_bmson) {
         nk_widget_disable_begin(context);
     }

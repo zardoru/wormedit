@@ -458,4 +458,212 @@ auto delete_bmson_bgm_marker(document_history_t& history,
     return commit_document_command(history, std::move(proposed), "Delete BMSON BGM marker");
 }
 
+auto assign_bmson_sound_event(document_history_t& history, std::uint64_t expected_revision,
+                              chart_id_t chart, object_id_t semantic_event,
+                              std::optional<lane_id_t> playable_lane) -> document_command_result_t {
+    if (expected_revision != history.document.revision) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BMSON sound assignment has a stale document revision");
+    }
+    const auto found_chart =
+        std::ranges::find(history.document.charts, chart, &chart_document_t::id);
+    if (!chart || found_chart == history.document.charts.end() ||
+        found_chart->source_family != format_family_t::bmson || !semantic_event ||
+        (playable_lane && !*playable_lane)) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BMSON sound assignment requires a linked event and valid target");
+    }
+    const auto built = build_measure_index(*found_chart);
+    if (!std::holds_alternative<measure_index_t>(built)) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_measure,
+                        "BMSON sound assignment requires valid measure geometry");
+    }
+    const auto& index = std::get<measure_index_t>(built);
+    const note_t* note{};
+    const bgm_event_t* bgm{};
+    for (const auto& measure : found_chart->measures) {
+        if (const auto found = std::ranges::find(measure.notes, semantic_event, &note_t::id);
+            found != measure.notes.end()) {
+            note = &*found;
+        }
+        if (const auto found =
+                std::ranges::find(measure.bgm_events, semantic_event, &bgm_event_t::id);
+            found != measure.bgm_events.end()) {
+            bgm = &*found;
+        }
+    }
+    if ((note == nullptr) == (bgm == nullptr) ||
+        (note && (note->kind != note_kind_t::tap || note->end || note->label || note->branch ||
+                  !note->semantic_layers.empty())) ||
+        (bgm && bgm->branch) || (note && !note->sound_channel_event) ||
+        (bgm && !bgm->sound_channel_event)) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BMSON sound assignment requires one linked tap or BGM marker");
+    }
+    if ((note && playable_lane && note->lane == *playable_lane) || (bgm && !playable_lane)) {
+        return {.applied = false, .revision = history.document.revision, .diagnostics = {}};
+    }
+    const auto position = note ? note->position : bgm->position;
+    const auto target_row = absolute_row(index, position);
+    if (!target_row) {
+        return rejected(history.document.revision, diagnostic_code_t::row_out_of_range,
+                        "BMSON sound assignment target is outside chart geometry");
+    }
+    if (playable_lane) {
+        const lane_layout_t* layout{};
+        std::uint64_t layout_row{};
+        for (const auto& segment : found_chart->lane_layouts) {
+            const auto row = absolute_row(index, segment.position);
+            if (row && *row <= *target_row && (!layout || *row >= layout_row)) {
+                layout = &segment.layout;
+                layout_row = *row;
+            }
+        }
+        const auto editable =
+            layout && std::ranges::any_of(layout->lanes, [&](const auto& lane) {
+                return lane.id == *playable_lane && lane.role != lane_role_t::autoplay &&
+                       lane.role != lane_role_t::invisible && lane.role != lane_role_t::mine;
+            });
+        if (!editable) {
+            return rejected(history.document.revision, diagnostic_code_t::unknown_lane,
+                            "Target playable lane is unavailable at the BMSON marker");
+        }
+        for (const auto& measure : found_chart->measures) {
+            for (const auto& other : measure.notes) {
+                if (other.id == semantic_event || other.lane != *playable_lane) {
+                    continue;
+                }
+                const auto begin = absolute_row(index, other.position);
+                const auto end = other.end ? absolute_row(index, *other.end) : begin;
+                if (begin && end && *begin <= *target_row && *target_row <= *end) {
+                    return rejected(history.document.revision, diagnostic_code_t::collision,
+                                    "Another note occupies the target BMSON playable lane");
+                }
+            }
+        }
+    }
+    const auto source_id = note ? *note->sound_channel_event : *bgm->sound_channel_event;
+    const auto channel =
+        std::ranges::find_if(found_chart->sound_channels, [&](const auto& candidate) {
+            return std::ranges::any_of(candidate.events,
+                                       [&](const auto& event) { return event.id == source_id; });
+        });
+    if (channel == found_chart->sound_channels.end()) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BMSON sound assignment source event is unavailable");
+    }
+    const auto source = std::ranges::find(channel->events, source_id, &sound_channel_event_t::id);
+    if (source == channel->events.end() || source->position != position || source->end ||
+        source->playable != (note != nullptr) || (note && source->lane != note->lane) ||
+        (bgm && source->lane)) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                        "BMSON semantic event and retained source disagree");
+    }
+    if (std::ranges::any_of(channel->events, [&](const auto& other) {
+            return other.id != source_id && other.position == position;
+        })) {
+        return rejected(history.document.revision, diagnostic_code_t::collision,
+                        "Another event shares this BMSON source pulse");
+    }
+    auto proposed = history.document;
+    const auto chart_offset =
+        static_cast<std::size_t>(found_chart - history.document.charts.begin());
+    auto& changed_chart = proposed.charts[chart_offset];
+    const auto channel_offset =
+        static_cast<std::size_t>(channel - found_chart->sound_channels.begin());
+    const auto source_offset = static_cast<std::size_t>(source - channel->events.begin());
+    auto& changed_source = changed_chart.sound_channels[channel_offset].events[source_offset];
+    changed_source.playable = playable_lane.has_value();
+    changed_source.lane = playable_lane.value_or(lane_id_t{});
+    const auto destination =
+        std::ranges::find(changed_chart.measures, position.measure, &measure_chunk_t::id);
+    if (destination == changed_chart.measures.end()) {
+        return rejected(history.document.revision, diagnostic_code_t::invalid_measure,
+                        "BMSON sound assignment measure is unavailable");
+    }
+    auto& changed_measure = *destination;
+    if (playable_lane) {
+        changed_measure.notes.push_back({.id = bgm->id,
+                                         .position = position,
+                                         .lane = *playable_lane,
+                                         .kind = note_kind_t::tap,
+                                         .end = std::nullopt,
+                                         .sound = bgm->sound,
+                                         .sound_channel_event = source_id,
+                                         .provenance = bgm->provenance});
+        std::erase_if(changed_measure.bgm_events,
+                      [semantic_event](const auto& item) { return item.id == semantic_event; });
+    } else {
+        const auto source_order = channel_offset;
+        const auto lane =
+            std::ranges::find_if(changed_chart.bgm_source_lanes, [&](const auto& candidate) {
+                return candidate.source_order == source_order;
+            });
+        object_id_t bgm_lane{};
+        if (lane != changed_chart.bgm_source_lanes.end()) {
+            bgm_lane = lane->id;
+        } else {
+            std::uint64_t largest{};
+            const auto scan = [&](const auto& items) {
+                for (const auto& item : items)
+                    largest = std::max(largest, item.id.value);
+            };
+            scan(changed_chart.bgm_source_lanes);
+            scan(changed_chart.lane_layouts);
+            scan(changed_chart.bpms);
+            scan(changed_chart.pauses);
+            scan(changed_chart.warps);
+            scan(changed_chart.scrolls);
+            scan(changed_chart.speeds);
+            scan(changed_chart.kiai);
+            scan(changed_chart.timing_anchors);
+            scan(changed_chart.bookmarks);
+            scan(changed_chart.sections);
+            scan(changed_chart.bga_events);
+            scan(changed_chart.sound_channels);
+            for (const auto& item : changed_chart.sound_channels)
+                scan(item.events);
+            for (const auto& measure : changed_chart.measures) {
+                scan(measure.notes);
+                scan(measure.bgm_events);
+            }
+            if (largest == std::numeric_limits<std::uint64_t>::max()) {
+                return rejected(history.document.revision, diagnostic_code_t::invalid_id,
+                                "BMSON BGM lane ID space is exhausted");
+            }
+            bgm_lane = object_id_t{largest + 1};
+            const auto insert_at = std::ranges::lower_bound(
+                changed_chart.bgm_source_lanes, source_order, {},
+                &bgm_source_lane_t::source_order);
+            changed_chart.bgm_source_lanes.insert(
+                insert_at, {.id = bgm_lane, .name = channel->name,
+                            .source_order = source_order});
+        }
+        changed_measure.bgm_events.push_back({.id = note->id,
+                                              .position = position,
+                                              .source_lane = bgm_lane,
+                                              .sound = note->sound,
+                                              .sound_channel_event = source_id,
+                                              .structural_slot = 0,
+                                              .provenance = note->provenance});
+        std::erase_if(changed_measure.notes,
+                      [semantic_event](const auto& item) { return item.id == semantic_event; });
+    }
+    const auto asset = std::ranges::find(
+        proposed.audio_assets, changed_chart.sound_channels[channel_offset].source_clip.source,
+        &audio_asset_t::id);
+    if (asset != proposed.audio_assets.end() && asset->stream.sample_rate != 0) {
+        const auto slices =
+            derive_sound_channel_slices(changed_chart, changed_chart.sound_channels[channel_offset],
+                                        asset->stream.sample_rate, asset->stream.frame_count);
+        if (!slices) {
+            return rejected(history.document.revision, diagnostic_code_t::invalid_resolution,
+                            slices.diagnostics.front().message);
+        }
+    }
+    return commit_document_command(history, std::move(proposed),
+                                   playable_lane ? "Assign BMSON sound to playable lane"
+                                                 : "Assign BMSON sound to BGM");
+}
+
 } // namespace wormedit

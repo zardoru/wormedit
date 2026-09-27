@@ -2510,6 +2510,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.timing_lane_visibility_mask = application_state.compose_timing_lane_visibility_mask;
     view.selected_note_count = 0;
     view.selected_bmson_bgm_event_id = 0;
+    view.selected_bmson_note_event_id = 0;
     view.selected_bmson_source_lane_id = 0;
     view.staged_bmson_marker_count = 0;
     view.bmson_marker_drafts = nullptr;
@@ -3074,6 +3075,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
             }
             view.selected_note_label = flattened.compose_selected_note_label_storage.c_str();
             view.selected_note_label_note_id = note_id.value;
+            if (chart.source_family == wormedit::format_family_t::bmson &&
+                note->sound_channel_event && note->kind == wormedit::note_kind_t::tap) {
+                view.selected_bmson_note_event_id = note_id.value;
+            }
             break;
         }
     }
@@ -5618,6 +5623,44 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                        : rebound.diagnostics.front().message;
         }
         return "Resource placed at the edit cursor.";
+    }
+    case WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE:
+    case WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_NOTE_TO_BGM: {
+        if (editor_interaction_has_pending_gesture(state)) {
+            return "Finish or cancel the active Compose gesture before assigning BMSON sound.";
+        }
+        const auto event = object_id_t{action.compose_bmson_bgm_event_id};
+        const auto to_lane =
+            action.compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE;
+        const auto selected_kind = to_lane ? editor_selection_object_kind_t::bgm_event
+                                           : editor_selection_object_kind_t::note;
+        if (state.selected_objects.size() != 1 ||
+            state.selected_objects.front().kind != selected_kind ||
+            state.selected_objects.front().id != event) {
+            return "Select one linked BMSON tap or BGM marker before assigning sound.";
+        }
+        const auto assigned = assign_bmson_sound_event(
+            history, action.compose_input_document_revision, state.chart, event,
+            to_lane ? std::optional<lane_id_t>{state.active_lane} : std::nullopt);
+        if (!assigned.diagnostics.empty()) {
+            return assigned.diagnostics.front().message;
+        }
+        if (!assigned.applied) {
+            return "BMSON sound is already assigned to that destination.";
+        }
+        state.selected_objects = {{to_lane ? editor_selection_object_kind_t::note
+                                           : editor_selection_object_kind_t::bgm_event,
+                                   event}};
+        state.selected_notes =
+            to_lane ? std::vector<object_id_t>{event} : std::vector<object_id_t>{};
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            return rebound.diagnostics.empty()
+                       ? "BMSON sound assigned, but workspace rebinding failed."
+                       : rebound.diagnostics.front().message;
+        }
+        return to_lane ? "BMSON BGM assigned to the active playable lane."
+                       : "BMSON tap assigned to BGM.";
     }
     case WORM_UI_COMPOSE_ACTION_MOVE_BMSON_BGM_TO_CURSOR: {
         if (editor_interaction_has_pending_gesture(state)) {

@@ -3,6 +3,7 @@
 #include <wormedit/core/document.h>
 
 #include <cstddef>
+#include <filesystem>
 #include <optional>
 #include <string>
 #include <vector>
@@ -49,6 +50,13 @@ struct conversion_request_t {
     std::optional<quantize_request_t> quantization;
     loss_policy_t loss_policy{loss_policy_t::reject};
     bool overwrite{false};
+    struct staged_asset_t {
+        asset_id_t asset;
+        // Path relative to the output chart's directory, after a successful
+        // copy_resource_file_into_export publication.
+        std::filesystem::path relative_path;
+    };
+    std::vector<staged_asset_t> staged_assets;
 };
 
 enum class conversion_stage_t {

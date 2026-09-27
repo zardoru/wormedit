@@ -118,6 +118,11 @@ TEST_CASE("export asset copy stages beside an output group without changing proj
     const auto copied = wormedit::copy_resource_file_into_export(request);
     REQUIRE(copied);
     CHECK(copied.relative_path == std::filesystem::path{"exports/bms/assets/12-kick.wav"});
+    CHECK(
+        wormedit::export_asset_reference_path(request.relative_output_path, copied.relative_path) ==
+        std::filesystem::path{"assets/12-kick.wav"});
+    CHECK_FALSE(
+        wormedit::export_asset_reference_path(request.relative_output_path, "outside/12-kick.wav"));
     CHECK(read_text(copied.absolute_path) == "first audio bytes");
     CHECK_FALSE(std::filesystem::exists(directory.path / "assets/12-kick.wav"));
     CHECK(wormedit::copy_resource_file_into_export(request).status ==
@@ -166,5 +171,8 @@ TEST_CASE("export asset copy accepts an output group directory path", "[unit][co
     const auto copied = wormedit::copy_resource_file_into_export(request);
     REQUIRE(copied);
     CHECK(copied.relative_path == std::filesystem::path{"charts/assets/5-kick.wav"});
+    CHECK(
+        wormedit::export_asset_reference_path(request.relative_output_path, copied.relative_path) ==
+        std::filesystem::path{"assets/5-kick.wav"});
     CHECK(read_text(copied.absolute_path) == "source data");
 }

@@ -15,6 +15,8 @@
 #include <ranges>
 #include <span>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace wormedit {
@@ -144,6 +146,52 @@ auto prepare_document(const song_document_t& song, const conversion_request_t& r
                       const std::vector<chart_id_t>& charts, conversion_result_t& result)
     -> std::optional<song_document_t> {
     auto prepared = song;
+    if (!request.staged_assets.empty()) {
+        std::unordered_map<std::uint64_t, std::size_t> known_assets;
+        known_assets.reserve(prepared.audio_assets.size() + prepared.visual_assets.size());
+        for (const auto& asset : prepared.audio_assets)
+            ++known_assets[asset.id.value];
+        for (const auto& asset : prepared.visual_assets)
+            ++known_assets[asset.id.value];
+        std::unordered_map<std::uint64_t, std::filesystem::path> staged_paths_by_id;
+        staged_paths_by_id.reserve(request.staged_assets.size());
+        std::unordered_set<std::string> staged_paths;
+        for (const auto& staged : request.staged_assets) {
+            const auto path = staged.relative_path.generic_string();
+            const auto safe_path =
+                !staged.relative_path.empty() && path.size() <= 4096 &&
+                !staged.relative_path.filename().empty() && !staged.relative_path.is_absolute() &&
+                !staged.relative_path.has_root_name() &&
+                staged.relative_path.lexically_normal() == staged.relative_path &&
+                std::ranges::none_of(
+                    staged.relative_path,
+                    [](const auto& part) { return part == "." || part == ".."; }) &&
+                !std::ranges::any_of(path, [](unsigned char character) {
+                    return character < 0x20 || character == 0x7f;
+                });
+            if (!staged.asset || !safe_path || known_assets[staged.asset.value] != 1 ||
+                !staged_paths_by_id.emplace(staged.asset.value, staged.relative_path).second ||
+                !staged_paths.insert(path).second) {
+                add_diagnostic(result, diagnostic_severity_t::error,
+                               conversion_diagnostic_code_t::invalid_request,
+                               conversion_stage_t::request, request.target, request.chart,
+                               "Staged asset mapping has an invalid, duplicate, or unknown path");
+                return std::nullopt;
+            }
+        }
+        for (auto& asset : prepared.audio_assets)
+            if (const auto found = staged_paths_by_id.find(asset.id.value);
+                found != staged_paths_by_id.end())
+                asset.source_path = found->second;
+        for (auto& asset : prepared.visual_assets)
+            if (const auto found = staged_paths_by_id.find(asset.id.value);
+                found != staged_paths_by_id.end())
+                asset.source_path = found->second;
+        for (auto& resource : prepared.resources)
+            if (const auto found = staged_paths_by_id.find(resource.asset.value);
+                found != staged_paths_by_id.end())
+                resource.name = found->second.generic_string();
+    }
     if (!request.quantization)
         return prepared;
     if (!request.quantization->objects.empty() && charts.size() != 1) {
@@ -303,6 +351,21 @@ auto convert_document(const song_document_t& song, const conversion_request_t& r
                        "is not applicable");
         return result;
     }
+    if (!request.staged_assets.empty() && request.target != format_family_t::bms &&
+        request.target != format_family_t::bmson && request.target != format_family_t::osu_mania) {
+        add_diagnostic(result, diagnostic_severity_t::error,
+                       conversion_diagnostic_code_t::invalid_request, conversion_stage_t::request,
+                       request.target, request.chart,
+                       "This target does not yet serialize staged resource paths");
+        return result;
+    }
+    if (request.staged_assets.size() > song.audio_assets.size() + song.visual_assets.size()) {
+        add_diagnostic(result, diagnostic_severity_t::error,
+                       conversion_diagnostic_code_t::invalid_request, conversion_stage_t::request,
+                       request.target, request.chart,
+                       "Staged asset mapping exceeds the document asset count");
+        return result;
+    }
     if (request.target == format_family_t::midi || request.target == format_family_t::quaver) {
         add_diagnostic(result, diagnostic_severity_t::error,
                        conversion_diagnostic_code_t::unsupported_target,
@@ -385,6 +448,7 @@ auto convert_document(const song_document_t& song, const conversion_request_t& r
         for (const auto chart_id : charts) {
             bms_write_options_t options;
             options.chart = chart_id;
+            options.preserve_unchanged_source = request.staged_assets.empty();
             options.branch_policy = request.branches == branch_projection_t::preserve_tree
                                         ? bms_branch_policy_t::preserve_tree
                                         : bms_branch_policy_t::flatten_active;

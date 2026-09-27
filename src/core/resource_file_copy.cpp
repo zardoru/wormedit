@@ -295,6 +295,17 @@ auto export_asset_directory(const std::filesystem::path& relative_output_path)
            "assets";
 }
 
+auto export_asset_reference_path(const std::filesystem::path& relative_output_path,
+                                 const std::filesystem::path& copied_project_relative_path)
+    -> std::optional<std::filesystem::path> {
+    const auto directory = export_asset_directory(relative_output_path);
+    if (!directory || !valid_relative(copied_project_relative_path) ||
+        copied_project_relative_path.parent_path() != *directory ||
+        copied_project_relative_path.filename().empty())
+        return std::nullopt;
+    return std::filesystem::path{"assets"} / copied_project_relative_path.filename();
+}
+
 auto copy_resource_file_into_export(const export_asset_copy_request_t& request,
                                     std::stop_token stop) -> project_asset_copy_result_t {
     const auto directory = export_asset_directory(request.relative_output_path);

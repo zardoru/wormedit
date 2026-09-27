@@ -41,6 +41,13 @@ struct export_asset_copy_request_t {
 [[nodiscard]] auto export_asset_directory(const std::filesystem::path& relative_output_path)
     -> std::optional<std::filesystem::path>;
 
+// Converts the copy result's project-relative path to the reference a chart
+// file writes from its output directory. Rejects a path outside that folder.
+[[nodiscard]] auto
+export_asset_reference_path(const std::filesystem::path& relative_output_path,
+                            const std::filesystem::path& copied_project_relative_path)
+    -> std::optional<std::filesystem::path>;
+
 struct project_asset_copy_result_t {
     project_asset_copy_status_t status{project_asset_copy_status_t::invalid_request};
     std::filesystem::path relative_path;

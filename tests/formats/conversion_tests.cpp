@@ -1,8 +1,12 @@
+#include <wormedit/formats/bms.h>
+#include <wormedit/formats/bmson.h>
 #include <wormedit/formats/conversion.h>
+#include <wormedit/formats/osu_mania.h>
 #include <wormedit/formats/stepmania.h>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -107,4 +111,115 @@ TEST_CASE("conversion enforces output bounds atomically",
     REQUIRE_FALSE(converted.diagnostics.empty());
     CHECK(converted.diagnostics.back().code ==
           wormedit::conversion_diagnostic_code_t::output_limit);
+}
+
+TEST_CASE("conversion writes a staged BMSON asset path without changing the source document",
+          "[unit][format][conversion]") {
+    const auto parsed = wormedit::parse_bmson_bytes(read_binary(
+        std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / "zero-resolution-default.bmson"));
+    REQUIRE(parsed.song.has_value());
+    REQUIRE_FALSE(parsed.song->audio_assets.empty());
+    const auto original_path = parsed.song->audio_assets.front().source_path;
+    const wormedit::conversion_request_t request{
+        .target = wormedit::format_family_t::bmson,
+        .chart = parsed.song->charts.front().id,
+        .loss_policy = wormedit::loss_policy_t::warn,
+        .staged_assets = {{.asset = parsed.song->audio_assets.front().id,
+                           .relative_path = "assets/12-tone.wav"}}};
+    const auto converted = wormedit::convert_document(*parsed.song, request);
+    std::string diagnostics;
+    for (const auto& diagnostic : converted.diagnostics)
+        diagnostics += diagnostic.message + "\n";
+    INFO(diagnostics);
+    REQUIRE(converted);
+    REQUIRE(converted.outputs.size() == 1);
+    CHECK(converted.outputs.front().bytes.find("assets/12-tone.wav") != std::string::npos);
+    CHECK(parsed.song->audio_assets.front().source_path == original_path);
+}
+
+TEST_CASE("conversion rejects invalid staged asset mappings before serialization",
+          "[unit][format][conversion]") {
+    const auto parsed = wormedit::parse_bmson_bytes(read_binary(
+        std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / "zero-resolution-default.bmson"));
+    REQUIRE(parsed.song.has_value());
+    wormedit::conversion_request_t request{
+        .target = wormedit::format_family_t::bmson,
+        .chart = parsed.song->charts.front().id,
+        .staged_assets = {
+            {.asset = parsed.song->audio_assets.front().id, .relative_path = "../outside.wav"}}};
+    CHECK_FALSE(wormedit::convert_document(*parsed.song, request));
+    request.staged_assets.front().relative_path = "assets/";
+    CHECK_FALSE(wormedit::convert_document(*parsed.song, request));
+    request.staged_assets.front().relative_path = "assets/tone.wav";
+    request.staged_assets.front().asset = wormedit::asset_id_t{999'999};
+    CHECK_FALSE(wormedit::convert_document(*parsed.song, request));
+    request.staged_assets.front().asset = parsed.song->audio_assets.front().id;
+    request.target = wormedit::format_family_t::native_project;
+    CHECK_FALSE(wormedit::convert_document(*parsed.song, request));
+
+    const auto multiple = wormedit::parse_bmson_bytes(read_binary(
+        std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / "slicing-and-mixed-sounds.bmson"));
+    REQUIRE(multiple.song.has_value());
+    REQUIRE(multiple.song->audio_assets.size() >= 2);
+    request.target = wormedit::format_family_t::bmson;
+    request.chart = multiple.song->charts.front().id;
+    request.staged_assets = {
+        {.asset = multiple.song->audio_assets[0].id, .relative_path = "assets/shared.wav"},
+        {.asset = multiple.song->audio_assets[1].id, .relative_path = "assets/shared.wav"}};
+    CHECK_FALSE(wormedit::convert_document(*multiple.song, request));
+}
+
+TEST_CASE("conversion rewrites a BMS WAV declaration from a staged asset",
+          "[unit][format][conversion]") {
+    const auto parsed =
+        wormedit::parse_bms_bytes(read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bms" /
+                                              "profiles" / "bms-5k-foot-pedal.bms"),
+                                  {.file_extension = ".bms"});
+    REQUIRE(parsed.song.has_value());
+    REQUIRE_FALSE(parsed.song->audio_assets.empty());
+    const auto original = parsed.song->resources.front().name;
+    const wormedit::conversion_request_t request{
+        .target = wormedit::format_family_t::bms,
+        .target_profile = "bms-5k-outside-scratch-foot-pedal",
+        .chart = parsed.song->charts.front().id,
+        .loss_policy = wormedit::loss_policy_t::warn,
+        .staged_assets = {
+            {.asset = parsed.song->audio_assets.front().id, .relative_path = "assets/5-lane.wav"}}};
+    const auto converted = wormedit::convert_document(*parsed.song, request);
+    std::string diagnostics;
+    for (const auto& diagnostic : converted.diagnostics)
+        diagnostics += diagnostic.message + "\n";
+    INFO(diagnostics);
+    REQUIRE(converted);
+    REQUIRE(converted.outputs.size() == 1);
+    INFO(converted.outputs.front().bytes.substr(0, 500));
+    CHECK(converted.outputs.front().bytes.find("#WAV01 assets/5-lane.wav") != std::string::npos);
+    CHECK(parsed.song->resources.front().name == original);
+}
+
+TEST_CASE("conversion rewrites an osu!mania music path from a staged asset",
+          "[unit][format][conversion]") {
+    const auto parsed = wormedit::parse_osu_mania_bytes(read_binary(
+        std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "osu" / "mania-tags-bookmarks-kiai.osu"));
+    REQUIRE(parsed.song.has_value());
+    const auto music = std::ranges::find_if(parsed.song->audio_assets, [](const auto& asset) {
+        return asset.source_path == "fixture.mp3";
+    });
+    REQUIRE(music != parsed.song->audio_assets.end());
+    const wormedit::conversion_request_t request{
+        .target = wormedit::format_family_t::osu_mania,
+        .chart = parsed.song->charts.front().id,
+        .loss_policy = wormedit::loss_policy_t::warn,
+        .staged_assets = {{.asset = music->id, .relative_path = "assets/7-fixture.mp3"}}};
+    const auto converted = wormedit::convert_document(*parsed.song, request);
+    std::string diagnostics;
+    for (const auto& diagnostic : converted.diagnostics)
+        diagnostics += diagnostic.message + "\n";
+    INFO(diagnostics);
+    REQUIRE(converted);
+    REQUIRE(converted.outputs.size() == 1);
+    INFO(converted.outputs.front().bytes.substr(0, 500));
+    CHECK(converted.outputs.front().bytes.find("AudioFilename: assets/7-fixture.mp3") !=
+          std::string::npos);
+    CHECK(music->source_path == "fixture.mp3");
 }

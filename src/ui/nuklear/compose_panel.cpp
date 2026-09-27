@@ -34,7 +34,7 @@ static void append_compose_input(
     double y_pixels = 0.0, uint64_t lane_id = 0, bool successive = false,
     WormUiComposeSelectionMode selection_mode = WORM_UI_COMPOSE_SELECTION_REPLACE,
     WormUiComposeNavigationAction navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-    uint64_t object_id = 0) {
+    uint64_t object_id = 0, uint8_t resource_role = 0) {
     if (!action) {
         return;
     }
@@ -43,6 +43,7 @@ static void append_compose_input(
             .kind = WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE,
             .lane_id = 0,
             .object_id = 0,
+            .resource_role = 0,
             .successive = false,
             .selection_mode = WORM_UI_COMPOSE_SELECTION_REPLACE,
             .navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
@@ -75,6 +76,7 @@ static void append_compose_input(
         .kind = kind,
         .lane_id = lane_id,
         .object_id = object_id,
+        .resource_role = resource_role,
         .successive = successive,
         .selection_mode = selection_mode,
         .navigation_action = navigation_action,
@@ -841,6 +843,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
         if (state.cancel_pending) {
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
             state.cancel_pending = false;
+            state.resource_pointer_placement_active = false;
             state.note_paint_pointer_active = false;
             state.semantic_layer_paint_pointer_active = false;
             state.space_range_hold_active = false;
@@ -854,6 +857,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
         const auto revision_changed = state.last_document_revision != view->document_revision;
         if (project_changed) {
             state.armed_resource_id = 0;
+            state.resource_pointer_placement_active = false;
             state.last_project_id = view->project_id;
         }
         if (chart_changed || revision_changed) {
@@ -876,6 +880,9 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             state.lane_hold_keycode = 0;
             state.lane_hold_lane_id = 0;
             cancel_compose_navigation(action);
+        }
+        if (chart_changed) {
+            state.resource_pointer_placement_active = false;
         }
         if (chart_changed) {
             // Events received before the first frame for another chart still
@@ -1462,6 +1469,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     nk_label(context,
              state.timing_stage_drag_active
                  ? "Move timing event · release to keep staged position · Apply to commit"
+             : state.resource_pointer_placement_active
+                 ? "Resource placement armed · click a chart lane · Esc disarms"
              : timing_view->stage_active && timing_view->stage_existing_object_id != 0
                  ? "Drag outlined timing marker to resnap · edit/apply in side inspector"
              : view->semantic_layer_paint_mode_active
@@ -1733,6 +1742,45 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     bool paint_pointer_consumed = state.note_paint_pointer_active ||
                                   state.semantic_layer_paint_pointer_active ||
                                   compose_action_has_cancel(action);
+    if (!paint_pointer_consumed && state.resource_pointer_placement_active &&
+        view->scene_available && pointer_started_in_view && window_focused &&
+        shortcut_event_count == 0 && (pointer_modifiers & any_pointer_modifier) == 0 &&
+        !compose_note_double_click_in_view && !compose_pointer_captured &&
+        !state.note_move_candidate_active && !state.area_selection_candidate_active &&
+        !view->note_paint_mode_active && !view->semantic_layer_paint_mode_active) {
+        const auto role =
+            state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::sample
+                ? WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE
+                : state.resource_filter == worm_ui_nuklear_compose_resource_filter_t::bgm
+                      ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGM
+                      : WORM_UI_COMPOSE_RESOURCE_ROLE_BGA;
+        uint64_t target_lane_id = 0;
+        bool in_placement_pane = false;
+        if (role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM) {
+            for (size_t index = 0; index < view->bgm_lane_count; ++index) {
+                const auto& lane = view->bgm_lanes[index];
+                if (pointer_started_x >= lane.bounds.left &&
+                    pointer_started_x < lane.bounds.right &&
+                    pointer_started_y >= lane.bounds.top &&
+                    pointer_started_y < lane.bounds.bottom) {
+                    target_lane_id = lane.source_lane_id;
+                    in_placement_pane = true;
+                    break;
+                }
+            }
+        } else {
+            in_placement_pane = pointer_started_in_note_field;
+        }
+        if (in_placement_pane) {
+            append_compose_input(
+                action, WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE,
+                pointer_started_x, pointer_started_y, target_lane_id, false,
+                WORM_UI_COMPOSE_SELECTION_REPLACE,
+                WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                state.armed_resource_id, role);
+            paint_pointer_consumed = true;
+        }
+    }
     if (!state.action_overflowed && state.semantic_layer_paint_pointer_active) {
         if (!window_focused || !view->scene_available || !view->semantic_layer_paint_mode_active ||
             shortcut_event_count != 0 || (pointer_modifiers & any_pointer_modifier) != 0 ||

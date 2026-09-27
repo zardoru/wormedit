@@ -210,6 +210,42 @@ TEST_CASE("BGM placement creates the first source lane when the chart has none",
     CHECK(history.document.charts.front().bgm_source_lanes.empty());
 }
 
+TEST_CASE("pointer resource placement snaps exactly and respects a requested BGM lane",
+          "[unit][core][resources]") {
+    auto history = make_document_history(assignment_song());
+    const auto& chart = history.document.charts.front();
+    const auto snapped = resolve_resource_placement_position(
+        chart, {measure_id_t{3}, 190}, 8);
+    REQUIRE(snapped);
+    CHECK(snapped->row == 240);
+    const auto tie = resolve_resource_placement_position(
+        chart, {measure_id_t{3}, 180}, 8);
+    REQUIRE(tie);
+    CHECK(tie->row == 120);
+    CHECK_FALSE(resolve_resource_placement_position(
+        chart, {measure_id_t{3}, 190}, 7));
+
+    const auto occupied = apply_resource_placement(
+        history, 4, {.chart = chart_id_t{2}, .resource = resource_id_t{2},
+                     .position = {measure_id_t{3}, 190},
+                     .source_lane = object_id_t{20},
+                     .kind = resource_placement_kind_t::bgm_event,
+                     .snap_denominator = 8});
+    CHECK_FALSE(occupied);
+    CHECK(has_code(occupied, diagnostic_code_t::collision));
+    const auto placed = apply_resource_placement(
+        history, 4, {.chart = chart_id_t{2}, .resource = resource_id_t{2},
+                     .position = {measure_id_t{3}, 510},
+                     .source_lane = object_id_t{20},
+                     .kind = resource_placement_kind_t::bgm_event,
+                     .snap_denominator = 8});
+    REQUIRE(placed);
+    CHECK(history.document.charts.front().measures.front().bgm_events.back().position.row == 480);
+    CHECK(history.document.charts.front().measures.front().bgm_events.back().source_lane ==
+          object_id_t{20});
+    CHECK(history.document.charts.front().bgm_source_lanes.size() == 1);
+}
+
 TEST_CASE("resource assignment changes typed note and BGM references atomically",
           "[unit][core][resources]") {
     auto history = make_document_history(assignment_song());

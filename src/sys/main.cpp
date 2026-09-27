@@ -4440,6 +4440,71 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             }
             break;
         }
+        case WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE: {
+            if (gesture_active) {
+                return "Finish or cancel the active Compose gesture before placing a resource.";
+            }
+            const auto chart =
+                std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);
+            const auto current_view = compose_view_for_state(history, state);
+            if (chart == history.document.charts.end() || !current_view ||
+                input.object_id == 0) {
+                return "The selected chart or armed resource is no longer available.";
+            }
+            const auto kind =
+                input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE
+                    ? resource_placement_kind_t::sample_note
+                    : input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM
+                          ? resource_placement_kind_t::bgm_event
+                          : input.resource_role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGA
+                                ? resource_placement_kind_t::bga_background
+                                : static_cast<resource_placement_kind_t>(255);
+            if (kind == static_cast<resource_placement_kind_t>(255)) {
+                return "Resource pointer placement used an unknown role.";
+            }
+            std::optional<local_position_t> raw_position;
+            lane_id_t target_lane{};
+            if (kind == resource_placement_kind_t::sample_note) {
+                const auto target =
+                    hit_target_at(*chart, *current_view, input.x_pixels, input.y_pixels);
+                if (!target) {
+                    return "Click inside an editable playable lane to place a Sample.";
+                }
+                raw_position = target->position;
+                target_lane = target->lane;
+            } else {
+                raw_position =
+                    editor_position_at_y_pixels(*chart, *current_view, input.y_pixels);
+            }
+            const auto position =
+                raw_position ? resolve_resource_placement_position(
+                                   *chart, *raw_position, state.active_snap_denominator)
+                             : std::nullopt;
+            if (!position) {
+                return "Pointer placement could not snap to a valid chart row.";
+            }
+            const auto applied = apply_resource_placement(
+                history, ui_action.compose_input_document_revision,
+                {.chart = state.chart,
+                 .resource = resource_id_t{input.object_id},
+                 .position = *position,
+                 .lane = target_lane,
+                 .source_lane = kind == resource_placement_kind_t::bgm_event
+                                    ? object_id_t{input.lane_id}
+                                    : object_id_t{},
+                 .kind = kind});
+            result.accepted = applied.applied;
+            result.document_changed = applied.applied;
+            result.diagnostics = applied.diagnostics;
+            if (applied.applied) {
+                state.cursor = *position;
+                if (target_lane) {
+                    state.active_lane = target_lane;
+                }
+            }
+            accepted = "Resource placed at the pointer.";
+            break;
+        }
         case WORM_UI_COMPOSE_INPUT_UNDO:
         case WORM_UI_COMPOSE_INPUT_REDO: {
             (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});

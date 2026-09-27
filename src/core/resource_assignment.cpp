@@ -61,7 +61,53 @@ auto next_chart_object_id(const chart_document_t& chart) -> std::optional<object
     return object_id_t{largest + 1};
 }
 
+auto snap_placement_position(const chart_document_t& chart, const measure_index_t& index,
+                             local_position_t position, std::uint64_t denominator)
+    -> std::optional<local_position_t> {
+    const auto absolute = absolute_row(index, position);
+    if (!absolute) {
+        return std::nullopt;
+    }
+    if (denominator == 0) {
+        return position;
+    }
+    if (chart.divisions_per_standard_measure == 0 ||
+        chart.divisions_per_standard_measure % denominator != 0) {
+        return std::nullopt;
+    }
+    const auto step = chart.divisions_per_standard_measure / denominator;
+    const auto remainder = *absolute % step;
+    auto snapped = *absolute - remainder;
+    const auto distance_up = step - remainder;
+    if (remainder > distance_up &&
+        distance_up <= std::numeric_limits<std::uint64_t>::max() - *absolute) {
+        snapped = *absolute + distance_up;
+    }
+    if (snapped >= index.total_rows) {
+        return std::nullopt;
+    }
+    const auto after = std::ranges::upper_bound(index.entries, snapped, {},
+                                                &measure_index_entry_t::absolute_begin_row);
+    if (after == index.entries.begin()) {
+        return std::nullopt;
+    }
+    const auto entry = std::prev(after);
+    return local_position_t{entry->id, snapped - entry->absolute_begin_row};
+}
+
 } // namespace
+
+auto resolve_resource_placement_position(const chart_document_t& chart,
+                                         local_position_t position,
+                                         std::uint64_t snap_denominator)
+    -> std::optional<local_position_t> {
+    const auto built = build_measure_index(chart);
+    if (!std::holds_alternative<measure_index_t>(built)) {
+        return std::nullopt;
+    }
+    return snap_placement_position(chart, std::get<measure_index_t>(built), position,
+                                   snap_denominator);
+}
 
 auto apply_resource_placement(document_history_t& history, std::uint64_t expected_revision,
                               const place_resource_action_t& action) -> document_command_result_t {
@@ -121,7 +167,9 @@ auto apply_resource_placement(document_history_t& history, std::uint64_t expecte
         return result;
     }
     const auto& index = std::get<measure_index_t>(built);
-    const auto row = absolute_row(index, action.position);
+    const auto position =
+        snap_placement_position(*source_chart, index, action.position, action.snap_denominator);
+    const auto row = position ? absolute_row(index, *position) : std::nullopt;
     if (!row) {
         reject(result, diagnostic_code_t::row_out_of_range,
                "resource placement row is outside the chart");
@@ -136,7 +184,7 @@ auto apply_resource_placement(document_history_t& history, std::uint64_t expecte
     auto proposed = document;
     auto& chart = proposed.charts[static_cast<std::size_t>(source_chart - document.charts.begin())];
     auto measure =
-        std::ranges::find(chart.measures, action.position.measure, &measure_chunk_t::id);
+        std::ranges::find(chart.measures, position->measure, &measure_chunk_t::id);
     if (measure == chart.measures.end()) {
         reject(result, diagnostic_code_t::invalid_measure,
                "resource placement measure is missing");
@@ -181,7 +229,7 @@ auto apply_resource_placement(document_history_t& history, std::uint64_t expecte
             }
         }
         measure->notes.push_back({.id = *first_id,
-                                  .position = action.position,
+                                  .position = *position,
                                   .lane = action.lane,
                                   .kind = note_kind_t::tap,
                                   .end = std::nullopt,
@@ -198,22 +246,39 @@ auto apply_resource_placement(document_history_t& history, std::uint64_t expecte
         std::unordered_set<std::uint64_t> occupied_lanes;
         for (const auto& chunk : chart.measures) {
             for (const auto& event : chunk.bgm_events) {
-                if (event.position == action.position) {
+                if (event.position == *position) {
                     occupied_lanes.insert(event.source_lane.value);
                 }
             }
         }
-        const bgm_source_lane_t* first_available{};
-        for (const auto& source_lane : chart.bgm_source_lanes) {
-            if (!occupied_lanes.contains(source_lane.id.value) &&
-                (!first_available ||
-                 std::tie(source_lane.source_order, source_lane.id.value) <
-                     std::tie(first_available->source_order, first_available->id.value))) {
-                first_available = &source_lane;
+        if (action.source_lane) {
+            const auto requested = std::ranges::find(chart.bgm_source_lanes,
+                                                     action.source_lane,
+                                                     &bgm_source_lane_t::id);
+            if (requested == chart.bgm_source_lanes.end()) {
+                reject(result, diagnostic_code_t::invalid_id,
+                       "BGM placement refers to an unknown source lane");
+                return result;
             }
-        }
-        if (first_available) {
-            lane = first_available->id;
+            if (occupied_lanes.contains(action.source_lane.value)) {
+                reject(result, diagnostic_code_t::collision,
+                       "BGM source lane is occupied at the requested row");
+                return result;
+            }
+            lane = action.source_lane;
+        } else {
+            const bgm_source_lane_t* first_available{};
+            for (const auto& source_lane : chart.bgm_source_lanes) {
+                if (!occupied_lanes.contains(source_lane.id.value) &&
+                    (!first_available ||
+                     std::tie(source_lane.source_order, source_lane.id.value) <
+                         std::tie(first_available->source_order, first_available->id.value))) {
+                    first_available = &source_lane;
+                }
+            }
+            if (first_available) {
+                lane = first_available->id;
+            }
         }
         auto event_id = *first_id;
         if (!lane) {
@@ -240,7 +305,7 @@ auto apply_resource_placement(document_history_t& history, std::uint64_t expecte
                  .source_order = next_source_order});
         }
         measure->bgm_events.push_back({.id = event_id,
-                                       .position = action.position,
+                                       .position = *position,
                                        .source_lane = lane,
                                        .sound = action.resource,
                                        .sound_channel_event = std::nullopt,
@@ -252,14 +317,14 @@ auto apply_resource_placement(document_history_t& history, std::uint64_t expecte
     case resource_placement_kind_t::bga_background: {
         if (std::ranges::any_of(chart.bga_events, [&](const auto& event) {
                 return event.kind == visual_event_kind_t::background &&
-                       event.position == action.position;
+                       event.position == *position;
             })) {
             reject(result, diagnostic_code_t::collision,
                    "a BGA background already occupies the cursor row");
             return result;
         }
         chart.bga_events.push_back({.id = *first_id,
-                                    .position = action.position,
+                                    .position = *position,
                                     .resource = action.resource,
                                     .kind = visual_event_kind_t::background,
                                     .provenance = {}});

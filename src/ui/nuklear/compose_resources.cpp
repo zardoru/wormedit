@@ -78,6 +78,9 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         std::snprintf(label.data(), label.size(), "%s%s", filter_name(candidate),
                       selected ? " *" : "");
         if (nk_button_label(context, label.data())) {
+            if (state->resource_filter != candidate) {
+                state->resource_pointer_placement_active = false;
+            }
             state->resource_filter = candidate;
         }
     }
@@ -134,6 +137,7 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
     }
     if (disarm_clicked) {
         state->armed_resource_id = 0;
+        state->resource_pointer_placement_active = false;
     }
 
     nk_layout_row_dynamic(context, 24, 1);
@@ -159,6 +163,28 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         action->compose_resource_id = armed->resource_id;
         action->compose_resource_role = placement_role;
         action->compose_action = WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE;
+    }
+    nk_layout_row_dynamic(context, 24, 1);
+    const auto can_pointer_place = can_place && !view->note_paint_mode_active &&
+                                   !view->semantic_layer_paint_mode_active &&
+                                   !view->timing_stage_active &&
+                                   (state->resource_filter !=
+                                        worm_ui_nuklear_compose_resource_filter_t::bgm ||
+                                    view->bgm_lane_count != 0);
+    if (!can_pointer_place) {
+        state->resource_pointer_placement_active = false;
+        nk_widget_disable_begin(context);
+    }
+    const auto pointer_tool_clicked = nk_button_label(
+        context, state->resource_pointer_placement_active
+                     ? "Pointer placement: On"
+                     : "Pointer placement: Off");
+    if (!can_pointer_place) {
+        nk_widget_disable_end(context);
+    }
+    if (pointer_tool_clicked && can_pointer_place) {
+        state->resource_pointer_placement_active =
+            !state->resource_pointer_placement_active;
     }
 
     if (state->resource_filter != worm_ui_nuklear_compose_resource_filter_t::bga) {
@@ -265,6 +291,7 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         }
         if (arm_clicked) {
             state->armed_resource_id = resource.resource_id;
+            state->resource_pointer_placement_active = false;
         }
         nk_layout_row_end(context);
         if (resource.missing) {

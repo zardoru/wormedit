@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -38,8 +39,17 @@ struct place_resource_action_t {
     resource_id_t resource;
     local_position_t position;
     lane_id_t lane;
+    object_id_t source_lane;
     resource_placement_kind_t kind{resource_placement_kind_t::sample_note};
+    // Zero keeps an already exact cursor row. Pointer tools pass the active
+    // denominator so all placement kinds use the same nearest-row policy.
+    std::uint64_t snap_denominator{};
 };
+
+[[nodiscard]] auto resolve_resource_placement_position(const chart_document_t& chart,
+                                                       local_position_t position,
+                                                       std::uint64_t snap_denominator)
+    -> std::optional<local_position_t>;
 
 // Inserts one resource-backed event at an exact chart row. BGM placement
 // reuses the first unoccupied source lane or appends one in the same command.

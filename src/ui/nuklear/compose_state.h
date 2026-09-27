@@ -96,6 +96,7 @@ struct worm_ui_nuklear_compose_state_t {
         worm_ui_nuklear_compose_resource_filter_t::sample};
     std::array<char, 96> resource_search{};
     std::uint64_t armed_resource_id{};
+    bool resource_pointer_placement_active{};
 };
 
 [[nodiscard]] auto worm_ui_nuklear_compose_state() noexcept -> worm_ui_nuklear_compose_state_t&;

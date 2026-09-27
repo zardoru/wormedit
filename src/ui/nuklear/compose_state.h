@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
+#include <string>
 
 struct worm_ui_nuklear_compose_key_event_t {
     std::uint32_t keycode{};
@@ -102,6 +104,7 @@ struct worm_ui_nuklear_compose_state_t {
         worm_ui_nuklear_compose_resource_filter_t::sample};
     std::array<char, 96> resource_search{};
     std::array<char, WORM_UI_COMPOSE_IMPORT_PATH_BYTES + 1> resource_import_path{};
+    std::array<char, 256> resource_import_error{};
     std::uint64_t armed_resource_id{};
     worm_ui_nuklear_compose_resource_pointer_mode_t resource_pointer_mode{
         worm_ui_nuklear_compose_resource_pointer_mode_t::off};
@@ -110,3 +113,17 @@ struct worm_ui_nuklear_compose_state_t {
 [[nodiscard]] auto worm_ui_nuklear_compose_state() noexcept -> worm_ui_nuklear_compose_state_t&;
 
 void worm_ui_nuklear_reset_compose_state();
+
+struct worm_ui_nuklear_compose_file_dialog_result_t {
+    std::string path;
+    std::string error;
+    bool canceled{};
+};
+
+[[nodiscard]] auto worm_ui_nuklear_compose_file_dialog_begin()
+    -> std::optional<std::uint64_t>;
+void worm_ui_nuklear_compose_file_dialog_complete(
+    std::uint64_t generation, std::string path, std::string error, bool canceled);
+[[nodiscard]] auto worm_ui_nuklear_compose_file_dialog_take()
+    -> std::optional<worm_ui_nuklear_compose_file_dialog_result_t>;
+[[nodiscard]] auto worm_ui_nuklear_compose_file_dialog_open() -> bool;

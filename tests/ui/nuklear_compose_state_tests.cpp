@@ -55,3 +55,27 @@ TEST_CASE("Nuklear compose state resets queues gestures editors and authored def
     CHECK(state.armed_resource_id == 0);
     CHECK(state.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off);
 }
+
+TEST_CASE("Compose file picker ignores stale callbacks after frontend reset",
+          "[unit][frontend][compose]") {
+    worm_ui_nuklear_reset_compose_state();
+    const auto first = worm_ui_nuklear_compose_file_dialog_begin();
+    REQUIRE(first);
+    CHECK(worm_ui_nuklear_compose_file_dialog_open());
+    CHECK_FALSE(worm_ui_nuklear_compose_file_dialog_begin());
+    worm_ui_nuklear_compose_file_dialog_complete(*first - 1, "/stale.wav", {}, false);
+    CHECK(worm_ui_nuklear_compose_file_dialog_open());
+    worm_ui_nuklear_compose_file_dialog_complete(*first, "/selected.wav", {}, false);
+    CHECK_FALSE(worm_ui_nuklear_compose_file_dialog_open());
+    const auto picked = worm_ui_nuklear_compose_file_dialog_take();
+    REQUIRE(picked);
+    CHECK(picked->path == "/selected.wav");
+    CHECK_FALSE(worm_ui_nuklear_compose_file_dialog_take());
+
+    const auto second = worm_ui_nuklear_compose_file_dialog_begin();
+    REQUIRE(second);
+    worm_ui_nuklear_reset_compose_state();
+    worm_ui_nuklear_compose_file_dialog_complete(*second, "/late.wav", {}, false);
+    CHECK_FALSE(worm_ui_nuklear_compose_file_dialog_open());
+    CHECK_FALSE(worm_ui_nuklear_compose_file_dialog_take());
+}

@@ -2,10 +2,18 @@
 
 #include "wormedit/nuklear_config.h"
 
+#include <SDL3/SDL_dialog.h>
+#include <SDL3/SDL_error.h>
+#include <SDL3/SDL_video.h>
+
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <cstdio>
+#include <filesystem>
+#include <memory>
+#include <new>
+#include <string>
 #include <string_view>
 
 namespace {
@@ -53,6 +61,36 @@ auto resource_matches(const WormUiComposeResourceView& resource, const char* que
            contains_ascii_case_insensitive(resource.source_name, needle);
 }
 
+void SDLCALL compose_file_dialog_callback(void* userdata,
+                                          const char* const* filelist,
+                                          int /*selected_filter*/) {
+    std::unique_ptr<std::uint64_t> generation{
+        static_cast<std::uint64_t*>(userdata)};
+    if (!generation) {
+        return;
+    }
+    if (!filelist) {
+        const auto* error = SDL_GetError();
+        worm_ui_nuklear_compose_file_dialog_complete(
+            *generation, {}, error && *error ? error : "File picker failed.", false);
+    } else if (!filelist[0]) {
+        worm_ui_nuklear_compose_file_dialog_complete(*generation, {}, {}, true);
+    } else {
+        std::size_t length{};
+        while (length <= WORM_UI_COMPOSE_IMPORT_PATH_BYTES &&
+               filelist[0][length] != '\0') {
+            ++length;
+        }
+        if (length > WORM_UI_COMPOSE_IMPORT_PATH_BYTES) {
+            worm_ui_nuklear_compose_file_dialog_complete(
+                *generation, {}, "Selected file path exceeds the import limit.", false);
+        } else {
+            worm_ui_nuklear_compose_file_dialog_complete(
+                *generation, std::string{filelist[0], length}, {}, false);
+        }
+    }
+}
+
 } // namespace
 
 void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
@@ -61,6 +99,25 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
                                               worm_ui_nuklear_compose_state_t* state) {
     if (!context || !view || !action || !state) {
         return;
+    }
+    if (auto picked = worm_ui_nuklear_compose_file_dialog_take()) {
+        state->resource_import_error.fill('\0');
+        if (!picked->error.empty()) {
+            std::snprintf(state->resource_import_error.data(),
+                          state->resource_import_error.size(), "%s",
+                          picked->error.c_str());
+        } else if (!picked->canceled) {
+            if (picked->path.size() >= state->resource_import_path.size() ||
+                !std::filesystem::path{picked->path}.is_absolute()) {
+                std::snprintf(state->resource_import_error.data(),
+                              state->resource_import_error.size(),
+                              "Choose a bounded local filesystem path.");
+            } else {
+                std::snprintf(state->resource_import_path.data(),
+                              state->resource_import_path.size(), "%s",
+                              picked->path.c_str());
+            }
+        }
     }
     if (!nk_tree_push(context, NK_TREE_TAB, "Samples / BGM / BGA", NK_MAXIMIZED)) {
         return;
@@ -229,10 +286,38 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
     }
     nk_layout_row_dynamic(context, 18, 1);
     nk_label(context, "External file (absolute path)", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 24, 1);
+    nk_layout_row_begin(context, NK_DYNAMIC, 24, 2);
+    nk_layout_row_push(context, 0.75f);
     (void)nk_edit_string_zero_terminated(
         context, NK_EDIT_FIELD, state->resource_import_path.data(),
         state->resource_import_path.size(), nk_filter_default);
+    nk_layout_row_push(context, 0.25f);
+    const auto dialog_open = worm_ui_nuklear_compose_file_dialog_open();
+    if (dialog_open) {
+        nk_widget_disable_begin(context);
+    }
+    const auto browse_clicked = nk_button_label(context, dialog_open ? "Choosing" : "Browse");
+    if (dialog_open) {
+        nk_widget_disable_end(context);
+    }
+    nk_layout_row_end(context);
+    if (browse_clicked && !dialog_open) {
+        if (const auto generation = worm_ui_nuklear_compose_file_dialog_begin()) {
+            auto* token = new (std::nothrow) std::uint64_t{*generation};
+            if (!token) {
+                worm_ui_nuklear_compose_file_dialog_complete(
+                    *generation, {}, "File picker could not allocate callback state.", false);
+            } else {
+                state->resource_import_error.fill('\0');
+                SDL_ShowOpenFileDialog(compose_file_dialog_callback, token,
+                                       SDL_GetKeyboardFocus(), nullptr, 0, nullptr, false);
+            }
+        }
+    }
+    if (state->resource_import_error[0] != '\0') {
+        nk_layout_row_dynamic(context, 18, 1);
+        nk_label(context, state->resource_import_error.data(), NK_TEXT_LEFT);
+    }
     nk_layout_row_dynamic(context, 24, 1);
     const auto can_import = state->resource_import_path[0] != '\0';
     if (!can_import) {

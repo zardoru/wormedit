@@ -194,11 +194,17 @@ TEST_CASE("BMS cursor crosses authored boundary and pages through virtual #999",
     state.pending_virtual_lane_key =
         editor_interaction_state_t::virtual_lane_key_t{959'040, lane_id_t{1},
                                                         history.document.revision};
-    CHECK_FALSE(dispatch_editor_action(
-        history, state, move_edit_cursor_action_t{interaction_direction_t::forward}));
-    CHECK(state.virtual_bms_cursor_row == 959'040);
+    const auto moved = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    REQUIRE(moved);
+    REQUIRE(moved.view);
+    REQUIRE(moved.view->pending_virtual_hold);
+    CHECK(moved.view->pending_virtual_hold->anchor_row == 959'040);
+    CHECK(state.virtual_bms_cursor_row == 959'280);
     REQUIRE(dispatch_editor_action(history, state, cancel_editor_gesture_action_t{}));
     CHECK_FALSE(state.pending_virtual_lane_key);
+    REQUIRE(dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::backward}));
     CHECK(history.document.charts.front().measures.size() == 2);
     CHECK(history.undo.empty());
     CHECK_FALSE(dispatch_editor_action(history, state,
@@ -245,6 +251,110 @@ TEST_CASE("BMS paging preserves fractional position across an imported short mea
     CHECK_FALSE(state.virtual_bms_cursor_row);
     CHECK((state.cursor == local_position_t{measure_id_t{1}, 240}));
     CHECK(history.document.charts.front().measures.size() == 2);
+}
+
+TEST_CASE("virtual BMS hold spans rows in one undoable command",
+          "[unit][core][interaction][virtual-canvas]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto placed = dispatch_editor_action(
+        history, state,
+        place_virtual_bms_hold_action_t{959'040, 959'520, lane_id_t{1}});
+    REQUIRE(placed);
+    CHECK(placed.document_changed);
+    CHECK(history.undo.size() == 1);
+    REQUIRE(history.document.charts.front().measures.size() == 1'000);
+    const auto& notes = history.document.charts.front().measures.back().notes;
+    REQUIRE(notes.size() == 1);
+    CHECK(notes.front().kind == note_kind_t::hold);
+    CHECK((notes.front().position == local_position_t{measure_id_t{1'000}, 0}));
+    CHECK((notes.front().end == local_position_t{measure_id_t{1'000}, 480}));
+    CHECK((state.cursor == local_position_t{measure_id_t{1'000}, 480}));
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().measures.size() == 2);
+    REQUIRE(redo_document_command(history));
+    CHECK(history.document.charts.front().measures.back().notes.size() == 1);
+}
+
+TEST_CASE("virtual BMS lane key may move the cursor before confirming a hold",
+          "[unit][core][interaction][virtual-canvas]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        jump_edit_cursor_action_t{{measure_id_t{2}, 720}, history.document.revision}));
+    REQUIRE(dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward}));
+    REQUIRE(state.virtual_bms_cursor_row);
+    const auto anchor = *state.virtual_bms_cursor_row;
+    state.pending_virtual_lane_key =
+        editor_interaction_state_t::virtual_lane_key_t{anchor, lane_id_t{1},
+                                                        history.document.revision};
+    const auto moved = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    REQUIRE(moved);
+    REQUIRE(moved.view);
+    REQUIRE(moved.view->pending_virtual_hold);
+    CHECK(moved.view->pending_virtual_hold->anchor_row == anchor);
+    REQUIRE(state.virtual_bms_cursor_row);
+    const auto end = *state.virtual_bms_cursor_row;
+    CHECK(end == anchor + 240);
+    state.pending_virtual_lane_key.reset();
+    const auto placed = dispatch_editor_action(
+        history, state, place_virtual_bms_hold_action_t{anchor, end, lane_id_t{1}});
+    REQUIRE(placed);
+    CHECK_FALSE(state.virtual_bms_cursor_row);
+    REQUIRE(history.document.charts.front().measures[2].notes.size() == 1);
+    CHECK(history.document.charts.front().measures[2].notes.front().kind == note_kind_t::hold);
+}
+
+TEST_CASE("virtual BMS hold extends backward into authored geometry and merges a tap",
+          "[unit][core][interaction][virtual-canvas]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    chart.measures[1].notes.push_back({.id = object_id_t{200},
+                                       .position = {measure_id_t{2}, 720},
+                                       .lane = lane_id_t{1}});
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto placed = dispatch_editor_action(
+        history, state,
+        place_virtual_bms_hold_action_t{1'920, 1'680, lane_id_t{1}});
+    REQUIRE(placed);
+    CHECK(history.undo.size() == 1);
+    CHECK(history.document.charts.front().measures[1].notes.size() == 1);
+    const auto& hold = history.document.charts.front().measures[1].notes.front();
+    CHECK(hold.kind == note_kind_t::hold);
+    CHECK((hold.position == local_position_t{measure_id_t{2}, 720}));
+    CHECK((hold.end == local_position_t{measure_id_t{3}, 0}));
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().measures.size() == 2);
+    CHECK(history.document.charts.front().measures[1].notes.front().id == object_id_t{200});
+}
+
+TEST_CASE("virtual BMS hold rejects a protected authored collision atomically",
+          "[unit][core][interaction][virtual-canvas]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.source_family = format_family_t::bms;
+    chart.measures[1].notes.push_back({.id = object_id_t{200},
+                                       .position = {measure_id_t{2}, 720},
+                                       .lane = lane_id_t{1},
+                                       .label = "protected"});
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto cursor = state.cursor;
+    CHECK_FALSE(dispatch_editor_action(
+        history, state,
+        place_virtual_bms_hold_action_t{1'920, 1'680, lane_id_t{1}}));
+    CHECK(history.document.charts.front().measures.size() == 2);
+    CHECK(history.undo.empty());
+    CHECK(state.cursor == cursor);
 }
 
 TEST_CASE(

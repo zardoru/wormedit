@@ -202,6 +202,15 @@ TEST_CASE("field scene can project the last sparse BMS measure with its active l
     }));
     CHECK(chart.measures.size() == 2);
     CHECK(indexed.measures.entries.size() == 2);
+    visible.pending_virtual_hold =
+        wormedit::editor_interaction_view_model_t::virtual_hold_preview_t{
+            959'040, 959'280, wormedit::lane_id_t{1}, 7};
+    const auto with_hold = wormedit::make_editor_field_scene(chart, indexed, visible, request);
+    REQUIRE(with_hold);
+    CHECK(std::ranges::any_of(with_hold.scene->hold_bodies, [](const auto& body) {
+        return body.proposal_ghost && body.bounds.top == Catch::Approx(0.0) &&
+               body.bounds.bottom == Catch::Approx(48.0);
+    }));
     auto authored_only = request;
     authored_only.include_virtual_bms_tail = false;
     CHECK_FALSE(wormedit::make_editor_field_scene(chart, indexed, visible, authored_only));

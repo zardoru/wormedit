@@ -5175,14 +5175,34 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 const auto pending = *state.pending_virtual_lane_key;
                 state.pending_virtual_lane_key.reset();
                 if (pending.document_revision != history.document.revision ||
-                    state.virtual_bms_cursor_row != pending.canvas_row ||
                     pending.lane != lane_id_t{input.lane_id}) {
-                    return "Virtual BMS lane key was canceled after the cursor or chart changed.";
+                    return "Virtual BMS lane key was canceled after the chart or key changed.";
                 }
-                result = dispatch_editor_action(
-                    history, state,
-                    place_virtual_bms_tap_action_t{pending.canvas_row, pending.lane});
-                accepted = "Virtual BMS tap placed from the lane key.";
+                auto end_row = state.virtual_bms_cursor_row;
+                if (!end_row) {
+                    const auto* chart = selected_chart(history, workspace);
+                    if (chart) {
+                        const auto built = build_measure_index(*chart);
+                        if (const auto* index = std::get_if<measure_index_t>(&built)) {
+                            end_row = absolute_row(*index, state.cursor);
+                        }
+                    }
+                }
+                if (!end_row) {
+                    return "Virtual BMS lane key ended outside chart geometry.";
+                }
+                if (*end_row == pending.canvas_row) {
+                    result = dispatch_editor_action(
+                        history, state,
+                        place_virtual_bms_tap_action_t{pending.canvas_row, pending.lane});
+                    accepted = "Virtual BMS tap placed from the lane key.";
+                } else {
+                    result = dispatch_editor_action(
+                        history, state,
+                        place_virtual_bms_hold_action_t{pending.canvas_row, *end_row,
+                                                        pending.lane});
+                    accepted = "Virtual BMS hold placed from the lane key.";
+                }
             } else if (state.pending_hold.has_value() &&
                 state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) {
                 result = dispatch_editor_action(history, state,

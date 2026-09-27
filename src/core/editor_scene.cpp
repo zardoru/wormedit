@@ -732,6 +732,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
     }
     const auto preview_gesture_count =
         static_cast<unsigned>(view.pending_hold.has_value()) +
+        static_cast<unsigned>(view.pending_virtual_hold.has_value()) +
         static_cast<unsigned>(view.pending_note_duration_gesture.has_value()) +
         static_cast<unsigned>(view.pending_note_move_gesture.has_value());
     if (preview_gesture_count > 1) {
@@ -989,6 +990,25 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                              .tail_row = tail_row,
                              .adds_note = preview.adds_note};
         }
+    }
+    if (view.pending_virtual_hold.has_value()) {
+        const auto& pending = *view.pending_virtual_hold;
+        if (pending.document_revision != index.document_revision ||
+            chart.source_family != format_family_t::bms ||
+            !request.include_virtual_bms_tail || pending.anchor_row < index.measures.total_rows ||
+            pending.anchor_row >= canvas_rows || pending.end_row >= canvas_rows ||
+            index.layouts.empty() || !has_lane(&index.layouts.back(), pending.lane)) {
+            result.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
+                                               "virtual BMS hold preview is stale or invalid"));
+            return result;
+        }
+        const auto first = std::min(pending.anchor_row, pending.end_row);
+        const auto last = std::max(pending.anchor_row, pending.end_row);
+        hold_proposal = {.lane = pending.lane,
+                         .head_row = first,
+                         .tail_row = first == last ? std::optional<std::uint64_t>{}
+                                                  : std::optional{last},
+                         .adds_note = true};
     }
     const auto after_candidates = std::ranges::upper_bound(
         index.notes, query_high,

@@ -62,6 +62,12 @@ struct place_virtual_bms_tap_action_t {
     std::optional<resource_id_t> sample;
 };
 
+struct place_virtual_bms_hold_action_t {
+    std::uint64_t anchor_canvas_row{};
+    std::uint64_t end_canvas_row{};
+    lane_id_t lane;
+};
+
 // Hold authoring is a two-step gesture. Beginning stores an exact snapped
 // preview anchor without changing the document; committing publishes one
 // validated command. A rejected commit leaves the preview available to retry.
@@ -343,6 +349,7 @@ struct scroll_editor_view_action_t {
 using editor_ui_action_t = std::variant<
     move_edit_cursor_action_t, page_edit_cursor_action_t, jump_edit_cursor_action_t,
     cycle_edit_snap_action_t, place_tap_action_t, place_virtual_bms_tap_action_t,
+    place_virtual_bms_hold_action_t,
     begin_hold_action_t, update_hold_preview_action_t,
     commit_hold_action_t, cancel_hold_action_t, begin_lane_key_hold_gesture_action_t,
     release_lane_key_hold_gesture_action_t, begin_alt_pointer_hold_gesture_action_t,
@@ -536,6 +543,13 @@ struct editor_interaction_view_model_t {
     double viewport_scroll_pixels{};
     double viewport_height_pixels{1.0};
     std::optional<pending_hold_t> pending_hold;
+    struct virtual_hold_preview_t {
+        std::uint64_t anchor_row{};
+        std::uint64_t end_row{};
+        lane_id_t lane;
+        std::uint64_t document_revision{};
+    };
+    std::optional<virtual_hold_preview_t> pending_virtual_hold;
     std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
     std::optional<pending_note_move_gesture_t> pending_note_move_gesture;
     std::optional<note_paint_gesture_preview_t> pending_note_paint_gesture;

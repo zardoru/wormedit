@@ -381,6 +381,22 @@ auto make_view(const document_history_t& history, const editor_interaction_state
             index, state.retained_selection_range->begin, state.retained_selection_range->end);
     }
 
+    std::optional<editor_interaction_view_model_t::virtual_hold_preview_t> virtual_hold_preview;
+    if (state.pending_virtual_lane_key) {
+        const auto& pending = *state.pending_virtual_lane_key;
+        if (pending.document_revision != history.document.revision ||
+            chart->source_family != format_family_t::bms ||
+            pending.canvas_row < index.total_rows || pending.canvas_row >= canvas_rows ||
+            !find_active_lane(*chart, index, lane_position, pending.lane)) {
+            return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
+                                           "virtual BMS lane-key preview is stale or invalid")};
+        }
+        virtual_hold_preview = {.anchor_row = pending.canvas_row,
+                                .end_row = *absolute,
+                                .lane = pending.lane,
+                                .document_revision = pending.document_revision};
+    }
+
     const auto step = chart->divisions_per_standard_measure / state.active_snap_denominator;
     return editor_interaction_view_model_t{
         .chart = state.chart,
@@ -395,6 +411,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .viewport_scroll_pixels = state.viewport_scroll_pixels,
         .viewport_height_pixels = state.viewport_height_pixels,
         .pending_hold = state.pending_hold,
+        .pending_virtual_hold = virtual_hold_preview,
         .pending_note_duration_gesture = state.pending_note_duration_gesture,
         .pending_note_move_gesture = state.pending_note_move_gesture,
         .pending_note_paint_gesture =
@@ -2551,7 +2568,9 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                  {error(diagnostic_code_t::invalid_hold,
                                         "Space range selection is stale after a document edit")});
     }
-    if (state.pending_virtual_lane_key) {
+    if (state.pending_virtual_lane_key &&
+        !std::holds_alternative<move_edit_cursor_action_t>(action) &&
+        !std::holds_alternative<page_edit_cursor_action_t>(action)) {
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "release or cancel the virtual BMS lane key first")});
@@ -2631,6 +2650,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         !std::holds_alternative<jump_edit_cursor_action_t>(action) &&
         !std::holds_alternative<cycle_edit_snap_action_t>(action) &&
         !std::holds_alternative<place_virtual_bms_tap_action_t>(action) &&
+        !std::holds_alternative<place_virtual_bms_hold_action_t>(action) &&
         !std::holds_alternative<select_editor_lane_action_t>(action) &&
         !std::holds_alternative<adjust_editor_zoom_action_t>(action) &&
         !std::holds_alternative<scroll_editor_view_action_t>(action)) {
@@ -4069,6 +4089,124 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                        ? std::get<diagnostic_list_t>(next_view)
                                        : diagnostic_list_t{},
                 };
+            } else if constexpr (std::is_same_v<action_t, place_virtual_bms_hold_action_t>) {
+                if (chart->source_family != format_family_t::bms || !typed_action.lane ||
+                    state.active_snap_denominator == 0 ||
+                    chart->divisions_per_standard_measure % state.active_snap_denominator != 0) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::invalid_resolution,
+                                                    "virtual hold requires a BMS chart and valid snap")});
+                }
+                const auto built_canvas = build_virtual_canvas(*chart);
+                if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas))
+                    return diagnostic_result(history, state, *diagnostics);
+                const auto& canvas = std::get<virtual_canvas_t>(built_canvas);
+                const auto step = chart->divisions_per_standard_measure /
+                                  state.active_snap_denominator;
+                const auto snap_row = [&](std::uint64_t row) -> std::optional<std::uint64_t> {
+                    if (row >= canvas.total_rows)
+                        return std::nullopt;
+                    const auto remainder = row % step;
+                    auto snapped = row - remainder;
+                    if (remainder > step - remainder) {
+                        if (step > std::numeric_limits<std::uint64_t>::max() - snapped)
+                            return std::nullopt;
+                        snapped += step;
+                    }
+                    return snapped < canvas.total_rows ? std::optional{snapped} : std::nullopt;
+                };
+                const auto anchor_row = snap_row(typed_action.anchor_canvas_row);
+                const auto end_row = snap_row(typed_action.end_canvas_row);
+                const auto anchor_measure =
+                    anchor_row ? canvas.measure_containing(*anchor_row) : std::nullopt;
+                const auto end_measure =
+                    end_row ? canvas.measure_containing(*end_row) : std::nullopt;
+                if (!anchor_measure || anchor_measure->authored || !end_measure ||
+                    anchor_measure->number >= bms_addressable_measure_count ||
+                    end_measure->number >= bms_addressable_measure_count) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::row_out_of_range,
+                                                    "virtual hold endpoints are unavailable")});
+                }
+                auto proposed = history.document;
+                auto* proposed_chart = find_chart(proposed, state.chart);
+                const auto last_number = std::max(anchor_measure->number, end_measure->number);
+                const auto required = last_number + 1 - proposed_chart->measures.size();
+                std::uint64_t last_measure_id{};
+                for (const auto& measure : proposed_chart->measures)
+                    last_measure_id = std::max(last_measure_id, measure.id.value);
+                if (required > std::numeric_limits<std::uint64_t>::max() - last_measure_id) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::invalid_id,
+                                                    "virtual hold measure ID sequence is exhausted")});
+                }
+                proposed_chart->measures.reserve(last_number + 1);
+                for (std::size_t added = 0; added < required; ++added) {
+                    proposed_chart->measures.push_back(
+                        {.id = measure_id_t{++last_measure_id},
+                         .definition = {{1, 1}, meter_t{4, 4}}});
+                }
+                const auto built_proposed_index = build_measure_index(*proposed_chart);
+                if (const auto* diagnostics =
+                        std::get_if<diagnostic_list_t>(&built_proposed_index))
+                    return diagnostic_result(history, state, *diagnostics);
+                const auto& proposed_index = std::get<measure_index_t>(built_proposed_index);
+                const auto anchor = position_at(proposed_index, *anchor_row);
+                const auto end = position_at(proposed_index, *end_row);
+                if (!anchor || !end ||
+                    !find_active_lane(*proposed_chart, proposed_index, *anchor,
+                                      typed_action.lane) ||
+                    !find_active_lane(*proposed_chart, proposed_index, *end,
+                                      typed_action.lane)) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::unknown_lane,
+                                                    "virtual hold lane is unavailable at an endpoint")});
+                }
+                const auto planned = plan_hold_placement(*proposed_chart, proposed_index,
+                                                         typed_action.lane, *anchor, *end);
+                if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
+                    return diagnostic_result(history, state, *diagnostics);
+                const auto& placement = std::get<hold_placement_plan_t>(planned);
+                std::optional<object_id_t> id;
+                if (placement.adds_note) {
+                    id = next_object_id(*proposed_chart);
+                    if (!id) {
+                        return diagnostic_result(history, state,
+                                                 {error(diagnostic_code_t::invalid_id,
+                                                        "virtual hold object ID sequence is exhausted")});
+                    }
+                }
+                erase_notes(*proposed_chart, placement.removals);
+                if (placement.adds_note) {
+                    const auto target_measure = std::ranges::find(
+                        proposed_chart->measures, placement.head.measure,
+                        &measure_chunk_t::id);
+                    target_measure->notes.push_back({
+                        .id = *id,
+                        .position = placement.head,
+                        .lane = typed_action.lane,
+                        .kind = placement.tail ? note_kind_t::hold : note_kind_t::tap,
+                        .end = placement.tail,
+                    });
+                }
+                auto command = commit_document_command(
+                    history, std::move(proposed),
+                    placement.tail ? "Place hold in virtual BMS measure"
+                                   : "Place tap in virtual BMS measure");
+                if (!command)
+                    return diagnostic_result(history, state, std::move(command.diagnostics));
+                state.cursor = *end;
+                state.virtual_bms_cursor_row.reset();
+                state.active_lane = typed_action.lane;
+                const auto next_view = make_view(history, state);
+                return {.accepted = true,
+                        .document_changed = true,
+                        .view = std::holds_alternative<editor_interaction_view_model_t>(next_view)
+                                    ? std::optional{std::get<editor_interaction_view_model_t>(next_view)}
+                                    : std::nullopt,
+                        .diagnostics = std::holds_alternative<diagnostic_list_t>(next_view)
+                                           ? std::get<diagnostic_list_t>(next_view)
+                                           : diagnostic_list_t{}};
             } else if constexpr (std::is_same_v<action_t, place_virtual_bms_tap_action_t>) {
                 if (chart->source_family != format_family_t::bms || !typed_action.lane ||
                     state.active_snap_denominator == 0 ||

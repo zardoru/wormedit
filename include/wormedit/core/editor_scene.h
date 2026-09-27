@@ -25,6 +25,7 @@ struct editor_field_scene_bgm_source_t {
     object_id_t source_lane;
     std::uint64_t row{};
     std::optional<resource_id_t> sound;
+    std::optional<bool> bmson_restart;
 };
 
 struct editor_field_scene_note_source_t {
@@ -147,6 +148,7 @@ struct editor_field_bgm_event_geometry_t {
     object_id_t event;
     object_id_t source_lane;
     std::optional<resource_id_t> sound;
+    std::optional<bool> bmson_restart;
     bool selected{};
     editor_field_rect_t bounds;
 };

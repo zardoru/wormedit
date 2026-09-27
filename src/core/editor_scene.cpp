@@ -241,6 +241,28 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
         bgm_event_count += measure.bgm_events.size();
     }
     index.bgm_events.reserve(bgm_event_count);
+    std::unordered_map<std::uint64_t, bool> bmson_restart_by_event;
+    if (chart.source_family == format_family_t::bmson) {
+        for (const auto& channel : chart.sound_channels) {
+            std::unordered_map<std::uint64_t, bool> restart_by_row;
+            std::vector<std::pair<object_id_t, std::uint64_t>> channel_events;
+            channel_events.reserve(channel.events.size());
+            for (const auto& event : channel.events) {
+                const auto row = absolute_row(index.measures, event.position);
+                if (!row) {
+                    diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
+                                                "BMSON source event is outside chart geometry",
+                                                event.id));
+                    continue;
+                }
+                restart_by_row[*row] = restart_by_row[*row] || !event.continuation;
+                channel_events.emplace_back(event.id, *row);
+            }
+            for (const auto& [id, row] : channel_events) {
+                bmson_restart_by_event.emplace(id.value, restart_by_row[row]);
+            }
+        }
+    }
     std::unordered_set<std::uint64_t> bgm_source_lanes;
     std::unordered_set<std::uint64_t> bgm_event_ids;
     bgm_source_lanes.reserve(chart.bgm_source_lanes.size());
@@ -277,7 +299,16 @@ auto build_editor_field_scene_index(const chart_document_t& chart, std::uint64_t
             index.bgm_events.push_back({.event = event.id,
                                         .source_lane = event.source_lane,
                                         .row = *row,
-                                        .sound = event.sound});
+                                        .sound = event.sound,
+                                        .bmson_restart = event.sound_channel_event
+                                            ? [&]() -> std::optional<bool> {
+                                                  const auto found = bmson_restart_by_event.find(
+                                                      event.sound_channel_event->value);
+                                                  return found == bmson_restart_by_event.end()
+                                                             ? std::nullopt
+                                                             : std::optional<bool>{found->second};
+                                              }()
+                                            : std::nullopt});
         }
     }
     if (!diagnostics.empty()) {
@@ -1339,6 +1370,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                 {.event = event->event,
                  .source_lane = event->source_lane,
                  .sound = event->sound,
+                 .bmson_restart = event->bmson_restart,
                  .selected = selected_bgm_events.contains(event->event.value),
                  .bounds = bounds});
         }

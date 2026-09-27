@@ -1487,7 +1487,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                  ? "Layer solo active · only selected-layer notes shown"
              : view->note_paint_mode_active
                  ? "Paint armed · click/drag draws or erases · Esc cancels"
-                 : "↑/↓ move · PgUp/PgDn page · drag selects/moves · Alt-drag hold · Del",
+                 : "↑/↓ move · drag selects/moves · Alt-drag hold · Shift-click BMSON BGM resets",
              NK_TEXT_LEFT);
 
     const auto group_bounds = nk_window_get_content_region(context);
@@ -1910,7 +1910,17 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                !state.area_selection_candidate_active) {
         const auto event_id = compose_bgm_event_at(view, pointer_x, pointer_y);
         if (event_id != 0) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK, pointer_x,
+            const auto event = std::find_if(view->bgm_events,
+                                             view->bgm_events + view->bgm_event_count,
+                                             [event_id](const auto& item) {
+                                                 return item.event_id == event_id;
+                                             });
+            const auto shift_restart = event != view->bgm_events + view->bgm_event_count &&
+                event->bmson_slice && (pointer_modifiers & SDL_KMOD_SHIFT) != 0 &&
+                (pointer_modifiers & (SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI)) == 0;
+            append_compose_input(action, shift_restart
+                                             ? WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE
+                                             : WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK, pointer_x,
                                  pointer_y, 0, false, compose_selection_mode(pointer_modifiers),
                                  WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, event_id);
         }
@@ -2222,6 +2232,12 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             nk_fill_rect(canvas, rect, 1.5f, fill);
             nk_stroke_rect(canvas, rect, 1.5f, event.selected ? 2.0f : 1.0f,
                            event.selected ? nk_rgb(248, 224, 255) : nk_rgb(50, 35, 58));
+            if (event.bmson_slice) {
+                const auto color = event.bmson_restart ? nk_rgb(255, 188, 94)
+                                                        : nk_rgb(119, 231, 226);
+                nk_stroke_line(canvas, rect.x + 3.0f, rect.y + 2.0f,
+                               rect.x + 3.0f, rect.y + rect.h - 2.0f, 2.0f, color);
+            }
         }
         for (size_t index = 0; index < view->bgm_lane_count; ++index) {
             const auto rect = compose_screen_rect(&view->bgm_lanes[index].bounds, view, viewport);

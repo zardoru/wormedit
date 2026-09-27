@@ -26,6 +26,8 @@ Compose now selects a registered image by clicking its BGA catalog row. The work
 
 The Compose resource toolbar now has an opt-in Auto next control for Sample, BGM, and BGA placement. After a successful cursor or pointer insertion, it advances the armed resource to the next non-missing entry of the same role and asset type in stable catalog order. It does not wrap; exhaustion turns Auto next and pointer placement off while leaving the last resource selected. Assignment, replacement, failed insertion, regular note editing, and history operations do not advance it. Disarming or switching projects clears the toggle.
 
+The independently scrolled BGM canvas now distinguishes BMSON source-channel slice continuations from restarts with colored marks on linked tiles. Shift-clicking a linked non-playable BMSON tile toggles the retained channel's restart flag for every event at that pulse in one undoable command; BMS tiles keep their ordinary Shift-selection behavior. The scene index resolves same-pulse restart state once per revision, and the BMSON writer round-trip preserves the edit. The broader timing-aligned sound-channel waveform, multi-marker razor, drag/delete, and region audition workflow remains.
+
 Setup now exposes independent SM/SSC file-family, native/legacy timing-syntax,
 and syntax-only/StepMania 5.1/Etterna 0.75.1 implementation choices. The
 application retains the typed policy outside the adapter, validates it through

@@ -11,6 +11,7 @@
 #include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/autosave_loop.h>
 #include <wormedit/core/bms_branch_editor.h>
+#include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/command_registry.h>
@@ -3394,6 +3395,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
              .source_lane_id = event.source_lane.value,
              .sound_id = event.sound ? event.sound->value : 0,
              .has_sound = event.sound.has_value(),
+             .bmson_slice = event.bmson_restart.has_value(),
+             .bmson_restart = event.bmson_restart.value_or(false),
              .selected = event.selected});
     }
     if (scene.cursor) {
@@ -4419,6 +4422,44 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                     true});
             accepted = "BGM event selected.";
             break;
+        case WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE: {
+            if (gesture_active) {
+                return "Finish or cancel the active Compose gesture before editing a BMSON reset.";
+            }
+            const auto chart = std::ranges::find(history.document.charts, state.chart,
+                                                 &chart_document_t::id);
+            if (chart == history.document.charts.end()) {
+                return "The selected BMSON chart is no longer available.";
+            }
+            std::optional<object_id_t> source_event;
+            for (const auto& measure : chart->measures) {
+                const auto event = std::ranges::find(measure.bgm_events,
+                                                     object_id_t{input.object_id},
+                                                     &bgm_event_t::id);
+                if (event != measure.bgm_events.end()) {
+                    source_event = event->sound_channel_event;
+                    break;
+                }
+            }
+            if (!source_event) {
+                return "This BGM tile has no BMSON sound-channel slice to reset.";
+            }
+            const auto applied = toggle_bmson_sound_channel_restart(
+                history, ui_action.compose_input_document_revision, state.chart, *source_event);
+            if (!applied.diagnostics.empty()) {
+                return applied.diagnostics.front().message;
+            }
+            if (!applied.applied) {
+                return "BMSON restart state did not change.";
+            }
+            const auto rebound = rebind_workspace(workspace, history);
+            if (!rebound) {
+                return rebound.diagnostics.empty()
+                           ? "BMSON restart changed, but workspace rebinding failed."
+                           : rebound.diagnostics.front().message;
+            }
+            return "BMSON slice restart toggled.";
+        }
         case WORM_UI_COMPOSE_INPUT_POINTER_CLICK: {
             const auto chart =
                 std::ranges::find(history.document.charts, state.chart, &chart_document_t::id);

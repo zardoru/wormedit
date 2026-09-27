@@ -340,6 +340,8 @@ typedef struct WormUiComposeBgmEventView {
     uint64_t source_lane_id;
     uint64_t sound_id;
     bool has_sound;
+    bool bmson_slice;
+    bool bmson_restart;
     bool selected;
 } WormUiComposeBgmEventView;
 
@@ -1065,6 +1067,7 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_PLACE,
     WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE,
     WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK,
+    WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE,
     WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK,
     WORM_UI_COMPOSE_INPUT_DELETE_NOTES,
     WORM_UI_COMPOSE_INPUT_UNDO,

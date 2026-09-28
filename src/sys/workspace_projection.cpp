@@ -173,8 +173,8 @@ void populate_recovery_view(
         result.view.recovery_rows_truncated || recovery_row_count < recovery.rows.size();
     for (std::size_t index = 0; index < recovery_row_count; ++index) {
         const auto& row = recovery.rows[index];
-        result.recovery_path_storage[index] = row.path_label;
-        auto& summary = result.recovery_summary_storage[index];
+        result.recovery.path[index] = row.path_label;
+        auto& summary = result.recovery.summary[index];
         summary = std::string(recovery_status_name(row.status)) + " · " +
                   std::string(recovery_comparison_name(row.comparison));
         if (row.version) {
@@ -186,7 +186,7 @@ void populate_recovery_view(
         if (recovery.preferred_recovery_row == index) {
             summary += " · recommended recovery";
         }
-        auto& disabled_reason = result.recovery_disabled_storage[index];
+        auto& disabled_reason = result.recovery.disabled_reason[index];
         const auto action_mask = recovery_action_mask(row.available_actions);
         constexpr auto all_recovery_actions =
             WORM_UI_RECOVERY_ACTION_INSPECT | WORM_UI_RECOVERY_ACTION_RECOVER |
@@ -199,7 +199,7 @@ void populate_recovery_view(
                 "Unavailable actions are disabled by the recovery controller's safety checks.";
         }
         result.view.recovery_candidates[index] = {
-            .path_label = result.recovery_path_storage[index].c_str(),
+            .path_label = result.recovery.path[index].c_str(),
             .summary = summary.c_str(),
             .disabled_reason = disabled_reason.empty() ? nullptr : disabled_reason.c_str(),
             .action_mask = action_mask,
@@ -216,7 +216,7 @@ void populate_recovery_view(
                                          recovery_diagnostic_count != 0 ||
                                          result.view.recovery_rows_truncated;
     for (std::size_t index = 0; index < recovery_diagnostic_count; ++index) {
-        auto& diagnostic = result.recovery_diagnostic_storage[index];
+        auto& diagnostic = result.recovery.diagnostic[index];
         diagnostic = recovery.diagnostics[index].message;
         if (!recovery.diagnostics[index].path.empty()) {
             diagnostic += " (" + recovery.diagnostics[index].path.generic_string() + ")";
@@ -226,6 +226,63 @@ void populate_recovery_view(
 }
 
 } // namespace
+
+void flattened_workspace_t::rebind_view_pointers() {
+    for (std::size_t index = 0; index < view.summary_line_count; ++index) {
+        view.summary_lines[index] = summary.lines[index].c_str();
+    }
+
+    for (std::size_t index = 0; index < view.recovery_candidate_count; ++index) {
+        auto& candidate = view.recovery_candidates[index];
+        candidate.path_label = recovery.path[index].c_str();
+        candidate.summary = recovery.summary[index].c_str();
+        candidate.disabled_reason = recovery.disabled_reason[index].empty()
+                                        ? nullptr
+                                        : recovery.disabled_reason[index].c_str();
+    }
+    for (std::size_t index = 0; index < view.recovery_diagnostic_count; ++index) {
+        view.recovery_diagnostics[index] = recovery.diagnostic[index].c_str();
+    }
+
+    view.setup.stepmania_policy_status = setup.policy_status.c_str();
+
+    auto& metadata_view = view.metadata;
+    metadata_view.search_tags = metadata_view.search_tags_editable
+                                   ? metadata.search_tag.data()
+                                   : nullptr;
+    metadata_view.search_tag_bytes = metadata_view.search_tags_editable
+                                        ? metadata.search_tag_length.data()
+                                        : nullptr;
+    metadata_view.format_fields = metadata.format_field.data();
+    metadata_view.format_targets = metadata.format_target.data();
+
+    auto& compose_view = view.compose;
+    compose_view.resources = compose.resource.view.data();
+    for (std::size_t index = 0; index < compose_view.resource_count; ++index) {
+        auto& resource = compose.resource.view[index];
+        resource.target_index = compose.resource.index[index].c_str();
+        resource.name = compose.resource.name[index].c_str();
+        resource.source_name = compose.resource.path[index].c_str();
+    }
+    compose_view.output_groups = compose.output_group.view.data();
+    for (std::size_t index = 0; index < compose_view.output_group_count; ++index) {
+        auto& output_group = compose.output_group.view[index];
+        output_group.name = compose.output_group.name[index].c_str();
+        output_group.relative_output_path = compose.output_group.path[index].c_str();
+        output_group.relative_asset_directory =
+            compose.output_group.asset_directory[index].c_str();
+    }
+    compose_view.branch_rows = compose.branch.row.data();
+    for (std::size_t index = 0; index < compose_view.branch_row_count; ++index) {
+        compose.branch.row[index].display_text = compose.branch.text[index].c_str();
+    }
+    compose_view.branch_choices = compose.branch.choice.data();
+    for (std::size_t index = 0; index < compose_view.branch_diagnostic_count; ++index) {
+        compose_view.branch_diagnostics[index] = compose.branch.diagnostic[index].c_str();
+    }
+
+    view.audio_slices.asset_ids = audio.asset.data();
+}
 
 auto flatten_workspace(const wormedit::workspace_view_t& source,
                        const wormedit::song_document_t& document, const std::string& status,
@@ -256,11 +313,11 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
     result.view.tab_heading = tab_labels[static_cast<std::size_t>(source.active_tab)];
 
     const auto append = [&result](std::string line) {
-        if (result.view.summary_line_count >= result.summary_storage.size()) {
+        if (result.view.summary_line_count >= result.summary.lines.size()) {
             return;
         }
         const auto index = result.view.summary_line_count++;
-        result.summary_storage[index] = std::move(line);
+        result.summary.lines[index] = std::move(line);
     };
     std::visit(
         [&](const auto& tab) {
@@ -282,7 +339,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                 const auto resolved = wormedit::resolve_stepmania_export_policy(stepmania_policy);
                 setup.stepmania_policy_valid = static_cast<bool>(resolved);
                 if (resolved) {
-                    result.setup_policy_status_storage =
+                    result.setup.policy_status =
                         stepmania_policy.file_profile == wormedit::stepmania_profile_t::sm &&
                                 stepmania_policy.timing_syntax ==
                                     wormedit::stepmania_timing_syntax_t::native_warps
@@ -290,9 +347,9 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                               "encoding instead."
                             : "Compatible StepMania export policy.";
                 } else {
-                    result.setup_policy_status_storage = resolved.message;
+                    result.setup.policy_status = resolved.message;
                 }
-                setup.stepmania_policy_status = result.setup_policy_status_storage.c_str();
+                setup.stepmania_policy_status = result.setup.policy_status.c_str();
             } else if constexpr (std::is_same_v<tab_t, wormedit::workspace_metadata_view_t>) {
                 result.view.project_title = tab.title.c_str();
                 result.view.artist = tab.artist.c_str();
@@ -311,21 +368,21 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                 metadata.search_tags_editable =
                     tab.search_tags.size() <= WORM_UI_METADATA_SEARCH_TAG_CAPACITY;
                 if (metadata.search_tags_editable) {
-                    result.metadata_search_tag_storage.reserve(tab.search_tags.size());
-                    result.metadata_search_tag_length_storage.reserve(tab.search_tags.size());
+                    result.metadata.search_tag.reserve(tab.search_tags.size());
+                    result.metadata.search_tag_length.reserve(tab.search_tags.size());
                     for (const auto& tag : tab.search_tags) {
-                        result.metadata_search_tag_storage.push_back(tag.c_str());
-                        result.metadata_search_tag_length_storage.push_back(tag.size());
+                        result.metadata.search_tag.push_back(tag.c_str());
+                        result.metadata.search_tag_length.push_back(tag.size());
                         metadata.search_tags_editable =
                             metadata.search_tags_editable &&
                             tag.size() <= WORM_UI_METADATA_SEARCH_TAG_BYTES;
                     }
                 }
                 metadata.search_tags = metadata.search_tags_editable
-                                           ? result.metadata_search_tag_storage.data()
+                                           ? result.metadata.search_tag.data()
                                            : nullptr;
                 metadata.search_tag_bytes = metadata.search_tags_editable
-                                                ? result.metadata_search_tag_length_storage.data()
+                                                ? result.metadata.search_tag_length.data()
                                                 : nullptr;
                 metadata.song_fields_editable =
                     metadata.song_fields_editable && metadata.search_tags_editable;
@@ -360,7 +417,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                              static_cast<std::size_t>(WORM_UI_METADATA_FORMAT_FIELD_CAPACITY));
                 for (std::size_t index = 0; index < metadata.format_field_count; ++index) {
                     const auto& field = tab.format_fields[index];
-                    result.metadata_format_field_storage[index] = {
+                    result.metadata.format_field[index] = {
                         .chart_scoped = field.chart_scoped,
                         .family = static_cast<std::uint8_t>(field.family),
                         .first_group_for_family = field.first_group_for_family,
@@ -375,7 +432,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                         .source_order = field.source_order.value_or(0),
                     };
                 }
-                metadata.format_fields = result.metadata_format_field_storage.data();
+                metadata.format_fields = result.metadata.format_field.data();
                 constexpr std::array format_families{
                     wormedit::format_family_t::native_project, wormedit::format_family_t::bms,
                     wormedit::format_family_t::stepmania,      wormedit::format_family_t::osu_mania,
@@ -398,7 +455,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                         const auto family_index = static_cast<std::size_t>(family);
                         const auto* found = first_groups[family_index];
                         const auto index = metadata.format_target_count++;
-                        result.metadata_format_target_storage[index] = {
+                        result.metadata.format_target[index] = {
                             .chart_scoped = chart_scoped,
                             .family = static_cast<std::uint8_t>(family),
                             .group_exists = found != nullptr,
@@ -418,7 +475,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                         append_format_targets(selected->metadata.format_groups, true);
                     }
                 }
-                metadata.format_targets = result.metadata_format_target_storage.data();
+                metadata.format_targets = result.metadata.format_target.data();
                 append("Song title: " + tab.title);
                 append("Artist: " + tab.artist);
                 append("Search tags: " + std::to_string(tab.search_tags.size()));
@@ -457,11 +514,11 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                 const auto resource_catalog = wormedit::sys::make_compose_resource_catalog(
                     document, source.transport.audio_asset, WORM_UI_COMPOSE_RESOURCE_CAPACITY,
                     source.selected_visual_asset);
-                compose.resources = result.compose_resource_storage.data();
+                compose.resources = result.compose.resource.view.data();
                 compose.resource_count = resource_catalog.entries.size();
                 compose.resource_total_count = resource_catalog.total_count;
                 compose.resources_truncated = resource_catalog.truncated;
-                compose.output_groups = result.compose_output_group_storage.data();
+                compose.output_groups = result.compose.output_group.view.data();
                 compose.output_group_count = 0;
                 compose.output_groups_truncated = false;
                 for (std::size_t group_index = 0; group_index < document.output_groups.size();
@@ -474,20 +531,20 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                         continue;
                     }
                     const auto slot = compose.output_group_count++;
-                    result.compose_output_group_name_storage[slot] = group.name;
-                    result.compose_output_group_path_storage[slot] =
+                    result.compose.output_group.name[slot] = group.name;
+                    result.compose.output_group.path[slot] =
                         group.relative_output_path.generic_string();
                     const auto asset_directory =
                         wormedit::export_asset_directory(group.relative_output_path);
-                    result.compose_output_group_asset_directory_storage[slot] =
+                    result.compose.output_group.asset_directory[slot] =
                         asset_directory ? asset_directory->generic_string() : std::string{};
-                    result.compose_output_group_storage[slot] = {
+                    result.compose.output_group.view[slot] = {
                         .document_index = group_index,
-                        .name = result.compose_output_group_name_storage[slot].c_str(),
+                        .name = result.compose.output_group.name[slot].c_str(),
                         .relative_output_path =
-                            result.compose_output_group_path_storage[slot].c_str(),
+                            result.compose.output_group.path[slot].c_str(),
                         .relative_asset_directory =
-                            result.compose_output_group_asset_directory_storage[slot].c_str()};
+                            result.compose.output_group.asset_directory[slot].c_str()};
                 }
                 for (std::size_t index = 0; index < resource_catalog.entries.size(); ++index) {
                     const auto& resource = resource_catalog.entries[index];
@@ -495,13 +552,13 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                     roles |= resource.sample ? WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE : 0;
                     roles |= resource.bgm ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGM : 0;
                     roles |= resource.bga ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGA : 0;
-                    auto& target_index = result.compose_resource_index_storage[index];
+                    auto& target_index = result.compose.resource.index[index];
                     target_index = resource.target_index;
-                    auto& name = result.compose_resource_name_storage[index];
+                    auto& name = result.compose.resource.name[index];
                     name = resource.name;
-                    auto& source_name = result.compose_resource_path_storage[index];
+                    auto& source_name = result.compose.resource.path[index];
                     source_name = resource.source_name;
-                    result.compose_resource_storage[index] = {
+                    result.compose.resource.view[index] = {
                         .resource_id = resource.resource.value,
                         .asset_id = resource.asset.value,
                         .roles = roles,
@@ -527,9 +584,9 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                     compose.branch_rows_truncated || compose.branch_row_count < outline.rows.size();
                 for (std::size_t row_index = 0; row_index < compose.branch_row_count; ++row_index) {
                     const auto& row = outline.rows[row_index];
-                    result.compose_branch_text_storage[row_index] = row.display_text;
-                    result.compose_branch_row_storage[row_index] = {
-                        .display_text = result.compose_branch_text_storage[row_index].c_str(),
+                    result.compose.branch.text[row_index] = row.display_text;
+                    result.compose.branch.row[row_index] = {
+                        .display_text = result.compose.branch.text[row_index].c_str(),
                         .depth = row.depth,
                         .active = row.active,
                         .selected = row.selected,
@@ -538,7 +595,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                         .source_order = row.source_order.value_or(0),
                     };
                 }
-                compose.branch_rows = result.compose_branch_row_storage.data();
+                compose.branch_rows = result.compose.branch.row.data();
                 compose.branch_choice_count =
                     std::min(outline.choices.size(),
                              static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY));
@@ -548,7 +605,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                 for (std::size_t choice_index = 0; choice_index < compose.branch_choice_count;
                      ++choice_index) {
                     const auto& choice = outline.choices[choice_index];
-                    result.compose_branch_choice_storage[choice_index] = {
+                    result.compose.branch.choice[choice_index] = {
                         .branch_id = choice.id.value,
                         .kind = choice.kind == wormedit::bms_control_kind_t::switch_block
                                     ? WORM_UI_COMPOSE_BRANCH_SWITCH
@@ -566,7 +623,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                         .can_clear = choice.can_clear,
                     };
                 }
-                compose.branch_choices = result.compose_branch_choice_storage.data();
+                compose.branch_choices = result.compose.branch.choice.data();
                 compose.branch_diagnostic_count =
                     std::min(outline.diagnostics.size(),
                              static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY));
@@ -575,7 +632,7 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                     compose.branch_diagnostic_count < outline.diagnostics.size();
                 for (std::size_t diagnostic_index = 0;
                      diagnostic_index < compose.branch_diagnostic_count; ++diagnostic_index) {
-                    auto& diagnostic = result.compose_branch_diagnostic_storage[diagnostic_index];
+                    auto& diagnostic = result.compose.branch.diagnostic[diagnostic_index];
                     diagnostic = outline.diagnostics[diagnostic_index].message;
                     compose.branch_diagnostics[diagnostic_index] = diagnostic.c_str();
                 }
@@ -594,10 +651,10 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                 audio.asset_count =
                     std::min(tab.audio_assets.size(),
                              static_cast<std::size_t>(WORM_UI_AUDIO_ASSET_CAPACITY));
-                result.audio_asset_storage.reserve(audio.asset_count);
+                result.audio.asset.reserve(audio.asset_count);
                 for (std::size_t index = 0; index < audio.asset_count; ++index)
-                    result.audio_asset_storage.push_back(tab.audio_assets[index].value);
-                audio.asset_ids = result.audio_asset_storage.data();
+                    result.audio.asset.push_back(tab.audio_assets[index].value);
+                audio.asset_ids = result.audio.asset.data();
                 audio.has_selected_asset = tab.transport.audio_asset.has_value();
                 audio.selected_asset_id =
                     tab.transport.audio_asset.value_or(wormedit::asset_id_t{}).value;

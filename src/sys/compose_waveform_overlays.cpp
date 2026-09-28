@@ -72,7 +72,7 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
                                    const wormedit::timing_index_t& proposed,
                                    const wormedit::editor_interaction_state_t& interaction) {
     auto& view = flattened.view.compose;
-    auto& output = flattened.compose_proposed_grid_storage;
+    auto& output = flattened.compose.grid.proposed;
     output.clear();
     if (!cache.index || !cache.interaction_view)
         return;
@@ -136,7 +136,7 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
                                *projected, view.viewport_height_pixels, downscroll)}
                          : std::nullopt;
     };
-    auto& preview_rects = flattened.compose_timing_preview_rect_storage;
+    auto& preview_rects = flattened.compose.timing_preview_rect;
     preview_rects.clear();
     preview_rects.reserve(source_scene.note_endpoints.size() + source_scene.bgm_events.size());
     const auto append_rect = [&](WormUiComposeRect bounds, std::uint64_t row, std::uint8_t kind) {
@@ -230,7 +230,7 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
     view.timing_preview_rects = preview_rects.data();
     view.timing_preview_rect_count = preview_rects.size();
 
-    auto& preview_markers = flattened.compose_timing_preview_marker_storage;
+    auto& preview_markers = flattened.compose.timing_preview_marker;
     preview_markers.clear();
     const auto append_marker = [&](wormedit::local_position_t position, std::uint64_t id,
                                    std::size_t source_order, std::size_t storage_order,
@@ -307,7 +307,7 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
     view.timing_preview_markers = preview_markers.data();
     view.timing_preview_marker_count = preview_markers.size();
     for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
-        auto& bookmark = flattened.compose_bookmark_storage[index];
+        auto& bookmark = flattened.compose.bookmark[index];
         const auto y = proposed_y(bookmark.chart_row);
         const auto old_y = compose_project_y(bookmark.chart_row, pixels_per_row,
                                              interaction.viewport_scroll_pixels,
@@ -317,7 +317,7 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
         bookmark.proposed_y_pixels = bookmark.proposed_projection_visible ? *y : 0.0;
     }
     for (std::size_t index = 0; index < view.beat_section_count; ++index) {
-        auto& section = flattened.compose_section_storage[index];
+        auto& section = flattened.compose.section[index];
         const auto begin = proposed_y(section.begin_chart_row);
         const auto end = proposed_y(section.end_chart_row);
         const auto old_begin = compose_project_y(section.begin_chart_row, pixels_per_row,

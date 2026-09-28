@@ -1,0 +1,4 @@
+Checks: '-*,readability-function-cognitive-complexity'
+CheckOptions:
+  readability-function-cognitive-complexity.Threshold: 25
+  readability-function-cognitive-complexity.DescribeBasicIncrements: false

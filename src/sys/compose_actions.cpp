@@ -7,6 +7,7 @@
 #include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/bpm_editor.h>
+#include <wormedit/core/bms_branch_editor.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/grid.h>
@@ -1820,6 +1821,54 @@ std::optional<std::string> dispatch_compose_semantic_layer_state_action(compose_
     return compose_result_status(result, status);
 }
 
+std::string dispatch_bms_branch_choice_action(
+    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+    wormedit::workspace_controller_t& workspace,
+    const std::optional<wormedit::editor_interaction_state_t>& interaction_state) {
+    using namespace wormedit;
+    if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
+        workspace.selected_chart->value != action.compose_input_chart_id ||
+        history.document.revision != action.compose_input_document_revision) {
+        return "BMS branch action ignored because the chart or document revision changed.";
+    }
+    if (interaction_state && editor_interaction_has_pending_gesture(*interaction_state)) {
+        return "Finish or cancel the active Compose gesture before changing a BMS branch.";
+    }
+    if (action.compose_branch_id == 0) {
+        return "Choose a current BMS RANDOM or SWITCH control first.";
+    }
+    const auto applied = apply_bms_branch_choice_command(
+        history, action.compose_input_document_revision,
+        {.chart = *workspace.selected_chart,
+         .branch = branch_id_t{action.compose_branch_id},
+         .selected_value = action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE
+                               ? std::optional<std::int64_t>{action.compose_branch_value}
+                               : std::nullopt});
+    if (!applied) {
+        if (!applied.command.diagnostics.empty()) {
+            return applied.command.diagnostics.front().message;
+        }
+        if (!applied.format_diagnostics.empty()) {
+            return applied.format_diagnostics.front().message;
+        }
+        if (!applied.write_diagnostics.empty()) {
+            return applied.write_diagnostics.front().message;
+        }
+        if (!applied.parse_diagnostics.empty()) {
+            return applied.parse_diagnostics.front().message;
+        }
+        return "BMS branch choice was rejected without changing the document.";
+    }
+    const auto rebound = rebind_workspace(workspace, history);
+    if (!rebound) {
+        return rebound.diagnostics.empty() ? "BMS branch changed, but workspace rebinding failed."
+                                           : rebound.diagnostics.front().message;
+    }
+    return action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE
+               ? "BMS branch choice changed and its semantics were rematerialized."
+               : "BMS branch choice cleared and its semantics were rematerialized.";
+}
+
 } // namespace
 
 auto dispatch_compose_view_action(
@@ -1869,6 +1918,54 @@ auto dispatch_compose_view_action(
     if (auto response = dispatch_compose_semantic_layer_catalog_action(context)) return *response;
     if (auto response = dispatch_compose_semantic_layer_state_action(context)) return *response;
     return compose_result_status(result, status);
+}
+
+auto dispatch_compose_workspace_action(
+    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+    wormedit::workspace_controller_t& workspace,
+    std::optional<wormedit::editor_interaction_state_t>& interaction_state,
+    double viewport_height, application_command_state_t& application_state,
+    const std::filesystem::path& asset_base,
+    wormedit::task_scheduler_t& resource_copy_scheduler,
+    runtime::resource_copy_t& resource_copy_runtime,
+    runtime::output_group_export_t& export_runtime, bool metadata_import_busy,
+    metadata_drop_state_t& metadata_drop, runtime::metadata_asset_t& metadata_asset_runtime,
+    std::string& status) -> bool {
+    if (action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE ||
+        action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE) {
+        status = dispatch_bms_branch_choice_action(action, history, workspace, interaction_state);
+        return true;
+    }
+    if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        return false;
+    }
+
+    const bool metadata_path_action =
+        workspace.active_tab == wormedit::workspace_tab_t::metadata &&
+        (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET ||
+         action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT ||
+         action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT);
+    wormedit::editor_interaction_state_t metadata_interaction{};
+    if (metadata_path_action && workspace.selected_chart) {
+        metadata_interaction.chart = *workspace.selected_chart;
+    }
+    if (interaction_state || metadata_path_action) {
+        if (metadata_path_action) {
+            metadata_asset_runtime.clear_copy_preview_key();
+        }
+        status = dispatch_compose_view_action(
+            action, history, workspace,
+            metadata_path_action ? metadata_interaction : *interaction_state,
+            viewport_height, application_state, asset_base, resource_copy_scheduler,
+            resource_copy_runtime, export_runtime, metadata_import_busy);
+        if (workspace.active_tab == wormedit::workspace_tab_t::metadata &&
+            (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET ||
+             action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT ||
+             action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT)) {
+            metadata_drop.clear_music();
+        }
+    }
+    return true;
 }
 
 

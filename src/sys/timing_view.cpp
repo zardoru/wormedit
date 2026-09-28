@@ -191,21 +191,21 @@ void populate_timing_recipe_view(flattened_workspace_t& flattened,
                         candidate.sampling.max_points);
 
     if (!preview) {
-        flattened.timing_recipe_status_storage = "The transient recipe preview is unavailable.";
-        view.status_text = flattened.timing_recipe_status_storage.c_str();
+        flattened.timing.recipe_status = "The transient recipe preview is unavailable.";
+        view.status_text = flattened.timing.recipe_status.c_str();
         return;
     }
     view.valid = preview->diagnostics.empty();
     if (!preview->diagnostics.empty()) {
-        flattened.timing_recipe_status_storage = preview->diagnostics.front().message;
+        flattened.timing.recipe_status = preview->diagnostics.front().message;
     } else if (!preview->candidate_points.tolerance_met) {
-        flattened.timing_recipe_status_storage =
+        flattened.timing.recipe_status =
             "Adaptive sampling reached its point cap before meeting tolerance.";
     } else {
-        flattened.timing_recipe_status_storage =
+        flattened.timing.recipe_status =
             "Preview is transient; Apply stores only the editable recipe.";
     }
-    view.status_text = flattened.timing_recipe_status_storage.c_str();
+    view.status_text = flattened.timing.recipe_status.c_str();
 
     long double minimum = 0.0L;
     long double maximum = 1.0L;
@@ -275,12 +275,12 @@ void populate_timing_recipe_view(flattened_workspace_t& flattened,
         }
         append(source.size() - 1);
     };
-    append_points(preview->candidate_points.points, flattened.timing_recipe_candidate_storage);
-    append_points(preview->effective_output.points, flattened.timing_recipe_composed_storage);
-    view.candidate_points = flattened.timing_recipe_candidate_storage.data();
-    view.candidate_point_count = flattened.timing_recipe_candidate_storage.size();
-    view.composed_points = flattened.timing_recipe_composed_storage.data();
-    view.composed_point_count = flattened.timing_recipe_composed_storage.size();
+    append_points(preview->candidate_points.points, flattened.timing.recipe_candidate);
+    append_points(preview->effective_output.points, flattened.timing.recipe_composed);
+    view.candidate_points = flattened.timing.recipe_candidate.data();
+    view.candidate_point_count = flattened.timing.recipe_candidate.size();
+    view.composed_points = flattened.timing.recipe_composed.data();
+    view.composed_point_count = flattened.timing.recipe_composed.size();
 }
 
 void populate_speed_cache(timing_scene_cache_t& cache, const wormedit::chart_document_t& chart,
@@ -441,8 +441,8 @@ void populate_timing_stage_view(
             },
             stage->value);
         if (!stage->diagnostics.empty()) {
-            flattened.timing_status_storage = stage->diagnostics.front().message;
-            view.stage_status_text = flattened.timing_status_storage.c_str();
+            flattened.timing.status = stage->diagnostics.front().message;
+            view.stage_status_text = flattened.timing.status.c_str();
         }
     }
 }
@@ -453,7 +453,7 @@ auto populate_timing_grid_and_speeds(flattened_workspace_t& flattened,
                                     const timing_scene_cache_t& cache,
                                     const timing_grid_state_t& timing_grid,
                                     WormUiTimingView& view, RowToPixels row_to_pixels) -> bool {
-    flattened.timing_grid_storage.clear();
+    flattened.timing.grid.clear();
     const auto grid = wormedit::make_editor_grid_lines(
         chart,
         {.visible_begin_row = 0,
@@ -464,25 +464,25 @@ auto populate_timing_grid_and_speeds(flattened_workspace_t& flattened,
                                         static_cast<double>(cache.total_rows),
          .maximum_line_count = WORM_UI_TIMING_GRID_CAPACITY});
     if (!grid) {
-        flattened.timing_status_storage = grid.diagnostics.empty()
+        flattened.timing.status = grid.diagnostics.empty()
                                               ? "The timing grid could not be composed."
                                               : grid.diagnostics.front().message;
-        view.status_text = flattened.timing_status_storage.c_str();
+        view.status_text = flattened.timing.status.c_str();
         return false;
     }
-    flattened.timing_grid_storage.reserve(grid.lines.size());
+    flattened.timing.grid.reserve(grid.lines.size());
     for (const auto& line : grid.lines) {
         const auto row = static_cast<long double>(line.chart_row.whole_rows) +
                          static_cast<long double>(line.chart_row.fractional_rows.numerator) /
                              line.chart_row.fractional_rows.denominator;
-        flattened.timing_grid_storage.push_back(
+        flattened.timing.grid.push_back(
             {.y_pixels = row_to_pixels(row),
              .kind = static_cast<std::uint8_t>(line.kind),
              .emphasis = static_cast<std::uint8_t>(line.emphasis)});
     }
-    flattened.timing_speed_storage.reserve(cache.speeds.size());
+    flattened.timing.speed.reserve(cache.speeds.size());
     for (const auto& speed : cache.speeds) {
-        flattened.timing_speed_storage.push_back({
+        flattened.timing.speed.push_back({
             .object_id = speed.object_id,
             .source_order = speed.source_order,
             .storage_order = speed.storage_order,
@@ -495,7 +495,7 @@ auto populate_timing_grid_and_speeds(flattened_workspace_t& flattened,
             .transition_clipped = speed.transition_clipped,
         });
     }
-    std::ranges::sort(flattened.timing_speed_storage, [](const auto& left, const auto& right) {
+    std::ranges::sort(flattened.timing.speed, [](const auto& left, const auto& right) {
         if (left.marker_y_pixels != right.marker_y_pixels) {
             return left.marker_y_pixels < right.marker_y_pixels;
         }
@@ -505,18 +505,18 @@ auto populate_timing_grid_and_speeds(flattened_workspace_t& flattened,
         return left.storage_order != right.storage_order ? left.storage_order < right.storage_order
                                                          : left.object_id < right.object_id;
     });
-    for (std::size_t first = 0; first < flattened.timing_speed_storage.size();) {
+    for (std::size_t first = 0; first < flattened.timing.speed.size();) {
         auto after = first + 1;
-        while (after < flattened.timing_speed_storage.size() &&
-               flattened.timing_speed_storage[after].marker_y_pixels ==
-                   flattened.timing_speed_storage[first].marker_y_pixels) {
+        while (after < flattened.timing.speed.size() &&
+               flattened.timing.speed[after].marker_y_pixels ==
+                   flattened.timing.speed[first].marker_y_pixels) {
             ++after;
         }
         const auto count = static_cast<double>(after - first);
         for (auto index = first; index < after; ++index) {
-            flattened.timing_speed_storage[index].marker_left_fraction =
+            flattened.timing.speed[index].marker_left_fraction =
                 static_cast<double>(index - first) / count;
-            flattened.timing_speed_storage[index].marker_right_fraction =
+            flattened.timing.speed[index].marker_right_fraction =
                 static_cast<double>(index - first + 1) / count;
         }
         first = after;
@@ -529,19 +529,19 @@ void populate_timing_markers(flattened_workspace_t& flattened,
                              const wormedit::chart_document_t& chart,
                              const wormedit::measure_index_t* measures,
                              WormUiTimingView& view, RowToPixels row_to_pixels) {
-    flattened.timing_marker_storage.clear();
+    flattened.timing.marker.clear();
     std::size_t marker_reserve = 0;
     for (const auto count : {chart.bpms.size(), chart.scrolls.size(), chart.pauses.size(),
                              chart.warps.size(), chart.kiai.size(), chart.timing_anchors.size()}) {
         marker_reserve +=
             std::min<std::size_t>(count, WORM_UI_TIMING_MARKER_CAPACITY - marker_reserve);
     }
-    flattened.timing_marker_storage.reserve(marker_reserve);
+    flattened.timing.marker.reserve(marker_reserve);
     if (measures != nullptr) {
         const auto append_marker = [&](wormedit::local_position_t position, std::uint64_t id,
                                        std::size_t source_order, std::size_t storage_order,
                                        WormUiTimingLaneKind lane) {
-            if (flattened.timing_marker_storage.size() >= WORM_UI_TIMING_MARKER_CAPACITY) {
+            if (flattened.timing.marker.size() >= WORM_UI_TIMING_MARKER_CAPACITY) {
                 view.truncated = true;
                 return;
             }
@@ -549,7 +549,7 @@ void populate_timing_markers(flattened_workspace_t& flattened,
             if (!row) {
                 return;
             }
-            flattened.timing_marker_storage.push_back({
+            flattened.timing.marker.push_back({
                 .object_id = id,
                 .source_order = source_order,
                 .storage_order = storage_order,
@@ -584,7 +584,7 @@ void populate_timing_markers(flattened_workspace_t& flattened,
             append_marker(chart.timing_anchors[index].position,
                           chart.timing_anchors[index].id.value, index, index,
                           WORM_UI_TIMING_LANE_ANCHOR);
-        std::ranges::sort(flattened.timing_marker_storage, [](const auto& left, const auto& right) {
+        std::ranges::sort(flattened.timing.marker, [](const auto& left, const auto& right) {
             if (left.lane != right.lane) {
                 return left.lane < right.lane;
             }
@@ -598,20 +598,20 @@ void populate_timing_markers(flattened_workspace_t& flattened,
                        ? left.storage_order < right.storage_order
                        : left.object_id < right.object_id;
         });
-        for (std::size_t first = 0; first < flattened.timing_marker_storage.size();) {
+        for (std::size_t first = 0; first < flattened.timing.marker.size();) {
             auto after = first + 1;
-            while (after < flattened.timing_marker_storage.size() &&
-                   flattened.timing_marker_storage[after].lane ==
-                       flattened.timing_marker_storage[first].lane &&
-                   flattened.timing_marker_storage[after].marker_y_pixels ==
-                       flattened.timing_marker_storage[first].marker_y_pixels) {
+            while (after < flattened.timing.marker.size() &&
+                   flattened.timing.marker[after].lane ==
+                       flattened.timing.marker[first].lane &&
+                   flattened.timing.marker[after].marker_y_pixels ==
+                       flattened.timing.marker[first].marker_y_pixels) {
                 ++after;
             }
             const auto count = static_cast<double>(after - first);
             for (auto index = first; index < after; ++index) {
-                flattened.timing_marker_storage[index].marker_left_fraction =
+                flattened.timing.marker[index].marker_left_fraction =
                     static_cast<double>(index - first) / count;
-                flattened.timing_marker_storage[index].marker_right_fraction =
+                flattened.timing.marker[index].marker_right_fraction =
                     static_cast<double>(index - first + 1) / count;
             }
             first = after;
@@ -637,15 +637,15 @@ void populate_timing_view(flattened_workspace_t& flattened,
     view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
     if (!workspace.selected_chart) {
-        flattened.timing_status_storage = "Choose a difficulty to display its timing lanes.";
-        view.status_text = flattened.timing_status_storage.c_str();
+        flattened.timing.status = "Choose a difficulty to display its timing lanes.";
+        view.status_text = flattened.timing.status.c_str();
         return;
     }
     const auto chart_it = std::ranges::find(history.document.charts, *workspace.selected_chart,
                                             &wormedit::chart_document_t::id);
     if (chart_it == history.document.charts.end()) {
-        flattened.timing_status_storage = "The selected difficulty is no longer available.";
-        view.status_text = flattened.timing_status_storage.c_str();
+        flattened.timing.status = "The selected difficulty is no longer available.";
+        view.status_text = flattened.timing.status.c_str();
         return;
     }
     const auto& chart = *chart_it;
@@ -667,13 +667,13 @@ void populate_timing_view(flattened_workspace_t& flattened,
     view.speed_total_count = chart.speeds.size();
     populate_speed_cache(cache, chart, history.document.revision);
     if (!cache.status.empty()) {
-        flattened.timing_status_storage = cache.status;
-        view.status_text = flattened.timing_status_storage.c_str();
+        flattened.timing.status = cache.status;
+        view.status_text = flattened.timing.status.c_str();
         return;
     }
     if (cache.total_rows == 0) {
-        flattened.timing_status_storage = "This difficulty has no timing rows to display.";
-        view.status_text = flattened.timing_status_storage.c_str();
+        flattened.timing.status = "This difficulty has no timing rows to display.";
+        view.status_text = flattened.timing.status.c_str();
         return;
     }
     view.total_rows = cache.total_rows;
@@ -692,12 +692,12 @@ void populate_timing_view(flattened_workspace_t& flattened,
     populate_timing_markers(flattened, chart, measures, view, row_to_pixels);
     view.scene_available = true;
     view.truncated = view.truncated || cache.truncated;
-    view.speeds = flattened.timing_speed_storage.data();
-    view.speed_count = flattened.timing_speed_storage.size();
-    view.markers = flattened.timing_marker_storage.data();
-    view.marker_count = flattened.timing_marker_storage.size();
-    view.grid_lines = flattened.timing_grid_storage.data();
-    view.grid_line_count = flattened.timing_grid_storage.size();
+    view.speeds = flattened.timing.speed.data();
+    view.speed_count = flattened.timing.speed.size();
+    view.markers = flattened.timing.marker.data();
+    view.marker_count = flattened.timing.marker.size();
+    view.grid_lines = flattened.timing.grid.data();
+    view.grid_line_count = flattened.timing.grid.size();
     populate_timing_recipe_view(flattened, chart, measures, recipe_draft, recipe_preview,
                                 recipe_selection_armed);
     populate_timing_stage_view(flattened, view, chart, measures, stage, timing_grid,

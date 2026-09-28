@@ -81,6 +81,34 @@ auto register_audition_sources(
     return unavailable;
 }
 
+auto reconcile_audition_sources(
+    audition_source_reconciliation_context_t context, bool stop_playback)
+    -> std::optional<std::size_t> {
+    std::vector<audition_asset_entry_t> next_inventory;
+    next_inventory.reserve(context.document.audio_assets.size());
+    for (const auto& asset : context.document.audio_assets) {
+        next_inventory.emplace_back(asset.id, asset.source_path);
+    }
+    if (context.source_project == context.document.id &&
+        context.asset_inventory == next_inventory) {
+        return std::nullopt;
+    }
+    if (stop_playback) {
+        context.stop_playback();
+        context.invalidate_preview();
+    }
+    context.reset_waveform();
+    context.sources.clear();
+    context.metronome_bindings.clear();
+    ++context.generation;
+    const auto unavailable = register_audition_sources(
+        context.document, context.asset_base, context.generation, context.sources,
+        context.metronome_bindings);
+    context.source_project = context.document.id;
+    context.asset_inventory = std::move(next_inventory);
+    return unavailable;
+}
+
 } // namespace wormedit::sys
 
 #endif

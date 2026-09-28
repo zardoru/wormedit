@@ -2,6 +2,9 @@
 #include "wormedit/window.h"
 
 #include "sys/application_commands.h"
+#include "sys/application_startup.h"
+#include "sys/application_frame_services.h"
+#include "sys/application_frame_projection.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/application_defaults.h"
 #include "sys/compose_resource_presenter.h"
@@ -10,10 +13,13 @@
 #include "sys/compose_actions.h"
 #include "sys/application_edit_helpers.h"
 #include "sys/workspace_projection.h"
+#include "sys/workspace_frame_view.h"
+#include "sys/transport_player_actions.h"
 #include "sys/timing_view.h"
 #include "sys/timing_edit_runtime.h"
 #include "sys/metadata_drop_state.h"
 #include "sys/metadata_asset_runtime.h"
+#include "sys/metadata_actions.h"
 #include "sys/metadata_view_projection.h"
 #include "sys/platform_recovery.h"
 #include "sys/platform_shortcut_profile.h"
@@ -72,6 +78,8 @@
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include "sys/chart_preview_state.h"
+#include "sys/audio_transport_frame.h"
+#include "sys/waveform_analysis_runtime.h"
 #include "sys/sdl_audition_output.h"
 #include "sys/sdl_preview_output.h"
 #include <wormedit/audio/aligned_waveform.h>
@@ -161,53 +169,6 @@ using wormedit::sys::selected_bmson_waveform_source;
 using wormedit::sys::stage_bmson_bgm_marker;
 using wormedit::sys::selected_chart;
 using wormedit::sys::visible_semantic_layer_by_id;
-
-auto stepmania_policy_from_ui(const WormUiWorkspaceAction& action)
-    -> std::optional<wormedit::stepmania_export_policy_t> {
-    wormedit::stepmania_export_policy_t policy;
-    switch (action.stepmania_file_profile) {
-    case WORM_UI_STEPMANIA_FILE_SM:
-        policy.file_profile = wormedit::stepmania_profile_t::sm;
-        break;
-    case WORM_UI_STEPMANIA_FILE_SSC:
-        policy.file_profile = wormedit::stepmania_profile_t::ssc;
-        break;
-    default:
-        return std::nullopt;
-    }
-    switch (action.stepmania_timing_syntax) {
-    case WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS:
-        policy.timing_syntax = wormedit::stepmania_timing_syntax_t::native_warps;
-        break;
-    case WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_BPM:
-        policy.timing_syntax = wormedit::stepmania_timing_syntax_t::legacy_negative_bpm;
-        break;
-    case WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP:
-        policy.timing_syntax = wormedit::stepmania_timing_syntax_t::legacy_negative_stop;
-        break;
-    default:
-        return std::nullopt;
-    }
-    switch (action.stepmania_implementation) {
-    case WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY:
-        policy.implementation_profile =
-            wormedit::stepmania_implementation_profile_t::unspecified;
-        break;
-    case WORM_UI_STEPMANIA_IMPLEMENTATION_STEP_MANIA_5_1:
-        policy.implementation_profile =
-            wormedit::stepmania_implementation_profile_t::stepmania_5_1;
-        break;
-    case WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1:
-        policy.implementation_profile =
-            wormedit::stepmania_implementation_profile_t::etterna_0_75_1;
-        break;
-    default:
-        return std::nullopt;
-    }
-    return policy;
-}
-
-
 
 auto rational_as_long_double(wormedit::signed_rational_t value) -> long double {
     if (value.denominator == 0) {
@@ -982,21 +943,6 @@ auto first_recovery_diagnostic(
     return {};
 }
 
-auto autosave_status_text(const wormedit::native_project_autosave_result_t& result) -> std::string {
-    using status_t = wormedit::native_project_autosave_status_t;
-    if (result.status == status_t::published)
-        return "Autosaved revision " + std::to_string(result.revision) + ".";
-    if (result.status != status_t::failed)
-        return {};
-    if (result.diagnostics.empty())
-        return "Autosave failed; the previous recovery backup was retained.";
-    const auto& diagnostic = result.diagnostics.front();
-    auto message = "Autosave failed: " + diagnostic.message;
-    if (!diagnostic.path.empty())
-        message += " (" + diagnostic.path.generic_string() + ")";
-    return message;
-}
-
 auto dispatch_recovery_ui_action(
     const WormUiWorkspaceAction& action, wormedit::native_project_recovery_controller_t& controller,
     wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
@@ -1124,133 +1070,6 @@ auto dispatch_recovery_ui_action(
     }
 }
 
-auto dispatch_metadata_ui_action(const WormUiWorkspaceAction& action,
-                                 wormedit::document_history_t& history,
-                                 wormedit::workspace_controller_t& workspace, bool timing_locked)
-    -> std::string {
-    using namespace wormedit;
-    const auto failed = [](const document_command_result_t& result) {
-        if (!result.diagnostics.empty())
-            return result.diagnostics.front().message;
-        return std::string{"Metadata edit was not applied."};
-    };
-    const auto publish = [&](document_command_result_t result) {
-        if (!result.applied)
-            return result.diagnostics.empty() ? std::string{"No metadata changes."}
-                                              : failed(result);
-        const auto rebound = rebind_workspace(workspace, history);
-        if (!rebound) {
-            return rebound.diagnostics.empty()
-                       ? std::string{"Metadata changed, but workspace rebinding failed."}
-                       : rebound.diagnostics.front().message;
-        }
-        return std::string{"Metadata updated."};
-    };
-
-    switch (action.metadata_edit) {
-    case WORM_UI_METADATA_EDIT_SONG: {
-        if (!action.metadata_title || !action.metadata_artist ||
-            action.metadata_search_tag_count > WORM_UI_METADATA_SEARCH_TAG_CAPACITY ||
-            (action.metadata_search_tag_count != 0 && !action.metadata_search_tags)) {
-            return "Metadata edit payload is incomplete or exceeds the tag-count cap.";
-        }
-        std::vector<std::string> tags;
-        tags.reserve(action.metadata_search_tag_count);
-        for (std::size_t index = 0; index < action.metadata_search_tag_count; ++index) {
-            if (!action.metadata_search_tags[index])
-                return "Metadata edit contains an empty tag pointer.";
-            tags.emplace_back(action.metadata_search_tags[index]);
-        }
-        return publish(apply_metadata_edit(history, action.metadata_document_revision,
-                                           set_song_metadata_action_t{action.metadata_title,
-                                                                      action.metadata_artist,
-                                                                      std::move(tags)}));
-    }
-    case WORM_UI_METADATA_EDIT_CHART: {
-        if (action.metadata_chart_id == 0 || !action.metadata_chart_name ||
-            !action.metadata_chart_author ||
-            (action.metadata_has_chart_rating &&
-             (!action.metadata_chart_rating_numerator_text ||
-              !action.metadata_chart_rating_denominator_text))) {
-            return "Chart metadata edit payload is incomplete.";
-        }
-        const auto rating = make_chart_rating_metadata_edit(
-            chart_id_t{action.metadata_chart_id}, !action.metadata_has_chart_rating,
-            action.metadata_chart_rating_numerator_text
-                ? action.metadata_chart_rating_numerator_text
-                : "",
-            action.metadata_chart_rating_denominator_text
-                ? action.metadata_chart_rating_denominator_text
-                : "");
-        if (!rating) {
-            return "Rating must use a signed 64-bit numerator and positive 64-bit denominator.";
-        }
-        return publish(apply_metadata_edit(
-            history, action.metadata_document_revision,
-            set_chart_metadata_action_t{chart_id_t{action.metadata_chart_id},
-                                        action.metadata_chart_name, action.metadata_chart_author,
-                                        rating->rating}));
-    }
-    case WORM_UI_METADATA_EDIT_AUDIO_OFFSET: {
-        if (action.metadata_chart_id == 0 || !action.metadata_audio_offset_numerator_text ||
-            !action.metadata_audio_offset_denominator_text) {
-            return "Audio offset edit payload is incomplete.";
-        }
-        const auto numerator = parse_timing_signed(action.metadata_audio_offset_numerator_text);
-        const auto denominator =
-            parse_timing_unsigned(action.metadata_audio_offset_denominator_text);
-        if (!numerator || !denominator || *denominator == 0) {
-            return "Audio offset must use a signed 64-bit numerator and positive 64-bit "
-                   "denominator.";
-        }
-        return publish(apply_audio_offset_edit(history, action.metadata_document_revision,
-                                               chart_id_t{action.metadata_chart_id},
-                                               {*numerator, *denominator}, timing_locked));
-    }
-    case WORM_UI_METADATA_EDIT_OUTPUT_PATH: {
-        if (!action.metadata_output_path ||
-            std::strlen(action.metadata_output_path) > WORM_UI_METADATA_OUTPUT_PATH_BYTES)
-            return "Output path edit payload is incomplete or too long.";
-        return publish(apply_metadata_edit(
-            history, action.metadata_document_revision,
-            set_output_group_path_action_t{action.metadata_output_group_index,
-                                           action.metadata_output_path}));
-    }
-    case WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD:
-    case WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD:
-    case WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD: {
-        if (action.metadata_format_family > static_cast<std::uint8_t>(format_family_t::quaver)) {
-            return "Format metadata edit refers to an unknown format family.";
-        }
-        const format_metadata_target_t target{
-            action.metadata_format_chart_scoped
-                ? std::optional<chart_id_t>{chart_id_t{action.metadata_chart_id}}
-                : std::nullopt,
-            static_cast<format_family_t>(action.metadata_format_family)};
-        metadata_edit_action_t edit;
-        if (action.metadata_edit == WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD) {
-            if (!action.metadata_format_name || !action.metadata_format_value)
-                return "Format metadata replacement payload is incomplete.";
-            edit = replace_format_metadata_field_action_t{target, action.metadata_format_index,
-                                                          action.metadata_format_name,
-                                                          action.metadata_format_value};
-        } else if (action.metadata_edit == WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD) {
-            edit = erase_format_metadata_field_action_t{target, action.metadata_format_index};
-        } else {
-            if (!action.metadata_format_name || !action.metadata_format_value)
-                return "Format metadata insertion payload is incomplete.";
-            edit = insert_format_metadata_field_action_t{target, action.metadata_format_index,
-                                                         action.metadata_format_name,
-                                                         action.metadata_format_value};
-        }
-        return publish(apply_metadata_edit(history, action.metadata_document_revision, edit));
-    }
-    case WORM_UI_METADATA_EDIT_NONE:
-        break;
-    }
-    return "Invalid metadata edit action.";
-}
-
 auto dispatch_audio_offset_drag_action(const WormUiWorkspaceAction& action,
                                        wormedit::document_history_t& history,
                                        wormedit::workspace_controller_t& workspace,
@@ -1348,55 +1167,6 @@ auto dispatch_audio_offset_drag_action(const WormUiWorkspaceAction& action,
            : rebound.diagnostics.empty() ? "Audio offset changed, but workspace rebinding failed."
                                          : rebound.diagnostics.front().message;
 }
-
-auto dispatch_bms_branch_choice_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace,
-    const std::optional<wormedit::editor_interaction_state_t>& interaction_state) -> std::string {
-    using namespace wormedit;
-    if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
-        workspace.selected_chart->value != action.compose_input_chart_id ||
-        history.document.revision != action.compose_input_document_revision) {
-        return "BMS branch action ignored because the chart or document revision changed.";
-    }
-    if (interaction_state && editor_interaction_has_pending_gesture(*interaction_state)) {
-        return "Finish or cancel the active Compose gesture before changing a BMS branch.";
-    }
-    if (action.compose_branch_id == 0) {
-        return "Choose a current BMS RANDOM or SWITCH control first.";
-    }
-    const auto applied = apply_bms_branch_choice_command(
-        history, action.compose_input_document_revision,
-        {.chart = *workspace.selected_chart,
-         .branch = branch_id_t{action.compose_branch_id},
-         .selected_value = action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE
-                               ? std::optional<std::int64_t>{action.compose_branch_value}
-                               : std::nullopt});
-    if (!applied) {
-        if (!applied.command.diagnostics.empty()) {
-            return applied.command.diagnostics.front().message;
-        }
-        if (!applied.format_diagnostics.empty()) {
-            return applied.format_diagnostics.front().message;
-        }
-        if (!applied.write_diagnostics.empty()) {
-            return applied.write_diagnostics.front().message;
-        }
-        if (!applied.parse_diagnostics.empty()) {
-            return applied.parse_diagnostics.front().message;
-        }
-        return "BMS branch choice was rejected without changing the document.";
-    }
-    const auto rebound = rebind_workspace(workspace, history);
-    if (!rebound) {
-        return rebound.diagnostics.empty() ? "BMS branch changed, but workspace rebinding failed."
-                                           : rebound.diagnostics.front().message;
-    }
-    return action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE
-               ? "BMS branch choice changed and its semantics were rematerialized."
-               : "BMS branch choice cleared and its semantics were rematerialized.";
-}
-
 
 void refresh_application_command_states(
     wormedit::command_registry_t& registry, const wormedit::document_history_t& history,
@@ -1807,6 +1577,46 @@ void dispatch_timing_grid_action(const WormUiWorkspaceAction& action,
     status = "Timing grid set to 1/" + std::to_string(timing_grid.active_denominator) + ".";
 }
 
+bool dispatch_timing_workspace_action(
+    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+    wormedit::workspace_controller_t& workspace,
+    application_command_state_t& application_state, timing_grid_state_t& timing_grid,
+    timing_edit_t& timing_edit, std::string& status) {
+    if (action.timing_meter_action != WORM_UI_TIMING_METER_ACTION_NONE) {
+        dispatch_timing_meter_action(action, history, workspace,
+                                     application_state.timing_locked,
+                                     timing_edit.has_pending_edit(), status);
+        return true;
+    }
+    if (action.timing_grid_action != WORM_UI_TIMING_GRID_ACTION_NONE) {
+        dispatch_timing_grid_action(action, history, workspace,
+                                    timing_edit.has_pending_edit(), timing_grid,
+                                    application_state, status);
+        return true;
+    }
+    if (action.timing_recipe_action.kind != WORM_UI_TIMING_RECIPE_ACTION_NONE) {
+        const bool starting_recipe =
+            action.timing_recipe_action.kind == WORM_UI_TIMING_RECIPE_ACTION_ARM_SELECTION ||
+            action.timing_recipe_action.kind == WORM_UI_TIMING_RECIPE_ACTION_BEGIN;
+        if (starting_recipe && timing_edit.stage) {
+            status = "Apply or cancel the timing event before adding an SV recipe.";
+        } else {
+            (void)dispatch_timing_recipe_action(
+                action.timing_recipe_action, history, workspace,
+                application_state.timing_locked, timing_grid.active_denominator,
+                timing_edit, status);
+        }
+        return true;
+    }
+    if (action.timing_stage_action != WORM_UI_TIMING_STAGE_NONE) {
+        dispatch_timing_stage_action(action, history, workspace,
+                                     application_state.timing_locked,
+                                     timing_grid.active_denominator, timing_edit, status);
+        return true;
+    }
+    return false;
+}
+
 void cancel_stale_compose_interaction(
     std::optional<wormedit::editor_interaction_state_t>& compose_interaction_state,
     wormedit::document_history_t& history,
@@ -1848,25 +1658,233 @@ void cancel_stale_compose_interaction(
     }
 }
 
+template <typename Context>
+auto process_compose_frame_action(Context& context, const WormUiWorkspaceAction& action,
+                                  double viewport_delta_seconds) -> bool {
+    const bool shortcut_handled =
+        action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
+        dispatch_application_shortcuts(action, context.command_registry_ref, context.history_ref,
+                                       context.workspace_ref, context.compose_interaction_state_ref,
+                                       context.application_command_state_ref, context.status_ref);
+    if (shortcut_handled && context.compose_interaction_state_ref &&
+        editor_interaction_has_pending_gesture(*context.compose_interaction_state_ref)) {
+        (void)wormedit::dispatch_editor_action(
+            context.history_ref, *context.compose_interaction_state_ref,
+            wormedit::cancel_editor_gesture_action_t{});
+    }
+    if (shortcut_handled) {
+        context.audio_offset_drag_ref.reset();
+        context.audio_offset_drag_tab_ref.reset();
+        context.compose_scene_cache_ref.beat_fit_drag.reset();
+        context.compose_scene_cache_ref.beat_fit_asset.reset();
+    }
+    if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
+        (action.compose_input_count != 0 || action.compose_viewport_input_count != 0 ||
+         action.compose_has_pointer_hover ||
+         (context.workspace_ref.active_tab == wormedit::workspace_tab_t::compose &&
+          action.compose_input_chart_id != 0)) &&
+        context.compose_interaction_state_ref) {
+        context.status_ref = dispatch_compose_input_action(
+            action, context.history_ref, context.workspace_ref, *context.compose_interaction_state_ref,
+            context.compose_viewport_input_ref, context.compose_navigation_input_ref,
+            context.application_command_state_ref, context.compose_scene_cache_ref,
+            viewport_delta_seconds);
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        wormedit::sys::process_compose_audition_requests(
+            context.compose_scene_cache_ref, context.history_ref, context.audition_sources_ref,
+            context.object_audition_ref, context.preview_session_ref, context.preview_output_ref,
+            context.preview_state_ref, context.audition_output_ref, context.status_ref);
+#else
+        wormedit::sys::process_compose_audition_requests(
+            context.compose_scene_cache_ref, context.history_ref, context.status_ref);
+#endif
+    }
+    if (context.workspace_ref.active_tab != wormedit::workspace_tab_t::compose) {
+        context.compose_viewport_input_ref.escape();
+        context.compose_scene_cache_ref.viewport_autoscroll_active = false;
+    }
+    if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
+        context.compose_interaction_state_ref &&
+        context.workspace_ref.active_tab == wormedit::workspace_tab_t::compose) {
+        const auto repeated = dispatch_compose_navigation_actions(
+            context.compose_navigation_input_ref.advance(
+                static_cast<std::uint64_t>(SDL_GetTicks())),
+            context.history_ref, *context.compose_interaction_state_ref);
+        if (!repeated.empty()) {
+            context.status_ref = repeated;
+        }
+    } else if (context.workspace_ref.active_tab != wormedit::workspace_tab_t::compose) {
+        context.compose_navigation_input_ref.cancel();
+    }
+    return shortcut_handled;
+}
+
+template <typename Context>
+void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceAction& action,
+                                     bool shortcut_handled,
+                                     std::optional<std::uint32_t> sample_rate,
+                                     int compose_viewport_height_pixels) {
+    auto& running = context.running_ref;
+    auto& status = context.status_ref;
+    auto& history = context.history_ref;
+    auto& workspace = context.workspace_ref;
+    auto& application_command_state = context.application_command_state_ref;
+    auto& stepmania_export_policy = context.stepmania_export_policy_ref;
+    auto& audio_offset_drag = context.audio_offset_drag_ref;
+    auto& audio_offset_drag_tab = context.audio_offset_drag_tab_ref;
+    auto& command_registry = context.command_registry_ref;
+    auto& compose_interaction_state = context.compose_interaction_state_ref;
+    auto& metadata_drop = context.metadata_drop_ref;
+    auto& metadata_asset_runtime = context.metadata_asset_runtime_ref;
+    auto& asset_base = context.asset_base_ref;
+    auto& resource_copy_scheduler = context.resource_copy_scheduler_ref;
+    auto& resource_copy_runtime = context.resource_copy_runtime_ref;
+    auto& export_runtime = context.export_runtime_ref;
+    auto& timing_grid = context.timing_grid_ref;
+    auto& timing_edit = context.timing_edit_ref;
+    auto& autosave_loop = context.autosave_loop_ref;
+    auto& recovery_controller = context.recovery_controller_ref;
+    auto& scanned_primary_version = context.scanned_primary_version_ref;
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    auto& audition_reconciliation = context.audition_reconciliation_ref;
+#endif
+        if (action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
+            running = false;
+        } else if (shortcut_handled) {
+            // Registry commands take precedence over widget actions emitted
+            // by the same input frame, preventing duplicate mutations.
+        } else if (action.audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
+            status = dispatch_audio_offset_drag_action(
+                action, history, workspace, application_command_state.timing_locked,
+                sample_rate, audio_offset_drag, audio_offset_drag_tab);
+        } else if (const auto common_status = wormedit::sys::dispatch_transport_player_action(
+                       action, application_command_state, stepmania_export_policy)) {
+            status = *common_status;
+        } else if (action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER ||
+                   action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER) {
+            const auto command = wormedit::command_id_t{
+                action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER
+                    ? "navigation.previous_marker"
+                    : "navigation.next_marker"};
+            refresh_application_command_states(command_registry, history, workspace,
+                                               compose_interaction_state,
+                                               application_command_state);
+            const auto dispatched = wormedit::invoke_command(
+                command_registry, command, application_command_focus(action, workspace));
+            if (dispatched.status == wormedit::command_dispatch_status_t::disabled) {
+                status = "No beat-anchored bookmarks or section boundaries are available.";
+            } else if (dispatched.status != wormedit::command_dispatch_status_t::invoked &&
+                       !dispatched.diagnostics.empty()) {
+                status = dispatched.diagnostics.front().message;
+            }
+        } else if (const auto selection_status =
+                       dispatch_workspace_selection_action(action, history, workspace)) {
+            status = *selection_status;
+        } else if (const auto metadata_status = wormedit::sys::dispatch_metadata_action(
+                       action, history, workspace, application_command_state.timing_locked,
+                       metadata_drop, metadata_asset_runtime, asset_base,
+                       resource_copy_scheduler, resource_copy_runtime.busy(),
+                       export_runtime.busy())) {
+            status = *metadata_status;
+        } else if (dispatch_timing_workspace_action(action, history, workspace,
+                                                   application_command_state, timing_grid,
+                                                   timing_edit, status)) {
+            // The timing dispatcher updates status and consumes this action.
+        } else if (wormedit::sys::dispatch_compose_workspace_action(
+                       action, history, workspace, compose_interaction_state,
+                       compose_viewport_height_pixels, application_command_state, asset_base,
+                       resource_copy_scheduler, resource_copy_runtime, export_runtime,
+                       metadata_asset_runtime.import_pending(), metadata_drop,
+                       metadata_asset_runtime, status)) {
+            // The compose dispatcher updates status and consumes this action.
+        } else if (action.kind >= WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT &&
+                   action.kind <= WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE) {
+            if (autosave_loop.busy()) {
+                status = "Wait for the current autosave to finish before recovering a session.";
+            } else {
+                status = dispatch_recovery_ui_action(action, recovery_controller, history,
+                                                     workspace, scanned_primary_version,
+                                                     autosave_loop);
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+                if (const auto unavailable = wormedit::sys::reconcile_audition_sources(audition_reconciliation, true);
+                    unavailable && *unavailable != 0) {
+                    status += " " + std::to_string(*unavailable) +
+                              " recovered audio asset(s) are unavailable for preview.";
+                }
+#endif
+            }
+        }
+}
+
+template <typename Model>
+auto handle_workspace_view_error(const Model& model, std::string& status, bool& running,
+                                 wormedit::document_history_t& history,
+                                 wormedit::workspace_controller_t& workspace) -> bool {
+    if (model) {
+        return false;
+    }
+    status = model.diagnostics.empty() ? "Workspace view unavailable"
+                                       : model.diagnostics.front().message;
+    const auto recovery_action = worm_ui_frontend_workspace_error(status.c_str());
+    if (recovery_action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
+        running = false;
+    } else if (recovery_action.kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB) {
+        const auto changed = wormedit::apply_workspace_action(
+            workspace, history.document, history.document.revision,
+            wormedit::workspace_switch_tab_action_t{wormedit::workspace_tab_t::setup});
+        if (!changed && !changed.diagnostics.empty()) {
+            status = changed.diagnostics.front().message;
+        }
+    }
+    return true;
+}
+
+void prepare_bound_workspace_frame(
+    const wormedit::document_history_t& history,
+    const wormedit::workspace_controller_t& workspace,
+    application_command_state_t& application_command_state, timing_grid_state_t& timing_grid,
+    std::optional<wormedit::audio_offset_drag_t>& audio_offset_drag,
+    std::optional<wormedit::workspace_tab_t>& audio_offset_drag_tab,
+    compose_scene_cache_t& compose_scene_cache) {
+    if (workspace.selected_chart) {
+        const auto chart =
+            std::ranges::find(history.document.charts, *workspace.selected_chart,
+                              &wormedit::chart_document_t::id);
+        if (chart != history.document.charts.end()) {
+            timing_grid = refresh_timing_grid(*chart, application_command_state);
+        }
+    }
+    if (audio_offset_drag &&
+        (!audio_offset_drag_tab || workspace.active_tab != *audio_offset_drag_tab ||
+         !workspace.selected_chart || *workspace.selected_chart != audio_offset_drag->chart ||
+         history.document.revision != audio_offset_drag->document_revision ||
+         application_command_state.timing_locked)) {
+        audio_offset_drag.reset();
+        audio_offset_drag_tab.reset();
+    }
+    if (compose_scene_cache.beat_fit_drag &&
+        (workspace.active_tab != wormedit::workspace_tab_t::compose ||
+         !workspace.selected_chart ||
+         *workspace.selected_chart != compose_scene_cache.beat_fit_drag->chart ||
+         history.document.revision != compose_scene_cache.beat_fit_drag->document_revision ||
+         workspace.transport.audio_asset != compose_scene_cache.beat_fit_asset ||
+         application_command_state.timing_locked)) {
+        compose_scene_cache.beat_fit_drag.reset();
+        compose_scene_cache.beat_fit_asset.reset();
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
-    constexpr int maximum_startup_paths = 30;
-    if (argc > maximum_startup_paths + 1) {
-        std::fprintf(stderr, "usage: wormedit [project.wormedit [recovery-artifact ...]]\n");
-        return 2;
-    }
-    wormedit::native_project_startup_request_t startup_request;
-    if (argc > 1)
-        startup_request.primary_path = std::filesystem::path{argv[1]};
-    for (int index = 2; index < argc; ++index)
-        startup_request.recovery_entries.emplace_back(argv[index]);
-    const auto requested_primary_path = startup_request.primary_path;
+    wormedit::sys::application_startup_arguments_t arguments;
+    wormedit::sys::application_runtime_t runtime;
+    if (const int startup_error = wormedit::sys::initialize_application_startup(
+            argc, argv, arguments, runtime); startup_error != 0)
+        return startup_error;
+    auto startup_request = std::move(arguments.request);
+    const auto requested_primary_path = arguments.requested_primary_path;
 
-    if (!SDL_Init(0)) {
-        std::fprintf(stderr, "SDL init failed\n");
-        return 1;
-    }
     const auto platform_recovery = wormedit::prepare_platform_recovery_directory();
     if (platform_recovery) {
         startup_request.recovery_directories.push_back(platform_recovery.path);
@@ -1874,37 +1892,16 @@ int main(int argc, char** argv) {
     auto startup = wormedit::prepare_native_project_startup(
         initial_document(new_session_project_id()), std::move(startup_request));
 
-    WormAudioSystem audio{};
-    if (!worm_audio_init(&audio)) {
-        std::fprintf(stderr, "Audio subsystem init failed\n");
-        SDL_Quit();
+    if (!wormedit::sys::initialize_application_runtime(runtime))
         return 1;
-    }
-
-    WormWindow window{};
-    const WormWindowDesc window_desc{"wormedit", 1280, 720};
-    if (!worm_window_create(&window, &window_desc)) {
-        worm_audio_shutdown(&audio);
-        SDL_Quit();
-        return 1;
-    }
-
-    if (!worm_ui_frontend_init(window.handle, window.renderer)) {
-        worm_window_destroy(&window);
-        worm_audio_shutdown(&audio);
-        SDL_Quit();
-        return 1;
-    }
+    auto& window = runtime.window;
 
     auto history =
         wormedit::make_document_history(std::move(startup.document), 128, startup.loaded_primary);
     auto binding = wormedit::make_workspace_controller(history);
     if (!binding) {
         std::fprintf(stderr, "Initial workspace binding failed\n");
-        worm_ui_frontend_shutdown();
-        worm_window_destroy(&window);
-        worm_audio_shutdown(&audio);
-        SDL_Quit();
+        wormedit::sys::shutdown_application_runtime(runtime);
         return 1;
     }
     auto workspace = std::move(*binding.workspace);
@@ -1914,19 +1911,8 @@ int main(int argc, char** argv) {
     wormedit::native_project_autosave_loop_t autosave_loop(
         wormedit::native_project_autosave_loop_t::clock_t::now(), autosave_scheduler,
         startup.primary_version, initial_autosave_sequence);
-    std::string status;
-    if (startup.loaded_primary) {
-        status = "Opened native project: " + requested_primary_path.generic_string();
-    } else if (!requested_primary_path.empty()) {
-        status = "Primary project was not loaded; review the completed recovery scan.";
-    } else if (platform_recovery) {
-        status = "New unsaved workspace ready; platform recovery scan complete.";
-    } else {
-        status = "New unsaved workspace ready; recovery discovery unavailable.";
-    }
-    if (!platform_recovery && !platform_recovery.error.empty()) {
-        status += " " + platform_recovery.error;
-    }
+    std::string status = wormedit::sys::select_initial_application_status(
+        startup.loaded_primary, requested_primary_path, platform_recovery);
     std::optional<wormedit::audio_offset_drag_t> audio_offset_drag;
     std::optional<wormedit::workspace_tab_t> audio_offset_drag_tab;
     const auto asset_base =
@@ -1951,17 +1937,7 @@ int main(int argc, char** argv) {
 #endif
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     wormedit::audio::decoded_source_registry_t audition_sources;
-    wormedit::audio::decoded_block_cache_t waveform_blocks;
-    wormedit::audio::waveform_cache_t waveform_cache;
-    wormedit::task_scheduler_t waveform_scheduler(2, 4);
-    wormedit::audio::waveform_job_t waveform_job{audition_sources, waveform_blocks, waveform_cache,
-                                                 waveform_scheduler};
-    wormedit::audio::waveform_job_t channel_waveform_job{audition_sources, waveform_blocks,
-                                                         waveform_cache, waveform_scheduler};
-    std::optional<wormedit::asset_id_t> waveform_job_asset;
-    std::shared_ptr<const wormedit::audio::waveform_analysis_result_t> waveform_analysis;
-    std::optional<wormedit::asset_id_t> channel_waveform_job_asset;
-    std::shared_ptr<const wormedit::audio::waveform_analysis_result_t> channel_waveform_analysis;
+    wormedit::sys::runtime::waveform_analysis_t waveform_runtime{audition_sources};
     wormedit::audio::decoded_block_cache_t audition_cache;
     wormedit::audio::transport_t audition_transport{audition_cache};
     wormedit::audio::audition_transport_bridge_t audition_bridge{audition_transport};
@@ -1977,44 +1953,25 @@ int main(int argc, char** argv) {
     wormedit::sys::sdl_preview_output_t preview_output{preview_session};
     wormedit::sys::runtime::chart_preview_t preview_state;
     std::vector<wormedit::audio::preview_metronome_source_binding_t> preview_metronome_bindings;
-    using audition_asset_entry_t = std::pair<wormedit::asset_id_t, std::filesystem::path>;
     std::optional<wormedit::song_id_t> audition_source_project;
-    std::vector<audition_asset_entry_t> audition_asset_inventory;
+    std::vector<wormedit::sys::audition_asset_entry_t> audition_asset_inventory;
     std::uint64_t audition_source_generation{};
-    const auto reconcile_audition_sources = [&](bool stop_playback) -> std::optional<std::size_t> {
-        std::vector<audition_asset_entry_t> next_inventory;
-        next_inventory.reserve(history.document.audio_assets.size());
-        for (const auto& asset : history.document.audio_assets) {
-            next_inventory.emplace_back(asset.id, asset.source_path);
-        }
-        if (audition_source_project == history.document.id &&
-            audition_asset_inventory == next_inventory) {
-            return std::nullopt;
-        }
-        if (stop_playback) {
+    const wormedit::sys::audition_source_reconciliation_context_t audition_reconciliation{
+        history.document,
+        asset_base,
+        audition_source_project,
+        audition_asset_inventory,
+        audition_source_generation,
+        audition_sources,
+        preview_metronome_bindings,
+        [&] {
             static_cast<void>(audition_output.stop());
             static_cast<void>(preview_output.stop());
-            preview_state.invalidate();
-        }
-        waveform_job.cancel();
-        waveform_job_asset.reset();
-        waveform_analysis.reset();
-        channel_waveform_job.cancel();
-        channel_waveform_job_asset.reset();
-        channel_waveform_analysis.reset();
-        audition_sources.clear();
-        waveform_blocks.clear();
-        waveform_cache.clear();
-        preview_metronome_bindings.clear();
-        ++audition_source_generation;
-        const auto unavailable = wormedit::sys::register_audition_sources(
-            history.document, asset_base, audition_source_generation,
-            audition_sources, preview_metronome_bindings);
-        audition_source_project = history.document.id;
-        audition_asset_inventory = std::move(next_inventory);
-        return unavailable;
+        },
+        [&] { waveform_runtime.reset_sources(); },
+        [&] { preview_state.invalidate(); },
     };
-    const auto initial_unavailable_audio_assets = reconcile_audition_sources(false).value_or(0);
+    const auto initial_unavailable_audio_assets = wormedit::sys::reconcile_audition_sources(audition_reconciliation, false).value_or(0);
     if (initial_unavailable_audio_assets != 0) {
         status += " " + std::to_string(initial_unavailable_audio_assets) +
                   " audio asset(s) are unavailable for preview.";
@@ -2088,631 +2045,190 @@ int main(int argc, char** argv) {
     bool running = true;
     metadata_drop_state_t metadata_drop;
     auto compose_viewport_last_ticks = static_cast<std::uint64_t>(SDL_GetTicks());
-    while (running) {
-        SDL_Event event;
-        worm_ui_frontend_begin_input();
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-                running = false;
-            }
-            metadata_drop.handle_file_drop(event, window.handle, workspace, history,
-                                           asset_base, status);
-            worm_ui_frontend_handle_event(&event);
-        }
-        worm_ui_frontend_end_input();
-        if (workspace.active_tab != wormedit::workspace_tab_t::metadata) {
-            metadata_drop.clear_paths();
-        }
-        if (auto completed = metadata_asset_runtime.poll(history, workspace, asset_base))
-            status = std::move(*completed);
-        if (auto completed = resource_copy_runtime.poll(history, workspace))
-            status = std::move(*completed);
-        if (auto completed = export_runtime.poll(history))
-            status = std::move(*completed);
-        const auto compose_viewport_now_ticks = static_cast<std::uint64_t>(SDL_GetTicks());
-        const auto compose_viewport_delta_seconds =
-            compose_viewport_now_ticks >= compose_viewport_last_ticks
-                ? static_cast<double>(compose_viewport_now_ticks - compose_viewport_last_ticks) /
-                      1000.0
-                : 0.0;
-        compose_viewport_last_ticks = compose_viewport_now_ticks;
-
-        const auto autosave_target = wormedit::make_native_project_autosave_target(
-            history.document.id, startup.loaded_primary, requested_primary_path,
-            platform_recovery.path);
-        if (const auto autosave_result = autosave_loop.tick(
-                history.document, wormedit::is_document_dirty(history),
-                wormedit::native_project_autosave_loop_t::clock_t::now(), autosave_target)) {
-            const auto autosave_text = autosave_status_text(*autosave_result);
-            if (!autosave_text.empty())
-                status = autosave_text;
-        }
+    struct compose_frame_action_context_t {
+        decltype(history)& history_ref;
+        decltype(workspace)& workspace_ref;
+        decltype(command_registry)& command_registry_ref;
+        decltype(compose_interaction_state)& compose_interaction_state_ref;
+        decltype(application_command_state)& application_command_state_ref;
+        decltype(status)& status_ref;
+        decltype(audio_offset_drag)& audio_offset_drag_ref;
+        decltype(audio_offset_drag_tab)& audio_offset_drag_tab_ref;
+        decltype(compose_scene_cache)& compose_scene_cache_ref;
+        decltype(compose_viewport_input)& compose_viewport_input_ref;
+        decltype(compose_navigation_input)& compose_navigation_input_ref;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        const bool preview_binding_current =
-            preview_state.matches_selection(history.document, workspace);
-        if (preview_state.chart && !preview_binding_current) {
-            const bool interrupted = preview_session.active() || preview_state.paused;
-            if (preview_session.active())
-                static_cast<void>(preview_output.stop());
-            preview_state.invalidate();
-            if (interrupted)
-                status = "Chart preview stopped because its document or selected chart changed.";
-        }
-        if (const auto serviced = audition_output.service(); serviced && !*serviced) {
-            static_cast<void>(audition_output.stop());
-            if (serviced->status == wormedit::sys::sdl_audition_service_status_t::device_failed) {
-                status = "Audio preview stopped after an output-device failure.";
-            } else if (serviced->status ==
-                       wormedit::sys::sdl_audition_service_status_t::render_failed) {
-                status = "Audio preview stopped after a realtime cache underrun.";
-            } else if (serviced->pump &&
-                       serviced->pump->status ==
-                           wormedit::audio::audition_pump_status_t::source_unavailable) {
-                status = "Audio preview stopped because its decoded source is unavailable.";
-            } else {
-                status = "Audio preview stopped after a bounded lookahead failure.";
-            }
-        }
-        if (const auto serviced = preview_output.service(); serviced && !*serviced) {
-            static_cast<void>(preview_output.stop());
-            preview_state.reset_transport();
-            if (serviced->status == wormedit::sys::sdl_preview_service_status_t::device_failed) {
-                status = "Chart preview stopped after an output-device failure.";
-            } else if (serviced->status ==
-                       wormedit::sys::sdl_preview_service_status_t::render_failed) {
-                status = "Chart preview stopped after a realtime cache underrun.";
-            } else if (serviced->pump && serviced->pump->decode &&
-                       serviced->pump->decode->status ==
-                           wormedit::audio::preview_pump_status_t::source_unavailable) {
-                status = "Chart preview stopped because a decoded source is unavailable.";
-            } else {
-                status = "Chart preview stopped after a bounded refill failure.";
-            }
-        }
-        if (!preview_session.active() && !preview_state.paused)
-            preview_state.resume_frame = 0;
-        application_command_state.preview_playhead_absolute_row.reset();
-        if (preview_state.timing && (preview_session.active() || preview_state.paused)) {
-            const auto frame = preview_state.current_frame(preview_session);
-            if (frame <= static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-                const auto position = wormedit::musical_position_at(
-                    *preview_state.timing,
-                    {static_cast<std::int64_t>(frame), wormedit::audio::output_sample_rate});
-                if (position && position.absolute_row->denominator != 0) {
-                    const auto row = static_cast<double>(position.absolute_row->numerator) /
-                                     static_cast<double>(position.absolute_row->denominator);
-                    if (std::isfinite(row))
-                        application_command_state.preview_playhead_absolute_row = row;
-                }
-            }
-        }
-        if (workspace.transport.audio_asset != waveform_job_asset) {
-            waveform_job.cancel();
-            waveform_job_asset.reset();
-            waveform_analysis.reset();
-            if (workspace.transport.audio_asset) {
-                const auto started = waveform_job.request(*workspace.transport.audio_asset, 256);
-                if (started) {
-                    waveform_job_asset = workspace.transport.audio_asset;
-                } else if (started.status !=
-                           wormedit::audio::waveform_job_start_status_t::capacity_exceeded) {
-                    status = started.message.empty() ? "Waveform analysis could not start."
-                                                     : started.message;
-                }
-            }
-        }
-        if (const auto completed = waveform_job.poll();
-            completed && waveform_job_asset == completed->asset) {
-            if (*completed) {
-                waveform_analysis = completed->analysis;
-            } else if (completed->task_error) {
-                status = completed->task_error->message;
-            }
-        }
-        std::optional<wormedit::asset_id_t> selected_channel_waveform_asset;
-        if (workspace.active_tab == wormedit::workspace_tab_t::compose &&
-            workspace.selected_chart && compose_interaction_state &&
-            compose_interaction_state->chart == *workspace.selected_chart &&
-            compose_interaction_state->selected_objects.size() == 1 &&
-            compose_interaction_state->selected_objects.front().kind ==
-                wormedit::editor_selection_object_kind_t::bgm_event) {
-            const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                                 &wormedit::chart_document_t::id);
-            if (chart != history.document.charts.end()) {
-                const auto selection = selected_bmson_waveform_source(
-                    compose_scene_cache, *chart, history.document.revision,
-                    compose_interaction_state->selected_objects.front().id);
-                if (selection)
-                    selected_channel_waveform_asset = selection->asset;
-            }
-        }
-        if (selected_channel_waveform_asset == workspace.transport.audio_asset)
-            selected_channel_waveform_asset.reset();
-        if (selected_channel_waveform_asset != channel_waveform_job_asset) {
-            channel_waveform_job.cancel();
-            channel_waveform_job_asset.reset();
-            channel_waveform_analysis.reset();
-            if (selected_channel_waveform_asset) {
-                const auto started =
-                    channel_waveform_job.request(*selected_channel_waveform_asset, 256);
-                if (started)
-                    channel_waveform_job_asset = selected_channel_waveform_asset;
-                else if (started.status !=
-                         wormedit::audio::waveform_job_start_status_t::capacity_exceeded)
-                    status = started.message.empty() ? "Channel waveform analysis could not start."
-                                                     : started.message;
-            }
-        }
-        if (const auto completed = channel_waveform_job.poll();
-            completed && channel_waveform_job_asset == completed->asset) {
-            if (*completed) {
-                channel_waveform_analysis = completed->analysis;
-                if (!channel_waveform_analysis->waveform)
-                    status = "Selected BMSON channel waveform could not be analyzed.";
-            } else if (completed->task_error) {
-                status = completed->task_error->message;
-            }
-        }
+        decltype(audition_sources)& audition_sources_ref;
+        decltype(object_audition)& object_audition_ref;
+        decltype(preview_session)& preview_session_ref;
+        decltype(preview_output)& preview_output_ref;
+        decltype(preview_state)& preview_state_ref;
+        decltype(audition_output)& audition_output_ref;
+#endif
+    };
+    compose_frame_action_context_t compose_frame_action_context{
+        history,
+        workspace,
+        command_registry,
+        compose_interaction_state,
+        application_command_state,
+        status,
+        audio_offset_drag,
+        audio_offset_drag_tab,
+        compose_scene_cache,
+        compose_viewport_input,
+        compose_navigation_input,
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        audition_sources,
+        object_audition,
+        preview_session,
+        preview_output,
+        preview_state,
+        audition_output,
+#endif
+    };
+    struct workspace_frame_action_context_t {
+        decltype(running)& running_ref;
+        decltype(status)& status_ref;
+        decltype(history)& history_ref;
+        decltype(workspace)& workspace_ref;
+        decltype(application_command_state)& application_command_state_ref;
+        decltype(stepmania_export_policy)& stepmania_export_policy_ref;
+        decltype(audio_offset_drag)& audio_offset_drag_ref;
+        decltype(audio_offset_drag_tab)& audio_offset_drag_tab_ref;
+        decltype(command_registry)& command_registry_ref;
+        decltype(compose_interaction_state)& compose_interaction_state_ref;
+        decltype(metadata_drop)& metadata_drop_ref;
+        decltype(metadata_asset_runtime)& metadata_asset_runtime_ref;
+        decltype(asset_base)& asset_base_ref;
+        decltype(resource_copy_scheduler)& resource_copy_scheduler_ref;
+        decltype(resource_copy_runtime)& resource_copy_runtime_ref;
+        decltype(export_runtime)& export_runtime_ref;
+        decltype(timing_grid)& timing_grid_ref;
+        decltype(timing_edit)& timing_edit_ref;
+        decltype(autosave_loop)& autosave_loop_ref;
+        decltype(recovery_controller)& recovery_controller_ref;
+        decltype(scanned_primary_version)& scanned_primary_version_ref;
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        decltype(audition_reconciliation)& audition_reconciliation_ref;
+#endif
+    };
+    workspace_frame_action_context_t workspace_frame_action_context{
+        running,
+        status,
+        history,
+        workspace,
+        application_command_state,
+        stepmania_export_policy,
+        audio_offset_drag,
+        audio_offset_drag_tab,
+        command_registry,
+        compose_interaction_state,
+        metadata_drop,
+        metadata_asset_runtime,
+        asset_base,
+        resource_copy_scheduler,
+        resource_copy_runtime,
+        export_runtime,
+        timing_grid,
+        timing_edit,
+        autosave_loop,
+        recovery_controller,
+        scanned_primary_version,
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        audition_reconciliation,
+#endif
+    };
+    while (running) {
+        if (!wormedit::sys::poll_frontend_events(
+                window, metadata_drop, workspace, history, asset_base, status))
+            running = false;
+        wormedit::sys::poll_application_jobs(metadata_asset_runtime, resource_copy_runtime,
+                                             export_runtime, history, workspace, asset_base,
+                                             status);
+        const auto compose_viewport_delta_seconds =
+            wormedit::sys::compose_frame_delta_seconds(compose_viewport_last_ticks);
+        wormedit::sys::tick_application_autosave(
+            autosave_loop, history, startup.loaded_primary, requested_primary_path,
+            platform_recovery.path, status);
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        wormedit::sys::service_audio_transport_frame(
+            history.document, workspace, preview_state, preview_session,
+            audition_output, preview_output,
+            application_command_state.preview_playhead_absolute_row, status);
+        waveform_runtime.service(
+            history.document, workspace, compose_scene_cache,
+            compose_interaction_state ? &*compose_interaction_state : nullptr, status);
 #endif
 
         cancel_stale_compose_interaction(compose_interaction_state, history, workspace);
 
-        // Every document mutation must leave the next frame bound to its new
-        // revision. Keep this boundary authoritative even when a command path
-        // forgets its local rebind after committing.
-        if (workspace.song == history.document.id &&
-            (workspace.document_revision != history.document.revision ||
-             workspace.history.undo_depth != history.undo.size() ||
-             workspace.history.redo_depth != history.redo.size() ||
-             workspace.history.dirty != wormedit::is_document_dirty(history))) {
-            const auto rebound = wormedit::rebind_workspace(workspace, history);
-            if (!rebound)
-                status = rebound.diagnostics.empty()
-                             ? "Workspace could not follow the latest document edit."
-                             : rebound.diagnostics.front().message;
-        }
+        wormedit::sys::rebind_workspace_after_edit(workspace, history, status);
         const auto model = wormedit::make_workspace_view(workspace, history.document);
         timing_edit.cancel_if_stale(history, workspace, application_command_state);
-        if (!model) {
-            status = model.diagnostics.empty() ? "Workspace view unavailable"
-                                               : model.diagnostics.front().message;
-            const auto recovery_action = worm_ui_frontend_workspace_error(status.c_str());
-            if (recovery_action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
-                running = false;
-            } else if (recovery_action.kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB) {
-                const auto changed = wormedit::apply_workspace_action(
-                    workspace, history.document, history.document.revision,
-                    wormedit::workspace_switch_tab_action_t{wormedit::workspace_tab_t::setup});
-                if (!changed && !changed.diagnostics.empty())
-                    status = changed.diagnostics.front().message;
-            }
-        } else {
-            if (workspace.selected_chart) {
-                const auto chart =
-                    std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                      &wormedit::chart_document_t::id);
-                if (chart != history.document.charts.end()) {
-                    timing_grid = refresh_timing_grid(*chart, application_command_state);
-                }
-            }
-            if (audio_offset_drag &&
-                (!audio_offset_drag_tab || workspace.active_tab != *audio_offset_drag_tab ||
-                 !workspace.selected_chart ||
-                 *workspace.selected_chart != audio_offset_drag->chart ||
-                 history.document.revision != audio_offset_drag->document_revision ||
-                 application_command_state.timing_locked)) {
-                audio_offset_drag.reset();
-                audio_offset_drag_tab.reset();
-            }
-            if (compose_scene_cache.beat_fit_drag &&
-                (workspace.active_tab != wormedit::workspace_tab_t::compose ||
-                 !workspace.selected_chart ||
-                 *workspace.selected_chart != compose_scene_cache.beat_fit_drag->chart ||
-                 history.document.revision !=
-                     compose_scene_cache.beat_fit_drag->document_revision ||
-                 workspace.transport.audio_asset != compose_scene_cache.beat_fit_asset ||
-                 application_command_state.timing_locked)) {
-                compose_scene_cache.beat_fit_drag.reset();
-                compose_scene_cache.beat_fit_asset.reset();
-            }
-            auto flattened =
-                flatten_workspace(*model.view, history.document, status, recovery_controller.view(),
-                                  recovery_scan_configured, stepmania_export_policy);
-            if (flattened.view.setup.visible) {
-                flattened.view.setup.stepmania_policy_status =
-                    flattened.setup_policy_status_storage.c_str();
-            }
-            flattened.view.metadata.timing_locked = application_command_state.timing_locked;
-            flattened.view.metadata.audio_waveform_has_selected_asset =
-                workspace.transport.audio_asset.has_value();
-            flattened.view.metadata.audio_waveform_selected_asset_id =
-                workspace.transport.audio_asset ? workspace.transport.audio_asset->value : 0;
-            auto& audio_view = flattened.view.audio_slices;
-            audio_view.document_revision = history.document.revision;
-            audio_view.timing_locked = application_command_state.timing_locked;
-            if (workspace.selected_chart) {
-                const auto selected =
-                    std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                      &wormedit::chart_document_t::id);
-                if (selected != history.document.charts.end()) {
-                    audio_view.has_chart = true;
-                    audio_view.chart_id = selected->id.value;
-                    audio_view.offset_numerator =
-                        selected->beat_zero_audio_offset_seconds.numerator;
-                    audio_view.offset_denominator =
-                        selected->beat_zero_audio_offset_seconds.denominator;
-                }
-            }
-            if (audio_offset_drag) {
-                audio_view.offset_drag_active = true;
-                audio_view.offset_drag_delta_frames = audio_offset_drag->delta_frames;
-                audio_view.proposed_offset_numerator =
-                    audio_offset_drag->proposed_offset_seconds.numerator;
-                audio_view.proposed_offset_denominator =
-                    audio_offset_drag->proposed_offset_seconds.denominator;
-                flattened.view.metadata.audio_offset_drag_active = true;
-                flattened.view.metadata.audio_offset_drag_delta_frames =
-                    audio_offset_drag->delta_frames;
-                flattened.view.metadata.proposed_audio_offset_numerator =
-                    audio_offset_drag->proposed_offset_seconds.numerator;
-                flattened.view.metadata.proposed_audio_offset_denominator =
-                    audio_offset_drag->proposed_offset_seconds.denominator;
-            }
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-            flattened.view.transport_available =
-                workspace.selected_chart.has_value() && preview_output.available();
-            flattened.view.transport_playing =
-                preview_session.active() || audition_session.active();
-            flattened.view.transport_paused = preview_state.paused;
-            flattened.view.transport_frame =
-                preview_session.active()    ? preview_session.timeline_frame()
-                : audition_session.active() ? audition_session.timeline_frame()
-                                            : preview_state.resume_frame;
-            flattened.view.transport_end_frame = preview_state.end_frame;
-            flattened.view.transport_sample_rate = wormedit::audio::output_sample_rate;
-#else
-            flattened.view.transport_available = false;
-            flattened.view.transport_playing = false;
-            flattened.view.transport_paused = false;
-            flattened.view.transport_frame = 0;
-            flattened.view.transport_end_frame = 0;
-            flattened.view.transport_sample_rate = 44'100;
-#endif
-            player_preview_presenter.populate(
-                flattened.view.player_preview, history, workspace.selected_chart,
-                application_command_state.player_preview_visible,
-                application_command_state.player_preview_skin, flattened.view.transport_frame,
-                flattened.view.transport_sample_rate, asset_base
+        if (!handle_workspace_view_error(model, status, running, history, workspace)) {
+            prepare_bound_workspace_frame(history, workspace, application_command_state,
+                                          timing_grid, audio_offset_drag, audio_offset_drag_tab,
+                                          compose_scene_cache);
+            auto flattened = wormedit::sys::project_application_frame(
+                {.model = *model.view,
+                 .history = history,
+                 .workspace = workspace,
+                 .status = status,
+                 .recovery_controller = recovery_controller,
+                 .recovery_scan_configured = recovery_scan_configured,
+                 .stepmania_export_policy = stepmania_export_policy,
+                 .asset_base = asset_base,
+                 .timing_grid = timing_grid,
+                 .timing_scene_cache = timing_scene_cache,
+                 .timing_edit = timing_edit,
+                 .compose_scene_cache = compose_scene_cache,
+                 .player_preview_presenter = player_preview_presenter,
+                 .application_command_state = application_command_state,
+                 .compose_interaction_state = compose_interaction_state,
+                 .audio_offset_drag = audio_offset_drag,
+                 .audio_offset_drag_tab = audio_offset_drag_tab,
+                 .metadata_drop = metadata_drop,
+                 .metadata_asset_runtime = metadata_asset_runtime,
+                 .window = window,
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
-                ,
-                player_image_job
+                 .player_image_job = player_image_job,
 #endif
 #if defined(WORMEDIT_HAS_VIDEO_DECODER)
-                ,
-                player_video_job
-#endif
-            );
-            for (std::size_t line = 0; line < flattened.view.summary_line_count; ++line) {
-                flattened.view.summary_lines[line] = flattened.summary_storage[line].c_str();
-            }
-            for (std::size_t row = 0; row < flattened.view.recovery_candidate_count; ++row) {
-                flattened.view.recovery_candidates[row].path_label =
-                    flattened.recovery_path_storage[row].c_str();
-                flattened.view.recovery_candidates[row].summary =
-                    flattened.recovery_summary_storage[row].c_str();
-                flattened.view.recovery_candidates[row].disabled_reason =
-                    flattened.recovery_disabled_storage[row].empty()
-                        ? nullptr
-                        : flattened.recovery_disabled_storage[row].c_str();
-            }
-            for (std::size_t diagnostic = 0; diagnostic < flattened.view.recovery_diagnostic_count;
-                 ++diagnostic) {
-                flattened.view.recovery_diagnostics[diagnostic] =
-                    flattened.recovery_diagnostic_storage[diagnostic].c_str();
-            }
-            if (flattened.view.audio_slices.visible) {
-                flattened.view.audio_slices.asset_ids = flattened.audio_asset_storage.data();
-            }
-            flattened.view.compose.branch_rows = flattened.compose_branch_row_storage.data();
-            flattened.view.compose.branch_choices = flattened.compose_branch_choice_storage.data();
-            flattened.view.compose.resources = flattened.compose_resource_storage.data();
-            for (std::size_t resource = 0;
-                 resource < flattened.view.compose.resource_count; ++resource) {
-                flattened.compose_resource_storage[resource].target_index =
-                    flattened.compose_resource_index_storage[resource].c_str();
-                flattened.compose_resource_storage[resource].name =
-                    flattened.compose_resource_name_storage[resource].c_str();
-                flattened.compose_resource_storage[resource].source_name =
-                    flattened.compose_resource_path_storage[resource].c_str();
-            }
-            for (std::size_t row = 0; row < flattened.view.compose.branch_row_count; ++row) {
-                flattened.compose_branch_row_storage[row].display_text =
-                    flattened.compose_branch_text_storage[row].c_str();
-            }
-            for (std::size_t diagnostic = 0;
-                 diagnostic < flattened.view.compose.branch_diagnostic_count; ++diagnostic) {
-                flattened.view.compose.branch_diagnostics[diagnostic] =
-                    flattened.compose_branch_diagnostic_storage[diagnostic].c_str();
-            }
-            wormedit::sys::populate_metadata_view_projection(
-                flattened, history, workspace, asset_base, metadata_drop, metadata_asset_runtime);
-            int compose_window_width = 0;
-            int compose_window_height = 0;
-            worm_window_get_size(&window, &compose_window_width, &compose_window_height);
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-            wormedit::sys::populate_audio_waveform_views(
-                flattened, waveform_analysis.get(), waveform_job.busy(), compose_window_width);
-#endif
-            const bool timing_for_compose = flattened.view.compose.visible;
-            if (timing_for_compose) {
-                flattened.view.timing.visible = true;
-            }
-            populate_timing_view(flattened, history, workspace, timing_scene_cache,
-                                 compose_window_width, compose_window_height, timing_grid,
-                                 timing_edit.stage_view(), timing_edit.recipe_draft_view(),
-                                 timing_edit.recipe_preview_view(),
-                                 timing_edit.recipe_selection_binding.has_value());
-            flattened.view.timing.initial_bpm_editable =
-                flattened.view.timing.scene_available &&
-                !application_command_state.timing_locked;
-            if (timing_for_compose) {
-                flattened.view.timing.visible = false;
-            }
-            populate_compose_view(flattened, history, workspace, compose_scene_cache,
-                                  compose_window_width, compose_window_height,
-                                  compose_interaction_state, application_command_state,
-                                  timing_edit.stage_view());
-            compose_scene_cache.waveform_overview_total_frames = 0;
-            compose_scene_cache.waveform_overview_sample_rate = 0;
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-            const auto* compose_waveform_analysis =
-                waveform_job_asset == workspace.transport.audio_asset
-                    ? waveform_analysis.get()
-                    : nullptr;
-            const bool compose_waveform_overview_available =
-                wormedit::sys::populate_compose_waveform_projection(
-                    flattened, compose_scene_cache, compose_waveform_analysis,
-                    waveform_job.busy(), workspace.transport.audio_asset.has_value(),
-                    compose_interaction_state ? &*compose_interaction_state : nullptr);
-            wormedit::sys::populate_compose_waveform_overlays(
-                compose_waveform_overview_available, flattened, history, workspace,
-                compose_scene_cache,
-                compose_interaction_state ? &*compose_interaction_state : nullptr,
-                audio_offset_drag, audio_offset_drag_tab, compose_waveform_analysis);
+                 .player_video_job = player_video_job,
 #endif
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-            wormedit::sys::populate_bmson_waveform_projection(
-                flattened, history, workspace,
-                compose_interaction_state ? &*compose_interaction_state : nullptr,
-                compose_scene_cache, audition_sources, waveform_job_asset,
-                waveform_analysis, channel_waveform_job_asset,
-                channel_waveform_analysis, audition_source_generation);
+                 .waveform_runtime = waveform_runtime,
+                 .audition_sources = audition_sources,
+                 .audition_source_generation = audition_source_generation,
+                 .audition_session = audition_session,
+                 .preview_session = preview_session,
+                 .preview_state = preview_state,
+                 .preview_output_available = preview_output.available(),
 #endif
+                });
+            // Projection returns by value; refresh view pointers after any move.
+            flattened.rebind_view_pointers();
             const auto action = worm_ui_frontend_compose(&flattened.view);
             std::optional<std::uint32_t> selected_waveform_sample_rate;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-            if (waveform_analysis && waveform_analysis->waveform && waveform_job_asset &&
-                workspace.transport.audio_asset == waveform_job_asset) {
-                selected_waveform_sample_rate = waveform_analysis->waveform->sample_rate;
+            if (waveform_runtime.waveform_analysis() &&
+                waveform_runtime.waveform_analysis()->waveform &&
+                waveform_runtime.waveform_asset() &&
+                workspace.transport.audio_asset == waveform_runtime.waveform_asset()) {
+                selected_waveform_sample_rate =
+                    waveform_runtime.waveform_analysis()->waveform->sample_rate;
             }
 #endif
             const bool shortcut_handled =
-                action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
-                dispatch_application_shortcuts(action, command_registry, history, workspace,
-                                               compose_interaction_state, application_command_state,
-                                               status);
-            if (shortcut_handled && compose_interaction_state &&
-                editor_interaction_has_pending_gesture(*compose_interaction_state)) {
-                (void)wormedit::dispatch_editor_action(history, *compose_interaction_state,
-                                                       wormedit::cancel_editor_gesture_action_t{});
-            }
-            if (shortcut_handled) {
-                audio_offset_drag.reset();
-                audio_offset_drag_tab.reset();
-                compose_scene_cache.beat_fit_drag.reset();
-                compose_scene_cache.beat_fit_asset.reset();
-            }
-            if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
-                (action.compose_input_count != 0 || action.compose_viewport_input_count != 0 ||
-                 action.compose_has_pointer_hover ||
-                 (workspace.active_tab == wormedit::workspace_tab_t::compose &&
-                  action.compose_input_chart_id != 0)) &&
-                compose_interaction_state) {
-                status = dispatch_compose_input_action(
-                    action, history, workspace, *compose_interaction_state, compose_viewport_input,
-                    compose_navigation_input, application_command_state, compose_scene_cache,
-                    compose_viewport_delta_seconds);
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-                wormedit::sys::process_compose_audition_requests(
-                    compose_scene_cache, history, audition_sources, object_audition,
-                    preview_session, preview_output, preview_state, audition_output, status);
-#else
-                wormedit::sys::process_compose_audition_requests(
-                    compose_scene_cache, history, status);
-#endif
-            }
-            if (workspace.active_tab != wormedit::workspace_tab_t::compose) {
-                compose_viewport_input.escape();
-                compose_scene_cache.viewport_autoscroll_active = false;
-            }
-            if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
-                compose_interaction_state &&
-                workspace.active_tab == wormedit::workspace_tab_t::compose) {
-                const auto repeated = dispatch_compose_navigation_actions(
-                    compose_navigation_input.advance(static_cast<std::uint64_t>(SDL_GetTicks())),
-                    history, *compose_interaction_state);
-                if (!repeated.empty()) {
-                    status = repeated;
-                }
-            } else if (workspace.active_tab != wormedit::workspace_tab_t::compose) {
-                compose_navigation_input.cancel();
-            }
-            if (action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
-                running = false;
-            } else if (shortcut_handled) {
-                // Registry commands take precedence over widget actions emitted
-                // by the same input frame, preventing duplicate mutations.
-            } else if (action.audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
-                status = dispatch_audio_offset_drag_action(
-                    action, history, workspace, application_command_state.timing_locked,
-                    selected_waveform_sample_rate, audio_offset_drag, audio_offset_drag_tab);
-            } else if (action.kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE) {
-                status = application_command_state.transport_play_pause
-                             ? application_command_state.transport_play_pause()
-                             : "Chart preview is unavailable.";
-            } else if (action.kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP) {
-                if (application_command_state.transport_stop) {
-                    application_command_state.transport_stop();
-                    status = "Audio preview stopped.";
-                } else {
-                    status = "Audio preview is unavailable.";
-                }
-            } else if (action.kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK) {
-                status = application_command_state.transport_seek
-                             ? application_command_state.transport_seek(action.transport_seek_frame)
-                             : "Chart preview seek is unavailable.";
-            } else if (action.kind == WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW) {
-                application_command_state.player_preview_visible =
-                    !application_command_state.player_preview_visible;
-                status = application_command_state.player_preview_visible
-                             ? "Player preview shown."
-                             : "Player preview hidden.";
-            } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SELECT_PLAYER_PREVIEW_SKIN) {
-                if (action.player_preview_skin > WORM_UI_PLAYER_PREVIEW_SKIN_ARROWS) {
-                    status = "Unknown player-preview skin ignored.";
-                } else {
-                    application_command_state.player_preview_skin =
-                        static_cast<wormedit::player_preview_skin_t>(action.player_preview_skin);
-                    status = "Player-preview skin changed.";
-                }
-            } else if (action.kind ==
-                       WORM_UI_WORKSPACE_ACTION_SET_STEPMANIA_EXPORT_POLICY) {
-                const auto candidate = stepmania_policy_from_ui(action);
-                if (!candidate) {
-                    status = "Unknown StepMania export policy ignored.";
-                } else {
-                    stepmania_export_policy = *candidate;
-                    const auto resolved =
-                        wormedit::resolve_stepmania_export_policy(stepmania_export_policy);
-                    status = resolved ? "StepMania export policy updated."
-                                      : "StepMania policy needs attention: " + resolved.message;
-                }
-            } else if (action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER ||
-                       action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER) {
-                const auto command = wormedit::command_id_t{
-                    action.kind == WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER
-                        ? "navigation.previous_marker"
-                        : "navigation.next_marker"};
-                refresh_application_command_states(command_registry, history, workspace,
-                                                   compose_interaction_state,
-                                                   application_command_state);
-                const auto dispatched = wormedit::invoke_command(
-                    command_registry, command, application_command_focus(action, workspace));
-                if (dispatched.status == wormedit::command_dispatch_status_t::disabled) {
-                    status = "No beat-anchored bookmarks or section boundaries are available.";
-                } else if (dispatched.status != wormedit::command_dispatch_status_t::invoked &&
-                           !dispatched.diagnostics.empty()) {
-                    status = dispatched.diagnostics.front().message;
-                }
-            } else if (const auto selection_status =
-                           dispatch_workspace_selection_action(action, history, workspace)) {
-                status = *selection_status;
-            } else if (action.metadata_edit != WORM_UI_METADATA_EDIT_NONE) {
-                status = dispatch_metadata_ui_action(action, history, workspace,
-                                                     application_command_state.timing_locked);
-                if (action.metadata_edit == WORM_UI_METADATA_EDIT_OUTPUT_PATH)
-                    metadata_drop.clear_output();
-            } else if (action.metadata_import_copy_project || action.metadata_import_copy_export) {
-                status = metadata_asset_runtime.start_import_copy(
-                    action, history, workspace, asset_base, resource_copy_scheduler,
-                    resource_copy_runtime.busy(), export_runtime.busy());
-                if (metadata_asset_runtime.import_pending()) {
-                    metadata_drop.clear_music();
-                }
-            } else if (action.metadata_inspect_copy) {
-                status = metadata_asset_runtime.start_copy_preview(
-                    action, history, workspace, asset_base);
-            } else if (action.timing_meter_action != WORM_UI_TIMING_METER_ACTION_NONE) {
-                dispatch_timing_meter_action(
-                    action, history, workspace, application_command_state.timing_locked,
-                    timing_edit.has_pending_edit(),
-                    status);
-            } else if (action.timing_grid_action != WORM_UI_TIMING_GRID_ACTION_NONE) {
-                dispatch_timing_grid_action(
-                    action, history, workspace,
-                    timing_edit.has_pending_edit(),
-                    timing_grid, application_command_state, status);
-            } else if (action.timing_recipe_action.kind != WORM_UI_TIMING_RECIPE_ACTION_NONE) {
-                const bool starting_recipe =
-                    action.timing_recipe_action.kind ==
-                        WORM_UI_TIMING_RECIPE_ACTION_ARM_SELECTION ||
-                    action.timing_recipe_action.kind == WORM_UI_TIMING_RECIPE_ACTION_BEGIN;
-                if (starting_recipe && timing_edit.stage) {
-                    status = "Apply or cancel the timing event before adding an SV recipe.";
-                } else {
-                    (void)dispatch_timing_recipe_action(
-                        action.timing_recipe_action, history, workspace,
-                        application_command_state.timing_locked, timing_grid.active_denominator,
-                        timing_edit, status);
-                }
-            } else if (action.timing_stage_action != WORM_UI_TIMING_STAGE_NONE) {
-                dispatch_timing_stage_action(
-                    action, history, workspace, application_command_state.timing_locked,
-                    timing_grid.active_denominator, timing_edit, status);
-            } else if (action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE ||
-                       action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE) {
-                status = dispatch_bms_branch_choice_action(action, history, workspace,
-                                                           compose_interaction_state);
-            } else if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
-                const bool metadata_path_action =
-                    workspace.active_tab == wormedit::workspace_tab_t::metadata &&
-                    (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET ||
-                     action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT ||
-                     action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT);
-                wormedit::editor_interaction_state_t metadata_interaction{};
-                if (metadata_path_action && workspace.selected_chart)
-                    metadata_interaction.chart = *workspace.selected_chart;
-                if (compose_interaction_state || metadata_path_action) {
-                    if (metadata_path_action)
-                        metadata_asset_runtime.clear_copy_preview_key();
-                    status = dispatch_compose_view_action(
-                        action, history, workspace,
-                        metadata_path_action ? metadata_interaction : *compose_interaction_state,
-                        flattened.view.compose.viewport_height_pixels, application_command_state,
-                        asset_base, resource_copy_scheduler, resource_copy_runtime, export_runtime,
-                        metadata_asset_runtime.import_pending());
-                    if (workspace.active_tab == wormedit::workspace_tab_t::metadata &&
-                        (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET ||
-                         action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT ||
-                         action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT)) {
-                        metadata_drop.clear_music();
-                    }
-                }
-            } else if (action.kind >= WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT &&
-                       action.kind <= WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE) {
-                if (autosave_loop.busy()) {
-                    status = "Wait for the current autosave to finish before recovering a session.";
-                } else {
-                    status =
-                        dispatch_recovery_ui_action(action, recovery_controller, history, workspace,
-                                                    scanned_primary_version, autosave_loop);
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-                    if (const auto unavailable = reconcile_audition_sources(true);
-                        unavailable && *unavailable != 0) {
-                        status += " " + std::to_string(*unavailable) +
-                                  " recovered audio asset(s) are unavailable for preview.";
-                    }
-#endif
-                }
-            }
+                process_compose_frame_action(compose_frame_action_context, action,
+                                             compose_viewport_delta_seconds);
+            dispatch_workspace_frame_action(
+                workspace_frame_action_context, action, shortcut_handled, selected_waveform_sample_rate,
+                flattened.view.compose.viewport_height_pixels);
         }
 
-        int width = 0;
-        int height = 0;
-        worm_window_get_size(&window, &width, &height);
-        worm_ui_frontend_render(width, height);
-        worm_window_swap(&window);
-        SDL_Delay(1);
+        wormedit::sys::render_application_frame(window);
     }
 
     resource_copy_runtime.cancel();
@@ -2725,9 +2241,6 @@ int main(int argc, char** argv) {
     preview_output.close();
     audition_output.close();
 #endif
-    worm_ui_frontend_shutdown();
-    worm_window_destroy(&window);
-    worm_audio_shutdown(&audio);
-    SDL_Quit();
+    wormedit::sys::shutdown_application_runtime(runtime);
     return 0;
 }

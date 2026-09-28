@@ -33,9 +33,9 @@ void populate_audio_waveform_views(
     if (!projection)
         return;
 
-    flattened.audio_waveform_storage.reserve(projection.columns.size());
+    flattened.audio.waveform.reserve(projection.columns.size());
     for (const auto& column : projection.columns) {
-        flattened.audio_waveform_storage.push_back({
+        flattened.audio.waveform.push_back({
             .minimum = {column.minimum[0], column.minimum[1]},
             .maximum = {column.maximum[0], column.maximum[1]},
             .absolute_peak = {column.absolute_peak[0], column.absolute_peak[1]},
@@ -45,15 +45,15 @@ void populate_audio_waveform_views(
     audio.waveform_available = true;
     audio.total_frames = waveform.total_frames;
     audio.sample_rate = waveform.sample_rate;
-    audio.waveform_columns = flattened.audio_waveform_storage.data();
-    audio.waveform_column_count = flattened.audio_waveform_storage.size();
+    audio.waveform_columns = flattened.audio.waveform.data();
+    audio.waveform_column_count = flattened.audio.waveform.size();
 
     auto& metadata = flattened.view.metadata;
     metadata.audio_waveform_available = true;
     metadata.audio_waveform_total_frames = waveform.total_frames;
     metadata.audio_waveform_sample_rate = waveform.sample_rate;
-    metadata.audio_waveform_columns = flattened.audio_waveform_storage.data();
-    metadata.audio_waveform_column_count = flattened.audio_waveform_storage.size();
+    metadata.audio_waveform_columns = flattened.audio.waveform.data();
+    metadata.audio_waveform_column_count = flattened.audio.waveform.size();
 }
 
 auto populate_compose_waveform_projection(
@@ -80,9 +80,9 @@ auto populate_compose_waveform_projection(
          .pixels_per_standard_measure = compose.pixels_per_standard_measure,
          .maximum_rows = WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY});
     if (aligned) {
-        flattened.compose_waveform_storage.reserve(aligned.rows.size());
+        flattened.compose.waveform.row.reserve(aligned.rows.size());
         for (const auto& row : aligned.rows) {
-            flattened.compose_waveform_storage.push_back({
+            flattened.compose.waveform.row.push_back({
                 .y_pixels = row.y_pixels,
                 .absolute_peak = {std::clamp(row.absolute_peak[0], 0.0f, 1.0f),
                                   std::clamp(row.absolute_peak[1], 0.0f, 1.0f)},
@@ -90,8 +90,8 @@ auto populate_compose_waveform_projection(
                         std::clamp(row.rms[1], 0.0f, 1.0f)},
             });
         }
-        compose.waveform_rows = flattened.compose_waveform_storage.data();
-        compose.waveform_row_count = flattened.compose_waveform_storage.size();
+        compose.waveform_rows = flattened.compose.waveform.row.data();
+        compose.waveform_row_count = flattened.compose.waveform.row.size();
     }
 
     const auto overview = wormedit::audio::project_waveform_overview(
@@ -102,15 +102,15 @@ auto populate_compose_waveform_projection(
     if (!overview)
         return false;
 
-    flattened.compose_waveform_overview_storage.reserve(overview.rows.size());
+    flattened.compose.waveform.overview_row.reserve(overview.rows.size());
     for (const auto& row : overview.rows) {
-        flattened.compose_waveform_overview_storage.push_back({
+        flattened.compose.waveform.overview_row.push_back({
             .audio_fraction = row.audio_fraction,
             .absolute_peak = std::clamp(row.absolute_peak, 0.0f, 1.0f),
         });
     }
-    compose.waveform_overview_rows = flattened.compose_waveform_overview_storage.data();
-    compose.waveform_overview_row_count = flattened.compose_waveform_overview_storage.size();
+    compose.waveform_overview_rows = flattened.compose.waveform.overview_row.data();
+    compose.waveform_overview_row_count = flattened.compose.waveform.overview_row.size();
     compose.waveform_overview_visible_begin_fraction = overview.visible_begin_fraction;
     compose.waveform_overview_visible_end_fraction = overview.visible_end_fraction;
     compose.waveform_beat_zero_visible = overview.beat_zero_fraction.has_value();

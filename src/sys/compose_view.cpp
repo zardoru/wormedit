@@ -300,10 +300,10 @@ void project_compose_layout_and_notes(const compose_scene_projection_context_t& 
     const auto& bands = scene.layout_bands;
     const auto band_count =
         std::min(bands.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BAND_CAPACITY));
-    flattened.compose_band_storage.reserve(band_count);
+    flattened.compose.band.reserve(band_count);
     for (std::size_t index = 0; index < band_count; ++index) {
         const auto& band = bands[index];
-        flattened.compose_band_storage.push_back(
+        flattened.compose.band.push_back(
             {.bounds = {field_left_pixels, band.top_pixels,
                         field_left_pixels + playable_field_width,
                         band.bottom_pixels},
@@ -312,10 +312,10 @@ void project_compose_layout_and_notes(const compose_scene_projection_context_t& 
     const auto& lanes = scene.lanes;
     const auto lane_count =
         std::min(lanes.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_LANE_CAPACITY));
-    flattened.compose_lane_storage.reserve(lane_count);
+    flattened.compose.lane.reserve(lane_count);
     for (std::size_t index = 0; index < lane_count; ++index) {
         const auto& lane = lanes[index];
-        flattened.compose_lane_storage.push_back({.bounds = convert_rect(lane.bounds),
+        flattened.compose.lane.push_back({.bounds = convert_rect(lane.bounds),
                                                   .lane_id = lane.lane.value,
                                                   .display_order = lane.display_order,
                                                   .role = static_cast<std::uint8_t>(lane.role),
@@ -338,11 +338,11 @@ void project_compose_layout_and_notes(const compose_scene_projection_context_t& 
             virtual_canvas = std::move(*built);
         }
     }
-    flattened.compose_grid_storage.reserve(line_count);
-    flattened.compose_grid_row_storage.reserve(line_count);
+    flattened.compose.grid.line.reserve(line_count);
+    flattened.compose.grid.row.reserve(line_count);
     for (std::size_t index = 0; index < line_count; ++index) {
         const auto& line = lines[index];
-        flattened.compose_grid_row_storage.push_back(line.chart_row);
+        flattened.compose.grid.row.push_back(line.chart_row);
         const auto measure = measure_numbers.find(line.chart_row.whole_rows);
         std::uint32_t measure_number = measure != measure_numbers.end() ? measure->second : 0;
         if (line.kind == wormedit::editor_grid_line_kind_t::measure &&
@@ -353,7 +353,7 @@ void project_compose_layout_and_notes(const compose_scene_projection_context_t& 
                 measure_number = static_cast<std::uint32_t>(virtual_measure->number + 1);
             }
         }
-        flattened.compose_grid_storage.push_back(
+        flattened.compose.grid.line.push_back(
             {.y_pixels = line.y_pixels,
              .kind = static_cast<std::uint8_t>(line.kind),
              .emphasis = static_cast<std::uint8_t>(line.emphasis),
@@ -366,18 +366,18 @@ void project_compose_layout_and_notes(const compose_scene_projection_context_t& 
     const auto& differences = scene.comparison_differences;
     const auto difference_count =
         std::min(differences.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_DIFFERENCE_CAPACITY));
-    flattened.compose_difference_storage.reserve(difference_count);
+    flattened.compose.difference.reserve(difference_count);
     for (std::size_t index = 0; index < difference_count; ++index) {
-        flattened.compose_difference_storage.push_back(
+        flattened.compose.difference.push_back(
             {.bounds = convert_rect(differences[index].bounds)});
     }
     const auto& holds = scene.hold_bodies;
     const auto hold_count =
         std::min(holds.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_HOLD_CAPACITY));
-    flattened.compose_hold_storage.reserve(hold_count);
+    flattened.compose.hold.reserve(hold_count);
     for (std::size_t index = 0; index < hold_count; ++index) {
         const auto& hold = holds[index];
-        flattened.compose_hold_storage.push_back(
+        flattened.compose.hold.push_back(
             {.bounds = convert_rect(hold.bounds),
              .note_id = hold.note.value,
              .lane_id = hold.lane.value,
@@ -397,10 +397,10 @@ void project_compose_layout_and_notes(const compose_scene_projection_context_t& 
     const auto& endpoints = scene.note_endpoints;
     const auto endpoint_count =
         std::min(endpoints.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_NOTE_CAPACITY));
-    flattened.compose_note_storage.reserve(endpoint_count);
+    flattened.compose.note.reserve(endpoint_count);
     for (std::size_t index = 0; index < endpoint_count; ++index) {
         const auto& endpoint = endpoints[index];
-        flattened.compose_note_storage.push_back(
+        flattened.compose.note.push_back(
             {.bounds = convert_rect(endpoint.bounds),
              .note_id = endpoint.note.value,
              .lane_id = endpoint.lane.value,
@@ -441,10 +441,10 @@ void project_compose_bgm(const compose_scene_projection_context_t& projection) {
     const auto& bgm_lanes = scene.bgm_lanes;
     const auto bgm_lane_count =
         std::min(bgm_lanes.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BGM_LANE_CAPACITY));
-    flattened.compose_bgm_lane_storage.reserve(bgm_lane_count);
+    flattened.compose.bgm.lane.reserve(bgm_lane_count);
     for (std::size_t index = 0; index < bgm_lane_count; ++index) {
         const auto& lane = bgm_lanes[index];
-        flattened.compose_bgm_lane_storage.push_back({.bounds = convert_rect(lane.bounds),
+        flattened.compose.bgm.lane.push_back({.bounds = convert_rect(lane.bounds),
                                                       .source_lane_id = lane.source_lane.value,
                                                       .source_order = lane.source_order});
     }
@@ -457,7 +457,7 @@ void project_compose_bgm(const compose_scene_projection_context_t& projection) {
         if (bgm_events[index].sound)
             visible_sound_ids.insert(bgm_events[index].sound->value);
     }
-    flattened.compose_bgm_sound_labels.reserve(visible_sound_ids.size());
+    flattened.compose.bgm.sound_labels.reserve(visible_sound_ids.size());
     for (const auto& resource : history.document.resources) {
         if (!visible_sound_ids.contains(resource.id.value))
             continue;
@@ -471,17 +471,17 @@ void project_compose_bgm(const compose_scene_projection_context_t& projection) {
         const auto label = bms_identity != resource.target_identities.end()
                                ? bms_identity->identifier
                                : std::filesystem::path{name}.stem().string();
-        flattened.compose_bgm_sound_labels.emplace(
+        flattened.compose.bgm.sound_labels.emplace(
             resource.id.value,
             std::pair{label.empty() ? std::to_string(resource.id.value) : label, name});
     }
-    flattened.compose_bgm_event_storage.reserve(bgm_event_count);
+    flattened.compose.bgm.event.reserve(bgm_event_count);
     for (std::size_t index = 0; index < bgm_event_count; ++index) {
         const auto& event = bgm_events[index];
         const auto sound = event.sound
-                               ? flattened.compose_bgm_sound_labels.find(event.sound->value)
-                               : flattened.compose_bgm_sound_labels.end();
-        flattened.compose_bgm_event_storage.push_back(
+                               ? flattened.compose.bgm.sound_labels.find(event.sound->value)
+                               : flattened.compose.bgm.sound_labels.end();
+        flattened.compose.bgm.event.push_back(
             {.bounds = convert_rect(event.bounds),
              .event_id = event.event.value,
              .source_lane_id = event.source_lane.value,
@@ -490,10 +490,10 @@ void project_compose_bgm(const compose_scene_projection_context_t& projection) {
              .bmson_slice = event.bmson_restart.has_value(),
              .bmson_restart = event.bmson_restart.value_or(false),
              .selected = event.selected,
-             .sound_label = sound == flattened.compose_bgm_sound_labels.end()
+             .sound_label = sound == flattened.compose.bgm.sound_labels.end()
                                 ? (event.sound ? "?" : "")
                                 : sound->second.first.c_str(),
-             .sound_detail = sound == flattened.compose_bgm_sound_labels.end()
+             .sound_detail = sound == flattened.compose.bgm.sound_labels.end()
                                  ? (event.sound ? "Unknown sound resource" : "Unbound BGM slot")
                                  : sound->second.second.c_str()});
     }
@@ -558,7 +558,7 @@ void project_compose_marker_previews(const compose_scene_projection_context_t& p
                 if (!bounds) {
                     continue;
                 }
-                flattened.compose_bgm_draft_storage.push_back(
+                flattened.compose.bgm.draft.push_back(
                     {.bounds = {bounds->left, y - 8.0, bounds->right, y + 8.0},
                      .restart = marker.restart,
                      .playable = marker.playable_lane.has_value()});
@@ -578,14 +578,14 @@ void project_compose_marker_previews(const compose_scene_projection_context_t& p
                                              interaction_view.viewport_scroll_pixels,
                                              view.viewport_height_pixels, downscroll);
             if (y >= -8.0 && y <= view.viewport_height_pixels + 8.0) {
-                flattened.compose_bgm_move_storage = WormUiComposeBgmMovePreviewView{
+                flattened.compose.bgm.move = WormUiComposeBgmMovePreviewView{
                     .bounds = {lane->bounds.left, y - 8.0, lane->bounds.right, y + 8.0},
                     .valid = preview.valid};
             }
         }
     }
     if (scene.cursor) {
-        flattened.compose_cursor_storage = WormUiComposeCursorView{
+        flattened.compose.cursor = WormUiComposeCursorView{
             .bounds = convert_rect(scene.cursor->bounds),
             .lane_id = scene.cursor->lane.value,
         };
@@ -596,27 +596,27 @@ void project_compose_marker_previews(const compose_scene_projection_context_t& p
 void publish_compose_scene(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.flattened;
     auto& view = projection.view;
-    view.bands = flattened.compose_band_storage.data();
-    view.band_count = flattened.compose_band_storage.size();
-    view.lanes = flattened.compose_lane_storage.data();
-    view.lane_count = flattened.compose_lane_storage.size();
-    view.grid_lines = flattened.compose_grid_storage.data();
-    view.grid_line_count = flattened.compose_grid_storage.size();
-    view.differences = flattened.compose_difference_storage.data();
-    view.difference_count = flattened.compose_difference_storage.size();
-    view.hold_bodies = flattened.compose_hold_storage.data();
-    view.hold_body_count = flattened.compose_hold_storage.size();
-    view.note_endpoints = flattened.compose_note_storage.data();
-    view.note_endpoint_count = flattened.compose_note_storage.size();
-    view.bgm_lanes = flattened.compose_bgm_lane_storage.data();
-    view.bgm_lane_count = flattened.compose_bgm_lane_storage.size();
-    view.bgm_events = flattened.compose_bgm_event_storage.data();
-    view.bgm_event_count = flattened.compose_bgm_event_storage.size();
-    view.bmson_marker_drafts = flattened.compose_bgm_draft_storage.data();
-    view.bmson_marker_draft_count = flattened.compose_bgm_draft_storage.size();
-    view.bmson_marker_move_preview = flattened.compose_bgm_move_storage
-        ? &*flattened.compose_bgm_move_storage : nullptr;
-    view.cursor = flattened.compose_cursor_storage ? &*flattened.compose_cursor_storage : nullptr;
+    view.bands = flattened.compose.band.data();
+    view.band_count = flattened.compose.band.size();
+    view.lanes = flattened.compose.lane.data();
+    view.lane_count = flattened.compose.lane.size();
+    view.grid_lines = flattened.compose.grid.line.data();
+    view.grid_line_count = flattened.compose.grid.line.size();
+    view.differences = flattened.compose.difference.data();
+    view.difference_count = flattened.compose.difference.size();
+    view.hold_bodies = flattened.compose.hold.data();
+    view.hold_body_count = flattened.compose.hold.size();
+    view.note_endpoints = flattened.compose.note.data();
+    view.note_endpoint_count = flattened.compose.note.size();
+    view.bgm_lanes = flattened.compose.bgm.lane.data();
+    view.bgm_lane_count = flattened.compose.bgm.lane.size();
+    view.bgm_events = flattened.compose.bgm.event.data();
+    view.bgm_event_count = flattened.compose.bgm.event.size();
+    view.bmson_marker_drafts = flattened.compose.bgm.draft.data();
+    view.bmson_marker_draft_count = flattened.compose.bgm.draft.size();
+    view.bmson_marker_move_preview = flattened.compose.bgm.move
+        ? &*flattened.compose.bgm.move : nullptr;
+    view.cursor = flattened.compose.cursor ? &*flattened.compose.cursor : nullptr;
 }
 bool initialize_compose_view_state(
     flattened_workspace_t& flattened, compose_scene_cache_t& cache, int window_width,
@@ -693,10 +693,10 @@ bool initialize_compose_view_state(
     view.beat_marker_navigation_available = false;
     view.audio_marker_navigation_available = false;
     view.audio_marker_transport_available = false;
-    view.beat_bookmarks = flattened.compose_bookmark_storage.data();
+    view.beat_bookmarks = flattened.compose.bookmark.data();
     view.beat_bookmark_count = 0;
     view.beat_bookmarks_truncated = false;
-    view.beat_sections = flattened.compose_section_storage.data();
+    view.beat_sections = flattened.compose.section.data();
     view.beat_section_count = 0;
     view.beat_sections_truncated = false;
     view.beat_section_selection_span_available = false;
@@ -704,13 +704,13 @@ bool initialize_compose_view_state(
     view.beat_section_selection_begin_row = 0;
     view.beat_section_selection_end_measure_number = 0;
     view.beat_section_selection_end_row = 0;
-    view.audio_bookmarks = flattened.compose_audio_bookmark_storage.data();
+    view.audio_bookmarks = flattened.compose.audio_marker.bookmark.data();
     view.audio_bookmark_count = 0;
     view.audio_bookmarks_truncated = false;
-    view.audio_sections = flattened.compose_audio_section_storage.data();
+    view.audio_sections = flattened.compose.audio_marker.section.data();
     view.audio_section_count = 0;
     view.audio_sections_truncated = false;
-    view.semantic_layers = flattened.compose_semantic_layer_storage.data();
+    view.semantic_layers = flattened.compose.semantic_layer.view.data();
     view.semantic_layer_count = 0;
     view.semantic_layer_total_count = 0;
     view.semantic_layer_page = 0;
@@ -735,8 +735,8 @@ bool initialize_compose_view_state(
     view.viewport_autoscroll_anchor_y_pixels = cache.viewport_autoscroll_anchor_y_pixels;
     view.viewport_autoscroll_pointer_x_pixels = cache.viewport_autoscroll_pointer_x_pixels;
     view.viewport_autoscroll_pointer_y_pixels = cache.viewport_autoscroll_pointer_y_pixels;
-    flattened.compose_hover_tooltip_storage.clear();
-    flattened.compose_selected_note_label_storage.clear();
+    flattened.compose.hover_tooltip.clear();
+    flattened.compose.selected_note_label.clear();
     return true;
 }
 
@@ -771,8 +771,8 @@ bool populate_semantic_layer_palette(
         application_state.semantic_layer_palette_page,
         palette_context_changed || palette_target_changed, WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY);
     if (!palette) {
-        flattened.compose_status_storage = "The semantic-layer palette exceeds its UI limit.";
-        view.status_text = flattened.compose_status_storage.c_str();
+        flattened.compose.status = "The semantic-layer palette exceeds its UI limit.";
+        view.status_text = flattened.compose.status.c_str();
         return false;
     }
     application_state.semantic_layer_palette_target = application_state.semantic_layer_target;
@@ -785,10 +785,10 @@ bool populate_semantic_layer_palette(
         const auto& layer = chart.semantic_layers[layer_index];
         const auto selected = application_state.semantic_layer_target == layer.id;
         const auto index = view.semantic_layer_count++;
-        flattened.compose_semantic_layer_name_storage[index] = layer.name;
-        flattened.compose_semantic_layer_storage[index] = {
+        flattened.compose.semantic_layer.name[index] = layer.name;
+        flattened.compose.semantic_layer.view[index] = {
             .layer_id = layer.id.value,
-            .name = flattened.compose_semantic_layer_name_storage[index].c_str(),
+            .name = flattened.compose.semantic_layer.name[index].c_str(),
             .red = layer.color.red,
             .green = layer.color.green,
             .blue = layer.color.blue,
@@ -822,9 +822,9 @@ bool populate_compose_bookmark_storage(
     for (const auto& bookmark : chart.bookmarks) {
         if (bookmark.anchor == wormedit::marker_anchor_t::audio_time) {
             if (!bookmark.audio_milliseconds || bookmark.position) {
-                flattened.compose_status_storage =
+                flattened.compose.status =
                     "An audio-time bookmark has inconsistent position data.";
-                view.status_text = flattened.compose_status_storage.c_str();
+                view.status_text = flattened.compose.status.c_str();
                 return false;
             }
             if (view.audio_bookmark_count >= WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY) {
@@ -832,10 +832,10 @@ bool populate_compose_bookmark_storage(
                 continue;
             }
             const auto index = view.audio_bookmark_count++;
-            flattened.compose_audio_bookmark_label_storage[index] = bookmark.label;
-            flattened.compose_audio_bookmark_storage[index] = {
+            flattened.compose.audio_marker.bookmark_label[index] = bookmark.label;
+            flattened.compose.audio_marker.bookmark[index] = {
                 .bookmark_id = bookmark.id.value,
-                .label = flattened.compose_audio_bookmark_label_storage[index].c_str(),
+                .label = flattened.compose.audio_marker.bookmark_label[index].c_str(),
                 .audio_milliseconds = *bookmark.audio_milliseconds,
                 .projection_visible = false,
                 .projected_y_pixels = 0.0,
@@ -846,9 +846,9 @@ bool populate_compose_bookmark_storage(
             continue;
         }
         if (!bookmark.position) {
-            flattened.compose_status_storage =
+            flattened.compose.status =
                 "A beat-anchored bookmark has no valid chart position.";
-            view.status_text = flattened.compose_status_storage.c_str();
+            view.status_text = flattened.compose.status.c_str();
             return false;
         }
         if (view.beat_bookmark_count >= WORM_UI_COMPOSE_BOOKMARK_CAPACITY) {
@@ -858,16 +858,16 @@ bool populate_compose_bookmark_storage(
         const auto measure = std::ranges::find(measures.entries, bookmark.position->measure,
                                                &wormedit::measure_index_entry_t::id);
         if (measure == measures.entries.end() || bookmark.position->row >= measure->row_capacity) {
-            flattened.compose_status_storage =
+            flattened.compose.status =
                 "A beat-anchored bookmark is outside the chart measure geometry.";
-            view.status_text = flattened.compose_status_storage.c_str();
+            view.status_text = flattened.compose.status.c_str();
             return false;
         }
         const auto index = view.beat_bookmark_count++;
-        flattened.compose_bookmark_label_storage[index] = bookmark.label;
-        flattened.compose_bookmark_storage[index] = {
+        flattened.compose.bookmark_label[index] = bookmark.label;
+        flattened.compose.bookmark[index] = {
             .bookmark_id = bookmark.id.value,
-            .label = flattened.compose_bookmark_label_storage[index].c_str(),
+            .label = flattened.compose.bookmark_label[index].c_str(),
             .measure_number =
                 static_cast<std::uint64_t>(std::distance(measures.entries.begin(), measure) + 1),
             .row = bookmark.position->row,
@@ -888,9 +888,9 @@ bool populate_compose_section_storage(
         if (section.anchor == wormedit::marker_anchor_t::audio_time) {
             if (!section.audio_millisecond_span || section.beat_span ||
                 section.audio_millisecond_span->second <= section.audio_millisecond_span->first) {
-                flattened.compose_status_storage =
+                flattened.compose.status =
                     "An audio-time section has inconsistent span data.";
-                view.status_text = flattened.compose_status_storage.c_str();
+                view.status_text = flattened.compose.status.c_str();
                 return false;
             }
             if (view.audio_section_count >= WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY) {
@@ -898,10 +898,10 @@ bool populate_compose_section_storage(
                 continue;
             }
             const auto index = view.audio_section_count++;
-            flattened.compose_audio_section_label_storage[index] = section.label;
-            flattened.compose_audio_section_storage[index] = {
+            flattened.compose.audio_marker.section_label[index] = section.label;
+            flattened.compose.audio_marker.section[index] = {
                 .section_id = section.id.value,
-                .label = flattened.compose_audio_section_label_storage[index].c_str(),
+                .label = flattened.compose.audio_marker.section_label[index].c_str(),
                 .begin_audio_milliseconds = section.audio_millisecond_span->first,
                 .end_audio_milliseconds = section.audio_millisecond_span->second,
                 .begin_projection_visible = false,
@@ -918,8 +918,8 @@ bool populate_compose_section_storage(
             continue;
         }
         if (!section.beat_span) {
-            flattened.compose_status_storage = "A beat-anchored section has no valid chart span.";
-            view.status_text = flattened.compose_status_storage.c_str();
+            flattened.compose.status = "A beat-anchored section has no valid chart span.";
+            view.status_text = flattened.compose.status.c_str();
             return false;
         }
         if (view.beat_section_count >= WORM_UI_COMPOSE_SECTION_CAPACITY) {
@@ -934,16 +934,16 @@ bool populate_compose_section_storage(
         if (begin_measure == measures.entries.end() || end_measure == measures.entries.end() ||
             section.beat_span->begin.row >= begin_measure->row_capacity ||
             section.beat_span->end.row >= end_measure->row_capacity) {
-            flattened.compose_status_storage =
+            flattened.compose.status =
                 "A beat-anchored section is outside the chart measure geometry.";
-            view.status_text = flattened.compose_status_storage.c_str();
+            view.status_text = flattened.compose.status.c_str();
             return false;
         }
         const auto index = view.beat_section_count++;
-        flattened.compose_section_label_storage[index] = section.label;
-        flattened.compose_section_storage[index] = {
+        flattened.compose.section_label[index] = section.label;
+        flattened.compose.section[index] = {
             .section_id = section.id.value,
-            .label = flattened.compose_section_label_storage[index].c_str(),
+            .label = flattened.compose.section_label[index].c_str(),
             .begin_measure_number = static_cast<std::uint64_t>(
                 std::distance(measures.entries.begin(), begin_measure) + 1),
             .begin_row = section.beat_span->begin.row,
@@ -994,13 +994,13 @@ void project_compose_markers(
         return y;
     };
     for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
-        auto& bookmark = flattened.compose_bookmark_storage[index];
+        auto& bookmark = flattened.compose.bookmark[index];
         const auto y = visible_beat_y(bookmark.chart_row);
         bookmark.projection_visible = y.has_value();
         bookmark.projected_y_pixels = y.value_or(0.0);
     }
     for (std::size_t index = 0; index < view.beat_section_count; ++index) {
-        auto& section = flattened.compose_section_storage[index];
+        auto& section = flattened.compose.section[index];
         const auto begin_y = compose_project_y(section.begin_chart_row, beat_pixels_per_row,
                                                interaction_view.viewport_scroll_pixels,
                                                view.viewport_height_pixels, downscroll);
@@ -1051,7 +1051,7 @@ void project_compose_markers(
             return std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels;
         };
         for (std::size_t index = 0; index < view.audio_bookmark_count; ++index) {
-            auto& bookmark = flattened.compose_audio_bookmark_storage[index];
+            auto& bookmark = flattened.compose.audio_marker.bookmark[index];
             const auto y = projected_y(bookmark.audio_milliseconds);
             if (y && visible_y(*y)) {
                 bookmark.projection_visible = true;
@@ -1059,7 +1059,7 @@ void project_compose_markers(
             }
         }
         for (std::size_t index = 0; index < view.audio_section_count; ++index) {
-            auto& section = flattened.compose_audio_section_storage[index];
+            auto& section = flattened.compose.audio_marker.section[index];
             const auto begin = projected_y(section.begin_audio_milliseconds);
             const auto end = projected_y(section.end_audio_milliseconds);
             if (!begin || !end) {
@@ -1092,7 +1092,7 @@ void populate_compose_timing_markers(
     WormUiComposeView& view, bool downscroll, double pixels_per_row,
     std::uint64_t canvas_rows,
     const wormedit::timing_lane_pseudonote_preview_t* timing_stage) {
-    flattened.compose_timing_marker_storage.clear();
+    flattened.compose.timing_marker.clear();
     if (canvas_rows != 0 && pixels_per_row > 0.0) {
         const auto total_rows = static_cast<double>(canvas_rows);
         view.timing_document_begin_fraction = std::clamp(
@@ -1105,7 +1105,7 @@ void populate_compose_timing_markers(
     const auto append_timing_marker = [&](wormedit::local_position_t position, std::uint64_t id,
                                           std::size_t source_order, std::size_t storage_order,
                                           WormUiTimingLaneKind lane) {
-        if (flattened.compose_timing_marker_storage.size() >= WORM_UI_TIMING_MARKER_CAPACITY) {
+        if (flattened.compose.timing_marker.size() >= WORM_UI_TIMING_MARKER_CAPACITY) {
             view.truncated = true;
             return;
         }
@@ -1119,7 +1119,7 @@ void populate_compose_timing_markers(
         if (!std::isfinite(y) || y < 0.0 || y > view.viewport_height_pixels) {
             return;
         }
-        flattened.compose_timing_marker_storage.push_back({
+        flattened.compose.timing_marker.push_back({
             .object_id = id,
             .source_order = static_cast<std::uint64_t>(source_order),
             .storage_order = static_cast<std::uint64_t>(storage_order),
@@ -1160,33 +1160,33 @@ void populate_compose_timing_markers(
         append_timing_marker(chart.timing_anchors[index].position,
                              chart.timing_anchors[index].id.value, index, index,
                              WORM_UI_TIMING_LANE_ANCHOR);
-    std::ranges::sort(flattened.compose_timing_marker_storage,
+    std::ranges::sort(flattened.compose.timing_marker,
                       [](const auto& left, const auto& right) {
                           return std::tie(left.lane, left.marker_y_pixels, left.source_order,
                                           left.storage_order, left.object_id) <
                                  std::tie(right.lane, right.marker_y_pixels, right.source_order,
                                           right.storage_order, right.object_id);
                       });
-    for (std::size_t first = 0; first < flattened.compose_timing_marker_storage.size();) {
+    for (std::size_t first = 0; first < flattened.compose.timing_marker.size();) {
         auto after = first + 1;
-        while (after < flattened.compose_timing_marker_storage.size() &&
-               flattened.compose_timing_marker_storage[after].lane ==
-                   flattened.compose_timing_marker_storage[first].lane &&
-               flattened.compose_timing_marker_storage[after].marker_y_pixels ==
-                   flattened.compose_timing_marker_storage[first].marker_y_pixels) {
+        while (after < flattened.compose.timing_marker.size() &&
+               flattened.compose.timing_marker[after].lane ==
+                   flattened.compose.timing_marker[first].lane &&
+               flattened.compose.timing_marker[after].marker_y_pixels ==
+                   flattened.compose.timing_marker[first].marker_y_pixels) {
             ++after;
         }
         const auto count = static_cast<double>(after - first);
         for (auto index = first; index < after; ++index) {
-            flattened.compose_timing_marker_storage[index].marker_left_fraction =
+            flattened.compose.timing_marker[index].marker_left_fraction =
                 static_cast<double>(index - first) / count;
-            flattened.compose_timing_marker_storage[index].marker_right_fraction =
+            flattened.compose.timing_marker[index].marker_right_fraction =
                 static_cast<double>(index - first + 1) / count;
         }
         first = after;
     }
-    view.timing_markers = flattened.compose_timing_marker_storage.data();
-    view.timing_marker_count = flattened.compose_timing_marker_storage.size();
+    view.timing_markers = flattened.compose.timing_marker.data();
+    view.timing_marker_count = flattened.compose.timing_marker.size();
     if (timing_stage &&
         timing_stage->status == wormedit::timing_lane_pseudonote_status_t::editing &&
         timing_stage->chart == chart.id &&
@@ -1288,18 +1288,18 @@ void populate_compose_selected_objects_and_drafts(
     }
     if (application_state.bmson_marker_draft) {
         view.staged_bmson_marker_count = application_state.bmson_marker_draft->markers.size();
-        flattened.compose_bmson_draft_playable_lane_storage.clear();
-        flattened.compose_bmson_draft_restart_storage.clear();
-        flattened.compose_bmson_draft_playable_lane_storage.reserve(view.staged_bmson_marker_count);
-        flattened.compose_bmson_draft_restart_storage.reserve(view.staged_bmson_marker_count);
+        flattened.compose.bmson_draft_playable_lane.clear();
+        flattened.compose.bmson_draft_restart.clear();
+        flattened.compose.bmson_draft_playable_lane.reserve(view.staged_bmson_marker_count);
+        flattened.compose.bmson_draft_restart.reserve(view.staged_bmson_marker_count);
         for (const auto& marker : application_state.bmson_marker_draft->markers) {
-            flattened.compose_bmson_draft_playable_lane_storage.push_back(
+            flattened.compose.bmson_draft_playable_lane.push_back(
                 marker.playable_lane.value_or(wormedit::lane_id_t{}).value);
-            flattened.compose_bmson_draft_restart_storage.push_back(marker.restart ? 1 : 0);
+            flattened.compose.bmson_draft_restart.push_back(marker.restart ? 1 : 0);
         }
         view.staged_bmson_marker_playable_lanes =
-            flattened.compose_bmson_draft_playable_lane_storage.data();
-        view.staged_bmson_marker_restarts = flattened.compose_bmson_draft_restart_storage.data();
+            flattened.compose.bmson_draft_playable_lane.data();
+        view.staged_bmson_marker_restarts = flattened.compose.bmson_draft_restart.data();
     }
     if (application_state.bmson_marker_move_preview &&
         (application_state.bmson_marker_move_preview->chart != chart.id ||
@@ -1334,9 +1334,9 @@ void populate_compose_selected_objects_and_drafts(
                 continue;
             }
             if (note->label.has_value()) {
-                flattened.compose_selected_note_label_storage = *note->label;
+                flattened.compose.selected_note_label = *note->label;
             }
-            view.selected_note_label = flattened.compose_selected_note_label_storage.c_str();
+            view.selected_note_label = flattened.compose.selected_note_label.c_str();
             view.selected_note_label_note_id = note_id.value;
             view.selected_assigned_resource_id =
                 note->sound.value_or(wormedit::resource_id_t{}).value;
@@ -1365,15 +1365,15 @@ void populate_compose_view(flattened_workspace_t& flattened,
     }
     auto& view = flattened.view.compose;
     if (!workspace.selected_chart) {
-        flattened.compose_status_storage = "Choose a difficulty to display its chart field.";
-        view.status_text = flattened.compose_status_storage.c_str();
+        flattened.compose.status = "Choose a difficulty to display its chart field.";
+        view.status_text = flattened.compose.status.c_str();
         return;
     }
     const auto chart_it = std::ranges::find(history.document.charts, *workspace.selected_chart,
                                             &wormedit::chart_document_t::id);
     if (chart_it == history.document.charts.end()) {
-        flattened.compose_status_storage = "The selected difficulty is no longer available.";
-        view.status_text = flattened.compose_status_storage.c_str();
+        flattened.compose.status = "The selected difficulty is no longer available.";
+        view.status_text = flattened.compose.status.c_str();
         return;
     }
     const auto& chart = *chart_it;
@@ -1452,23 +1452,23 @@ void populate_compose_view(flattened_workspace_t& flattened,
         }
     }
     if (!cache.index) {
-        flattened.compose_status_storage = cache.status;
-        view.status_text = flattened.compose_status_storage.c_str();
+        flattened.compose.status = cache.status;
+        view.status_text = flattened.compose.status.c_str();
         return;
     }
     if (chart.measures.empty()) {
-        flattened.compose_status_storage = "This difficulty has no measures to display.";
-        view.status_text = flattened.compose_status_storage.c_str();
+        flattened.compose.status = "This difficulty has no measures to display.";
+        view.status_text = flattened.compose.status.c_str();
         return;
     }
 
     const auto measure_index = wormedit::build_measure_index(chart);
     if (!std::holds_alternative<wormedit::measure_index_t>(measure_index)) {
         const auto& diagnostics = std::get<wormedit::diagnostic_list_t>(measure_index);
-        flattened.compose_status_storage = diagnostics.empty()
+        flattened.compose.status = diagnostics.empty()
                                                ? "The chart measure geometry is invalid."
                                                : diagnostics.front().message;
-        view.status_text = flattened.compose_status_storage.c_str();
+        view.status_text = flattened.compose.status.c_str();
         return;
     }
     const auto& measures = std::get<wormedit::measure_index_t>(measure_index);
@@ -1502,12 +1502,12 @@ void populate_compose_view(flattened_workspace_t& flattened,
         const auto initial = initial_interaction();
         if (!initial.state || !initial.view) {
             if (!initial.diagnostics.empty()) {
-                flattened.compose_status_storage = initial.diagnostics.front().message;
+                flattened.compose.status = initial.diagnostics.front().message;
             } else {
-                flattened.compose_status_storage =
+                flattened.compose.status =
                     "This difficulty has no editable lanes to display.";
             }
-            view.status_text = flattened.compose_status_storage.c_str();
+            view.status_text = flattened.compose.status.c_str();
             return;
         }
         retained_state = *initial.state;
@@ -1527,8 +1527,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
             chart.divisions_per_standard_measure, chart_snap_preferences,
             requested_snap_denominator(application_state, chart.id));
         if (!snap) {
-            flattened.compose_status_storage = "The chart snap configuration is invalid.";
-            view.status_text = flattened.compose_status_storage.c_str();
+            flattened.compose.status = "The chart snap configuration is invalid.";
+            view.status_text = flattened.compose.status.c_str();
             return;
         }
         retained_state->supported_snap_denominators = snap.supported_denominators;
@@ -1544,10 +1544,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
         auto recovered = wormedit::recover_editor_interaction(history, *retained_state);
         if (!recovered.state || !recovered.view) {
             retained_state.reset();
-            flattened.compose_status_storage = recovered.diagnostics.empty()
+            flattened.compose.status = recovered.diagnostics.empty()
                                                    ? "The chart field view could not be recovered."
                                                    : recovered.diagnostics.front().message;
-            view.status_text = flattened.compose_status_storage.c_str();
+            view.status_text = flattened.compose.status.c_str();
             return;
         }
         retained_state = std::move(*recovered.state);
@@ -1600,8 +1600,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
         cache.hover->object.kind == wormedit::editor_selection_object_kind_t::note) {
         view.hover_note_visible = true;
         view.hover_note_id = cache.hover->object.id.value;
-        flattened.compose_hover_tooltip_storage = cache.hover->tooltip;
-        view.hover_tooltip = flattened.compose_hover_tooltip_storage.c_str();
+        flattened.compose.hover_tooltip = cache.hover->tooltip;
+        view.hover_tooltip = flattened.compose.hover_tooltip.c_str();
     }
     if (!hover_gesture_active && cache.focus_note_label_editor &&
         retained_state->selected_notes.size() == 1) {
@@ -1673,7 +1673,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
             view.space_range_tail_y_pixels = row_center(*cursor_row);
         }
     }
-    flattened.compose_interaction_view_storage = interaction_view;
+    flattened.compose.interaction_view = interaction_view;
     view.bms_measure_labels = chart.source_family == wormedit::format_family_t::bms;
     view.selected_bms_measure_number_plus_one =
         interaction_view.selected_canvas_measure
@@ -1686,16 +1686,16 @@ void populate_compose_view(flattened_workspace_t& flattened,
         if (scancode == 0) {
             continue;
         }
-        if (lane_key_binding_count >= flattened.compose_lane_key_storage.size()) {
+        if (lane_key_binding_count >= flattened.compose.lane_key.size()) {
             lane_key_bindings_truncated = true;
             break;
         }
-        flattened.compose_lane_key_storage[lane_key_binding_count++] = {
+        flattened.compose.lane_key[lane_key_binding_count++] = {
             .scancode = scancode,
             .lane_id = binding.lane.value,
         };
     }
-    view.lane_key_bindings = flattened.compose_lane_key_storage.data();
+    view.lane_key_bindings = flattened.compose.lane_key.data();
     view.lane_key_binding_count = lane_key_binding_count;
 
     const auto horizontal_layout =
@@ -1743,10 +1743,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
     const auto composed = wormedit::make_editor_field_scene(chart, *cache.index, interaction_view,
                                                             cache.preview_scene_request);
     if (!composed.scene || composed.has_errors()) {
-        flattened.compose_status_storage = composed.diagnostics.empty()
+        flattened.compose.status = composed.diagnostics.empty()
                                                ? "The chart field could not be composed."
                                                : composed.diagnostics.front().message;
-        view.status_text = flattened.compose_status_storage.c_str();
+        view.status_text = flattened.compose.status.c_str();
         return;
     }
     const auto& scene = *composed.scene;

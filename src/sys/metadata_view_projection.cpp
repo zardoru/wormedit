@@ -18,8 +18,8 @@ void populate_metadata_view_projection(
 
     auto& metadata = flattened.view.metadata;
     metadata_drop.discard_if_stale(history.document.revision, metadata.chart_id);
-    flattened.metadata_project_directory_storage = asset_base.generic_string();
-    metadata.project_directory = flattened.metadata_project_directory_storage.c_str();
+    flattened.metadata.project_directory = asset_base.generic_string();
+    metadata.project_directory = flattened.metadata.project_directory.c_str();
     metadata.import_copy_pending = metadata_asset_runtime.import_pending();
     if (!asset_base.empty()) {
         if (const auto next = wormedit::next_resource_asset_id(history.document))
@@ -33,8 +33,8 @@ void populate_metadata_view_projection(
                                              &wormedit::audio_asset_t::id);
         if (audio != history.document.audio_assets.end()) {
             metadata.selected_music_asset_id = audio->id.value;
-            flattened.metadata_music_source_storage = audio->source_path.generic_string();
-            metadata.selected_music_source = flattened.metadata_music_source_storage.c_str();
+            flattened.metadata.music_source = audio->source_path.generic_string();
+            metadata.selected_music_source = flattened.metadata.music_source.c_str();
             metadata.selected_music_resource_count =
                 std::ranges::count(history.document.resources, audio->id,
                                    &wormedit::resource_entry_t::asset);
@@ -47,7 +47,7 @@ void populate_metadata_view_projection(
         }
     }
 
-    metadata.output_groups = flattened.metadata_output_group_storage.data();
+    metadata.output_groups = flattened.metadata.output_group.view.data();
     const auto& copy_key = metadata_asset_runtime.copy_preview_key();
     if (copy_key && copy_key->song == history.document.id &&
         copy_key->revision == history.document.revision &&
@@ -63,8 +63,8 @@ void populate_metadata_view_projection(
         metadata.copy_preview_import = copy_key->import_copy;
         metadata.copy_preview_group_index = copy_key->output_group_index;
         metadata.copy_preview_asset_id = copy_key->asset.value;
-        flattened.metadata_copy_preview_source_storage = copy_key->source_path.generic_string();
-        metadata.copy_preview_source = flattened.metadata_copy_preview_source_storage.c_str();
+        flattened.metadata.copy_preview_source = copy_key->source_path.generic_string();
+        metadata.copy_preview_source = flattened.metadata.copy_preview_source.c_str();
     }
 
     for (std::size_t group_index = 0;
@@ -78,30 +78,30 @@ void populate_metadata_view_projection(
             continue;
         }
         const auto slot = metadata.output_group_count++;
-        flattened.metadata_output_group_name_storage[slot] = group.name;
-        flattened.metadata_output_group_path_storage[slot] =
+        flattened.metadata.output_group.name[slot] = group.name;
+        flattened.metadata.output_group.path[slot] =
             group.relative_output_path.generic_string();
         const auto asset_directory =
             wormedit::export_asset_directory(group.relative_output_path);
-        flattened.metadata_output_group_asset_directory_storage[slot] =
+        flattened.metadata.output_group.asset_directory[slot] =
             asset_directory ? asset_directory->generic_string() : std::string{};
-        flattened.metadata_output_group_storage[slot] = {
+        flattened.metadata.output_group.view[slot] = {
             .document_index = group_index,
-            .name = flattened.metadata_output_group_name_storage[slot].c_str(),
-            .relative_output_path = flattened.metadata_output_group_path_storage[slot].c_str(),
+            .name = flattened.metadata.output_group.name[slot].c_str(),
+            .relative_output_path = flattened.metadata.output_group.path[slot].c_str(),
             .relative_asset_directory =
-                flattened.metadata_output_group_asset_directory_storage[slot].c_str()};
+                flattened.metadata.output_group.asset_directory[slot].c_str()};
     }
 
     metadata.search_tags = metadata.search_tags_editable
-                               ? flattened.metadata_search_tag_storage.data()
+                               ? flattened.metadata.search_tag.data()
                                : nullptr;
     flattened.view.metadata.search_tag_bytes =
         flattened.view.metadata.search_tags_editable
-            ? flattened.metadata_search_tag_length_storage.data()
+            ? flattened.metadata.search_tag_length.data()
             : nullptr;
-    flattened.view.metadata.format_fields = flattened.metadata_format_field_storage.data();
-    flattened.view.metadata.format_targets = flattened.metadata_format_target_storage.data();
+    flattened.view.metadata.format_fields = flattened.metadata.format_field.data();
+    flattened.view.metadata.format_targets = flattened.metadata.format_target.data();
 }
 
 } // namespace wormedit::sys

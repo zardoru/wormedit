@@ -21,103 +21,124 @@ namespace wormedit::sys {
 
 struct flattened_workspace_t {
     WormUiWorkspaceView view{};
-    std::array<std::string, WORM_UI_WORKSPACE_SUMMARY_CAPACITY> summary_storage;
-    std::array<std::string, WORM_UI_RECOVERY_ROW_CAPACITY> recovery_path_storage;
-    std::array<std::string, WORM_UI_RECOVERY_ROW_CAPACITY> recovery_summary_storage;
-    std::array<std::string, WORM_UI_RECOVERY_ROW_CAPACITY> recovery_disabled_storage;
-    std::array<std::string, WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY> recovery_diagnostic_storage;
-    std::string setup_policy_status_storage;
-    std::vector<const char*> metadata_search_tag_storage;
-    std::vector<std::size_t> metadata_search_tag_length_storage;
-    std::array<WormUiMetadataFormatFieldView, WORM_UI_METADATA_FORMAT_FIELD_CAPACITY>
-        metadata_format_field_storage{};
-    std::array<WormUiMetadataFormatTargetView, WORM_UI_METADATA_FORMAT_TARGET_CAPACITY>
-        metadata_format_target_storage{};
-    std::string timing_status_storage;
-    std::string timing_recipe_status_storage;
-    std::vector<WormUiTimingSpeedView> timing_speed_storage;
-    std::vector<WormUiTimingMarkerView> timing_marker_storage;
-    std::vector<WormUiTimingGridLineView> timing_grid_storage;
-    std::vector<WormUiTimingRecipePoint> timing_recipe_candidate_storage;
-    std::vector<WormUiTimingRecipePoint> timing_recipe_composed_storage;
-    std::string compose_status_storage;
-    std::string compose_hover_tooltip_storage;
-    std::string compose_selected_note_label_storage;
-    std::array<WormUiComposeBookmarkView, WORM_UI_COMPOSE_BOOKMARK_CAPACITY>
-        compose_bookmark_storage{};
-    std::array<std::string, WORM_UI_COMPOSE_BOOKMARK_CAPACITY> compose_bookmark_label_storage;
-    std::array<WormUiComposeSectionView, WORM_UI_COMPOSE_SECTION_CAPACITY>
-        compose_section_storage{};
-    std::array<std::string, WORM_UI_COMPOSE_SECTION_CAPACITY> compose_section_label_storage;
-    std::array<WormUiComposeAudioBookmarkView, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY>
-        compose_audio_bookmark_storage{};
-    std::array<std::string, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY>
-        compose_audio_bookmark_label_storage;
-    std::array<WormUiComposeAudioSectionView, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY>
-        compose_audio_section_storage{};
-    std::array<std::string, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY>
-        compose_audio_section_label_storage;
-    std::vector<WormUiComposeBandView> compose_band_storage;
-    std::vector<WormUiComposeLaneView> compose_lane_storage;
-    std::vector<WormUiComposeGridLineView> compose_grid_storage;
-    std::vector<wormedit::exact_chart_row_t> compose_grid_row_storage;
-    std::vector<WormUiComposeGridLineView> compose_proposed_grid_storage;
-    std::vector<WormUiComposeTimingPreviewRectView> compose_timing_preview_rect_storage;
-    std::vector<WormUiTimingMarkerView> compose_timing_preview_marker_storage;
-    std::vector<WormUiTimingMarkerView> compose_timing_marker_storage;
-    std::vector<WormUiComposeDifferenceView> compose_difference_storage;
-    std::vector<WormUiComposeHoldView> compose_hold_storage;
-    std::vector<WormUiComposeNoteView> compose_note_storage;
-    std::vector<WormUiComposeBgmLaneView> compose_bgm_lane_storage;
-    std::vector<WormUiComposeBgmEventView> compose_bgm_event_storage;
-    std::unordered_map<std::uint64_t, std::pair<std::string, std::string>> compose_bgm_sound_labels;
-    std::vector<WormUiComposeWaveformRowView> compose_waveform_storage;
-    std::vector<WormUiComposeWaveformOverviewRowView> compose_waveform_overview_storage;
-    std::vector<WormUiComposeBgmDraftView> compose_bgm_draft_storage;
-    std::vector<std::uint64_t> compose_bmson_draft_playable_lane_storage;
-    std::vector<std::uint8_t> compose_bmson_draft_restart_storage;
-    std::optional<WormUiComposeBgmMovePreviewView> compose_bgm_move_storage;
-    std::optional<WormUiComposeCursorView> compose_cursor_storage;
-    std::array<WormUiComposeSemanticLayerView, WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY>
-        compose_semantic_layer_storage{};
-    std::array<std::string, WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY>
-        compose_semantic_layer_name_storage;
-    std::array<WormUiComposeBranchRowView, WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY>
-        compose_branch_row_storage{};
-    std::array<WormUiComposeBranchChoiceView, WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY>
-        compose_branch_choice_storage{};
-    std::array<std::string, WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY> compose_branch_text_storage;
-    std::array<std::string, WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY>
-        compose_branch_diagnostic_storage;
-    std::array<WormUiComposeResourceView, WORM_UI_COMPOSE_RESOURCE_CAPACITY>
-        compose_resource_storage{};
-    std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> compose_resource_index_storage;
-    std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> compose_resource_name_storage;
-    std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> compose_resource_path_storage;
-    std::array<WormUiComposeOutputGroupView, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
-        compose_output_group_storage{};
-    std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
-        compose_output_group_name_storage;
-    std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
-        compose_output_group_path_storage;
-    std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
-        compose_output_group_asset_directory_storage;
-    std::string metadata_project_directory_storage;
-    std::string metadata_music_source_storage;
-    std::string metadata_copy_preview_source_storage;
-    std::array<WormUiComposeOutputGroupView, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
-        metadata_output_group_storage{};
-    std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
-        metadata_output_group_name_storage;
-    std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
-        metadata_output_group_path_storage;
-    std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
-        metadata_output_group_asset_directory_storage;
-    std::array<WormUiComposeLaneKeyBinding, WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY>
-        compose_lane_key_storage{};
-    std::optional<wormedit::editor_interaction_view_model_t> compose_interaction_view_storage;
-    std::vector<std::uint64_t> audio_asset_storage;
-    std::vector<WormUiAudioWaveformColumnView> audio_waveform_storage;
+    // Refresh pointers into inline storage after flatten_workspace returns or this object moves.
+    void rebind_view_pointers();
+
+    struct {
+        std::array<std::string, WORM_UI_WORKSPACE_SUMMARY_CAPACITY> lines;
+    } summary;
+    struct {
+        std::array<std::string, WORM_UI_RECOVERY_ROW_CAPACITY> path;
+        std::array<std::string, WORM_UI_RECOVERY_ROW_CAPACITY> summary;
+        std::array<std::string, WORM_UI_RECOVERY_ROW_CAPACITY> disabled_reason;
+        std::array<std::string, WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY> diagnostic;
+    } recovery;
+    struct {
+        std::string policy_status;
+    } setup;
+    struct {
+        std::vector<const char*> search_tag;
+        std::vector<std::size_t> search_tag_length;
+        std::array<WormUiMetadataFormatFieldView, WORM_UI_METADATA_FORMAT_FIELD_CAPACITY>
+            format_field{};
+        std::array<WormUiMetadataFormatTargetView, WORM_UI_METADATA_FORMAT_TARGET_CAPACITY>
+            format_target{};
+        std::string project_directory;
+        std::string music_source;
+        std::string copy_preview_source;
+        struct {
+            std::array<WormUiComposeOutputGroupView, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
+                view{};
+            std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY> name;
+            std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY> path;
+            std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY> asset_directory;
+        } output_group;
+    } metadata;
+    struct {
+        std::string status;
+        std::string recipe_status;
+        std::vector<WormUiTimingSpeedView> speed;
+        std::vector<WormUiTimingMarkerView> marker;
+        std::vector<WormUiTimingGridLineView> grid;
+        std::vector<WormUiTimingRecipePoint> recipe_candidate;
+        std::vector<WormUiTimingRecipePoint> recipe_composed;
+    } timing;
+    struct {
+        std::string status;
+        std::string hover_tooltip;
+        std::string selected_note_label;
+        std::array<WormUiComposeBookmarkView, WORM_UI_COMPOSE_BOOKMARK_CAPACITY> bookmark{};
+        std::array<std::string, WORM_UI_COMPOSE_BOOKMARK_CAPACITY> bookmark_label;
+        std::array<WormUiComposeSectionView, WORM_UI_COMPOSE_SECTION_CAPACITY> section{};
+        std::array<std::string, WORM_UI_COMPOSE_SECTION_CAPACITY> section_label;
+        struct {
+            std::array<WormUiComposeAudioBookmarkView, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY>
+                bookmark{};
+            std::array<std::string, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY> bookmark_label;
+            std::array<WormUiComposeAudioSectionView, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY>
+                section{};
+            std::array<std::string, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY> section_label;
+        } audio_marker;
+        std::vector<WormUiComposeBandView> band;
+        std::vector<WormUiComposeLaneView> lane;
+        struct {
+            std::vector<WormUiComposeGridLineView> line;
+            std::vector<wormedit::exact_chart_row_t> row;
+            std::vector<WormUiComposeGridLineView> proposed;
+        } grid;
+        std::vector<WormUiComposeTimingPreviewRectView> timing_preview_rect;
+        std::vector<WormUiTimingMarkerView> timing_preview_marker;
+        std::vector<WormUiTimingMarkerView> timing_marker;
+        std::vector<WormUiComposeDifferenceView> difference;
+        std::vector<WormUiComposeHoldView> hold;
+        std::vector<WormUiComposeNoteView> note;
+        struct {
+            std::vector<WormUiComposeBgmLaneView> lane;
+            std::vector<WormUiComposeBgmEventView> event;
+            std::unordered_map<std::uint64_t, std::pair<std::string, std::string>> sound_labels;
+            std::vector<WormUiComposeBgmDraftView> draft;
+            std::optional<WormUiComposeBgmMovePreviewView> move;
+        } bgm;
+        struct {
+            std::vector<WormUiComposeWaveformRowView> row;
+            std::vector<WormUiComposeWaveformOverviewRowView> overview_row;
+        } waveform;
+        std::vector<std::uint64_t> bmson_draft_playable_lane;
+        std::vector<std::uint8_t> bmson_draft_restart;
+        std::optional<WormUiComposeCursorView> cursor;
+        struct {
+            std::array<WormUiComposeSemanticLayerView,
+                       WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY> view{};
+            std::array<std::string, WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY> name;
+        } semantic_layer;
+        struct {
+            std::array<WormUiComposeBranchRowView, WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY> row{};
+            std::array<WormUiComposeBranchChoiceView, WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY>
+                choice{};
+            std::array<std::string, WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY> text;
+            std::array<std::string, WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY> diagnostic;
+        } branch;
+        struct {
+            std::array<WormUiComposeResourceView, WORM_UI_COMPOSE_RESOURCE_CAPACITY> view{};
+            std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> index;
+            std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> name;
+            std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> path;
+        } resource;
+        struct {
+            std::array<WormUiComposeOutputGroupView, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
+                view{};
+            std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY> name;
+            std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY> path;
+            std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY> asset_directory;
+        } output_group;
+        std::array<WormUiComposeLaneKeyBinding, WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY>
+            lane_key{};
+        std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
+    } compose;
+    struct {
+        std::vector<std::uint64_t> asset;
+        std::vector<WormUiAudioWaveformColumnView> waveform;
+    } audio;
 };
 
 [[nodiscard]] auto flatten_workspace(const workspace_view_t& source,

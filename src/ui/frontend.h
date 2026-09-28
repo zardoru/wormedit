@@ -204,6 +204,7 @@ typedef struct WormUiMetadataView {
     uint64_t document_revision;
     bool has_chart;
     uint64_t chart_id;
+    uint8_t selected_chart_source_family;
     const char* title;
     const char* artist;
     size_t title_bytes;

@@ -830,8 +830,11 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                     const auto selected =
                         std::ranges::find(document.charts, tab.selected_difficulty->id,
                                           &wormedit::chart_document_t::id);
-                    if (selected != document.charts.end())
+                    if (selected != document.charts.end()) {
+                        metadata.selected_chart_source_family =
+                            static_cast<std::uint8_t>(selected->source_family);
                         append_format_targets(selected->metadata.format_groups, true);
+                    }
                 }
                 metadata.format_targets = result.metadata_format_target_storage.data();
                 append("Song title: " + tab.title);

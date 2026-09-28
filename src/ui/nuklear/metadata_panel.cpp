@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -25,6 +26,22 @@
 #include <vector>
 
 static auto& state = worm_ui_nuklear_metadata_state();
+
+static constexpr std::array<const char*, worm_ui_nuklear_metadata_state_t::bms_field_count>
+    bms_field_names{"GENRE", "SUBARTIST", "STAGEFILE", "BANNER", "PREVIEW"};
+
+static auto bms_field_name_matches(const char* name, const char* expected) -> bool {
+    if (!name || !expected)
+        return false;
+    while (*name && *expected) {
+        if (std::toupper(static_cast<unsigned char>(*name)) !=
+            std::toupper(static_cast<unsigned char>(*expected)))
+            return false;
+        ++name;
+        ++expected;
+    }
+    return *name == '\0' && *expected == '\0';
+}
 
 static void SDLCALL metadata_file_dialog_callback(void* userdata, const char* const* filelist,
                                                   int /*selected_filter*/) {
@@ -63,6 +80,34 @@ static int copy_metadata_text(char* destination, size_t capacity, const char* so
     memcpy(destination, source, source_bytes);
     destination[source_bytes] = '\0';
     return 1;
+}
+
+static void initialize_bms_field_buffers(const WormUiMetadataView* metadata) {
+    state.bms_field_indices.fill(std::numeric_limits<size_t>::max());
+    state.bms_field_occurrences.fill(0);
+    state.bms_field_valid.fill(true);
+    for (auto& value : state.bms_fields)
+        value.fill('\0');
+    if (!metadata || !metadata->format_fields)
+        return;
+    for (size_t index = 0; index < metadata->format_field_count; ++index) {
+        const auto& field = metadata->format_fields[index];
+        if (field.chart_scoped || field.family != 1 || !field.first_group_for_family)
+            continue;
+        for (size_t typed = 0; typed < bms_field_names.size(); ++typed) {
+            if (!bms_field_name_matches(field.name, bms_field_names[typed]))
+                continue;
+            ++state.bms_field_occurrences[typed];
+            if (state.bms_field_indices[typed] != std::numeric_limits<size_t>::max())
+                break;
+            state.bms_field_indices[typed] = field.field_index;
+            state.bms_field_valid[typed] =
+                copy_metadata_text(state.bms_fields[typed].data(),
+                                   state.bms_fields[typed].size(), field.value,
+                                   field.value_bytes) != 0;
+            break;
+        }
+    }
 }
 
 static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
@@ -139,6 +184,7 @@ static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
     state.format_buffers_valid = 0;
     state.format_name.clear();
     state.format_value.clear();
+    initialize_bms_field_buffers(metadata);
 }
 
 static int metadata_buffer_key_changed(const WormUiMetadataView* metadata) {
@@ -408,6 +454,96 @@ static void set_metadata_format_action(WormUiWorkspaceAction* action,
     action->metadata_format_index = state.format_target_index;
     action->metadata_format_name = needs_text ? state.format_name.data() : nullptr;
     action->metadata_format_value = needs_text ? state.format_value.data() : nullptr;
+}
+
+static void render_bms_fields(struct nk_context* context, const WormUiMetadataView* metadata,
+                              WormUiWorkspaceAction* action) {
+    if (metadata->selected_chart_source_family != 1 || !metadata->has_chart)
+        return;
+    const WormUiMetadataFormatTargetView* song_target = nullptr;
+    for (size_t index = 0; index < metadata->format_target_count; ++index) {
+        const auto& target = metadata->format_targets[index];
+        if (!target.chart_scoped && target.family == 1) {
+            song_target = &target;
+            break;
+        }
+    }
+    nk_layout_row_dynamic(context, 24, 1);
+    nk_label(context, "BMS fields", NK_TEXT_LEFT);
+    if (!song_target || metadata->format_fields_truncated) {
+        nk_layout_row_dynamic(context, 20, 1);
+        nk_label(context, "BMS fields are unavailable while metadata rows are truncated.",
+                 NK_TEXT_LEFT);
+        return;
+    }
+    for (size_t typed = 0; typed < bms_field_names.size(); ++typed) {
+        auto& buffer = state.bms_fields[typed];
+        const auto field_index = state.bms_field_indices[typed];
+        const auto exists = field_index != std::numeric_limits<size_t>::max();
+        const WormUiMetadataFormatFieldView* source = nullptr;
+        if (exists) {
+            for (size_t index = 0; index < metadata->format_field_count; ++index) {
+                const auto& field = metadata->format_fields[index];
+                if (!field.chart_scoped && field.family == 1 &&
+                    field.first_group_for_family && field.field_index == field_index) {
+                    source = &field;
+                    break;
+                }
+            }
+        }
+        const auto editable = state.bms_field_valid[typed] && (!exists || source != nullptr);
+        nk_layout_row_begin(context, NK_DYNAMIC, 26, 4);
+        nk_layout_row_push(context, 0.17f);
+        nk_label(context, bms_field_names[typed], NK_TEXT_LEFT);
+        nk_layout_row_push(context, 0.51f);
+        if (!editable)
+            nk_widget_disable_begin(context);
+        (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, buffer.data(),
+                                             buffer.size(), nk_filter_default);
+        if (!editable)
+            nk_widget_disable_end(context);
+        nk_layout_row_push(context, 0.17f);
+        const auto changed = exists && source && source->value &&
+                             std::strcmp(source->value, buffer.data()) != 0;
+        const auto can_apply = editable && action->metadata_edit == WORM_UI_METADATA_EDIT_NONE &&
+                               (exists ? changed : buffer[0] != '\0' &&
+                                    song_target->field_count <
+                                        WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY);
+        if (!can_apply)
+            nk_widget_disable_begin(context);
+        const auto apply = nk_button_label(context, exists ? "Apply" : "Add");
+        if (!can_apply)
+            nk_widget_disable_end(context);
+        nk_layout_row_push(context, 0.15f);
+        const auto can_clear = exists && action->metadata_edit == WORM_UI_METADATA_EDIT_NONE;
+        if (!can_clear)
+            nk_widget_disable_begin(context);
+        const auto clear = nk_button_label(context, "Clear");
+        if (!can_clear)
+            nk_widget_disable_end(context);
+        nk_layout_row_end(context);
+        if ((apply && can_apply) || (clear && can_clear)) {
+            action->metadata_edit = clear ? WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD
+                                          : exists ? WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD
+                                                   : WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD;
+            action->metadata_document_revision = metadata->document_revision;
+            action->metadata_chart_id = 0;
+            action->metadata_format_chart_scoped = false;
+            action->metadata_format_family = 1;
+            action->metadata_format_index = exists ? field_index : song_target->field_count;
+            action->metadata_format_name = bms_field_names[typed];
+            action->metadata_format_value = buffer.data();
+        }
+        if (!editable || state.bms_field_occurrences[typed] > 1) {
+            nk_layout_row_dynamic(context, 18, 1);
+            if (!editable)
+                nk_label(context, "Source value exceeds the typed editor limit; use the ordered field editor.", NK_TEXT_LEFT);
+            else
+                nk_labelf(context, NK_TEXT_LEFT,
+                          "%zu ordered entries; this control edits the first.",
+                          state.bms_field_occurrences[typed]);
+        }
+    }
 }
 
 static void metadata_register_drop_target(struct nk_context* context,
@@ -947,6 +1083,7 @@ void worm_ui_nuklear_render_metadata_panel(struct nk_context* context,
                        metadata->song_fields_editable && state.song_buffers_valid);
     metadata_input_row(context, "Artist", state.artist.data(), state.artist.size(),
                        metadata->song_fields_editable && state.song_buffers_valid);
+    render_bms_fields(context, metadata, action);
     render_metadata_paths(context, metadata, action);
 
     nk_layout_row_dynamic(context, 24, 1);

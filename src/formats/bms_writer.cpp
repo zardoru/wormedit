@@ -384,6 +384,22 @@ auto exact_decimal(std::uint64_t numerator, std::uint64_t denominator, std::stri
     return output;
 }
 
+auto exact_offset_decimal(signed_rational_t value) -> std::string {
+    constexpr std::string_view path = "$.charts[].beat_zero_audio_offset_seconds";
+    if (value.denominator == 0) {
+        fail(bms_write_diagnostic_code_t::unrepresentable_number,
+             "BMS OFFSET has an invalid denominator", std::string(path));
+    }
+    if (value.numerator == 0) return "0";
+    const bool negative = value.numerator < 0;
+    const auto magnitude = negative
+                               ? static_cast<std::uint64_t>(-(value.numerator + 1)) + 1
+                               : static_cast<std::uint64_t>(value.numerator);
+    auto decimal = exact_decimal(magnitude, value.denominator, std::string(path));
+    if (negative) decimal.insert(decimal.begin(), '-');
+    return decimal;
+}
+
 auto exact_decimal(signed_rational_t value, std::string path) -> std::string {
     if (value.numerator <= 0) {
         fail(bms_write_diagnostic_code_t::unrepresentable_number,
@@ -1241,12 +1257,6 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
              "semantic note layers are omitted while their underlying note types are retained",
              "$.charts[].semantic_layers");
     }
-    if (chart.metadata.rating.has_value()) {
-        warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
-             "chart rating is omitted because the current BMS reader does not materialize it",
-             "$.charts[].metadata.rating");
-    }
-
     const auto title = song.metadata.title.empty() ? chart.metadata.name : song.metadata.title;
     const auto artist = song.metadata.artist.empty() ? chart.metadata.author : song.metadata.artist;
     if (has_line_break_or_nul(title) || has_line_break_or_nul(artist) ||
@@ -2366,6 +2376,54 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     };
     append_bms_groups(song.metadata.format_groups);
     append_bms_groups(chart.metadata.format_groups);
+    const auto offset_decimal = exact_offset_decimal(chart.beat_zero_audio_offset_seconds);
+    if (chart.beat_zero_audio_offset_seconds.numerator != 0) {
+        warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
+             "OFFSET is a Wormedit BMS extension and may be ignored by other players",
+             "$.charts[].beat_zero_audio_offset_seconds");
+    }
+    std::optional<std::uint32_t> playlevel_from_rating;
+    if (chart.metadata.rating) {
+        const auto rating = *chart.metadata.rating;
+        if (rating.denominator != 0 && rating.numerator >= 0 &&
+            static_cast<std::uint64_t>(rating.numerator) % rating.denominator == 0 &&
+            static_cast<std::uint64_t>(rating.numerator) / rating.denominator <= UINT32_MAX) {
+            playlevel_from_rating = static_cast<std::uint32_t>(
+                static_cast<std::uint64_t>(rating.numerator) / rating.denominator);
+        } else {
+            warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
+                 "chart rating cannot be represented as an integral BMS PLAYLEVEL",
+                 "$.charts[].metadata.rating");
+        }
+    }
+    bool has_ordered_playlevel = false;
+    bool ordered_playlevel_matches_rating = true;
+    for (const auto* group : bms_metadata_groups) {
+        for (const auto& [token, value] : group->ordered_fields) {
+            if (ascii_upper(token) != "PLAYLEVEL") {
+                continue;
+            }
+            has_ordered_playlevel = true;
+            if (!playlevel_from_rating) {
+                continue;
+            }
+            const auto trimmed = trim_ascii_whitespace(value);
+            std::uint32_t parsed{};
+            const auto [end, error] =
+                std::from_chars(trimmed.data(), trimmed.data() + trimmed.size(), parsed);
+            if (error != std::errc{} || end != trimmed.data() + trimmed.size() ||
+                parsed != *playlevel_from_rating) {
+                ordered_playlevel_matches_rating = false;
+            }
+        }
+    }
+    if (has_ordered_playlevel && playlevel_from_rating &&
+        !ordered_playlevel_matches_rating) {
+        warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
+             "chart rating differs from retained PLAYLEVEL; retained source metadata takes "
+             "precedence",
+             "$.charts[].metadata.rating");
+    }
     bool has_branch_player_field = false;
     struct effective_metadata_source_t {
         std::size_t source_order{};
@@ -2373,6 +2431,7 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     };
     std::optional<effective_metadata_source_t> last_title_source;
     std::optional<effective_metadata_source_t> last_artist_source;
+    std::optional<effective_metadata_source_t> last_offset_source;
     std::map<std::size_t, std::string> branch_metadata_edits;
     std::set<std::size_t> metadata_source_orders;
     for (const auto* group : bms_metadata_groups) {
@@ -2427,6 +2486,9 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
             } else if (normalized_token == "ARTIST" &&
                        (!last_artist_source || source_order >= last_artist_source->source_order)) {
                 last_artist_source = {source_order, branch_scoped};
+            } else if (normalized_token == "OFFSET" &&
+                       (!last_offset_source || source_order >= last_offset_source->source_order)) {
+                last_offset_source = {source_order, branch_scoped};
             }
         }
     }
@@ -2465,6 +2527,8 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
         route_projected_branch_metadata("TITLE", last_title_source, title);
     const bool artist_is_branch_projection =
         route_projected_branch_metadata("ARTIST", last_artist_source, artist);
+    const bool offset_is_branch_projection =
+        route_projected_branch_metadata("OFFSET", last_offset_source, offset_decimal);
 
     const auto has_player_field = std::ranges::any_of(bms_metadata_groups, [&](const auto* group) {
         for (std::size_t index = 0; index < group->ordered_fields.size(); ++index) {
@@ -2481,6 +2545,7 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     bool player_emitted = false;
     bool title_emitted = false;
     bool artist_emitted = false;
+    bool offset_emitted = false;
     for (std::size_t group_index = 0; group_index < bms_metadata_groups.size(); ++group_index) {
         const auto& fields = bms_metadata_groups[group_index]->ordered_fields;
         for (std::size_t field_index = 0; field_index < fields.size(); ++field_index) {
@@ -2528,6 +2593,11 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
                 }
                 value = artist_is_branch_projection ? retained_value : artist;
                 artist_emitted = true;
+            } else if (upper_token == "OFFSET") {
+                if (!offset_is_branch_projection) {
+                    value = offset_decimal;
+                }
+                offset_emitted = true;
             }
             if (has_line_break_or_nul(value) || !valid_utf8(value)) {
                 fail(bms_write_diagnostic_code_t::invalid_document,
@@ -2547,6 +2617,11 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
         output.emplace_back("#TITLE " + title);
     if (!artist_emitted && !artist.empty() && !artist_is_branch_projection)
         output.emplace_back("#ARTIST " + artist);
+    if (!offset_emitted && !last_offset_source &&
+        chart.beat_zero_audio_offset_seconds.numerator != 0)
+        output.emplace_back("#OFFSET " + offset_decimal);
+    if (!has_ordered_playlevel && playlevel_from_rating)
+        output.emplace_back("#PLAYLEVEL " + std::to_string(*playlevel_from_rating));
 
     if (flattening_active_projection) {
         if (projected_initial_bpm != nullptr) {
@@ -2992,6 +3067,7 @@ auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_
 
         if (!options.output_encoding.has_value() && options.preserve_unchanged_source &&
             song.charts.size() == 1 && !had_active_recipes &&
+            chart->beat_zero_audio_offset_seconds.numerator == 0 &&
             options.branch_policy == bms_branch_policy_t::preserve_tree) {
             if (const auto source = retained_source_bytes(song, *chart); source) {
                 result.bytes =

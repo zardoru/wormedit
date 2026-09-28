@@ -430,6 +430,76 @@ TEST_CASE("BMS writer emits ordered metadata, exact measures, resources, and tap
     }));
 }
 
+TEST_CASE("BMS writer maps integral chart ratings without replacing retained PLAYLEVEL",
+          "[unit][format][bms][writer]") {
+    const auto has_rating_warning = [](const wormedit::bms_write_result_t& result) {
+        return std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
+            return diagnostic.severity == wormedit::diagnostic_severity_t::warning &&
+                   diagnostic.path == "$.charts[].metadata.rating";
+        });
+    };
+    wormedit::bms_write_options_t options;
+    options.preserve_unchanged_source = false;
+    options.lane_profile_id = "bme-7k-outside-scratch";
+
+    const auto without_playlevel = parse("#PLAYER 1\n#TITLE Rating\n#BPM 120\n"
+                                         "#WAV01 click.wav\n#00011:01\n",
+                                         {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(without_playlevel.song.has_value());
+    REQUIRE_FALSE(without_playlevel.has_errors());
+    auto authored = *without_playlevel.song;
+    authored.charts.front().metadata.rating = wormedit::signed_rational_t{24, 2};
+    const auto generated = wormedit::write_bms(authored, options);
+    REQUIRE(generated.bytes.has_value());
+    CHECK_FALSE(generated.has_errors());
+    CHECK(generated.bytes->find("#PLAYLEVEL 12\n") != std::string::npos);
+    CHECK_FALSE(has_rating_warning(generated));
+
+    auto retained = *simple_chart().song;
+    retained.charts.front().metadata.rating = wormedit::signed_rational_t{12, 1};
+    const auto matching = wormedit::write_bms(retained, options);
+    REQUIRE(matching.bytes.has_value());
+    CHECK(matching.bytes->find("#PLAYLEVEL 12\n") != std::string::npos);
+    CHECK(matching.bytes->find("#PLAYLEVEL 12", matching.bytes->find("#PLAYLEVEL 12") + 1) ==
+          std::string::npos);
+    CHECK_FALSE(has_rating_warning(matching));
+
+    retained.charts.front().metadata.rating = wormedit::signed_rational_t{13, 1};
+    const auto conflicting = wormedit::write_bms(retained, options);
+    REQUIRE(conflicting.bytes.has_value());
+    CHECK(conflicting.bytes->find("#PLAYLEVEL 12\n") != std::string::npos);
+    CHECK(conflicting.bytes->find("#PLAYLEVEL 13\n") == std::string::npos);
+    CHECK(has_rating_warning(conflicting));
+
+    authored.charts.front().metadata.rating = wormedit::signed_rational_t{25, 2};
+    const auto fractional = wormedit::write_bms(authored, options);
+    REQUIRE(fractional.bytes.has_value());
+    CHECK(fractional.bytes->find("#PLAYLEVEL ") == std::string::npos);
+    CHECK(has_rating_warning(fractional));
+}
+
+TEST_CASE("BMS writer round trips its signed OFFSET extension",
+          "[unit][format][bms][writer]") {
+    auto song = *simple_chart().song;
+    song.charts.front().beat_zero_audio_offset_seconds = wormedit::signed_rational_t{-1, 10};
+    const auto written = wormedit::write_bms(song);
+    REQUIRE(written.bytes.has_value());
+    CHECK_FALSE(written.has_errors());
+    CHECK(written.bytes->find("#OFFSET -0.1\n") != std::string::npos);
+    CHECK(has_warning(written, wormedit::bms_write_diagnostic_code_t::lossy_transform));
+    const auto reparsed = parse(*written.bytes, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(reparsed.song.has_value());
+    CHECK((reparsed.song->charts.front().beat_zero_audio_offset_seconds ==
+           wormedit::signed_rational_t{-1, 10}));
+
+    auto retained = *reparsed.song;
+    retained.charts.front().beat_zero_audio_offset_seconds = wormedit::signed_rational_t{3, 20};
+    const auto edited = wormedit::write_bms(retained);
+    REQUIRE(edited.bytes.has_value());
+    CHECK(edited.bytes->find("#OFFSET 0.15\n") != std::string::npos);
+    CHECK(edited.bytes->find("#OFFSET -0.1\n") == std::string::npos);
+}
+
 TEST_CASE("BMS writer flattens note layers and omits bookmarks with warnings",
           "[unit][format][bms][writer]") {
     auto imported = simple_chart();

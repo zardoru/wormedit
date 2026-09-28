@@ -450,7 +450,8 @@ auto is_bms_metadata_command(std::string_view token) -> bool {
     constexpr std::array commands{
         std::string_view{"PLAYER"},     std::string_view{"GENRE"},   std::string_view{"TITLE"},
         std::string_view{"SUBTITLE"},   std::string_view{"ARTIST"},  std::string_view{"SUBARTIST"},
-        std::string_view{"PLAYLEVEL"},  std::string_view{"RANK"},    std::string_view{"DEFEXRANK"},
+        std::string_view{"PLAYLEVEL"},  std::string_view{"OFFSET"},  std::string_view{"RANK"},
+        std::string_view{"DEFEXRANK"},
         std::string_view{"TOTAL"},      std::string_view{"VOLWAV"},  std::string_view{"STAGEFILE"},
         std::string_view{"BANNER"},     std::string_view{"BACKBMP"}, std::string_view{"PREVIEW"},
         std::string_view{"DIFFICULTY"}, std::string_view{"COMMENT"}, std::string_view{"URL"},
@@ -562,6 +563,44 @@ auto parse_positive_rational(std::string_view text) -> std::optional<signed_rati
     }
     return signed_rational_t{static_cast<std::int64_t>(parsed.value->numerator),
                              parsed.value->denominator};
+}
+
+auto parse_signed_decimal_seconds(std::string_view text) -> std::optional<signed_rational_t> {
+    if (text.empty()) return std::nullopt;
+    const bool negative = text.front() == '-';
+    if (negative || text.front() == '+') text.remove_prefix(1);
+    if (text.empty()) return std::nullopt;
+    std::uint64_t magnitude{};
+    std::uint64_t denominator{1};
+    bool decimal_point = false;
+    bool digit_seen = false;
+    const auto limit = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) +
+                       (negative ? 1U : 0U);
+    for (const char character : text) {
+        if (character == '.' && !decimal_point) {
+            decimal_point = true;
+            continue;
+        }
+        if (character < '0' || character > '9') return std::nullopt;
+        digit_seen = true;
+        const auto digit = static_cast<std::uint64_t>(character - '0');
+        if (magnitude > (limit - digit) / 10 ||
+            (decimal_point && denominator > std::numeric_limits<std::uint64_t>::max() / 10)) {
+            return std::nullopt;
+        }
+        magnitude = magnitude * 10 + digit;
+        if (decimal_point) denominator *= 10;
+    }
+    if (!digit_seen) return std::nullopt;
+    const auto divisor = std::gcd(magnitude, denominator);
+    magnitude /= divisor;
+    denominator /= divisor;
+    const auto numerator = negative
+                               ? (magnitude == limit
+                                      ? std::numeric_limits<std::int64_t>::min()
+                                      : -static_cast<std::int64_t>(magnitude))
+                               : static_cast<std::int64_t>(magnitude);
+    return signed_rational_t{numerator, denominator};
 }
 
 auto source_provenance(std::string_view field, std::string_view spelling, std::size_t order,
@@ -1587,6 +1626,15 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
                     static_cast<std::uint64_t>(*parsed_player) <=
                         std::numeric_limits<unsigned int>::max()) {
                     player_header = static_cast<unsigned int>(*parsed_player);
+                }
+            } else if (token == "OFFSET") {
+                const auto parsed_offset = parse_signed_decimal_seconds(value);
+                if (parsed_offset) {
+                    chart.beat_zero_audio_offset_seconds = *parsed_offset;
+                } else {
+                    line_diagnostic(*node, diagnostic_severity_t::warning,
+                                    bms_parse_diagnostic_code_t::invalid_number,
+                                    "OFFSET is not an exact signed decimal; raw text is retained");
                 }
             }
             ordered_metadata_fields.emplace_back(token, node->raw_value);

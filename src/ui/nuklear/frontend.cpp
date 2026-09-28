@@ -279,7 +279,7 @@ void worm_ui_frontend_begin_input(void) {
     }
 }
 
-WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(SDL_WindowID window_id, float x,
+WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_id, float x,
                                                                 float y) {
     if (!g_context || !g_window ||
         (window_id != 0 && window_id != SDL_GetWindowID(g_window)) || !std::isfinite(x) ||

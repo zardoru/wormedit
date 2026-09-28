@@ -6,6 +6,7 @@
 
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_error.h>
+#include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_video.h>
 
 #include <nlohmann/json.hpp>

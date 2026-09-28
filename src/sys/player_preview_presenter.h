@@ -11,7 +11,7 @@
 #include <optional>
 
 namespace wormedit {
-class document_history_t;
+struct document_history_t;
 namespace visual {
 class image_job_t;
 class video_frame_job_t;

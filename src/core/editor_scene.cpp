@@ -511,10 +511,12 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         return true;
     };
     const auto y_for_row = [&](long double row) {
-        const auto offset = row * pixels_per_row -
+        const auto offset = row * static_cast<long double>(view.pixels_per_standard_measure) /
+                                chart.divisions_per_standard_measure -
                             static_cast<long double>(view.viewport_scroll_pixels);
         return static_cast<double>(request.scroll_direction == editor_field_scroll_direction_t::down
-                                       ? static_cast<long double>(view.viewport_height_pixels) - offset
+                                       ? static_cast<long double>(view.viewport_height_pixels) -
+                                             offset
                                        : offset);
     };
 

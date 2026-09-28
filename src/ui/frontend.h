@@ -1,12 +1,12 @@
 #pragma once
 
-#include <SDL3/SDL_events.h>
-#include <SDL3/SDL_render.h>
-#include <SDL3/SDL_video.h>
-
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
+typedef union SDL_Event SDL_Event;
+typedef struct SDL_Renderer SDL_Renderer;
+typedef struct SDL_Window SDL_Window;
 
 #define WORM_UI_WORKSPACE_TAB_COUNT 7
 #define WORM_UI_WORKSPACE_SUMMARY_CAPACITY 16
@@ -1461,7 +1461,7 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer);
 void worm_ui_frontend_shutdown(void);
 void worm_ui_frontend_begin_input(void);
 bool worm_ui_frontend_handle_event(const SDL_Event* event);
-WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(SDL_WindowID window_id, float x,
+WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_id, float x,
                                                                 float y);
 void worm_ui_frontend_end_input(void);
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view);

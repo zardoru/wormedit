@@ -8,10 +8,13 @@
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_video.h>
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <array>
 #include <charconv>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -29,6 +32,11 @@ static auto& state = worm_ui_nuklear_metadata_state();
 
 static constexpr std::uint8_t bms_format_family = 1;
 static constexpr std::uint8_t bmson_format_family = 4;
+static constexpr std::array<const char*, worm_ui_nuklear_metadata_state_t::bmson_field_count>
+    bmson_field_names{"info.subtitle", "info.subartists", "info.genre", "info.judge_rank",
+                      "info.total"};
+static constexpr std::array<const char*, worm_ui_nuklear_metadata_state_t::bmson_field_count>
+    bmson_field_labels{"Subtitle", "Subartists (one per line)", "Genre", "Judge rank", "Total"};
 static constexpr std::array<const char*, worm_ui_nuklear_metadata_state_t::bms_field_count>
     bms_field_names{"GENRE",     "SUBARTIST", "STAGEFILE", "BANNER",  "PREVIEW",
                     "SUBTITLE",  "PLAYLEVEL", "RANK",      "TOTAL",   "DIFFICULTY",
@@ -155,6 +163,106 @@ static void initialize_bms_field_buffers(const WormUiMetadataView* metadata) {
     }
 }
 
+static auto bmson_human_value(size_t typed, std::string_view source)
+    -> std::optional<std::string> {
+    const auto value = nlohmann::json::parse(source, nullptr, false);
+    if (value.is_discarded())
+        return std::nullopt;
+    if (typed == 0 || typed == 2) {
+        if (!value.is_string())
+            return std::nullopt;
+        return value.get<std::string>();
+    }
+    if (typed == 1) {
+        if (!value.is_array())
+            return std::nullopt;
+        std::string joined;
+        bool first = true;
+        for (const auto& item : value) {
+            if (!item.is_string())
+                return std::nullopt;
+            const auto text = item.get<std::string>();
+            if (text.empty() || text.find('\n') != std::string::npos ||
+                text.find('\r') != std::string::npos)
+                return std::nullopt;
+            if (!first)
+                joined.push_back('\n');
+            joined += text;
+            first = false;
+        }
+        return joined;
+    }
+    if (!value.is_number() || !std::isfinite(value.get<double>()) ||
+        value.get<double>() < 0.0)
+        return std::nullopt;
+    return std::string(source);
+}
+
+static auto bmson_json_value(size_t typed, std::string_view human)
+    -> std::optional<std::string> {
+    if (typed == 0 || typed == 2)
+        return nlohmann::json(std::string(human)).dump();
+    if (typed == 1) {
+        auto values = nlohmann::json::array();
+        if (!human.empty()) {
+            size_t start = 0;
+            while (start <= human.size()) {
+                const auto end = human.find('\n', start);
+                const auto line = human.substr(start, end == std::string_view::npos
+                                                          ? human.size() - start
+                                                          : end - start);
+                if (line.empty() || line.find('\r') != std::string_view::npos)
+                    return std::nullopt;
+                values.push_back(std::string(line));
+                if (end == std::string_view::npos)
+                    break;
+                start = end + 1;
+            }
+        }
+        return values.dump();
+    }
+    const auto parsed = nlohmann::json::parse(human, nullptr, false);
+    if (!parsed.is_number() || !std::isfinite(parsed.get<double>()) ||
+        parsed.get<double>() < 0.0)
+        return std::nullopt;
+    return std::string(human);
+}
+
+static void initialize_bmson_field_buffers(const WormUiMetadataView* metadata) {
+    state.bmson_field_indices.fill(std::numeric_limits<size_t>::max());
+    state.bmson_field_chart_scoped.fill(false);
+    state.bmson_field_valid.fill(true);
+    for (auto& value : state.bmson_fields)
+        value.fill('\0');
+    if (!metadata || !metadata->format_fields)
+        return;
+    for (size_t typed = 0; typed < bmson_field_names.size(); ++typed) {
+        for (const bool chart_scoped : {false, true}) {
+            bool found = false;
+            for (size_t index = 0; index < metadata->format_field_count; ++index) {
+                const auto& field = metadata->format_fields[index];
+                if (field.chart_scoped != chart_scoped ||
+                    field.family != bmson_format_family ||
+                    !field.first_group_for_family || !field.name || !field.value ||
+                    std::string_view{field.name} != bmson_field_names[typed])
+                    continue;
+                state.bmson_field_indices[typed] = field.field_index;
+                state.bmson_field_chart_scoped[typed] = chart_scoped;
+                const auto human = bmson_human_value(
+                    typed, std::string_view{field.value, field.value_bytes});
+                state.bmson_field_valid[typed] =
+                    human && copy_metadata_text(state.bmson_fields[typed].data(),
+                                                state.bmson_fields[typed].size(),
+                                                human->c_str(), human->size()) != 0;
+                found = true;
+                break;
+            }
+            if (found)
+                break;
+        }
+    }
+}
+
 static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
     if (!metadata) {
         return;
@@ -230,6 +338,7 @@ static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
     state.format_name.clear();
     state.format_value.clear();
     initialize_bms_field_buffers(metadata);
+    initialize_bmson_field_buffers(metadata);
 }
 
 static int metadata_buffer_key_changed(const WormUiMetadataView* metadata) {
@@ -605,6 +714,105 @@ static void render_bms_fields(struct nk_context* context, const WormUiMetadataVi
     }
     if (additional_fields_open) {
         nk_tree_pop(context);
+    }
+}
+
+static void render_bmson_fields(struct nk_context* context, const WormUiMetadataView* metadata,
+                                WormUiWorkspaceAction* action) {
+    if (metadata->selected_chart_source_family != bmson_format_family || !metadata->has_chart)
+        return;
+    const WormUiMetadataFormatTargetView* song_target = nullptr;
+    for (size_t index = 0; index < metadata->format_target_count; ++index) {
+        const auto& target = metadata->format_targets[index];
+        if (!target.chart_scoped && target.family == bmson_format_family) {
+            song_target = &target;
+            break;
+        }
+    }
+    nk_layout_row_dynamic(context, 24, 1);
+    nk_label(context, "BMSON info", NK_TEXT_LEFT);
+    if (!song_target || metadata->format_fields_truncated) {
+        nk_layout_row_dynamic(context, 20, 1);
+        nk_label(context, "BMSON fields are unavailable while metadata rows are truncated.",
+                 NK_TEXT_LEFT);
+        return;
+    }
+    for (size_t typed = 0; typed < bmson_field_names.size(); ++typed) {
+        auto& buffer = state.bmson_fields[typed];
+        const auto field_index = state.bmson_field_indices[typed];
+        const auto exists = field_index != std::numeric_limits<size_t>::max();
+        const auto chart_scoped = state.bmson_field_chart_scoped[typed];
+        const WormUiMetadataFormatFieldView* source = nullptr;
+        if (exists) {
+            for (size_t index = 0; index < metadata->format_field_count; ++index) {
+                const auto& field = metadata->format_fields[index];
+                if (field.chart_scoped == chart_scoped &&
+                    field.family == bmson_format_family && field.first_group_for_family &&
+                    field.field_index == field_index) {
+                    source = &field;
+                    break;
+                }
+            }
+        }
+        const auto editable = state.bmson_field_valid[typed] && (!exists || source);
+        nk_layout_row_begin(context, NK_DYNAMIC, typed == 1 ? 58 : 26, 2);
+        nk_layout_row_push(context, 0.27f);
+        nk_label(context, bmson_field_labels[typed], NK_TEXT_LEFT);
+        nk_layout_row_push(context, 0.73f);
+        if (!editable)
+            nk_widget_disable_begin(context);
+        (void)nk_edit_string_zero_terminated(context,
+                                             typed == 1 ? NK_EDIT_BOX : NK_EDIT_FIELD,
+                                             buffer.data(), buffer.size(), nk_filter_default);
+        if (!editable)
+            nk_widget_disable_end(context);
+        nk_layout_row_end(context);
+        const auto encoded = editable
+                                 ? bmson_json_value(typed, std::string_view{buffer.data()})
+                                 : std::nullopt;
+        const auto changed = exists && source && source->value && encoded &&
+                             std::string_view{source->value, source->value_bytes} != *encoded;
+        const auto can_apply = editable && encoded &&
+                               action->metadata_edit == WORM_UI_METADATA_EDIT_NONE &&
+                               (exists ? changed :
+                                (buffer[0] != '\0' || typed == 1) &&
+                                song_target->field_count <
+                                    WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY);
+        const auto can_clear = exists && action->metadata_edit == WORM_UI_METADATA_EDIT_NONE;
+        nk_layout_row_begin(context, NK_DYNAMIC, 24, 2);
+        nk_layout_row_push(context, 0.5f);
+        if (!can_apply)
+            nk_widget_disable_begin(context);
+        const auto apply = nk_button_label(context, exists ? "Apply" : "Add");
+        if (!can_apply)
+            nk_widget_disable_end(context);
+        nk_layout_row_push(context, 0.5f);
+        if (!can_clear)
+            nk_widget_disable_begin(context);
+        const auto clear = nk_button_label(context, "Clear");
+        if (!can_clear)
+            nk_widget_disable_end(context);
+        nk_layout_row_end(context);
+        if ((apply && can_apply) || (clear && can_clear)) {
+            state.bmson_action_json_value = encoded.value_or(std::string{});
+            action->metadata_edit = clear ? WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD
+                                          : exists ? WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD
+                                                   : WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD;
+            action->metadata_document_revision = metadata->document_revision;
+            action->metadata_chart_id = exists && chart_scoped ? metadata->chart_id : 0;
+            action->metadata_format_chart_scoped = exists && chart_scoped;
+            action->metadata_format_family = bmson_format_family;
+            action->metadata_format_index = exists ? field_index : song_target->field_count;
+            action->metadata_format_name = bmson_field_names[typed];
+            action->metadata_format_value = state.bmson_action_json_value.c_str();
+        }
+        if (!editable || !encoded) {
+            nk_layout_row_dynamic(context, 18, 1);
+            nk_label(context, editable
+                                  ? "Enter a valid nonnegative number or text value."
+                                  : "Retained JSON value cannot be shown in this editor; use the ordered field editor.",
+                     NK_TEXT_LEFT);
+        }
     }
 }
 
@@ -1146,6 +1354,7 @@ void worm_ui_nuklear_render_metadata_panel(struct nk_context* context,
     metadata_input_row(context, "Artist", state.artist.data(), state.artist.size(),
                        metadata->song_fields_editable && state.song_buffers_valid);
     render_bms_fields(context, metadata, action);
+    render_bmson_fields(context, metadata, action);
     render_metadata_paths(context, metadata, action);
 
     nk_layout_row_dynamic(context, 24, 1);

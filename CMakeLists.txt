@@ -310,6 +310,7 @@ if(WORMEDIT_BUILD_APP)
             wormedit::ui_frontend
             SDL3::SDL3
             otoworm::otoworm
+            nlohmann_json::nlohmann_json
     )
 
     if(WORMEDIT_ENABLE_IMAGE_DECODER)

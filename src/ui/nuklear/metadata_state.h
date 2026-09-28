@@ -46,6 +46,13 @@ struct worm_ui_nuklear_metadata_state_t {
     std::array<std::size_t, bms_field_count> bms_field_indices{};
     std::array<std::size_t, bms_field_count> bms_field_occurrences{};
     std::array<bool, bms_field_count> bms_field_valid{};
+    static constexpr std::size_t bmson_field_count = 5;
+    static constexpr std::size_t bmson_field_value_bytes = 1024;
+    std::array<std::array<char, bmson_field_value_bytes + 1>, bmson_field_count> bmson_fields{};
+    std::array<std::size_t, bmson_field_count> bmson_field_indices{};
+    std::array<bool, bmson_field_count> bmson_field_chart_scoped{};
+    std::array<bool, bmson_field_count> bmson_field_valid{};
+    std::string bmson_action_json_value;
     std::size_t selected_output_group_index{std::numeric_limits<std::size_t>::max()};
     std::uint64_t output_path_buffer_revision{std::numeric_limits<std::uint64_t>::max()};
     std::size_t output_path_buffer_group_index{std::numeric_limits<std::size_t>::max()};

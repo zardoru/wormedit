@@ -1,0 +1,47 @@
+#pragma once
+
+#include "sys/compose_view.h"
+
+#include <wormedit/core/editor_navigation_input.h>
+#include <wormedit/core/viewport_input.h>
+
+#include <cstdint>
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
+
+namespace wormedit::sys {
+
+auto compose_result_status(const wormedit::editor_interaction_result_t& result,
+                           std::string_view accepted) -> std::string;
+auto dispatch_compose_navigation_actions(const wormedit::editor_navigation_action_batch_t& actions,
+                                         wormedit::document_history_t& history,
+                                         wormedit::editor_interaction_state_t& state)
+    -> std::string;
+auto stage_bmson_bgm_marker(const wormedit::document_history_t& history,
+                            const wormedit::editor_interaction_state_t& state,
+                            application_command_state_t& application_state,
+                            wormedit::object_id_t reference, wormedit::local_position_t position,
+                            bool restart) -> std::string;
+auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
+                                   wormedit::document_history_t& history,
+                                   wormedit::workspace_controller_t& workspace,
+                                   wormedit::editor_interaction_state_t& state,
+                                   wormedit::viewport_input_controller_t& viewport_input,
+                                   wormedit::editor_navigation_input_controller_t& navigation_input,
+                                   application_command_state_t& application_state,
+                                   compose_scene_cache_t& scene_cache,
+                                   double viewport_delta_seconds) -> std::string;
+auto selected_bmson_waveform_source(
+    compose_scene_cache_t& cache, const wormedit::chart_document_t& chart,
+    std::uint64_t revision, wormedit::object_id_t bgm_event)
+    -> std::optional<compose_scene_cache_t::channel_waveform_selection_t>;
+auto selected_chart(const wormedit::document_history_t& history,
+                    const wormedit::workspace_controller_t& workspace)
+    -> const wormedit::chart_document_t*;
+auto visible_semantic_layer_by_id(const wormedit::chart_document_t& chart,
+                                  wormedit::layer_id_t id)
+    -> const wormedit::semantic_layer_t*;
+
+} // namespace wormedit::sys

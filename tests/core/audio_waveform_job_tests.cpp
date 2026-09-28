@@ -3,6 +3,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
+#include <latch>
+#include <span>
+#include <stop_token>
 #include <string_view>
 
 namespace {
@@ -64,5 +67,38 @@ TEST_CASE("waveform job rejects invalid and zero-capacity requests",
     CHECK(job.request(asset_id_t{1}, 32).status == waveform_job_start_status_t::invalid_request);
     CHECK(job.request({}, 32).status == waveform_job_start_status_t::invalid_request);
     CHECK_FALSE(job.poll().has_value());
+    CHECK_FALSE(job.busy());
+}
+
+TEST_CASE("waveform job preserves scheduler capacity rejection",
+          "[unit][audio][waveform-job][bounds]") {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    decoded_block_cache_t blocks;
+    waveform_cache_t waveforms;
+    std::latch worker_started{1};
+    std::latch release_worker{1};
+    task_scheduler_t scheduler{1, 1};
+    task_graph_t blocker{1};
+    const auto blocker_task = blocker.add_task({}, [&](std::span<const task_result_t>,
+                                                       std::stop_token) {
+        worker_started.count_down();
+        release_worker.wait();
+        return task_result_t::success();
+    });
+    REQUIRE(blocker_task);
+    auto blocker_submission = scheduler.submit(std::move(blocker));
+    REQUIRE(blocker_submission);
+    worker_started.wait();
+
+    waveform_job_t job{sources, blocks, waveforms, scheduler};
+    const auto rejected = job.request(asset_id_t{1}, 32);
+    release_worker.count_down();
+    REQUIRE(blocker_submission.graph.wait());
+
+    CHECK_FALSE(rejected);
+    CHECK(rejected.status == waveform_job_start_status_t::capacity_exceeded);
+    CHECK(rejected.message == "scheduler outstanding-task capacity exceeded");
     CHECK_FALSE(job.busy());
 }

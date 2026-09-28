@@ -63,7 +63,11 @@ auto waveform_job_t::request(asset_id_t asset, std::uint32_t frames_per_bin,
     }
     auto submitted = scheduler_.submit(std::move(graph));
     if (!submitted) {
-        return {.status = waveform_job_start_status_t::scheduler_rejected,
+        const auto status = submitted.error &&
+                                    submitted.error->code == task_error_code_t::capacity_exceeded
+                                ? async_job_start_status_t::capacity_exceeded
+                                : async_job_start_status_t::scheduler_rejected;
+        return {.status = status,
                 .message = submitted.error ? submitted.error->message
                                            : "waveform analysis task could not be submitted"};
     }
@@ -76,7 +80,9 @@ auto waveform_job_t::request(asset_id_t asset, std::uint32_t frames_per_bin,
                         .asset = asset,
                         .graph = std::move(submitted.graph),
                         .task = *task.id});
-    return {.status = waveform_job_start_status_t::started, .generation = generation};
+    return {.status = waveform_job_start_status_t::started,
+            .generation = generation,
+            .message = {}};
 }
 
 auto waveform_job_t::poll() -> std::optional<waveform_job_completion_t> {

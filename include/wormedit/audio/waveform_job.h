@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/audio/source_registry.h>
+#include <wormedit/core/async_job.h>
 #include <wormedit/core/task_graph.h>
 
 #include <cstddef>
@@ -12,22 +13,8 @@
 
 namespace wormedit::audio {
 
-enum class waveform_job_start_status_t {
-    started,
-    invalid_request,
-    capacity_exceeded,
-    scheduler_rejected,
-};
-
-struct waveform_job_start_result_t {
-    waveform_job_start_status_t status{waveform_job_start_status_t::invalid_request};
-    std::uint64_t generation{};
-    std::string message;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == waveform_job_start_status_t::started;
-    }
-};
+using waveform_job_start_status_t = ::wormedit::async_job_start_status_t;
+using waveform_job_start_result_t = ::wormedit::async_job_start_result_t;
 
 struct waveform_job_completion_t {
     std::uint64_t generation{};

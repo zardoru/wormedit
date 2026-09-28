@@ -123,6 +123,94 @@ struct player_preview_presenter_t::impl_t {
     std::vector<WormUiPlayerPreviewStoryboardSpriteView> storyboard_sprites;
 };
 
+namespace {
+
+auto evaluate_storyboards(const song_document_t& document,
+                          std::vector<cached_storyboard_t>& storyboards, std::int64_t time_ms,
+                          std::vector<storyboard_draw_instance_t>& instances,
+                          std::string& error) -> bool {
+    instances.reserve(WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY);
+    for (auto& cached : storyboards) {
+        const auto storyboard =
+            std::ranges::find(document.storyboards, cached.id, &storyboard_document_t::id);
+        if (storyboard == document.storyboards.end() || !storyboard->model) {
+            error = "A cached storyboard preview no longer matches the document.";
+            return false;
+        }
+        const auto remaining = WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY - instances.size();
+        const auto frame = evaluate_storyboard_frame(
+            *storyboard->model, cached.index, time_ms, cached.arena,
+            {.maximum_instances = std::max<std::size_t>(remaining, 1)});
+        if (!frame) {
+            error = frame.diagnostic ? frame.diagnostic->message
+                                     : "The storyboard frame exceeded its preview bounds.";
+            return false;
+        }
+        if (frame.instances.size() > remaining) {
+            error = "The storyboard frame exceeds the frontend sprite cap.";
+            return false;
+        }
+        instances.insert(instances.end(), frame.instances.begin(), frame.instances.end());
+    }
+    return true;
+}
+
+auto convert_rect(const player_preview_rect_t& rect) -> WormUiPlayerPreviewRect {
+    return {.left = rect.left, .top = rect.top, .right = rect.right, .bottom = rect.bottom};
+}
+
+void append_scene_geometry(const player_preview_scene_t& scene,
+                           std::vector<WormUiPlayerPreviewLaneView>& lanes,
+                           std::vector<WormUiPlayerPreviewReceptorView>& receptors,
+                           std::vector<WormUiPlayerPreviewHoldView>& holds,
+                           std::vector<WormUiPlayerPreviewNoteView>& notes) {
+    for (const auto& lane : scene.lanes) {
+        lanes.push_back({.lane_id = lane.lane.value,
+                         .role = static_cast<std::uint8_t>(lane.role),
+                         .glyph = static_cast<std::uint8_t>(lane.glyph),
+                         .display_order = lane.display_order,
+                         .bounds = convert_rect(lane.bounds)});
+    }
+    for (const auto& receptor : scene.receptors) {
+        receptors.push_back({.lane_id = receptor.lane.value,
+                             .glyph = static_cast<std::uint8_t>(receptor.glyph),
+                             .bounds = convert_rect(receptor.bounds)});
+    }
+    for (const auto& hold : scene.hold_bodies) {
+        holds.push_back({.note_id = hold.note.value,
+                         .lane_id = hold.lane.value,
+                         .semantic_color_visible = hold.semantic_color.has_value(),
+                         .semantic_red = static_cast<std::uint8_t>(
+                             hold.semantic_color ? hold.semantic_color->red : 0),
+                         .semantic_green = static_cast<std::uint8_t>(
+                             hold.semantic_color ? hold.semantic_color->green : 0),
+                         .semantic_blue = static_cast<std::uint8_t>(
+                             hold.semantic_color ? hold.semantic_color->blue : 0),
+                         .semantic_alpha = static_cast<std::uint8_t>(
+                             hold.semantic_color ? hold.semantic_color->alpha : 0),
+                         .bounds = convert_rect(hold.bounds)});
+    }
+    for (const auto& note : scene.note_endpoints) {
+        notes.push_back({.note_id = note.note.value,
+                         .lane_id = note.lane.value,
+                         .kind = static_cast<std::uint8_t>(note.kind),
+                         .glyph = static_cast<std::uint8_t>(note.glyph),
+                         .tail = note.tail,
+                         .semantic_color_visible = note.semantic_color.has_value(),
+                         .semantic_red = static_cast<std::uint8_t>(
+                             note.semantic_color ? note.semantic_color->red : 0),
+                         .semantic_green = static_cast<std::uint8_t>(
+                             note.semantic_color ? note.semantic_color->green : 0),
+                         .semantic_blue = static_cast<std::uint8_t>(
+                             note.semantic_color ? note.semantic_color->blue : 0),
+                         .semantic_alpha = static_cast<std::uint8_t>(
+                             note.semantic_color ? note.semantic_color->alpha : 0),
+                         .bounds = convert_rect(note.bounds)});
+    }
+}
+
+} // namespace
+
 player_preview_presenter_t::player_preview_presenter_t() : impl_(std::make_unique<impl_t>()) {}
 player_preview_presenter_t::~player_preview_presenter_t() = default;
 player_preview_presenter_t::player_preview_presenter_t(player_preview_presenter_t&&) noexcept =
@@ -312,30 +400,11 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
         return;
     }
     std::vector<storyboard_draw_instance_t> storyboard_instances;
-    storyboard_instances.reserve(WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY);
-    for (auto& cached : state.storyboards) {
-        const auto document =
-            std::ranges::find(history.document.storyboards, cached.id, &storyboard_document_t::id);
-        if (document == history.document.storyboards.end() || !document->model) {
-            fail("A cached storyboard preview no longer matches the document.");
-            return;
-        }
-        const auto remaining =
-            WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY - storyboard_instances.size();
-        const auto frame =
-            evaluate_storyboard_frame(*document->model, cached.index, *time_ms, cached.arena,
-                                      {.maximum_instances = std::max<std::size_t>(remaining, 1)});
-        if (!frame) {
-            fail(frame.diagnostic ? frame.diagnostic->message
-                                  : "The storyboard frame exceeded its preview bounds.");
-            return;
-        }
-        if (frame.instances.size() > remaining) {
-            fail("The storyboard frame exceeds the frontend sprite cap.");
-            return;
-        }
-        storyboard_instances.insert(storyboard_instances.end(), frame.instances.begin(),
-                                    frame.instances.end());
+    std::string storyboard_error;
+    if (!evaluate_storyboards(history.document, state.storyboards, *time_ms, storyboard_instances,
+                              storyboard_error)) {
+        fail(std::move(storyboard_error));
+        return;
     }
     const auto scene = make_player_preview_scene(
         *state.index, {.sample_frame = sample_frame,
@@ -364,54 +433,7 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
         fail("The player-preview frame exceeds the frontend geometry cap.");
         return;
     }
-    const auto convert_rect = [](const player_preview_rect_t& rect) {
-        return WormUiPlayerPreviewRect{rect.left, rect.top, rect.right, rect.bottom};
-    };
-    for (const auto& lane : scene.scene->lanes) {
-        state.lanes.push_back({.lane_id = lane.lane.value,
-                               .role = static_cast<std::uint8_t>(lane.role),
-                               .glyph = static_cast<std::uint8_t>(lane.glyph),
-                               .display_order = lane.display_order,
-                               .bounds = convert_rect(lane.bounds)});
-    }
-    for (const auto& receptor : scene.scene->receptors) {
-        state.receptors.push_back({.lane_id = receptor.lane.value,
-                                   .glyph = static_cast<std::uint8_t>(receptor.glyph),
-                                   .bounds = convert_rect(receptor.bounds)});
-    }
-    for (const auto& hold : scene.scene->hold_bodies) {
-        state.holds.push_back(
-            {.note_id = hold.note.value,
-             .lane_id = hold.lane.value,
-             .semantic_color_visible = hold.semantic_color.has_value(),
-             .semantic_red =
-                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->red : 0),
-             .semantic_green =
-                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->green : 0),
-             .semantic_blue =
-                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->blue : 0),
-             .semantic_alpha =
-                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->alpha : 0),
-             .bounds = convert_rect(hold.bounds)});
-    }
-    for (const auto& note : scene.scene->note_endpoints) {
-        state.notes.push_back(
-            {.note_id = note.note.value,
-             .lane_id = note.lane.value,
-             .kind = static_cast<std::uint8_t>(note.kind),
-             .glyph = static_cast<std::uint8_t>(note.glyph),
-             .tail = note.tail,
-             .semantic_color_visible = note.semantic_color.has_value(),
-             .semantic_red =
-                 static_cast<std::uint8_t>(note.semantic_color ? note.semantic_color->red : 0),
-             .semantic_green =
-                 static_cast<std::uint8_t>(note.semantic_color ? note.semantic_color->green : 0),
-             .semantic_blue =
-                 static_cast<std::uint8_t>(note.semantic_color ? note.semantic_color->blue : 0),
-             .semantic_alpha =
-                 static_cast<std::uint8_t>(note.semantic_color ? note.semantic_color->alpha : 0),
-             .bounds = convert_rect(note.bounds)});
-    }
+    append_scene_geometry(*scene.scene, state.lanes, state.receptors, state.holds, state.notes);
     const auto append_visual = [&](const auto& event) {
         if (!event) {
             return;
@@ -598,7 +620,7 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
                     history.document.id, history.document.revision, *resolved.source, clock);
                 if (started) {
                     state.requested_video_clock = clock;
-                } else {
+                } else if (started.status != async_job_start_status_t::capacity_exceeded) {
                     state.failed_video_event = clock.event;
                     state.video_diagnostic_message = started.message.empty()
                                                          ? "The video frame task could not start."

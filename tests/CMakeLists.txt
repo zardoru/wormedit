@@ -2,6 +2,7 @@ include(Catch)
 
 add_executable(wormedit_core_tests
     ../src/sys/compose_resource_presenter.cpp
+    ../src/sys/application_commands.cpp
     core/audio_offset_editor_tests.cpp
     core/audio_fixture_inventory_tests.cpp
     core/autosave_loop_tests.cpp
@@ -13,6 +14,7 @@ add_executable(wormedit_core_tests
     core/command_tests.cpp
     core/compose_resource_presenter_tests.cpp
     core/command_registry_tests.cpp
+    sys/application_commands_tests.cpp
     core/document_tests.cpp
     core/editor_navigation_input_tests.cpp
     core/editor_scene_tests.cpp

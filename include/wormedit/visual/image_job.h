@@ -1,5 +1,6 @@
 #pragma once
 
+#include <wormedit/core/async_job.h>
 #include <wormedit/core/task_graph.h>
 #include <wormedit/visual/image_decoder.h>
 
@@ -48,27 +49,14 @@ class image_cache_t {
     std::vector<image_cache_entry_t> entries_;
 };
 
-enum class image_job_start_status_t : std::uint8_t {
-    started,
-    invalid_request,
-    capacity_exceeded,
-    scheduler_rejected,
-};
+using image_job_start_status_t = ::wormedit::async_job_start_status_t;
 
 struct image_job_options_t {
     image_decode_limits_t decode_limits;
     std::size_t maximum_result_rgba_bytes{256U * 1024U * 1024U};
 };
 
-struct image_job_start_result_t {
-    image_job_start_status_t status{image_job_start_status_t::invalid_request};
-    std::uint64_t generation{};
-    std::string message;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == image_job_start_status_t::started;
-    }
-};
+using image_job_start_result_t = ::wormedit::async_job_start_result_t;
 
 struct image_job_item_t {
     resolved_visual_asset_t source;

@@ -214,7 +214,11 @@ auto video_frame_job_t::request(song_id_t project, std::uint64_t document_revisi
     }
     auto submitted = scheduler_.submit(std::move(graph));
     if (!submitted) {
-        return {.status = video_job_start_status_t::scheduler_rejected,
+        const auto status = submitted.error &&
+                                    submitted.error->code == task_error_code_t::capacity_exceeded
+                                ? async_job_start_status_t::capacity_exceeded
+                                : async_job_start_status_t::scheduler_rejected;
+        return {.status = status,
                 .message = submitted.error ? submitted.error->message
                                            : "video frame task could not be submitted"};
     }

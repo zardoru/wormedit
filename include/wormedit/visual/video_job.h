@@ -1,5 +1,6 @@
 #pragma once
 
+#include <wormedit/core/async_job.h>
 #include <wormedit/core/task_graph.h>
 #include <wormedit/visual/video_decoder.h>
 
@@ -48,22 +49,8 @@ class video_frame_cache_t {
     std::vector<video_frame_cache_entry_t> entries_;
 };
 
-enum class video_job_start_status_t : std::uint8_t {
-    started,
-    invalid_request,
-    capacity_exceeded,
-    scheduler_rejected,
-};
-
-struct video_job_start_result_t {
-    video_job_start_status_t status{video_job_start_status_t::invalid_request};
-    std::uint64_t generation{};
-    std::string message;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == video_job_start_status_t::started;
-    }
-};
+using video_job_start_status_t = ::wormedit::async_job_start_status_t;
+using video_job_start_result_t = ::wormedit::async_job_start_result_t;
 
 struct video_job_result_t {
     song_id_t project;

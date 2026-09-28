@@ -271,9 +271,28 @@ if(WORMEDIT_BUILD_APP)
         src/common/chart.cpp
         src/editor/field.cpp
         src/sys/audio.cpp
+        src/sys/application_defaults.cpp
+        src/sys/application_commands.cpp
+        src/sys/application_command_dispatch.cpp
         src/sys/compose_resource_presenter.cpp
+        src/sys/compose_view.cpp
+        src/sys/compose_input.cpp
+        src/sys/compose_actions.cpp
+        src/sys/compose_audition_requests.cpp
+        src/sys/audio_source_registration.cpp
+        src/sys/application_edit_helpers.cpp
         src/sys/main.cpp
+        src/sys/timing_view.cpp
+        src/sys/timing_edit_runtime.cpp
+        src/sys/metadata_drop_state.cpp
+        src/sys/metadata_asset_runtime.cpp
+        src/sys/metadata_view_projection.cpp
+        src/sys/waveform_view_projection.cpp
+        src/sys/bmson_waveform_projection.cpp
+        src/sys/compose_waveform_overlays.cpp
+        src/sys/resource_job_state.cpp
         src/sys/player_preview_presenter.cpp
+        src/sys/workspace_projection.cpp
         src/sys/platform_recovery.cpp
         src/sys/platform_shortcut_profile.cpp
         src/sys/window.cpp
@@ -325,6 +344,7 @@ if(WORMEDIT_BUILD_APP)
 
     if(WORMEDIT_ENABLE_AUDIO_DECODER)
         target_sources(wormedit PRIVATE
+            src/sys/chart_preview_state.cpp
             src/sys/sdl_audition_output.cpp
             src/sys/sdl_preview_output.cpp
         )

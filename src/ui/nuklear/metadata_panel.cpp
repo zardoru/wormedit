@@ -27,8 +27,52 @@
 
 static auto& state = worm_ui_nuklear_metadata_state();
 
+static constexpr std::uint8_t bms_format_family = 1;
+static constexpr std::uint8_t bmson_format_family = 4;
 static constexpr std::array<const char*, worm_ui_nuklear_metadata_state_t::bms_field_count>
-    bms_field_names{"GENRE", "SUBARTIST", "STAGEFILE", "BANNER", "PREVIEW"};
+    bms_field_names{"GENRE",     "SUBARTIST", "STAGEFILE", "BANNER",  "PREVIEW",
+                    "SUBTITLE",  "PLAYLEVEL", "RANK",      "TOTAL",   "DIFFICULTY",
+                    "BACKBMP",   "COMMENT",   "URL",       "VOLWAV"};
+enum class bms_field_value_kind_t { text, unsigned_integer, unsigned_decimal };
+static constexpr std::array<bms_field_value_kind_t,
+                            worm_ui_nuklear_metadata_state_t::bms_field_count>
+    bms_field_value_kinds{
+        bms_field_value_kind_t::text,             bms_field_value_kind_t::text,
+        bms_field_value_kind_t::text,             bms_field_value_kind_t::text,
+        bms_field_value_kind_t::text,             bms_field_value_kind_t::text,
+        bms_field_value_kind_t::unsigned_decimal, bms_field_value_kind_t::unsigned_integer,
+        bms_field_value_kind_t::unsigned_decimal, bms_field_value_kind_t::unsigned_integer,
+        bms_field_value_kind_t::text,             bms_field_value_kind_t::text,
+        bms_field_value_kind_t::text,             bms_field_value_kind_t::unsigned_decimal,
+    };
+
+static auto bms_field_numeric_valid(size_t field, std::string_view value) -> bool {
+    const auto kind = bms_field_value_kinds[field];
+    if (kind == bms_field_value_kind_t::text)
+        return true;
+    if (value.empty())
+        return false;
+    if (kind == bms_field_value_kind_t::unsigned_integer) {
+        std::uint64_t parsed{};
+        const auto result = std::from_chars(value.data(), value.data() + value.size(), parsed);
+        return result.ec == std::errc{} && result.ptr == value.data() + value.size();
+    }
+    bool digit = false;
+    bool point = false;
+    size_t digits = 0;
+    for (const char character : value) {
+        if (character >= '0' && character <= '9') {
+            digit = true;
+            if (++digits > 40)
+                return false;
+        } else if (character == '.' && !point) {
+            point = true;
+        } else {
+            return false;
+        }
+    }
+    return digit;
+}
 
 static auto bms_field_name_matches(const char* name, const char* expected) -> bool {
     if (!name || !expected)
@@ -92,7 +136,8 @@ static void initialize_bms_field_buffers(const WormUiMetadataView* metadata) {
         return;
     for (size_t index = 0; index < metadata->format_field_count; ++index) {
         const auto& field = metadata->format_fields[index];
-        if (field.chart_scoped || field.family != 1 || !field.first_group_for_family)
+        if (field.chart_scoped || field.family != bms_format_family ||
+            !field.first_group_for_family)
             continue;
         for (size_t typed = 0; typed < bms_field_names.size(); ++typed) {
             if (!bms_field_name_matches(field.name, bms_field_names[typed]))
@@ -458,12 +503,12 @@ static void set_metadata_format_action(WormUiWorkspaceAction* action,
 
 static void render_bms_fields(struct nk_context* context, const WormUiMetadataView* metadata,
                               WormUiWorkspaceAction* action) {
-    if (metadata->selected_chart_source_family != 1 || !metadata->has_chart)
+    if (metadata->selected_chart_source_family != bms_format_family || !metadata->has_chart)
         return;
     const WormUiMetadataFormatTargetView* song_target = nullptr;
     for (size_t index = 0; index < metadata->format_target_count; ++index) {
         const auto& target = metadata->format_targets[index];
-        if (!target.chart_scoped && target.family == 1) {
+        if (!target.chart_scoped && target.family == bms_format_family) {
             song_target = &target;
             break;
         }
@@ -476,7 +521,14 @@ static void render_bms_fields(struct nk_context* context, const WormUiMetadataVi
                  NK_TEXT_LEFT);
         return;
     }
+    bool additional_fields_open = false;
     for (size_t typed = 0; typed < bms_field_names.size(); ++typed) {
+        if (typed == 5) {
+            additional_fields_open =
+                nk_tree_push(context, NK_TREE_TAB, "Additional BMS fields", NK_MINIMIZED);
+            if (!additional_fields_open)
+                break;
+        }
         auto& buffer = state.bms_fields[typed];
         const auto field_index = state.bms_field_indices[typed];
         const auto exists = field_index != std::numeric_limits<size_t>::max();
@@ -484,7 +536,7 @@ static void render_bms_fields(struct nk_context* context, const WormUiMetadataVi
         if (exists) {
             for (size_t index = 0; index < metadata->format_field_count; ++index) {
                 const auto& field = metadata->format_fields[index];
-                if (!field.chart_scoped && field.family == 1 &&
+                if (!field.chart_scoped && field.family == bms_format_family &&
                     field.first_group_for_family && field.field_index == field_index) {
                     source = &field;
                     break;
@@ -503,9 +555,11 @@ static void render_bms_fields(struct nk_context* context, const WormUiMetadataVi
         if (!editable)
             nk_widget_disable_end(context);
         nk_layout_row_push(context, 0.17f);
+        const auto numeric_valid = bms_field_numeric_valid(typed, buffer.data());
         const auto changed = exists && source && source->value &&
                              std::strcmp(source->value, buffer.data()) != 0;
-        const auto can_apply = editable && action->metadata_edit == WORM_UI_METADATA_EDIT_NONE &&
+        const auto can_apply = editable && numeric_valid &&
+                               action->metadata_edit == WORM_UI_METADATA_EDIT_NONE &&
                                (exists ? changed : buffer[0] != '\0' &&
                                     song_target->field_count <
                                         WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY);
@@ -529,20 +583,28 @@ static void render_bms_fields(struct nk_context* context, const WormUiMetadataVi
             action->metadata_document_revision = metadata->document_revision;
             action->metadata_chart_id = 0;
             action->metadata_format_chart_scoped = false;
-            action->metadata_format_family = 1;
+            action->metadata_format_family = bms_format_family;
             action->metadata_format_index = exists ? field_index : song_target->field_count;
             action->metadata_format_name = bms_field_names[typed];
             action->metadata_format_value = buffer.data();
         }
-        if (!editable || state.bms_field_occurrences[typed] > 1) {
+        if (!editable || !numeric_valid || state.bms_field_occurrences[typed] > 1) {
             nk_layout_row_dynamic(context, 18, 1);
             if (!editable)
-                nk_label(context, "Source value exceeds the typed editor limit; use the ordered field editor.", NK_TEXT_LEFT);
+                nk_label(context,
+                         "Source value exceeds the typed editor limit; use the ordered field editor.",
+                         NK_TEXT_LEFT);
+            else if (!numeric_valid)
+                nk_label(context, "Enter an unsigned number before applying this field.",
+                         NK_TEXT_LEFT);
             else
                 nk_labelf(context, NK_TEXT_LEFT,
                           "%zu ordered entries; this control edits the first.",
                           state.bms_field_occurrences[typed]);
         }
+    }
+    if (additional_fields_open) {
+        nk_tree_pop(context);
     }
 }
 
@@ -1207,6 +1269,14 @@ void worm_ui_nuklear_render_metadata_panel(struct nk_context* context,
         metadata_input_row(context, "Offset seconds denominator",
                            state.audio_offset_denominator.data(),
                            state.audio_offset_denominator.size(), offset_editable);
+        if (metadata->selected_chart_source_family == bms_format_family) {
+            nk_layout_row_dynamic(context, 20, 1);
+            nk_label(context, "BMS exports this offset as #OFFSET; player support varies.",
+                     NK_TEXT_LEFT);
+        } else if (metadata->selected_chart_source_family == bmson_format_family) {
+            nk_layout_row_dynamic(context, 20, 1);
+            nk_label(context, "BMSON 1.0 export requires a zero offset.", NK_TEXT_LEFT);
+        }
         const auto parsed_offset = metadata_audio_offset_value();
         const int offset_changed =
             parsed_offset && (parsed_offset->numerator != metadata->audio_offset_numerator ||

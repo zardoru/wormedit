@@ -40,7 +40,7 @@ struct worm_ui_nuklear_metadata_state_t {
     bool format_buffers_valid{};
     std::vector<char> format_name;
     std::vector<char> format_value;
-    static constexpr std::size_t bms_field_count = 5;
+    static constexpr std::size_t bms_field_count = 14;
     static constexpr std::size_t bms_field_value_bytes = 1024;
     std::array<std::array<char, bms_field_value_bytes + 1>, bms_field_count> bms_fields{};
     std::array<std::size_t, bms_field_count> bms_field_indices{};

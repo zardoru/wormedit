@@ -141,8 +141,12 @@ auto mirrored_source_fields(song_document_t& song, const format_metadata_target_
     const auto source_order = source_group.ordered_field_source_orders[source_index];
     const auto append = [&](std::vector<format_metadata_t>& groups) {
         for (auto& group : groups) {
-            if (group.family != source_group.family || !group.encoding.original_bytes ||
-                group.encoding.original_bytes.get() != source_group.encoding.original_bytes.get())
+            const auto same_source = group.encoding.original_bytes &&
+                (group.encoding.original_bytes.get() ==
+                     source_group.encoding.original_bytes.get() ||
+                 (group.family == format_family_t::bmson &&
+                  *group.encoding.original_bytes == *source_group.encoding.original_bytes));
+            if (group.family != source_group.family || !same_source)
                 continue;
             const auto found = std::ranges::find(group.ordered_field_source_orders, source_order);
             if (found == group.ordered_field_source_orders.end())

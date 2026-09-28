@@ -445,6 +445,11 @@ auto add_format_group(std::string_view source, const json_value_t& root,
         group.ordered_fields.emplace_back("resolution",
                                           resolution ? raw_spelling(source, *resolution) : "<omitted>");
     }
+    // Song and chart scopes share these imported fields. Give each occurrence
+    // the same stable identity so a generic metadata edit updates both copies.
+    group.ordered_field_source_orders.resize(group.ordered_fields.size());
+    std::iota(group.ordered_field_source_orders.begin(),
+              group.ordered_field_source_orders.end(), std::size_t{});
     return group;
 }
 

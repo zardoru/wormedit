@@ -278,6 +278,82 @@ auto original_json(const song_document_t& song, const chart_document_t& chart,
     }
 }
 
+auto apply_bmson_info_metadata(const song_document_t& song, const chart_document_t& chart,
+                               json_t& info) -> bool {
+    const auto find_group = [](const std::vector<format_metadata_t>& groups)
+        -> const format_metadata_t* {
+        const auto found = std::ranges::find(groups, format_family_t::bmson,
+                                             &format_metadata_t::family);
+        return found == groups.end() ? nullptr : &*found;
+    };
+    const auto* song_group = find_group(song.metadata.format_groups);
+    const auto* chart_group = find_group(chart.metadata.format_groups);
+    if (!song_group && !chart_group) return false;
+    const auto source = original_json(song, chart, true);
+    const auto source_info = source.contains("info") && source["info"].is_object()
+                                 ? source["info"] : json_t::object();
+    // These fields have no normalized document property. The generic metadata
+    // editor stores their exact JSON tokens, including string quotes and arrays.
+    bool genre_edited = false;
+    for (const auto key : {"subtitle", "subartists", "genre", "judge_rank", "total"}) {
+        const auto name = std::string("info.") + key;
+        const auto field_value = [&](const format_metadata_t* group) -> std::optional<json_t> {
+            if (!group) return std::nullopt;
+            const auto matches = std::ranges::count(group->ordered_fields, name,
+                                                    &std::pair<std::string, std::string>::first);
+            if (matches > 1) {
+                fail(bmson_write_diagnostic_code_t::invalid_document,
+                     "BMSON info field has duplicate metadata entries", "$." + name);
+            }
+            const auto found = std::ranges::find(group->ordered_fields, name,
+                                                 &std::pair<std::string, std::string>::first);
+            if (found == group->ordered_fields.end()) return std::nullopt;
+            auto value = json_t::parse(found->second, nullptr, false);
+            if (value.is_discarded()) {
+                fail(bmson_write_diagnostic_code_t::invalid_document,
+                     "BMSON info metadata is not a valid JSON value", "$." + name);
+            }
+            return value;
+        };
+        const auto song_value = field_value(song_group);
+        const auto chart_value = field_value(chart_group);
+        const auto source_value = source_info.contains(key)
+                                      ? std::optional<json_t>{source_info[key]}
+                                      : std::nullopt;
+        const auto song_changed = song_group && song_value != source_value;
+        const auto chart_changed = chart_group && chart_value != source_value;
+        if (name == "info.genre") genre_edited = song_changed || chart_changed;
+        if (song_changed && chart_changed && song_value != chart_value) {
+            fail(bmson_write_diagnostic_code_t::invalid_document,
+                 "song and chart BMSON metadata disagree on the same edited info field",
+                 "$." + name);
+        }
+        const auto& selected = chart_changed || !song_group ? chart_value :
+                               song_changed || !chart_group ? song_value : chart_value;
+        if (!selected) {
+            info.erase(key);
+            continue;
+        }
+        const auto& value = *selected;
+        const auto string_field = name == "info.subtitle" || name == "info.genre";
+        const auto string_array = name == "info.subartists";
+        const auto number_field = name == "info.judge_rank" || name == "info.total";
+        const auto valid = (!string_field || value.is_string()) &&
+                           (!string_array || (value.is_array() &&
+                              std::ranges::all_of(value, [](const auto& item) {
+                                  return item.is_string();
+                              }))) &&
+                           (!number_field || (value.is_number() && value.get<double>() >= 0.0));
+        if (!valid) {
+            fail(bmson_write_diagnostic_code_t::invalid_document,
+                 "BMSON info metadata must contain a valid JSON value of the expected type",
+                 "$." + name);
+        }
+        info[key] = value;
+    }
+    return genre_edited;
+}
+
 auto optional_u32_identity(const resource_entry_t& resource, std::string_view space)
     -> std::optional<std::uint32_t> {
     const auto identity = std::ranges::find_if(resource.target_identities,
@@ -866,6 +942,7 @@ auto write_impl(const song_document_t& song, bmson_write_options_t options,
     root["version"] = "1.0.0";
     auto info = root.contains("info") && root["info"].is_object()
                     ? root["info"] : json_t::object();
+    const auto genre_edited = apply_bmson_info_metadata(song, *chart, info);
     if (!chart->metadata.author.empty() && !song.metadata.artist.empty() &&
         chart->metadata.author != song.metadata.artist) {
         fail(bmson_write_diagnostic_code_t::unsupported_feature,
@@ -882,7 +959,7 @@ auto write_impl(const song_document_t& song, bmson_write_options_t options,
              "BMSON has one genre field and cannot retain multiple ordered search tags",
              "$.info.genre");
     }
-    if (song.metadata.ordered_search_tags.size() == 1) {
+    if (song.metadata.ordered_search_tags.size() == 1 && !genre_edited) {
         info["genre"] = song.metadata.ordered_search_tags.front();
     }
     if (chart->metadata.rating) {

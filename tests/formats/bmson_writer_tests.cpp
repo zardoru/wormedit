@@ -1,4 +1,6 @@
 #include <wormedit/formats/bmson.h>
+#include <wormedit/core/metadata_editor.h>
+#include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
@@ -115,6 +117,106 @@ TEST_CASE("BMSON writer round-trips mixed sound slices, timing, layout, metadata
     CHECK(written.json->find("\"resolution\": 240") != std::string::npos);
     CHECK(written.json->find("\"mode_hint\": \"beat-7k\"") != std::string::npos);
     CHECK(written.json->find("\"lines\"") != std::string::npos);
+}
+
+TEST_CASE("BMSON writer persists editable info metadata through export and reload",
+          "[unit][format][bmson][writer][metadata]") {
+    auto imported = fixture("slicing-and-mixed-sounds.bmson");
+    REQUIRE(imported.song);
+    auto history = wormedit::make_document_history(std::move(*imported.song));
+    const auto chart_id = history.document.charts.front().id;
+    const wormedit::format_metadata_target_t song_target{
+        std::nullopt, wormedit::format_family_t::bmson};
+    const wormedit::format_metadata_target_t chart_target{
+        chart_id, wormedit::format_family_t::bmson};
+    const auto find_field = [](const auto& group, std::string_view name) {
+        const auto found = std::ranges::find(group.ordered_fields, name,
+            [](const auto& field) -> std::string_view { return field.first; });
+        return static_cast<std::size_t>(std::distance(group.ordered_fields.begin(), found));
+    };
+    const auto& song_group = history.document.metadata.format_groups.front();
+    const auto genre_index = find_field(song_group, "info.genre");
+    REQUIRE(genre_index < song_group.ordered_fields.size());
+    REQUIRE(wormedit::apply_metadata_edit(
+        history, history.document.revision,
+        wormedit::replace_format_metadata_field_action_t{
+            song_target, genre_index, "info.genre", "\"electronic\""}));
+    const auto& chart_group = history.document.charts.front().metadata.format_groups.front();
+    CHECK(chart_group.ordered_fields[genre_index].second == "\"electronic\"");
+    const auto rank_index = find_field(chart_group, "info.judge_rank");
+    const auto total_index = find_field(chart_group, "info.total");
+    REQUIRE(rank_index < chart_group.ordered_fields.size());
+    REQUIRE(total_index < chart_group.ordered_fields.size());
+    REQUIRE(wormedit::apply_metadata_edit(
+        history, history.document.revision,
+        wormedit::replace_format_metadata_field_action_t{
+            chart_target, rank_index, "info.judge_rank", "115.5"}));
+    REQUIRE(wormedit::apply_metadata_edit(
+        history, history.document.revision,
+        wormedit::replace_format_metadata_field_action_t{
+            song_target, total_index, "info.total", "220"}));
+    const auto append_info = [&](std::string name, std::string value) {
+        const auto count = history.document.charts.front().metadata.format_groups.front()
+                               .ordered_fields.size();
+        return wormedit::apply_metadata_edit(
+            history, history.document.revision,
+            wormedit::insert_format_metadata_field_action_t{
+                chart_target, count, std::move(name), std::move(value)});
+    };
+    REQUIRE(append_info("info.subtitle", "\"A new subtitle\""));
+    REQUIRE(append_info("info.subartists", "[\"music:Guest\",\"chart:Mapper\"]"));
+    REQUIRE(wormedit::apply_metadata_edit(
+        history, history.document.revision,
+        wormedit::set_song_metadata_action_t{
+            history.document.metadata.title, history.document.metadata.artist, {"catalog tag"}}));
+
+    const auto written = wormedit::write_bmson(history.document);
+    REQUIRE(written.json);
+    const auto json = nlohmann::json::parse(*written.json);
+    CHECK(json["info"]["subtitle"] == "A new subtitle");
+    CHECK(json["info"]["genre"] == "electronic");
+    CHECK(json["info"]["subartists"] ==
+          nlohmann::json::array({"music:Guest", "chart:Mapper"}));
+    CHECK(json["info"]["judge_rank"] == 115.5);
+    CHECK(json["info"]["total"] == 220);
+    const auto reloaded = parse_text(*written.json);
+    REQUIRE(reloaded.song);
+    const auto& fields = reloaded.song->charts.front().metadata.format_groups.front()
+                             .ordered_fields;
+    CHECK(std::ranges::any_of(fields, [](const auto& field) {
+        return field.first == "info.subtitle" && field.second == "\"A new subtitle\"";
+    }));
+
+    const auto saved = wormedit::write_native_project(history.document);
+    REQUIRE(saved.bytes);
+    auto reopened = wormedit::parse_native_project(*saved.bytes);
+    REQUIRE(reopened.song);
+    auto resumed = wormedit::make_document_history(std::move(*reopened.song));
+    const auto& reopened_song_group = resumed.document.metadata.format_groups.front();
+    const auto reopened_genre_index = find_field(reopened_song_group, "info.genre");
+    REQUIRE(reopened_genre_index < reopened_song_group.ordered_fields.size());
+    REQUIRE(wormedit::apply_metadata_edit(
+        resumed, resumed.document.revision,
+        wormedit::replace_format_metadata_field_action_t{
+            song_target, reopened_genre_index, "info.genre", "\"post-save genre\""}));
+    CHECK(resumed.document.charts.front().metadata.format_groups.front()
+              .ordered_fields[reopened_genre_index].second == "\"post-save genre\"");
+    const auto after_reopen = wormedit::write_bmson(resumed.document);
+    REQUIRE(after_reopen.json);
+    CHECK(nlohmann::json::parse(*after_reopen.json)["info"]["genre"] == "post-save genre");
+
+    auto invalid = wormedit::make_document_history(history.document);
+    const auto& invalid_group = invalid.document.charts.front().metadata.format_groups.front();
+    const auto subtitle_index = find_field(invalid_group, "info.subtitle");
+    REQUIRE(subtitle_index < invalid_group.ordered_fields.size());
+    REQUIRE(wormedit::apply_metadata_edit(
+        invalid, invalid.document.revision,
+        wormedit::replace_format_metadata_field_action_t{
+            chart_target, subtitle_index, "info.subtitle", "unquoted subtitle"}));
+    const auto invalid_export = wormedit::write_bmson(invalid.document);
+    CHECK_FALSE(invalid_export.json);
+    REQUIRE_FALSE(invalid_export.diagnostics.empty());
+    CHECK(invalid_export.diagnostics.front().json_path == "$.info.subtitle");
 }
 
 TEST_CASE("BMSON writer retains standalone BGM and normalizes source-only collisions",

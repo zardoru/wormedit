@@ -813,6 +813,31 @@ void worm_ui_nuklear_render_timing_panel(struct nk_context* context, const WormU
             action->timing_grid_denominator = view->supported_snap_denominators[next];
         }
     }
+    nk_layout_row_begin(context, NK_DYNAMIC, 25, 2);
+    nk_layout_row_push(context, 0.57f);
+    if (view->initial_bpm_present && std::isfinite(view->initial_bpm_value)) {
+        nk_labelf(context, NK_TEXT_LEFT, "Initial BPM: %.6g", view->initial_bpm_value);
+    } else {
+        nk_label(context, "Initial BPM: unset", NK_TEXT_LEFT);
+    }
+    nk_layout_row_push(context, 0.43f);
+    const bool can_edit_initial_bpm = view->initial_bpm_editable && !view->stage_active &&
+                                      !view->sv_recipe.active &&
+                                      !view->sv_recipe.selection_armed &&
+                                      action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE;
+    if (!can_edit_initial_bpm)
+        nk_widget_disable_begin(context);
+    const auto initial_bpm_clicked = nk_button_label(context, "Set initial BPM");
+    if (!can_edit_initial_bpm)
+        nk_widget_disable_end(context);
+    nk_layout_row_end(context);
+    if (initial_bpm_clicked && can_edit_initial_bpm) {
+        set_timing_action(action, view, WORM_UI_TIMING_STAGE_BEGIN);
+        action->timing_lane = WORM_UI_TIMING_LANE_BPM;
+        action->timing_object_id = view->initial_bpm_event_id;
+        action->timing_has_target_y = view->initial_bpm_event_id == 0;
+        action->timing_target_y_fraction = 0.0;
+    }
     const bool can_apply_meter = !view->stage_active && !view->sv_recipe.active &&
                                  !view->sv_recipe.selection_armed && view->scene_available &&
                                  view->measure_count != 0;

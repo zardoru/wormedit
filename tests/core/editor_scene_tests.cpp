@@ -188,6 +188,7 @@ TEST_CASE("field scene scroll direction anchors rectangular heads and keeps arro
              .field_width_pixels = 200.0,
              .note_head_height_pixels = 16.0,
              .scroll_direction = direction,
+             .fixed_cursor_screen_y_pixels = 72.0,
              .bgm_pane_left_pixels = 210.0,
              .bgm_pane_width_pixels = 36.0});
     };
@@ -217,6 +218,10 @@ TEST_CASE("field scene scroll direction anchors rectangular heads and keeps arro
     CHECK(down_arrow->bounds.bottom == Catch::Approx(56.0));
     REQUIRE(up.scene->bgm_events.size() == 1);
     REQUIRE(down.scene->bgm_events.size() == 1);
+    REQUIRE(up.scene->cursor.has_value());
+    REQUIRE(down.scene->cursor.has_value());
+    CHECK(up.scene->cursor->bounds.top == Catch::Approx(71.0));
+    CHECK(down.scene->cursor->bounds.top == Catch::Approx(71.0));
     CHECK(up.scene->bgm_events.front().bounds.top == Catch::Approx(96.0));
     CHECK(down.scene->bgm_events.front().bounds.bottom == Catch::Approx(96.0));
     CHECK(std::ranges::all_of(down.scene->lanes, [](const auto& lane) {

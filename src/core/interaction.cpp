@@ -442,7 +442,13 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         state.pixels_per_standard_measure < minimum_pixels_per_standard_measure ||
         state.pixels_per_standard_measure > maximum_pixels_per_standard_measure ||
         !maximum_scroll.has_value() || !std::isfinite(state.viewport_scroll_pixels) ||
-        state.viewport_scroll_pixels < 0.0 || state.viewport_scroll_pixels > *maximum_scroll) {
+        state.viewport_scroll_pixels < 0.0 || state.viewport_scroll_pixels > *maximum_scroll ||
+        (state.fixed_cursor_screen_y_pixels.has_value() &&
+         (!std::isfinite(*state.fixed_cursor_screen_y_pixels) ||
+          *state.fixed_cursor_screen_y_pixels < 0.0 ||
+          *state.fixed_cursor_screen_y_pixels > state.viewport_height_pixels ||
+          (state.scroll_direction != editor_field_scroll_direction_t::up &&
+           state.scroll_direction != editor_field_scroll_direction_t::down)))) {
         return diagnostic_list_t{
             error(diagnostic_code_t::invalid_resolution, "editor viewport geometry is invalid")};
     }
@@ -539,6 +545,8 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .pixels_per_standard_measure = state.pixels_per_standard_measure,
         .viewport_scroll_pixels = state.viewport_scroll_pixels,
         .viewport_height_pixels = state.viewport_height_pixels,
+        .fixed_cursor_screen_y_pixels = state.fixed_cursor_screen_y_pixels,
+        .scroll_direction = state.scroll_direction,
         .pending_hold = state.pending_hold,
         .pending_virtual_hold = virtual_hold_preview,
         .pending_note_duration_gesture = state.pending_note_duration_gesture,
@@ -1464,6 +1472,13 @@ auto recover_editor_interaction(const document_history_t& history,
     if (maximum_scroll && std::isfinite(previous.viewport_scroll_pixels)) {
         result.state->viewport_scroll_pixels =
             std::clamp(previous.viewport_scroll_pixels, 0.0, *maximum_scroll);
+    }
+    if (previous.fixed_cursor_screen_y_pixels &&
+        std::isfinite(*previous.fixed_cursor_screen_y_pixels) &&
+        *previous.fixed_cursor_screen_y_pixels >= 0.0 &&
+        *previous.fixed_cursor_screen_y_pixels <= result.state->viewport_height_pixels) {
+        result.state->fixed_cursor_screen_y_pixels = previous.fixed_cursor_screen_y_pixels;
+        result.state->scroll_direction = previous.scroll_direction;
     }
     const auto view = make_view(history, *result.state);
     if (const auto* recovered = std::get_if<editor_interaction_view_model_t>(&view)) {
@@ -2788,6 +2803,15 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                     static_cast<double>(chart->divisions_per_standard_measure);
         const auto cursor_top = static_cast<double>(*cursor_row) * pixels_per_row;
         const auto cursor_bottom = cursor_top + pixels_per_row;
+        if (candidate.fixed_cursor_screen_y_pixels.has_value()) {
+            const auto anchor = candidate.scroll_direction == editor_field_scroll_direction_t::down
+                                    ? candidate.viewport_height_pixels -
+                                          *candidate.fixed_cursor_screen_y_pixels
+                                    : *candidate.fixed_cursor_screen_y_pixels;
+            candidate.viewport_scroll_pixels =
+                std::clamp(cursor_top - anchor, 0.0, *maximum_scroll);
+            return std::isfinite(candidate.viewport_scroll_pixels);
+        }
         constexpr double comfort_band_top_fraction = 0.25;
         constexpr double comfort_band_bottom_fraction = 0.75;
         const auto comfort_top = candidate.viewport_scroll_pixels +
@@ -5696,8 +5720,72 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                              {error(diagnostic_code_t::invalid_resolution,
                                                     "editor viewport geometry is invalid")});
                 }
-                state.viewport_scroll_pixels = std::clamp(next_scroll, 0.0, *maximum_scroll);
-                const auto next_view = make_view(history, state);
+                auto proposed_state = state;
+                proposed_state.viewport_scroll_pixels = std::clamp(next_scroll, 0.0, *maximum_scroll);
+                if (typed_action.fixed_cursor_screen_y_pixels.has_value()) {
+                    const auto anchor_y = *typed_action.fixed_cursor_screen_y_pixels;
+                    if (!std::isfinite(anchor_y) || anchor_y < 0.0 ||
+                        anchor_y > state.viewport_height_pixels ||
+                        (typed_action.direction != editor_field_scroll_direction_t::up &&
+                         typed_action.direction != editor_field_scroll_direction_t::down)) {
+                        return diagnostic_result(history, state,
+                                                 {error(diagnostic_code_t::invalid_resolution,
+                                                        "fixed cursor scroll anchor is invalid")});
+                    }
+                    proposed_state.fixed_cursor_screen_y_pixels = anchor_y;
+                    proposed_state.scroll_direction = typed_action.direction;
+                    auto canvas_rows = index.total_rows;
+                    if (chart->source_family == format_family_t::bms) {
+                        const auto built_canvas = build_virtual_canvas(*chart);
+                        if (const auto* diagnostics =
+                                std::get_if<diagnostic_list_t>(&built_canvas)) {
+                            return diagnostic_result(history, state, *diagnostics);
+                        }
+                        canvas_rows = std::get<virtual_canvas_t>(built_canvas).total_rows;
+                    }
+                    const auto pixels_per_row =
+                        static_cast<long double>(state.pixels_per_standard_measure) /
+                        chart->divisions_per_standard_measure;
+                    const auto field_y =
+                        typed_action.direction == editor_field_scroll_direction_t::down
+                            ? state.viewport_height_pixels - anchor_y
+                            : anchor_y;
+                    const auto raw_row =
+                        (static_cast<long double>(proposed_state.viewport_scroll_pixels) +
+                         field_y) / pixels_per_row;
+                    if (!std::isfinite(raw_row) || canvas_rows == 0 ||
+                        state.active_snap_denominator == 0 ||
+                        chart->divisions_per_standard_measure % state.active_snap_denominator != 0) {
+                        return diagnostic_result(history, state,
+                                                 {error(diagnostic_code_t::invalid_resolution,
+                                                        "fixed cursor scroll cannot resolve a snap")});
+                    }
+                    const auto step = chart->divisions_per_standard_measure /
+                                      state.active_snap_denominator;
+                    const auto bounded_row = std::clamp(
+                        raw_row, 0.0L, static_cast<long double>(canvas_rows - 1));
+                    auto cursor_row = static_cast<std::uint64_t>(std::floor(bounded_row / step)) *
+                                      step;
+                    if (step < canvas_rows - cursor_row &&
+                        bounded_row - cursor_row > static_cast<long double>(step) / 2.0L) {
+                        cursor_row += step;
+                    }
+                    const auto position = position_at(index, cursor_row);
+                    proposed_state.virtual_bms_cursor_row =
+                        position ? std::nullopt : std::optional{cursor_row};
+                    if (position) {
+                        proposed_state.cursor = *position;
+                        const auto replacement = transition_lane(*chart, index, state.cursor,
+                                                                  *position, state.active_lane);
+                        if (replacement.has_value()) {
+                            proposed_state.active_lane = *replacement;
+                        }
+                    }
+                }
+                const auto next_view = make_view(history, proposed_state);
+                if (std::holds_alternative<editor_interaction_view_model_t>(next_view)) {
+                    state = std::move(proposed_state);
+                }
                 return {
                     .accepted = std::holds_alternative<editor_interaction_view_model_t>(next_view),
                     .view =

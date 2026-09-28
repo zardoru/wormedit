@@ -887,6 +887,10 @@ typedef struct WormUiTimingView {
     const char* status_text;
     size_t measure_count;
     size_t bpm_count;
+    bool initial_bpm_editable;
+    bool initial_bpm_present;
+    uint64_t initial_bpm_event_id;
+    double initial_bpm_value;
     size_t pause_count;
     size_t warp_count;
     size_t bookmark_count;

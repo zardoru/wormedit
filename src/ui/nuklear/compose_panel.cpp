@@ -1282,6 +1282,35 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                               compose_body_height));
         if (nk_group_begin(context, "Compose inspector", NK_WINDOW_BORDER)) {
 
+    nk_layout_row_begin(context, NK_DYNAMIC, 25, 2);
+    nk_layout_row_push(context, 0.57f);
+    if (timing_view->initial_bpm_present && std::isfinite(timing_view->initial_bpm_value)) {
+        nk_labelf(context, NK_TEXT_LEFT, "Initial BPM: %.6g",
+                  timing_view->initial_bpm_value);
+    } else {
+        nk_label(context, "Initial BPM: unset", NK_TEXT_LEFT);
+    }
+    nk_layout_row_push(context, 0.43f);
+    const auto can_edit_initial_bpm = timing_view->initial_bpm_editable &&
+        !timing_view->stage_active && !timing_view->sv_recipe.active &&
+        !timing_view->sv_recipe.selection_armed &&
+        action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE;
+    if (!can_edit_initial_bpm)
+        nk_widget_disable_begin(context);
+    const auto initial_bpm_clicked = nk_button_label(context, "Set initial BPM");
+    if (!can_edit_initial_bpm)
+        nk_widget_disable_end(context);
+    nk_layout_row_end(context);
+    if (initial_bpm_clicked && can_edit_initial_bpm) {
+        action->timing_stage_action = WORM_UI_TIMING_STAGE_BEGIN;
+        action->timing_chart_id = timing_view->chart_id;
+        action->timing_document_revision = timing_view->document_revision;
+        action->timing_lane = WORM_UI_TIMING_LANE_BPM;
+        action->timing_object_id = timing_view->initial_bpm_event_id;
+        action->timing_has_target_y = timing_view->initial_bpm_event_id == 0;
+        action->timing_target_y_fraction = 0.0;
+    }
+
     if (nk_tree_push(context, NK_TREE_TAB, "Timing lanes", NK_MINIMIZED)) {
         constexpr std::array<const char*, 8> labels{"BPM", "SV", "SPD", "STP",
                                                     "DLY", "WRP", "KIA", "ANC"};

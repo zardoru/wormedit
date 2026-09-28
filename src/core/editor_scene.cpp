@@ -388,6 +388,10 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         !std::isfinite(request.note_head_height_pixels) || request.note_head_height_pixels <= 0.0 ||
         (request.scroll_direction != editor_field_scroll_direction_t::down &&
          request.scroll_direction != editor_field_scroll_direction_t::up) ||
+        (request.fixed_cursor_screen_y_pixels.has_value() &&
+         (!std::isfinite(*request.fixed_cursor_screen_y_pixels) ||
+          *request.fixed_cursor_screen_y_pixels < 0.0 ||
+          *request.fixed_cursor_screen_y_pixels > view.viewport_height_pixels)) ||
         !std::isfinite(request.comparison_difference_height_pixels) ||
         request.comparison_difference_height_pixels <= 0.0 ||
         !std::isfinite(request.hold_body_width_ratio) || request.hold_body_width_ratio <= 0.0 ||
@@ -1484,7 +1488,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                               "field-scene cursor exceeds its configured primitive cap"));
                     return result;
                 }
-                const auto y = y_for_row(*cursor_row);
+                const auto y = request.fixed_cursor_screen_y_pixels.value_or(y_for_row(*cursor_row));
                 scene.cursor = editor_field_cursor_geometry_t{
                     .lane = view.active_lane,
                     .bounds = {bounds->left, y - 1.0, bounds->right, y + 1.0}};

@@ -42,6 +42,24 @@ static std::array<WormUiShortcutEvent, WORM_UI_SHORTCUT_EVENT_CAPACITY> g_shortc
 static size_t g_shortcut_event_count{};
 static bool g_shortcut_events_overflowed{};
 static bool g_ime_composition_active{};
+static int g_last_window_width{};
+static int g_last_window_height{};
+
+static bool frontend_window_size(int* width, int* height) {
+    int current_width = 0;
+    int current_height = 0;
+    if (g_window && SDL_GetWindowSize(g_window, &current_width, &current_height) &&
+        current_width > 0 && current_height > 0) {
+        g_last_window_width = current_width;
+        g_last_window_height = current_height;
+    }
+    if (g_last_window_width <= 0 || g_last_window_height <= 0) {
+        return false;
+    }
+    *width = g_last_window_width;
+    *height = g_last_window_height;
+    return true;
+}
 
 void worm_ui_nuklear_append_image_quad(void* canvas, short, short, unsigned short, unsigned short,
                                        nk_handle callback_data) {
@@ -219,6 +237,8 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer) {
     g_shortcut_events_overflowed = false;
     g_ime_composition_active = false;
     g_double_click_count = 0;
+    g_last_window_width = 0;
+    g_last_window_height = 0;
     return true;
 }
 
@@ -242,6 +262,8 @@ void worm_ui_frontend_shutdown(void) {
     g_shortcut_events_overflowed = false;
     g_ime_composition_active = false;
     g_double_click_count = 0;
+    g_last_window_width = 0;
+    g_last_window_height = 0;
     worm_ui_nuklear_reset_metadata_state();
     worm_ui_nuklear_reset_timing_state();
     worm_ui_nuklear_reset_audio_state();
@@ -366,7 +388,7 @@ WormUiWorkspaceAction worm_ui_frontend_workspace_error(const char* diagnostic) {
     }
     int width = 0;
     int height = 0;
-    if (!SDL_GetWindowSize(g_window, &width, &height) || width <= 0 || height <= 0) {
+    if (!frontend_window_size(&width, &height)) {
         return action;
     }
     render_workspace_error(&action, width, height, diagnostic);
@@ -433,7 +455,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
 
     int width = 0;
     int height = 0;
-    if (!SDL_GetWindowSize(g_window, &width, &height) || width <= 0 || height <= 0) {
+    if (!frontend_window_size(&width, &height)) {
         worm_ui_nuklear_compose_discard_frame_input();
         worm_ui_nuklear_reconcile_timing_gestures(nullptr, false, false);
         expose_shortcut_input(&action);
@@ -718,6 +740,9 @@ void worm_ui_frontend_resource_placed(uint64_t placed_resource_id, uint64_t next
 }
 
 void worm_ui_frontend_render(int window_width, int window_height) {
+    if (window_width <= 0 || window_height <= 0) {
+        (void)frontend_window_size(&window_width, &window_height);
+    }
     if (g_context && g_renderer && window_width > 0 && window_height > 0) {
         // Nuklear and SDL input use window-coordinate points, while a high-DPI
         // renderer targets the larger pixel backbuffer. Keep the renderer's
@@ -725,7 +750,11 @@ void worm_ui_frontend_render(int window_width, int window_height) {
         // hit testing, and the cleared background cover the same full window.
         if (!SDL_SetRenderLogicalPresentation(g_renderer, window_width, window_height,
                                               SDL_LOGICAL_PRESENTATION_STRETCH)) {
-            return;
+            // A renderer can reject a new logical presentation after a resize.
+            // Keep presenting the current Nuklear frame instead of leaving the
+            // previous backbuffer (or a blank one) on screen indefinitely.
+            (void)SDL_SetRenderLogicalPresentation(g_renderer, 0, 0,
+                                                   SDL_LOGICAL_PRESENTATION_DISABLED);
         }
         SDL_SetRenderDrawColor(g_renderer, 18, 20, 26, 255);
         SDL_RenderClear(g_renderer);

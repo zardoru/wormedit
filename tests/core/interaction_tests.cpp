@@ -2412,6 +2412,82 @@ TEST_CASE("pointer zoom anchors chart rows and viewport scrolling clamps to cont
     CHECK(has_code(invalid.diagnostics, diagnostic_code_t::invalid_resolution));
 }
 
+TEST_CASE("fixed cursor scrolling follows the snap beneath a stationary viewport line",
+          "[unit][core][interaction][viewport][fixed-cursor]") {
+    auto history = make_document_history(make_song());
+    constexpr std::array snaps{std::uint64_t{4}};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                               {measure_id_t{1}, 0}, snaps, 4, 192.0);
+    REQUIRE(setup);
+    auto up_state = *setup.state;
+    const auto up = dispatch_editor_action(
+        history, up_state,
+        scroll_editor_view_action_t{48.0, 48.0, editor_field_scroll_direction_t::up});
+    REQUIRE(up);
+    CHECK(up.view->viewport_scroll_pixels == 48.0);
+    CHECK(up.view->cursor == local_position_t{measure_id_t{1}, 480});
+    CHECK(editor_position_y_pixels(history.document.charts.front(), *up.view, up.view->cursor) ==
+          48.0);
+    const auto up_step = dispatch_editor_action(
+        history, up_state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    REQUIRE(up_step);
+    CHECK(up_step.view->cursor == local_position_t{measure_id_t{1}, 720});
+    CHECK(up_step.view->viewport_scroll_pixels == 96.0);
+    CHECK(up_step.view->fixed_cursor_screen_y_pixels == 48.0);
+
+    auto down_state = *setup.state;
+    const auto down = dispatch_editor_action(
+        history, down_state,
+        scroll_editor_view_action_t{48.0, 48.0, editor_field_scroll_direction_t::down});
+    REQUIRE(down);
+    CHECK(down.view->viewport_scroll_pixels == 48.0);
+    CHECK(down.view->cursor == local_position_t{measure_id_t{2}, 0});
+    const auto down_up_y = editor_position_y_pixels(history.document.charts.front(),
+                                                    *down.view, down.view->cursor);
+    REQUIRE(down_up_y);
+    CHECK(down.view->viewport_height_pixels - *down_up_y == 48.0);
+    const auto down_step = dispatch_editor_action(
+        history, down_state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    REQUIRE(down_step);
+    CHECK(down_step.view->cursor == local_position_t{measure_id_t{2}, 240});
+    CHECK(down_step.view->viewport_scroll_pixels == 96.0);
+    CHECK(down_step.view->scroll_direction == editor_field_scroll_direction_t::down);
+
+    const auto page = dispatch_editor_action(
+        history, up_state, page_edit_cursor_action_t{interaction_direction_t::forward, 1});
+    REQUIRE(page);
+    CHECK(page.view->cursor == local_position_t{measure_id_t{2}, 720});
+    CHECK(page.view->viewport_scroll_pixels == 192.0);
+
+    const auto previous = down_state;
+    const auto invalid = dispatch_editor_action(
+        history, down_state,
+        scroll_editor_view_action_t{24.0, 193.0, editor_field_scroll_direction_t::down});
+    CHECK_FALSE(invalid);
+    CHECK(down_state.cursor == previous.cursor);
+    CHECK(down_state.viewport_scroll_pixels == previous.viewport_scroll_pixels);
+}
+
+TEST_CASE("fixed cursor scrolling reaches virtual BMS rows without materializing measures",
+          "[unit][core][interaction][viewport][fixed-cursor][virtual-canvas]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{std::uint64_t{4}};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                               {measure_id_t{1}, 0}, snaps, 4, 192.0);
+    REQUIRE(setup);
+    auto state = *setup.state;
+    const auto moved = dispatch_editor_action(
+        history, state,
+        scroll_editor_view_action_t{400.0, 48.0, editor_field_scroll_direction_t::up});
+    REQUIRE(moved);
+    CHECK(moved.view->viewport_scroll_pixels == 400.0);
+    CHECK(moved.view->virtual_bms_cursor_row == 2'160);
+    CHECK(history.document.charts.front().measures.size() == 2);
+    CHECK(history.undo.empty());
+}
+
 TEST_CASE("two-step hold placement previews, commits across measures, and cancels atomically",
           "[unit][core][interaction][hold]") {
     auto history = make_document_history(make_song());

@@ -346,8 +346,17 @@ struct adjust_editor_zoom_action_t {
     std::optional<double> anchor_screen_y_pixels;
 };
 
+enum class editor_field_scroll_direction_t : std::uint8_t {
+    up,
+    down,
+};
+
 struct scroll_editor_view_action_t {
     double vertical_pixels{};
+    // When present, keep the edit cursor at the snap nearest this stationary
+    // screen line while the entire field moves beneath it.
+    std::optional<double> fixed_cursor_screen_y_pixels;
+    editor_field_scroll_direction_t direction{editor_field_scroll_direction_t::up};
 };
 
 using editor_ui_action_t = std::variant<
@@ -531,6 +540,8 @@ struct editor_interaction_state_t {
     double pixels_per_standard_measure{default_pixels_per_standard_measure};
     double viewport_scroll_pixels{};
     double viewport_height_pixels{1.0};
+    std::optional<double> fixed_cursor_screen_y_pixels;
+    editor_field_scroll_direction_t scroll_direction{editor_field_scroll_direction_t::up};
     std::optional<pending_hold_t> pending_hold;
     std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
     std::optional<pending_note_move_gesture_t> pending_note_move_gesture;
@@ -560,6 +571,8 @@ struct editor_interaction_view_model_t {
     double pixels_per_standard_measure{default_pixels_per_standard_measure};
     double viewport_scroll_pixels{};
     double viewport_height_pixels{1.0};
+    std::optional<double> fixed_cursor_screen_y_pixels;
+    editor_field_scroll_direction_t scroll_direction{editor_field_scroll_direction_t::up};
     std::optional<pending_hold_t> pending_hold;
     struct virtual_hold_preview_t {
         std::uint64_t anchor_row{};

@@ -1989,6 +1989,16 @@ void populate_timing_view(flattened_workspace_t& flattened,
     const auto& chart = *chart_it;
     view.chart_id = chart.id.value;
     view.document_revision = history.document.revision;
+    if (!chart.measures.empty()) {
+        for (const auto& bpm : chart.bpms) {
+            if (bpm.position.measure == chart.measures.front().id && bpm.position.row == 0) {
+                view.initial_bpm_present = true;
+                view.initial_bpm_event_id = bpm.id.value;
+                view.initial_bpm_value =
+                    static_cast<double>(rational_as_long_double(bpm.beats_per_minute));
+            }
+        }
+    }
     view.active_snap_denominator = timing_grid.active_denominator;
     view.supported_snap_denominators = timing_grid.supported_denominators.data();
     view.supported_snap_denominator_count = timing_grid.supported_denominators.size();
@@ -2619,7 +2629,7 @@ auto compose_physical_scancode(wormedit::physical_key_t key) -> std::uint32_t {
 }
 
 void populate_compose_view(flattened_workspace_t& flattened,
-                           const wormedit::document_history_t& history,
+                           wormedit::document_history_t& history,
                            const wormedit::workspace_controller_t& workspace,
                            compose_scene_cache_t& cache, int window_width, int window_height,
                            std::optional<wormedit::editor_interaction_state_t>& retained_state,
@@ -3092,6 +3102,12 @@ void populate_compose_view(flattened_workspace_t& flattened,
             return;
         }
         retained_state = *initial.state;
+        (void)wormedit::dispatch_editor_action(
+            history, *retained_state,
+            wormedit::scroll_editor_view_action_t{
+                0.0, view.viewport_height_pixels * 0.5,
+                downscroll ? wormedit::editor_field_scroll_direction_t::down
+                           : wormedit::editor_field_scroll_direction_t::up});
     }
 
     // Compose and Timing consume the same chart-scoped snap preference. Do
@@ -3637,6 +3653,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
         .scroll_direction = downscroll
             ? wormedit::editor_field_scroll_direction_t::down
             : wormedit::editor_field_scroll_direction_t::up,
+        .fixed_cursor_screen_y_pixels = retained_state->fixed_cursor_screen_y_pixels,
         .bgm_pane_left_pixels = field_left_pixels + playable_field_width,
         .bgm_pane_width_pixels = bgm_pane_width,
         .bgm_lane_width_pixels = compose_bgm_lane_width_pixels,
@@ -6402,8 +6419,18 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 if (scroll->delta_y_pixels == 0.0) {
                     continue;
                 }
+                if (input_chart == history.document.charts.end()) {
+                    status = "The selected difficulty is no longer available.";
+                    continue;
+                }
                 const auto result = dispatch_editor_action(
-                    history, state, scroll_editor_view_action_t{scroll->delta_y_pixels});
+                    history, state,
+                    scroll_editor_view_action_t{
+                        scroll->delta_y_pixels,
+                        state.viewport_height_pixels * 0.5,
+                        compose_field_downscroll(*input_chart)
+                            ? editor_field_scroll_direction_t::down
+                            : editor_field_scroll_direction_t::up});
                 status = compose_result_status(result, "Compose field scrolled.");
             } else if (const auto* zoom = std::get_if<viewport_zoom_action_t>(&viewport_action)) {
                 const auto result = dispatch_editor_action(
@@ -6819,6 +6846,13 @@ auto dispatch_compose_view_action(
         history.document.revision != action.compose_input_document_revision) {
         return "Compose view action ignored because the chart or document revision changed.";
     }
+    const auto selected_chart_it = std::ranges::find(history.document.charts, state.chart,
+                                                     &chart_document_t::id);
+    const auto scroll_direction =
+        selected_chart_it != history.document.charts.end() &&
+                compose_field_downscroll(*selected_chart_it)
+            ? editor_field_scroll_direction_t::down
+            : editor_field_scroll_direction_t::up;
     editor_interaction_result_t result;
     std::string status;
     switch (action.compose_action) {
@@ -6841,7 +6875,8 @@ auto dispatch_compose_view_action(
             action.compose_action == WORM_UI_COMPOSE_ACTION_SCROLL_UP ? -1.0 : 1.0;
         result = dispatch_editor_action(
             history, state,
-            scroll_editor_view_action_t{direction * std::max(64.0, viewport_height * 0.75)});
+            scroll_editor_view_action_t{direction * std::max(64.0, viewport_height * 0.75),
+                                        viewport_height * 0.5, scroll_direction});
         status = direction < 0.0 ? "Compose field scrolled up." : "Compose field scrolled down.";
         break;
     }
@@ -10019,6 +10054,9 @@ int main(int argc, char** argv) {
                                  timing_recipe_draft ? &*timing_recipe_draft : nullptr,
                                  timing_recipe_preview ? &*timing_recipe_preview : nullptr,
                                  timing_recipe_selection_binding.has_value());
+            flattened.view.timing.initial_bpm_editable =
+                flattened.view.timing.scene_available &&
+                !application_command_state.timing_locked;
             if (timing_for_compose) {
                 flattened.view.timing.visible = false;
             }

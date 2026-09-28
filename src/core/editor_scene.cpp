@@ -46,6 +46,25 @@ auto finite_nonnegative(double value) -> bool {
     return std::isfinite(value) && value >= 0.0;
 }
 
+auto rectangular_glyph(lane_glyph_t glyph) -> bool {
+    return glyph == lane_glyph_t::bar || glyph == lane_glyph_t::square;
+}
+
+auto ordered_vertical_bounds(double first, double second) -> std::pair<double, double> {
+    return std::minmax(first, second);
+}
+
+auto endpoint_vertical_bounds(double snap_y, double height, lane_glyph_t glyph,
+                              editor_field_scroll_direction_t direction)
+    -> std::pair<double, double> {
+    if (!rectangular_glyph(glyph)) {
+        return {snap_y - height / 2.0, snap_y + height / 2.0};
+    }
+    return direction == editor_field_scroll_direction_t::up
+               ? std::pair{snap_y, snap_y + height}
+               : std::pair{snap_y - height, snap_y};
+}
+
 auto rect_intersects_viewport(const editor_field_rect_t& rect, double height) -> bool {
     return rect.bottom >= 0.0 && rect.top <= height;
 }
@@ -367,6 +386,8 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         !std::isfinite(request.field_width_pixels) || request.field_width_pixels <= 0.0 ||
         !finite_nonnegative(request.split_stage_gutter_pixels) ||
         !std::isfinite(request.note_head_height_pixels) || request.note_head_height_pixels <= 0.0 ||
+        (request.scroll_direction != editor_field_scroll_direction_t::down &&
+         request.scroll_direction != editor_field_scroll_direction_t::up) ||
         !std::isfinite(request.comparison_difference_height_pixels) ||
         request.comparison_difference_height_pixels <= 0.0 ||
         !std::isfinite(request.hold_body_width_ratio) || request.hold_body_width_ratio <= 0.0 ||
@@ -459,7 +480,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
     const auto visible_high = std::clamp(row_at_pixel(view.viewport_height_pixels), 0.0L,
                                          static_cast<long double>(canvas_rows));
     const auto overscan_rows =
-        static_cast<long double>(request.note_head_height_pixels) / (2.0L * pixels_per_row);
+        static_cast<long double>(request.note_head_height_pixels) / pixels_per_row;
     const auto query_low = std::max(0.0L, visible_low - overscan_rows);
     const auto query_high =
         std::min(static_cast<long double>(canvas_rows), visible_high + overscan_rows);
@@ -486,8 +507,11 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         return true;
     };
     const auto y_for_row = [&](long double row) {
-        return static_cast<double>(row * pixels_per_row -
-                                   static_cast<long double>(view.viewport_scroll_pixels));
+        const auto offset = row * pixels_per_row -
+                            static_cast<long double>(view.viewport_scroll_pixels);
+        return static_cast<double>(request.scroll_direction == editor_field_scroll_direction_t::down
+                                       ? static_cast<long double>(view.viewport_height_pixels) - offset
+                                       : offset);
     };
 
     std::vector<visible_band_t> visible_bands;
@@ -538,10 +562,12 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
             return result;
         }
         const auto scene_band = scene.layout_bands.size();
+        const auto [band_top, band_bottom] =
+            ordered_vertical_bounds(y_for_row(clipped_begin), y_for_row(clipped_end));
         scene.layout_bands.push_back({.begin_row = source.begin_row,
                                       .end_row = source_end,
-                                      .top_pixels = y_for_row(clipped_begin),
-                                      .bottom_pixels = y_for_row(clipped_end),
+                                      .top_pixels = band_top,
+                                      .bottom_pixels = band_bottom,
                                       .profile_id = source.layout.profile_id,
                                       .split_stage = source.layout.split_stage});
         visible_band_t band{.begin_row = source.begin_row,
@@ -562,7 +588,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                  .stage = lanes[lane_index]->stage,
                  .glyph = lanes[lane_index]->glyph,
                  .display_order = lanes[lane_index]->display_order,
-                 .bounds = {left, y_for_row(clipped_begin), right, y_for_row(clipped_end)}});
+                 .bounds = {left, band_top, right, band_bottom}});
         }
         visible_bands.push_back(std::move(band));
     }
@@ -634,9 +660,9 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                 continue;
             }
             const auto y = y_for_row(*row);
-            const auto half_height = request.note_head_height_pixels / 2.0;
-            const editor_field_rect_t bounds{lane->left, y - half_height, lane->right,
-                                             y + half_height};
+            const auto [top, bottom] = endpoint_vertical_bounds(
+                y, request.note_head_height_pixels, lane->glyph, request.scroll_direction);
+            const editor_field_rect_t bounds{lane->left, top, lane->right, bottom};
             if (rect_intersects_viewport(bounds, view.viewport_height_pixels)) {
                 visible_paint_cells.insert(cell);
                 visible_paint_rows_by_lane[target.lane.value].push_back(*row);
@@ -1103,9 +1129,9 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                 return;
             }
             const auto y = y_for_row(row);
-            const auto half_height = request.note_head_height_pixels / 2.0;
-            const editor_field_rect_t rect{bounds->left, y - half_height, bounds->right,
-                                           y + half_height};
+            const auto [top, bottom] = endpoint_vertical_bounds(
+                y, request.note_head_height_pixels, bounds->glyph, request.scroll_direction);
+            const editor_field_rect_t rect{bounds->left, top, bounds->right, bottom};
             if (!rect_intersects_viewport(rect, view.viewport_height_pixels)) {
                 return;
             }
@@ -1160,14 +1186,16 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                 const auto lane_width = bounds->right - bounds->left;
                 const auto body_width = lane_width * request.hold_body_width_ratio;
                 const auto center = (bounds->left + bounds->right) / 2.0;
+                const auto [top, bottom] =
+                    ordered_vertical_bounds(y_for_row(begin), y_for_row(end));
                 scene.hold_bodies.push_back(
                     {.note = note.note,
                      .lane = note.lane,
                      .selected = note_selected,
                      .proposal_origin = proposal_origin,
                      .semantic_color = note.semantic_color,
-                     .bounds = {center - body_width / 2.0, y_for_row(begin),
-                                center + body_width / 2.0, y_for_row(end)}});
+                     .bounds = {center - body_width / 2.0, top,
+                                center + body_width / 2.0, bottom}});
             }
         }
         add_endpoint(note.begin_row, false);
@@ -1266,14 +1294,16 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                 const auto lane_width = bounds->right - bounds->left;
                 const auto body_width = lane_width * request.hold_body_width_ratio;
                 const auto center = (bounds->left + bounds->right) / 2.0;
+                const auto [top, bottom] =
+                    ordered_vertical_bounds(y_for_row(begin), y_for_row(end));
                 scene.hold_bodies.push_back(
                     {.note = note,
                      .lane = lane,
                      .selected = selected_note,
                      .proposal_ghost = true,
                      .semantic_color = semantic_color,
-                     .bounds = {center - body_width / 2.0, y_for_row(begin),
-                                center + body_width / 2.0, y_for_row(end)}});
+                     .bounds = {center - body_width / 2.0, top,
+                                center + body_width / 2.0, bottom}});
             }
         }
         const auto add_endpoint = [&](std::uint64_t row, bool tail) {
@@ -1286,9 +1316,9 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                 return;
             }
             const auto y = y_for_row(row);
-            const auto half_height = request.note_head_height_pixels / 2.0;
-            const editor_field_rect_t rect{bounds->left, y - half_height, bounds->right,
-                                           y + half_height};
+            const auto [top, bottom] = endpoint_vertical_bounds(
+                y, request.note_head_height_pixels, bounds->glyph, request.scroll_direction);
+            const editor_field_rect_t rect{bounds->left, top, bounds->right, bottom};
             if (!rect_intersects_viewport(rect, view.viewport_height_pixels)) {
                 return;
             }
@@ -1419,9 +1449,9 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                 continue;
             }
             const auto y = y_for_row(event->row);
-            const auto half_height = request.note_head_height_pixels / 2.0;
-            const editor_field_rect_t bounds{lane->second.left, y - half_height, lane->second.right,
-                                             y + half_height};
+            const auto [top, bottom] = endpoint_vertical_bounds(
+                y, request.note_head_height_pixels, lane_glyph_t::bar, request.scroll_direction);
+            const editor_field_rect_t bounds{lane->second.left, top, lane->second.right, bottom};
             if (!rect_intersects_viewport(bounds, view.viewport_height_pixels)) {
                 continue;
             }

@@ -607,6 +607,7 @@ typedef struct WormUiComposeView {
     bool semantic_layer_paint_mode_active;
     size_t selected_note_count;
     size_t selected_object_count;
+    uint64_t selected_assigned_resource_id;
     uint64_t selected_bgm_event_id;
     uint64_t selected_bmson_bgm_event_id;
     uint64_t selected_bmson_note_event_id;
@@ -1459,5 +1460,7 @@ WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(SDL_WindowID wind
                                                                 float y);
 void worm_ui_frontend_end_input(void);
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view);
+// Draw a recoverable workspace error when the model could not produce a view.
+WormUiWorkspaceAction worm_ui_frontend_workspace_error(const char* diagnostic);
 void worm_ui_frontend_resource_placed(uint64_t placed_resource_id, uint64_t next_resource_id);
 void worm_ui_frontend_render(int window_width, int window_height);

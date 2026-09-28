@@ -119,6 +119,43 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
             }
         }
     }
+    const auto selected_object_id = view->selected_bgm_event_id != 0
+                                        ? view->selected_bgm_event_id
+                                        : view->selected_note_label_note_id;
+    if (state->resource_selection_chart_id != view->chart_id ||
+        state->resource_selection_object_id != selected_object_id ||
+        state->resource_selection_assigned_id != view->selected_assigned_resource_id) {
+        state->resource_selection_chart_id = view->chart_id;
+        state->resource_selection_object_id = selected_object_id;
+        state->resource_selection_assigned_id = view->selected_assigned_resource_id;
+        if (selected_object_id != 0 && view->selected_assigned_resource_id != 0) {
+            state->armed_resource_id = view->selected_assigned_resource_id;
+            const WormUiComposeResourceView* assigned = nullptr;
+            for (size_t index = 0; index < view->resource_count; ++index) {
+                if (view->resources[index].resource_id == view->selected_assigned_resource_id) {
+                    assigned = &view->resources[index];
+                    break;
+                }
+            }
+            if (assigned) {
+                const auto preferred = view->selected_bgm_event_id != 0
+                                           ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGM
+                                           : WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE;
+                if ((assigned->roles & preferred) != 0) {
+                    state->resource_filter = view->selected_bgm_event_id != 0
+                                                 ? worm_ui_nuklear_compose_resource_filter_t::bgm
+                                                 : worm_ui_nuklear_compose_resource_filter_t::sample;
+                } else if ((assigned->roles & WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE) != 0) {
+                    state->resource_filter = worm_ui_nuklear_compose_resource_filter_t::sample;
+                } else if ((assigned->roles & WORM_UI_COMPOSE_RESOURCE_ROLE_BGM) != 0) {
+                    state->resource_filter = worm_ui_nuklear_compose_resource_filter_t::bgm;
+                }
+            }
+            state->resource_search.fill('\0');
+            state->resource_pointer_mode =
+                worm_ui_nuklear_compose_resource_pointer_mode_t::off;
+        }
+    }
     if (!nk_tree_push(context, NK_TREE_TAB, "Samples / BGM / BGA", NK_MAXIMIZED)) {
         return;
     }
@@ -571,7 +608,10 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
             continue;
         }
         std::array<char, 320> label{};
-        std::snprintf(label.data(), label.size(), "%s%s%s · %s",
+        std::snprintf(label.data(), label.size(), "%s%s%s%s · %s",
+                      view->selected_assigned_resource_id == resource.resource_id
+                          ? "[Selected] "
+                          : "",
                       resource.selected_audio_asset || resource.selected_visual_asset ? "> " : "",
                       resource.target_index,
                       state->armed_resource_id == resource.resource_id ? " *" : "",

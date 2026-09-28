@@ -1,4 +1,5 @@
 #include <wormedit/core/sv_recipe.h>
+#include <wormedit/core/workspace.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -427,6 +428,29 @@ TEST_CASE("SV recipe draft previews raw and composed values without mutation, th
     CHECK(history.document.revision == revision_before_cancel);
     CHECK(history.undo.size() == undo_before_cancel);
     CHECK(history.document.charts.front().sv_recipes.size() == 2);
+}
+
+TEST_CASE("applying an SV recipe requires rebinding the workspace before its next frame",
+          "[unit][sv-recipe][workspace]") {
+    auto history = make_document_history(make_recipe_song());
+    auto binding = make_workspace_controller(history);
+    REQUIRE(binding.workspace);
+    auto workspace = *binding.workspace;
+    workspace.active_tab = workspace_tab_t::timing;
+    REQUIRE(make_workspace_view(workspace, history.document));
+
+    auto candidate = make_constant_recipe({}, measure_id_t{11}, measure_id_t{12}, {2, 1});
+    auto draft = begin_sv_recipe_draft(history, chart_id_t{10}, candidate);
+    REQUIRE(draft.status == sv_recipe_draft_status_t::editing);
+    REQUIRE(preview_sv_recipe_draft(history, draft));
+    REQUIRE(apply_sv_recipe_draft(history, draft));
+
+    CHECK_FALSE(make_workspace_view(workspace, history.document));
+    REQUIRE(rebind_workspace(workspace, history));
+    const auto next_frame = make_workspace_view(workspace, history.document);
+    REQUIRE(next_frame);
+    CHECK(next_frame.view->active_tab == workspace_tab_t::timing);
+    CHECK(next_frame.view->document_revision == history.document.revision);
 }
 
 TEST_CASE("SV recipe edit drafts substitute in stable order and preserve replacement ID",

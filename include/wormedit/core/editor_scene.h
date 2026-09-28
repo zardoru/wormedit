@@ -169,11 +169,19 @@ struct editor_field_scene_t {
     std::optional<editor_field_cursor_geometry_t> cursor;
 };
 
+enum class editor_field_scroll_direction_t : std::uint8_t {
+    up,
+    down,
+};
+
 struct editor_field_scene_request_t {
     double field_left_pixels{};
     double field_width_pixels{};
     double split_stage_gutter_pixels{12.0};
     double note_head_height_pixels{10.0};
+    // Up scroll projects later rows toward the top of the viewport. Rectangular
+    // note heads begin at the snap line in up scroll and end there in down scroll.
+    editor_field_scroll_direction_t scroll_direction{editor_field_scroll_direction_t::up};
     double comparison_difference_height_pixels{10.0};
     double hold_body_width_ratio{0.35};
     // Optional adjacent BGM pane. A zero width leaves BGM geometry omitted.

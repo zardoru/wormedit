@@ -329,6 +329,50 @@ void worm_ui_frontend_end_input(void) {
     }
 }
 
+static void render_workspace_error(WormUiWorkspaceAction* action, int width, int height,
+                                   const char* diagnostic) {
+    worm_ui_nuklear_compose_discard_frame_input();
+    worm_ui_nuklear_reconcile_timing_gestures(nullptr, false, false);
+    if (nk_begin(g_context, "wormedit-workspace", nk_rect(0, 0, (float)width, (float)height),
+                 NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
+        nk_layout_row_dynamic(g_context, 30, 1);
+        nk_label(g_context, "The editor could not display this workspace frame.", NK_TEXT_LEFT);
+        nk_layout_row_dynamic(g_context, 72, 1);
+        nk_label_wrap(g_context, diagnostic && diagnostic[0]
+                                     ? diagnostic
+                                     : "No diagnostic was provided for the workspace error.");
+        nk_layout_row_dynamic(g_context, 30, 2);
+        if (nk_button_label(g_context, "Setup")) {
+            action->kind = WORM_UI_WORKSPACE_ACTION_SWITCH_TAB;
+            action->tab = WORM_UI_WORKSPACE_TAB_SETUP;
+        }
+        if (nk_button_label(g_context, "Quit")) {
+            action->kind = WORM_UI_WORKSPACE_ACTION_QUIT;
+        }
+    }
+    nk_end(g_context);
+    expose_shortcut_input(action);
+}
+
+WormUiWorkspaceAction worm_ui_frontend_workspace_error(const char* diagnostic) {
+    worm_ui_nuklear_begin_image_quad_frame();
+    WormUiWorkspaceAction action{};
+    action.kind = WORM_UI_WORKSPACE_ACTION_NONE;
+    action.tab = WORM_UI_WORKSPACE_TAB_SETUP;
+    action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_NONE;
+    action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
+    if (!g_context || !g_window) {
+        return action;
+    }
+    int width = 0;
+    int height = 0;
+    if (!SDL_GetWindowSize(g_window, &width, &height) || width <= 0 || height <= 0) {
+        return action;
+    }
+    render_workspace_error(&action, width, height, diagnostic);
+    return action;
+}
+
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
     worm_ui_nuklear_begin_image_quad_frame();
     WormUiWorkspaceAction action{};
@@ -339,39 +383,52 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     const bool timing_tab_active = view && view->active_tab == WORM_UI_WORKSPACE_TAB_TIMING;
     worm_ui_nuklear_reconcile_timing_gestures(view ? &view->timing : nullptr, timing_tab_active,
                                               g_window_focused);
-    if (!g_context || !g_window || !view || !view->project_title || !view->artist ||
-        !view->selected_difficulty || !view->status_text || !view->git_hash || !view->tab_heading ||
-        view->summary_line_count > WORM_UI_WORKSPACE_SUMMARY_CAPACITY ||
-        view->recovery_candidate_count > WORM_UI_RECOVERY_ROW_CAPACITY ||
-        view->recovery_diagnostic_count > WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY ||
-        !worm_ui_nuklear_setup_view_valid(&view->setup) ||
-        (view->metadata.visible &&
-         (view->metadata.format_field_count > WORM_UI_METADATA_FORMAT_FIELD_CAPACITY ||
-          view->metadata.format_target_count > WORM_UI_METADATA_FORMAT_TARGET_CAPACITY ||
-          view->metadata.audio_waveform_column_count > WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY ||
-          (view->metadata.audio_waveform_column_count != 0 &&
-           !view->metadata.audio_waveform_columns) ||
-          (view->metadata.audio_waveform_analysis_pending &&
-           view->metadata.audio_waveform_available) ||
-          (!view->metadata.audio_waveform_available &&
-           view->metadata.audio_waveform_column_count != 0) ||
-          (view->metadata.audio_waveform_available &&
-           (view->metadata.audio_waveform_column_count == 0 ||
-            view->metadata.audio_waveform_total_frames == 0 ||
-            view->metadata.audio_waveform_sample_rate == 0 ||
-            !view->metadata.audio_waveform_has_selected_asset)))) ||
-        ((view->timing.visible || view->compose.visible) &&
-         !worm_ui_nuklear_timing_view_valid(&view->timing)) ||
-        (view->audio_slices.visible &&
-         !worm_ui_nuklear_audio_slices_view_valid(&view->audio_slices)) ||
-        !worm_ui_nuklear_player_preview_view_valid(&view->player_preview) ||
-        (view->compose.visible && !worm_ui_nuklear_compose_view_valid(&view->compose)) ||
-        view->active_tab < WORM_UI_WORKSPACE_TAB_SETUP ||
-        view->active_tab > WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE) {
+    if (!g_context || !g_window || !view) {
         worm_ui_nuklear_compose_discard_frame_input();
         worm_ui_nuklear_reconcile_timing_gestures(nullptr, false, false);
         expose_shortcut_input(&action);
         return action;
+    }
+
+    const char* validation_error = nullptr;
+    if (!view->project_title || !view->artist || !view->selected_difficulty ||
+        !view->status_text || !view->git_hash || !view->tab_heading ||
+        view->summary_line_count > WORM_UI_WORKSPACE_SUMMARY_CAPACITY ||
+        view->recovery_candidate_count > WORM_UI_RECOVERY_ROW_CAPACITY ||
+        view->recovery_diagnostic_count > WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY ||
+        view->active_tab < WORM_UI_WORKSPACE_TAB_SETUP ||
+        view->active_tab > WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE) {
+        validation_error = "Workspace view data is invalid.";
+    } else if (!worm_ui_nuklear_setup_view_valid(&view->setup)) {
+        validation_error = "Setup view data is invalid.";
+    } else if (view->metadata.visible &&
+               (view->metadata.format_field_count > WORM_UI_METADATA_FORMAT_FIELD_CAPACITY ||
+                view->metadata.format_target_count > WORM_UI_METADATA_FORMAT_TARGET_CAPACITY ||
+                view->metadata.audio_waveform_column_count >
+                    WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY ||
+                (view->metadata.audio_waveform_column_count != 0 &&
+                 !view->metadata.audio_waveform_columns) ||
+                (view->metadata.audio_waveform_analysis_pending &&
+                 view->metadata.audio_waveform_available) ||
+                (!view->metadata.audio_waveform_available &&
+                 view->metadata.audio_waveform_column_count != 0) ||
+                (view->metadata.audio_waveform_available &&
+                 (view->metadata.audio_waveform_column_count == 0 ||
+                  view->metadata.audio_waveform_total_frames == 0 ||
+                  view->metadata.audio_waveform_sample_rate == 0 ||
+                  !view->metadata.audio_waveform_has_selected_asset)))) {
+        validation_error = "Metadata view data is invalid.";
+    } else if ((view->timing.visible || view->compose.visible) &&
+               !worm_ui_nuklear_timing_view_valid(&view->timing)) {
+        validation_error = "Timing view data is invalid.";
+    } else if (view->audio_slices.visible &&
+               !worm_ui_nuklear_audio_slices_view_valid(&view->audio_slices)) {
+        validation_error = "Audio slices view data is invalid.";
+    } else if (!worm_ui_nuklear_player_preview_view_valid(&view->player_preview)) {
+        validation_error = "Player preview view data is invalid.";
+    } else if (view->compose.visible &&
+               !worm_ui_nuklear_compose_view_valid(&view->compose)) {
+        validation_error = "Compose view data is invalid.";
     }
 
     int width = 0;
@@ -380,6 +437,11 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         worm_ui_nuklear_compose_discard_frame_input();
         worm_ui_nuklear_reconcile_timing_gestures(nullptr, false, false);
         expose_shortcut_input(&action);
+        return action;
+    }
+
+    if (validation_error) {
+        render_workspace_error(&action, width, height, validation_error);
         return action;
     }
 

@@ -141,6 +141,9 @@ struct worm_ui_nuklear_compose_state_t {
     std::array<char, WORM_UI_COMPOSE_IMPORT_PATH_BYTES + 1> resource_import_path{};
     std::array<char, 256> resource_import_error{};
     std::uint64_t armed_resource_id{};
+    std::uint64_t resource_selection_chart_id{};
+    std::uint64_t resource_selection_object_id{};
+    std::uint64_t resource_selection_assigned_id{};
     bool auto_increment_on_place{};
     worm_ui_nuklear_compose_resource_pointer_mode_t resource_pointer_mode{
         worm_ui_nuklear_compose_resource_pointer_mode_t::off};

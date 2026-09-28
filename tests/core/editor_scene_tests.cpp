@@ -173,6 +173,60 @@ TEST_CASE("field scene composes split layout bands, exact grid, holds, selection
     CHECK(zoomed.scene->hold_bodies[0].bounds.bottom == Catch::Approx(192.0));
 }
 
+TEST_CASE("field scene scroll direction anchors rectangular heads and keeps arrows centered",
+          "[unit][core][editor-scene][scroll-direction]") {
+    const auto chart = scene_chart();
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    const auto& index = std::get<wormedit::editor_field_scene_index_t>(built);
+    auto visible = view();
+    visible.viewport_scroll_pixels = 0.0;
+    const auto compose = [&](wormedit::editor_field_scroll_direction_t direction) {
+        return wormedit::make_editor_field_scene(
+            chart, index, visible,
+            {.field_left_pixels = 10.0,
+             .field_width_pixels = 200.0,
+             .note_head_height_pixels = 16.0,
+             .scroll_direction = direction,
+             .bgm_pane_left_pixels = 210.0,
+             .bgm_pane_width_pixels = 36.0});
+    };
+    const auto up = compose(wormedit::editor_field_scroll_direction_t::up);
+    const auto down = compose(wormedit::editor_field_scroll_direction_t::down);
+    REQUIRE(up);
+    REQUIRE(down);
+    const auto note = [](const auto& scene, wormedit::object_id_t id) {
+        return std::ranges::find_if(scene.note_endpoints,
+                                    [=](const auto& endpoint) { return endpoint.note == id; });
+    };
+    const auto up_bar = note(*up.scene, wormedit::object_id_t{10});
+    const auto down_bar = note(*down.scene, wormedit::object_id_t{10});
+    const auto up_arrow = note(*up.scene, wormedit::object_id_t{11});
+    const auto down_arrow = note(*down.scene, wormedit::object_id_t{11});
+    REQUIRE(up_bar != up.scene->note_endpoints.end());
+    REQUIRE(down_bar != down.scene->note_endpoints.end());
+    REQUIRE(up_arrow != up.scene->note_endpoints.end());
+    REQUIRE(down_arrow != down.scene->note_endpoints.end());
+    CHECK(up_bar->bounds.top == Catch::Approx(48.0));
+    CHECK(up_bar->bounds.bottom == Catch::Approx(64.0));
+    CHECK(down_bar->bounds.top == Catch::Approx(128.0));
+    CHECK(down_bar->bounds.bottom == Catch::Approx(144.0));
+    CHECK(up_arrow->bounds.top == Catch::Approx(136.0));
+    CHECK(up_arrow->bounds.bottom == Catch::Approx(152.0));
+    CHECK(down_arrow->bounds.top == Catch::Approx(40.0));
+    CHECK(down_arrow->bounds.bottom == Catch::Approx(56.0));
+    REQUIRE(up.scene->bgm_events.size() == 1);
+    REQUIRE(down.scene->bgm_events.size() == 1);
+    CHECK(up.scene->bgm_events.front().bounds.top == Catch::Approx(96.0));
+    CHECK(down.scene->bgm_events.front().bounds.bottom == Catch::Approx(96.0));
+    CHECK(std::ranges::all_of(down.scene->lanes, [](const auto& lane) {
+        return lane.bounds.top <= lane.bounds.bottom;
+    }));
+    CHECK(std::ranges::all_of(down.scene->hold_bodies, [](const auto& hold) {
+        return hold.bounds.top <= hold.bounds.bottom;
+    }));
+}
+
 TEST_CASE("field scene can project the last sparse BMS measure with its active lanes",
           "[unit][core][editor-scene][virtual-canvas]") {
     auto chart = scene_chart();
@@ -456,8 +510,8 @@ TEST_CASE("field scene composes an independently scrolled BGM pane",
     CHECK(result.scene->bgm_events[0].selected);
     CHECK(result.scene->bgm_events[0].bounds.left == 240.0);
     CHECK(result.scene->bgm_events[0].bounds.right == 280.0);
-    CHECK(result.scene->bgm_events[0].bounds.top == Catch::Approx(-5.0));
-    CHECK(result.scene->bgm_events[0].bounds.bottom == Catch::Approx(5.0));
+    CHECK(result.scene->bgm_events[0].bounds.top == Catch::Approx(0.0));
+    CHECK(result.scene->bgm_events[0].bounds.bottom == Catch::Approx(10.0));
 
     const auto disabled = wormedit::make_editor_field_scene(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), scene_view,
@@ -600,12 +654,12 @@ TEST_CASE("field scene composes visible paint previews across measure and layout
     REQUIRE(result.scene->note_endpoints.size() == 4);
     const auto first = std::ranges::find_if(result.scene->note_endpoints, [](const auto& endpoint) {
         return endpoint.paint_preview && endpoint.lane == wormedit::lane_id_t{1} &&
-               endpoint.bounds.top == Catch::Approx(43.0);
+               endpoint.bounds.top == Catch::Approx(48.0);
     });
     const auto second =
         std::ranges::find_if(result.scene->note_endpoints, [](const auto& endpoint) {
             return endpoint.paint_preview && endpoint.lane == wormedit::lane_id_t{1} &&
-                   endpoint.bounds.top == Catch::Approx(139.0);
+                   endpoint.bounds.top == Catch::Approx(144.0);
         });
     REQUIRE(first != result.scene->note_endpoints.end());
     REQUIRE(second != result.scene->note_endpoints.end());
@@ -812,7 +866,7 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
     CHECK(erased->paint_erase_preview);
     CHECK(std::ranges::count_if(occupied.scene->note_endpoints, [](const auto& endpoint) {
               return endpoint.paint_preview && endpoint.lane == wormedit::lane_id_t{1} &&
-                     endpoint.bounds.top == Catch::Approx(43.0);
+                     endpoint.bounds.top == Catch::Approx(48.0);
           }) == 1);
 
     auto collision_view = view();

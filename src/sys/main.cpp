@@ -120,15 +120,23 @@ auto new_session_project_id() -> wormedit::song_id_t {
 
 auto initial_document(wormedit::song_id_t project_id) -> wormedit::song_document_t {
     auto profile = wormedit::make_bms_7k_profile();
+    std::vector<wormedit::bgm_source_lane_t> bgm_lanes;
+    bgm_lanes.reserve(15);
+    for (std::size_t index = 0; index < 15; ++index) {
+        bgm_lanes.push_back({.id = wormedit::object_id_t{6 + index},
+                             .name = "BGM " + std::to_string(index + 1),
+                             .source_order = index});
+    }
     wormedit::chart_document_t chart{
         .id = wormedit::chart_id_t{2},
         .metadata = {.name = "New Difficulty", .author = ""},
-        .source_family = wormedit::format_family_t::native_project,
+        .source_family = wormedit::format_family_t::bms,
         .measures = {{.id = wormedit::measure_id_t{3}}},
         .lane_layouts = {{.id = wormedit::object_id_t{4},
                           .position = {wormedit::measure_id_t{3}, 0},
                           .layout = std::move(profile.layout)}},
         .input_profile = std::move(profile.input),
+        .bgm_source_lanes = std::move(bgm_lanes),
         .bpms = {{.id = wormedit::object_id_t{5},
                   .position = {wormedit::measure_id_t{3}, 0},
                   .beats_per_minute = {120, 1}}},
@@ -1071,6 +1079,34 @@ constexpr double compose_playable_lane_width_pixels{48.0};
 constexpr double compose_minimum_playable_field_width_pixels{160.0};
 constexpr double compose_maximum_playable_field_width_pixels{640.0};
 constexpr double compose_minimum_bgm_pane_width_pixels{96.0};
+
+auto compose_field_downscroll(const wormedit::chart_document_t& chart) -> bool {
+    for (const auto& segment : chart.lane_layouts) {
+        for (const auto& lane : segment.layout.lanes) {
+            switch (lane.glyph) {
+            case wormedit::lane_glyph_t::arrow_left:
+            case wormedit::lane_glyph_t::arrow_down:
+            case wormedit::lane_glyph_t::arrow_up:
+            case wormedit::lane_glyph_t::arrow_right:
+                return false;
+            case wormedit::lane_glyph_t::bar:
+            case wormedit::lane_glyph_t::square:
+                break;
+            }
+        }
+    }
+    return true;
+}
+
+auto compose_project_y(long double row, double pixels_per_row, double scroll,
+                       double viewport_height, bool downscroll) -> double {
+    const auto offset = row * pixels_per_row - scroll;
+    return static_cast<double>(downscroll ? viewport_height - offset : offset);
+}
+
+auto compose_source_y(double viewport_y, double viewport_height, bool downscroll) -> double {
+    return downscroll ? viewport_height - viewport_y : viewport_y;
+}
 
 struct compose_horizontal_layout_t {
     double field_left_pixels{};
@@ -2311,7 +2347,7 @@ auto refresh_timing_recipe_preview(const wormedit::document_history_t& history,
 
 auto dispatch_timing_recipe_action(
     const WormUiTimingRecipeAction& action, wormedit::document_history_t& history,
-    const wormedit::workspace_controller_t& workspace, bool timing_locked,
+    wormedit::workspace_controller_t& workspace, bool timing_locked,
     std::uint64_t active_snap_denominator,
     std::optional<std::pair<wormedit::chart_id_t, std::uint64_t>>& selection_binding,
     std::optional<wormedit::sv_recipe_draft_t>& draft,
@@ -2475,6 +2511,17 @@ auto dispatch_timing_recipe_action(
             status = result.diagnostics.front().message;
             return true;
         }
+        if (!result.applied) {
+            status = "SV recipe did not change the chart.";
+            return true;
+        }
+        const auto rebound = rebind_workspace(workspace, history);
+        if (!rebound) {
+            status = rebound.diagnostics.empty()
+                         ? "SV recipe applied, but workspace rebinding failed."
+                         : rebound.diagnostics.front().message;
+            return true;
+        }
         const bool edited_existing = draft->existing_recipe.has_value();
         status = edited_existing ? "SV recipe updated." : "SV recipe added.";
         draft.reset();
@@ -2606,6 +2653,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.timing_stage_y_pixels = 0.0;
     view.timing_lane_visibility_mask = application_state.compose_timing_lane_visibility_mask;
     view.selected_note_count = 0;
+    view.selected_assigned_resource_id = 0;
     view.selected_bgm_event_id = 0;
     view.selected_bmson_bgm_event_id = 0;
     view.selected_bmson_note_event_id = 0;
@@ -2705,6 +2753,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
         return;
     }
     const auto& chart = *chart_it;
+    const auto downscroll = compose_field_downscroll(chart);
     view.waveform_audio_offset_numerator = chart.beat_zero_audio_offset_seconds.numerator;
     view.waveform_audio_offset_denominator = chart.beat_zero_audio_offset_seconds.denominator;
     view.beat_marker_navigation_available = has_beat_marker_navigation(chart);
@@ -3084,8 +3133,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
     const auto beat_pixels_per_row =
         interaction_view.pixels_per_standard_measure / chart.divisions_per_standard_measure;
     const auto visible_beat_y = [&](std::uint64_t row) -> std::optional<double> {
-        const auto y = static_cast<double>(row) * beat_pixels_per_row -
-                       interaction_view.viewport_scroll_pixels;
+        const auto y = compose_project_y(row, beat_pixels_per_row,
+                                         interaction_view.viewport_scroll_pixels,
+                                         view.viewport_height_pixels, downscroll);
         if (!std::isfinite(y) || y < 0.0 || y > view.viewport_height_pixels)
             return std::nullopt;
         return y;
@@ -3098,23 +3148,28 @@ void populate_compose_view(flattened_workspace_t& flattened,
     }
     for (std::size_t index = 0; index < view.beat_section_count; ++index) {
         auto& section = flattened.compose_section_storage[index];
-        const auto begin_y = static_cast<double>(section.begin_chart_row) * beat_pixels_per_row -
-                             interaction_view.viewport_scroll_pixels;
-        const auto end_y = static_cast<double>(section.end_chart_row) * beat_pixels_per_row -
-                           interaction_view.viewport_scroll_pixels;
+        const auto begin_y = compose_project_y(section.begin_chart_row, beat_pixels_per_row,
+                                               interaction_view.viewport_scroll_pixels,
+                                               view.viewport_height_pixels, downscroll);
+        const auto end_y = compose_project_y(section.end_chart_row, beat_pixels_per_row,
+                                             interaction_view.viewport_scroll_pixels,
+                                             view.viewport_height_pixels, downscroll);
         section.begin_projection_visible =
             std::isfinite(begin_y) && begin_y >= 0.0 && begin_y <= view.viewport_height_pixels;
         section.end_projection_visible =
             std::isfinite(end_y) && end_y >= 0.0 && end_y <= view.viewport_height_pixels;
         section.projected_begin_y_pixels = section.begin_projection_visible ? begin_y : 0.0;
         section.projected_end_y_pixels = section.end_projection_visible ? end_y : 0.0;
+        const auto span_top = std::min(begin_y, end_y);
+        const auto span_bottom = std::max(begin_y, end_y);
         section.span_projection_visible = std::isfinite(begin_y) && std::isfinite(end_y) &&
-                                          end_y >= 0.0 && begin_y <= view.viewport_height_pixels;
+                                          span_bottom >= 0.0 &&
+                                          span_top <= view.viewport_height_pixels;
         if (section.span_projection_visible) {
             section.projected_span_top_y_pixels =
-                std::clamp(begin_y, 0.0, view.viewport_height_pixels);
+                std::clamp(span_top, 0.0, view.viewport_height_pixels);
             section.projected_span_bottom_y_pixels =
-                std::clamp(end_y, 0.0, view.viewport_height_pixels);
+                std::clamp(span_bottom, 0.0, view.viewport_height_pixels);
         }
     }
     if (cache.marker_timing_index) {
@@ -3129,8 +3184,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
             const auto pixels_per_row =
                 static_cast<long double>(interaction_view.pixels_per_standard_measure) /
                 static_cast<long double>(chart.divisions_per_standard_measure);
-            const auto y = row * pixels_per_row -
-                           static_cast<long double>(interaction_view.viewport_scroll_pixels);
+            const auto y = compose_project_y(row, static_cast<double>(pixels_per_row),
+                                             interaction_view.viewport_scroll_pixels,
+                                             view.viewport_height_pixels, downscroll);
             if (!std::isfinite(y) ||
                 y < static_cast<long double>(std::numeric_limits<double>::lowest()) ||
                 y > static_cast<long double>(std::numeric_limits<double>::max())) {
@@ -3178,8 +3234,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
     if (application_state.preview_playhead_absolute_row) {
         const auto pixels_per_row = interaction_view.pixels_per_standard_measure /
                                     static_cast<double>(chart.divisions_per_standard_measure);
-        const auto playhead_y = *application_state.preview_playhead_absolute_row * pixels_per_row -
-                                interaction_view.viewport_scroll_pixels;
+        const auto playhead_y = compose_project_y(
+            *application_state.preview_playhead_absolute_row, pixels_per_row,
+            interaction_view.viewport_scroll_pixels, view.viewport_height_pixels, downscroll);
         if (std::isfinite(playhead_y) && playhead_y >= 0.0 &&
             playhead_y <= view.viewport_height_pixels) {
             view.playhead_visible = true;
@@ -3283,6 +3340,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                                   &wormedit::bgm_event_t::id);
             if (event != measure.bgm_events.end()) {
                 view.selected_bgm_event_id = selected.value;
+                view.selected_assigned_resource_id =
+                    event->sound.value_or(wormedit::resource_id_t{}).value;
                 if (chart.source_family == wormedit::format_family_t::bmson &&
                     event->sound_channel_event) {
                     view.selected_bmson_bgm_event_id = selected.value;
@@ -3304,6 +3363,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
             }
             view.selected_note_label = flattened.compose_selected_note_label_storage.c_str();
             view.selected_note_label_note_id = note_id.value;
+            view.selected_assigned_resource_id =
+                note->sound.value_or(wormedit::resource_id_t{}).value;
             if (chart.source_family == wormedit::format_family_t::bmson &&
                 note->sound_channel_event && note->kind == wormedit::note_kind_t::tap) {
                 view.selected_bmson_note_event_id = note_id.value;
@@ -3311,7 +3372,13 @@ void populate_compose_view(flattened_workspace_t& flattened,
             break;
         }
     }
-    const auto content_height = static_cast<long double>(cache.index->measures.total_rows) *
+    auto canvas_rows = cache.index->measures.total_rows;
+    if (chart.source_family == wormedit::format_family_t::bms) {
+        const auto built_canvas = wormedit::build_virtual_canvas(chart);
+        if (const auto* canvas = std::get_if<wormedit::virtual_canvas_t>(&built_canvas))
+            canvas_rows = canvas->total_rows;
+    }
+    const auto content_height = static_cast<long double>(canvas_rows) *
                                 interaction_view.pixels_per_standard_measure /
                                 chart.divisions_per_standard_measure;
     const auto maximum_scroll =
@@ -3359,9 +3426,13 @@ void populate_compose_view(flattened_workspace_t& flattened,
             scalar_selection_mode(retained_state->pending_editor_area_selection->mode);
         view.area_selection_preview_bounds = {
             std::clamp(preview.left_pixels, 0.0, view.viewport_width_pixels),
-            std::clamp(preview.top_pixels, 0.0, view.viewport_height_pixels),
+            std::clamp(downscroll ? view.viewport_height_pixels - preview.bottom_pixels
+                                  : preview.top_pixels,
+                       0.0, view.viewport_height_pixels),
             std::clamp(preview.right_pixels, 0.0, view.viewport_width_pixels),
-            std::clamp(preview.bottom_pixels, 0.0, view.viewport_height_pixels),
+            std::clamp(downscroll ? view.viewport_height_pixels - preview.top_pixels
+                                  : preview.bottom_pixels,
+                       0.0, view.viewport_height_pixels),
         };
     }
     if (retained_state->pending_space_range_selection) {
@@ -3376,10 +3447,14 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                         static_cast<double>(chart.divisions_per_standard_measure);
             const auto first_row = std::min(pending.anchor_canvas_row, *cursor_row);
             const auto last_row = std::max(pending.anchor_canvas_row, *cursor_row);
-            const auto top = static_cast<double>(first_row) * pixels_per_row -
-                             interaction_view.viewport_scroll_pixels;
-            const auto bottom = static_cast<double>(last_row + 1) * pixels_per_row -
-                                interaction_view.viewport_scroll_pixels;
+            const auto first_y = compose_project_y(first_row, pixels_per_row,
+                                                   interaction_view.viewport_scroll_pixels,
+                                                   view.viewport_height_pixels, downscroll);
+            const auto last_y = compose_project_y(last_row + 1, pixels_per_row,
+                                                  interaction_view.viewport_scroll_pixels,
+                                                  view.viewport_height_pixels, downscroll);
+            const auto top = std::min(first_y, last_y);
+            const auto bottom = std::max(first_y, last_y);
             view.space_range_preview_visible = true;
             view.space_range_preview_mode = scalar_selection_mode(pending.mode);
             view.space_range_preview_bounds = {
@@ -3389,8 +3464,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
                 std::clamp(bottom, 0.0, view.viewport_height_pixels),
             };
             const auto row_center = [&](std::uint64_t row) {
-                return std::clamp((static_cast<double>(row) + 0.5) * pixels_per_row -
+                return std::clamp(compose_project_y(
+                                      static_cast<long double>(row) + 0.5L, pixels_per_row,
                                       interaction_view.viewport_scroll_pixels,
+                                      view.viewport_height_pixels, downscroll),
                                   0.0, view.viewport_height_pixels);
             };
             view.space_range_anchor_y_pixels = row_center(pending.anchor_canvas_row);
@@ -3436,8 +3513,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
     flattened.compose_timing_marker_storage.clear();
     const auto pixels_per_row = interaction_view.pixels_per_standard_measure /
                                 static_cast<double>(chart.divisions_per_standard_measure);
-    if (cache.index->measures.total_rows != 0 && pixels_per_row > 0.0) {
-        const auto total_rows = static_cast<double>(cache.index->measures.total_rows);
+    if (canvas_rows != 0 && pixels_per_row > 0.0) {
+        const auto total_rows = static_cast<double>(canvas_rows);
         view.timing_document_begin_fraction = std::clamp(
             interaction_view.viewport_scroll_pixels / pixels_per_row / total_rows, 0.0, 1.0);
         view.timing_document_end_fraction = std::clamp(
@@ -3456,8 +3533,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
         if (!row) {
             return;
         }
-        const auto y = static_cast<double>(*row) * pixels_per_row -
-                       interaction_view.viewport_scroll_pixels;
+        const auto y = compose_project_y(*row, pixels_per_row,
+                                         interaction_view.viewport_scroll_pixels,
+                                         view.viewport_height_pixels, downscroll);
         if (!std::isfinite(y) || y < 0.0 || y > view.viewport_height_pixels) {
             return;
         }
@@ -3535,8 +3613,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
         timing_stage->document_revision == history.document.revision) {
         const auto stage_row = wormedit::absolute_row(cache.index->measures, timing_stage->position);
         if (stage_row) {
-            const auto y = static_cast<double>(*stage_row) * pixels_per_row -
-                           interaction_view.viewport_scroll_pixels;
+            const auto y = compose_project_y(*stage_row, pixels_per_row,
+                                             interaction_view.viewport_scroll_pixels,
+                                             view.viewport_height_pixels, downscroll);
             if (std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels) {
                 view.timing_stage_active = true;
                 view.timing_stage_valid = timing_stage->valid;
@@ -3555,6 +3634,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
         .field_width_pixels = playable_field_width,
         .split_stage_gutter_pixels = 14.0,
         .note_head_height_pixels = 16.0,
+        .scroll_direction = downscroll
+            ? wormedit::editor_field_scroll_direction_t::down
+            : wormedit::editor_field_scroll_direction_t::up,
         .bgm_pane_left_pixels = field_left_pixels + playable_field_width,
         .bgm_pane_width_pixels = bgm_pane_width,
         .bgm_lane_width_pixels = compose_bgm_lane_width_pixels,
@@ -3787,8 +3869,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
                 if (!row) {
                     continue;
                 }
-                const auto y = static_cast<double>(*row) * pixels_per_row -
-                               interaction_view.viewport_scroll_pixels;
+                const auto y = compose_project_y(*row, pixels_per_row,
+                                                 interaction_view.viewport_scroll_pixels,
+                                                 view.viewport_height_pixels, downscroll);
                 if (y < -8.0 || y > view.viewport_height_pixels + 8.0) {
                     continue;
                 }
@@ -3825,8 +3908,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
             ? preview.virtual_canvas_row
             : wormedit::absolute_row(cache.index->measures, preview.target);
         if (lane != scene.bgm_lanes.end() && row) {
-            const auto y = static_cast<double>(*row) * pixels_per_row -
-                           interaction_view.viewport_scroll_pixels;
+            const auto y = compose_project_y(*row, pixels_per_row,
+                                             interaction_view.viewport_scroll_pixels,
+                                             view.viewport_height_pixels, downscroll);
             if (y >= -8.0 && y <= view.viewport_height_pixels + 8.0) {
                 flattened.compose_bgm_move_storage = WormUiComposeBgmMovePreviewView{
                     .bounds = {lane->bounds.left, y - 8.0, lane->bounds.right, y + 8.0},
@@ -4210,6 +4294,7 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
     output.clear();
     if (!cache.index || !cache.interaction_view)
         return;
+    const auto downscroll = compose_field_downscroll(chart);
     const auto rows =
         proposed_visible_source_rows(original, proposed, interaction.viewport_scroll_pixels,
                                      view.viewport_height_pixels, view.pixels_per_standard_measure);
@@ -4234,10 +4319,13 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
     const auto& source_scene = *composed.scene;
     output.reserve(source_scene.grid_lines.size());
     for (const auto& line : source_scene.grid_lines) {
-        const auto y = wormedit::proposed_timing_y_on_fixed_waveform(
+        const auto projected = wormedit::proposed_timing_y_on_fixed_waveform(
             original, proposed, line.chart_row, interaction.viewport_scroll_pixels,
             view.pixels_per_standard_measure);
-        if (!y || *y < 0.0 || *y > view.viewport_height_pixels)
+        if (!projected)
+            continue;
+        const auto y = compose_source_y(*projected, view.viewport_height_pixels, downscroll);
+        if (y < 0.0 || y > view.viewport_height_pixels)
             continue;
         std::uint32_t measure_number{};
         if (line.kind == wormedit::editor_grid_line_kind_t::measure) {
@@ -4248,7 +4336,7 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
             if (found != measures.end() && found->absolute_begin_row == line.chart_row.whole_rows)
                 measure_number = static_cast<std::uint32_t>(found - measures.begin() + 1);
         }
-        output.push_back({.y_pixels = *y,
+        output.push_back({.y_pixels = y,
                           .kind = static_cast<std::uint8_t>(line.kind),
                           .emphasis = static_cast<std::uint8_t>(line.emphasis),
                           .measure_number = measure_number,
@@ -4259,9 +4347,12 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
     view.proposed_grid_lines = output.data();
     view.proposed_grid_line_count = output.size();
     const auto proposed_y = [&](std::uint64_t row) {
-        return wormedit::proposed_timing_y_on_fixed_waveform(original, proposed, {row, {}},
-                                                             interaction.viewport_scroll_pixels,
-                                                             view.pixels_per_standard_measure);
+        const auto projected = wormedit::proposed_timing_y_on_fixed_waveform(
+            original, proposed, {row, {}}, interaction.viewport_scroll_pixels,
+            view.pixels_per_standard_measure);
+        return projected ? std::optional{compose_source_y(
+                               *projected, view.viewport_height_pixels, downscroll)}
+                         : std::nullopt;
     };
     auto& preview_rects = flattened.compose_timing_preview_rect_storage;
     preview_rects.clear();
@@ -4274,14 +4365,15 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
         const auto y = proposed_y(row);
         if (!y)
             return;
-        const auto old_y =
-            static_cast<double>(row) * pixels_per_row - interaction.viewport_scroll_pixels;
-        const auto half_height = (bounds.bottom - bounds.top) * 0.5;
-        if (std::abs(*y - old_y) < 0.5 || *y + half_height < 0.0 ||
-            *y - half_height > view.viewport_height_pixels)
+        const auto old_y = compose_project_y(row, pixels_per_row,
+                                             interaction.viewport_scroll_pixels,
+                                             view.viewport_height_pixels, downscroll);
+        const auto shift = *y - old_y;
+        if (std::abs(shift) < 0.5 || bounds.bottom + shift < 0.0 ||
+            bounds.top + shift > view.viewport_height_pixels)
             return;
-        bounds.top = *y - half_height;
-        bounds.bottom = *y + half_height;
+        bounds.top += shift;
+        bounds.bottom += shift;
         if (std::abs(bounds.top) > 10000000.0 || std::abs(bounds.bottom) > 10000000.0)
             return;
         preview_rects.push_back({.bounds = bounds, .kind = kind});
@@ -4302,7 +4394,10 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
             append_rect(convert_rect(event.bounds), row->second, 1);
     }
     const auto projected_geometry_y = [&](double old_y) -> std::optional<double> {
-        const auto row = (static_cast<long double>(old_y) + source_view.viewport_scroll_pixels) *
+        const auto source_y = compose_source_y(old_y, source_view.viewport_height_pixels,
+                                               downscroll);
+        const auto row = (static_cast<long double>(source_y) +
+                          source_view.viewport_scroll_pixels) *
                          original.divisions_per_standard_measure / view.pixels_per_standard_measure;
         if (!std::isfinite(row) || row < 0.0L || row > original.total_rows)
             return std::nullopt;
@@ -4314,9 +4409,12 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
             ++whole;
             fractional = 0;
         }
-        return wormedit::proposed_timing_y_on_fixed_waveform(
+        const auto projected = wormedit::proposed_timing_y_on_fixed_waveform(
             original, proposed, {whole, {fractional, fractional_scale}},
             interaction.viewport_scroll_pixels, view.pixels_per_standard_measure);
+        return projected ? std::optional{compose_source_y(
+                               *projected, view.viewport_height_pixels, downscroll)}
+                         : std::nullopt;
     };
     for (const auto& hold : source_scene.hold_bodies) {
         if (preview_rects.size() >= WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY) {
@@ -4325,17 +4423,24 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
         }
         const auto top = projected_geometry_y(hold.bounds.top);
         const auto bottom = projected_geometry_y(hold.bounds.bottom);
-        const auto old_top = hold.bounds.top + source_view.viewport_scroll_pixels -
-                             interaction.viewport_scroll_pixels;
-        const auto old_bottom = hold.bounds.bottom + source_view.viewport_scroll_pixels -
-                                interaction.viewport_scroll_pixels;
-        if (!top || !bottom || *bottom <= *top ||
+        const auto old_top_source = compose_source_y(hold.bounds.top,
+                                                     source_view.viewport_height_pixels, downscroll);
+        const auto old_bottom_source = compose_source_y(hold.bounds.bottom,
+                                                        source_view.viewport_height_pixels, downscroll);
+        const auto old_top = compose_source_y(old_top_source + source_view.viewport_scroll_pixels -
+                                                  interaction.viewport_scroll_pixels,
+                                              view.viewport_height_pixels, downscroll);
+        const auto old_bottom = compose_source_y(old_bottom_source + source_view.viewport_scroll_pixels -
+                                                     interaction.viewport_scroll_pixels,
+                                                 view.viewport_height_pixels, downscroll);
+        if (!top || !bottom || std::abs(*bottom - *top) < 0.5 ||
             (std::abs(*top - old_top) < 0.5 && std::abs(*bottom - old_bottom) < 0.5) ||
-            *bottom < 0.0 || *top > view.viewport_height_pixels)
+            std::max(*top, *bottom) < 0.0 ||
+            std::min(*top, *bottom) > view.viewport_height_pixels)
             continue;
         auto bounds = convert_rect(hold.bounds);
-        bounds.top = *top;
-        bounds.bottom = *bottom;
+        bounds.top = std::min(*top, *bottom);
+        bounds.bottom = std::max(*top, *bottom);
         if (std::abs(bounds.top) > 10000000.0 || std::abs(bounds.bottom) > 10000000.0)
             continue;
         preview_rects.push_back({.bounds = bounds, .kind = 2});
@@ -4356,8 +4461,9 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
         if (!row || *row < rows->first || *row > rows->second)
             return;
         const auto y = proposed_y(*row);
-        const auto old_y =
-            static_cast<double>(*row) * pixels_per_row - interaction.viewport_scroll_pixels;
+        const auto old_y = compose_project_y(*row, pixels_per_row,
+                                             interaction.viewport_scroll_pixels,
+                                             view.viewport_height_pixels, downscroll);
         if (!y || std::abs(*y - old_y) < 0.5 || *y < 0.0 || *y > view.viewport_height_pixels)
             return;
         preview_markers.push_back({.object_id = id,
@@ -4421,8 +4527,9 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
     for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
         auto& bookmark = flattened.compose_bookmark_storage[index];
         const auto y = proposed_y(bookmark.chart_row);
-        const auto old_y = static_cast<double>(bookmark.chart_row) * pixels_per_row -
-                           interaction.viewport_scroll_pixels;
+        const auto old_y = compose_project_y(bookmark.chart_row, pixels_per_row,
+                                             interaction.viewport_scroll_pixels,
+                                             view.viewport_height_pixels, downscroll);
         bookmark.proposed_projection_visible =
             y && std::abs(*y - old_y) >= 0.5 && *y >= 0.0 && *y <= view.viewport_height_pixels;
         bookmark.proposed_y_pixels = bookmark.proposed_projection_visible ? *y : 0.0;
@@ -4431,10 +4538,12 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
         auto& section = flattened.compose_section_storage[index];
         const auto begin = proposed_y(section.begin_chart_row);
         const auto end = proposed_y(section.end_chart_row);
-        const auto old_begin = static_cast<double>(section.begin_chart_row) * pixels_per_row -
-                               interaction.viewport_scroll_pixels;
-        const auto old_end = static_cast<double>(section.end_chart_row) * pixels_per_row -
-                             interaction.viewport_scroll_pixels;
+        const auto old_begin = compose_project_y(section.begin_chart_row, pixels_per_row,
+                                                 interaction.viewport_scroll_pixels,
+                                                 view.viewport_height_pixels, downscroll);
+        const auto old_end = compose_project_y(section.end_chart_row, pixels_per_row,
+                                               interaction.viewport_scroll_pixels,
+                                               view.viewport_height_pixels, downscroll);
         section.proposed_begin_projection_visible = begin && std::abs(*begin - old_begin) >= 0.5 &&
                                                     *begin >= 0.0 &&
                                                     *begin <= view.viewport_height_pixels;
@@ -4444,13 +4553,14 @@ void project_compose_proposed_grid(flattened_workspace_t& flattened,
         section.proposed_begin_y_pixels = section.proposed_begin_projection_visible ? *begin : 0.0;
         section.proposed_end_y_pixels = section.proposed_end_projection_visible ? *end : 0.0;
         section.proposed_span_projection_visible =
-            begin && end && *end >= 0.0 && *begin <= view.viewport_height_pixels &&
+            begin && end && std::max(*begin, *end) >= 0.0 &&
+            std::min(*begin, *end) <= view.viewport_height_pixels &&
             (std::abs(*begin - old_begin) >= 0.5 || std::abs(*end - old_end) >= 0.5);
         if (section.proposed_span_projection_visible) {
             section.proposed_span_top_y_pixels =
-                std::clamp(*begin, 0.0, view.viewport_height_pixels);
+                std::clamp(std::min(*begin, *end), 0.0, view.viewport_height_pixels);
             section.proposed_span_bottom_y_pixels =
-                std::clamp(*end, 0.0, view.viewport_height_pixels);
+                std::clamp(std::max(*begin, *end), 0.0, view.viewport_height_pixels);
         }
     }
 }
@@ -4828,6 +4938,12 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
     const auto bgm_pane_width = horizontal_layout.bgm_pane_width_pixels;
     const auto field_left_pixels = horizontal_layout.field_left_pixels;
     const auto field_width_pixels = horizontal_layout.playable_field_width_pixels;
+    const auto input_source_y = [&](double y) {
+        return compose_source_y(
+            y, state.viewport_height_pixels,
+            input_chart != history.document.charts.end() &&
+                compose_field_downscroll(*input_chart));
+    };
 
     if (!ui_action.shortcut_window_focused) {
         viewport_input.focus_lost();
@@ -4894,9 +5010,18 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
         }
         return hit_test_editor(chart, *scene_cache.hit_test_index, view,
                                {.x_pixels = x_pixels,
-                                .y_pixels = y_pixels,
+                                .y_pixels = compose_source_y(
+                                    y_pixels, view.viewport_height_pixels,
+                                    compose_field_downscroll(chart)),
                                 .field_left_pixels = field_left_pixels,
                                 .field_width_pixels = field_width_pixels});
+    };
+    const auto position_at_compose_y = [&](const chart_document_t& chart,
+                                           const editor_interaction_view_model_t& view,
+                                           double y_pixels) {
+        return editor_position_at_y_pixels(
+            chart, view, compose_source_y(y_pixels, view.viewport_height_pixels,
+                                          compose_field_downscroll(chart)));
     };
     const auto virtual_bms_row_at =
         [&](const chart_document_t& chart, const editor_interaction_view_model_t& view,
@@ -4911,8 +5036,10 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
         if (!virtual_canvas) {
             return std::nullopt;
         }
+        const auto source_y = compose_source_y(y_pixels, view.viewport_height_pixels,
+                                               compose_field_downscroll(chart));
         const auto exact_row = (static_cast<long double>(view.viewport_scroll_pixels) +
-                                y_pixels) *
+                                source_y) *
                                chart.divisions_per_standard_measure /
                                view.pixels_per_standard_measure;
         if (!std::isfinite(exact_row) || exact_row < 0.0L ||
@@ -5283,7 +5410,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             }
             const auto y = std::clamp(input.y_pixels, 0.0,
                                       std::max(0.0, current_view->viewport_height_pixels - 0.001));
-            const auto position = editor_position_at_y_pixels(*chart, *current_view, y);
+            const auto position = position_at_compose_y(*chart, *current_view, y);
             if (!position) {
                 (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
                 return "Pointer hold input fell outside chart geometry and was canceled.";
@@ -5475,7 +5602,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 const auto y =
                     std::clamp(input.y_pixels, 0.0,
                                std::max(0.0, current_view->viewport_height_pixels - 0.001));
-                const auto position = editor_position_at_y_pixels(*chart, *current_view, y);
+                const auto position = position_at_compose_y(*chart, *current_view, y);
                 const auto target =
                     hit_target_at(*chart, *current_view, input.x_pixels, input.y_pixels);
                 if (!position || !target) {
@@ -5503,7 +5630,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             result = dispatch_editor_action(history, state,
                                             begin_editor_area_selection_action_t{
                                                 .x_pixels = input.x_pixels,
-                                                .y_pixels = input.y_pixels,
+                                                .y_pixels = input_source_y(input.y_pixels),
                                                 .field_left_pixels = field_left_pixels,
                                                 .field_width_pixels = field_width_pixels,
                                                 .mode = *selection_mode(input.selection_mode),
@@ -5513,13 +5640,15 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
         case WORM_UI_COMPOSE_INPUT_AREA_SELECTION_UPDATE:
             result = dispatch_editor_action(
                 history, state,
-                update_editor_area_selection_action_t{input.x_pixels, input.y_pixels, true});
+                update_editor_area_selection_action_t{
+                    input.x_pixels, input_source_y(input.y_pixels), true});
             accepted = "Area selection preview updated.";
             break;
         case WORM_UI_COMPOSE_INPUT_AREA_SELECTION_RELEASE:
             result = dispatch_editor_action(
                 history, state,
-                commit_editor_area_selection_action_t{input.x_pixels, input.y_pixels, true});
+                commit_editor_area_selection_action_t{
+                    input.x_pixels, input_source_y(input.y_pixels), true});
             accepted = "Area selection committed.";
             break;
         case WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION:
@@ -5554,7 +5683,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             const auto hover = hover_editor_object(
                 *chart, *scene_cache.hit_test_index, *scene_cache.interaction_view,
                 {.x_pixels = input.x_pixels,
-                 .y_pixels = input.y_pixels,
+                 .y_pixels = input_source_y(input.y_pixels),
                  .field_left_pixels = field_left_pixels,
                  .field_width_pixels = field_width_pixels,
                  .hit_radius_pixels = 8.0,
@@ -5644,8 +5773,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 preview.reset();
                 return "BGM event drag lost its chart field.";
             }
-            const auto raw = editor_position_at_y_pixels(*chart, *current_view,
-                                                          input.y_pixels);
+            const auto raw = position_at_compose_y(*chart, *current_view, input.y_pixels);
             const auto target = raw ? resolve_resource_placement_position(
                 *chart, *raw, preview->snap_denominator) : std::nullopt;
             preview->virtual_canvas_row.reset();
@@ -5774,8 +5902,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             }
             const auto denominator = input.razor_stroke_start
                 ? state.active_snap_denominator : stroke->snap_denominator;
-            const auto raw = editor_position_at_y_pixels(*chart, *current_view,
-                                                          input.y_pixels);
+            const auto raw = position_at_compose_y(*chart, *current_view, input.y_pixels);
             const auto position = raw ? resolve_resource_placement_position(
                 *chart, *raw, denominator) : std::nullopt;
             if (!position) {
@@ -5954,18 +6081,25 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             if (!target) {
                 if (const auto virtual_hit = virtual_bms_hit_at(
                         *chart, *current_view, input.x_pixels, input.y_pixels)) {
+                    const auto built_canvas = build_virtual_canvas(*chart);
+                    const auto* canvas = std::get_if<virtual_canvas_t>(&built_canvas);
+                    const auto measure = canvas
+                        ? canvas->measure_containing(virtual_hit->first)
+                        : std::nullopt;
+                    if (!measure)
+                        return "The clicked BMS measure is unavailable.";
                     result = dispatch_editor_action(
-                        history, state,
-                        place_virtual_bms_tap_action_t{virtual_hit->first, virtual_hit->second});
-                    accepted = "Tap note placed in BMS measure.";
+                        history, state, select_bms_canvas_measure_action_t{measure->number});
+                    state.active_lane = virtual_hit->second;
+                    accepted = "BMS measure selected.";
                     break;
                 }
-                return "Click inside an editable lane to place or select a note.";
+                return "Click inside an editable lane to select a note or position.";
             }
             state.active_lane = target->lane;
             state.cursor = target->position;
             state.virtual_bms_cursor_row.reset();
-            if (target->note && target->note_kind != note_kind_t::tap) {
+            if (target->note) {
                 result = dispatch_editor_action(
                     history, state,
                     select_editor_objects_action_t{
@@ -5974,10 +6108,11 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                         true});
                 accepted = "Note selected.";
             } else {
-                result =
-                    dispatch_editor_action(history, state, place_tap_action_t{target->position});
-                accepted =
-                    result.document_changed ? "Tap note toggled." : "Tap note was not changed.";
+                result = dispatch_editor_action(
+                    history, state,
+                    select_editor_objects_action_t{{}, editor_area_selection_mode_t::replace,
+                                                   false});
+                accepted = "Edit cursor moved to the clicked row.";
             }
             break;
         }
@@ -5999,7 +6134,8 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
             }
             const auto exact_row =
                 (static_cast<long double>(current_view->viewport_scroll_pixels) +
-                 input.y_pixels) *
+                 compose_source_y(input.y_pixels, current_view->viewport_height_pixels,
+                                  compose_field_downscroll(*chart))) *
                 chart->divisions_per_standard_measure /
                 current_view->pixels_per_standard_measure;
             if (!std::isfinite(exact_row) || exact_row < 0.0L ||
@@ -6090,8 +6226,7 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 target_lane = target->lane;
                 note_target = target->note;
             } else {
-                raw_position =
-                    editor_position_at_y_pixels(*chart, *current_view, input.y_pixels);
+                raw_position = position_at_compose_y(*chart, *current_view, input.y_pixels);
             }
             if (!raw_position && !replacing &&
                 kind != resource_placement_kind_t::sample_note) {
@@ -9523,6 +9658,20 @@ int main(int argc, char** argv) {
             }
         }
 
+        // Every document mutation must leave the next frame bound to its new
+        // revision. Keep this boundary authoritative even when a command path
+        // forgets its local rebind after committing.
+        if (workspace.song == history.document.id &&
+            (workspace.document_revision != history.document.revision ||
+             workspace.history.undo_depth != history.undo.size() ||
+             workspace.history.redo_depth != history.redo.size() ||
+             workspace.history.dirty != wormedit::is_document_dirty(history))) {
+            const auto rebound = wormedit::rebind_workspace(workspace, history);
+            if (!rebound)
+                status = rebound.diagnostics.empty()
+                             ? "Workspace could not follow the latest document edit."
+                             : rebound.diagnostics.front().message;
+        }
         const auto model = wormedit::make_workspace_view(workspace, history.document);
         if (timing_stage &&
             (timing_stage->document_revision != history.document.revision ||
@@ -9552,6 +9701,16 @@ int main(int argc, char** argv) {
         if (!model) {
             status = model.diagnostics.empty() ? "Workspace view unavailable"
                                                : model.diagnostics.front().message;
+            const auto recovery_action = worm_ui_frontend_workspace_error(status.c_str());
+            if (recovery_action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
+                running = false;
+            } else if (recovery_action.kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB) {
+                const auto changed = wormedit::apply_workspace_action(
+                    workspace, history.document, history.document.revision,
+                    wormedit::workspace_switch_tab_action_t{wormedit::workspace_tab_t::setup});
+                if (!changed && !changed.diagnostics.empty())
+                    status = changed.diagnostics.front().message;
+            }
         } else {
             if (workspace.selected_chart) {
                 const auto chart =
@@ -10011,15 +10170,17 @@ int main(int argc, char** argv) {
                                 const auto pixels_per_row = compose.pixels_per_standard_measure /
                                                             compose_scene_cache.marker_timing_index
                                                                 ->divisions_per_standard_measure;
+                                const auto downscroll = compose_field_downscroll(*chart);
                                 if (anchor_row) {
                                     compose.beat_fit_anchor_y_pixels =
-                                        static_cast<double>(*anchor_row) * pixels_per_row -
-                                        compose_interaction_state->viewport_scroll_pixels;
+                                        compose_project_y(*anchor_row, pixels_per_row,
+                                            compose_interaction_state->viewport_scroll_pixels,
+                                            compose.viewport_height_pixels, downscroll);
                                 }
                                 compose.beat_fit_beat_y_pixels =
-                                    static_cast<double>(compose.beat_fit_chart_row) *
-                                        pixels_per_row -
-                                    compose_interaction_state->viewport_scroll_pixels;
+                                    compose_project_y(compose.beat_fit_chart_row, pixels_per_row,
+                                        compose_interaction_state->viewport_scroll_pixels,
+                                        compose.viewport_height_pixels, downscroll);
                                 if (compose_scene_cache.proposed_beat_bpm != drag.proposed_bpm ||
                                     compose_scene_cache.proposed_beat_event != drag.bpm_event) {
                                     compose_scene_cache.proposed_beat_timing_index.reset();
@@ -10050,12 +10211,15 @@ int main(int argc, char** argv) {
                                  drag.sample_rate});
                             if (target) {
                                 const auto& row = *target.absolute_row;
-                                compose.beat_fit_target_y_pixels = static_cast<double>(
+                                const auto source_y = static_cast<double>(
                                     static_cast<long double>(row.numerator) / row.denominator *
                                         compose.pixels_per_standard_measure /
                                         compose_scene_cache.marker_timing_index
                                             ->divisions_per_standard_measure -
                                     compose_interaction_state->viewport_scroll_pixels);
+                                compose.beat_fit_target_y_pixels = compose_source_y(
+                                    source_y, compose.viewport_height_pixels,
+                                    compose_field_downscroll(*chart));
                             }
                         }
                         compose_scene_cache.waveform_overview_total_frames =
@@ -10144,7 +10308,9 @@ int main(int argc, char** argv) {
                                         cache.channel_waveform_rows.reserve(projected.rows.size());
                                         for (const auto& row : projected.rows) {
                                             cache.channel_waveform_rows.push_back({
-                                                .y_pixels = row.y_pixels,
+                                                .y_pixels = compose_source_y(
+                                                    row.y_pixels, height,
+                                                    compose_field_downscroll(*chart)),
                                                 .absolute_peak = {std::clamp(row.absolute_peak[0],
                                                                              0.0f, 1.0f),
                                                                   std::clamp(row.absolute_peak[1],

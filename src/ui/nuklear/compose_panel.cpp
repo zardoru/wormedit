@@ -2318,7 +2318,15 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         } else {
             in_placement_pane = pointer_started_in_note_field;
         }
-        if (in_placement_pane) {
+        const auto existing_note = role == WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE &&
+                                   compose_point_hits_note(view, pointer_started_x,
+                                                           pointer_started_y);
+        const auto existing_bgm = role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM &&
+                                  compose_bgm_event_at(view, pointer_started_x,
+                                                       pointer_started_y) != 0;
+        if (in_placement_pane && !existing_note &&
+            !(existing_bgm && state.resource_pointer_mode ==
+                                  worm_ui_nuklear_compose_resource_pointer_mode_t::place)) {
             const auto replacing = state.resource_pointer_mode ==
                 worm_ui_nuklear_compose_resource_pointer_mode_t::replace;
             if (replacing && role == WORM_UI_COMPOSE_RESOURCE_ROLE_BGM) {

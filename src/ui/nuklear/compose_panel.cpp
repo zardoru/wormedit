@@ -28,6 +28,7 @@
 using wormedit::ui::lucide::Glyph;
 
 static auto& state = worm_ui_nuklear_compose_state();
+static constexpr double compose_measure_rail_width = 42.0;
 
 static auto compose_inspector_icon(bool visible) -> Glyph {
     return visible ? Glyph::panel_right_close : Glyph::panel_right_open;
@@ -37,6 +38,12 @@ static void reset_bmson_marker_move_capture() {
     state.bmson_marker_move_candidate_active = false;
     state.bmson_marker_move_active = false;
     state.bmson_marker_move_event_id = 0;
+}
+
+static void reset_timing_marker_drag_capture() {
+    state.timing_marker_candidate_active = false;
+    state.timing_marker_drag_active = false;
+    state.timing_marker_object_id = 0;
 }
 
 static void set_waveform_offset_drag_action(WormUiWorkspaceAction* action,
@@ -67,7 +74,10 @@ static void append_compose_input(
     WormUiComposeSelectionMode selection_mode = WORM_UI_COMPOSE_SELECTION_REPLACE,
     WormUiComposeNavigationAction navigation_action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
     uint64_t object_id = 0, uint8_t resource_role = 0,
-    bool razor_stroke_start = false) {
+    bool razor_stroke_start = false,
+    WormUiTimingLaneKind timing_lane = WORM_UI_TIMING_LANE_BPM,
+    uint64_t timing_chart_id = 0, uint64_t timing_document_revision = 0,
+    uint64_t timing_anchor_chart_row = 0) {
     if (!action) {
         return;
     }
@@ -76,6 +86,10 @@ static void append_compose_input(
             .kind = WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE,
             .lane_id = 0,
             .object_id = 0,
+            .timing_chart_id = 0,
+            .timing_document_revision = 0,
+            .timing_lane = WORM_UI_TIMING_LANE_BPM,
+            .timing_anchor_chart_row = 0,
             .resource_role = 0,
             .successive = false,
             .razor_stroke_start = false,
@@ -113,6 +127,10 @@ static void append_compose_input(
         .kind = kind,
         .lane_id = lane_id,
         .object_id = object_id,
+        .timing_chart_id = timing_chart_id,
+        .timing_document_revision = timing_document_revision,
+        .timing_lane = timing_lane,
+        .timing_anchor_chart_row = timing_anchor_chart_row,
         .resource_role = resource_role,
         .successive = successive,
         .razor_stroke_start = razor_stroke_start,
@@ -319,6 +337,8 @@ void worm_ui_nuklear_compose_handle_focus_lost() {
     state.note_move_candidate_active = false;
     state.note_move_active = false;
     state.timing_stage_drag_active = false;
+    reset_timing_marker_drag_capture();
+    state.inline_timing_open = false;
     state.area_selection_candidate_active = false;
     state.area_selection_active = false;
     state.navigation_key_active = false;
@@ -538,15 +558,67 @@ static struct nk_color compose_lane_color(uint8_t role, size_t display_order) {
 }
 
 struct ComposeTimingLaneLayout {
-    std::array<struct nk_rect, 8> lanes{};
-    std::array<struct nk_color, 8> colors{};
+    std::array<struct nk_rect, WORM_UI_TIMING_LANE_COUNT> lanes{};
+    std::array<struct nk_color, WORM_UI_TIMING_LANE_COUNT> colors{};
     float field_left{};
 };
 
+static auto compose_timing_marker_document_rect(const WormUiComposeView& view,
+                                                const WormUiTimingMarkerView& marker)
+    -> WormUiComposeRect {
+    const auto marker_lane_ordinal = static_cast<unsigned>(marker.lane);
+    if (marker_lane_ordinal >= WORM_UI_TIMING_LANE_COUNT) return {};
+    const auto bit = static_cast<std::uint8_t>(1U << marker_lane_ordinal);
+    const auto visible_count = std::popcount(view.timing_lane_visibility_mask);
+    if (visible_count == 0 || (view.timing_lane_visibility_mask & bit) == 0) return {};
+    const auto preceding = static_cast<std::uint8_t>(view.timing_lane_visibility_mask & (bit - 1));
+    const auto visible_marker_lane_slot = std::popcount(preceding);
+    const auto width = (view.playable_field_left_pixels - compose_measure_rail_width) / visible_count;
+    const auto inner_left = compose_measure_rail_width + width * visible_marker_lane_slot + 2.0;
+    const auto inner_width = std::max(0.0, width - 4.0);
+    const auto left = inner_left + inner_width * marker.marker_left_fraction;
+    const auto right = inner_left + inner_width * marker.marker_right_fraction;
+    constexpr double height = 16.0;
+    const auto top = std::clamp(marker.marker_y_pixels - height * 0.5, 0.0,
+                                std::max(0.0, view.viewport_height_pixels - height));
+    return {left, top, std::max(left + 1.0, right), top + height};
+}
+
+static auto compose_timing_marker_screen_rect(const ComposePaintContext& paint,
+                                               const WormUiTimingMarkerView& marker)
+    -> struct nk_rect {
+    const auto bounds = compose_timing_marker_document_rect(*paint.view, marker);
+    return compose_screen_rect(&bounds, paint.view, paint.viewport);
+}
+
+static auto compose_hovered_timing_marker(const ComposePaintContext& paint)
+    -> const WormUiTimingMarkerView* {
+    const WormUiTimingMarkerView* hovered = nullptr;
+    for (size_t index = 0; index < paint.view->timing_marker_count; ++index) {
+        const auto& marker = paint.view->timing_markers[index];
+        const auto bounds = compose_timing_marker_screen_rect(paint, marker);
+        if (bounds.w > 0.0f && bounds.h > 0.0f &&
+            nk_input_is_mouse_hovering_rect(&paint.context->input, bounds)) hovered = &marker;
+    }
+    return hovered;
+}
+
+static auto compose_timing_marker_at(const WormUiComposeView& view, double x, double y)
+    -> const WormUiTimingMarkerView* {
+    const WormUiTimingMarkerView* hit = nullptr;
+    for (size_t index = 0; index < view.timing_marker_count; ++index) {
+        const auto& marker = view.timing_markers[index];
+        const auto bounds = compose_timing_marker_document_rect(view, marker);
+        if (x >= bounds.left && x <= bounds.right && y >= bounds.top && y <= bounds.bottom)
+            hit = &marker;
+    }
+    return hit;
+}
+
 static void draw_compose_timing_lanes(const ComposePaintContext& paint,
                                       ComposeTimingLaneLayout& layout) {
-    constexpr std::array<const char*, 8> labels{"BPM", "SV", "SPD", "STP", "DLY", "WRP",
-                                                "KIA", "ANC"};
+    constexpr std::array<const char*, WORM_UI_TIMING_LANE_COUNT> labels{
+        "BPM", "SV", "SPD", "STP", "DLY", "WRP", "KIA", "ANC"};
     for (size_t index = 0; index < layout.colors.size(); ++index) {
         layout.colors[index] = wormedit::ui::theme::compose_note_accent(index);
     }
@@ -782,34 +854,72 @@ static void draw_compose_timing_preview_legend(const ComposePaintContext& paint)
                  paint.context->style.font, nk_rgba(18, 21, 29, 220), nk_rgb(194, 227, 238));
 }
 
-static void draw_compose_timing_markers(const ComposePaintContext& paint,
-                                        const ComposeTimingLaneLayout& layout) {
+static void draw_compose_timing_marker_drag_ghosts(const ComposePaintContext& paint) {
+    if (!state.timing_marker_drag_active ||
+        state.timing_marker_chart_id != paint.view->chart_id ||
+        state.timing_marker_revision != paint.view->document_revision) return;
+    bool selected_fixed = false;
+    for (size_t index = 0; index < paint.view->timing_marker_count; ++index)
+        selected_fixed |= paint.view->timing_markers[index].selected &&
+                          paint.view->timing_markers[index].fixed_initial;
+    const auto ghost_color = selected_fixed ? nk_rgb(242, 111, 104) : nk_rgb(255, 207, 99);
+    const auto delta = static_cast<float>(state.timing_marker_current_y_pixels -
+                                           state.timing_marker_anchor_y_pixels) *
+                       paint.viewport.h / static_cast<float>(paint.view->viewport_height_pixels);
     for (size_t index = 0; index < paint.view->timing_marker_count; ++index) {
         const auto& marker = paint.view->timing_markers[index];
-        const auto lane_index = static_cast<size_t>(marker.lane);
-        if (lane_index >= layout.lanes.size() || layout.lanes[lane_index].w <= 0.0f) {
+        if (!marker.selected) continue;
+        auto ghost = compose_timing_marker_screen_rect(paint, marker);
+        ghost.y += delta;
+        nk_fill_rect(paint.canvas, ghost, 1.0f,
+                     selected_fixed ? nk_rgba(242, 111, 104, 45) : nk_rgba(255, 207, 99, 40));
+        nk_stroke_rect(paint.canvas, ghost, 1.0f, 2.0f, ghost_color);
+    }
+}
+
+static void draw_compose_timing_markers(const ComposePaintContext& paint,
+                                        const ComposeTimingLaneLayout& layout) {
+    const auto* hovered = compose_hovered_timing_marker(paint);
+    for (size_t index = 0; index < paint.view->timing_marker_count; ++index) {
+        const auto& marker = paint.view->timing_markers[index];
+        const auto marker_lane_ordinal = static_cast<size_t>(marker.lane);
+        if (marker_lane_ordinal >= layout.lanes.size() ||
+            layout.lanes[marker_lane_ordinal].w <= 0.0f) {
             continue;
         }
-        const auto& lane = layout.lanes[lane_index];
-        const auto inner_left = lane.x + 2.0f;
-        const auto inner_width = std::max(0.0f, lane.w - 4.0f);
-        const auto left = inner_left + inner_width * static_cast<float>(marker.marker_left_fraction);
-        const auto right = inner_left + inner_width * static_cast<float>(marker.marker_right_fraction);
-        const auto y = compose_projected_y(paint, marker.marker_y_pixels);
-        nk_fill_rect(paint.canvas, nk_rect(left, y - 2.5f, std::max(1.0f, right - left), 5.0f),
-                     0.0f, layout.colors[lane_index]);
+        const auto bounds = compose_timing_marker_screen_rect(paint, marker);
+        nk_fill_rect(paint.canvas, bounds, 1.0f, nk_rgb(18, 22, 31));
+        const auto selected = marker.selected ||
+                              (marker.fixed_initial && marker.object_id == 0 &&
+                               state.timing_missing_initial_selected);
+        const auto outline = hovered == &marker ? nk_rgb(255, 220, 112)
+                             : selected ? nk_rgb(116, 92, 49)
+                                        : nk_rgb(55, 64, 79);
+        nk_stroke_rect(paint.canvas, bounds, 1.0f, hovered == &marker ? 2.0f : 1.5f,
+                       outline);
+        if (!marker.short_label || !marker.short_label[0]) continue;
+        const auto* font = paint.context->style.font;
+        const auto length = static_cast<int>(strlen(marker.short_label));
+        const auto text_width = font->width(font->userdata, font->height, marker.short_label,
+                                            length);
+        const auto text_bounds = nk_rect(bounds.x + 2.0f, bounds.y + (bounds.h - font->height) * 0.5f,
+                                         std::max(bounds.w - 4.0f, text_width + 2.0f), font->height);
+        nk_draw_text(paint.canvas, text_bounds, marker.short_label, length, font,
+                     nk_rgba(18, 22, 31, 0), layout.colors[marker_lane_ordinal]);
     }
+    draw_compose_timing_marker_drag_ghosts(paint);
 }
 
 static void draw_compose_timing_preview_markers(const ComposePaintContext& paint,
                                                 const ComposeTimingLaneLayout& layout) {
     for (size_t index = 0; index < paint.view->timing_preview_marker_count; ++index) {
         const auto& marker = paint.view->timing_preview_markers[index];
-        const auto lane_index = static_cast<size_t>(marker.lane);
-        if (lane_index >= layout.lanes.size() || layout.lanes[lane_index].w <= 0.0f) {
+        const auto marker_lane_ordinal = static_cast<size_t>(marker.lane);
+        if (marker_lane_ordinal >= layout.lanes.size() ||
+            layout.lanes[marker_lane_ordinal].w <= 0.0f) {
             continue;
         }
-        const auto& lane = layout.lanes[lane_index];
+        const auto& lane = layout.lanes[marker_lane_ordinal];
         const auto y = compose_projected_y(paint, marker.marker_y_pixels);
         nk_stroke_line(paint.canvas, lane.x + 2.0f, y, lane.x + lane.w - 2.0f, y, 2.0f,
                        nk_rgba(255, 207, 104, 215));
@@ -821,11 +931,11 @@ static void draw_compose_timing_stage_marker(const ComposePaintContext& paint,
     if (!paint.view->timing_stage_active) {
         return;
     }
-    const auto lane_index = static_cast<size_t>(paint.view->timing_stage_lane);
-    if (lane_index >= layout.lanes.size()) {
+    const auto staged_timing_lane_ordinal = static_cast<size_t>(paint.view->timing_stage_lane);
+    if (staged_timing_lane_ordinal >= layout.lanes.size()) {
         return;
     }
-    const auto& lane = layout.lanes[lane_index];
+    const auto& lane = layout.lanes[staged_timing_lane_ordinal];
     const auto y = compose_projected_y(paint, paint.view->timing_stage_y_pixels);
     const auto bounds = nk_rect(lane.x + 2.0f, y - 5.0f,
                                 std::max(1.0f, lane.w - 4.0f), 10.0f);
@@ -1246,6 +1356,28 @@ static void draw_compose_note_tooltip(const ComposePaintContext& paint) {
     }
 }
 
+static void draw_compose_timing_tooltip(const ComposePaintContext& paint) {
+    const auto* marker = compose_hovered_timing_marker(paint);
+    if (!marker || !marker->detail || !marker->detail[0]) return;
+    const auto* font = paint.context->style.font;
+    const auto length = static_cast<int>(strlen(marker->detail));
+    const auto text_width = font->width(font->userdata, font->height, marker->detail, length);
+    const auto width = std::max(1.0f, std::min(paint.viewport.w - 16.0f,
+                                              text_width + 16.0f));
+    const auto mouse = paint.context->input.mouse.pos;
+    const auto x = std::clamp(mouse.x + 10.0f, paint.viewport.x + 8.0f,
+                              std::max(paint.viewport.x + 8.0f,
+                                       paint.viewport.x + paint.viewport.w - width - 8.0f));
+    const auto y = std::clamp(mouse.y - 32.0f, paint.viewport.y + 8.0f,
+                              std::max(paint.viewport.y + 8.0f,
+                                       paint.viewport.y + paint.viewport.h - 28.0f));
+    const auto bounds = nk_rect(x, y, width, 24.0f);
+    nk_fill_rect(paint.canvas, bounds, 3.0f, nk_rgba(12, 16, 24, 245));
+    nk_stroke_rect(paint.canvas, bounds, 3.0f, 1.0f, nk_rgb(255, 220, 112));
+    nk_draw_text(paint.canvas, bounds, marker->detail, length, font,
+                 nk_rgb(12, 16, 24), nk_rgb(255, 244, 192));
+}
+
 static void draw_compose_bgm_tooltip(const ComposePaintContext& paint,
                                      const ComposeHoveredBgm& hovered) {
     if (!hovered.detail) {
@@ -1282,6 +1414,7 @@ static void draw_compose_editor_overlays(const ComposePaintContext& paint,
     draw_compose_autoscroll_preview(paint);
     draw_compose_note_tooltip(paint);
     draw_compose_bgm_tooltip(paint, hovered);
+    draw_compose_timing_tooltip(paint);
 }
 
 static auto compose_editor_status_hint(const WormUiComposeView* view,
@@ -1483,8 +1616,8 @@ static void render_timing_lane_visibility(const ComposeInspectorContext& inspect
     const auto* timing_view = inspector.timing_view;
     auto* action = inspector.action;
     if (!nk_tree_push(context, NK_TREE_TAB, "Timing lanes", NK_MINIMIZED)) return;
-    constexpr std::array<const char*, 8> labels{"BPM", "SV", "SPD", "STP",
-                                                "DLY", "WRP", "KIA", "ANC"};
+    constexpr std::array<const char*, WORM_UI_TIMING_LANE_COUNT> labels{
+        "BPM", "SV", "SPD", "STP", "DLY", "WRP", "KIA", "ANC"};
     for (std::size_t row = 0; row < 2; ++row) {
         nk_layout_row_begin(context, NK_DYNAMIC, 24, 4);
         for (std::size_t column = 0; column < 4; ++column) {
@@ -1584,7 +1717,7 @@ static void render_compose_marker_section(const ComposeInspectorContext& inspect
 static void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
     render_initial_bpm_control(inspector);
     render_timing_lane_visibility(inspector);
-    if (inspector.timing_view->stage_active &&
+    if (!state.inline_timing_open && inspector.timing_view->stage_active &&
         nk_tree_push(inspector.context, NK_TREE_TAB, "Timing event", NK_MAXIMIZED)) {
         worm_ui_nuklear_render_timing_stage_editor(inspector.context, inspector.timing_view,
                                                    inspector.action);
@@ -2690,6 +2823,18 @@ static void process_compose_key_event(const auto& key_event, const WormUiCompose
 static void process_compose_key_events(struct nk_context* context, const WormUiComposeView* view,
                                        WormUiWorkspaceAction* action, bool window_focused,
                                        bool ime_composition_active) {
+    if (state.inline_timing_open) {
+        for (size_t index = 0; index < state.key_event_count; ++index) {
+            const auto& event = state.key_events[index];
+            if (event.down && event.keycode == static_cast<uint32_t>(SDLK_ESCAPE)) {
+                state.inline_timing_open = false;
+                action->timing_stage_action = WORM_UI_TIMING_STAGE_CANCEL;
+                break;
+            }
+        }
+        state.key_event_count = 0;
+        return;
+    }
     const bool keyboard_ready =
         window_focused && state.keyboard_focus && view->scene_available && context;
     const bool pointer_paint_mode_active = compose_pointer_paint_mode_active(view, action);
@@ -2729,6 +2874,8 @@ static void cancel_pending_compose_panel_actions(WormUiWorkspaceAction* action) 
     state.note_move_candidate_active = false;
     state.note_move_active = false;
     state.timing_stage_drag_active = false;
+    reset_timing_marker_drag_capture();
+    state.inline_timing_open = false;
 }
 
 static void reset_compose_revision_state(bool chart_changed, WormUiWorkspaceAction* action) {
@@ -2753,6 +2900,9 @@ static void reset_compose_revision_state(bool chart_changed, WormUiWorkspaceActi
     state.note_move_candidate_active = false;
     state.note_move_active = false;
     state.timing_stage_drag_active = false;
+    reset_timing_marker_drag_capture();
+    state.inline_timing_open = false;
+    state.timing_missing_initial_selected = false;
     state.area_selection_candidate_active = false;
     state.area_selection_active = false;
     state.semantic_layer_color_editor_visible = false;
@@ -2781,6 +2931,9 @@ static void clear_inactive_compose_panel(WormUiWorkspaceAction* action) {
     state.area_selection_candidate_active = false;
     state.area_selection_active = false;
     state.timing_stage_drag_active = false;
+    reset_timing_marker_drag_capture();
+    state.inline_timing_open = false;
+    state.timing_missing_initial_selected = false;
     state.semantic_layer_color_editor_visible = false;
     cancel_compose_navigation(action);
     state.last_chart_id = 0;
@@ -3338,8 +3491,7 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
     const auto& view = *input.view;
     const auto& timing_view = *input.timing_view;
     auto& action = *input.action;
-    constexpr double measure_rail_width = 42.0;
-    if (timing_view.stage_active || click_x < measure_rail_width ||
+    if (timing_view.stage_active || click_x < compose_measure_rail_width ||
         click_x >= input.note_field_left ||
         action.timing_stage_action != WORM_UI_TIMING_STAGE_NONE)
         return false;
@@ -3347,50 +3499,61 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
         std::popcount(view.timing_lane_visibility_mask));
     const auto lane_width = visible_lane_count == 0
                                 ? 0.0
-                                : (input.note_field_left - measure_rail_width) / visible_lane_count;
+                                : (input.note_field_left - compose_measure_rail_width) /
+                                      visible_lane_count;
     if (lane_width <= 0.0 || visible_lane_count == 0) return false;
     const auto visible_slot = std::min(
-        static_cast<std::size_t>((click_x - measure_rail_width) / lane_width),
+        static_cast<std::size_t>((click_x - compose_measure_rail_width) / lane_width),
         visible_lane_count - 1);
-    std::size_t lane_index = 0;
-    for (std::size_t candidate = 0, slot = 0; candidate < 8; ++candidate) {
+    std::size_t clicked_timing_lane_ordinal = 0;
+    for (std::size_t candidate = 0, slot = 0; candidate < WORM_UI_TIMING_LANE_COUNT;
+         ++candidate) {
         if ((view.timing_lane_visibility_mask & (1U << candidate)) == 0) continue;
         if (slot++ == visible_slot) {
-            lane_index = candidate;
+            clicked_timing_lane_ordinal = candidate;
             break;
         }
     }
-    uint64_t existing_object_id = 0;
-    auto nearest_distance = std::numeric_limits<double>::max();
-    const auto lane_left = measure_rail_width + lane_width * visible_slot;
-    const auto marker_inner_left = lane_left + 2.0;
-    const auto marker_inner_width = std::max(0.0, lane_width - 4.0);
-    const auto hit_tolerance = 7.0 * view.viewport_height_pixels / input.viewport.h;
-    for (size_t marker_index = 0; marker_index < view.timing_marker_count; ++marker_index) {
-        const auto& marker = view.timing_markers[marker_index];
-        if (static_cast<std::size_t>(marker.lane) != lane_index) continue;
-        const auto marker_left = marker_inner_left + marker_inner_width * marker.marker_left_fraction;
-        const auto marker_right = marker_inner_left + marker_inner_width * marker.marker_right_fraction;
-        const auto distance = std::abs(click_y - marker.marker_y_pixels);
-        if (click_x >= marker_left && click_x <= marker_right &&
-            distance <= hit_tolerance && distance <= nearest_distance) {
-            existing_object_id = marker.object_id;
-            nearest_distance = distance;
-        }
-    }
+    const auto* clicked_marker = compose_timing_marker_at(view, click_x, click_y);
+    const auto existing_object_id = clicked_marker ? clicked_marker->object_id : 0;
     action.timing_stage_action = WORM_UI_TIMING_STAGE_BEGIN;
     action.timing_chart_id = timing_view.chart_id;
     action.timing_document_revision = timing_view.document_revision;
-    action.timing_lane = static_cast<WormUiTimingLaneKind>(lane_index);
+    action.timing_lane = static_cast<WormUiTimingLaneKind>(clicked_timing_lane_ordinal);
     action.timing_object_id = existing_object_id;
     if (existing_object_id == 0) {
         action.timing_has_target_y = true;
         const auto viewport_fraction =
             std::clamp(click_y / view.viewport_height_pixels, 0.0, 1.0);
-        action.timing_target_y_fraction =
-            view.timing_document_begin_fraction +
-            viewport_fraction * (view.timing_document_end_fraction -
-                                 view.timing_document_begin_fraction);
+        action.timing_target_y_fraction = clicked_marker && clicked_marker->fixed_initial
+            ? 0.0
+            : view.timing_document_begin_fraction +
+                  viewport_fraction * (view.timing_document_end_fraction -
+                                       view.timing_document_begin_fraction);
+    }
+    if (clicked_marker && existing_object_id != 0) {
+        append_compose_input(&action, WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT, click_x,
+                             click_y, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, existing_object_id,
+                             0, false, clicked_marker->lane, view.chart_id,
+                             view.document_revision);
+    }
+    state.timing_missing_initial_selected = clicked_marker && clicked_marker->fixed_initial &&
+                                            existing_object_id == 0;
+    if (timing_view.initial_bpm_editable &&
+        clicked_timing_lane_ordinal != WORM_UI_TIMING_LANE_KIAI) {
+        state.inline_timing_open = true;
+        state.inline_timing_focus_pending = true;
+        state.inline_timing_chart_id = timing_view.chart_id;
+        state.inline_timing_revision = timing_view.document_revision;
+        state.inline_timing_object_id = existing_object_id;
+        state.inline_timing_lane = static_cast<WormUiTimingLaneKind>(clicked_timing_lane_ordinal);
+        state.inline_timing_anchor_screen_x = static_cast<float>(
+            input.viewport.x + click_x * input.viewport.w / view.viewport_width_pixels);
+        state.inline_timing_anchor_screen_y = static_cast<float>(
+            input.viewport.y + click_y * input.viewport.h / view.viewport_height_pixels);
+        state.inline_timing_text.fill('\0');
+        state.inline_timing_error.fill('\0');
     }
     return true;
 }
@@ -3410,7 +3573,10 @@ static bool process_compose_double_clicks(const ComposeDoubleClickContext& input
                              input.view->viewport_width_pixels / viewport.w;
         const auto click_y = (static_cast<double>(pointer.y) - viewport.y) *
                              input.view->viewport_height_pixels / viewport.h;
-        if (begin_timing_stage_from_rail_click(input, click_x, click_y)) continue;
+        if (begin_timing_stage_from_rail_click(input, click_x, click_y)) {
+            note_double_click_in_view = true;
+            continue;
+        }
         if (click_x < input.note_field_left || click_x >= input.note_field_right) continue;
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_NOTE_DOUBLE_CLICK, click_x,
                              (static_cast<double>(pointer.y) - viewport.y) *
@@ -3489,8 +3655,8 @@ static void start_timing_stage_drag(const ComposePointerEventContext& input) {
         input.shortcut_event_count != 0 ||
         (input.pointer_modifiers & input.any_pointer_modifier) != 0)
         return;
-    const auto lane_index = static_cast<std::size_t>(view.timing_stage_lane);
-    const auto lane_bit = static_cast<std::uint8_t>(1U << lane_index);
+    const auto staged_timing_lane_ordinal = static_cast<std::size_t>(view.timing_stage_lane);
+    const auto lane_bit = static_cast<std::uint8_t>(1U << staged_timing_lane_ordinal);
     const auto visible_lane_count =
         static_cast<std::size_t>(std::popcount(view.timing_lane_visibility_mask));
     if ((view.timing_lane_visibility_mask & lane_bit) == 0 || visible_lane_count == 0) return;
@@ -3991,6 +4157,86 @@ static auto handle_compose_alt_pointer(const ComposePointerEventContext& input,
     return true;
 }
 
+static auto timing_marker_capture_matches(const ComposePointerEventContext& input) -> bool {
+    return input.window_focused && input.view->scene_available &&
+           input.view->chart_id == state.timing_marker_chart_id &&
+           input.view->document_revision == state.timing_marker_revision &&
+           !input.view->waveform_timing_locked && !state.action_overflowed;
+}
+
+static auto update_compose_timing_marker_drag(const ComposePointerEventContext& input) -> bool {
+    if (!state.timing_marker_candidate_active) return false;
+    if (!timing_marker_capture_matches(input) || (!input.left_down && !input.left_released)) {
+        reset_timing_marker_drag_capture();
+        return true;
+    }
+    state.timing_marker_current_y_pixels = input.pointer_y;
+    if (input.left_released) {
+        if (state.timing_marker_drag_active) {
+            append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE,
+                                 input.pointer_x, input.pointer_y, 0, false,
+                                 WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                 state.timing_marker_object_id, 0, false,
+                                 state.timing_marker_lane, state.timing_marker_chart_id,
+                                 state.timing_marker_revision,
+                                 state.timing_marker_chart_row);
+        }
+        reset_timing_marker_drag_capture();
+        return true;
+    }
+    if (!state.timing_marker_drag_active &&
+        std::abs(input.context->input.mouse.pos.y - state.timing_marker_anchor_screen_y) >= 4.0f)
+        state.timing_marker_drag_active = true;
+    return true;
+}
+
+static auto begin_compose_timing_marker_drag(const ComposePointerEventContext& input,
+                                             bool paint_pointer_consumed) -> bool {
+    if (paint_pointer_consumed || !input.view->scene_available || !input.window_focused ||
+        !input.pointer_started_in_view || !input.left_down ||
+        input.pointer_started_x < compose_measure_rail_width ||
+        input.pointer_started_x >= input.note_field_left ||
+        input.compose_note_double_click_in_view || state.action_overflowed)
+        return false;
+    const auto* marker = compose_timing_marker_at(*input.view, input.pointer_started_x,
+                                                   input.pointer_started_y);
+    if (!marker) return false;
+    const auto has_modifier = (input.pointer_modifiers & input.any_pointer_modifier) != 0;
+    if (marker->object_id == 0) {
+        state.timing_missing_initial_selected = true;
+    } else {
+        state.timing_missing_initial_selected = false;
+        if (!marker->selected || has_modifier) {
+            append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT,
+                                 input.pointer_started_x, input.pointer_started_y, 0, false,
+                                 compose_selection_mode(input.pointer_modifiers),
+                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                 marker->object_id, 0, false, marker->lane,
+                                 input.view->chart_id, input.view->document_revision);
+        }
+    }
+    if (marker->fixed_initial || marker->object_id == 0 ||
+        input.view->waveform_timing_locked || has_modifier) return true;
+    state.timing_marker_candidate_active = true;
+    state.timing_marker_drag_active = false;
+    state.timing_marker_object_id = marker->object_id;
+    state.timing_marker_chart_row = marker->chart_row;
+    state.timing_marker_lane = marker->lane;
+    state.timing_marker_anchor_y_pixels = input.pointer_started_y;
+    state.timing_marker_current_y_pixels = input.pointer_started_y;
+    state.timing_marker_anchor_screen_y = input.context->input.mouse.pos.y;
+    state.timing_marker_chart_id = input.view->chart_id;
+    state.timing_marker_revision = input.view->document_revision;
+    return true;
+}
+
+static auto process_compose_timing_marker_pointer(const ComposePointerEventContext& input,
+                                                  bool paint_pointer_consumed) -> bool {
+    if (update_compose_timing_marker_drag(input)) return true;
+    return begin_compose_timing_marker_drag(input, paint_pointer_consumed);
+}
+
 static auto handle_compose_note_field_pointer_start(const ComposePointerEventContext& input,
                                                     bool paint_pointer_consumed) -> bool {
     const auto& view = *input.view;
@@ -4095,6 +4341,69 @@ struct ComposePanelRenderContext {
     std::size_t double_click_count;
     std::size_t shortcut_event_count;
 };
+
+static void render_compose_inline_timing_editor(const ComposePanelRenderContext& panel,
+                                                struct nk_rect viewport) {
+    if (!state.inline_timing_open) return;
+    const auto& timing = *panel.timing_view;
+    if (!timing.stage_active) return;
+    if (timing.chart_id != state.inline_timing_chart_id ||
+        timing.document_revision != state.inline_timing_revision ||
+        timing.stage_existing_object_id != state.inline_timing_object_id ||
+        timing.stage_lane != state.inline_timing_lane) {
+        state.inline_timing_open = false;
+        state.inline_timing_focus_pending = false;
+        return;
+    }
+    if (state.inline_timing_focus_pending)
+        worm_ui_nuklear_inline_timing_initial_text(
+            timing, state.inline_timing_text.data(), state.inline_timing_text.size());
+
+    constexpr float popup_width = 196.0f;
+    constexpr float popup_height = 75.0f;
+    const auto popup_x = std::clamp(state.inline_timing_anchor_screen_x,
+                                    viewport.x, viewport.x + std::max(0.0f, viewport.w - popup_width));
+    const auto popup_y = std::clamp(state.inline_timing_anchor_screen_y - 24.0f,
+                                    viewport.y,
+                                    viewport.y + std::max(0.0f, viewport.h - popup_height));
+    const auto parent_clip = nk_window_get_content_region(panel.context);
+    const auto popup_rect = nk_rect(popup_x - parent_clip.x, popup_y - parent_clip.y,
+                                    popup_width, popup_height);
+    if (!nk_popup_begin(panel.context, NK_POPUP_STATIC, "Compose timing value",
+                        NK_WINDOW_NO_SCROLLBAR, popup_rect)) {
+        state.inline_timing_open = false;
+        state.inline_timing_focus_pending = false;
+        panel.action->timing_stage_action = WORM_UI_TIMING_STAGE_CANCEL;
+        return;
+    }
+    nk_layout_row_dynamic(panel.context, 25.0f, 1);
+    const auto edit_flags = nk_edit_string_zero_terminated(
+        panel.context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER |
+                           NK_EDIT_AUTO_SELECT,
+        state.inline_timing_text.data(), static_cast<int>(state.inline_timing_text.size()),
+        nk_filter_default);
+    if (state.inline_timing_focus_pending) {
+        nk_edit_focus(panel.context, NK_EDIT_ALWAYS_INSERT_MODE);
+        state.inline_timing_focus_pending = false;
+    }
+    if ((edit_flags & NK_EDIT_COMMITTED) != 0) {
+        if (worm_ui_nuklear_inline_timing_confirm(timing, state.inline_timing_text.data(),
+                                                   *panel.action)) {
+            state.inline_timing_open = false;
+            state.inline_timing_focus_pending = false;
+            nk_popup_close(panel.context);
+        } else {
+            std::snprintf(state.inline_timing_error.data(), state.inline_timing_error.size(),
+                          "Enter a valid timing value");
+            nk_edit_focus(panel.context, NK_EDIT_ALWAYS_INSERT_MODE);
+        }
+    }
+    nk_layout_row_dynamic(panel.context, 17.0f, 1);
+    nk_label(panel.context, state.inline_timing_error[0] ? state.inline_timing_error.data()
+                                                    : "Enter to apply · Esc to cancel",
+             NK_TEXT_LEFT);
+    nk_popup_end(panel.context);
+}
 
 static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
                                         bool inspector_drawn, float inspector_width) {
@@ -4207,12 +4516,15 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         pointer_inside, pointer_clicked, pointer_in_note_field,
         pointer_started_in_view, pointer_started_in_note_field,
         left_down, left_released, alt_down, false, false};
-    update_timing_stage_drag(pointer_event);
+    if (!state.inline_timing_open && !state.timing_marker_candidate_active)
+        update_timing_stage_drag(pointer_event);
     const auto compose_pointer_captured =
-        state.note_paint_pointer_active || state.bmson_razor_pointer_active ||
+        state.inline_timing_open || state.note_paint_pointer_active ||
+        state.bmson_razor_pointer_active ||
         state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
         state.pointer_hold_active || state.lane_hold_active || state.note_move_active ||
         state.area_selection_active || state.timing_stage_drag_active ||
+        state.timing_marker_candidate_active || state.timing_marker_drag_active ||
         state.waveform_beat_zero_drag_active || beat_fit_pointer_consumed;
     action->compose_has_pointer_hover = !state.action_overflowed && window_focused &&
                                         view->scene_available && pointer_in_note_field &&
@@ -4228,10 +4540,14 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     pointer_event.compose_pointer_captured = compose_pointer_captured;
     pointer_event.compose_note_double_click_in_view = compose_note_double_click_in_view;
     bool paint_pointer_consumed =
-        state.note_paint_pointer_active || beat_fit_pointer_consumed ||
+        state.inline_timing_open || state.note_paint_pointer_active ||
+        beat_fit_pointer_consumed ||
         state.bmson_razor_pointer_active || state.bmson_marker_move_candidate_active ||
         state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
         compose_action_has_cancel(action);
+    paint_pointer_consumed = process_compose_timing_marker_pointer(pointer_event,
+                                                                    paint_pointer_consumed) ||
+                             paint_pointer_consumed;
     paint_pointer_consumed = begin_compose_resource_pointer(pointer_event, paint_pointer_consumed) ||
                              paint_pointer_consumed;
     paint_pointer_consumed = process_bmson_razor_pointer(pointer_event, paint_pointer_consumed);
@@ -4243,6 +4559,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     process_compose_drag_gestures(pointer_event, paint_pointer_consumed);
 
     draw_compose_scene_canvas(context, view, canvas, viewport);
+    render_compose_inline_timing_editor(panel, viewport);
 }
 
 void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const WormUiComposeView* view,

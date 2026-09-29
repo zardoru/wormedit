@@ -557,6 +557,7 @@ typedef enum WormUiTimingLaneKind {
     WORM_UI_TIMING_LANE_WARP,
     WORM_UI_TIMING_LANE_KIAI,
     WORM_UI_TIMING_LANE_ANCHOR,
+    WORM_UI_TIMING_LANE_COUNT,
 } WormUiTimingLaneKind;
 
 typedef struct WormUiTimingMarkerView {
@@ -568,6 +569,10 @@ typedef struct WormUiTimingMarkerView {
     double marker_right_fraction;
     uint64_t chart_row;
     WormUiTimingLaneKind lane;
+    const char* short_label;
+    const char* detail;
+    bool fixed_initial;
+    bool selected;
 } WormUiTimingMarkerView;
 
 typedef enum WormUiComposeResourceRole {
@@ -1285,6 +1290,8 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE,
     WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE,
     WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL,
+    WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT,
+    WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE,
 } WormUiComposeInputKind;
 
 typedef enum WormUiComposeNavigationAction {
@@ -1298,6 +1305,10 @@ typedef struct WormUiComposeInputAction {
     WormUiComposeInputKind kind;
     uint64_t lane_id;
     uint64_t object_id;
+    uint64_t timing_chart_id;
+    uint64_t timing_document_revision;
+    WormUiTimingLaneKind timing_lane;
+    uint64_t timing_anchor_chart_row;
     uint8_t resource_role;
     bool successive;
     bool razor_stroke_start;

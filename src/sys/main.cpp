@@ -303,6 +303,8 @@ auto timing_lane_kind_from_ui(WormUiTimingLaneKind lane)
         return kind_t::kiai;
     case WORM_UI_TIMING_LANE_ANCHOR:
         return kind_t::anchor;
+    case WORM_UI_TIMING_LANE_COUNT:
+        break;
     }
     return std::nullopt;
 }

@@ -12,12 +12,14 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <iterator>
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
@@ -1007,33 +1009,141 @@ bool populate_compose_bookmark_and_section_storage(
            populate_compose_section_storage(flattened, chart, measures, view);
 }
 
+auto compose_timing_short_number(wormedit::signed_rational_t value) -> std::string {
+    if (value.denominator == 0) return "?";
+    std::array<char, 96> buffer{};
+    const auto number = static_cast<double>(value.numerator) /
+                        static_cast<double>(value.denominator);
+    const auto formatted = std::to_chars(buffer.data(), buffer.data() + buffer.size(), number,
+                                         std::chars_format::fixed, 2);
+    if (formatted.ec != std::errc{}) return "?";
+    std::string result(buffer.data(), formatted.ptr);
+    if (result.find('.') != std::string::npos) {
+        while (result.back() == '0') result.pop_back();
+        if (result.back() == '.') result.pop_back();
+    }
+    return result == "-0" ? "0" : result;
+}
+
+auto compose_timing_exact_number(wormedit::signed_rational_t value) -> std::string {
+    if (value.denominator == 0) return "invalid fraction";
+    std::string fraction = std::to_string(value.numerator);
+    if (value.denominator != 1) {
+        fraction += "/" + std::to_string(value.denominator);
+    }
+    return fraction;
+}
+
+auto compose_timing_decimal_detail(wormedit::signed_rational_t value) -> std::string {
+    if (value.denominator == 0) return "?";
+    const auto exact = compose_timing_exact_number(value);
+    if (value.denominator == 1) return exact;
+    std::array<char, 96> buffer{};
+    const auto number = static_cast<double>(value.numerator) /
+                        static_cast<double>(value.denominator);
+    const auto formatted = std::to_chars(buffer.data(), buffer.data() + buffer.size(), number,
+                                         std::chars_format::general,
+                                         std::numeric_limits<double>::max_digits10);
+    if (formatted.ec != std::errc{}) return exact;
+    const std::string decimal(buffer.data(), formatted.ptr);
+    return decimal + " (exact " + exact + ")";
+}
+
+auto compose_pause_unit_label(wormedit::pause_unit_t unit) -> std::string_view {
+    switch (unit) {
+    case wormedit::pause_unit_t::seconds: return "s";
+    case wormedit::pause_unit_t::milliseconds: return "ms";
+    case wormedit::pause_unit_t::bms_stop_ticks: return "ticks";
+    case wormedit::pause_unit_t::beats: return "beats";
+    }
+    return "";
+}
+
+auto compose_initial_bpm(const wormedit::chart_document_t& chart,
+                         const wormedit::measure_index_t& measures)
+    -> const wormedit::bpm_event_t* {
+    const wormedit::bpm_event_t* initial = nullptr;
+    for (const auto& bpm : chart.bpms) {
+        if (wormedit::absolute_row(measures, bpm.position) == 0 &&
+            bpm.beats_per_minute.numerator > 0 && bpm.beats_per_minute.denominator != 0 &&
+            (!initial || bpm.provenance.source_order >= initial->provenance.source_order)) {
+            initial = &bpm;
+        }
+    }
+    return initial;
+}
+
+template <typename AppendMarker>
+void append_compose_initial_bpm(const wormedit::chart_document_t& chart,
+                                const wormedit::bpm_event_t* initial,
+                                AppendMarker&& append) {
+    if (initial) {
+        const auto index = static_cast<std::size_t>(initial - chart.bpms.data());
+        append(initial->position, initial->id.value, initial->provenance.source_order, index,
+               WORM_UI_TIMING_LANE_BPM,
+               compose_timing_short_number(initial->beats_per_minute),
+               "BPM " + compose_timing_decimal_detail(initial->beats_per_minute), true);
+    } else if (!chart.measures.empty()) {
+        append(wormedit::local_position_t{chart.measures.front().id, 0}, 0, 0, 0,
+               WORM_UI_TIMING_LANE_BPM, "?", "Initial BPM missing", true);
+    }
+}
+
 template <typename AppendMarker>
 void append_compose_chart_timing_markers(const wormedit::chart_document_t& chart,
+                                         const wormedit::measure_index_t& measures,
                                          AppendMarker&& append) {
-    for (std::size_t index = 0; index < chart.bpms.size(); ++index)
+    const auto* initial_bpm = compose_initial_bpm(chart, measures);
+    append_compose_initial_bpm(chart, initial_bpm, append);
+    for (std::size_t index = 0; index < chart.bpms.size(); ++index) {
+        if (&chart.bpms[index] == initial_bpm) continue;
         append(chart.bpms[index].position, chart.bpms[index].id.value,
-               chart.bpms[index].provenance.source_order, index, WORM_UI_TIMING_LANE_BPM);
+               chart.bpms[index].provenance.source_order, index, WORM_UI_TIMING_LANE_BPM,
+               compose_timing_short_number(chart.bpms[index].beats_per_minute),
+               "BPM " + compose_timing_decimal_detail(chart.bpms[index].beats_per_minute),
+               false);
+    }
     for (std::size_t index = 0; index < chart.scrolls.size(); ++index)
         append(chart.scrolls[index].position, chart.scrolls[index].id.value,
-               chart.scrolls[index].provenance.source_order, index, WORM_UI_TIMING_LANE_SCROLL);
+               chart.scrolls[index].provenance.source_order, index, WORM_UI_TIMING_LANE_SCROLL,
+               compose_timing_short_number(chart.scrolls[index].multiplier),
+               "Scroll " + compose_timing_decimal_detail(chart.scrolls[index].multiplier), false);
     for (std::size_t index = 0; index < chart.speeds.size(); ++index)
         append(chart.speeds[index].position, chart.speeds[index].id.value,
-               chart.speeds[index].provenance.source_order, index, WORM_UI_TIMING_LANE_SPEED);
+               chart.speeds[index].provenance.source_order, index, WORM_UI_TIMING_LANE_SPEED,
+               compose_timing_short_number(chart.speeds[index].multiplier),
+               "Speed " + compose_timing_decimal_detail(chart.speeds[index].multiplier), false);
     for (std::size_t index = 0; index < chart.pauses.size(); ++index)
         append(chart.pauses[index].position, chart.pauses[index].id.value,
                chart.pauses[index].provenance.source_order, index,
                chart.pauses[index].kind == wormedit::pause_kind_t::stop
                    ? WORM_UI_TIMING_LANE_STOP
-                   : WORM_UI_TIMING_LANE_DELAY);
-    for (std::size_t index = 0; index < chart.warps.size(); ++index)
+                   : WORM_UI_TIMING_LANE_DELAY,
+               compose_timing_short_number(chart.pauses[index].duration),
+               std::string(chart.pauses[index].kind == wormedit::pause_kind_t::stop ? "Stop "
+                                                                                   : "Delay ") +
+                   compose_timing_decimal_detail(chart.pauses[index].duration) + " " +
+                   std::string(compose_pause_unit_label(chart.pauses[index].source_unit)), false);
+    for (std::size_t index = 0; index < chart.warps.size(); ++index) {
+        const auto begin = wormedit::absolute_row(measures, chart.warps[index].span.begin);
+        const auto end = wormedit::absolute_row(measures, chart.warps[index].span.end);
+        const auto rows = begin && end && *end >= *begin ? *end - *begin : 0;
         append(chart.warps[index].span.begin, chart.warps[index].id.value,
-               chart.warps[index].provenance.source_order, index, WORM_UI_TIMING_LANE_WARP);
+               chart.warps[index].provenance.source_order, index, WORM_UI_TIMING_LANE_WARP,
+               std::to_string(rows), "Warp " + std::to_string(rows) + " rows", false);
+    }
     for (std::size_t index = 0; index < chart.kiai.size(); ++index)
         append(chart.kiai[index].position, chart.kiai[index].id.value,
-               chart.kiai[index].provenance.source_order, index, WORM_UI_TIMING_LANE_KIAI);
+               chart.kiai[index].provenance.source_order, index, WORM_UI_TIMING_LANE_KIAI,
+               chart.kiai[index].enabled ? "On" : "Off",
+               chart.kiai[index].enabled ? "Kiai on" : "Kiai off", false);
     for (std::size_t index = 0; index < chart.timing_anchors.size(); ++index)
         append(chart.timing_anchors[index].position, chart.timing_anchors[index].id.value,
-               index, index, WORM_UI_TIMING_LANE_ANCHOR);
+               index, index, WORM_UI_TIMING_LANE_ANCHOR,
+               std::to_string(chart.timing_anchors[index].source_sample_frame),
+               "Anchor at sample frame " +
+                   std::to_string(chart.timing_anchors[index].source_sample_frame) +
+                   (chart.timing_anchors[index].locked ? " (locked)" : ""), false);
 }
 
 void assign_compose_timing_marker_fractions(flattened_workspace_t& flattened) {
@@ -1061,6 +1171,32 @@ void assign_compose_timing_marker_fractions(flattened_workspace_t& flattened) {
         }
         first = after;
     }
+}
+
+auto compose_marker_selection_kind(WormUiTimingLaneKind lane)
+    -> wormedit::editor_selection_object_kind_t {
+    using kind_t = wormedit::editor_selection_object_kind_t;
+    switch (lane) {
+    case WORM_UI_TIMING_LANE_BPM: return kind_t::bpm_event;
+    case WORM_UI_TIMING_LANE_SCROLL: return kind_t::scroll_event;
+    case WORM_UI_TIMING_LANE_SPEED: return kind_t::speed_event;
+    case WORM_UI_TIMING_LANE_STOP: return kind_t::stop_event;
+    case WORM_UI_TIMING_LANE_DELAY: return kind_t::delay_event;
+    case WORM_UI_TIMING_LANE_WARP: return kind_t::warp_event;
+    case WORM_UI_TIMING_LANE_KIAI: return kind_t::kiai_event;
+    case WORM_UI_TIMING_LANE_ANCHOR: return kind_t::timing_anchor;
+    case WORM_UI_TIMING_LANE_COUNT: break;
+    }
+    return kind_t::bpm_event;
+}
+
+auto compose_timing_marker_selected(const wormedit::editor_interaction_view_model_t& interaction,
+                                    WormUiTimingLaneKind lane, std::uint64_t id) -> bool {
+    if (id == 0) return false;
+    const auto kind = compose_marker_selection_kind(lane);
+    return std::ranges::any_of(interaction.selected_objects, [kind, id](const auto& object) {
+        return object.kind == kind && object.id.value == id;
+    });
 }
 
 struct compose_marker_projection_context_t {
@@ -1212,6 +1348,12 @@ void populate_compose_timing_markers(
     std::uint64_t canvas_rows,
     const wormedit::timing_lane_pseudonote_preview_t* timing_stage) {
     flattened.compose.timing_marker.clear();
+    flattened.compose.timing_marker_labels.clear();
+    const auto marker_total = chart.bpms.size() + chart.scrolls.size() + chart.speeds.size() +
+                              chart.pauses.size() + chart.warps.size() + chart.kiai.size() +
+                              chart.timing_anchors.size() + 1;
+    flattened.compose.timing_marker_labels.reserve(
+        std::min<std::size_t>(marker_total, WORM_UI_TIMING_MARKER_CAPACITY));
     if (canvas_rows != 0 && pixels_per_row > 0.0) {
         const auto total_rows = static_cast<double>(canvas_rows);
         view.timing_document_begin_fraction = std::clamp(
@@ -1223,7 +1365,8 @@ void populate_compose_timing_markers(
     }
     const auto append_timing_marker = [&](wormedit::local_position_t position, std::uint64_t id,
                                           std::size_t source_order, std::size_t storage_order,
-                                          WormUiTimingLaneKind lane) {
+                                          WormUiTimingLaneKind lane, std::string short_label,
+                                          std::string detail, bool fixed_initial) {
         if (flattened.compose.timing_marker.size() >= WORM_UI_TIMING_MARKER_CAPACITY) {
             view.truncated = true;
             return;
@@ -1238,6 +1381,8 @@ void populate_compose_timing_markers(
         if (!std::isfinite(y) || y < 0.0 || y > view.viewport_height_pixels) {
             return;
         }
+        auto& labels = flattened.compose.timing_marker_labels.emplace_back(
+            std::move(short_label), std::move(detail));
         flattened.compose.timing_marker.push_back({
             .object_id = id,
             .source_order = static_cast<std::uint64_t>(source_order),
@@ -1247,9 +1392,13 @@ void populate_compose_timing_markers(
             .marker_right_fraction = 1.0,
             .chart_row = *row,
             .lane = lane,
+            .short_label = labels.first.c_str(),
+            .detail = labels.second.c_str(),
+            .fixed_initial = fixed_initial,
+            .selected = compose_timing_marker_selected(interaction_view, lane, id),
         });
     };
-    append_compose_chart_timing_markers(chart, append_timing_marker);
+    append_compose_chart_timing_markers(chart, cache.index->measures, append_timing_marker);
     assign_compose_timing_marker_fractions(flattened);
     view.timing_markers = flattened.compose.timing_marker.data();
     view.timing_marker_count = flattened.compose.timing_marker.size();

@@ -7,11 +7,13 @@
 #include <wormedit/core/timing_anchor_editor.h>
 
 #include <algorithm>
+#include <limits>
 #include <ranges>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace wormedit {
 namespace {
@@ -29,6 +31,23 @@ auto reject(timing_lane_pseudonote_preview_t& preview, diagnostic_code_t code, s
 auto chart_for(const song_document_t& song, chart_id_t id) -> const chart_document_t* {
     const auto found = std::ranges::find(song.charts, id, &chart_document_t::id);
     return found == song.charts.end() ? nullptr : &*found;
+}
+
+auto is_fixed_initial_bpm(const chart_document_t& chart, object_id_t event) -> bool {
+    if (chart.measures.empty()) {
+        return false;
+    }
+    const auto first_measure = chart.measures.front().id;
+    const bpm_event_t* initial = nullptr;
+    for (const auto& bpm : chart.bpms) {
+        if (bpm.position.measure == first_measure && bpm.position.row == 0 &&
+            bpm.beats_per_minute.numerator > 0 && bpm.beats_per_minute.denominator != 0 &&
+            (initial == nullptr ||
+             bpm.provenance.source_order >= initial->provenance.source_order)) {
+            initial = &bpm;
+        }
+    }
+    return initial != nullptr && initial->id == event;
 }
 
 auto chart_object_id_count(const chart_document_t& chart, object_id_t sought) -> std::size_t {
@@ -195,6 +214,144 @@ auto same_row_is_occupied(const chart_document_t& chart, timing_lane_kind_t kind
         return std::ranges::any_of(chart.timing_anchors, [position](const auto& item) {
             return item.position == position;
         });
+    }
+    return true;
+}
+
+auto selected_event(std::span<const timing_lane_event_ref_t> events, timing_lane_kind_t kind,
+                    object_id_t event) -> bool {
+    return std::ranges::any_of(events, [kind, event](const auto& selected) {
+        return selected.kind == kind && selected.event == event;
+    });
+}
+
+auto target_occupied_by_unselected(const chart_document_t& chart, timing_lane_kind_t kind,
+                                   local_position_t position,
+                                   std::span<const timing_lane_event_ref_t> events) -> bool {
+    const auto occupied = [&](const auto& values) {
+        return std::ranges::any_of(values, [&](const auto& item) {
+            return item.position == position && !selected_event(events, kind, item.id);
+        });
+    };
+    switch (kind) {
+    case timing_lane_kind_t::bpm:
+        return occupied(chart.bpms);
+    case timing_lane_kind_t::scroll:
+        return occupied(chart.scrolls);
+    case timing_lane_kind_t::speed:
+        return occupied(chart.speeds);
+    case timing_lane_kind_t::stop:
+    case timing_lane_kind_t::delay:
+        return std::ranges::any_of(chart.pauses, [&](const auto& pause) {
+            const auto matches_kind = (kind == timing_lane_kind_t::stop) ==
+                                      (pause.kind == pause_kind_t::stop);
+            return matches_kind && pause.position == position &&
+                   !selected_event(events, kind, pause.id);
+        });
+    case timing_lane_kind_t::warp:
+        return std::ranges::any_of(chart.warps, [&](const auto& warp) {
+            return warp.span.begin == position && !selected_event(events, kind, warp.id);
+        });
+    case timing_lane_kind_t::kiai:
+        return occupied(chart.kiai);
+    case timing_lane_kind_t::anchor:
+        return occupied(chart.timing_anchors);
+    }
+    return true;
+}
+
+auto shifted_row(std::uint64_t row, std::int64_t delta, std::uint64_t total)
+    -> std::optional<std::uint64_t> {
+    if (delta >= 0) {
+        const auto increase = static_cast<std::uint64_t>(delta);
+        if (row >= total || increase >= total - row) {
+            return std::nullopt;
+        }
+        return row + increase;
+    }
+    const auto decrease = static_cast<std::uint64_t>(-(delta + 1)) + 1;
+    if (decrease > row) {
+        return std::nullopt;
+    }
+    return row - decrease;
+}
+
+auto local_position_at(const measure_index_t& index, std::uint64_t row)
+    -> std::optional<local_position_t> {
+    const auto found = std::ranges::find_if(index.entries, [row](const auto& entry) {
+        return row >= entry.absolute_begin_row && row - entry.absolute_begin_row < entry.row_capacity;
+    });
+    if (found == index.entries.end()) {
+        return std::nullopt;
+    }
+    return local_position_t{found->id, row - found->absolute_begin_row};
+}
+
+auto shifted_position(const measure_index_t& index, local_position_t position,
+                      std::int64_t row_delta) -> std::optional<local_position_t> {
+    const auto source = absolute_row(index, position);
+    const auto target_row = source ? shifted_row(*source, row_delta, index.total_rows)
+                                   : std::nullopt;
+    return target_row ? local_position_at(index, *target_row) : std::nullopt;
+}
+
+auto shifted_warp_end(const chart_document_t& chart, const measure_index_t& index,
+                      object_id_t event, std::int64_t row_delta)
+    -> std::optional<local_position_t> {
+    const auto warp = std::ranges::find(chart.warps, event, &warp_event_t::id);
+    return warp == chart.warps.end() ? std::nullopt
+                                     : shifted_position(index, warp->span.end, row_delta);
+}
+
+struct prepared_timing_move_t {
+    timing_lane_event_ref_t event;
+    std::uint64_t source_row{};
+    local_position_t target;
+    std::optional<local_position_t> warp_end;
+};
+
+auto prepare_timing_group_moves(const document_history_t& history, const chart_document_t& chart,
+                                const measure_index_t& index,
+                                std::span<const timing_lane_event_ref_t> events,
+                                std::int64_t row_delta, std::vector<prepared_timing_move_t>& moves,
+                                document_command_result_t& result) -> bool {
+    for (const auto& event : events) {
+        if (std::ranges::any_of(moves, [&](const auto& prepared) {
+                return prepared.event.event == event.event;
+            })) {
+            result.diagnostics = {error(diagnostic_code_t::duplicate_id,
+                                        "timing group contains the same event more than once")};
+            return false;
+        }
+        auto preview = begin_existing_timing_lane_pseudonote(history, chart.id, event.kind,
+                                                               event.event, false);
+        if (preview.status != timing_lane_pseudonote_status_t::editing) {
+            result.diagnostics = std::move(preview.diagnostics);
+            return false;
+        }
+        if (event.kind == timing_lane_kind_t::bpm && is_fixed_initial_bpm(chart, event.event)) {
+            result.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+                                        "the initial BPM cannot move with a timing group")};
+            return false;
+        }
+        const auto source = absolute_row(index, preview.position);
+        const auto target = shifted_position(index, preview.position, row_delta);
+        const auto warp_end = event.kind == timing_lane_kind_t::warp
+                                  ? shifted_warp_end(chart, index, event.event, row_delta)
+                                  : std::nullopt;
+        if (!source || !target ||
+            (event.kind == timing_lane_kind_t::warp && !warp_end)) {
+            result.diagnostics = {error(diagnostic_code_t::row_out_of_range,
+                                        "timing group move leaves the chart measure geometry")};
+            return false;
+        }
+        if (row_delta != 0 &&
+            target_occupied_by_unselected(chart, event.kind, *target, events)) {
+            result.diagnostics = {error(diagnostic_code_t::collision,
+                                        "timing group destination contains another event")};
+            return false;
+        }
+        moves.push_back({event, *source, *target, warp_end});
     }
     return true;
 }
@@ -619,12 +776,85 @@ auto move_existing_timing_lane_pseudonote(const document_history_t& history,
         preview.status = timing_lane_pseudonote_status_t::cancelled;
         return false;
     }
+    if (preview.kind == timing_lane_kind_t::bpm &&
+        is_fixed_initial_bpm(*chart, *preview.existing_event) &&
+        exact_snapped_position != preview.position) {
+        reject(preview, diagnostic_code_t::unsupported_feature,
+               "the initial BPM is fixed at chart row zero");
+        return false;
+    }
     preview.position = exact_snapped_position;
     preview.diagnostics.clear();
     preview.valid =
         validate_position(*chart, preview.position, preview.diagnostics, "timing event") &&
         validate_value(*chart, preview);
     return preview.valid;
+}
+
+auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_id,
+                                  std::span<const timing_lane_event_ref_t> events,
+                                  std::int64_t row_delta, std::uint64_t expected_revision,
+                                  bool timing_locked) -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision};
+    constexpr std::size_t maximum_group_events = 4096;
+    if (timing_locked) {
+        result.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+                                    "timing is locked; timing group moves are unavailable")};
+        return result;
+    }
+    if (expected_revision != history.document.revision) {
+        result.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                    "timing group move uses a stale document revision")};
+        return result;
+    }
+    if (events.empty() || events.size() > maximum_group_events) {
+        result.diagnostics = {error(diagnostic_code_t::invalid_resolution,
+                                    "timing group must contain 1 to 4096 events")};
+        return result;
+    }
+    const auto* chart = chart_for(history.document, chart_id);
+    if (chart == nullptr) {
+        result.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                    "timing group move refers to an unknown chart")};
+        return result;
+    }
+    const auto indexed = build_measure_index(*chart);
+    if (!std::holds_alternative<measure_index_t>(indexed)) {
+        result.diagnostics = std::get<diagnostic_list_t>(indexed);
+        return result;
+    }
+    std::vector<prepared_timing_move_t> moves;
+    moves.reserve(events.size());
+    if (!prepare_timing_group_moves(history, *chart, std::get<measure_index_t>(indexed), events,
+                                    row_delta, moves, result)) {
+        return result;
+    }
+    if (row_delta == 0) {
+        return result;
+    }
+    std::ranges::stable_sort(moves, [row_delta](const auto& left, const auto& right) {
+        return row_delta > 0 ? left.source_row > right.source_row
+                             : left.source_row < right.source_row;
+    });
+    auto staged = make_document_history(history.document);
+    for (const auto& move : moves) {
+        auto preview = begin_existing_timing_lane_pseudonote(
+            staged, chart_id, move.event.kind, move.event.event, false);
+        if (move.warp_end && preview.status == timing_lane_pseudonote_status_t::editing) {
+            std::get<timing_warp_value_t>(preview.value).end = *move.warp_end;
+        }
+        if (preview.status != timing_lane_pseudonote_status_t::editing ||
+            !move_existing_timing_lane_pseudonote(staged, preview, move.target, false)) {
+            result.diagnostics = std::move(preview.diagnostics);
+            return result;
+        }
+        auto applied = confirm_timing_lane_pseudonote(staged, preview, false);
+        if (!applied) {
+            result.diagnostics = std::move(applied.diagnostics);
+            return result;
+        }
+    }
+    return commit_document_command(history, std::move(staged.document), "Move timing markers");
 }
 
 auto confirm_timing_lane_pseudonote(document_history_t& history,
@@ -651,6 +881,15 @@ auto confirm_timing_lane_pseudonote(document_history_t& history,
         reject(preview, diagnostic_code_t::invalid_id,
                "existing timing event no longer matches the staged target");
         preview.status = timing_lane_pseudonote_status_t::cancelled;
+        result.diagnostics = preview.diagnostics;
+        return result;
+    }
+    if (preview.kind == timing_lane_kind_t::bpm && preview.existing_event &&
+        is_fixed_initial_bpm(*chart, *preview.existing_event) &&
+        preview.position != local_position_t{chart->measures.front().id, 0}) {
+        reject(preview, diagnostic_code_t::unsupported_feature,
+               "the initial BPM is fixed at chart row zero");
+        preview.status = timing_lane_pseudonote_status_t::rejected;
         result.diagnostics = preview.diagnostics;
         return result;
     }
@@ -705,6 +944,12 @@ auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t c
     const auto preview = begin_existing_timing_lane_pseudonote(history, chart, kind, event, false);
     if (preview.status != timing_lane_pseudonote_status_t::editing) {
         result.diagnostics = preview.diagnostics;
+        return result;
+    }
+    if (kind == timing_lane_kind_t::bpm &&
+        is_fixed_initial_bpm(*chart_for(history.document, chart), event)) {
+        result.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+                                    "the initial BPM cannot be deleted")};
         return result;
     }
     switch (kind) {

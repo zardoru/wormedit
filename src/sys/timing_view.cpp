@@ -614,8 +614,14 @@ void populate_timing_markers(flattened_workspace_t& flattened,
                 .source_order = source_order,
                 .storage_order = storage_order,
                 .marker_y_pixels = row_to_pixels(static_cast<long double>(*row)),
+                .marker_left_fraction = 0.0,
+                .marker_right_fraction = 1.0,
                 .chart_row = *row,
                 .lane = lane,
+                .short_label = nullptr,
+                .detail = nullptr,
+                .fixed_initial = false,
+                .selected = false,
             });
         };
         for (std::size_t index = 0; index < chart.bpms.size(); ++index)

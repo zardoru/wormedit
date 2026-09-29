@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <variant>
 
 namespace wormedit {
@@ -21,6 +22,11 @@ enum class timing_lane_kind_t {
     warp,
     kiai,
     anchor,
+};
+
+struct timing_lane_event_ref_t {
+    timing_lane_kind_t kind{timing_lane_kind_t::bpm};
+    object_id_t event;
 };
 
 enum class timing_lane_initial_value_source_t {
@@ -127,6 +133,14 @@ begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart
 [[nodiscard]] auto move_existing_timing_lane_pseudonote(
     const document_history_t& history, timing_lane_pseudonote_preview_t& preview,
     local_position_t exact_snapped_position, bool timing_locked) -> bool;
+
+// Moves a bounded selection by the same signed number of chart rows. A staged
+// history applies each typed update; publication is one atomic undoable command.
+// The fixed effective initial BPM cannot be part of the selection.
+[[nodiscard]] auto move_timing_lane_event_group(
+    document_history_t& history, chart_id_t chart, std::span<const timing_lane_event_ref_t> events,
+    std::int64_t row_delta, std::uint64_t expected_revision, bool timing_locked)
+    -> document_command_result_t;
 
 // Confirmation makes exactly one call to the existing revision-checked timing
 // command API, using an update command for an existing event. No playable note

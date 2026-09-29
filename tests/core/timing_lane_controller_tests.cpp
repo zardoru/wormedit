@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <ranges>
 #include <utility>
 
@@ -747,4 +748,198 @@ TEST_CASE("existing timing markers move as transient previews and delete through
         history, chart_id_t{2}, timing_lane_kind_t::stop, object_id_t{40}, history.document.revision, true);
     CHECK_FALSE(locked);
     CHECK(has_code(locked, diagnostic_code_t::unsupported_feature));
+}
+
+TEST_CASE("the effective initial BPM cannot leave chart row zero",
+          "[unit][core][timing-lane-controller][initial-bpm]") {
+    auto history = make_document_history(timing_song());
+    auto initial = begin_existing_timing_lane_pseudonote(
+        history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10}, false);
+    const auto revision = history.document.revision;
+    CHECK_FALSE(move_existing_timing_lane_pseudonote(history, initial, pos(120), false));
+    CHECK(has_code(initial, diagnostic_code_t::unsupported_feature));
+    CHECK((initial.position == pos(0) && history.document.revision == revision));
+}
+
+TEST_CASE("the effective initial BPM can change value but cannot be deleted",
+          "[unit][core][timing-lane-controller][initial-bpm]") {
+    auto history = make_document_history(timing_song());
+    auto initial = begin_existing_timing_lane_pseudonote(
+        history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10}, false);
+    REQUIRE(update_timing_lane_pseudonote(history, initial, timing_bpm_value_t{{365, 3}}, false));
+    REQUIRE(confirm_timing_lane_pseudonote(history, initial, false));
+    const auto& bpm = history.document.charts.front().bpms.front();
+    CHECK((bpm.position == pos(0) && bpm.beats_per_minute == signed_rational_t{365, 3}));
+
+    const auto before_delete = history.document.revision;
+    const auto deletion = delete_existing_timing_lane_event(
+        history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10}, before_delete, false);
+    CHECK_FALSE(deletion);
+    CHECK((has_code(deletion, diagnostic_code_t::unsupported_feature) &&
+           history.document.revision == before_delete &&
+           history.document.charts.front().bpms.size() == 1));
+}
+
+TEST_CASE("coincident ordinary BPMs remain movable and deletable",
+          "[unit][core][timing-lane-controller][initial-bpm]") {
+    auto history = make_document_history(timing_edit_song());
+    auto ordinary = begin_existing_timing_lane_pseudonote(
+        history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10}, false);
+    REQUIRE(move_existing_timing_lane_pseudonote(history, ordinary, pos(120), false));
+    REQUIRE(confirm_timing_lane_pseudonote(history, ordinary, false));
+    CHECK(history.document.charts.front().bpms.front().position == pos(120));
+
+    const auto ordinary_delete = delete_existing_timing_lane_event(
+        history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10},
+        history.document.revision, false);
+    REQUIRE(ordinary_delete);
+    CHECK((history.document.charts.front().bpms.size() == 1 &&
+           history.document.charts.front().bpms.front().id == object_id_t{11} &&
+           history.document.charts.front().bpms.front().position == pos(0)));
+}
+
+TEST_CASE("initial BPM follows source order when storage order differs",
+          "[unit][core][timing-lane-controller][initial-bpm]") {
+    auto song = timing_edit_song();
+    song.charts.front().bpms.front().provenance.source_order = 9;
+    auto history = make_document_history(std::move(song));
+    auto effective = begin_existing_timing_lane_pseudonote(
+        history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10}, false);
+    CHECK_FALSE(move_existing_timing_lane_pseudonote(history, effective, pos(120), false));
+    CHECK(has_code(effective, diagnostic_code_t::unsupported_feature));
+
+    auto ordinary = begin_existing_timing_lane_pseudonote(
+        history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{11}, false);
+    REQUIRE(move_existing_timing_lane_pseudonote(history, ordinary, pos(120), false));
+    REQUIRE(confirm_timing_lane_pseudonote(history, ordinary, false));
+    CHECK((history.document.charts.front().bpms[0].position == pos(0) &&
+           history.document.charts.front().bpms[1].position == pos(120)));
+    const auto deletion = delete_existing_timing_lane_event(
+        history, chart_id_t{2}, timing_lane_kind_t::bpm, object_id_t{10},
+        history.document.revision, false);
+    CHECK_FALSE(deletion);
+    CHECK(has_code(deletion, diagnostic_code_t::unsupported_feature));
+}
+
+TEST_CASE("mixed timing markers move together in one undoable command",
+          "[unit][core][timing-lane-controller][group-move]") {
+    auto history = make_document_history(timing_edit_song());
+    const std::array events{timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{10}},
+                            timing_lane_event_ref_t{timing_lane_kind_t::scroll, object_id_t{20}},
+                            timing_lane_event_ref_t{timing_lane_kind_t::stop, object_id_t{40}}};
+    const auto revision = history.document.revision;
+    const auto undo_count = history.undo.size();
+    const auto result = move_timing_lane_event_group(history, chart_id_t{2}, events, 120,
+                                                      revision, false);
+    REQUIRE(result);
+    CHECK(history.undo.size() == undo_count + 1);
+    const auto& chart = history.document.charts.front();
+    CHECK((chart.bpms[0].position == pos(120) && chart.bpms[1].position == pos(0) &&
+           chart.scrolls[0].position == pos(240) && chart.pauses[0].position == pos(360)));
+
+    REQUIRE(undo_document_command(history));
+    const auto& restored = history.document.charts.front();
+    CHECK((restored.bpms[0].position == pos(0) &&
+           restored.scrolls[0].position == pos(120) &&
+           restored.pauses[0].position == pos(240)));
+}
+
+TEST_CASE("timing group row deltas cross measure boundaries exactly",
+          "[unit][core][timing-lane-controller][group-move]") {
+    auto history = make_document_history(timing_edit_song());
+    history.document.charts.front().measures.push_back({.id = measure_id_t{4}});
+    const std::array events{timing_lane_event_ref_t{timing_lane_kind_t::scroll,
+                                                    object_id_t{20}}};
+    const auto moved = move_timing_lane_event_group(
+        history, chart_id_t{2}, events, 960, history.document.revision, false);
+    REQUIRE(moved);
+    CHECK(history.document.charts.front().scrolls.front().position ==
+          local_position_t{measure_id_t{4}, 120});
+}
+
+TEST_CASE("group moving a warp preserves its length in both directions",
+          "[unit][core][timing-lane-controller][group-move]") {
+    auto history = make_document_history(timing_edit_song());
+    const std::array events{timing_lane_event_ref_t{timing_lane_kind_t::warp,
+                                                    object_id_t{50}}};
+    REQUIRE(move_timing_lane_event_group(history, chart_id_t{2}, events, 120,
+                                         history.document.revision, false));
+    CHECK((history.document.charts.front().warps.front().span.begin == pos(480) &&
+           history.document.charts.front().warps.front().span.end == pos(540)));
+    REQUIRE(move_timing_lane_event_group(history, chart_id_t{2}, events, -240,
+                                         history.document.revision, false));
+    CHECK((history.document.charts.front().warps.front().span.begin == pos(240) &&
+           history.document.charts.front().warps.front().span.end == pos(300)));
+}
+
+TEST_CASE("warp group move rejects an end outside the chart atomically",
+          "[unit][core][timing-lane-controller][group-move][negative]") {
+    auto history = make_document_history(timing_edit_song());
+    const std::array events{timing_lane_event_ref_t{timing_lane_kind_t::warp,
+                                                    object_id_t{50}}};
+    const auto revision = history.document.revision;
+    const auto result = move_timing_lane_event_group(history, chart_id_t{2}, events, 540,
+                                                      revision, false);
+    CHECK_FALSE(result);
+    CHECK(has_code(result, diagnostic_code_t::row_out_of_range));
+    CHECK((history.document.revision == revision && history.undo.empty() &&
+           history.document.charts.front().warps.front().span.begin == pos(360) &&
+           history.document.charts.front().warps.front().span.end == pos(420)));
+}
+
+TEST_CASE("invalid timing group moves leave every event and history unchanged",
+          "[unit][core][timing-lane-controller][group-move][negative]") {
+    auto history = make_document_history(timing_edit_song());
+    const auto revision = history.document.revision;
+    const std::array fixed{timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{11}},
+                           timing_lane_event_ref_t{timing_lane_kind_t::scroll, object_id_t{20}}};
+    const auto fixed_result = move_timing_lane_event_group(history, chart_id_t{2}, fixed, 120,
+                                                            revision, false);
+    CHECK_FALSE(fixed_result);
+    CHECK(has_code(fixed_result, diagnostic_code_t::unsupported_feature));
+
+    const std::array ordinary{timing_lane_event_ref_t{timing_lane_kind_t::scroll,
+                                                        object_id_t{20}}};
+    const auto outside = move_timing_lane_event_group(history, chart_id_t{2}, ordinary, -121,
+                                                       revision, false);
+    CHECK_FALSE(outside);
+    CHECK(has_code(outside, diagnostic_code_t::row_out_of_range));
+    CHECK((history.document.revision == revision && history.undo.empty()));
+}
+
+TEST_CASE("timing group collisions and stale requests are atomic",
+          "[unit][core][timing-lane-controller][group-move][negative]") {
+    auto history = make_document_history(timing_edit_song());
+    const auto revision = history.document.revision;
+    const std::array ordinary{timing_lane_event_ref_t{timing_lane_kind_t::scroll,
+                                                        object_id_t{20}}};
+
+    history.document.charts.front().scrolls.push_back(
+        {.id = object_id_t{80}, .position = pos(360), .multiplier = {1, 1}});
+    const auto collision = move_timing_lane_event_group(history, chart_id_t{2}, ordinary, 240,
+                                                         revision, false);
+    CHECK_FALSE(collision);
+    CHECK(has_code(collision, diagnostic_code_t::collision));
+
+    const auto stale = move_timing_lane_event_group(history, chart_id_t{2}, ordinary, 120,
+                                                     revision - 1, false);
+    CHECK_FALSE(stale);
+    CHECK(has_code(stale, diagnostic_code_t::invalid_id));
+    CHECK((history.document.revision == revision && history.undo.empty() &&
+           history.document.charts.front().scrolls[0].position == pos(120)));
+}
+
+TEST_CASE("timing group moves honor the timing lock",
+          "[unit][core][timing-lane-controller][group-move][negative]") {
+    auto history = make_document_history(timing_edit_song());
+    const auto revision = history.document.revision;
+    const std::array ordinary{timing_lane_event_ref_t{timing_lane_kind_t::scroll,
+                                                        object_id_t{20}}};
+    const auto locked = move_timing_lane_event_group(history, chart_id_t{2}, ordinary, 120,
+                                                      revision, true);
+    CHECK_FALSE(locked);
+    CHECK(has_code(locked, diagnostic_code_t::unsupported_feature));
+    CHECK((history.document.revision == revision && history.undo.empty() &&
+           history.document.charts.front().scrolls[0].position == pos(120) &&
+           history.document.charts.front().bpms[1].position == pos(0)));
 }

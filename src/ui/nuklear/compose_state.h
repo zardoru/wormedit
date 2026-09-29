@@ -86,6 +86,27 @@ struct worm_ui_nuklear_compose_state_t {
     bool note_move_candidate_active{};
     bool note_move_active{};
     bool timing_stage_drag_active{};
+    bool timing_marker_candidate_active{};
+    bool timing_marker_drag_active{};
+    bool timing_missing_initial_selected{};
+    std::uint64_t timing_marker_object_id{};
+    std::uint64_t timing_marker_chart_row{};
+    WormUiTimingLaneKind timing_marker_lane{WORM_UI_TIMING_LANE_BPM};
+    double timing_marker_anchor_y_pixels{};
+    float timing_marker_anchor_screen_y{};
+    double timing_marker_current_y_pixels{};
+    std::uint64_t timing_marker_chart_id{};
+    std::uint64_t timing_marker_revision{};
+    bool inline_timing_open{};
+    bool inline_timing_focus_pending{};
+    std::uint64_t inline_timing_chart_id{};
+    std::uint64_t inline_timing_revision{};
+    std::uint64_t inline_timing_object_id{};
+    WormUiTimingLaneKind inline_timing_lane{WORM_UI_TIMING_LANE_BPM};
+    float inline_timing_anchor_screen_x{};
+    float inline_timing_anchor_screen_y{};
+    std::array<char, 64> inline_timing_text{};
+    std::array<char, 128> inline_timing_error{};
     bool waveform_overview_drag_active{};
     bool waveform_beat_zero_drag_active{};
     bool beat_fit_drag_active{};
@@ -161,6 +182,12 @@ void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
                                               std::uint64_t next_resource_id);
 
 void worm_ui_nuklear_reset_compose_state();
+
+void worm_ui_nuklear_inline_timing_initial_text(const WormUiTimingView& view, char* destination,
+                                                std::size_t capacity);
+[[nodiscard]] auto worm_ui_nuklear_inline_timing_confirm(const WormUiTimingView& view,
+                                                         const char* text,
+                                                         WormUiWorkspaceAction& action) -> bool;
 
 struct worm_ui_nuklear_compose_file_dialog_result_t {
     std::string path;

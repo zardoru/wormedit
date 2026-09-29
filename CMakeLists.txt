@@ -311,6 +311,7 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/compose_state.cpp
         src/ui/nuklear/frontend.cpp
         src/ui/nuklear/image_quad.cpp
+        src/ui/nuklear/lucide_icons.cpp
         src/ui/nuklear/metadata_panel.cpp
         src/ui/nuklear/metadata_state.cpp
         src/ui/nuklear/player_preview.cpp
@@ -319,7 +320,21 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/setup_state.cpp
         src/ui/nuklear/timing_panel.cpp
         src/ui/nuklear/timing_state.cpp
+        src/ui/nuklear/theme.cpp
     )
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/assets/fonts")
+    configure_file("${CMAKE_SOURCE_DIR}/assets/fonts/AdwaitaMono-Regular.ttf"
+                   "${CMAKE_BINARY_DIR}/assets/fonts/AdwaitaMono-Regular.ttf" COPYONLY)
+    configure_file("${CMAKE_SOURCE_DIR}/assets/fonts/LICENSE"
+                   "${CMAKE_BINARY_DIR}/assets/fonts/LICENSE" COPYONLY)
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/assets/themes")
+    configure_file("${CMAKE_SOURCE_DIR}/assets/themes/ui-dark.json"
+                   "${CMAKE_BINARY_DIR}/assets/themes/ui-dark.json" COPYONLY)
+    configure_file("${CMAKE_SOURCE_DIR}/assets/themes/compose-field.json"
+                   "${CMAKE_BINARY_DIR}/assets/themes/compose-field.json" COPYONLY)
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/assets/icons/lucide")
+    configure_file("${CMAKE_SOURCE_DIR}/assets/icons/lucide/LICENSE"
+                   "${CMAKE_BINARY_DIR}/assets/icons/lucide/LICENSE" COPYONLY)
 
     target_include_directories(wormedit
         PRIVATE

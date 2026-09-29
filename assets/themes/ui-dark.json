@@ -1,0 +1,40 @@
+{
+  "description": "Dark UI palette. Blue is the primary highlight; warm coral and yellow-green split its complement.",
+  "scales": {
+    "neutral": {
+      "50": "#f5f6fa", "100": "#e9ebf2", "200": "#ced2df", "300": "#adb3c5",
+      "400": "#8b92a9", "500": "#717077", "600": "#555b6f", "700": "#3a3c4b",
+      "800": "#2c2e3c", "900": "#1e1f28", "950": "#12131a"
+    },
+    "blue": {
+      "50": "#eff5ff", "100": "#dbeaff", "200": "#b8d4ff", "300": "#86b4ff",
+      "400": "#538dff", "500": "#2c70f5", "600": "#145ce3", "700": "#1848ad",
+      "800": "#173982", "900": "#172e60", "950": "#101d3b"
+    },
+    "coral": {
+      "50": "#fff4f2", "100": "#ffe4dd", "200": "#ffc5b5", "300": "#ff9e86",
+      "400": "#f87459", "500": "#df563b", "600": "#b73e28", "700": "#8b3225",
+      "800": "#642920", "900": "#46231d", "950": "#281613"
+    },
+    "lime": {
+      "50": "#f9fbe9", "100": "#f0f5c5", "200": "#e0e993", "300": "#c9d35e",
+      "400": "#aeb93d", "500": "#8c9a30", "600": "#6d7829", "700": "#525b24",
+      "800": "#3b4320", "900": "#2b321c", "950": "#1b2114"
+    }
+  },
+  "roles": {
+    "background": "$neutral.950",
+    "surface": "$neutral.900",
+    "surface_hover": "$neutral.800",
+    "surface_active": "$neutral.700",
+    "border": "$neutral.700",
+    "border_hover": "$blue.300",
+    "text": "$neutral.200",
+    "text_bright": "$neutral.50",
+    "text_muted": "$neutral.300",
+    "selected": "$blue.600",
+    "selected_text": "#ffffff",
+    "accent": "$lime.300",
+    "status": "$neutral.900"
+  }
+}

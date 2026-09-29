@@ -17,6 +17,7 @@ constexpr command_name_t command_names[]{
     {"history.undo", application_command_kind_t::history_undo},
     {"history.redo", application_command_kind_t::history_redo},
     {"transport.play_pause", application_command_kind_t::transport_play_pause},
+    {"transport.play_from_start", application_command_kind_t::transport_play_from_start},
     {"transport.stop", application_command_kind_t::transport_stop},
     {"edit.delete", application_command_kind_t::edit_delete},
     {"selection.clear", application_command_kind_t::selection_clear},

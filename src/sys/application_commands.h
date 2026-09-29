@@ -15,6 +15,7 @@ enum class application_command_kind_t {
     history_undo,
     history_redo,
     transport_play_pause,
+    transport_play_from_start,
     transport_stop,
     edit_delete,
     selection_clear,

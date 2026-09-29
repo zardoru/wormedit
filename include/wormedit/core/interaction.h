@@ -18,6 +18,7 @@ namespace wormedit {
 inline constexpr double minimum_pixels_per_standard_measure = 24.0;
 inline constexpr double maximum_pixels_per_standard_measure = 4096.0;
 inline constexpr double default_pixels_per_standard_measure = 192.0;
+inline constexpr double editor_cursor_edge_margin_fraction = 0.2;
 
 enum class interaction_direction_t {
     backward,
@@ -98,7 +99,9 @@ struct begin_lane_key_hold_gesture_action_t {
     lane_id_t lane;
 };
 
-struct release_lane_key_hold_gesture_action_t {};
+struct release_lane_key_hold_gesture_action_t {
+    lane_id_t lane{};
+};
 
 struct begin_alt_pointer_hold_gesture_action_t {
     lane_id_t lane;
@@ -403,6 +406,8 @@ struct pending_hold_t {
     local_position_t position;
     lane_id_t lane;
     std::uint64_t document_revision{};
+    std::optional<std::uint64_t> anchor_canvas_row;
+    std::optional<std::uint64_t> preview_canvas_row;
     std::optional<local_position_t> preview_end;
     std::optional<pending_hold_placement_preview_t> placement_preview;
     std::optional<hold_gesture_source_t> gesture_source;
@@ -543,6 +548,7 @@ struct editor_interaction_state_t {
     std::optional<double> fixed_cursor_screen_y_pixels;
     editor_field_scroll_direction_t scroll_direction{editor_field_scroll_direction_t::up};
     std::optional<pending_hold_t> pending_hold;
+    std::vector<pending_hold_t> additional_keyboard_holds;
     std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
     std::optional<pending_note_move_gesture_t> pending_note_move_gesture;
     std::optional<pending_note_paint_gesture_t> pending_note_paint_gesture;
@@ -574,6 +580,7 @@ struct editor_interaction_view_model_t {
     std::optional<double> fixed_cursor_screen_y_pixels;
     editor_field_scroll_direction_t scroll_direction{editor_field_scroll_direction_t::up};
     std::optional<pending_hold_t> pending_hold;
+    std::vector<pending_hold_t> additional_keyboard_holds;
     struct virtual_hold_preview_t {
         std::uint64_t anchor_row{};
         std::uint64_t end_row{};
@@ -585,6 +592,7 @@ struct editor_interaction_view_model_t {
         bool adds_note{};
     };
     std::optional<virtual_hold_preview_t> pending_virtual_hold;
+    std::vector<virtual_hold_preview_t> pending_canvas_keyboard_holds;
     std::optional<pending_note_duration_gesture_t> pending_note_duration_gesture;
     std::optional<pending_note_move_gesture_t> pending_note_move_gesture;
     std::optional<note_paint_gesture_preview_t> pending_note_paint_gesture;

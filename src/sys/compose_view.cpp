@@ -45,7 +45,7 @@ auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) 
         }
     }
     const auto content_height =
-        window_height > 300 ? static_cast<float>(window_height) - 165.0f - recovery_height : 80.0f;
+        window_height > 300 ? static_cast<float>(window_height) - 132.0f - recovery_height : 80.0f;
     const auto& compose = view.compose;
     const auto rows_shown = std::min<std::size_t>(compose.branch_row_count, 4);
     const auto diagnostics_shown = std::min<std::size_t>(compose.branch_diagnostic_count, 2);
@@ -1511,10 +1511,16 @@ void populate_compose_view(flattened_workspace_t& flattened,
             return;
         }
         retained_state = *initial.state;
+        const auto initial_cursor_row = *wormedit::absolute_row(measures, retained_state->cursor);
+        const auto desired_scroll =
+            static_cast<double>(initial_cursor_row) * retained_state->pixels_per_standard_measure /
+                chart.divisions_per_standard_measure -
+            view.viewport_height_pixels * wormedit::editor_cursor_edge_margin_fraction;
         (void)wormedit::dispatch_editor_action(
             history, *retained_state,
             wormedit::scroll_editor_view_action_t{
-                0.0, view.viewport_height_pixels * 0.5,
+                desired_scroll - retained_state->viewport_scroll_pixels,
+                compose_cursor_screen_anchor(view.viewport_height_pixels, downscroll),
                 downscroll ? wormedit::editor_field_scroll_direction_t::down
                            : wormedit::editor_field_scroll_direction_t::up});
     }
@@ -1582,8 +1588,10 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                 chart.divisions_per_standard_measure;
     const auto maximum_scroll =
         std::max(0.0L, content_height - static_cast<long double>(view.viewport_height_pixels));
-    retained_state->viewport_scroll_pixels = std::clamp(retained_state->viewport_scroll_pixels, 0.0,
-                                                        static_cast<double>(maximum_scroll));
+    retained_state->viewport_scroll_pixels = std::clamp(
+        retained_state->viewport_scroll_pixels,
+        -view.viewport_height_pixels * wormedit::editor_cursor_edge_margin_fraction,
+        static_cast<double>(maximum_scroll));
     interaction_view.viewport_scroll_pixels = retained_state->viewport_scroll_pixels;
     view.pixels_per_standard_measure = interaction_view.pixels_per_standard_measure;
     cache.interaction_view = interaction_view;
@@ -1718,6 +1726,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
                  bgm_pane_width);
     auto& bgm_horizontal_scroll = application_state.bgm_horizontal_scroll_pixels[chart.id.value];
     bgm_horizontal_scroll = std::clamp(bgm_horizontal_scroll, 0.0, maximum_bgm_scroll);
+    view.bgm_horizontal_scroll_pixels = bgm_horizontal_scroll;
+    view.bgm_maximum_horizontal_scroll_pixels = maximum_bgm_scroll;
     cache.preview_scene_request = {
         .field_left_pixels = field_left_pixels,
         .field_width_pixels = playable_field_width,

@@ -27,6 +27,7 @@
 #include "sys/waveform_view_projection.h"
 #include "sys/bmson_waveform_projection.h"
 #include "sys/compose_audition_requests.h"
+#include "sys/inline_preview_cursor.h"
 #include "sys/audio_source_registration.h"
 #include "sys/compose_waveform_overlays.h"
 #include "ui/frontend.h"
@@ -78,6 +79,7 @@
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include "sys/chart_preview_state.h"
+#include "sys/compose_playhead_cursor.h"
 #include "sys/audio_transport_frame.h"
 #include "sys/waveform_analysis_runtime.h"
 #include "sys/sdl_audition_output.h"
@@ -1168,6 +1170,10 @@ auto dispatch_audio_offset_drag_action(const WormUiWorkspaceAction& action,
                                          : rebound.diagnostics.front().message;
 }
 
+auto inline_preview_active(const application_command_state_t& state) -> bool {
+    return state.transport_inline_active && state.transport_inline_active();
+}
+
 void refresh_application_command_states(
     wormedit::command_registry_t& registry, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
@@ -1200,7 +1206,8 @@ void refresh_application_command_states(
     set("history.undo", !history.undo.empty());
     set("history.redo", !history.redo.empty());
     set("edit.delete", compose_ready);
-    set("selection.clear", compose_ready && (pending || !compose_state->selected_objects.empty() ||
+    set("selection.clear", compose_ready && (inline_preview_active(application_state) ||
+                                            pending || !compose_state->selected_objects.empty() ||
                                              application_state.note_paint_mode_active ||
                                              application_state.semantic_layer_paint_mode_active));
     set("selection.select_all", compose_ready);
@@ -1213,6 +1220,8 @@ void refresh_application_command_states(
     set("navigation.next_snap", compose_ready);
     set("transport.play_pause",
         chart != nullptr && static_cast<bool>(application_state.transport_play_pause));
+    set("transport.play_from_start",
+        chart != nullptr && static_cast<bool>(application_state.transport_play_from_start));
     set("transport.stop",
         application_state.transport_active && application_state.transport_active());
 
@@ -1999,15 +2008,45 @@ int main(int argc, char** argv) {
     wormedit::viewport_input_controller_t compose_viewport_input;
     wormedit::editor_navigation_input_controller_t compose_navigation_input;
     application_command_state_t application_command_state;
+    wormedit::sys::inline_preview_cursor_t inline_preview_cursor;
     wormedit::stepmania_export_policy_t stepmania_export_policy;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     application_command_state.transport_active = [&] {
         return audition_session.active() || preview_session.active() || preview_state.paused;
     };
+    application_command_state.transport_inline_active = [&] {
+        return preview_session.active() || preview_state.paused;
+    };
     application_command_state.transport_play_pause = [&]() -> std::string {
-        return preview_state.play_pause(
+        const auto compose_cursor = workspace.active_tab == wormedit::workspace_tab_t::compose &&
+                                            compose_interaction_state && workspace.selected_chart &&
+                                            compose_interaction_state->chart == *workspace.selected_chart
+                                        ? &*compose_interaction_state
+                                        : nullptr;
+        if (!preview_session.active() && !preview_state.paused && compose_cursor &&
+            compose_cursor->virtual_bms_cursor_row)
+            return "Materialize the cursor measure before starting chart preview.";
+        const bool starting = !preview_session.active() && !preview_state.paused;
+        const auto result = preview_state.play_pause(
             selected_chart(history, workspace), history.document, audition_sources,
-            preview_metronome_bindings, audition_output, preview_session, preview_output);
+            preview_metronome_bindings, audition_output, preview_session, preview_output,
+            compose_cursor ? std::optional{compose_cursor->cursor} : std::nullopt);
+        if (starting && preview_session.active()) inline_preview_cursor.capture(compose_cursor);
+        return result;
+    };
+    application_command_state.transport_play_from_start = [&]() -> std::string {
+        const bool starting = !preview_session.active() && !preview_state.paused;
+        const auto* compose_cursor = workspace.active_tab == wormedit::workspace_tab_t::compose &&
+                                             compose_interaction_state && workspace.selected_chart &&
+                                             compose_interaction_state->chart == *workspace.selected_chart
+                                         ? &*compose_interaction_state
+                                         : nullptr;
+        const auto result = preview_state.play_pause(
+            selected_chart(history, workspace), history.document, audition_sources,
+            preview_metronome_bindings, audition_output, preview_session, preview_output,
+            std::nullopt, true);
+        if (starting && preview_session.active()) inline_preview_cursor.capture(compose_cursor);
+        return result;
     };
     application_command_state.transport_seek = [&](std::uint64_t frame) -> std::string {
         return preview_state.seek(frame, history.document, workspace, audition_output,
@@ -2024,6 +2063,14 @@ int main(int argc, char** argv) {
     };
     application_command_state.transport_stop = [&] {
         preview_state.stop(audition_output, preview_output);
+        inline_preview_cursor.anchor.reset();
+    };
+    application_command_state.transport_cancel_restore = [&]() -> std::string {
+        preview_state.stop(audition_output, preview_output);
+        const bool restored = inline_preview_cursor.restore(
+            history, compose_interaction_state ? &*compose_interaction_state : nullptr);
+        return restored ? "Chart preview stopped; cursor restored."
+                        : "Chart preview stopped.";
     };
 #endif
     timing_grid_state_t timing_grid;
@@ -2162,6 +2209,15 @@ int main(int argc, char** argv) {
 #endif
 
         cancel_stale_compose_interaction(compose_interaction_state, history, workspace);
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        if (workspace.active_tab == wormedit::workspace_tab_t::compose &&
+            compose_interaction_state && application_command_state.preview_playhead_absolute_row &&
+            (preview_session.active() || preview_state.paused)) {
+            (void)wormedit::sys::follow_compose_playhead(
+                history, *compose_interaction_state,
+                *application_command_state.preview_playhead_absolute_row);
+        }
+#endif
 
         wormedit::sys::rebind_workspace_after_edit(workspace, history, status);
         const auto model = wormedit::make_workspace_view(workspace, history.document);

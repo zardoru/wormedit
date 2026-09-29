@@ -1,6 +1,11 @@
 #include <wormedit/core/interaction.h>
 #include <wormedit/formats/bmson.h>
+#include "sys/compose_scroll_geometry.h"
+#include "sys/compose_playhead_cursor.h"
+#include "sys/inline_preview_cursor.h"
+#include "sys/preview_cursor_frame.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
@@ -87,10 +92,75 @@ auto has_code(const diagnostic_list_t& diagnostics, diagnostic_code_t code) -> b
 
 } // namespace
 
+TEST_CASE("Escape restoration returns the Compose cursor to its preplay position",
+          "[unit][core][interaction][transport]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    const auto original = state.cursor;
+    sys::inline_preview_cursor_t preview_cursor;
+    preview_cursor.capture(&state);
+
+    REQUIRE(sys::follow_compose_playhead(history, state, 1'200.0));
+    REQUIRE(state.cursor != original);
+    REQUIRE(preview_cursor.restore(history, &state));
+    CHECK(state.cursor == original);
+    CHECK_FALSE(preview_cursor.restore(history, &state));
+}
+
+using parallel_hold_signature_t =
+    std::tuple<lane_id_t, local_position_t, std::optional<local_position_t>>;
+
+auto parallel_hold_result(bool release_newest_first)
+    -> std::optional<std::array<parallel_hold_signature_t, 2>> {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    const auto apply = [&](const editor_ui_action_t& action) {
+        return static_cast<bool>(dispatch_editor_action(history, state, action));
+    };
+    if (!apply(begin_lane_key_hold_gesture_action_t{lane_id_t{1}}) ||
+        !apply(move_edit_cursor_action_t{interaction_direction_t::forward}) ||
+        !apply(begin_lane_key_hold_gesture_action_t{lane_id_t{2}}) ||
+        !state.pending_hold || state.additional_keyboard_holds.size() != 1 ||
+        !apply(move_edit_cursor_action_t{interaction_direction_t::forward}))
+        return std::nullopt;
+    const auto first_release = release_newest_first ? lane_id_t{2} : lane_id_t{1};
+    const auto second_release = release_newest_first ? lane_id_t{1} : lane_id_t{2};
+    if (!apply(release_lane_key_hold_gesture_action_t{first_release}) ||
+        note_count(history) != 1 || !state.pending_hold ||
+        state.pending_hold->lane != second_release ||
+        !apply(move_edit_cursor_action_t{interaction_direction_t::forward}) ||
+        !apply(release_lane_key_hold_gesture_action_t{second_release}) ||
+        note_count(history) != 2 || state.pending_hold ||
+        !state.additional_keyboard_holds.empty())
+        return std::nullopt;
+    const auto* first = find_note(history, object_id_t{101});
+    const auto* second = find_note(history, object_id_t{102});
+    if (!first || !second) return std::nullopt;
+    return std::array<parallel_hold_signature_t, 2>{{
+        {first->lane, first->position, first->end},
+        {second->lane, second->position, second->end},
+    }};
+}
+
+TEST_CASE("simultaneous lane keys retain independent hold anchors and release order",
+          "[unit][core][interaction][gesture][hold]") {
+    CHECK(parallel_hold_result(false) ==
+          std::array<parallel_hold_signature_t, 2>{{
+              {lane_id_t{1}, {measure_id_t{1}, 720}, local_position_t{measure_id_t{2}, 240}},
+              {lane_id_t{2}, {measure_id_t{2}, 0}, local_position_t{measure_id_t{2}, 480}},
+          }});
+    CHECK(parallel_hold_result(true) ==
+          std::array<parallel_hold_signature_t, 2>{{
+              {lane_id_t{2}, {measure_id_t{2}, 0}, local_position_t{measure_id_t{2}, 240}},
+              {lane_id_t{1}, {measure_id_t{1}, 720}, local_position_t{measure_id_t{2}, 480}},
+          }});
+}
+
 TEST_CASE("first tap in virtual BMS #999 commits geometry and note as one undo step",
           "[unit][core][interaction][virtual-canvas]") {
     auto song = make_song();
     song.charts.front().source_family = format_family_t::bms;
+    REQUIRE(validate_document(song).empty());
     auto history = make_document_history(std::move(song));
     auto state = make_state(history);
     const auto before = history.document.revision;
@@ -665,7 +735,6 @@ TEST_CASE("cursor paging preserves fractional measure rows and keeps the cursor 
         {.id = measure_id_t{2}, .definition = {{3, 2}, meter_t{3, 2}}},
         {.id = measure_id_t{3}, .definition = {{1, 2}, meter_t{1, 2}}},
     };
-    REQUIRE(validate_document(song).empty());
     auto history = make_document_history(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
@@ -717,23 +786,30 @@ TEST_CASE("cursor navigation moves a mobile head through a central comfort band"
     const auto first = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(first);
+    REQUIRE(first.view.has_value());
     CHECK(first.view->viewport_scroll_pixels == 0.0);
 
     const auto second = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(second);
+    REQUIRE(second.view.has_value());
     CHECK(second.view->viewport_scroll_pixels > 0.0);
     const auto second_y = editor_position_y_pixels(history.document.charts.front(), *second.view,
                                                     second.view->cursor);
     REQUIRE(second_y);
-    CHECK(*second_y <= second.view->viewport_height_pixels * 0.75);
+    CHECK(*second_y <= second.view->viewport_height_pixels * 0.8);
 
     REQUIRE(dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::backward}));
     const auto returned = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
     REQUIRE(returned);
-    CHECK(returned.view->viewport_scroll_pixels == 0.0);
+    CHECK(returned.view->cursor == local_position_t{measure_id_t{1}, 0});
+    CHECK(returned.view->viewport_scroll_pixels == Catch::Approx(-19.2));
+    const auto origin_y = editor_position_y_pixels(history.document.charts.front(), *returned.view,
+                                                    returned.view->cursor);
+    REQUIRE(origin_y);
+    CHECK(*origin_y == Catch::Approx(19.2));
 }
 
 TEST_CASE("editor y mapping preserves exact rows through zoom and scroll",
@@ -2403,13 +2479,61 @@ TEST_CASE("pointer zoom anchors chart rows and viewport scrolling clamps to cont
     CHECK(bottom.view->viewport_scroll_pixels == 368.0);
     const auto top = dispatch_editor_action(history, state, scroll_editor_view_action_t{-10'000.0});
     REQUIRE(top);
-    CHECK(top.view->viewport_scroll_pixels == 0.0);
+    CHECK(top.view->viewport_scroll_pixels == Catch::Approx(-80.0));
 
     state.pixels_per_standard_measure = std::numeric_limits<double>::quiet_NaN();
     const auto invalid = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     CHECK_FALSE(invalid);
     CHECK(has_code(invalid.diagnostics, diagnostic_code_t::invalid_resolution));
+}
+
+TEST_CASE("Compose wheel direction and first-measure anchor follow field orientation",
+          "[unit][core][interaction][viewport][first-measure]") {
+    using wormedit::sys::compose_cursor_screen_anchor;
+    using wormedit::sys::compose_wheel_scroll_delta;
+    CHECK(compose_wheel_scroll_delta(48.0, false) == 48.0);
+    CHECK(compose_wheel_scroll_delta(48.0, true) == -48.0);
+    CHECK(compose_cursor_screen_anchor(400.0, false) == Catch::Approx(80.0));
+    CHECK(compose_cursor_screen_anchor(400.0, true) == Catch::Approx(320.0));
+    using wormedit::sys::compose_visual_navigation_direction;
+    CHECK(compose_visual_navigation_direction(false, true) == interaction_direction_t::backward);
+    CHECK(compose_visual_navigation_direction(false, false) == interaction_direction_t::forward);
+    CHECK(compose_visual_navigation_direction(true, true) == interaction_direction_t::forward);
+    CHECK(compose_visual_navigation_direction(true, false) == interaction_direction_t::backward);
+
+    auto history = make_document_history(make_song());
+    constexpr std::array snaps{std::uint64_t{4}};
+    for (const bool downscroll : {false, true}) {
+        const auto initial = make_editor_interaction(
+            history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0}, snaps, 4, 400.0);
+        REQUIRE(initial);
+        auto initial_state = *initial.state;
+        const auto placed_at_edge = dispatch_editor_action(
+            history, initial_state,
+            scroll_editor_view_action_t{
+                -80.0, compose_cursor_screen_anchor(400.0, downscroll),
+                downscroll ? editor_field_scroll_direction_t::down
+                           : editor_field_scroll_direction_t::up});
+        REQUIRE(placed_at_edge);
+        CHECK(placed_at_edge.view->cursor == local_position_t{measure_id_t{1}, 0});
+        CHECK(placed_at_edge.view->viewport_scroll_pixels == Catch::Approx(-80.0));
+
+        const auto setup = make_editor_interaction(
+            history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{2}, 0}, snaps, 4, 400.0);
+        REQUIRE(setup);
+        auto state = *setup.state;
+        const auto scrolled = dispatch_editor_action(
+            history, state,
+            scroll_editor_view_action_t{
+                -10'000.0, compose_cursor_screen_anchor(state.viewport_height_pixels, downscroll),
+                downscroll ? editor_field_scroll_direction_t::down
+                           : editor_field_scroll_direction_t::up});
+        REQUIRE(scrolled);
+        REQUIRE(scrolled.view);
+        CHECK(scrolled.view->cursor == local_position_t{measure_id_t{1}, 0});
+        CHECK(scrolled.view->viewport_scroll_pixels == Catch::Approx(-80.0));
+    }
 }
 
 TEST_CASE("fixed cursor scrolling follows the snap beneath a stationary viewport line",
@@ -2748,6 +2872,195 @@ TEST_CASE("lane-key hold gestures snap, extend, contract to a tap, and undo atom
     REQUIRE(moved_head != nullptr);
     CHECK(moved_head->position == local_position_t{measure_id_t{1}, 480});
     CHECK(moved_head->end == local_position_t{measure_id_t{2}, 240});
+}
+
+TEST_CASE("held lane key follows the cursor through multiple measures",
+          "[unit][core][interaction][gesture][hold][navigation]") {
+    auto song = make_song();
+    song.charts.front().measures.push_back({.id = measure_id_t{3}});
+    song.charts.front().measures.push_back({.id = measure_id_t{4}});
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{std::uint64_t{4}};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                         {measure_id_t{1}, 0}, snaps, 4, 192.0);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+
+    const auto pressed = dispatch_editor_action(
+        history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    const auto first_page = dispatch_editor_action(
+        history, state, page_edit_cursor_action_t{interaction_direction_t::forward, 1});
+    const auto second_page = dispatch_editor_action(
+        history, state, page_edit_cursor_action_t{interaction_direction_t::forward, 1});
+    const auto committed = dispatch_editor_action(
+        history, state, release_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    const auto* note = find_note(history, object_id_t{101});
+    const std::array checks{
+        bool(pressed), bool(first_page), bool(second_page), bool(committed),
+        first_page.view && first_page.view->viewport_scroll_pixels > 0.0,
+        second_page.view && second_page.view->cursor == local_position_t{measure_id_t{3}, 0},
+        first_page.view && second_page.view &&
+            second_page.view->viewport_scroll_pixels > first_page.view->viewport_scroll_pixels,
+        second_page.view && second_page.view->pending_hold &&
+            second_page.view->pending_hold->preview_end ==
+                local_position_t{measure_id_t{3}, 0},
+        committed.document_changed,
+        note && note->end == local_position_t{measure_id_t{3}, 0},
+    };
+    CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
+}
+
+TEST_CASE("preview starts at the cursor time and Compose cursor follows the playhead",
+          "[unit][core][interaction][transport]") {
+    auto song = make_song();
+    song.charts.front().bpms.push_back({.id = object_id_t{200},
+                                       .position = {measure_id_t{1}, 0},
+                                       .beats_per_minute = {120, 1}});
+    auto history = make_document_history(std::move(song));
+    const auto timing = build_timing_index(history.document.charts.front());
+    REQUIRE(timing);
+    const auto start = sys::preview_cursor_frame(
+        history.document.charts.front(), *timing.index, {measure_id_t{1}, 480});
+    auto state = make_state(history);
+    const auto followed = sys::follow_compose_playhead(history, state, 1'200.0);
+    const auto cursor_after_follow = state.cursor;
+    const auto remained = sys::follow_compose_playhead(history, state, 1'319.0);
+    const std::array checks{
+        std::holds_alternative<std::uint64_t>(start),
+        std::holds_alternative<std::uint64_t>(start) &&
+            std::get<std::uint64_t>(start) == audio::output_sample_rate,
+        followed,
+        cursor_after_follow == local_position_t{measure_id_t{2}, 240},
+        remained,
+        state.cursor == cursor_after_follow,
+    };
+    CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
+}
+
+TEST_CASE("held BMS lane keys extend into unmaterialized measures and commit independently",
+          "[unit][core][interaction][gesture][hold][virtual-canvas]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto jump = dispatch_editor_action(
+        history, state, jump_edit_cursor_action_t{{measure_id_t{2}, 720},
+                                                   history.document.revision});
+
+    const auto first_press = dispatch_editor_action(
+        history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    const auto second_press = dispatch_editor_action(
+        history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{2}});
+    const auto moved = dispatch_editor_action(
+        history, state, page_edit_cursor_action_t{interaction_direction_t::forward, 2});
+    const auto preview_valid = state.virtual_bms_cursor_row &&
+                               state.additional_keyboard_holds.size() == 1 && moved.view &&
+                               moved.view->pending_canvas_keyboard_holds.size() == 2 &&
+                               history.document.charts.front().measures.size() == 2;
+    const auto back = dispatch_editor_action(
+        history, state, page_edit_cursor_action_t{interaction_direction_t::backward, 2});
+    const auto returned_to_authored = !state.virtual_bms_cursor_row && state.pending_hold &&
+                                      !state.pending_hold->preview_canvas_row;
+    const auto forward = dispatch_editor_action(
+        history, state, page_edit_cursor_action_t{interaction_direction_t::forward, 2});
+
+    const auto first = dispatch_editor_action(
+        history, state, release_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    const auto first_committed = first.document_changed &&
+                                 history.document.charts.front().measures.size() == 4 &&
+                                 state.pending_hold && state.pending_hold->lane == lane_id_t{2};
+    const auto second = dispatch_editor_action(
+        history, state, release_lane_key_hold_gesture_action_t{lane_id_t{2}});
+    const auto* first_note = find_note(history, object_id_t{101});
+    const auto* second_note = find_note(history, object_id_t{102});
+    const std::array checks{
+        bool(jump), bool(first_press), bool(second_press), bool(moved), preview_valid,
+        bool(back), returned_to_authored, bool(forward), bool(first), first_committed,
+        bool(second), second.document_changed, !state.pending_hold,
+        first_note && first_note->end && first_note->end->measure == measure_id_t{4},
+        second_note && second_note->end && second_note->end->measure == measure_id_t{4},
+    };
+    CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
+}
+
+TEST_CASE("two BMS lane keys can begin on a virtual measure",
+          "[unit][core][interaction][gesture][hold][virtual-canvas]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto jump = dispatch_editor_action(
+        history, state, jump_edit_cursor_action_t{{measure_id_t{2}, 720},
+                                                   history.document.revision});
+    const auto entered_virtual = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    const auto virtual_cursor = state.virtual_bms_cursor_row.has_value();
+    const auto first_press = dispatch_editor_action(
+        history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    const auto second_press = dispatch_editor_action(
+        history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{2}});
+    const auto moved = dispatch_editor_action(
+        history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    const auto two_previews = moved.view &&
+                              moved.view->pending_canvas_keyboard_holds.size() == 2;
+    const auto first_release = dispatch_editor_action(
+        history, state, release_lane_key_hold_gesture_action_t{lane_id_t{2}});
+    const auto second_release = dispatch_editor_action(
+        history, state, release_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    const std::array checks{
+        bool(jump), bool(entered_virtual), virtual_cursor, bool(first_press),
+        bool(second_press), bool(moved), two_previews, bool(first_release),
+        bool(second_release), history.document.charts.front().measures.size() == 3,
+        note_count(history) == 2,
+    };
+    CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
+}
+
+TEST_CASE("BMS canvas hold commit reuses measures materialized by another lane",
+          "[unit][core][interaction][virtual-canvas][hold]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    song.charts.front().measures.push_back({.id = measure_id_t{3}});
+    song.charts.front().measures.push_back({.id = measure_id_t{4}});
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    const auto placed = dispatch_editor_action(
+        history, state, place_virtual_bms_hold_action_t{960, 2'160, lane_id_t{1}});
+    const auto* note = find_note(history, object_id_t{101});
+    const std::array checks{bool(placed), placed.document_changed,
+                            history.document.charts.front().measures.size() == 4,
+                            note && note->end == local_position_t{measure_id_t{3}, 240}};
+    CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
+}
+
+TEST_CASE("wheel anchored scrolling extends a held BMS lane key into virtual measures",
+          "[unit][core][interaction][gesture][hold][virtual-canvas][scroll]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{std::uint64_t{4}};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                         {measure_id_t{1}, 0}, snaps, 4, 192.0);
+    REQUIRE(setup);
+    auto state = std::move(*setup.state);
+    const auto pressed = dispatch_editor_action(
+        history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    const auto first_scroll = dispatch_editor_action(
+        history, state,
+        scroll_editor_view_action_t{192.0, 38.4, editor_field_scroll_direction_t::up});
+    const auto second = dispatch_editor_action(
+        history, state,
+        scroll_editor_view_action_t{192.0, 38.4, editor_field_scroll_direction_t::up});
+    const auto preview_valid = state.virtual_bms_cursor_row && second.view &&
+                               second.view->pending_canvas_keyboard_holds.size() == 1;
+    const auto committed = dispatch_editor_action(
+        history, state, release_lane_key_hold_gesture_action_t{lane_id_t{1}});
+    const auto* note = find_note(history, object_id_t{101});
+    const std::array checks{bool(pressed), bool(first_scroll), bool(second), preview_valid,
+                            bool(committed), committed.document_changed,
+                            history.document.charts.front().measures.size() >= 3,
+                            note && note->end.has_value()};
+    CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
 }
 
 TEST_CASE("lane-key press removes an occupied ordinary tap or hold",

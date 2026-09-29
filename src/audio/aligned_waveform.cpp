@@ -32,7 +32,7 @@ auto project_aligned_waveform(const waveform_t& waveform, const timing_index_t& 
     if (!std::isfinite(request.viewport_scroll_pixels) ||
         !std::isfinite(request.viewport_height_pixels) ||
         !std::isfinite(request.pixels_per_standard_measure) ||
-        request.viewport_scroll_pixels < 0.0 || request.viewport_height_pixels <= 0.0 ||
+        request.viewport_height_pixels <= 0.0 ||
         request.pixels_per_standard_measure <= 0.0 || request.maximum_rows == 0) {
         return result;
     }
@@ -143,7 +143,7 @@ auto project_waveform_overview(const waveform_t& waveform, const timing_index_t&
     if (!std::isfinite(viewport.viewport_scroll_pixels) ||
         !std::isfinite(viewport.viewport_height_pixels) ||
         !std::isfinite(viewport.pixels_per_standard_measure) ||
-        viewport.viewport_scroll_pixels < 0.0 || viewport.viewport_height_pixels <= 0.0 ||
+        viewport.viewport_height_pixels <= 0.0 ||
         viewport.pixels_per_standard_measure <= 0.0 || maximum_rows == 0) {
         return result;
     }

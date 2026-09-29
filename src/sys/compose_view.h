@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sys/workspace_projection.h"
+#include "sys/compose_scroll_geometry.h"
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/bpm_editor.h>
@@ -31,6 +32,7 @@ inline constexpr double compose_minimum_playable_field_width_pixels{160.0};
 inline constexpr double compose_maximum_playable_field_width_pixels{640.0};
 inline constexpr double compose_minimum_bgm_pane_width_pixels{96.0};
 inline constexpr std::array<std::uint64_t, 10> chart_snap_preferences{4, 8, 6, 12, 16, 24, 32, 48, 64, 96};
+
 
 struct bmson_draft_audition_request_t {
     wormedit::chart_id_t chart;
@@ -140,11 +142,14 @@ struct application_command_state_t {
     bool player_preview_visible{};
     wormedit::player_preview_skin_t player_preview_skin{wormedit::player_preview_skin_t::neutral};
     std::function<bool()> transport_active;
+    std::function<bool()> transport_inline_active;
     std::function<std::string()> transport_play_pause;
+    std::function<std::string()> transport_play_from_start;
     std::function<std::string(std::uint64_t)> transport_seek;
     std::function<std::optional<std::int64_t>()> transport_audio_milliseconds;
     std::function<std::string(std::int64_t)> transport_seek_audio_milliseconds;
     std::function<void()> transport_stop;
+    std::function<std::string()> transport_cancel_restore;
     std::optional<double> preview_playhead_absolute_row;
 };
 

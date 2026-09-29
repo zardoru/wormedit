@@ -1,4 +1,5 @@
 #include "sys/chart_preview_state.h"
+#include "sys/preview_cursor_frame.h"
 
 #include <wormedit/audio/audition_resolver.h>
 #include <wormedit/audio/decoder.h>
@@ -6,7 +7,6 @@
 #include <algorithm>
 #include <limits>
 #include <ranges>
-#include <limits>
 
 namespace wormedit::sys::runtime {
 
@@ -124,6 +124,7 @@ auto milliseconds_to_frame(std::int64_t milliseconds, std::uint32_t sample_rate)
     return base + fractional_frames;
 }
 
+
 } // namespace
 
 auto chart_preview_t::play_pause(
@@ -131,8 +132,9 @@ auto chart_preview_t::play_pause(
     const audio::decoded_source_registry_t& sources,
     const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings,
     sdl_audition_output_t& audition_output, audio::preview_session_t& preview_session,
-    sdl_preview_output_t& preview_output) -> std::string {
-    if (preview_session.active()) {
+    sdl_preview_output_t& preview_output, std::optional<local_position_t> start_cursor,
+    bool from_beginning) -> std::string {
+    if (preview_session.active() && !from_beginning) {
         const auto frame = preview_session.timeline_frame();
         static_cast<void>(preview_output.stop());
         pause_at(frame);
@@ -144,12 +146,27 @@ auto chart_preview_t::play_pause(
     if (auto error = compile_if_needed(*selected_chart, document, sources, metronome_bindings))
         return *error;
 
+    const auto was_paused = paused;
+    if (from_beginning) {
+        if (preview_session.active()) static_cast<void>(preview_output.stop());
+        resume_frame = 0;
+        paused = false;
+    } else if (!paused && start_cursor) {
+        const auto frame = wormedit::sys::preview_cursor_frame(*selected_chart, *timing,
+                                                               *start_cursor);
+        if (const auto* error = std::get_if<std::string>(&frame)) return *error;
+        resume_frame = std::get<std::uint64_t>(frame);
+    }
+
     static_cast<void>(audition_output.stop());
     const auto started = preview_output.start(*schedule, bindings, metronome_bindings, resume_frame);
     if (!started)
         return started.message.empty() ? "Chart preview could not start." : started.message;
     paused = false;
-    return resume_frame == 0 ? "Chart preview started." : "Chart preview resumed.";
+    return from_beginning ? "Chart preview started from the beginning."
+           : was_paused ? "Chart preview resumed."
+           : start_cursor ? "Chart preview started at the cursor."
+                          : "Chart preview started.";
 }
 
 auto chart_preview_t::seek(std::uint64_t frame, const song_document_t& document,

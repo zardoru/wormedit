@@ -1,4 +1,7 @@
 #include "ui/nuklear/compose_panel.h"
+#include "ui/nuklear/chrome.h"
+#include "ui/nuklear/theme.h"
+#include "sys/compose_scroll_geometry.h"
 #include "ui/nuklear/bms_branch_panel.h"
 #include "ui/nuklear/compose_markers.h"
 #include "ui/nuklear/compose_resources.h"
@@ -22,7 +25,13 @@
 #include <ranges>
 #include <string>
 
+using wormedit::ui::lucide::Glyph;
+
 static auto& state = worm_ui_nuklear_compose_state();
+
+static auto compose_inspector_icon(bool visible) -> Glyph {
+    return visible ? Glyph::panel_right_close : Glyph::panel_right_open;
+}
 
 static void reset_bmson_marker_move_capture() {
     state.bmson_marker_move_candidate_active = false;
@@ -96,8 +105,7 @@ static void append_compose_input(
         state.navigation_keycode = 0;
         state.pointer_navigation_active = false;
         state.keyboard_focus = false;
-        state.lane_hold_keycode = 0;
-        state.lane_hold_lane_id = 0;
+        state.lane_hold_count = 0;
         state.action_overflowed = true;
         return;
     }
@@ -113,6 +121,21 @@ static void append_compose_input(
         .x_pixels = x_pixels,
         .y_pixels = y_pixels,
         .audio_fraction = 0.0,
+    };
+}
+
+static void append_bgm_horizontal_scroll(WormUiWorkspaceAction* action,
+                                         const WormUiComposeView* view, double delta_pixels) {
+    if (!action || !view || !std::isfinite(delta_pixels) || delta_pixels == 0.0 ||
+        action->compose_viewport_input_count >= WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY ||
+        view->bgm_maximum_horizontal_scroll_pixels <= 0.0) return;
+    action->compose_viewport_inputs[action->compose_viewport_input_count++] = {
+        .kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_SMOOTH_WHEEL,
+        .zoom_modifier = false,
+        .delta_x = delta_pixels,
+        .delta_y = 0.0,
+        .cursor_x_pixels = (view->playable_field_right_pixels + view->viewport_width_pixels) * 0.5,
+        .cursor_y_pixels = view->viewport_height_pixels * 0.5,
     };
 }
 
@@ -160,39 +183,31 @@ static void cancel_compose_navigation(WormUiWorkspaceAction* action) {
 }
 
 static bool compose_navigation_action_for_key(uint32_t keycode, [[maybe_unused]] uint16_t modifiers,
+                                              bool downscroll,
                                               WormUiComposeNavigationAction* action) {
-    if (!action) {
-        return false;
-    }
-    if (keycode == static_cast<uint32_t>(SDLK_UP)) {
+    if (!action) return false;
+    const bool visual_up = keycode == static_cast<uint32_t>(SDLK_UP) ||
+                           keycode == static_cast<uint32_t>(SDLK_PAGEUP);
+    const bool visual_down = keycode == static_cast<uint32_t>(SDLK_DOWN) ||
+                             keycode == static_cast<uint32_t>(SDLK_PAGEDOWN);
+    if (!visual_up && !visual_down) return false;
+    bool page = keycode == static_cast<uint32_t>(SDLK_PAGEUP) ||
+                keycode == static_cast<uint32_t>(SDLK_PAGEDOWN);
 #if defined(__APPLE__)
-        if ((modifiers & SDL_KMOD_ALT) != 0) {
-            *action = WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD;
-            return true;
-        }
+    page = page || (modifiers & SDL_KMOD_ALT) != 0;
 #endif
-        *action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD;
-        return true;
+    const auto direction = wormedit::sys::compose_visual_navigation_direction(downscroll,
+                                                                               visual_up);
+    if (page) {
+        *action = direction == wormedit::interaction_direction_t::backward
+                      ? WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD
+                      : WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+    } else {
+        *action = direction == wormedit::interaction_direction_t::backward
+                      ? WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD
+                      : WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD;
     }
-    if (keycode == static_cast<uint32_t>(SDLK_DOWN)) {
-#if defined(__APPLE__)
-        if ((modifiers & SDL_KMOD_ALT) != 0) {
-            *action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
-            return true;
-        }
-#endif
-        *action = WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD;
-        return true;
-    }
-    if (keycode == static_cast<uint32_t>(SDLK_PAGEUP)) {
-        *action = WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD;
-        return true;
-    }
-    if (keycode == static_cast<uint32_t>(SDLK_PAGEDOWN)) {
-        *action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
-        return true;
-    }
-    return false;
+    return true;
 }
 
 static bool compose_action_has_cancel(const WormUiWorkspaceAction* action) {
@@ -235,8 +250,7 @@ void worm_ui_nuklear_queue_compose_key(std::uint32_t keycode, std::uint32_t scan
         state.area_selection_candidate_active = false;
         state.area_selection_active = false;
         state.keyboard_focus = false;
-        state.lane_hold_keycode = 0;
-        state.lane_hold_lane_id = 0;
+        state.lane_hold_count = 0;
         return;
     }
     state.key_events[state.key_event_count++] = {
@@ -269,8 +283,7 @@ void worm_ui_nuklear_queue_compose_wheel(double delta_x, double delta_y, double 
         state.area_selection_candidate_active = false;
         state.area_selection_active = false;
         state.keyboard_focus = false;
-        state.lane_hold_keycode = 0;
-        state.lane_hold_lane_id = 0;
+        state.lane_hold_count = 0;
         return;
     }
     state.wheel_events[state.wheel_event_count++] = {
@@ -300,6 +313,7 @@ void worm_ui_nuklear_compose_handle_focus_lost() {
     reset_bmson_marker_move_capture();
     // Keep paint capture until Compose can deliver the pending cancel.
     state.lane_hold_active = false;
+    state.lane_hold_count = 0;
     state.space_range_hold_active = false;
     state.space_range_hold_moved = false;
     state.note_move_candidate_active = false;
@@ -346,13 +360,13 @@ static struct nk_color compose_lane_color(uint8_t role, size_t display_order) {
     const auto alternate = (display_order & 1U) != 0;
     switch (role) {
     case 1: // scratch
-        return alternate ? nk_rgb(48, 44, 68) : nk_rgb(42, 39, 61);
+        return wormedit::ui::theme::compose_lane(0, alternate);
     case 5: // free zone
-        return alternate ? nk_rgb(47, 54, 63) : nk_rgb(42, 49, 58);
+        return wormedit::ui::theme::compose_lane(1, alternate);
     case 6: // foot pedal
-        return alternate ? nk_rgb(40, 58, 59) : nk_rgb(36, 52, 54);
+        return wormedit::ui::theme::compose_lane(2, alternate);
     default:
-        return alternate ? nk_rgb(37, 45, 59) : nk_rgb(33, 40, 53);
+        return wormedit::ui::theme::compose_lane(3, alternate);
     }
 }
 
@@ -372,6 +386,13 @@ static bool compose_selection_mode_valid(WormUiComposeSelectionMode mode) {
            mode == WORM_UI_COMPOSE_SELECTION_TOGGLE;
 }
 
+static bool compose_bgm_scroll_valid(const WormUiComposeView* view) {
+    return std::isfinite(view->bgm_horizontal_scroll_pixels) &&
+           std::isfinite(view->bgm_maximum_horizontal_scroll_pixels) &&
+           view->bgm_horizontal_scroll_pixels >= 0.0 &&
+           view->bgm_maximum_horizontal_scroll_pixels >= view->bgm_horizontal_scroll_pixels;
+}
+
 static int compose_geometry_valid(const WormUiComposeView* view) {
     if (!view || !std::isfinite(view->pixels_per_standard_measure) ||
         view->pixels_per_standard_measure < WORM_UI_COMPOSE_MIN_PIXELS_PER_MEASURE ||
@@ -379,6 +400,7 @@ static int compose_geometry_valid(const WormUiComposeView* view) {
         !std::isfinite(view->viewport_width_pixels) || view->viewport_width_pixels <= 0.0 ||
         view->viewport_width_pixels > 10000000.0 || !std::isfinite(view->viewport_height_pixels) ||
         view->viewport_height_pixels <= 0.0 || view->viewport_height_pixels > 10000000.0 ||
+        !compose_bgm_scroll_valid(view) ||
         !std::isfinite(view->playable_field_right_pixels) ||
         !std::isfinite(view->playable_field_left_pixels) ||
         view->playable_field_left_pixels < 0.0 ||
@@ -871,8 +893,7 @@ static void process_compose_key_events(struct nk_context* context, const WormUiC
     if (pointer_paint_mode_active && state.lane_hold_active) {
         append_compose_cancel_once(action);
         state.lane_hold_active = false;
-        state.lane_hold_keycode = 0;
-        state.lane_hold_lane_id = 0;
+        state.lane_hold_count = 0;
     }
     if (pointer_paint_mode_active && state.space_range_hold_active) {
         append_compose_cancel_once(action);
@@ -898,14 +919,20 @@ static void process_compose_key_events(struct nk_context* context, const WormUiC
             state.navigation_keycode = 0;
             continue;
         }
-        if (state.lane_hold_active && !key_event.down &&
-            key_event.scancode == state.lane_hold_keycode) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 0.0, 0.0,
-                                 state.lane_hold_lane_id);
-            state.lane_hold_active = false;
-            state.lane_hold_keycode = 0;
-            state.lane_hold_lane_id = 0;
-            continue;
+        if (!key_event.down) {
+            const auto held = std::find_if(state.lane_holds.begin(),
+                                           state.lane_holds.begin() + state.lane_hold_count,
+                                           [&](const auto& hold) {
+                                               return hold.scancode == key_event.scancode;
+                                           });
+            if (held != state.lane_holds.begin() + state.lane_hold_count) {
+                append_compose_input(action, WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE, 0.0, 0.0,
+                                     held->lane_id);
+                std::move(held + 1, state.lane_holds.begin() + state.lane_hold_count, held);
+                --state.lane_hold_count;
+                state.lane_hold_active = state.lane_hold_count != 0;
+                continue;
+            }
         }
         if (state.space_range_hold_active && !key_event.down &&
             key_event.keycode == static_cast<uint32_t>(SDLK_SPACE)) {
@@ -957,6 +984,7 @@ static void process_compose_key_events(struct nk_context* context, const WormUiC
         }
         if (key_event.keycode == static_cast<uint32_t>(SDLK_UP)) {
             if (!compose_navigation_action_for_key(key_event.keycode, key_event.modifiers,
+                                                   view->downscroll,
                                                    &navigation_action)) {
                 continue;
             }
@@ -973,6 +1001,7 @@ static void process_compose_key_events(struct nk_context* context, const WormUiC
         }
         if (key_event.keycode == static_cast<uint32_t>(SDLK_DOWN)) {
             if (!compose_navigation_action_for_key(key_event.keycode, key_event.modifiers,
+                                                   view->downscroll,
                                                    &navigation_action)) {
                 continue;
             }
@@ -988,30 +1017,31 @@ static void process_compose_key_events(struct nk_context* context, const WormUiC
             continue;
         }
         if (key_event.keycode == static_cast<uint32_t>(SDLK_PAGEUP)) {
+            compose_navigation_action_for_key(key_event.keycode, key_event.modifiers,
+                                              view->downscroll, &navigation_action);
             update_compose_pointer_navigation(action, std::nullopt);
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0.0, 0.0, 0, false,
-                                 WORM_UI_COMPOSE_SELECTION_REPLACE,
-                                 WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD);
+                                 WORM_UI_COMPOSE_SELECTION_REPLACE, navigation_action);
             state.navigation_key_active = !state.action_overflowed;
             state.navigation_keycode = key_event.scancode;
-            state.navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD;
+            state.navigation_action = navigation_action;
             continue;
         }
         if (key_event.keycode == static_cast<uint32_t>(SDLK_PAGEDOWN)) {
+            compose_navigation_action_for_key(key_event.keycode, key_event.modifiers,
+                                              view->downscroll, &navigation_action);
             update_compose_pointer_navigation(action, std::nullopt);
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS, 0.0, 0.0, 0, false,
-                                 WORM_UI_COMPOSE_SELECTION_REPLACE,
-                                 WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD);
+                                 WORM_UI_COMPOSE_SELECTION_REPLACE, navigation_action);
             state.navigation_key_active = !state.action_overflowed;
             state.navigation_keycode = key_event.scancode;
-            state.navigation_action = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+            state.navigation_action = navigation_action;
             continue;
         }
         if (pointer_paint_mode_active) {
             continue;
         }
-        if (state.lane_hold_active ||
-            (key_event.modifiers & (SDL_KMOD_ALT | SDL_KMOD_GUI | SDL_KMOD_CTRL | SDL_KMOD_MODE |
+        if ((key_event.modifiers & (SDL_KMOD_ALT | SDL_KMOD_GUI | SDL_KMOD_CTRL | SDL_KMOD_MODE |
                                     SDL_KMOD_LEVEL5)) != 0) {
             continue;
         }
@@ -1023,10 +1053,10 @@ static void process_compose_key_events(struct nk_context* context, const WormUiC
             }
             append_compose_input(action, WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS, 0.0, 0.0,
                                  binding.lane_id, (key_event.modifiers & SDL_KMOD_SHIFT) != 0);
-            if ((key_event.modifiers & SDL_KMOD_SHIFT) == 0) {
+            if ((key_event.modifiers & SDL_KMOD_SHIFT) == 0 && !state.action_overflowed &&
+                state.lane_hold_count < state.lane_holds.size()) {
                 state.lane_hold_active = true;
-                state.lane_hold_keycode = key_event.scancode;
-                state.lane_hold_lane_id = binding.lane_id;
+                state.lane_holds[state.lane_hold_count++] = {key_event.scancode, binding.lane_id};
             }
             break;
         }
@@ -1099,7 +1129,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             state.bmson_razor_pointer_active = false;
             reset_bmson_marker_move_capture();
             state.semantic_layer_paint_pointer_active = false;
-            state.lane_hold_active = false;
+            state.lane_hold_active = chart_changed ? false : state.lane_hold_active;
             state.space_range_hold_active = false;
             state.space_range_hold_moved = false;
             state.note_move_candidate_active = false;
@@ -1108,8 +1138,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
             state.area_selection_candidate_active = false;
             state.area_selection_active = false;
             state.semantic_layer_color_editor_visible = false;
-            state.lane_hold_keycode = 0;
-            state.lane_hold_lane_id = 0;
+            if (chart_changed) state.lane_hold_count = 0;
             cancel_compose_navigation(action);
         }
         if (chart_changed) {
@@ -1159,6 +1188,7 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
     state.note_paint_pointer_active = false;
     state.semantic_layer_paint_pointer_active = false;
     state.lane_hold_active = false;
+    state.lane_hold_count = 0;
     state.space_range_hold_active = false;
     state.space_range_hold_moved = false;
     state.area_selection_candidate_active = false;
@@ -1196,586 +1226,78 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         state.label_document_revision = view->document_revision;
         state.label_note_id = view->selected_note_label_note_id;
     }
-    nk_layout_row_begin(context, NK_DYNAMIC, 25, 11);
-    nk_layout_row_push(context, 0.06f);
-    if (nk_button_label(context, "Zoom -") && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+    nk_layout_row_template_begin(context, 27);
+    wormedit::ui::chrome::IconButton::layout_columns(context, 3);
+    nk_layout_row_template_push_static(context, 12);
+    wormedit::ui::chrome::IconButton::layout_columns(context, 3);
+    nk_layout_row_template_push_dynamic(context);
+    wormedit::ui::chrome::IconButton::layout_columns(context);
+    nk_layout_row_template_push_static(context, 215);
+    nk_layout_row_template_end(context);
+    if (wormedit::ui::chrome::IconButton{Glyph::zoom_out, "Zoom out"}.render(context) &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_OUT;
-    nk_layout_row_push(context, 0.06f);
-    if (nk_button_label(context, "Zoom +") && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+    if (wormedit::ui::chrome::IconButton{Glyph::zoom_in, "Zoom in"}.render(context) &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_IN;
-    std::optional<WormUiComposeNavigationAction> pointer_navigation;
-    const auto& navigation_left_button = context->input.mouse.buttons[NK_BUTTON_LEFT];
-    const auto pointer_down =
-        window_focused && view->scene_available && navigation_left_button.down != 0;
-    const auto pointer_started = pointer_down && navigation_left_button.clicked != 0;
-    if (state.pointer_navigation_active && pointer_down) {
-        pointer_navigation = state.pointer_navigation_action;
-    }
-    const auto navigation_button = [&](const char* label, WormUiComposeNavigationAction action) {
-        const auto bounds = nk_widget_bounds(context);
-        if (!view->scene_available) {
-            nk_widget_disable_begin(context);
-        }
-        (void)nk_button_label(context, label);
-        if (!view->scene_available) {
-            nk_widget_disable_end(context);
-        }
-        if (!state.pointer_navigation_active && pointer_started &&
-            navigation_left_button.clicked_pos.x >= bounds.x &&
-            navigation_left_button.clicked_pos.x <= bounds.x + bounds.w &&
-            navigation_left_button.clicked_pos.y >= bounds.y &&
-            navigation_left_button.clicked_pos.y <= bounds.y + bounds.h) {
-            pointer_navigation = action;
-        }
-    };
-    nk_layout_row_push(context, 0.07f);
-    navigation_button("Step up", WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD);
-    nk_layout_row_push(context, 0.07f);
-    navigation_button("Step down", WORM_UI_COMPOSE_NAVIGATION_CURSOR_FORWARD);
-    nk_layout_row_push(context, 0.08f);
-    navigation_button("Page up", WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD);
-    nk_layout_row_push(context, 0.08f);
-    navigation_button("Page down", WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD);
-    update_compose_pointer_navigation(action, pointer_navigation);
-    nk_layout_row_push(context, 0.07f);
-    if (nk_button_label(context, "Reset") && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+    update_compose_pointer_navigation(action, std::nullopt);
+    if (wormedit::ui::chrome::IconButton{Glyph::rotate_ccw, "Reset view"}
+            .render(context) &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW;
-    nk_layout_row_push(context, 0.14f);
-    nk_labelf(context, NK_TEXT_LEFT, "Zoom %.0f px/measure", view->pixels_per_standard_measure);
-    nk_layout_row_push(context, 0.12f);
+    nk_label(context, "", NK_TEXT_LEFT);
     if (!view->scene_available) {
         nk_widget_disable_begin(context);
     }
-    const auto paint_label = view->note_paint_mode_active ? "Paint: Armed" : "Paint: Off";
-    if (nk_button_label(context, paint_label) &&
+    if (wormedit::ui::chrome::IconButton{Glyph::paintbrush,
+                                         "Toggle note paint mode", view->note_paint_mode_active}
+            .render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
         action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
     }
     if (!view->scene_available) {
         nk_widget_disable_end(context);
     }
-    nk_layout_row_push(context, 0.07f);
-    if (nk_button_label(context, state.inspector_visible ? "Hide side" : "Show side")) {
+    if (wormedit::ui::chrome::IconButton{compose_inspector_icon(state.inspector_visible),
+                                         state.inspector_visible ? "Hide inspector"
+                                                                 : "Show inspector",
+                                         state.inspector_visible}.render(context)) {
         state.inspector_visible = !state.inspector_visible;
     }
-    nk_layout_row_push(context, 0.18f);
-    if (view->truncated) {
-        nk_label(context, "Geometry capped", NK_TEXT_RIGHT);
-    } else {
-        nk_labelf(context, NK_TEXT_RIGHT, "%zu notes · %zu lanes · %zu grid",
-                  view->note_endpoint_count, view->lane_count, view->grid_line_count);
+    const bool bgm_scrollable = view->bgm_maximum_horizontal_scroll_pixels > 0.0;
+    if (!bgm_scrollable) nk_widget_disable_begin(context);
+    if (wormedit::ui::chrome::IconButton{Glyph::chevron_left,
+                                         "Scroll BGM columns left"}.render(context) && bgm_scrollable)
+        append_bgm_horizontal_scroll(action, view, -80.0);
+    constexpr nk_size scroll_steps = 1000;
+    nk_size scroll_position = bgm_scrollable
+        ? static_cast<nk_size>(view->bgm_horizontal_scroll_pixels /
+                               view->bgm_maximum_horizontal_scroll_pixels * scroll_steps)
+        : 0;
+    if (nk_progress(context, &scroll_position, scroll_steps, NK_MODIFIABLE) && bgm_scrollable) {
+        const auto target = view->bgm_maximum_horizontal_scroll_pixels *
+                            static_cast<double>(scroll_position) / scroll_steps;
+        append_bgm_horizontal_scroll(action, view,
+                                     target - view->bgm_horizontal_scroll_pixels);
     }
-    nk_layout_row_end(context);
+    if (wormedit::ui::chrome::IconButton{Glyph::chevron_right,
+                                         "Scroll BGM columns right"}.render(context) && bgm_scrollable)
+        append_bgm_horizontal_scroll(action, view, 80.0);
+    if (!bgm_scrollable) nk_widget_disable_end(context);
+    nk_labelf(context, NK_TEXT_RIGHT, "%.0f px/measure · %zu lanes",
+              view->pixels_per_standard_measure, view->lane_count);
 
     const auto compose_body_bounds = nk_window_get_content_region(context);
-    const auto compose_body_height = std::max(64.0f, compose_body_bounds.h);
-    constexpr float inspector_gap = 5.0f;
+    const auto body_top = nk_widget_position(context).y;
+    const auto compose_body_height = std::max(
+        64.0f, compose_body_bounds.y + compose_body_bounds.h - body_top -
+                   context->style.window.spacing.y);
     const auto inspector_drawn = state.inspector_visible && compose_body_bounds.w >= 540.0f;
     const auto inspector_width = inspector_drawn
                                      ? std::clamp(compose_body_bounds.w * 0.24f, 280.0f, 380.0f)
                                      : 0.0f;
-    const auto editor_width = std::max(120.0f, compose_body_bounds.w - inspector_width -
-                                                   (inspector_drawn ? inspector_gap : 0.0f));
+    const auto editor_width = compose_body_bounds.w;
     nk_layout_space_begin(context, NK_STATIC, compose_body_height, inspector_drawn ? 2 : 1);
-    if (inspector_drawn) {
-        nk_layout_space_push(context, nk_rect(editor_width + inspector_gap, 0.0f, inspector_width,
-                                              compose_body_height));
-        if (nk_group_begin(context, "Compose inspector", NK_WINDOW_BORDER)) {
-
-    nk_layout_row_begin(context, NK_DYNAMIC, 25, 2);
-    nk_layout_row_push(context, 0.57f);
-    if (timing_view->initial_bpm_present && std::isfinite(timing_view->initial_bpm_value)) {
-        nk_labelf(context, NK_TEXT_LEFT, "Initial BPM: %.6g",
-                  timing_view->initial_bpm_value);
-    } else {
-        nk_label(context, "Initial BPM: unset", NK_TEXT_LEFT);
-    }
-    nk_layout_row_push(context, 0.43f);
-    const auto can_edit_initial_bpm = timing_view->initial_bpm_editable &&
-        !timing_view->stage_active && !timing_view->sv_recipe.active &&
-        !timing_view->sv_recipe.selection_armed &&
-        action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE;
-    if (!can_edit_initial_bpm)
-        nk_widget_disable_begin(context);
-    const auto initial_bpm_clicked = nk_button_label(context, "Set initial BPM");
-    if (!can_edit_initial_bpm)
-        nk_widget_disable_end(context);
-    nk_layout_row_end(context);
-    if (initial_bpm_clicked && can_edit_initial_bpm) {
-        action->timing_stage_action = WORM_UI_TIMING_STAGE_BEGIN;
-        action->timing_chart_id = timing_view->chart_id;
-        action->timing_document_revision = timing_view->document_revision;
-        action->timing_lane = WORM_UI_TIMING_LANE_BPM;
-        action->timing_object_id = timing_view->initial_bpm_event_id;
-        action->timing_has_target_y = timing_view->initial_bpm_event_id == 0;
-        action->timing_target_y_fraction = 0.0;
-    }
-
-    if (nk_tree_push(context, NK_TREE_TAB, "Timing lanes", NK_MINIMIZED)) {
-        constexpr std::array<const char*, 8> labels{"BPM", "SV", "SPD", "STP",
-                                                    "DLY", "WRP", "KIA", "ANC"};
-        for (std::size_t row = 0; row < 2; ++row) {
-            nk_layout_row_begin(context, NK_DYNAMIC, 24, 4);
-            for (std::size_t column = 0; column < 4; ++column) {
-                const auto lane = row * 4 + column;
-                const auto bit = static_cast<std::uint8_t>(1U << lane);
-                const auto visible = (view->timing_lane_visibility_mask & bit) != 0;
-                const auto editing_lane = timing_view->stage_active &&
-                                          static_cast<std::size_t>(timing_view->stage_lane) == lane;
-                char label[16]{};
-                (void)snprintf(label, sizeof(label), "%s: %s", labels[lane],
-                               visible ? "On" : "Off");
-                nk_layout_row_push(context, 0.25f);
-                const auto disabled = !view->scene_available || (editing_lane && visible);
-                if (disabled) {
-                    nk_widget_disable_begin(context);
-                }
-                const auto clicked = nk_button_label(context, label);
-                if (disabled) {
-                    nk_widget_disable_end(context);
-                }
-                if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                    action->compose_timing_lane = static_cast<std::uint8_t>(lane);
-                    action->compose_action =
-                        WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY;
-                }
-            }
-            nk_layout_row_end(context);
-        }
-        nk_tree_pop(context);
-    }
-
-    if (timing_view->stage_active &&
-        nk_tree_push(context, NK_TREE_TAB, "Timing event", NK_MAXIMIZED)) {
-        worm_ui_nuklear_render_timing_stage_editor(context, timing_view, action);
-        nk_tree_pop(context);
-    }
-
-    worm_ui_nuklear_render_compose_resources(context, view, action, &state);
-    if (view->waveform_analysis_pending) {
-        nk_layout_row_dynamic(context, 18, 1);
-        nk_label(context, "Building aligned waveform...", NK_TEXT_LEFT);
-    }
-
-    if (view->staged_bmson_marker_count != 0 &&
-        nk_tree_push(context, NK_TREE_TAB, "Staged BMSON regions", NK_MAXIMIZED)) {
-        state.bmson_audition_index = std::clamp(
-            state.bmson_audition_index, 1,
-            static_cast<int>(view->staged_bmson_marker_count));
-        nk_layout_row_dynamic(context, 24, 1);
-        nk_property_int(context, "Region", 1, &state.bmson_audition_index,
-                        static_cast<int>(view->staged_bmson_marker_count), 1, 1.0f);
-        const auto selected_index = static_cast<std::size_t>(state.bmson_audition_index - 1);
-        const auto assigned_lane = view->staged_bmson_marker_playable_lanes[selected_index];
-        nk_labelf(context, NK_TEXT_LEFT, "%s · %s",
-                  view->staged_bmson_marker_restarts[selected_index] ? "Restart" : "Continue",
-                  assigned_lane == 0 ? "BGM" : "Playable key lane");
-        if (nk_button_label(context, "Audition staged region")) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT,
-                                 0.0, 0.0, 0, false,
-                                 WORM_UI_COMPOSE_SELECTION_REPLACE,
-                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                                 static_cast<std::uint64_t>(state.bmson_audition_index));
-        }
-        nk_layout_row_dynamic(context, 24, 2);
-        if (nk_button_label(context, "Assign active key lane")) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_ACTIVE_LANE,
-                                 0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                                 static_cast<std::uint64_t>(state.bmson_audition_index));
-        }
-        if (nk_button_label(context, "Assign BGM")) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_BGM, 0.0, 0.0,
-                                 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                                 static_cast<std::uint64_t>(state.bmson_audition_index));
-        }
-        if (nk_button_label(context, "Toggle restart")) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_TOGGLE_DRAFT_RESTART, 0.0, 0.0,
-                                 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                                 static_cast<std::uint64_t>(state.bmson_audition_index));
-        }
-        if (nk_button_label(context, "Remove region")) {
-            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT, 0.0, 0.0, 0,
-                                 false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                                 static_cast<std::uint64_t>(state.bmson_audition_index));
-        }
-        nk_tree_pop(context);
-    }
-
-    if (nk_tree_push(context, NK_TREE_TAB, "Markers / sections", NK_MINIMIZED)) {
-    nk_layout_row_begin(context, NK_DYNAMIC, 24, 2);
-    if (!view->scene_available || !view->beat_marker_navigation_available) {
-        nk_widget_disable_begin(context);
-    }
-    nk_layout_row_push(context, 0.5f);
-    const auto previous_marker_clicked = nk_button_label(context, "Previous marker");
-    nk_layout_row_push(context, 0.5f);
-    const auto next_marker_clicked = nk_button_label(context, "Next marker");
-    if (!view->scene_available || !view->beat_marker_navigation_available) {
-        nk_widget_disable_end(context);
-    }
-    nk_layout_row_end(context);
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_label(context,
-             view->beat_marker_navigation_available
-                 ? "Navigate beat-anchored bookmarks and section boundaries"
-                 : "No beat-anchored bookmarks or sections",
-             NK_TEXT_LEFT);
-    if (action && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
-        if (previous_marker_clicked) {
-            action->kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER;
-        } else if (next_marker_clicked) {
-            action->kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER;
-        }
-    }
-
-    worm_ui_nuklear_render_compose_markers(context, view, action);
-    nk_tree_pop(context);
-    }
-
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_labelf(context, NK_TEXT_LEFT, "Label (%zu)", view->selected_note_count);
-    if (!view->scene_available || view->selected_note_count == 0) {
-        nk_widget_disable_begin(context);
-    }
-    nk_layout_row_dynamic(context, 25, 1);
-    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.note_label.data(),
-                                         state.note_label.size(), nk_filter_default);
-    if (view->focus_note_label_editor) {
-        nk_edit_focus(context, NK_EDIT_GOTO_END_ON_ACTIVATE);
-        if (action) {
-            action->compose_note_label_focus_consumed = true;
-        }
-    }
-    nk_layout_row_dynamic(context, 25, 2);
-    if (nk_button_label(context, "Apply") &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        memcpy(action->compose_note_label, state.note_label.data(),
-               sizeof(action->compose_note_label));
-        action->compose_action = WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL;
-    }
-    if (nk_button_label(context, "Clear") &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        action->compose_action = WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL;
-    }
-    if (!view->scene_available || view->selected_note_count == 0) {
-        nk_widget_disable_end(context);
-    }
-
-    const auto visible_layer_count = view->semantic_layer_count;
-    bool semantic_target_active = false;
-    for (size_t index = 0; index < visible_layer_count; ++index) {
-        semantic_target_active = semantic_target_active || view->semantic_layers[index].selected;
-    }
-    if (nk_tree_push(context, NK_TREE_TAB, "Semantic layers", NK_MINIMIZED)) {
-    nk_layout_row_dynamic(context, 24, 1);
-    if (nk_button_label(context, "Add semantic layer") && action &&
-        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        action->compose_action = WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER;
-    }
-    nk_layout_row_begin(context, NK_DYNAMIC, 24, 3);
-    nk_layout_row_push(context, 0.28f);
-    if (view->semantic_layer_page == 0) {
-        nk_widget_disable_begin(context);
-    }
-    const auto previous_layer_page_clicked = nk_button_label(context, "Previous");
-    if (view->semantic_layer_page == 0) {
-        nk_widget_disable_end(context);
-    }
-    nk_layout_row_push(context, 0.44f);
-    if (view->semantic_layer_page_count == 0) {
-        nk_label(context, "Palette empty", NK_TEXT_CENTERED);
-    } else {
-        nk_labelf(context, NK_TEXT_CENTERED, "Page %zu/%zu · %zu layers",
-                  view->semantic_layer_page + 1, view->semantic_layer_page_count,
-                  view->semantic_layer_total_count);
-    }
-    nk_layout_row_push(context, 0.28f);
-    const auto last_layer_page = view->semantic_layer_page_count == 0 ||
-                                 view->semantic_layer_page + 1 >= view->semantic_layer_page_count;
-    if (last_layer_page) {
-        nk_widget_disable_begin(context);
-    }
-    const auto next_layer_page_clicked = nk_button_label(context, "Next");
-    if (last_layer_page) {
-        nk_widget_disable_end(context);
-    }
-    nk_layout_row_end(context);
-    if (action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-        if (previous_layer_page_clicked) {
-            action->compose_action = WORM_UI_COMPOSE_ACTION_PREVIOUS_SEMANTIC_LAYER_PAGE;
-        } else if (next_layer_page_clicked) {
-            action->compose_action = WORM_UI_COMPOSE_ACTION_NEXT_SEMANTIC_LAYER_PAGE;
-        }
-    }
-    if (visible_layer_count == 0) {
-        nk_layout_row_dynamic(context, 22, 1);
-        nk_label(context, "Semantic layers: no visible palette entries", NK_TEXT_LEFT);
-    } else {
-        nk_layout_row_dynamic(context, 18, 1);
-        nk_label(context, view->semantic_layers_truncated ? "Layers+" : "Layers", NK_TEXT_LEFT);
-        for (size_t index = 0; index < visible_layer_count; ++index) {
-            const auto& layer = view->semantic_layers[index];
-            std::array<char, 96> label{};
-            const auto name_length = std::min<size_t>(strlen(layer.name), 24);
-            snprintf(label.data(), label.size(), "%zu:%.*s #%llu%s%s", index + 1,
-                     static_cast<int>(name_length), layer.name,
-                     static_cast<unsigned long long>(layer.layer_id),
-                     layer.visible ? "" : " [hidden]", layer.selected ? " *" : "");
-            nk_layout_row_dynamic(context, 25, 1);
-            const auto palette_color = nk_rgba(layer.red, layer.green, layer.blue, layer.alpha);
-            nk_style_push_style_item(context, &context->style.button.normal,
-                                     nk_style_item_color(palette_color));
-            nk_style_push_style_item(context, &context->style.button.hover,
-                                     nk_style_item_color(palette_color));
-            nk_style_push_style_item(context, &context->style.button.active,
-                                     nk_style_item_color(palette_color));
-            if (!view->scene_available) {
-                nk_widget_disable_begin(context);
-            }
-            const auto clicked = nk_button_label(context, label.data());
-            if (!view->scene_available) {
-                nk_widget_disable_end(context);
-            }
-            nk_style_pop_style_item(context);
-            nk_style_pop_style_item(context);
-            nk_style_pop_style_item(context);
-            if (clicked && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER;
-                action->compose_semantic_layer_id = layer.layer_id;
-            }
-        }
-        const auto selected_layer =
-            std::ranges::find_if(view->semantic_layers, view->semantic_layers + visible_layer_count,
-                                 [](const auto& layer) { return layer.selected; });
-        if (selected_layer != view->semantic_layers + visible_layer_count) {
-            if (state.semantic_layer_name_id != selected_layer->layer_id ||
-                state.semantic_layer_name_revision != view->document_revision) {
-                state.semantic_layer_name.fill('\0');
-                const auto length =
-                    std::min(strlen(selected_layer->name), state.semantic_layer_name.size() - 1);
-                memcpy(state.semantic_layer_name.data(), selected_layer->name, length);
-                state.semantic_layer_name_id = selected_layer->layer_id;
-                state.semantic_layer_name_revision = view->document_revision;
-            }
-            if (state.semantic_layer_color_id != selected_layer->layer_id) {
-                state.semantic_layer_color_id = selected_layer->layer_id;
-                state.semantic_layer_color_editor_visible = false;
-            }
-            if (!state.semantic_layer_color_editor_visible) {
-                const auto color =
-                    nk_color_cf(nk_rgba(selected_layer->red, selected_layer->green,
-                                        selected_layer->blue, selected_layer->alpha));
-                state.semantic_layer_color = {color.r, color.g, color.b, color.a};
-            }
-            nk_layout_row_dynamic(context, 24, 1);
-            (void)nk_edit_string_zero_terminated(
-                context, NK_EDIT_FIELD, state.semantic_layer_name.data(),
-                state.semantic_layer_name.size(), nk_filter_default);
-            nk_layout_row_dynamic(context, 24, 2);
-            if (nk_button_label(context, "Rename") && action &&
-                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                memcpy(action->compose_semantic_layer_name, state.semantic_layer_name.data(),
-                       sizeof(action->compose_semantic_layer_name));
-                action->compose_action = WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER;
-            }
-            if (nk_button_label(context, "Color...")) {
-                state.semantic_layer_color_editor_visible =
-                    !state.semantic_layer_color_editor_visible;
-            }
-            nk_layout_row_dynamic(context, 24, 4);
-            if (selected_layer->locked) {
-                nk_widget_disable_begin(context);
-            }
-            const auto delete_layer_clicked = nk_button_label(context, "Delete");
-            if (selected_layer->locked) {
-                nk_widget_disable_end(context);
-            }
-            if (delete_layer_clicked && action &&
-                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                action->compose_action = WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER;
-            }
-            if (nk_button_label(context, "Up") && action &&
-                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                action->compose_action = WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP;
-            }
-            if (nk_button_label(context, "Down") && action &&
-                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                action->compose_action = WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_DOWN;
-            }
-            if (nk_button_label(context, view->semantic_layer_target_visible ? "Hide" : "Show") &&
-                action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY;
-            }
-            if (state.semantic_layer_color_editor_visible) {
-                nk_layout_row_dynamic(context, 110, 1);
-                auto color = nk_colorf{state.semantic_layer_color.r, state.semantic_layer_color.g,
-                                       state.semantic_layer_color.b, state.semantic_layer_color.a};
-                color = nk_color_picker(context, color, NK_RGBA);
-                state.semantic_layer_color = {color.r, color.g, color.b, color.a};
-                const auto byte_component = [](float component) {
-                    return static_cast<uint8_t>(
-                        std::lround(std::clamp(component, 0.0f, 1.0f) * 255.0f));
-                };
-                const auto red = byte_component(state.semantic_layer_color.r);
-                const auto green = byte_component(state.semantic_layer_color.g);
-                const auto blue = byte_component(state.semantic_layer_color.b);
-                const auto alpha = byte_component(state.semantic_layer_color.a);
-                nk_layout_row_begin(context, NK_DYNAMIC, 24, 3);
-                nk_layout_row_push(context, 0.46f);
-                nk_labelf(context, NK_TEXT_LEFT, "RGBA %u %u %u %u", static_cast<unsigned>(red),
-                          static_cast<unsigned>(green), static_cast<unsigned>(blue),
-                          static_cast<unsigned>(alpha));
-                nk_layout_row_push(context, 0.27f);
-                const auto apply_color_clicked = nk_button_label(context, "Apply color");
-                nk_layout_row_push(context, 0.27f);
-                const auto cancel_color_clicked = nk_button_label(context, "Cancel color");
-                nk_layout_row_end(context);
-                if (apply_color_clicked && action &&
-                    action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                    action->compose_semantic_layer_red = red;
-                    action->compose_semantic_layer_green = green;
-                    action->compose_semantic_layer_blue = blue;
-                    action->compose_semantic_layer_alpha = alpha;
-                    action->compose_action = WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR;
-                    state.semantic_layer_color_editor_visible = false;
-                } else if (cancel_color_clicked) {
-                    state.semantic_layer_color_editor_visible = false;
-                }
-            }
-            if (selected_layer->assigned_note_count != 0) {
-                nk_layout_row_begin(context, NK_DYNAMIC, 24, 2);
-                nk_layout_row_push(context, 0.65f);
-                nk_labelf(context, NK_TEXT_LEFT, "Assigned to %zu note%s",
-                          selected_layer->assigned_note_count,
-                          selected_layer->assigned_note_count == 1 ? "" : "s");
-                nk_layout_row_push(context, 0.35f);
-                if (selected_layer->locked) {
-                    nk_widget_disable_begin(context);
-                }
-                const auto delete_and_unlink_clicked = nk_button_label(context, "Delete + unlink");
-                if (selected_layer->locked) {
-                    nk_widget_disable_end(context);
-                }
-                if (delete_and_unlink_clicked && action &&
-                    action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                    action->compose_action =
-                        WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS;
-                }
-                nk_layout_row_end(context);
-            }
-            if (selected_layer->visible) {
-                nk_layout_row_begin(context, NK_DYNAMIC, 22, 2);
-                nk_layout_row_push(context, 0.5f);
-                if (nk_button_label(context, view->semantic_layer_target_required_filter
-                                                 ? "Require: On"
-                                                 : "Require filter") &&
-                    action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                    action->compose_action =
-                        WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER;
-                }
-                nk_layout_row_push(context, 0.5f);
-                if (nk_button_label(context, view->semantic_layer_target_excluded_filter
-                                                 ? "Exclude: On"
-                                                 : "Exclude filter") &&
-                    action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                    action->compose_action =
-                        WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER;
-                }
-                nk_layout_row_end(context);
-            }
-        }
-
-        nk_layout_row_dynamic(context, 18, 1);
-        nk_labelf(context, NK_TEXT_LEFT, "Layer (%zu)", view->selected_note_count);
-        const auto membership_enabled = view->scene_available && semantic_target_active &&
-                                        !view->semantic_layer_target_locked &&
-                                        view->selected_note_count != 0;
-        const auto membership_button = [&](const char* label, WormUiComposeActionKind kind) {
-            if (!membership_enabled) {
-                nk_widget_disable_begin(context);
-            }
-            const auto clicked = nk_button_label(context, label);
-            if (!membership_enabled) {
-                nk_widget_disable_end(context);
-            }
-            if (clicked && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-                action->compose_action = kind;
-            }
-        };
-        nk_layout_row_dynamic(context, 24, 3);
-        if (!view->scene_available || !semantic_target_active) {
-            nk_widget_disable_begin(context);
-        }
-        const auto select_clicked = nk_button_label(context, "Select");
-        if (!view->scene_available || !semantic_target_active) {
-            nk_widget_disable_end(context);
-        }
-        if (select_clicked && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-            action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER_NOTES;
-        }
-        membership_button("Add", WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
-        membership_button("Toggle", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER);
-        nk_layout_row_dynamic(context, 24, 3);
-        membership_button("Remove", WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER);
-        const auto layer_paint_enabled =
-            view->scene_available && semantic_target_active && !view->semantic_layer_target_locked;
-        if (!layer_paint_enabled) {
-            nk_widget_disable_begin(context);
-        }
-        const auto layer_paint_clicked = nk_button_label(
-            context, view->semantic_layer_paint_mode_active ? "Paint: Armed" : "Paint: Off");
-        if (!layer_paint_enabled) {
-            nk_widget_disable_end(context);
-        }
-        if (layer_paint_clicked && action &&
-            action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-            action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE;
-        }
-        if (!semantic_target_active) {
-            nk_widget_disable_begin(context);
-        }
-        const auto solo_clicked =
-            nk_button_label(context, view->semantic_layer_solo_active ? "Solo: On" : "Solo: Off");
-        if (!semantic_target_active) {
-            nk_widget_disable_end(context);
-        }
-        if (solo_clicked && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-            action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO;
-        }
-        nk_layout_row_dynamic(context, 24, 2);
-        if (!semantic_target_active) {
-            nk_widget_disable_begin(context);
-        }
-        const auto lock_clicked =
-            nk_button_label(context, view->semantic_layer_target_locked ? "Unlock" : "Lock");
-        if (!semantic_target_active) {
-            nk_widget_disable_end(context);
-        }
-        if (lock_clicked && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-            action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK;
-        }
-        if (!semantic_target_active) {
-            nk_widget_disable_begin(context);
-        }
-        const auto clear_target = nk_button_label(context, "Clear target");
-        if (!semantic_target_active) {
-            nk_widget_disable_end(context);
-        }
-        if (clear_target && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
-            action->compose_action = WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER;
-        }
-    }
-    nk_tree_pop(context);
-    }
-
-    worm_ui_nuklear_render_bms_branch_panel(context, view, action);
-    nk_group_end(context);
-        }
-    }
     nk_layout_space_push(context, nk_rect(0.0f, 0.0f, editor_width, compose_body_height));
     if (nk_group_begin(context, "Compose editor", NK_WINDOW_NO_SCROLLBAR)) {
     const auto render_compose_editor = [&]() {
@@ -1882,7 +1404,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         return;
 
     if (overview_available && overview_rect.w > 1.0f && overview_rect.h > 1.0f) {
-        nk_fill_rect(canvas, overview_rect, 0.0f, nk_rgb(22, 31, 42));
+        nk_fill_rect(canvas, overview_rect, 0.0f,
+                     wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::overview));
         const auto center = overview_rect.x + overview_rect.w * 0.5f;
         const auto half_width = overview_rect.w * 0.43f;
         for (size_t index = 0; index < view->waveform_overview_row_count; ++index) {
@@ -1925,19 +1448,25 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         }
     }
 
-    const bool pointer_inside = nk_input_is_mouse_hovering_rect(&context->input, viewport);
+    const auto editor_input_right = inspector_drawn
+        ? viewport.x + viewport.w - inspector_width - 8.0f
+        : viewport.x + viewport.w;
+    const bool pointer_inside = nk_input_is_mouse_hovering_rect(&context->input, viewport) &&
+                                context->input.mouse.pos.x < editor_input_right;
     const bool pointer_clicked =
-        nk_input_is_mouse_click_in_rect(&context->input, NK_BUTTON_LEFT, viewport);
+        nk_input_is_mouse_click_in_rect(&context->input, NK_BUTTON_LEFT, viewport) &&
+        context->input.mouse.buttons[NK_BUTTON_LEFT].clicked_pos.x < editor_input_right;
     const auto& left_button = context->input.mouse.buttons[NK_BUTTON_LEFT];
     const bool overview_pressed =
         overview_available && overview_rect.w > 1.0f && overview_rect.h > 1.0f &&
-        nk_input_is_mouse_click_in_rect(&context->input, NK_BUTTON_LEFT, overview_rect);
+        nk_input_is_mouse_click_in_rect(&context->input, NK_BUTTON_LEFT, overview_rect) &&
+        context->input.mouse.buttons[NK_BUTTON_LEFT].clicked_pos.x < editor_input_right;
     if (overview_pressed && window_focused && view->scene_available) {
         state.keyboard_focus = true;
     }
     const bool pointer_pressed_in_view = left_button.down && left_button.clicked != 0 &&
                                          left_button.clicked_pos.x >= viewport.x &&
-                                         left_button.clicked_pos.x <= viewport.x + viewport.w &&
+                                         left_button.clicked_pos.x < editor_input_right &&
                                          left_button.clicked_pos.y >= viewport.y &&
                                          left_button.clicked_pos.y <= viewport.y + viewport.h;
     if (pointer_clicked || pointer_pressed_in_view) {
@@ -2048,7 +1577,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         action->compose_viewport_pointer_x_pixels = pointer_x;
         action->compose_viewport_pointer_y_pixels = pointer_y;
         if (state.middle_click_pending && state.middle_click_x >= viewport.x &&
-            state.middle_click_x <= viewport.x + viewport.w && state.middle_click_y >= viewport.y &&
+            state.middle_click_x < editor_input_right && state.middle_click_y >= viewport.y &&
             state.middle_click_y <= viewport.y + viewport.h) {
             action->compose_viewport_middle_click = true;
             action->compose_viewport_middle_click_x_pixels =
@@ -2063,7 +1592,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     if (!state.action_overflowed && view->scene_available && window_focused) {
         for (size_t index = 0; index < state.wheel_event_count; ++index) {
             const auto& wheel = state.wheel_events[index];
-            if (wheel.mouse_x < viewport.x || wheel.mouse_x > viewport.x + viewport.w ||
+            if (wheel.mouse_x < viewport.x || wheel.mouse_x >= editor_input_right ||
                 wheel.mouse_y < viewport.y || wheel.mouse_y > viewport.y + viewport.h) {
                 continue;
             }
@@ -2090,7 +1619,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                               SDL_KMOD_GUI | SDL_KMOD_MODE | SDL_KMOD_LEVEL5;
     const auto pointer_started_in_view = left_button.clicked != 0 &&
                                          left_button.clicked_pos.x >= viewport.x &&
-                                         left_button.clicked_pos.x <= viewport.x + viewport.w &&
+                                         left_button.clicked_pos.x < editor_input_right &&
                                          left_button.clicked_pos.y >= viewport.y &&
                                          left_button.clicked_pos.y <= viewport.y + viewport.h;
     const auto pointer_started_x = (static_cast<double>(left_button.clicked_pos.x) - viewport.x) *
@@ -2232,7 +1761,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     if (!compose_pointer_captured && window_focused && view->scene_available) {
         for (size_t click = 0; click < double_click_count; ++click) {
             const auto& pointer = double_clicks[click];
-            if (pointer.x < viewport.x || pointer.x >= viewport.x + viewport.w ||
+            if (pointer.x < viewport.x || pointer.x >= editor_input_right ||
                 pointer.y < viewport.y || pointer.y >= viewport.y + viewport.h) {
                 continue;
             }
@@ -2766,24 +2295,27 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
 
     const auto parent_clip = canvas->clip;
     nk_push_scissor(canvas, viewport);
-    nk_fill_rect(canvas, viewport, 0.0f, nk_rgb(22, 25, 33));
+    nk_fill_rect(canvas, viewport, 0.0f,
+                 wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::viewport));
     if (!view->scene_available) {
         const auto* status = view->status_text ? view->status_text : "Chart field is unavailable.";
         nk_draw_text(canvas, viewport, status, static_cast<int>(strlen(status)),
-                     context->style.font, nk_rgb(22, 25, 33), nk_rgb(190, 196, 207));
+                     context->style.font,
+                     wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::viewport),
+                     wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::label));
         nk_push_scissor(canvas, parent_clip);
     } else {
         const auto rail_width = static_cast<float>(42.0 * viewport.w / view->viewport_width_pixels);
         const auto rail = nk_rect(viewport.x, viewport.y, rail_width, viewport.h);
-        nk_fill_rect(canvas, rail, 0.0f, nk_rgb(18, 21, 29));
+        nk_fill_rect(canvas, rail, 0.0f,
+                     wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::rail));
         nk_stroke_line(canvas, rail.x + rail.w, rail.y, rail.x + rail.w, rail.y + rail.h, 1.0f,
                        nk_rgb(80, 91, 112));
         constexpr std::array<const char*, 8> timing_labels{"BPM", "SV", "SPD", "STP",
                                                            "DLY", "WRP", "KIA", "ANC"};
-        const std::array<struct nk_color, 8> timing_colors{
-            nk_rgb(242, 190, 102), nk_rgb(177, 206, 129), nk_rgb(113, 184, 218),
-            nk_rgb(224, 132, 119), nk_rgb(207, 153, 104), nk_rgb(176, 142, 218),
-            nk_rgb(244, 116, 174), nk_rgb(130, 219, 206)};
+        std::array<struct nk_color, 8> timing_colors{};
+        for (size_t index = 0; index < timing_colors.size(); ++index)
+            timing_colors[index] = wormedit::ui::theme::compose_note_accent(index);
         const auto timing_left = rail.x + rail.w;
         const auto field_left =
             viewport.x + static_cast<float>(view->playable_field_left_pixels) * viewport.w /
@@ -2808,7 +2340,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
             nk_fill_rect(canvas, timing_lanes[index], 0.0f,
                          (index & 1U) != 0 ? nk_rgb(25, 29, 38) : nk_rgb(28, 32, 42));
             nk_stroke_line(canvas, timing_lanes[index].x, viewport.y, timing_lanes[index].x,
-                           viewport.y + viewport.h, 1.0f, nk_rgb(58, 67, 83));
+                           viewport.y + viewport.h, 1.0f,
+                           wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::grid));
             if (timing_lane_width >= 17.0f) {
                 const auto title = nk_rect(timing_lanes[index].x + 2.0f, viewport.y + 2.0f,
                                            std::max(1.0f, timing_lane_width - 4.0f), 14.0f);
@@ -3468,6 +3001,505 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
     };
     render_compose_editor();
     nk_group_end(context);
+    }
+    if (inspector_drawn) {
+        nk_layout_space_push(context, nk_rect(editor_width - inspector_width - 8.0f, 8.0f,
+                                              inspector_width, compose_body_height - 16.0f));
+        if (nk_group_begin(context, "Compose inspector", NK_WINDOW_BORDER)) {
+
+    nk_layout_row_begin(context, NK_DYNAMIC, 25, 2);
+    nk_layout_row_push(context, 0.57f);
+    if (timing_view->initial_bpm_present && std::isfinite(timing_view->initial_bpm_value)) {
+        nk_labelf(context, NK_TEXT_LEFT, "Initial BPM: %.6g",
+                  timing_view->initial_bpm_value);
+    } else {
+        nk_label(context, "Initial BPM: unset", NK_TEXT_LEFT);
+    }
+    nk_layout_row_push(context, 0.43f);
+    const auto can_edit_initial_bpm = timing_view->initial_bpm_editable &&
+        !timing_view->stage_active && !timing_view->sv_recipe.active &&
+        !timing_view->sv_recipe.selection_armed &&
+        action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE;
+    if (!can_edit_initial_bpm)
+        nk_widget_disable_begin(context);
+    const auto initial_bpm_clicked = nk_button_label(context, "Set initial BPM");
+    if (!can_edit_initial_bpm)
+        nk_widget_disable_end(context);
+    nk_layout_row_end(context);
+    if (initial_bpm_clicked && can_edit_initial_bpm) {
+        action->timing_stage_action = WORM_UI_TIMING_STAGE_BEGIN;
+        action->timing_chart_id = timing_view->chart_id;
+        action->timing_document_revision = timing_view->document_revision;
+        action->timing_lane = WORM_UI_TIMING_LANE_BPM;
+        action->timing_object_id = timing_view->initial_bpm_event_id;
+        action->timing_has_target_y = timing_view->initial_bpm_event_id == 0;
+        action->timing_target_y_fraction = 0.0;
+    }
+
+    if (nk_tree_push(context, NK_TREE_TAB, "Timing lanes", NK_MINIMIZED)) {
+        constexpr std::array<const char*, 8> labels{"BPM", "SV", "SPD", "STP",
+                                                    "DLY", "WRP", "KIA", "ANC"};
+        for (std::size_t row = 0; row < 2; ++row) {
+            nk_layout_row_begin(context, NK_DYNAMIC, 24, 4);
+            for (std::size_t column = 0; column < 4; ++column) {
+                const auto lane = row * 4 + column;
+                const auto bit = static_cast<std::uint8_t>(1U << lane);
+                const auto visible = (view->timing_lane_visibility_mask & bit) != 0;
+                const auto editing_lane = timing_view->stage_active &&
+                                          static_cast<std::size_t>(timing_view->stage_lane) == lane;
+                char label[16]{};
+                (void)snprintf(label, sizeof(label), "%s: %s", labels[lane],
+                               visible ? "On" : "Off");
+                nk_layout_row_push(context, 0.25f);
+                const auto disabled = !view->scene_available || (editing_lane && visible);
+                if (disabled) {
+                    nk_widget_disable_begin(context);
+                }
+                const auto clicked = nk_button_label(context, label);
+                if (disabled) {
+                    nk_widget_disable_end(context);
+                }
+                if (clicked && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                    action->compose_timing_lane = static_cast<std::uint8_t>(lane);
+                    action->compose_action =
+                        WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY;
+                }
+            }
+            nk_layout_row_end(context);
+        }
+        nk_tree_pop(context);
+    }
+
+    if (timing_view->stage_active &&
+        nk_tree_push(context, NK_TREE_TAB, "Timing event", NK_MAXIMIZED)) {
+        worm_ui_nuklear_render_timing_stage_editor(context, timing_view, action);
+        nk_tree_pop(context);
+    }
+
+    worm_ui_nuklear_render_compose_resources(context, view, action, &state);
+    if (view->waveform_analysis_pending) {
+        nk_layout_row_dynamic(context, 18, 1);
+        nk_label(context, "Building aligned waveform...", NK_TEXT_LEFT);
+    }
+
+    if (view->staged_bmson_marker_count != 0 &&
+        nk_tree_push(context, NK_TREE_TAB, "Staged BMSON regions", NK_MAXIMIZED)) {
+        state.bmson_audition_index = std::clamp(
+            state.bmson_audition_index, 1,
+            static_cast<int>(view->staged_bmson_marker_count));
+        nk_layout_row_dynamic(context, 24, 1);
+        nk_property_int(context, "Region", 1, &state.bmson_audition_index,
+                        static_cast<int>(view->staged_bmson_marker_count), 1, 1.0f);
+        const auto selected_index = static_cast<std::size_t>(state.bmson_audition_index - 1);
+        const auto assigned_lane = view->staged_bmson_marker_playable_lanes[selected_index];
+        nk_labelf(context, NK_TEXT_LEFT, "%s · %s",
+                  view->staged_bmson_marker_restarts[selected_index] ? "Restart" : "Continue",
+                  assigned_lane == 0 ? "BGM" : "Playable key lane");
+        if (nk_button_label(context, "Audition staged region")) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_AUDITION_DRAFT,
+                                 0.0, 0.0, 0, false,
+                                 WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                 static_cast<std::uint64_t>(state.bmson_audition_index));
+        }
+        nk_layout_row_dynamic(context, 24, 2);
+        if (nk_button_label(context, "Assign active key lane")) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_ACTIVE_LANE,
+                                 0.0, 0.0, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                 static_cast<std::uint64_t>(state.bmson_audition_index));
+        }
+        if (nk_button_label(context, "Assign BGM")) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_BGM, 0.0, 0.0,
+                                 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                 static_cast<std::uint64_t>(state.bmson_audition_index));
+        }
+        if (nk_button_label(context, "Toggle restart")) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_TOGGLE_DRAFT_RESTART, 0.0, 0.0,
+                                 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                 static_cast<std::uint64_t>(state.bmson_audition_index));
+        }
+        if (nk_button_label(context, "Remove region")) {
+            append_compose_input(action, WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT, 0.0, 0.0, 0,
+                                 false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
+                                 static_cast<std::uint64_t>(state.bmson_audition_index));
+        }
+        nk_tree_pop(context);
+    }
+
+    if (nk_tree_push(context, NK_TREE_TAB, "Markers / sections", NK_MINIMIZED)) {
+    nk_layout_row_begin(context, NK_DYNAMIC, 24, 2);
+    if (!view->scene_available || !view->beat_marker_navigation_available) {
+        nk_widget_disable_begin(context);
+    }
+    nk_layout_row_push(context, 0.5f);
+    const auto previous_marker_clicked = nk_button_label(context, "Previous marker");
+    nk_layout_row_push(context, 0.5f);
+    const auto next_marker_clicked = nk_button_label(context, "Next marker");
+    if (!view->scene_available || !view->beat_marker_navigation_available) {
+        nk_widget_disable_end(context);
+    }
+    nk_layout_row_end(context);
+    nk_layout_row_dynamic(context, 18, 1);
+    nk_label(context,
+             view->beat_marker_navigation_available
+                 ? "Navigate beat-anchored bookmarks and section boundaries"
+                 : "No beat-anchored bookmarks or sections",
+             NK_TEXT_LEFT);
+    if (action && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
+        if (previous_marker_clicked) {
+            action->kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER;
+        } else if (next_marker_clicked) {
+            action->kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER;
+        }
+    }
+
+    worm_ui_nuklear_render_compose_markers(context, view, action);
+    nk_tree_pop(context);
+    }
+
+    nk_layout_row_dynamic(context, 18, 1);
+    nk_labelf(context, NK_TEXT_LEFT, "Label (%zu)", view->selected_note_count);
+    if (!view->scene_available || view->selected_note_count == 0) {
+        nk_widget_disable_begin(context);
+    }
+    nk_layout_row_dynamic(context, 25, 1);
+    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.note_label.data(),
+                                         state.note_label.size(), nk_filter_default);
+    if (view->focus_note_label_editor) {
+        nk_edit_focus(context, NK_EDIT_GOTO_END_ON_ACTIVATE);
+        if (action) {
+            action->compose_note_label_focus_consumed = true;
+        }
+    }
+    nk_layout_row_dynamic(context, 25, 2);
+    if (nk_button_label(context, "Apply") &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        memcpy(action->compose_note_label, state.note_label.data(),
+               sizeof(action->compose_note_label));
+        action->compose_action = WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL;
+    }
+    if (nk_button_label(context, "Clear") &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->compose_action = WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL;
+    }
+    if (!view->scene_available || view->selected_note_count == 0) {
+        nk_widget_disable_end(context);
+    }
+
+    const auto visible_layer_count = view->semantic_layer_count;
+    bool semantic_target_active = false;
+    for (size_t index = 0; index < visible_layer_count; ++index) {
+        semantic_target_active = semantic_target_active || view->semantic_layers[index].selected;
+    }
+    if (nk_tree_push(context, NK_TREE_TAB, "Semantic layers", NK_MINIMIZED)) {
+    nk_layout_row_dynamic(context, 24, 1);
+    if (nk_button_label(context, "Add semantic layer") && action &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->compose_action = WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER;
+    }
+    nk_layout_row_begin(context, NK_DYNAMIC, 24, 3);
+    nk_layout_row_push(context, 0.28f);
+    if (view->semantic_layer_page == 0) {
+        nk_widget_disable_begin(context);
+    }
+    const auto previous_layer_page_clicked = nk_button_label(context, "Previous");
+    if (view->semantic_layer_page == 0) {
+        nk_widget_disable_end(context);
+    }
+    nk_layout_row_push(context, 0.44f);
+    if (view->semantic_layer_page_count == 0) {
+        nk_label(context, "Palette empty", NK_TEXT_CENTERED);
+    } else {
+        nk_labelf(context, NK_TEXT_CENTERED, "Page %zu/%zu · %zu layers",
+                  view->semantic_layer_page + 1, view->semantic_layer_page_count,
+                  view->semantic_layer_total_count);
+    }
+    nk_layout_row_push(context, 0.28f);
+    const auto last_layer_page = view->semantic_layer_page_count == 0 ||
+                                 view->semantic_layer_page + 1 >= view->semantic_layer_page_count;
+    if (last_layer_page) {
+        nk_widget_disable_begin(context);
+    }
+    const auto next_layer_page_clicked = nk_button_label(context, "Next");
+    if (last_layer_page) {
+        nk_widget_disable_end(context);
+    }
+    nk_layout_row_end(context);
+    if (action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        if (previous_layer_page_clicked) {
+            action->compose_action = WORM_UI_COMPOSE_ACTION_PREVIOUS_SEMANTIC_LAYER_PAGE;
+        } else if (next_layer_page_clicked) {
+            action->compose_action = WORM_UI_COMPOSE_ACTION_NEXT_SEMANTIC_LAYER_PAGE;
+        }
+    }
+    if (visible_layer_count == 0) {
+        nk_layout_row_dynamic(context, 22, 1);
+        nk_label(context, "Semantic layers: no visible palette entries", NK_TEXT_LEFT);
+    } else {
+        nk_layout_row_dynamic(context, 18, 1);
+        nk_label(context, view->semantic_layers_truncated ? "Layers+" : "Layers", NK_TEXT_LEFT);
+        for (size_t index = 0; index < visible_layer_count; ++index) {
+            const auto& layer = view->semantic_layers[index];
+            std::array<char, 96> label{};
+            const auto name_length = std::min<size_t>(strlen(layer.name), 24);
+            snprintf(label.data(), label.size(), "%zu:%.*s #%llu%s%s", index + 1,
+                     static_cast<int>(name_length), layer.name,
+                     static_cast<unsigned long long>(layer.layer_id),
+                     layer.visible ? "" : " [hidden]", layer.selected ? " *" : "");
+            nk_layout_row_dynamic(context, 25, 1);
+            const auto palette_color = nk_rgba(layer.red, layer.green, layer.blue, layer.alpha);
+            nk_style_push_style_item(context, &context->style.button.normal,
+                                     nk_style_item_color(palette_color));
+            nk_style_push_style_item(context, &context->style.button.hover,
+                                     nk_style_item_color(palette_color));
+            nk_style_push_style_item(context, &context->style.button.active,
+                                     nk_style_item_color(palette_color));
+            if (!view->scene_available) {
+                nk_widget_disable_begin(context);
+            }
+            const auto clicked = nk_button_label(context, label.data());
+            if (!view->scene_available) {
+                nk_widget_disable_end(context);
+            }
+            nk_style_pop_style_item(context);
+            nk_style_pop_style_item(context);
+            nk_style_pop_style_item(context);
+            if (clicked && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER;
+                action->compose_semantic_layer_id = layer.layer_id;
+            }
+        }
+        const auto selected_layer =
+            std::ranges::find_if(view->semantic_layers, view->semantic_layers + visible_layer_count,
+                                 [](const auto& layer) { return layer.selected; });
+        if (selected_layer != view->semantic_layers + visible_layer_count) {
+            if (state.semantic_layer_name_id != selected_layer->layer_id ||
+                state.semantic_layer_name_revision != view->document_revision) {
+                state.semantic_layer_name.fill('\0');
+                const auto length =
+                    std::min(strlen(selected_layer->name), state.semantic_layer_name.size() - 1);
+                memcpy(state.semantic_layer_name.data(), selected_layer->name, length);
+                state.semantic_layer_name_id = selected_layer->layer_id;
+                state.semantic_layer_name_revision = view->document_revision;
+            }
+            if (state.semantic_layer_color_id != selected_layer->layer_id) {
+                state.semantic_layer_color_id = selected_layer->layer_id;
+                state.semantic_layer_color_editor_visible = false;
+            }
+            if (!state.semantic_layer_color_editor_visible) {
+                const auto color =
+                    nk_color_cf(nk_rgba(selected_layer->red, selected_layer->green,
+                                        selected_layer->blue, selected_layer->alpha));
+                state.semantic_layer_color = {color.r, color.g, color.b, color.a};
+            }
+            nk_layout_row_dynamic(context, 24, 1);
+            (void)nk_edit_string_zero_terminated(
+                context, NK_EDIT_FIELD, state.semantic_layer_name.data(),
+                state.semantic_layer_name.size(), nk_filter_default);
+            nk_layout_row_dynamic(context, 24, 2);
+            if (nk_button_label(context, "Rename") && action &&
+                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                memcpy(action->compose_semantic_layer_name, state.semantic_layer_name.data(),
+                       sizeof(action->compose_semantic_layer_name));
+                action->compose_action = WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER;
+            }
+            if (nk_button_label(context, "Color...")) {
+                state.semantic_layer_color_editor_visible =
+                    !state.semantic_layer_color_editor_visible;
+            }
+            nk_layout_row_dynamic(context, 24, 4);
+            if (selected_layer->locked) {
+                nk_widget_disable_begin(context);
+            }
+            const auto delete_layer_clicked = nk_button_label(context, "Delete");
+            if (selected_layer->locked) {
+                nk_widget_disable_end(context);
+            }
+            if (delete_layer_clicked && action &&
+                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                action->compose_action = WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER;
+            }
+            if (nk_button_label(context, "Up") && action &&
+                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                action->compose_action = WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP;
+            }
+            if (nk_button_label(context, "Down") && action &&
+                action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                action->compose_action = WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_DOWN;
+            }
+            if (nk_button_label(context, view->semantic_layer_target_visible ? "Hide" : "Show") &&
+                action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY;
+            }
+            if (state.semantic_layer_color_editor_visible) {
+                nk_layout_row_dynamic(context, 110, 1);
+                auto color = nk_colorf{state.semantic_layer_color.r, state.semantic_layer_color.g,
+                                       state.semantic_layer_color.b, state.semantic_layer_color.a};
+                color = nk_color_picker(context, color, NK_RGBA);
+                state.semantic_layer_color = {color.r, color.g, color.b, color.a};
+                const auto byte_component = [](float component) {
+                    return static_cast<uint8_t>(
+                        std::lround(std::clamp(component, 0.0f, 1.0f) * 255.0f));
+                };
+                const auto red = byte_component(state.semantic_layer_color.r);
+                const auto green = byte_component(state.semantic_layer_color.g);
+                const auto blue = byte_component(state.semantic_layer_color.b);
+                const auto alpha = byte_component(state.semantic_layer_color.a);
+                nk_layout_row_begin(context, NK_DYNAMIC, 24, 3);
+                nk_layout_row_push(context, 0.46f);
+                nk_labelf(context, NK_TEXT_LEFT, "RGBA %u %u %u %u", static_cast<unsigned>(red),
+                          static_cast<unsigned>(green), static_cast<unsigned>(blue),
+                          static_cast<unsigned>(alpha));
+                nk_layout_row_push(context, 0.27f);
+                const auto apply_color_clicked = nk_button_label(context, "Apply color");
+                nk_layout_row_push(context, 0.27f);
+                const auto cancel_color_clicked = nk_button_label(context, "Cancel color");
+                nk_layout_row_end(context);
+                if (apply_color_clicked && action &&
+                    action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                    action->compose_semantic_layer_red = red;
+                    action->compose_semantic_layer_green = green;
+                    action->compose_semantic_layer_blue = blue;
+                    action->compose_semantic_layer_alpha = alpha;
+                    action->compose_action = WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR;
+                    state.semantic_layer_color_editor_visible = false;
+                } else if (cancel_color_clicked) {
+                    state.semantic_layer_color_editor_visible = false;
+                }
+            }
+            if (selected_layer->assigned_note_count != 0) {
+                nk_layout_row_begin(context, NK_DYNAMIC, 24, 2);
+                nk_layout_row_push(context, 0.65f);
+                nk_labelf(context, NK_TEXT_LEFT, "Assigned to %zu note%s",
+                          selected_layer->assigned_note_count,
+                          selected_layer->assigned_note_count == 1 ? "" : "s");
+                nk_layout_row_push(context, 0.35f);
+                if (selected_layer->locked) {
+                    nk_widget_disable_begin(context);
+                }
+                const auto delete_and_unlink_clicked = nk_button_label(context, "Delete + unlink");
+                if (selected_layer->locked) {
+                    nk_widget_disable_end(context);
+                }
+                if (delete_and_unlink_clicked && action &&
+                    action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                    action->compose_action =
+                        WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS;
+                }
+                nk_layout_row_end(context);
+            }
+            if (selected_layer->visible) {
+                nk_layout_row_begin(context, NK_DYNAMIC, 22, 2);
+                nk_layout_row_push(context, 0.5f);
+                if (nk_button_label(context, view->semantic_layer_target_required_filter
+                                                 ? "Require: On"
+                                                 : "Require filter") &&
+                    action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                    action->compose_action =
+                        WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER;
+                }
+                nk_layout_row_push(context, 0.5f);
+                if (nk_button_label(context, view->semantic_layer_target_excluded_filter
+                                                 ? "Exclude: On"
+                                                 : "Exclude filter") &&
+                    action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                    action->compose_action =
+                        WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER;
+                }
+                nk_layout_row_end(context);
+            }
+        }
+
+        nk_layout_row_dynamic(context, 18, 1);
+        nk_labelf(context, NK_TEXT_LEFT, "Layer (%zu)", view->selected_note_count);
+        const auto membership_enabled = view->scene_available && semantic_target_active &&
+                                        !view->semantic_layer_target_locked &&
+                                        view->selected_note_count != 0;
+        const auto membership_button = [&](const char* label, WormUiComposeActionKind kind) {
+            if (!membership_enabled) {
+                nk_widget_disable_begin(context);
+            }
+            const auto clicked = nk_button_label(context, label);
+            if (!membership_enabled) {
+                nk_widget_disable_end(context);
+            }
+            if (clicked && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+                action->compose_action = kind;
+            }
+        };
+        nk_layout_row_dynamic(context, 24, 3);
+        if (!view->scene_available || !semantic_target_active) {
+            nk_widget_disable_begin(context);
+        }
+        const auto select_clicked = nk_button_label(context, "Select");
+        if (!view->scene_available || !semantic_target_active) {
+            nk_widget_disable_end(context);
+        }
+        if (select_clicked && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+            action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER_NOTES;
+        }
+        membership_button("Add", WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER);
+        membership_button("Toggle", WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER);
+        nk_layout_row_dynamic(context, 24, 3);
+        membership_button("Remove", WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER);
+        const auto layer_paint_enabled =
+            view->scene_available && semantic_target_active && !view->semantic_layer_target_locked;
+        if (!layer_paint_enabled) {
+            nk_widget_disable_begin(context);
+        }
+        const auto layer_paint_clicked = nk_button_label(
+            context, view->semantic_layer_paint_mode_active ? "Paint: Armed" : "Paint: Off");
+        if (!layer_paint_enabled) {
+            nk_widget_disable_end(context);
+        }
+        if (layer_paint_clicked && action &&
+            action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+            action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE;
+        }
+        if (!semantic_target_active) {
+            nk_widget_disable_begin(context);
+        }
+        const auto solo_clicked =
+            nk_button_label(context, view->semantic_layer_solo_active ? "Solo: On" : "Solo: Off");
+        if (!semantic_target_active) {
+            nk_widget_disable_end(context);
+        }
+        if (solo_clicked && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+            action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO;
+        }
+        nk_layout_row_dynamic(context, 24, 2);
+        if (!semantic_target_active) {
+            nk_widget_disable_begin(context);
+        }
+        const auto lock_clicked =
+            nk_button_label(context, view->semantic_layer_target_locked ? "Unlock" : "Lock");
+        if (!semantic_target_active) {
+            nk_widget_disable_end(context);
+        }
+        if (lock_clicked && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+            action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK;
+        }
+        if (!semantic_target_active) {
+            nk_widget_disable_begin(context);
+        }
+        const auto clear_target = nk_button_label(context, "Clear target");
+        if (!semantic_target_active) {
+            nk_widget_disable_end(context);
+        }
+        if (clear_target && action && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+            action->compose_action = WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER;
+        }
+    }
+    nk_tree_pop(context);
+    }
+
+    worm_ui_nuklear_render_bms_branch_panel(context, view, action);
+    nk_group_end(context);
+        }
     }
     nk_layout_space_end(context);
 }

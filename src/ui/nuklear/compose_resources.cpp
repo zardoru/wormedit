@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_resources.h"
+#include "ui/nuklear/chrome.h"
 
 #include "wormedit/nuklear_config.h"
 
@@ -327,16 +328,12 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         nk_widget_disable_begin(context);
     }
     nk_layout_row_dynamic(context, 24, 2);
-    const auto place_mode_clicked = nk_button_label(
-        context, state->resource_pointer_mode ==
-                         worm_ui_nuklear_compose_resource_pointer_mode_t::place
-                     ? "Place: On"
-                     : "Place: Off");
-    const auto replace_mode_clicked = nk_button_label(
-        context, state->resource_pointer_mode ==
-                         worm_ui_nuklear_compose_resource_pointer_mode_t::replace
-                     ? "Replace: On"
-                     : "Replace: Off");
+    const auto place_mode_clicked = wormedit::ui::chrome::mode_button(
+        context, "Place", "Place resources by clicking the field",
+        state->resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::place);
+    const auto replace_mode_clicked = wormedit::ui::chrome::mode_button(
+        context, "Replace", "Replace a resource by clicking an existing object",
+        state->resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::replace);
     if (!can_pointer_place) {
         nk_widget_disable_end(context);
     }
@@ -409,6 +406,9 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
             action->compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_NOTE_TO_BGM;
         }
     }
+    nk_layout_row_dynamic(context, 12, 1);
+    nk_rule_horizontal(context, wormedit::ui::theme::ui(
+                                    wormedit::ui::theme::UiColor::border), false);
     nk_layout_row_dynamic(context, 24, 2);
     if (!can_move_bmson) {
         nk_widget_disable_begin(context);
@@ -444,6 +444,9 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
             ? WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_RESTART_AT_CURSOR
             : WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_CONTINUE_AT_CURSOR;
     }
+    nk_layout_row_dynamic(context, 12, 1);
+    nk_rule_horizontal(context, wormedit::ui::theme::ui(
+                                    wormedit::ui::theme::UiColor::border), false);
     const auto can_razor = can_move_bmson && view->selected_bmson_source_lane_id != 0 &&
                            !view->note_paint_mode_active &&
                            !view->semantic_layer_paint_mode_active &&
@@ -453,12 +456,12 @@ void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
         nk_widget_disable_begin(context);
     }
     nk_layout_row_dynamic(context, 24, 2);
-    const auto razor_continue_clicked = nk_button_label(
-        context, state->bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::continuation
-                     ? "Razor continue: On" : "Razor continue: Off");
-    const auto razor_restart_clicked = nk_button_label(
-        context, state->bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::restart
-                     ? "Razor restart: On" : "Razor restart: Off");
+    const auto razor_continue_clicked = wormedit::ui::chrome::mode_button(
+        context, "Razor continue", "Slice the selected BGM lane without restarting",
+        state->bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::continuation);
+    const auto razor_restart_clicked = wormedit::ui::chrome::mode_button(
+        context, "Razor restart", "Slice the selected BGM lane and restart playback",
+        state->bmson_razor_mode == worm_ui_nuklear_bmson_razor_mode_t::restart);
     if (!can_razor) {
         nk_widget_disable_end(context);
     }

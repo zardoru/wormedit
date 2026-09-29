@@ -27,6 +27,32 @@ void remember_snap_denominator(application_command_state_t& state, wormedit::cha
     }
 }
 
+auto clear_selection_or_cancel_preview(wormedit::document_history_t& history,
+                                       wormedit::editor_interaction_state_t* state,
+                                       application_command_state_t& application_state,
+                                       std::string& status)
+    -> wormedit::command_invocation_result_t {
+    if (application_state.transport_inline_active &&
+        application_state.transport_inline_active() &&
+        application_state.transport_cancel_restore) {
+        status = application_state.transport_cancel_restore();
+        return {.accepted = true};
+    }
+    if (!state) {
+        return reject_application_command(status,
+                                          "Clear Selection requires the active Compose chart.");
+    }
+    (void)wormedit::dispatch_editor_action(history, *state,
+                                           wormedit::cancel_editor_gesture_action_t{});
+    application_state.note_paint_mode_active = false;
+    application_state.semantic_layer_paint_mode_active = false;
+    application_state.semantic_layer_solo_active = false;
+    return accept_editor_command(
+        wormedit::dispatch_editor_action(history, *state,
+                                         wormedit::select_editor_notes_action_t{}),
+        status, "Selection, pending Compose gesture, and note-paint mode cleared.");
+}
+
 } // namespace
 
 auto reject_application_command(
@@ -99,6 +125,14 @@ auto invoke_application_command(
         return {.accepted = true};
     }
 
+    if (kind == command_kind_t::transport_play_from_start) {
+        if (!application_state.transport_play_from_start) {
+            return reject_application_command(status, "Chart preview is unavailable.");
+        }
+        status = application_state.transport_play_from_start();
+        return {.accepted = true};
+    }
+
     if (kind == command_kind_t::transport_stop) {
         if (!application_state.transport_stop || !application_state.transport_active ||
             !application_state.transport_active()) {
@@ -129,18 +163,8 @@ auto invoke_application_command(
     }
 
     if (kind == command_kind_t::selection_clear) {
-        auto* state = require_compose();
-        if (!state) {
-            return reject_application_command(status,
-                                              "Clear Selection requires the active Compose chart.");
-        }
-        (void)dispatch_editor_action(history, *state, cancel_editor_gesture_action_t{});
-        application_state.note_paint_mode_active = false;
-        application_state.semantic_layer_paint_mode_active = false;
-        application_state.semantic_layer_solo_active = false;
-        return accept_editor_command(
-            dispatch_editor_action(history, *state, select_editor_notes_action_t{}), status,
-            "Selection, pending Compose gesture, and note-paint mode cleared.");
+        return clear_selection_or_cancel_preview(history, require_compose(), application_state,
+                                                 status);
     }
 
     if (kind == command_kind_t::selection_select_all || kind == command_kind_t::selection_invert) {

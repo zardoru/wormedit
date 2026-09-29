@@ -137,7 +137,7 @@ auto project_channel_waveform(const waveform_t& waveform, const sound_channel_t&
     if (!std::isfinite(request.viewport_scroll_pixels) ||
         !std::isfinite(request.viewport_height_pixels) ||
         !std::isfinite(request.pixels_per_standard_measure) ||
-        request.viewport_scroll_pixels < 0.0 || request.viewport_height_pixels <= 0.0 ||
+        request.viewport_height_pixels <= 0.0 ||
         request.pixels_per_standard_measure <= 0.0 || request.maximum_rows == 0)
         return result;
     if (timing.divisions_per_standard_measure == 0 || timing.total_rows == 0 ||

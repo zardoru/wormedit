@@ -46,6 +46,11 @@ auto finite_nonnegative(double value) -> bool {
     return std::isfinite(value) && value >= 0.0;
 }
 
+auto viewport_scroll_in_range(double scroll, double height, long double maximum) -> bool {
+    return std::isfinite(scroll) && scroll >= -height * 0.2 &&
+           static_cast<long double>(scroll) <= maximum;
+}
+
 auto rectangular_glyph(lane_glyph_t glyph) -> bool {
     return glyph == lane_glyph_t::bar || glyph == lane_glyph_t::square;
 }
@@ -409,7 +414,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         !std::isfinite(view.pixels_per_standard_measure) ||
         view.pixels_per_standard_measure < minimum_pixels_per_standard_measure ||
         view.pixels_per_standard_measure > maximum_pixels_per_standard_measure ||
-        !finite_nonnegative(view.viewport_scroll_pixels) ||
+        !std::isfinite(view.viewport_scroll_pixels) ||
         !std::isfinite(view.viewport_height_pixels) || view.viewport_height_pixels <= 0.0) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                            "field-scene index, view, or geometry is invalid"));
@@ -431,7 +436,8 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
     const auto content_height = static_cast<long double>(canvas_rows) * pixels_per_row;
     const auto maximum_scroll =
         std::max(0.0L, content_height - static_cast<long double>(view.viewport_height_pixels));
-    if (static_cast<long double>(view.viewport_scroll_pixels) > maximum_scroll) {
+    if (!viewport_scroll_in_range(view.viewport_scroll_pixels, view.viewport_height_pixels,
+                                  maximum_scroll)) {
         result.diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
                                            "field-scene viewport scroll exceeds chart content"));
         return result;
@@ -763,8 +769,9 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         selected.insert(note.value);
     }
     const auto preview_gesture_count =
-        static_cast<unsigned>(view.pending_hold.has_value()) +
-        static_cast<unsigned>(view.pending_virtual_hold.has_value()) +
+        static_cast<unsigned>(view.pending_hold.has_value() ||
+                              view.pending_virtual_hold.has_value() ||
+                              !view.pending_canvas_keyboard_holds.empty()) +
         static_cast<unsigned>(view.pending_note_duration_gesture.has_value()) +
         static_cast<unsigned>(view.pending_note_move_gesture.has_value());
     if (preview_gesture_count > 1) {
@@ -946,10 +953,12 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         std::optional<std::uint64_t> tail_row;
         bool adds_note{};
     };
-    std::optional<hold_proposal_t> hold_proposal;
+    std::vector<hold_proposal_t> hold_proposals;
     std::unordered_set<std::uint64_t> hold_origin_notes;
-    if (view.pending_hold.has_value()) {
-        const auto& pending = *view.pending_hold;
+    auto pending_holds = view.additional_keyboard_holds;
+    if (view.pending_hold) pending_holds.push_back(*view.pending_hold);
+    for (const auto& pending : pending_holds) {
+        if (pending.anchor_canvas_row || pending.preview_canvas_row) continue;
         const auto anchor_row = absolute_row(index.measures, pending.position);
         if (pending.document_revision != index.document_revision || !anchor_row ||
             !has_lane(layout_at_row(index, *anchor_row), pending.lane)) {
@@ -970,11 +979,12 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
         if (!pending.placement_preview.has_value()) {
             const auto head_row = moving_row ? std::min(*anchor_row, *moving_row) : *anchor_row;
             const auto tail_row = moving_row ? std::max(*anchor_row, *moving_row) : *anchor_row;
-            hold_proposal = {.lane = pending.lane,
-                             .head_row = head_row,
-                             .tail_row = head_row == tail_row ? std::optional<std::uint64_t>{}
-                                                              : std::optional{tail_row},
-                             .adds_note = true};
+            hold_proposals.push_back({.lane = pending.lane,
+                                      .head_row = head_row,
+                                      .tail_row = head_row == tail_row
+                                                      ? std::optional<std::uint64_t>{}
+                                                      : std::optional{tail_row},
+                                      .adds_note = true});
         } else {
             const auto& preview = *pending.placement_preview;
             const auto head_row = absolute_row(index.measures, preview.head);
@@ -1017,17 +1027,18 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                     return result;
                 }
             }
-            hold_proposal = {.lane = pending.lane,
-                             .head_row = *head_row,
-                             .tail_row = tail_row,
-                             .adds_note = preview.adds_note};
+            hold_proposals.push_back({.lane = pending.lane,
+                                      .head_row = *head_row,
+                                      .tail_row = tail_row,
+                                      .adds_note = preview.adds_note});
         }
     }
-    if (view.pending_virtual_hold.has_value()) {
-        const auto& pending = *view.pending_virtual_hold;
+    auto virtual_holds = view.pending_canvas_keyboard_holds;
+    if (view.pending_virtual_hold) virtual_holds.push_back(*view.pending_virtual_hold);
+    for (const auto& pending : virtual_holds) {
         if (pending.document_revision != index.document_revision ||
             chart.source_family != format_family_t::bms ||
-            !request.include_virtual_bms_tail || pending.anchor_row < index.measures.total_rows ||
+            !request.include_virtual_bms_tail ||
             pending.anchor_row >= canvas_rows || pending.end_row >= canvas_rows ||
             index.layouts.empty() || !has_lane(&index.layouts.back(), pending.lane)) {
             result.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
@@ -1070,10 +1081,10 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                 return result;
             }
         }
-        hold_proposal = {.lane = pending.lane,
-                         .head_row = pending.head_row,
-                         .tail_row = pending.tail_row,
-                         .adds_note = pending.adds_note};
+        hold_proposals.push_back({.lane = pending.lane,
+                                  .head_row = pending.head_row,
+                                  .tail_row = pending.tail_row,
+                                  .adds_note = pending.adds_note});
     }
     const auto after_candidates = std::ranges::upper_bound(
         index.notes, query_high,
@@ -1371,10 +1382,11 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
             return result;
         }
     }
-    if (hold_proposal.has_value() && hold_proposal->adds_note) {
-        const auto kind = hold_proposal->tail_row ? note_kind_t::hold : note_kind_t::tap;
-        append_proposal_geometry(object_id_t{}, hold_proposal->lane, kind, hold_proposal->head_row,
-                                 hold_proposal->tail_row, false);
+    for (const auto& hold_proposal : hold_proposals) {
+        if (!hold_proposal.adds_note) continue;
+        const auto kind = hold_proposal.tail_row ? note_kind_t::hold : note_kind_t::tap;
+        append_proposal_geometry(object_id_t{}, hold_proposal.lane, kind, hold_proposal.head_row,
+                                 hold_proposal.tail_row, false);
         if (proposal_failed) {
             result.diagnostics.push_back(
                 error(diagnostic_code_t::invalid_resolution,
@@ -1490,7 +1502,7 @@ auto make_editor_field_scene(const chart_document_t& chart, const editor_field_s
                               "field-scene cursor exceeds its configured primitive cap"));
                     return result;
                 }
-                const auto y = request.fixed_cursor_screen_y_pixels.value_or(y_for_row(*cursor_row));
+                const auto y = y_for_row(*cursor_row);
                 scene.cursor = editor_field_cursor_geometry_t{
                     .lane = view.active_lane,
                     .bounds = {bounds->left, y - 1.0, bounds->right, y + 1.0}};

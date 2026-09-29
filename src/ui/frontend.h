@@ -601,6 +601,7 @@ typedef struct WormUiComposeOutputGroupView {
 typedef struct WormUiComposeView {
     bool visible;
     bool scene_available;
+    bool downscroll;
     bool bms_measure_labels;
     uint32_t selected_bms_measure_number_plus_one;
     bool truncated;
@@ -652,6 +653,8 @@ typedef struct WormUiComposeView {
     uint64_t document_revision;
     double viewport_width_pixels;
     double viewport_height_pixels;
+    double bgm_horizontal_scroll_pixels;
+    double bgm_maximum_horizontal_scroll_pixels;
     double playable_field_left_pixels;
     double playable_field_right_pixels;
     double timing_document_begin_fraction;

@@ -1,0 +1,17 @@
+{
+  "description": "Compose canvas colors. Kept separate from application chrome so chart readability can evolve independently.",
+  "roles": {
+    "viewport": "#161921",
+    "rail": "#12151d",
+    "grid": "#3a4353",
+    "label": "#bec4cf",
+    "overview": "#161f2a"
+  },
+  "lane_backgrounds": {
+    "scratch": ["#2a273d", "#302c44"],
+    "free_zone": ["#2a313a", "#2f363f"],
+    "foot_pedal": ["#243436", "#283a3b"],
+    "default": ["#212835", "#252d3b"]
+  },
+  "note_accents": ["#f2be66", "#b1ce81", "#71b8da", "#e08477", "#cf9968", "#b08eda", "#f474ae", "#82dbce"]
+}

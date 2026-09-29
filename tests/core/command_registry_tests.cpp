@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <memory>
 #include <string>
 #include <vector>
@@ -386,4 +387,33 @@ TEST_CASE("default registry seeds discoverable editor commands and visible tab r
     const auto hidden = dispatch_shortcut(registry, {.chord = {.key = shortcut_key_t::f3}}, focus,
                                           shortcut_primary_modifier_t::control);
     CHECK(hidden.status == command_dispatch_status_t::no_match);
+}
+
+TEST_CASE("transport shortcuts distinguish cursor playback from play from start",
+          "[unit][core][command_registry][transport]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const auto focus = focus_for_compose();
+    const auto invoke = [&](shortcut_modifiers_t modifiers,
+                            shortcut_primary_modifier_t primary_modifier) {
+        return dispatch_shortcut(registry,
+                                 {.chord = {.key = shortcut_key_t::space,
+                                            .modifiers = modifiers}},
+                                 focus, primary_modifier).command;
+    };
+    const std::array commands{
+        invoke(static_cast<shortcut_modifiers_t>(shortcut_modifier_t::control),
+               shortcut_primary_modifier_t::control),
+        invoke(shortcut_modifier_t::control | shortcut_modifier_t::shift,
+               shortcut_primary_modifier_t::control),
+        invoke(static_cast<shortcut_modifiers_t>(shortcut_modifier_t::meta),
+               shortcut_primary_modifier_t::meta),
+        invoke(shortcut_modifier_t::meta | shortcut_modifier_t::shift,
+               shortcut_primary_modifier_t::meta),
+    };
+    CHECK(commands == std::array<std::optional<command_id_t>, 4>{
+                          command_id_t{"transport.play_pause"},
+                          command_id_t{"transport.play_from_start"},
+                          command_id_t{"transport.play_pause"},
+                          command_id_t{"transport.play_from_start"}});
 }

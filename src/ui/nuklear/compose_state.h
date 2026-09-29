@@ -33,6 +33,11 @@ struct worm_ui_nuklear_compose_color_t {
     float a{};
 };
 
+struct worm_ui_nuklear_lane_hold_t {
+    std::uint32_t scancode{};
+    std::uint64_t lane_id{};
+};
+
 enum class worm_ui_nuklear_compose_resource_filter_t : std::uint8_t {
     sample,
     bgm,
@@ -109,8 +114,8 @@ struct worm_ui_nuklear_compose_state_t {
     float area_selection_anchor_screen_x{};
     float area_selection_anchor_screen_y{};
     WormUiComposeSelectionMode area_selection_mode{WORM_UI_COMPOSE_SELECTION_REPLACE};
-    std::uint32_t lane_hold_keycode{};
-    std::uint64_t lane_hold_lane_id{};
+    std::array<worm_ui_nuklear_lane_hold_t, 64> lane_holds{};
+    std::size_t lane_hold_count{};
     bool navigation_key_active{};
     std::uint32_t navigation_keycode{};
     WormUiComposeNavigationAction navigation_action{WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD};

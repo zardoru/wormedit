@@ -967,7 +967,7 @@ auto sample_frame_at_chart_y(const timing_index_t& index, double viewport_scroll
     -> std::optional<std::uint64_t> {
     if (!std::isfinite(y_pixels) || y_pixels < 0.0 || y_pixels > viewport_height_pixels ||
         !std::isfinite(viewport_height_pixels) || viewport_height_pixels <= 0.0 ||
-        !std::isfinite(viewport_scroll_pixels) || viewport_scroll_pixels < 0.0 ||
+        !std::isfinite(viewport_scroll_pixels) ||
         !std::isfinite(pixels_per_standard_measure) || pixels_per_standard_measure <= 0.0 ||
         sample_rate == 0 || index.divisions_per_standard_measure == 0) {
         return std::nullopt;

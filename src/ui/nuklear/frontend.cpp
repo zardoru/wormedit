@@ -6,6 +6,7 @@
 #include "ui/nuklear/audio_state.h"
 #include "ui/nuklear/compose_panel.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/chrome.h"
 #include "ui/nuklear/image_quad.h"
 #include "ui/nuklear/metadata_panel.h"
 #include "ui/nuklear/metadata_state.h"
@@ -14,6 +15,7 @@
 #include "ui/nuklear/setup_state.h"
 #include "ui/nuklear/timing_panel.h"
 #include "ui/nuklear/timing_state.h"
+#include "ui/nuklear/theme.h"
 
 #include "wormedit/nuklear_config.h"
 
@@ -27,7 +29,11 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
 #include <stddef.h>
+#include <string>
+
+using wormedit::ui::lucide::Glyph;
 
 static SDL_Window* g_window;
 static SDL_Renderer* g_renderer;
@@ -222,10 +228,28 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer) {
         return false;
     }
     struct nk_font_atlas* atlas = nk_sdl_font_stash_begin(context);
-    (void)atlas;
+    struct nk_font* editor_font = nullptr;
+    if (atlas && SDL_GetBasePath()) {
+        const auto font_path = std::filesystem::path{SDL_GetBasePath()} /
+                               "assets/fonts/AdwaitaMono-Regular.ttf";
+        editor_font = nk_font_atlas_add_from_file(atlas, font_path.string().c_str(), 15.0f,
+                                                  nullptr);
+    }
     nk_sdl_font_stash_end(context);
+    const auto theme_directory = SDL_GetBasePath()
+                                     ? std::filesystem::path{SDL_GetBasePath()} / "assets/themes"
+                                     : std::filesystem::path{"assets/themes"};
+    wormedit::ui::theme::load(theme_directory);
+    wormedit::ui::chrome::apply_theme(context);
+    if (editor_font) nk_style_set_font(context, &editor_font->handle);
+
+    if (!wormedit::ui::lucide::initialize(renderer)) {
+        nk_sdl_shutdown(context);
+        return false;
+    }
 
     if (!SDL_StartTextInput(window)) {
+        wormedit::ui::lucide::shutdown();
         nk_sdl_shutdown(context);
         return false;
     }
@@ -254,6 +278,7 @@ void worm_ui_frontend_shutdown(void) {
         SDL_StopTextInput(g_window);
     }
     worm_ui_nuklear_shutdown_player_preview();
+    wormedit::ui::lucide::shutdown();
     nk_sdl_shutdown(g_context);
     g_window = NULL;
     g_renderer = NULL;
@@ -395,8 +420,148 @@ WormUiWorkspaceAction worm_ui_frontend_workspace_error(const char* diagnostic) {
     return action;
 }
 
+static void render_project_menu(const WormUiWorkspaceView* view,
+                                WormUiWorkspaceAction* action) {
+    if (!nk_menu_begin_label(g_context, "Project", NK_TEXT_LEFT, nk_vec2(230, 300))) return;
+    nk_layout_row_dynamic(g_context, 25, 1);
+    for (int tab = 0; tab < WORM_UI_WORKSPACE_TAB_COUNT; ++tab) {
+        if (tab == WORM_UI_WORKSPACE_TAB_TIMING || tab == WORM_UI_WORKSPACE_TAB_COMPOSE)
+            continue;
+        const auto& item = view->tabs[tab];
+        if (!item.label) continue;
+        if (!item.enabled) nk_widget_disable_begin(g_context);
+        const bool chosen = nk_menu_item_label(g_context, item.label, NK_TEXT_LEFT) != 0;
+        if (!item.enabled) nk_widget_disable_end(g_context);
+        if (chosen && item.enabled && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
+            action->kind = WORM_UI_WORKSPACE_ACTION_SWITCH_TAB;
+            action->tab = static_cast<WormUiWorkspaceTab>(tab);
+        }
+    }
+    nk_layout_row_dynamic(g_context, 25, 1);
+    if (nk_menu_item_label(g_context, "Quit", NK_TEXT_LEFT))
+        action->kind = WORM_UI_WORKSPACE_ACTION_QUIT;
+    nk_menu_end(g_context);
+}
+
+static void render_view_menu(const WormUiWorkspaceView* view,
+                             WormUiWorkspaceAction* action) {
+    if (!nk_menu_begin_label(g_context, "View", NK_TEXT_LEFT, nk_vec2(230, 130))) return;
+    nk_layout_row_dynamic(g_context, 25, 1);
+    if (nk_menu_item_label(g_context, view->player_preview.visible ? "Hide preview"
+                                                                 : "Show preview", NK_TEXT_LEFT) &&
+        action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
+        action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
+    if (view->compose.visible) {
+        nk_layout_row_dynamic(g_context, 25, 1);
+        if (nk_menu_item_label(g_context, "Reset editor view", NK_TEXT_LEFT) &&
+            action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+            action->compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW;
+    }
+    nk_menu_end(g_context);
+}
+
+static void render_title_bar(const WormUiWorkspaceView* view,
+                             WormUiWorkspaceAction* action) {
+    const bool custom_controls = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_BORDERLESS) != 0;
+    nk_menubar_begin(g_context);
+    nk_layout_row_template_begin(g_context, 32);
+    nk_layout_row_template_push_dynamic(g_context);
+    nk_layout_row_template_push_static(g_context, 76);
+    nk_layout_row_template_push_static(g_context, 56);
+    if (custom_controls) wormedit::ui::chrome::IconButton::layout_columns(g_context, 3);
+    nk_layout_row_template_end(g_context);
+    nk_labelf(g_context, NK_TEXT_LEFT, "  %s%s", view->project_title,
+              view->dirty ? " *" : "");
+    render_project_menu(view, action);
+    render_view_menu(view, action);
+    if (custom_controls) {
+        if (wormedit::ui::chrome::IconButton{Glyph::minus, "Minimize window"}.render(g_context))
+            SDL_MinimizeWindow(g_window);
+        const bool maximized = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_MAXIMIZED) != 0;
+        if (wormedit::ui::chrome::IconButton{maximized ? Glyph::minimize_2 : Glyph::maximize,
+                                             maximized ? "Restore window" : "Maximize window"}
+                .render(g_context)) {
+            if (maximized) SDL_RestoreWindow(g_window);
+            else SDL_MaximizeWindow(g_window);
+        }
+        if (wormedit::ui::chrome::IconButton{Glyph::x, "Close window"}.render(g_context))
+            action->kind = WORM_UI_WORKSPACE_ACTION_QUIT;
+    }
+    nk_menubar_end(g_context);
+}
+
+static void render_workspace_tabs(const WormUiWorkspaceView* view,
+                                  WormUiWorkspaceAction* action) {
+    nk_layout_row_dynamic(g_context, 32, WORM_UI_WORKSPACE_TAB_COUNT);
+    for (int tab = 0; tab < WORM_UI_WORKSPACE_TAB_COUNT; ++tab) {
+        const auto& item = view->tabs[tab];
+        if (!item.label) continue;
+        if (!item.enabled) nk_widget_disable_begin(g_context);
+        const bool selected = tab == static_cast<int>(view->active_tab);
+        const bool clicked = wormedit::ui::chrome::mode_button(
+            g_context, item.label, item.label, selected);
+        if (!item.enabled) nk_widget_disable_end(g_context);
+        if (clicked && item.enabled && !selected &&
+            action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
+            action->kind = WORM_UI_WORKSPACE_ACTION_SWITCH_TAB;
+            action->tab = static_cast<WormUiWorkspaceTab>(tab);
+        }
+    }
+}
+
+static void render_status_bar(const WormUiWorkspaceView* view,
+                              WormUiWorkspaceAction* action) {
+    nk_layout_row_template_begin(g_context, 30);
+    wormedit::ui::chrome::IconButton::layout_columns(g_context, 3);
+    nk_layout_row_template_push_dynamic(g_context);
+    nk_layout_row_template_push_static(g_context, 80);
+    nk_layout_row_template_push_dynamic(g_context);
+    nk_layout_row_template_end(g_context);
+    if (!view->transport_available) nk_widget_disable_begin(g_context);
+    const char* play_hint = view->transport_playing ? "Pause playback"
+                            : view->transport_paused ? "Resume playback"
+                            : view->compose.visible ? "Play from cursor" : "Play chart";
+    if (wormedit::ui::chrome::IconButton{view->transport_playing ? Glyph::pause : Glyph::play,
+                                         play_hint,
+                                         view->transport_playing}.render(g_context) &&
+        view->transport_available)
+        action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE;
+    if (!view->transport_available) nk_widget_disable_end(g_context);
+    const bool can_stop = view->transport_playing || view->transport_paused;
+    if (!can_stop) nk_widget_disable_begin(g_context);
+    if (wormedit::ui::chrome::IconButton{Glyph::square, "Stop playback"}
+            .render(g_context) &&
+        can_stop)
+        action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP;
+    if (!can_stop) nk_widget_disable_end(g_context);
+    if (wormedit::ui::chrome::IconButton{Glyph::eye,
+                                         view->player_preview.visible ? "Hide player preview"
+                                                                      : "Show player preview",
+                                         view->player_preview.visible}.render(g_context) &&
+        action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
+        action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
+    nk_label(g_context, wormedit::ui::chrome::status_hint
+                            ? wormedit::ui::chrome::status_hint : view->status_text, NK_TEXT_LEFT);
+    const auto sample_rate = view->transport_sample_rate == 0 ? 1U : view->transport_sample_rate;
+    const auto seconds = view->transport_frame / sample_rate;
+    nk_labelf(g_context, NK_TEXT_RIGHT, "%llu:%02llu",
+              static_cast<unsigned long long>(seconds / 60),
+              static_cast<unsigned long long>(seconds % 60));
+    nk_labelf(g_context, NK_TEXT_RIGHT, "%s · %s", view->artist,
+              view->selected_difficulty);
+}
+
+static auto workspace_content_flags(bool compose_visible) -> nk_flags {
+    return compose_visible ? NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR : NK_WINDOW_BORDER;
+}
+
+static void prepare_workspace_content_scroll(nk_context* context, bool compose_visible) {
+    if (compose_visible) nk_group_set_scroll(context, "workspace-content", 0, 0);
+}
+
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
     worm_ui_nuklear_begin_image_quad_frame();
+    wormedit::ui::chrome::begin_frame();
     WormUiWorkspaceAction action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_NONE;
     action.tab = WORM_UI_WORKSPACE_TAB_SETUP;
@@ -467,6 +632,11 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         return action;
     }
 
+    const std::string window_title = std::string{view->project_title} +
+                                     (view->dirty ? " *" : "") + " — wormedit";
+    if (window_title != SDL_GetWindowTitle(g_window))
+        SDL_SetWindowTitle(g_window, window_title.c_str());
+
     worm_ui_nuklear_emit_timing_cancellations(&view->timing, timing_tab_active, &action);
 
     const bool compose_tab_active = view->active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE;
@@ -475,63 +645,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
 
     if (nk_begin(g_context, "wormedit-workspace", nk_rect(0, 0, (float)width, (float)height),
                  NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
-        nk_layout_row_begin(g_context, NK_DYNAMIC, 30, 4);
-        nk_layout_row_push(g_context, 0.24f);
-        nk_labelf(g_context, NK_TEXT_LEFT, "%s%s", view->project_title, view->dirty ? " *" : "");
-        nk_layout_row_push(g_context, 0.18f);
-        nk_labelf(g_context, NK_TEXT_LEFT, "Artist: %s", view->artist);
-        nk_layout_row_push(g_context, 0.22f);
-        nk_labelf(g_context, NK_TEXT_LEFT, "Difficulty: %s", view->selected_difficulty);
-        nk_layout_row_push(g_context, 0.36f);
-        nk_label(g_context, view->status_text, NK_TEXT_RIGHT);
-        nk_layout_row_end(g_context);
-
-        nk_layout_row_begin(g_context, NK_DYNAMIC, 26, 5);
-        nk_layout_row_push(g_context, 0.10f);
-        if (!view->transport_available) {
-            nk_widget_disable_begin(g_context);
-        }
-        const auto* play_label = view->transport_playing  ? "Pause"
-                                 : view->transport_paused ? "Resume"
-                                                          : "Play";
-        if (nk_button_label(g_context, play_label) && view->transport_available) {
-            action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE;
-        }
-        if (!view->transport_available) {
-            nk_widget_disable_end(g_context);
-        }
-        nk_layout_row_push(g_context, 0.10f);
-        const bool can_stop = view->transport_playing || view->transport_paused;
-        if (!can_stop) {
-            nk_widget_disable_begin(g_context);
-        }
-        if (nk_button_label(g_context, "Stop") && can_stop) {
-            action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP;
-        }
-        if (!can_stop) {
-            nk_widget_disable_end(g_context);
-        }
-        nk_layout_row_push(g_context, 0.22f);
-        const auto sample_rate =
-            view->transport_sample_rate == 0 ? 1U : view->transport_sample_rate;
-        const auto total_seconds = view->transport_frame / sample_rate;
-        const auto minutes = total_seconds / 60;
-        const auto seconds = total_seconds % 60;
-        nk_labelf(g_context, NK_TEXT_LEFT, "%s · %llu:%02llu",
-                  view->transport_playing  ? "Playing"
-                  : view->transport_paused ? "Paused"
-                                           : "Stopped",
-                  static_cast<unsigned long long>(minutes),
-                  static_cast<unsigned long long>(seconds));
-        nk_layout_row_push(g_context, 0.12f);
-        if (nk_button_label(g_context,
-                            view->player_preview.visible ? "Preview: On" : "Preview: Off") &&
-            action.kind == WORM_UI_WORKSPACE_ACTION_NONE) {
-            action.kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
-        }
-        nk_layout_row_push(g_context, 0.46f);
-        nk_label(g_context, "Ctrl/Cmd+Space · Ctrl/Cmd+Shift+Space", NK_TEXT_RIGHT);
-        nk_layout_row_end(g_context);
+        render_title_bar(view, &action);
 
         if (view->transport_available && view->transport_end_frame != 0) {
             constexpr nk_size seek_steps = 10'000;
@@ -548,27 +662,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
             }
         }
 
-        nk_layout_row_dynamic(g_context, 34, WORM_UI_WORKSPACE_TAB_COUNT);
-        for (int tab = 0; tab < WORM_UI_WORKSPACE_TAB_COUNT; ++tab) {
-            const WormUiWorkspaceTabItem* item = &view->tabs[tab];
-            if (!item->label) {
-                continue;
-            }
-            if (!item->enabled) {
-                nk_widget_disable_begin(g_context);
-            }
-            if (nk_button_label(g_context, item->label) && item->enabled &&
-                tab != (int)view->active_tab) {
-                action.kind = WORM_UI_WORKSPACE_ACTION_SWITCH_TAB;
-                action.tab = (WormUiWorkspaceTab)tab;
-            }
-            if (!item->enabled) {
-                nk_widget_disable_end(g_context);
-            }
-        }
-
-        nk_layout_row_dynamic(g_context, 28, 1);
-        nk_label(g_context, view->tab_heading, NK_TEXT_LEFT);
+        render_workspace_tabs(view, &action);
 
         float recovery_height = 0.0f;
         if (view->recovery_panel_visible) {
@@ -671,12 +765,14 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
             }
         }
 
-        float content_height = height > 300 ? (float)height - 165.0f - recovery_height : 80.0f;
+        float content_height = height > 300 ? (float)height - 132.0f - recovery_height : 80.0f;
         if (content_height < 80.0f) {
             content_height = 80.0f;
         }
         nk_layout_row_dynamic(g_context, content_height, 1);
-        if (nk_group_begin(g_context, "workspace-content", NK_WINDOW_BORDER)) {
+        prepare_workspace_content_scroll(g_context, view->compose.visible);
+        if (nk_group_begin(g_context, "workspace-content",
+                           workspace_content_flags(view->compose.visible))) {
             if (view->setup.visible) {
                 worm_ui_nuklear_render_setup_panel(g_context, &view->setup, &action);
             } else if (view->metadata.visible) {
@@ -708,21 +804,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
             nk_group_end(g_context);
         }
 
-        nk_layout_row_begin(g_context, NK_DYNAMIC, 28, 5);
-        nk_layout_row_push(g_context, 0.16f);
-        nk_labelf(g_context, NK_TEXT_LEFT, "History: %s",
-                  view->history_available ? "available" : "unavailable");
-        nk_layout_row_push(g_context, 0.10f);
-        nk_labelf(g_context, NK_TEXT_LEFT, "Undo: %zu", view->undo_depth);
-        nk_layout_row_push(g_context, 0.10f);
-        nk_labelf(g_context, NK_TEXT_LEFT, "Redo: %zu", view->redo_depth);
-        nk_layout_row_push(g_context, 0.52f);
-        nk_labelf(g_context, NK_TEXT_LEFT, "Revision build: %s", view->git_hash);
-        nk_layout_row_push(g_context, 0.12f);
-        if (nk_button_label(g_context, "Quit")) {
-            action.kind = WORM_UI_WORKSPACE_ACTION_QUIT;
-        }
-        nk_layout_row_end(g_context);
+        render_status_bar(view, &action);
     }
     nk_end(g_context);
     worm_ui_nuklear_render_player_preview(g_context, g_renderer, &view->player_preview, &action,

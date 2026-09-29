@@ -173,6 +173,52 @@ TEST_CASE("field scene composes split layout bands, exact grid, holds, selection
     CHECK(zoomed.scene->hold_bodies[0].bounds.bottom == Catch::Approx(192.0));
 }
 
+TEST_CASE("field scene leaves a blank margin before chart row zero",
+          "[unit][core][editor-scene][scroll]") {
+    const auto chart = scene_chart();
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    auto visible = view();
+    visible.cursor = {wormedit::measure_id_t{1}, 0};
+    visible.viewport_scroll_pixels = -visible.viewport_height_pixels * 0.2;
+    const auto scene = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), visible,
+        {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(scene);
+    CHECK(scene.scene->visible_begin_row == 0);
+    CHECK(std::ranges::any_of(scene.scene->grid_lines, [](const auto& line) {
+        return line.kind == wormedit::editor_grid_line_kind_t::measure &&
+               line.y_pixels == Catch::Approx(38.4);
+    }));
+    CHECK(std::ranges::none_of(scene.scene->grid_lines,
+                               [](const auto& line) { return line.y_pixels < 38.4 - 0.001; }));
+}
+
+TEST_CASE("field cursor follows its chart row when scroll reaches the first measure",
+          "[unit][core][editor-scene][scroll][cursor]") {
+    const auto chart = scene_chart();
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    auto visible = view();
+    visible.cursor = {wormedit::measure_id_t{1}, 0};
+    visible.viewport_scroll_pixels = -visible.viewport_height_pixels * 0.2;
+    for (const auto direction : {wormedit::editor_field_scroll_direction_t::up,
+                                 wormedit::editor_field_scroll_direction_t::down}) {
+        const auto result = wormedit::make_editor_field_scene(
+            chart, std::get<wormedit::editor_field_scene_index_t>(built), visible,
+            {.field_left_pixels = 10.0,
+             .field_width_pixels = 200.0,
+             .scroll_direction = direction,
+             .fixed_cursor_screen_y_pixels = visible.viewport_height_pixels * 0.5});
+        REQUIRE(result);
+        REQUIRE(result.scene->cursor);
+        const auto expected_y = direction == wormedit::editor_field_scroll_direction_t::down
+                                    ? visible.viewport_height_pixels * 0.8
+                                    : visible.viewport_height_pixels * 0.2;
+        CHECK(result.scene->cursor->bounds.top == Catch::Approx(expected_y - 1.0));
+    }
+}
+
 TEST_CASE("field scene scroll direction anchors rectangular heads and keeps arrows centered",
           "[unit][core][editor-scene][scroll-direction]") {
     const auto chart = scene_chart();
@@ -220,8 +266,8 @@ TEST_CASE("field scene scroll direction anchors rectangular heads and keeps arro
     REQUIRE(down.scene->bgm_events.size() == 1);
     REQUIRE(up.scene->cursor.has_value());
     REQUIRE(down.scene->cursor.has_value());
-    CHECK(up.scene->cursor->bounds.top == Catch::Approx(71.0));
-    CHECK(down.scene->cursor->bounds.top == Catch::Approx(71.0));
+    CHECK(up.scene->cursor->bounds.top == Catch::Approx(191.0));
+    CHECK(down.scene->cursor->bounds.top == Catch::Approx(-1.0));
     CHECK(up.scene->bgm_events.front().bounds.top == Catch::Approx(96.0));
     CHECK(down.scene->bgm_events.front().bounds.bottom == Catch::Approx(96.0));
     CHECK(std::ranges::all_of(down.scene->lanes, [](const auto& lane) {
@@ -328,6 +374,42 @@ TEST_CASE("virtual BMS hold preview draws its normalized union and subdued origi
     CHECK(std::ranges::any_of(projected.scene->note_endpoints, [](const auto& endpoint) {
         return endpoint.note == wormedit::object_id_t{201} && endpoint.proposal_origin;
     }));
+}
+
+TEST_CASE("keyboard hold previews cross from authored rows into virtual BMS measures",
+          "[unit][core][editor-scene][virtual-canvas][hold-preview]") {
+    auto chart = scene_chart();
+    chart.source_family = wormedit::format_family_t::bms;
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    auto visible = view();
+    visible.viewport_scroll_pixels = 288.0;
+    visible.pending_hold = wormedit::pending_hold_t{
+        .position = {wormedit::measure_id_t{2}, 720},
+        .lane = wormedit::lane_id_t{1},
+        .document_revision = 7,
+        .preview_canvas_row = 2'160,
+        .gesture_source = wormedit::hold_gesture_source_t::keyboard_lane};
+    for (const auto lane_id : {wormedit::lane_id_t{1}, wormedit::lane_id_t{2}}) {
+        visible.pending_canvas_keyboard_holds.push_back({
+            .anchor_row = 1'680,
+            .end_row = 2'160,
+            .head_row = 1'680,
+            .tail_row = 2'160,
+            .lane = lane_id,
+            .document_revision = 7,
+            .removals = std::make_shared<const std::vector<wormedit::object_id_t>>(),
+            .adds_note = true});
+    }
+    const auto projected = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), visible,
+        {.field_left_pixels = 10.0,
+         .field_width_pixels = 200.0,
+         .include_virtual_bms_tail = true});
+    REQUIRE(projected);
+    CHECK(std::ranges::count_if(projected.scene->hold_bodies, [](const auto& body) {
+              return body.proposal_ghost;
+          }) == 2);
 }
 
 TEST_CASE("field scene resolves semantic layer colors by visible palette order",
@@ -842,6 +924,36 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
     CHECK_FALSE(capped);
     CHECK_FALSE(capped.scene.has_value());
     CHECK(has_code(capped.diagnostics, wormedit::diagnostic_code_t::invalid_resolution));
+}
+
+TEST_CASE("field scene shows simultaneous keyboard hold previews",
+          "[unit][core][editor-scene][proposal]") {
+    const auto chart = scene_chart();
+    const auto built = wormedit::build_editor_field_scene_index(chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
+    auto preview = view();
+    preview.pending_hold = wormedit::pending_hold_t{
+        .position = {wormedit::measure_id_t{2}, 0},
+        .lane = wormedit::lane_id_t{1},
+        .document_revision = 7,
+        .preview_end = wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
+    };
+    preview.additional_keyboard_holds.push_back(wormedit::pending_hold_t{
+        .position = {wormedit::measure_id_t{2}, 0},
+        .lane = wormedit::lane_id_t{2},
+        .document_revision = 7,
+        .preview_end = wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
+    });
+    const auto scene = wormedit::make_editor_field_scene(
+        chart, std::get<wormedit::editor_field_scene_index_t>(built), preview,
+        {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
+    REQUIRE(scene);
+    CHECK(std::ranges::count_if(scene.scene->note_endpoints, [](const auto& endpoint) {
+              return endpoint.note == wormedit::object_id_t{} && endpoint.proposal_ghost;
+          }) == 4);
+    CHECK(std::ranges::count_if(scene.scene->hold_bodies, [](const auto& body) {
+              return body.note == wormedit::object_id_t{} && body.proposal_ghost;
+          }) == 2);
 }
 
 TEST_CASE("field scene marks painted taps for erasure and enforces paint scene caps",

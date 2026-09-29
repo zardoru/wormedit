@@ -86,6 +86,15 @@ TEST_CASE("aligned waveform follows chart timing, offset, and viewport scroll",
     CHECK(loudest_row(scrolled) >= 235.0);
     CHECK(loudest_row(scrolled) <= 245.0);
 
+    auto before_start = request;
+    before_start.viewport_scroll_pixels = -192.0;
+    const auto padded =
+        wormedit::audio::project_aligned_waveform(waveform, *timing.index, before_start);
+    REQUIRE(padded);
+    REQUIRE_FALSE(padded.rows.empty());
+    CHECK(loudest_row(padded) >= 667.0);
+    CHECK(loudest_row(padded) <= 677.0);
+
     auto too_tall = request;
     too_tall.viewport_height_pixels = 4'097.0;
     CHECK(wormedit::audio::project_aligned_waveform(waveform, *timing.index, too_tall).status ==

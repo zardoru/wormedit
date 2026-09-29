@@ -179,6 +179,81 @@ auto plan_hold_rows(const chart_document_t& chart, const measure_index_t& index,
     return result;
 }
 
+auto canvas_keyboard_hold_previews(const chart_document_t& chart, const measure_index_t& index,
+                                   std::uint64_t canvas_rows, std::uint64_t revision,
+                                   const editor_interaction_state_t& state)
+    -> std::variant<std::vector<editor_interaction_view_model_t::virtual_hold_preview_t>,
+                    diagnostic_list_t> {
+    std::vector<editor_interaction_view_model_t::virtual_hold_preview_t> previews;
+    auto pending = state.additional_keyboard_holds;
+    if (state.pending_hold) pending.push_back(*state.pending_hold);
+    for (const auto& hold : pending) {
+        if (!hold.anchor_canvas_row && !hold.preview_canvas_row) continue;
+        const auto anchor = hold.anchor_canvas_row
+                                ? hold.anchor_canvas_row
+                                : absolute_row(index, hold.position);
+        const auto end = hold.preview_canvas_row ? hold.preview_canvas_row : anchor;
+        if (chart.source_family != format_family_t::bms ||
+            hold.document_revision != revision || !anchor || !end ||
+            *anchor >= canvas_rows || *end >= canvas_rows) {
+            return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
+                                           "canvas lane hold is stale or outside BMS geometry")};
+        }
+        auto planned = plan_hold_rows(chart, index, hold.lane, *anchor, *end);
+        if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
+            return *diagnostics;
+        auto rows = std::get<hold_row_plan_t>(std::move(planned));
+        previews.push_back({.anchor_row = *anchor,
+                            .end_row = *end,
+                            .head_row = rows.head_row,
+                            .tail_row = rows.head_row == rows.tail_row
+                                            ? std::optional<std::uint64_t>{}
+                                            : std::optional{rows.tail_row},
+                            .lane = hold.lane,
+                            .document_revision = revision,
+                            .removals = std::make_shared<const std::vector<object_id_t>>(
+                                std::move(rows.removals)),
+                            .adds_note = rows.adds_note});
+    }
+    return previews;
+}
+
+auto find_active_lane(const chart_document_t& chart, const measure_index_t& index,
+                      local_position_t position, lane_id_t id) -> const lane_definition_t*;
+
+auto virtual_lane_key_preview(const chart_document_t& chart, const measure_index_t& index,
+                              std::uint64_t canvas_rows, std::uint64_t revision,
+                              const editor_interaction_state_t& state,
+                              local_position_t lane_position, std::uint64_t cursor_row)
+    -> std::variant<std::optional<editor_interaction_view_model_t::virtual_hold_preview_t>,
+                    diagnostic_list_t> {
+    if (!state.pending_virtual_lane_key)
+        return std::optional<editor_interaction_view_model_t::virtual_hold_preview_t>{};
+    const auto& pending = *state.pending_virtual_lane_key;
+    if (pending.document_revision != revision || chart.source_family != format_family_t::bms ||
+        pending.canvas_row < index.total_rows || pending.canvas_row >= canvas_rows ||
+        !find_active_lane(chart, index, lane_position, pending.lane)) {
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
+                                       "virtual BMS lane-key preview is stale or invalid")};
+    }
+    auto planned = plan_hold_rows(chart, index, pending.lane, pending.canvas_row, cursor_row);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
+        return *diagnostics;
+    auto rows = std::get<hold_row_plan_t>(std::move(planned));
+    return std::optional{editor_interaction_view_model_t::virtual_hold_preview_t{
+        .anchor_row = pending.canvas_row,
+        .end_row = cursor_row,
+        .head_row = rows.head_row,
+        .tail_row = rows.head_row == rows.tail_row
+                        ? std::optional<std::uint64_t>{}
+                        : std::optional{rows.tail_row},
+        .lane = pending.lane,
+        .document_revision = pending.document_revision,
+        .removals = std::make_shared<const std::vector<object_id_t>>(
+            std::move(rows.removals)),
+        .adds_note = rows.adds_note}};
+}
+
 auto normalized_position_span(const measure_index_t& index, local_position_t first,
                               local_position_t second) -> std::optional<position_span_t> {
     const auto first_row = absolute_row(index, first);
@@ -335,6 +410,10 @@ auto maximum_viewport_scroll(const chart_document_t& chart, const measure_index_
     return std::max(0.0, content_height - viewport_height);
 }
 
+auto minimum_viewport_scroll(double viewport_height) -> double {
+    return -viewport_height * editor_cursor_edge_margin_fraction;
+}
+
 auto absolute_row_at_y_pixels(const chart_document_t& chart, const measure_index_t& index,
                               const editor_interaction_view_model_t& view, double y_pixels,
                               bool include_virtual_bms_tail = false)
@@ -442,7 +521,8 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         state.pixels_per_standard_measure < minimum_pixels_per_standard_measure ||
         state.pixels_per_standard_measure > maximum_pixels_per_standard_measure ||
         !maximum_scroll.has_value() || !std::isfinite(state.viewport_scroll_pixels) ||
-        state.viewport_scroll_pixels < 0.0 || state.viewport_scroll_pixels > *maximum_scroll ||
+        state.viewport_scroll_pixels < minimum_viewport_scroll(state.viewport_height_pixels) ||
+        state.viewport_scroll_pixels > *maximum_scroll ||
         (state.fixed_cursor_screen_y_pixels.has_value() &&
          (!std::isfinite(*state.fixed_cursor_screen_y_pixels) ||
           *state.fixed_cursor_screen_y_pixels < 0.0 ||
@@ -505,32 +585,16 @@ auto make_view(const document_history_t& history, const editor_interaction_state
                                        "retained canvas range lies outside chart geometry")};
     }
 
-    std::optional<editor_interaction_view_model_t::virtual_hold_preview_t> virtual_hold_preview;
-    if (state.pending_virtual_lane_key) {
-        const auto& pending = *state.pending_virtual_lane_key;
-        if (pending.document_revision != history.document.revision ||
-            chart->source_family != format_family_t::bms ||
-            pending.canvas_row < index.total_rows || pending.canvas_row >= canvas_rows ||
-            !find_active_lane(*chart, index, lane_position, pending.lane)) {
-            return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
-                                           "virtual BMS lane-key preview is stale or invalid")};
-        }
-        auto planned = plan_hold_rows(*chart, index, pending.lane, pending.canvas_row, *absolute);
-        if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
-            return *diagnostics;
-        auto rows = std::get<hold_row_plan_t>(std::move(planned));
-        virtual_hold_preview = {.anchor_row = pending.canvas_row,
-                                .end_row = *absolute,
-                                .head_row = rows.head_row,
-                                .tail_row = rows.head_row == rows.tail_row
-                                                ? std::optional<std::uint64_t>{}
-                                                : std::optional{rows.tail_row},
-                                .lane = pending.lane,
-                                .document_revision = pending.document_revision,
-                                .removals = std::make_shared<const std::vector<object_id_t>>(
-                                    std::move(rows.removals)),
-                                .adds_note = rows.adds_note};
-    }
+    auto virtual_preview = virtual_lane_key_preview(*chart, index, canvas_rows,
+                                                    history.document.revision, state,
+                                                    lane_position, *absolute);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&virtual_preview))
+        return *diagnostics;
+
+    auto canvas_keyboard_previews = canvas_keyboard_hold_previews(
+        *chart, index, canvas_rows, history.document.revision, state);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&canvas_keyboard_previews))
+        return *diagnostics;
 
     const auto step = chart->divisions_per_standard_measure / state.active_snap_denominator;
     return editor_interaction_view_model_t{
@@ -548,7 +612,13 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .fixed_cursor_screen_y_pixels = state.fixed_cursor_screen_y_pixels,
         .scroll_direction = state.scroll_direction,
         .pending_hold = state.pending_hold,
-        .pending_virtual_hold = virtual_hold_preview,
+        .additional_keyboard_holds = state.additional_keyboard_holds,
+        .pending_virtual_hold =
+            std::get<std::optional<editor_interaction_view_model_t::virtual_hold_preview_t>>(
+                std::move(virtual_preview)),
+        .pending_canvas_keyboard_holds =
+            std::get<std::vector<editor_interaction_view_model_t::virtual_hold_preview_t>>(
+                std::move(canvas_keyboard_previews)),
         .pending_note_duration_gesture = state.pending_note_duration_gesture,
         .pending_note_move_gesture = state.pending_note_move_gesture,
         .pending_note_paint_gesture =
@@ -1471,7 +1541,8 @@ auto recover_editor_interaction(const document_history_t& history,
         result.state->viewport_height_pixels);
     if (maximum_scroll && std::isfinite(previous.viewport_scroll_pixels)) {
         result.state->viewport_scroll_pixels =
-            std::clamp(previous.viewport_scroll_pixels, 0.0, *maximum_scroll);
+            std::clamp(previous.viewport_scroll_pixels,
+                       minimum_viewport_scroll(result.state->viewport_height_pixels), *maximum_scroll);
     }
     if (previous.fixed_cursor_screen_y_pixels &&
         std::isfinite(*previous.fixed_cursor_screen_y_pixels) &&
@@ -2550,7 +2621,7 @@ auto editor_objects_in_area_selection(const chart_document_t& chart,
             view.pixels_per_standard_measure > maximum_pixels_per_standard_measure ||
             !std::isfinite(view.viewport_scroll_pixels) ||
             !std::isfinite(view.viewport_height_pixels) || view.viewport_height_pixels <= 0.0 ||
-            !maximum_scroll || view.viewport_scroll_pixels < 0.0 ||
+            !maximum_scroll || view.viewport_scroll_pixels < minimum_viewport_scroll(view.viewport_height_pixels) ||
             view.viewport_scroll_pixels > *maximum_scroll ||
             chart.divisions_per_standard_measure == 0 || index.measures.total_rows == 0 ||
             index.selection_span_tree_leaf_base == 0 ||
@@ -2632,6 +2703,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                             "unknown editor gesture cancellation reason")});
         }
         state.pending_hold.reset();
+        state.additional_keyboard_holds.clear();
         state.pending_note_duration_gesture.reset();
         state.pending_note_move_gesture.reset();
         state.pending_note_paint_gesture.reset();
@@ -2652,6 +2724,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
     }
     if (std::holds_alternative<cancel_hold_action_t>(action)) {
         state.pending_hold.reset();
+        state.additional_keyboard_holds.clear();
         state.pending_virtual_lane_key.reset();
         const auto recovered_view = make_view(history, state);
         return {
@@ -2696,6 +2769,8 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
             source == hold_gesture_source_t::keyboard_lane &&
             (std::holds_alternative<move_edit_cursor_action_t>(action) ||
              std::holds_alternative<page_edit_cursor_action_t>(action) ||
+             std::holds_alternative<scroll_editor_view_action_t>(action) ||
+             std::holds_alternative<begin_lane_key_hold_gesture_action_t>(action) ||
              std::holds_alternative<release_lane_key_hold_gesture_action_t>(action));
         const auto pointer_action =
             source == hold_gesture_source_t::alt_pointer &&
@@ -2767,6 +2842,8 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         !std::holds_alternative<cycle_edit_snap_action_t>(action) &&
         !std::holds_alternative<place_virtual_bms_tap_action_t>(action) &&
         !std::holds_alternative<place_virtual_bms_hold_action_t>(action) &&
+        !std::holds_alternative<begin_lane_key_hold_gesture_action_t>(action) &&
+        !std::holds_alternative<release_lane_key_hold_gesture_action_t>(action) &&
         !std::holds_alternative<begin_editor_area_selection_action_t>(action) &&
         !std::holds_alternative<update_editor_area_selection_action_t>(action) &&
         !std::holds_alternative<commit_editor_area_selection_action_t>(action) &&
@@ -2809,11 +2886,12 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                           *candidate.fixed_cursor_screen_y_pixels
                                     : *candidate.fixed_cursor_screen_y_pixels;
             candidate.viewport_scroll_pixels =
-                std::clamp(cursor_top - anchor, 0.0, *maximum_scroll);
+                std::clamp(cursor_top - anchor,
+                           minimum_viewport_scroll(candidate.viewport_height_pixels), *maximum_scroll);
             return std::isfinite(candidate.viewport_scroll_pixels);
         }
-        constexpr double comfort_band_top_fraction = 0.25;
-        constexpr double comfort_band_bottom_fraction = 0.75;
+        constexpr double comfort_band_top_fraction = 0.2;
+        constexpr double comfort_band_bottom_fraction = 0.8;
         const auto comfort_top = candidate.viewport_scroll_pixels +
                                  candidate.viewport_height_pixels * comfort_band_top_fraction;
         const auto comfort_bottom = candidate.viewport_scroll_pixels +
@@ -2826,7 +2904,8 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                 cursor_bottom - candidate.viewport_height_pixels * comfort_band_bottom_fraction;
         }
         candidate.viewport_scroll_pixels =
-            std::clamp(candidate.viewport_scroll_pixels, 0.0, *maximum_scroll);
+            std::clamp(candidate.viewport_scroll_pixels,
+                       minimum_viewport_scroll(candidate.viewport_height_pixels), *maximum_scroll);
         return std::isfinite(candidate.viewport_scroll_pixels);
     };
 
@@ -3025,6 +3104,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         return result;
     };
     const auto update_hold_gesture = [&](hold_gesture_source_t source, local_position_t position) {
+        const auto before = state;
         if (!state.pending_hold.has_value() || state.pending_hold->gesture_source != source) {
             return diagnostic_result(
                 history, state,
@@ -3047,6 +3127,14 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
             state.pending_hold->gesture_source = source;
         }
         if (result) {
+            state.pending_hold->preview_canvas_row.reset();
+            if (source == hold_gesture_source_t::keyboard_lane &&
+                !keep_cursor_visible(state)) {
+                state = before;
+                return diagnostic_result(history, state,
+                                         {error(diagnostic_code_t::invalid_resolution,
+                                                "hold movement cannot keep the cursor visible")});
+            }
             const auto view = make_view(history, state);
             result.view = std::holds_alternative<editor_interaction_view_model_t>(view)
                               ? std::optional{std::get<editor_interaction_view_model_t>(view)}
@@ -3082,6 +3170,49 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                      : diagnostic_list_t{};
         }
         return result;
+    };
+    const auto update_keyboard_holds = [&](local_position_t position) {
+        const auto before = state;
+        state.virtual_bms_cursor_row.reset();
+        for (auto& pending : state.additional_keyboard_holds) {
+            std::swap(*state.pending_hold, pending);
+            auto result = update_hold_gesture(hold_gesture_source_t::keyboard_lane, position);
+            std::swap(*state.pending_hold, pending);
+            if (!result) {
+                state = before;
+                return result;
+            }
+        }
+        return update_hold_gesture(hold_gesture_source_t::keyboard_lane, position);
+    };
+    const auto update_canvas_keyboard_holds = [&](std::uint64_t row) {
+        const auto before = state;
+        if (!state.pending_hold || chart->source_family != format_family_t::bms) {
+            return diagnostic_result(history, state,
+                                     {error(diagnostic_code_t::invalid_hold,
+                                            "canvas hold movement requires a BMS lane key")});
+        }
+        state.pending_hold->preview_canvas_row = row;
+        for (auto& hold : state.additional_keyboard_holds)
+            hold.preview_canvas_row = row;
+        const auto authored = position_at(index, row);
+        state.virtual_bms_cursor_row = authored ? std::nullopt : std::optional{row};
+        if (authored) state.cursor = *authored;
+        if (!keep_cursor_visible(state)) {
+            state = before;
+            return diagnostic_result(history, state,
+                                     {error(diagnostic_code_t::invalid_resolution,
+                                            "canvas hold movement cannot keep the cursor visible")});
+        }
+        auto view = make_view(history, state);
+        if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&view)) {
+            state = before;
+            return diagnostic_result(history, state, *diagnostics);
+        }
+        return editor_interaction_result_t{
+            .accepted = true,
+            .view = std::get<editor_interaction_view_model_t>(std::move(view)),
+        };
     };
     const auto begin_duration_gesture = [&](object_id_t reference_id) {
         if (state.pending_hold.has_value() || state.pending_note_duration_gesture.has_value() ||
@@ -4012,12 +4143,13 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                       : std::nullopt;
                 if (state.pending_hold.has_value() &&
                     state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) {
-                    if (!next) {
-                        return diagnostic_result(history, state,
-                                                 {error(diagnostic_code_t::row_out_of_range,
-                                                        "hold movement requires authored geometry")});
-                    }
-                    return update_hold_gesture(hold_gesture_source_t::keyboard_lane, *next);
+                    if (!next || state.pending_hold->anchor_canvas_row ||
+                        std::ranges::any_of(state.additional_keyboard_holds,
+                                            [](const auto& hold) {
+                                                return hold.anchor_canvas_row.has_value();
+                                            }))
+                        return update_canvas_keyboard_holds(*next_row);
+                    return update_keyboard_holds(*next);
                 }
                 auto proposed_state = state;
                 proposed_state.virtual_bms_cursor_row = next ? std::nullopt : next_row;
@@ -4107,12 +4239,13 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                         : std::nullopt;
                 if (state.pending_hold.has_value() &&
                     state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) {
-                    if (!target) {
-                        return diagnostic_result(history, state,
-                                                 {error(diagnostic_code_t::row_out_of_range,
-                                                        "hold paging requires authored geometry")});
-                    }
-                    return update_hold_gesture(hold_gesture_source_t::keyboard_lane, *target);
+                    if (!target || state.pending_hold->anchor_canvas_row ||
+                        std::ranges::any_of(state.additional_keyboard_holds,
+                                            [](const auto& hold) {
+                                                return hold.anchor_canvas_row.has_value();
+                                            }))
+                        return update_canvas_keyboard_holds(target_row);
+                    return update_keyboard_holds(*target);
                 }
                 auto proposed_state = state;
                 proposed_state.virtual_bms_cursor_row =
@@ -4321,7 +4454,7 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                     anchor_row ? canvas.measure_containing(*anchor_row) : std::nullopt;
                 const auto end_measure =
                     end_row ? canvas.measure_containing(*end_row) : std::nullopt;
-                if (!anchor_measure || anchor_measure->authored || !end_measure ||
+                if (!anchor_measure || !end_measure ||
                     anchor_measure->number >= bms_addressable_measure_count ||
                     end_measure->number >= bms_addressable_measure_count) {
                     return diagnostic_result(history, state,
@@ -4331,7 +4464,9 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                 auto proposed = history.document;
                 auto* proposed_chart = find_chart(proposed, state.chart);
                 const auto last_number = std::max(anchor_measure->number, end_measure->number);
-                const auto required = last_number + 1 - proposed_chart->measures.size();
+                const auto required = last_number + 1 > proposed_chart->measures.size()
+                                          ? last_number + 1 - proposed_chart->measures.size()
+                                          : 0;
                 std::uint64_t last_measure_id{};
                 for (const auto& measure : proposed_chart->measures)
                     last_measure_id = std::max(last_measure_id, measure.id.value);
@@ -4792,8 +4927,56 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
             } else if constexpr (std::is_same_v<action_t, cancel_hold_action_t>) {
                 return {};
             } else if constexpr (std::is_same_v<action_t, begin_lane_key_hold_gesture_action_t>) {
-                return begin_hold_gesture(typed_action.lane, state.cursor,
-                                          hold_gesture_source_t::keyboard_lane);
+                const auto before = state;
+                if (state.pending_hold) {
+                    if (state.pending_hold->lane == typed_action.lane ||
+                        std::ranges::any_of(state.additional_keyboard_holds, [&](const auto& hold) {
+                            return hold.lane == typed_action.lane;
+                        })) {
+                        return diagnostic_result(history, state,
+                                                 {error(diagnostic_code_t::invalid_hold,
+                                                        "lane key is already held")});
+                    }
+                    state.additional_keyboard_holds.push_back(*state.pending_hold);
+                    state.pending_hold.reset();
+                }
+                if (state.virtual_bms_cursor_row) {
+                    state.pending_hold = pending_hold_t{
+                        .position = state.cursor,
+                        .lane = typed_action.lane,
+                        .document_revision = history.document.revision,
+                        .anchor_canvas_row = *state.virtual_bms_cursor_row,
+                        .preview_canvas_row = *state.virtual_bms_cursor_row,
+                        .gesture_source = hold_gesture_source_t::keyboard_lane,
+                    };
+                    const auto view = make_view(history, state);
+                    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&view)) {
+                        state = before;
+                        return diagnostic_result(history, state, *diagnostics);
+                    }
+                    return editor_interaction_result_t{
+                        .accepted = true,
+                        .view = std::get<editor_interaction_view_model_t>(std::move(view)),
+                    };
+                }
+                auto result = begin_hold_gesture(typed_action.lane, state.cursor,
+                                                 hold_gesture_source_t::keyboard_lane);
+                if (!result) {
+                    state = before;
+                } else if (result.document_changed) {
+                    if (!state.additional_keyboard_holds.empty()) {
+                        state.pending_hold = state.additional_keyboard_holds.back();
+                        state.additional_keyboard_holds.pop_back();
+                    }
+                    if (state.pending_hold)
+                        state.pending_hold->document_revision = history.document.revision;
+                    for (auto& hold : state.additional_keyboard_holds)
+                        hold.document_revision = history.document.revision;
+                    const auto view = make_view(history, state);
+                    if (const auto* current = std::get_if<editor_interaction_view_model_t>(&view))
+                        result.view = *current;
+                }
+                return result;
             } else if constexpr (std::is_same_v<action_t, release_lane_key_hold_gesture_action_t>) {
                 if (!state.pending_hold.has_value()) {
                     const auto view = make_view(history, state);
@@ -4807,11 +4990,53 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                            : diagnostic_list_t{},
                     };
                 }
-                const auto position =
-                    state.pending_hold.has_value()
-                        ? state.pending_hold->preview_end.value_or(state.pending_hold->position)
-                        : state.cursor;
-                return release_hold_gesture(hold_gesture_source_t::keyboard_lane, position);
+                const auto before = state;
+                const auto released_lane = typed_action.lane.value == 0
+                                               ? state.pending_hold->lane : typed_action.lane;
+                const auto found = std::ranges::find(state.additional_keyboard_holds,
+                                                     released_lane, &pending_hold_t::lane);
+                const bool primary = state.pending_hold->lane == released_lane;
+                if (!primary && found == state.additional_keyboard_holds.end()) {
+                    return diagnostic_result(history, state,
+                                             {error(diagnostic_code_t::invalid_hold,
+                                                    "released lane key has no pending hold")});
+                }
+                if (!primary) std::swap(*state.pending_hold, *found);
+                const auto position = state.pending_hold->preview_end.value_or(
+                    state.pending_hold->position);
+                editor_interaction_result_t result;
+                if (state.pending_hold->anchor_canvas_row ||
+                    state.pending_hold->preview_canvas_row) {
+                    const auto anchor = state.pending_hold->anchor_canvas_row.value_or(
+                        *absolute_row(index, state.pending_hold->position));
+                    const auto end = state.pending_hold->preview_canvas_row.value_or(anchor);
+                    const auto lane = state.pending_hold->lane;
+                    state.pending_hold.reset();
+                    result = dispatch_editor_action(
+                        history, state, place_virtual_bms_hold_action_t{anchor, end, lane});
+                } else {
+                    result = release_hold_gesture(hold_gesture_source_t::keyboard_lane, position);
+                }
+                if (!result) {
+                    state = before;
+                    return result;
+                }
+                if (!primary) {
+                    state.pending_hold = *found;
+                    state.additional_keyboard_holds.erase(found);
+                } else if (!state.additional_keyboard_holds.empty()) {
+                    state.pending_hold = state.additional_keyboard_holds.back();
+                    state.additional_keyboard_holds.pop_back();
+                }
+                if (result.document_changed) {
+                    if (state.pending_hold) state.pending_hold->document_revision = history.document.revision;
+                    for (auto& hold : state.additional_keyboard_holds)
+                        hold.document_revision = history.document.revision;
+                }
+                const auto view = make_view(history, state);
+                if (const auto* current = std::get_if<editor_interaction_view_model_t>(&view))
+                    result.view = *current;
+                return result;
             } else if constexpr (std::is_same_v<action_t,
                                                 begin_alt_pointer_hold_gesture_action_t>) {
                 if (!typed_action.alt_or_option_down) {
@@ -5678,7 +5903,9 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                 const auto maximum_scroll = maximum_viewport_scroll(*chart, index, next_scale,
                                                                     state.viewport_height_pixels);
                 const auto next_scroll = maximum_scroll.has_value()
-                                             ? std::clamp(unclamped_scroll, 0.0, *maximum_scroll)
+                                             ? std::clamp(unclamped_scroll,
+                                                          minimum_viewport_scroll(state.viewport_height_pixels),
+                                                          *maximum_scroll)
                                              : std::numeric_limits<double>::quiet_NaN();
                 if (!std::isfinite(next_scroll)) {
                     return diagnostic_result(
@@ -5721,7 +5948,8 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                                                     "editor viewport geometry is invalid")});
                 }
                 auto proposed_state = state;
-                proposed_state.viewport_scroll_pixels = std::clamp(next_scroll, 0.0, *maximum_scroll);
+                proposed_state.viewport_scroll_pixels = std::clamp(
+                    next_scroll, minimum_viewport_scroll(state.viewport_height_pixels), *maximum_scroll);
                 if (typed_action.fixed_cursor_screen_y_pixels.has_value()) {
                     const auto anchor_y = *typed_action.fixed_cursor_screen_y_pixels;
                     if (!std::isfinite(anchor_y) || anchor_y < 0.0 ||
@@ -5781,6 +6009,27 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                             proposed_state.active_lane = *replacement;
                         }
                     }
+                }
+                if (typed_action.fixed_cursor_screen_y_pixels && state.pending_hold &&
+                    state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane &&
+                    (proposed_state.cursor != state.cursor ||
+                     proposed_state.virtual_bms_cursor_row != state.virtual_bms_cursor_row)) {
+                    const auto before = state;
+                    const auto canvas_hold = proposed_state.virtual_bms_cursor_row ||
+                                             state.pending_hold->anchor_canvas_row ||
+                                             std::ranges::any_of(
+                                                 state.additional_keyboard_holds,
+                                                 [](const auto& hold) {
+                                                     return hold.anchor_canvas_row.has_value();
+                                                 });
+                    const auto cursor_row = proposed_state.virtual_bms_cursor_row.value_or(
+                        *absolute_row(index, proposed_state.cursor));
+                    state = proposed_state;
+                    const auto updated = canvas_hold
+                                             ? update_canvas_keyboard_holds(cursor_row)
+                                             : update_keyboard_holds(proposed_state.cursor);
+                    if (!updated) state = before;
+                    return updated;
                 }
                 const auto next_view = make_view(history, proposed_state);
                 if (std::holds_alternative<editor_interaction_view_model_t>(next_view)) {

@@ -494,20 +494,11 @@ auto dispatch_compose_keyboard_input(
                 accepted = input.successive ? "Next selected note assigned to lane."
                                             : "Selected notes assigned to lane.";
             } else {
-                if (state.virtual_bms_cursor_row) {
-                    state.pending_virtual_lane_key =
-                        editor_interaction_state_t::virtual_lane_key_t{
-                            *state.virtual_bms_cursor_row, lane_id_t{input.lane_id},
-                            history.document.revision};
-                    result.accepted = true;
-                    accepted = "Virtual BMS lane key captured; release it to place a tap.";
-                } else {
-                    result = dispatch_editor_action(
-                        history, state,
-                        begin_lane_key_hold_gesture_action_t{lane_id_t{input.lane_id}});
-                    accepted =
-                        "Lane hold started; move the edit cursor and release the key to finish.";
-                }
+                result = dispatch_editor_action(
+                    history, state,
+                    begin_lane_key_hold_gesture_action_t{lane_id_t{input.lane_id}});
+                accepted =
+                    "Lane hold started; move the edit cursor and release the key to finish.";
             }
             break;
         case WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE:
@@ -543,10 +534,12 @@ auto dispatch_compose_keyboard_input(
                                                         pending.lane});
                     accepted = "Virtual BMS hold placed from the lane key.";
                 }
-            } else if (state.pending_hold.has_value() &&
-                state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) {
+            } else if ((state.pending_hold.has_value() &&
+                        state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) ||
+                       !state.additional_keyboard_holds.empty()) {
                 result = dispatch_editor_action(history, state,
-                                                release_lane_key_hold_gesture_action_t{});
+                                                release_lane_key_hold_gesture_action_t{
+                                                    lane_id_t{input.lane_id}});
                 accepted = result.document_changed ? "Lane hold committed." : "Lane hold released.";
             } else {
                 result.accepted = true;
@@ -2014,8 +2007,10 @@ auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
                 const auto result = dispatch_editor_action(
                     history, state,
                     scroll_editor_view_action_t{
-                        scroll->delta_y_pixels,
-                        state.viewport_height_pixels * 0.5,
+                        compose_wheel_scroll_delta(scroll->delta_y_pixels,
+                                                   compose_field_downscroll(*input_chart)),
+                        compose_cursor_screen_anchor(state.viewport_height_pixels,
+                                                     compose_field_downscroll(*input_chart)),
                         compose_field_downscroll(*input_chart)
                             ? editor_field_scroll_direction_t::down
                             : editor_field_scroll_direction_t::up});

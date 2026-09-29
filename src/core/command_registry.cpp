@@ -790,11 +790,14 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
     add_builtin(registry, invoker, "navigation.next_snap", "Next Snap",
                 command_category_t::navigation, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::right)}, false, compose);
-    add_builtin(registry, invoker, "transport.play_pause", "Play / Pause",
+    add_builtin(registry, invoker, "transport.play_pause", "Play from Cursor / Pause",
                 command_category_t::transport, workspace,
                 {chord(shortcut_key_t::space, primary())});
+    add_builtin(registry, invoker, "transport.play_from_start", "Play from Start",
+                command_category_t::transport, workspace,
+                {chord(shortcut_key_t::space, modified(shortcut_modifier_t::shift))});
     add_builtin(registry, invoker, "transport.stop", "Stop", command_category_t::transport,
-                workspace, {chord(shortcut_key_t::space, modified(shortcut_modifier_t::shift))});
+                workspace, {});
 
     constexpr std::array workspace_tabs{
         workspace_tab_t::setup,

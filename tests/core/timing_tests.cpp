@@ -112,6 +112,8 @@ TEST_CASE("chart waveform pointer resolves fractional rows to source frames",
     CHECK(sample_frame_at_chart_y(timing, 0.0, 240.0, 60.0, 300.0, 48'000) == 72'000);
     CHECK(sample_frame_at_chart_y(timing, 0.0, 240.0, 90.0, 300.0, 48'000) == 84'000);
     CHECK(sample_frame_at_chart_y(timing, 240.0, 240.0, 60.0, 300.0, 48'000) == 192'000);
+    CHECK(sample_frame_at_chart_y(timing, -60.0, 240.0, 120.0, 300.0, 48'000) == 72'000);
+    CHECK_FALSE(sample_frame_at_chart_y(timing, -60.0, 240.0, 30.0, 300.0, 48'000));
     CHECK_FALSE(sample_frame_at_chart_y(timing, 0.0, 240.0, -1.0, 300.0, 48'000));
     CHECK_FALSE(sample_frame_at_chart_y(timing, 0.0, 240.0, 60.0, 300.0, 0));
 }

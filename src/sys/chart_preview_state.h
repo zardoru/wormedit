@@ -41,7 +41,9 @@ struct chart_preview_t {
         const audio::decoded_source_registry_t& sources,
         const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings,
         sdl_audition_output_t& audition_output,
-        audio::preview_session_t& preview_session, sdl_preview_output_t& preview_output)
+        audio::preview_session_t& preview_session, sdl_preview_output_t& preview_output,
+        std::optional<local_position_t> start_cursor = std::nullopt,
+        bool from_beginning = false)
         -> std::string;
     [[nodiscard]] auto seek(
         std::uint64_t frame, const song_document_t& document,

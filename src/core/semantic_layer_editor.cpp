@@ -340,6 +340,260 @@ auto apply_membership(chart_document_t& chart, layer_id_t layer_id,
     return changed;
 }
 
+auto insert_semantic_layer(chart_document_t& chart,
+                           const insert_semantic_layer_action_t& edit,
+                           const semantic_layer_edit_limits_t& limits,
+                           document_command_result_t& result) -> bool {
+    if (chart.semantic_layers.size() >= limits.maximum_layers) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "semantic layer insertion would exceed the configured layer cap");
+        return false;
+    }
+    if (!valid_name(edit.name, limits)) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "semantic layer name is empty, invalid UTF-8, contains NUL, or exceeds its byte cap");
+        return false;
+    }
+    if (!valid_color(edit.color)) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "semantic layer RGBA components must be finite values between zero and one");
+        return false;
+    }
+    std::size_t total_names{};
+    for (const auto& layer : chart.semantic_layers) {
+        if (!add_size(total_names, layer.name.size(), limits.maximum_total_name_bytes)) {
+            reject(result, diagnostic_code_t::invalid_resolution,
+                   "semantic layer names exceed the configured total byte cap");
+            return false;
+        }
+    }
+    if (!add_size(total_names, edit.name.size(), limits.maximum_total_name_bytes)) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "semantic layer names exceed the configured total byte cap");
+        return false;
+    }
+    const auto id = next_layer_id(chart);
+    if (!id.has_value()) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "semantic layer ID sequence is exhausted");
+        return false;
+    }
+    chart.semantic_layers.push_back({.id = *id,
+                                     .name = edit.name,
+                                     .color = stored_color(edit.color),
+                                     .visible = edit.visible,
+                                     .locked = edit.locked});
+    return true;
+}
+
+auto update_semantic_layer(chart_document_t& chart,
+                           const update_semantic_layer_action_t& edit,
+                           const semantic_layer_edit_limits_t& limits,
+                           document_command_result_t& result) -> bool {
+    auto* layer = unique_layer(chart, edit.layer, result);
+    if (layer == nullptr) {
+        return false;
+    }
+    if (!valid_name(edit.name, limits)) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "semantic layer name is empty, invalid UTF-8, contains NUL, or exceeds its byte cap");
+        return false;
+    }
+    if (!valid_color(edit.color)) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "semantic layer RGBA components must be finite values between zero and one");
+        return false;
+    }
+    const auto replacement_color = stored_color(edit.color);
+    std::size_t total_names{};
+    for (const auto& item : chart.semantic_layers) {
+        const auto& name = item.id == edit.layer ? edit.name : item.name;
+        if (!add_size(total_names, name.size(), limits.maximum_total_name_bytes)) {
+            reject(result, diagnostic_code_t::invalid_resolution,
+                   "semantic layer names exceed the configured total byte cap");
+            return false;
+        }
+    }
+    const auto changed = layer->name != edit.name || layer->color != replacement_color ||
+                         layer->visible != edit.visible || layer->locked != edit.locked;
+    if (changed) {
+        layer->name = edit.name;
+        layer->color = replacement_color;
+        layer->visible = edit.visible;
+        layer->locked = edit.locked;
+    }
+    return changed;
+}
+
+auto delete_semantic_layer(chart_document_t& chart,
+                           const delete_semantic_layer_action_t& edit,
+                           const semantic_layer_edit_limits_t& limits,
+                           document_command_result_t& result) -> bool {
+    auto* layer = unique_layer(chart, edit.layer, result);
+    if (layer == nullptr) {
+        return false;
+    }
+    if (layer->locked) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "locked semantic layers cannot be deleted");
+        return false;
+    }
+    const auto assigned_count = layer_membership_note_count(chart, edit.layer);
+    if (assigned_count != 0 && !edit.remove_from_notes) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "semantic layer is assigned to notes; explicit removal was not requested");
+        return false;
+    }
+    if (assigned_count > limits.maximum_note_selection) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "semantic layer deletion exceeds the configured note removal cap");
+        return false;
+    }
+    if (edit.remove_from_notes) {
+        for (auto& measure : chart.measures) {
+            for (auto& note : measure.notes) {
+                std::erase(note.semantic_layers, edit.layer);
+            }
+        }
+    }
+    std::erase_if(chart.semantic_layers,
+                  [&edit](const auto& item) { return item.id == edit.layer; });
+    return true;
+}
+
+auto reorder_semantic_layers(chart_document_t& chart,
+                             const reorder_semantic_layers_action_t& edit,
+                             const semantic_layer_edit_limits_t& limits,
+                             document_command_result_t& result) -> bool {
+    if (edit.ordered_layers.size() > limits.maximum_layers ||
+        edit.ordered_layers.size() != chart.semantic_layers.size()) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "semantic layer order must contain every chart layer exactly once");
+        return false;
+    }
+    std::unordered_set<std::uint64_t> ordered_ids;
+    std::unordered_map<std::uint64_t, const semantic_layer_t*> by_id;
+    by_id.reserve(chart.semantic_layers.size());
+    for (const auto& layer : chart.semantic_layers) {
+        by_id.emplace(layer.id.value, &layer);
+    }
+    std::vector<semantic_layer_t> reordered;
+    reordered.reserve(edit.ordered_layers.size());
+    for (const auto id : edit.ordered_layers) {
+        if (!id) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "semantic layer order uses the reserved zero layer ID");
+            return false;
+        }
+        if (!ordered_ids.insert(id.value).second) {
+            reject(result, diagnostic_code_t::duplicate_id,
+                   "semantic layer order contains a duplicate layer ID");
+            return false;
+        }
+        const auto layer = by_id.find(id.value);
+        if (layer == by_id.end()) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "semantic layer order refers to an unknown layer");
+            return false;
+        }
+        reordered.push_back(*layer->second);
+    }
+    const auto changed = !std::ranges::equal(reordered, chart.semantic_layers, {},
+                                              &semantic_layer_t::id, &semantic_layer_t::id);
+    if (changed) {
+        chart.semantic_layers = std::move(reordered);
+    }
+    return changed;
+}
+
+struct semantic_layer_edit_outcome_t {
+    std::string label;
+    bool changed{};
+};
+
+template <typename edit_t>
+auto semantic_edit_label(membership_operation_t operation = membership_operation_t::assign)
+    -> std::string {
+    if constexpr (std::is_same_v<edit_t, insert_semantic_layer_action_t>) {
+        return "Insert semantic layer";
+    } else if constexpr (std::is_same_v<edit_t, update_semantic_layer_action_t>) {
+        return "Update semantic layer";
+    } else if constexpr (std::is_same_v<edit_t, delete_semantic_layer_action_t>) {
+        return "Delete semantic layer";
+    } else if constexpr (std::is_same_v<edit_t, reorder_semantic_layers_action_t>) {
+        return "Reorder semantic layers";
+    } else if (operation == membership_operation_t::assign) {
+        return "Assign notes to semantic layer";
+    } else if (operation == membership_operation_t::remove) {
+        return "Remove notes from semantic layer";
+    } else {
+        return "Toggle semantic layer membership";
+    }
+}
+
+template <typename edit_t>
+auto membership_operation(const edit_t&) -> membership_operation_t {
+    if constexpr (std::is_same_v<edit_t, assign_notes_to_semantic_layer_action_t>) {
+        return membership_operation_t::assign;
+    } else if constexpr (std::is_same_v<edit_t, remove_notes_from_semantic_layer_action_t>) {
+        return membership_operation_t::remove;
+    } else {
+        return membership_operation_t::toggle;
+    }
+}
+
+template <typename edit_t>
+auto apply_typed_semantic_edit(chart_document_t& chart, const edit_t& edit,
+                               const semantic_layer_edit_limits_t& limits,
+                               document_command_result_t& result)
+    -> semantic_layer_edit_outcome_t {
+    if constexpr (std::is_same_v<edit_t, insert_semantic_layer_action_t>) {
+        return {.label = semantic_edit_label<edit_t>(),
+                .changed = insert_semantic_layer(chart, edit, limits, result)};
+    } else if constexpr (std::is_same_v<edit_t, update_semantic_layer_action_t>) {
+        return {.label = semantic_edit_label<edit_t>(),
+                .changed = update_semantic_layer(chart, edit, limits, result)};
+    } else if constexpr (std::is_same_v<edit_t, delete_semantic_layer_action_t>) {
+        return {.label = semantic_edit_label<edit_t>(),
+                .changed = delete_semantic_layer(chart, edit, limits, result)};
+    } else if constexpr (std::is_same_v<edit_t, reorder_semantic_layers_action_t>) {
+        return {.label = semantic_edit_label<edit_t>(),
+                .changed = reorder_semantic_layers(chart, edit, limits, result)};
+    } else {
+        const auto operation = membership_operation(edit);
+        return {.label = semantic_edit_label<edit_t>(operation),
+                .changed = apply_membership(chart, edit.layer, edit.notes, operation, limits, result)};
+    }
+}
+
+auto apply_semantic_layer_action(song_document_t& proposed,
+                                 const semantic_layer_edit_action_t& action,
+                                 const semantic_layer_edit_limits_t& limits,
+                                 document_command_result_t& result)
+    -> semantic_layer_edit_outcome_t {
+    return std::visit(
+        [&](const auto& edit) -> semantic_layer_edit_outcome_t {
+            const auto chart = std::ranges::find(proposed.charts, edit.chart, &chart_document_t::id);
+            if (!edit.chart || chart == proposed.charts.end() ||
+                std::ranges::count(proposed.charts, edit.chart, &chart_document_t::id) != 1) {
+                reject(result, diagnostic_code_t::invalid_id,
+                       "semantic layer edit refers to an unknown or ambiguous chart");
+                return {};
+            }
+            if (chart->semantic_layers.size() > limits.maximum_layers) {
+                reject(result, diagnostic_code_t::invalid_resolution,
+                       "selected chart exceeds the semantic layer cap");
+                return {};
+            }
+            if (!validate_layer_ids(*chart, result) ||
+                !validate_layer_names(*chart, limits, result)) {
+                return {};
+            }
+            return apply_typed_semantic_edit(*chart, edit, limits, result);
+        },
+        action);
+}
+
 } // namespace
 
 auto make_semantic_layer_palette_window(const chart_document_t& chart,
@@ -404,232 +658,12 @@ auto apply_semantic_layer_edit(document_history_t& history, std::uint64_t expect
                "semantic layer, object, note selection, and name byte caps must be positive");
         return result;
     }
-
     auto proposed = history.document;
-    std::string command_label;
-    bool changed{};
-    std::visit(
-        [&](const auto& edit) {
-            using edit_t = std::remove_cvref_t<decltype(edit)>;
-            const auto chart =
-                std::ranges::find(proposed.charts, edit.chart, &chart_document_t::id);
-            if (!edit.chart || chart == proposed.charts.end() ||
-                std::ranges::count(proposed.charts, edit.chart, &chart_document_t::id) != 1) {
-                reject(result, diagnostic_code_t::invalid_id,
-                       "semantic layer edit refers to an unknown or ambiguous chart");
-                return;
-            }
-            if (chart->semantic_layers.size() > limits.maximum_layers) {
-                reject(result, diagnostic_code_t::invalid_resolution,
-                       "selected chart exceeds the semantic layer cap");
-                return;
-            }
-            if (!validate_layer_ids(*chart, result) ||
-                !validate_layer_names(*chart, limits, result)) {
-                return;
-            }
-
-            if constexpr (std::is_same_v<edit_t, insert_semantic_layer_action_t>) {
-                if (chart->semantic_layers.size() >= limits.maximum_layers) {
-                    reject(result, diagnostic_code_t::invalid_resolution,
-                           "semantic layer insertion would exceed the configured layer cap");
-                    return;
-                }
-                if (!valid_name(edit.name, limits)) {
-                    reject(
-                        result, diagnostic_code_t::unsupported_feature,
-                        "semantic layer name is empty, invalid UTF-8, contains NUL, or exceeds its "
-                        "byte cap");
-                    return;
-                }
-                if (!valid_color(edit.color)) {
-                    reject(result, diagnostic_code_t::invalid_resolution,
-                           "semantic layer RGBA components must be finite values between zero and "
-                           "one");
-                    return;
-                }
-                std::size_t total_names{};
-                for (const auto& layer : chart->semantic_layers) {
-                    if (!add_size(total_names, layer.name.size(),
-                                  limits.maximum_total_name_bytes)) {
-                        reject(result, diagnostic_code_t::invalid_resolution,
-                               "semantic layer names exceed the configured total byte cap");
-                        return;
-                    }
-                }
-                if (!add_size(total_names, edit.name.size(), limits.maximum_total_name_bytes)) {
-                    reject(result, diagnostic_code_t::invalid_resolution,
-                           "semantic layer names exceed the configured total byte cap");
-                    return;
-                }
-                const auto id = next_layer_id(*chart);
-                if (!id.has_value()) {
-                    reject(result, diagnostic_code_t::invalid_resolution,
-                           "semantic layer ID sequence is exhausted");
-                    return;
-                }
-                chart->semantic_layers.push_back({.id = *id,
-                                                  .name = edit.name,
-                                                  .color = stored_color(edit.color),
-                                                  .visible = edit.visible,
-                                                  .locked = edit.locked});
-                command_label = "Insert semantic layer";
-                changed = true;
-            } else if constexpr (std::is_same_v<edit_t, update_semantic_layer_action_t>) {
-                auto* layer = unique_layer(*chart, edit.layer, result);
-                if (layer == nullptr) {
-                    return;
-                }
-                if (!valid_name(edit.name, limits)) {
-                    reject(
-                        result, diagnostic_code_t::unsupported_feature,
-                        "semantic layer name is empty, invalid UTF-8, contains NUL, or exceeds its "
-                        "byte cap");
-                    return;
-                }
-                if (!valid_color(edit.color)) {
-                    reject(result, diagnostic_code_t::invalid_resolution,
-                           "semantic layer RGBA components must be finite values between zero and "
-                           "one");
-                    return;
-                }
-                const auto replacement_color = stored_color(edit.color);
-                std::size_t total_names{};
-                for (const auto& item : chart->semantic_layers) {
-                    const auto& name = item.id == edit.layer ? edit.name : item.name;
-                    if (!add_size(total_names, name.size(), limits.maximum_total_name_bytes)) {
-                        reject(result, diagnostic_code_t::invalid_resolution,
-                               "semantic layer names exceed the configured total byte cap");
-                        return;
-                    }
-                }
-                changed = layer->name != edit.name || layer->color != replacement_color ||
-                          layer->visible != edit.visible || layer->locked != edit.locked;
-                if (!changed) {
-                    return;
-                }
-                layer->name = edit.name;
-                layer->color = replacement_color;
-                layer->visible = edit.visible;
-                layer->locked = edit.locked;
-                command_label = "Update semantic layer";
-            } else if constexpr (std::is_same_v<edit_t, delete_semantic_layer_action_t>) {
-                auto* layer = unique_layer(*chart, edit.layer, result);
-                if (layer == nullptr) {
-                    return;
-                }
-                if (layer->locked) {
-                    reject(result, diagnostic_code_t::unsupported_feature,
-                           "locked semantic layers cannot be deleted");
-                    return;
-                }
-                const auto assigned_note_count = layer_membership_note_count(*chart, edit.layer);
-                if (assigned_note_count != 0 && !edit.remove_from_notes) {
-                    reject(
-                        result, diagnostic_code_t::unsupported_feature,
-                        "semantic layer is assigned to notes; explicit removal was not requested");
-                    return;
-                }
-                if (assigned_note_count > limits.maximum_note_selection) {
-                    reject(result, diagnostic_code_t::invalid_resolution,
-                           "semantic layer deletion exceeds the configured note removal cap");
-                    return;
-                }
-                if (edit.remove_from_notes) {
-                    for (auto& measure : chart->measures) {
-                        for (auto& note : measure.notes) {
-                            std::erase(note.semantic_layers, edit.layer);
-                        }
-                    }
-                }
-                std::erase_if(chart->semantic_layers,
-                              [&edit](const auto& item) { return item.id == edit.layer; });
-                command_label = "Delete semantic layer";
-                changed = true;
-            } else if constexpr (std::is_same_v<edit_t, reorder_semantic_layers_action_t>) {
-                if (edit.ordered_layers.size() > limits.maximum_layers ||
-                    edit.ordered_layers.size() != chart->semantic_layers.size()) {
-                    reject(result, diagnostic_code_t::invalid_resolution,
-                           "semantic layer order must contain every chart layer exactly once");
-                    return;
-                }
-                std::unordered_set<std::uint64_t> ordered_ids;
-                std::unordered_map<std::uint64_t, const semantic_layer_t*> layers_by_id;
-                layers_by_id.reserve(chart->semantic_layers.size());
-                for (const auto& layer : chart->semantic_layers) {
-                    layers_by_id.emplace(layer.id.value, &layer);
-                }
-                std::vector<semantic_layer_t> reordered;
-                reordered.reserve(edit.ordered_layers.size());
-                for (const auto id : edit.ordered_layers) {
-                    if (!id) {
-                        reject(result, diagnostic_code_t::invalid_id,
-                               "semantic layer order uses the reserved zero layer ID");
-                        return;
-                    }
-                    if (!ordered_ids.insert(id.value).second) {
-                        reject(result, diagnostic_code_t::duplicate_id,
-                               "semantic layer order contains a duplicate layer ID");
-                        return;
-                    }
-                    const auto layer = layers_by_id.find(id.value);
-                    if (layer == layers_by_id.end()) {
-                        reject(result, diagnostic_code_t::invalid_id,
-                               "semantic layer order refers to an unknown layer");
-                        return;
-                    }
-                    reordered.push_back(*layer->second);
-                }
-                changed = false;
-                for (std::size_t index = 0; index < reordered.size(); ++index) {
-                    if (reordered[index].id != chart->semantic_layers[index].id) {
-                        changed = true;
-                        break;
-                    }
-                }
-                if (!changed) {
-                    return;
-                }
-                chart->semantic_layers = std::move(reordered);
-                command_label = "Reorder semantic layers";
-            } else {
-                const auto layer_id = edit.layer;
-                const auto operation = [&]() {
-                    if constexpr (std::is_same_v<edit_t, assign_notes_to_semantic_layer_action_t>) {
-                        return membership_operation_t::assign;
-                    } else if constexpr (std::is_same_v<
-                                             edit_t, remove_notes_from_semantic_layer_action_t>) {
-                        return membership_operation_t::remove;
-                    } else {
-                        return membership_operation_t::toggle;
-                    }
-                }();
-                changed = apply_membership(*chart, layer_id, edit.notes, operation, limits, result);
-                if (std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
-                        return diagnostic.severity == diagnostic_severity_t::error;
-                    })) {
-                    changed = false;
-                    return;
-                }
-                switch (operation) {
-                case membership_operation_t::assign:
-                    command_label = "Assign notes to semantic layer";
-                    break;
-                case membership_operation_t::remove:
-                    command_label = "Remove notes from semantic layer";
-                    break;
-                case membership_operation_t::toggle:
-                    command_label = "Toggle semantic layer membership";
-                    break;
-                }
-            }
-        },
-        action);
-
-    if (!result.diagnostics.empty() || !changed) {
+    auto outcome = apply_semantic_layer_action(proposed, action, limits, result);
+    if (!result.diagnostics.empty() || !outcome.changed) {
         return result;
     }
-    return commit_document_command(history, std::move(proposed), std::move(command_label));
+    return commit_document_command(history, std::move(proposed), std::move(outcome.label));
 }
 
 } // namespace wormedit

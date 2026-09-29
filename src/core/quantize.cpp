@@ -137,10 +137,19 @@ auto nearest_multiple(std::uint64_t value, std::uint64_t step, quantization_tie_
     return value + distance_to_upper;
 }
 
-auto quantized_position(const measure_index_t& index, std::uint64_t resolution,
-                        local_position_t position, const quantize_request_t& request,
-                        diagnostic_list_t& diagnostics, object_id_t object)
+struct quantization_position_context_t {
+    const measure_index_t& index;
+    std::uint64_t resolution;
+    const quantize_request_t& request;
+    diagnostic_list_t& diagnostics;
+};
+
+auto quantized_position(quantization_position_context_t& context, local_position_t position,
+                        object_id_t object)
     -> std::optional<local_position_t> {
+    const auto& index = context.index;
+    const auto& request = context.request;
+    auto& diagnostics = context.diagnostics;
     const auto absolute = absolute_row(index, position);
     if (!absolute.has_value()) {
         error(diagnostics, diagnostic_code_t::row_out_of_range,
@@ -153,7 +162,7 @@ auto quantized_position(const measure_index_t& index, std::uint64_t resolution,
     std::uint64_t base{};
     if (request.space == quantization_space_t::standard_measure) {
         coordinate = *absolute;
-        step = resolution / request.divisions;
+        step = context.resolution / request.divisions;
     } else {
         const auto entry = std::ranges::find_if(
             index.entries, [&](const auto& candidate) { return candidate.id == position.measure; });
@@ -354,6 +363,99 @@ auto rehome_measure_objects(chart_document_t& chart, diagnostic_list_t& diagnost
     return true;
 }
 
+auto transform_measure_positions(measure_chunk_t& measure, const quantize_request_t& request,
+                                 const auto& transform) -> void {
+    for (auto& note : measure.notes) {
+        transform(note.position, note.id, position_role_t::point);
+        if (note.end.has_value() && request.holds == quantization_hold_t::both_endpoints) {
+            transform(*note.end, note.id, position_role_t::note_end);
+        }
+    }
+    for (auto& bgm : measure.bgm_events) {
+        transform(bgm.position, bgm.id, position_role_t::point);
+    }
+}
+
+auto transform_chart_positions(chart_document_t& chart, const quantize_request_t& request,
+                               const auto& transform) -> void {
+    const auto transform_positioned = [&](auto& values) {
+        for (auto& value : values) {
+            transform(value.position, value.id, position_role_t::point);
+        }
+    };
+    for (auto& segment : chart.lane_layouts) {
+        transform(segment.position, segment.id, position_role_t::point);
+    }
+    for (auto& measure : chart.measures) {
+        transform_measure_positions(measure, request, transform);
+    }
+    transform_positioned(chart.bpms);
+    transform_positioned(chart.pauses);
+    transform_positioned(chart.scrolls);
+    transform_positioned(chart.speeds);
+    transform_positioned(chart.kiai);
+    transform_positioned(chart.timing_anchors);
+    transform_positioned(chart.bga_events);
+    for (auto& warp : chart.warps) {
+        transform(warp.span.begin, warp.id, position_role_t::span_begin);
+        transform(warp.span.end, warp.id, position_role_t::span_end);
+    }
+    for (auto& bookmark : chart.bookmarks) {
+        if (bookmark.position.has_value()) {
+            transform(*bookmark.position, bookmark.id, position_role_t::point);
+        }
+    }
+    for (auto& section : chart.sections) {
+        if (section.beat_span.has_value()) {
+            transform(section.beat_span->begin, section.id, position_role_t::span_begin);
+            transform(section.beat_span->end, section.id, position_role_t::span_end);
+        }
+    }
+    for (auto& channel : chart.sound_channels) {
+        for (auto& event : channel.events) {
+            transform(event.position, event.id, position_role_t::point);
+            if (event.end.has_value() && request.holds == quantization_hold_t::both_endpoints) {
+                transform(*event.end, event.id, position_role_t::note_end);
+            }
+        }
+    }
+}
+
+auto prepare_quantization_chart(const chart_document_t& chart, const quantize_request_t& request,
+                                std::uint64_t target_resolution, quantization_result_t& result)
+    -> std::optional<chart_document_t> {
+    if (target_resolution == chart.divisions_per_standard_measure) {
+        return chart;
+    }
+    if (!request.allow_resolution_promotion) {
+        error(result.diagnostics, diagnostic_code_t::invalid_resolution,
+              "requested grid requires explicit chart-resolution promotion");
+        return std::nullopt;
+    }
+    auto promotion = redivide_chart_exact(chart, target_resolution);
+    if (!promotion) {
+        result.diagnostics = std::move(promotion.diagnostics);
+        return std::nullopt;
+    }
+    result.promoted_from = chart.divisions_per_standard_measure;
+    result.promoted_to = target_resolution;
+    result.resolution_moves = std::move(promotion.moves);
+    return std::move(*promotion.chart);
+}
+
+auto selected_quantization_objects(const quantize_request_t& request,
+                                    diagnostic_list_t& diagnostics)
+    -> std::unordered_set<std::uint64_t> {
+    std::unordered_set<std::uint64_t> selected;
+    for (const auto object : request.objects) {
+        if (!object || !selected.insert(object.value).second) {
+            error(diagnostics, diagnostic_code_t::invalid_id,
+                  "quantization object IDs must be nonzero and unique", object);
+        }
+    }
+    return selected;
+}
+
 } // namespace
 
 auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_t& request)
@@ -365,13 +467,7 @@ auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_
         return result;
     }
 
-    std::unordered_set<std::uint64_t> selected;
-    for (const auto object : request.objects) {
-        if (!object || !selected.insert(object.value).second) {
-            error(result.diagnostics, diagnostic_code_t::invalid_id,
-                  "quantization object IDs must be nonzero and unique", object);
-        }
-    }
+    const auto selected = selected_quantization_objects(request, result.diagnostics);
     if (!result.diagnostics.empty()) {
         return result;
     }
@@ -383,23 +479,11 @@ auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_
         return result;
     }
 
-    auto working = chart;
-    if (*target_resolution != chart.divisions_per_standard_measure) {
-        if (!request.allow_resolution_promotion) {
-            error(result.diagnostics, diagnostic_code_t::invalid_resolution,
-                  "requested grid requires explicit chart-resolution promotion");
-            return result;
-        }
-        auto promotion = redivide_chart_exact(chart, *target_resolution);
-        if (!promotion) {
-            result.diagnostics = std::move(promotion.diagnostics);
-            return result;
-        }
-        result.promoted_from = chart.divisions_per_standard_measure;
-        result.promoted_to = *target_resolution;
-        result.resolution_moves = std::move(promotion.moves);
-        working = std::move(*promotion.chart);
+    auto prepared = prepare_quantization_chart(chart, request, *target_resolution, result);
+    if (!prepared.has_value()) {
+        return result;
     }
+    auto working = std::move(*prepared);
 
     const auto built_index = build_measure_index(working);
     if (std::holds_alternative<diagnostic_list_t>(built_index)) {
@@ -408,6 +492,8 @@ auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_
     }
     const auto& index = std::get<measure_index_t>(built_index);
     const auto before_quantization = working;
+    quantization_position_context_t position_context{
+        index, working.divisions_per_standard_measure, request, result.diagnostics};
     std::unordered_set<std::uint64_t> matched;
     bool failed = false;
     const auto should_move = [&](object_id_t object) {
@@ -426,8 +512,7 @@ auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_
             return;
         }
         const auto before = position;
-        const auto after = quantized_position(index, working.divisions_per_standard_measure,
-                                              position, request, result.diagnostics, object);
+        const auto after = quantized_position(position_context, position, object);
         if (!after.has_value()) {
             failed = true;
             return;
@@ -442,56 +527,7 @@ auto quantize_chart_exact(const chart_document_t& chart, const quantize_request_
             });
         }
     };
-    const auto transform_positioned = [&](auto& values) {
-        for (auto& value : values) {
-            transform(value.position, value.id, position_role_t::point);
-        }
-    };
-
-    for (auto& segment : working.lane_layouts) {
-        transform(segment.position, segment.id, position_role_t::point);
-    }
-    for (auto& measure : working.measures) {
-        for (auto& note : measure.notes) {
-            transform(note.position, note.id, position_role_t::point);
-            if (note.end.has_value() && request.holds == quantization_hold_t::both_endpoints) {
-                transform(*note.end, note.id, position_role_t::note_end);
-            }
-        }
-        for (auto& bgm : measure.bgm_events) {
-            transform(bgm.position, bgm.id, position_role_t::point);
-        }
-    }
-    transform_positioned(working.bpms);
-    transform_positioned(working.pauses);
-    transform_positioned(working.scrolls);
-    transform_positioned(working.speeds);
-    transform_positioned(working.kiai);
-    transform_positioned(working.timing_anchors);
-    transform_positioned(working.bga_events);
-    for (auto& warp : working.warps) {
-        transform(warp.span.begin, warp.id, position_role_t::span_begin);
-        transform(warp.span.end, warp.id, position_role_t::span_end);
-    }
-    for (auto& bookmark : working.bookmarks) {
-        if (bookmark.position.has_value()) {
-            transform(*bookmark.position, bookmark.id, position_role_t::point);
-        }
-    }
-    for (auto& section : working.sections) {
-        if (section.beat_span.has_value()) {
-            transform(section.beat_span->begin, section.id, position_role_t::span_begin);
-            transform(section.beat_span->end, section.id, position_role_t::span_end);
-        }
-    }
-    for (auto& channel : working.sound_channels) {
-        for (auto& event : channel.events) {
-            transform(event.position, event.id, position_role_t::point);
-            if (event.end.has_value() && request.holds == quantization_hold_t::both_endpoints) {
-                transform(*event.end, event.id, position_role_t::note_end);
-            }
-        }
-    }
+    transform_chart_positions(working, request, transform);
     if (!rehome_measure_objects(working, result.diagnostics)) {
         failed = true;
     }

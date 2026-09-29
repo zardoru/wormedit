@@ -373,6 +373,220 @@ auto install_new_directory(const fs::path& staging, const fs::path& destination)
 #endif
 }
 
+auto collect_owned_chart_names(const conversion_publication_plan_t& plan,
+                               const fs::path& relative_directory, std::string_view group_key,
+                               const output_ownership_t& ownership,
+                               std::set<std::string>& current_files) -> std::optional<std::string> {
+    for (const auto& file : plan.files) {
+        const auto relative = file.project_relative_path.lexically_relative(relative_directory);
+        const auto filename = relative.generic_string();
+        if (!safe_name(filename) || !current_files.insert(filename).second) {
+            return "A generated chart filename cannot be tracked safely.";
+        }
+    }
+    for (const auto& [other_group, filenames] : ownership) {
+        if (other_group == group_key) {
+            continue;
+        }
+        for (const auto& filename : current_files) {
+            if (filenames.contains(filename)) {
+                return "A chart filename is owned by another output group.";
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+auto prune_stale_chart_files(const fs::path& staging, const output_ownership_t& ownership,
+                             std::string_view group_key,
+                             const std::set<std::string>& current_files,
+                             std::size_t& pruned_files) -> std::optional<std::string> {
+    const auto previous = ownership.find(std::string{group_key});
+    if (previous == ownership.end()) {
+        return std::nullopt;
+    }
+    std::error_code error;
+    for (const auto& [filename, recorded] : previous->second) {
+        const auto old_path = staging / filename;
+        const auto old_status = fs::symlink_status(old_path, error);
+        if (error == std::errc::no_such_file_or_directory) {
+            error.clear();
+            continue;
+        }
+        if (error || !fs::is_regular_file(old_status)) {
+            return "A tracked generated chart is no longer a regular file.";
+        }
+        const auto actual = file_identity(old_path);
+        if (!actual) {
+            return "Could not verify an earlier generated chart.";
+        }
+        if (*actual != recorded) {
+            if (current_files.contains(filename)) {
+                return "A generated chart was edited since publication; move it before replacing.";
+            }
+            continue;
+        }
+        if (current_files.contains(filename)) {
+            continue;
+        }
+        const auto removed = fs::remove(old_path, error);
+        if (error) {
+            return "Could not remove a stale generated chart from staging.";
+        }
+        pruned_files += removed ? 1 : 0;
+    }
+    return std::nullopt;
+}
+
+struct staged_chart_write_t {
+    const conversion_publication_plan_t& plan;
+    const conversion_result_t& converted;
+    const conversion_publication_options_t& options;
+    const fs::path& relative_directory;
+    const fs::path& staging;
+    output_ownership_t& ownership;
+    const std::string& group_key;
+};
+
+auto write_generated_charts(staged_chart_write_t context) -> std::optional<std::string> {
+    std::error_code error;
+    context.ownership[context.group_key].clear();
+    for (const auto& file : context.plan.files) {
+        if (!allowed(context.options, conversion_publication_stage_t::write_output)) {
+            return "Output writing was interrupted.";
+        }
+        const auto relative =
+            file.project_relative_path.lexically_relative(context.relative_directory);
+        const auto path = context.staging / relative;
+        fs::create_directories(path.parent_path(), error);
+        if (error) {
+            return "Could not create a staged chart directory.";
+        }
+        const auto& bytes = context.converted.outputs[file.output_index].bytes;
+        {
+            std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+            stream.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+            stream.flush();
+            if (!stream) {
+                return "Could not write a staged chart file.";
+            }
+        }
+        if (!sync_file(path) || !same_bytes(path, bytes)) {
+            return "Staged chart bytes could not be flushed or verified.";
+        }
+        const auto identity = file_identity(path);
+        if (!identity || identity->bytes != bytes.size()) {
+            return "Could not identify a staged chart file.";
+        }
+        context.ownership[context.group_key].emplace(relative.generic_string(), *identity);
+    }
+    return std::nullopt;
+}
+
+auto reserve_publication_staging(const fs::path& parent, const fs::path& destination,
+                                 temporary_directory_t& staging, bool& destination_exists)
+    -> std::optional<std::string> {
+    std::error_code error;
+    const auto parent_status = fs::symlink_status(parent, error);
+    if (error || fs::is_symlink(parent_status) || !fs::is_directory(parent_status)) {
+        return "Output group parent is unavailable or is a symlink.";
+    }
+    const auto existing = fs::symlink_status(destination, error);
+    destination_exists = !error;
+    if (error == std::errc::no_such_file_or_directory) {
+        error.clear();
+    }
+    if (error ||
+        (destination_exists && (fs::is_symlink(existing) || !fs::is_directory(existing)))) {
+        return "Output group directory is unsafe or unavailable.";
+    }
+    static std::atomic<std::uint64_t> sequence{1};
+    for (int attempt = 0; attempt < 32; ++attempt) {
+        staging.path = parent /
+                       (".wormedit-export-" +
+                        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
+                        "-" + std::to_string(sequence.fetch_add(1, std::memory_order_relaxed)));
+        if (fs::create_directory(staging.path, error)) {
+            return std::nullopt;
+        }
+        staging.path.clear();
+        if (error != std::errc::file_exists) {
+            return "Could not create an export staging directory.";
+        }
+        error.clear();
+    }
+    return "Could not reserve an export staging directory.";
+}
+
+struct publication_commit_t {
+    const conversion_publication_plan_t& plan;
+    const conversion_publication_options_t& options;
+    temporary_directory_t& staging;
+    const fs::path& relative_directory;
+    const fs::path& destination;
+    const fs::path& parent;
+    const output_ownership_t& ownership;
+    bool destination_exists{};
+    conversion_publication_result_t& result;
+};
+
+void install_staged_conversion(publication_commit_t context) {
+    if (!allowed(context.options, conversion_publication_stage_t::validate_staging)) {
+        context.result.errors.emplace_back("Staging validation was interrupted.");
+        return;
+    }
+    std::error_code error;
+    for (const auto& asset : context.plan.assets) {
+        const auto relative =
+            asset.project_relative_path.lexically_relative(context.relative_directory);
+        if (!fs::is_regular_file(context.staging.path / relative, error) || error) {
+            context.result.errors.emplace_back(
+                "A staged asset was absent from the complete output set.");
+            return;
+        }
+    }
+    std::string failure;
+    if (!allowed(context.options, conversion_publication_stage_t::update_manifest) ||
+        !write_ownership(context.staging.path, context.ownership, failure)) {
+        context.result.errors.push_back(failure.empty() ? "Output ownership update was interrupted."
+                                                        : failure);
+        return;
+    }
+    if (!sync_tree_directories(context.staging.path) ||
+        !allowed(context.options, conversion_publication_stage_t::exchange_directory)) {
+        context.result.errors.emplace_back(
+            "Output directory could not be flushed or publication was interrupted.");
+        return;
+    }
+    if (context.destination_exists) {
+        if (!exchange_directories(context.staging.path, context.destination)) {
+            context.result.errors.emplace_back(
+                "Atomic replacement of the output directory is unavailable.");
+            return;
+        }
+    } else {
+        if (!install_new_directory(context.staging.path, context.destination)) {
+            context.result.errors.emplace_back("Atomic creation of the output directory failed.");
+            return;
+        }
+        context.staging.path.clear();
+    }
+    context.result.published = true;
+    if (context.destination_exists) {
+        fs::remove_all(context.staging.path, error);
+        if (error) {
+            context.result.warnings.emplace_back(
+                "Output was published, but old files could not be removed.");
+        } else {
+            context.staging.path.clear();
+        }
+    }
+    if (!sync_directory(context.parent)) {
+        context.result.warnings.emplace_back(
+            "Output was published, but parent directory sync failed.");
+    }
+}
+
 } // namespace
 
 auto publish_conversion_group_atomic(const fs::path& project_directory, const output_group_t& group,
@@ -397,41 +611,14 @@ auto publish_conversion_group_atomic(const fs::path& project_directory, const ou
     }
     const auto destination = project_directory / relative_directory;
     const auto parent = destination.parent_path();
-    std::error_code error;
-    const auto parent_status = fs::symlink_status(parent, error);
-    if (error || fs::is_symlink(parent_status) || !fs::is_directory(parent_status)) {
-        result.errors.emplace_back("Output group parent is unavailable or is a symlink.");
-        return result;
-    }
-    const auto existing = fs::symlink_status(destination, error);
-    const auto destination_exists = !error;
-    if (error == std::errc::no_such_file_or_directory)
-        error.clear();
-    if (error ||
-        (destination_exists && (fs::is_symlink(existing) || !fs::is_directory(existing)))) {
-        result.errors.emplace_back("Output group directory is unsafe or unavailable.");
-        return result;
-    }
-    static std::atomic<std::uint64_t> sequence{1};
     temporary_directory_t staging;
-    for (int attempt = 0; attempt < 32; ++attempt) {
-        staging.path =
-            parent / (".wormedit-export-" +
-                      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
-                      "-" + std::to_string(sequence.fetch_add(1, std::memory_order_relaxed)));
-        if (fs::create_directory(staging.path, error))
-            break;
-        staging.path.clear();
-        if (error != std::errc::file_exists) {
-            result.errors.emplace_back("Could not create an export staging directory.");
-            return result;
-        }
-        error.clear();
-    }
-    if (staging.path.empty()) {
-        result.errors.emplace_back("Could not reserve an export staging directory.");
+    bool destination_exists{};
+    if (auto staging_failure =
+            reserve_publication_staging(parent, destination, staging, destination_exists)) {
+        result.errors.push_back(std::move(*staging_failure));
         return result;
     }
+    std::error_code error;
     std::string failure;
     if (destination_exists && (!allowed(options, conversion_publication_stage_t::copy_existing) ||
                                !copy_existing(destination, staging.path, options, failure))) {
@@ -446,144 +633,27 @@ auto publish_conversion_group_atomic(const fs::path& project_directory, const ou
     }
     const auto group_key = group.relative_output_path.generic_string();
     std::set<std::string> current_files;
-    for (const auto& file : plan.files) {
-        const auto relative = file.project_relative_path.lexically_relative(relative_directory);
-        const auto filename = relative.generic_string();
-        if (!safe_name(filename) || !current_files.insert(filename).second) {
-            result.errors.emplace_back("A generated chart filename cannot be tracked safely.");
-            return result;
-        }
-    }
-    for (const auto& [other_group, filenames] : ownership) {
-        if (other_group == group_key)
-            continue;
-        for (const auto& filename : current_files) {
-            if (filenames.contains(filename)) {
-                result.errors.emplace_back("A chart filename is owned by another output group.");
-                return result;
-            }
-        }
+    if (auto failure = collect_owned_chart_names(plan, relative_directory, group_key, ownership,
+                                                 current_files)) {
+        result.errors.push_back(std::move(*failure));
+        return result;
     }
     std::size_t pruned_files{};
-    if (const auto previous = ownership.find(group_key); previous != ownership.end()) {
-        for (const auto& [filename, recorded] : previous->second) {
-            const auto old_path = staging.path / filename;
-            const auto old_status = fs::symlink_status(old_path, error);
-            if (error == std::errc::no_such_file_or_directory) {
-                error.clear();
-                continue;
-            }
-            if (error || !fs::is_regular_file(old_status)) {
-                result.errors.emplace_back(
-                    "A tracked generated chart is no longer a regular file.");
-                return result;
-            }
-            const auto actual = file_identity(old_path);
-            if (!actual) {
-                result.errors.emplace_back("Could not verify an earlier generated chart.");
-                return result;
-            }
-            if (*actual != recorded) {
-                if (current_files.contains(filename)) {
-                    result.errors.emplace_back("A generated chart was edited since publication; "
-                                               "move it before replacing.");
-                    return result;
-                }
-                continue;
-            }
-            if (current_files.contains(filename))
-                continue;
-            const auto removed = fs::remove(old_path, error);
-            if (error) {
-                result.errors.emplace_back(
-                    "Could not remove a stale generated chart from staging.");
-                return result;
-            }
-            pruned_files += removed ? 1 : 0;
-        }
-    }
-    ownership[group_key].clear();
-    for (const auto& file : plan.files) {
-        if (!allowed(options, conversion_publication_stage_t::write_output)) {
-            result.errors.emplace_back("Output writing was interrupted.");
-            return result;
-        }
-        const auto relative = file.project_relative_path.lexically_relative(relative_directory);
-        const auto path = staging.path / relative;
-        fs::create_directories(path.parent_path(), error);
-        if (error) {
-            result.errors.emplace_back("Could not create a staged chart directory.");
-            return result;
-        }
-        const auto& bytes = converted.outputs[file.output_index].bytes;
-        {
-            std::ofstream stream(path, std::ios::binary | std::ios::trunc);
-            stream.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-            stream.flush();
-            if (!stream) {
-                result.errors.emplace_back("Could not write a staged chart file.");
-                return result;
-            }
-        }
-        if (!sync_file(path) || !same_bytes(path, bytes)) {
-            result.errors.emplace_back("Staged chart bytes could not be flushed or verified.");
-            return result;
-        }
-        const auto identity = file_identity(path);
-        if (!identity || identity->bytes != bytes.size()) {
-            result.errors.emplace_back("Could not identify a staged chart file.");
-            return result;
-        }
-        ownership[group_key].emplace(relative.generic_string(), *identity);
-    }
-    if (!allowed(options, conversion_publication_stage_t::validate_staging)) {
-        result.errors.emplace_back("Staging validation was interrupted.");
+    if (auto failure = prune_stale_chart_files(staging.path, ownership, group_key, current_files,
+                                              pruned_files)) {
+        result.errors.push_back(std::move(*failure));
         return result;
     }
-    for (const auto& asset : plan.assets) {
-        const auto relative = asset.project_relative_path.lexically_relative(relative_directory);
-        if (!fs::is_regular_file(staging.path / relative, error) || error) {
-            result.errors.emplace_back("A staged asset was absent from the complete output set.");
-            return result;
-        }
-    }
-    if (!allowed(options, conversion_publication_stage_t::update_manifest) ||
-        !write_ownership(staging.path, ownership, failure)) {
-        result.errors.push_back(failure.empty() ? "Output ownership update was interrupted."
-                                                : failure);
+    if (auto write_failure = write_generated_charts(
+            {plan, converted, options, relative_directory, staging.path, ownership, group_key})) {
+        result.errors.push_back(std::move(*write_failure));
         return result;
     }
-    if (!sync_tree_directories(staging.path) ||
-        !allowed(options, conversion_publication_stage_t::exchange_directory)) {
-        result.errors.emplace_back(
-            "Output directory could not be flushed or publication was interrupted.");
-        return result;
+    install_staged_conversion({plan, options, staging, relative_directory, destination, parent,
+                               ownership, destination_exists, result});
+    if (result.published) {
+        result.pruned_files = pruned_files;
     }
-    if (destination_exists) {
-        if (!exchange_directories(staging.path, destination)) {
-            result.errors.emplace_back(
-                "Atomic replacement of the output directory is unavailable.");
-            return result;
-        }
-    } else {
-        if (!install_new_directory(staging.path, destination)) {
-            result.errors.emplace_back("Atomic creation of the output directory failed.");
-            return result;
-        }
-        staging.path.clear();
-    }
-    result.published = true;
-    result.pruned_files = pruned_files;
-    if (destination_exists) {
-        fs::remove_all(staging.path, error);
-        if (error)
-            result.warnings.emplace_back(
-                "Output was published, but old files could not be removed.");
-        else
-            staging.path.clear();
-    }
-    if (!sync_directory(parent))
-        result.warnings.emplace_back("Output was published, but parent directory sync failed.");
     return result;
 }
 

@@ -113,6 +113,18 @@ auto wrap_json(const nlohmann::ordered_json& source_value, std::string_view sour
     return value;
 }
 
+auto after_json_string(std::string_view source, std::size_t position) -> std::size_t {
+    ++position;
+    while (position < source.size()) {
+        if (source[position] == '\\') {
+            position += std::min<std::size_t>(2, source.size() - position);
+        } else if (source[position++] == '"') {
+            break;
+        }
+    }
+    return position;
+}
+
 auto first_duplicate_key_offset(std::string_view source) -> std::optional<std::size_t> {
     struct scope_t {
         bool object{};
@@ -136,14 +148,8 @@ auto first_duplicate_key_offset(std::string_view source) -> std::optional<std::s
             ++position;
             continue;
         }
-        const auto begin = position++;
-        while (position < source.size()) {
-            if (source[position] == '\\') {
-                position += std::min<std::size_t>(2, source.size() - position);
-            } else if (source[position++] == '"') {
-                break;
-            }
-        }
+        const auto begin = position;
+        position = after_json_string(source, position);
         const auto end = position;
         while (position < source.size() &&
                (source[position] == ' ' || source[position] == '\t' ||
@@ -187,6 +193,19 @@ auto unsigned_integer(const json_value_t& value) -> std::optional<std::uint64_t>
     return result;
 }
 
+auto parse_bmson_exponent(std::string_view text) -> std::optional<int> {
+    if (!text.empty() && text.front() == '+') {
+        text.remove_prefix(1);
+    }
+    int exponent{};
+    const auto parsed = std::from_chars(text.data(), text.data() + text.size(), exponent);
+    if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || exponent < -18 ||
+        exponent > 18) {
+        return std::nullopt;
+    }
+    return exponent;
+}
+
 auto exact_decimal(std::string_view text) -> std::optional<signed_rational_t> {
     bool negative{};
     if (!text.empty() && (text.front() == '-' || text.front() == '+')) {
@@ -197,14 +216,11 @@ auto exact_decimal(std::string_view text) -> std::optional<signed_rational_t> {
     auto mantissa = text.substr(0, exponent_at);
     int exponent{};
     if (exponent_at != std::string_view::npos) {
-        auto exponent_text = text.substr(exponent_at + 1);
-        if (!exponent_text.empty() && exponent_text.front() == '+') exponent_text.remove_prefix(1);
-        const auto parsed = std::from_chars(exponent_text.data(),
-                                            exponent_text.data() + exponent_text.size(), exponent);
-        if (parsed.ec != std::errc{} || parsed.ptr != exponent_text.data() + exponent_text.size() ||
-            exponent < -18 || exponent > 18) {
+        const auto parsed = parse_bmson_exponent(text.substr(exponent_at + 1));
+        if (!parsed) {
             return std::nullopt;
         }
+        exponent = *parsed;
     }
     const auto point = mantissa.find('.');
     const auto fractional_count = point == std::string_view::npos ? 0 : mantissa.size() - point - 1;
@@ -459,324 +475,161 @@ auto add_warning(bmson_parse_result_t& result, bmson_parse_diagnostic_code_t cod
                                   std::move(path), std::nullopt});
 }
 
-} // namespace
-
-auto bmson_parse_result_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
+auto add_parse_error(bmson_parse_result_t& result, bmson_parse_diagnostic_code_t code,
+                     std::string message, std::string path,
+                     std::optional<std::size_t> offset = {}) -> void {
+    result.diagnostics.push_back({diagnostic_severity_t::error, code, std::move(message),
+                                  std::move(path), offset});
 }
 
-auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t options)
-    -> bmson_parse_result_t {
-    bmson_parse_result_t result;
-    const auto add_error = [&](bmson_parse_diagnostic_code_t code, std::string message,
-                               std::string path, std::optional<std::size_t> offset = {}) {
-        result.diagnostics.push_back({diagnostic_severity_t::error, code, std::move(message),
-                                      std::move(path), offset});
-    };
-    if (bytes.size() > options.max_source_bytes) {
-        add_error(bmson_parse_diagnostic_code_t::invalid_value,
-                  "BMSON source exceeds the configured byte limit", "$", 0);
-        return result;
+struct json_policy_state_t {
+    std::string_view source;
+    const bmson_parse_options_t& options;
+    std::size_t value_count{};
+    std::unordered_map<int, std::set<std::string>> object_keys;
+
+    json_policy_state_t(std::string_view source_value, const bmson_parse_options_t& parse_options)
+        : source(source_value), options(parse_options) {}
+
+    auto on_event(int depth, nlohmann::json::parse_event_t event,
+                  nlohmann::ordered_json& parsed) -> bool {
+        if (event == nlohmann::json::parse_event_t::object_start ||
+            event == nlohmann::json::parse_event_t::array_start ||
+            event == nlohmann::json::parse_event_t::value) {
+            if (depth < 0 || static_cast<std::size_t>(depth) > options.max_nesting_depth) {
+                const auto offset = parsed.start_pos();
+                throw json_policy_error_t{"JSON nesting limit exceeded",
+                    offset == std::string::npos ? 0 : offset};
+            }
+            if (++value_count > options.max_json_values) {
+                const auto offset = parsed.start_pos();
+                throw json_policy_error_t{"JSON value-count limit exceeded",
+                    offset == std::string::npos ? 0 : offset};
+            }
+        }
+        if (event == nlohmann::json::parse_event_t::object_start) {
+            object_keys[depth].clear();
+        } else if (event == nlohmann::json::parse_event_t::key) {
+            const auto key = parsed.get<std::string>();
+            const auto object_depth = depth - 1;
+            if (!object_keys[object_depth].insert(key).second) {
+                const auto offset = first_duplicate_key_offset(source).value_or(0);
+                throw json_policy_error_t{"duplicate JSON object key", offset};
+            }
+        } else if (event == nlohmann::json::parse_event_t::object_end) {
+            object_keys.erase(depth);
+        }
+        return true;
     }
-    const auto* chars = reinterpret_cast<const char*>(bytes.data());
-    const std::string_view source(bytes.empty() ? "" : chars, bytes.size());
-    if (const auto invalid = valid_utf8(source); invalid.has_value()) {
-        add_error(bmson_parse_diagnostic_code_t::invalid_json,
-                  "BMSON input is not valid UTF-8", "$", *invalid);
-        return result;
-    }
-    std::optional<json_value_t> root_value;
+};
+
+auto parse_json_root(std::string_view source, const bmson_parse_options_t& options,
+                     bmson_parse_result_t& result) -> std::optional<json_value_t> {
     try {
-        std::size_t json_value_count{};
-        std::unordered_map<int, std::set<std::string>> object_keys;
+        json_policy_state_t policy{source, options};
         const auto callback = [&](int depth, nlohmann::json::parse_event_t event,
                                   nlohmann::ordered_json& parsed) {
-            if (event == nlohmann::json::parse_event_t::object_start ||
-                event == nlohmann::json::parse_event_t::array_start ||
-                event == nlohmann::json::parse_event_t::value) {
-                if (depth < 0 || static_cast<std::size_t>(depth) > options.max_nesting_depth) {
-                    const auto offset = parsed.start_pos();
-                    throw json_policy_error_t{"JSON nesting limit exceeded",
-                        offset == std::string::npos ? 0 : offset};
-                }
-                if (++json_value_count > options.max_json_values) {
-                    const auto offset = parsed.start_pos();
-                    throw json_policy_error_t{"JSON value-count limit exceeded",
-                        offset == std::string::npos ? 0 : offset};
-                }
-            }
-            if (event == nlohmann::json::parse_event_t::object_start) {
-                object_keys[depth].clear();
-            } else if (event == nlohmann::json::parse_event_t::key) {
-                const auto key = parsed.get<std::string>();
-                const auto object_depth = depth - 1;
-                if (!object_keys[object_depth].insert(key).second) {
-                    const auto offset = first_duplicate_key_offset(source).value_or(0);
-                    throw json_policy_error_t{"duplicate JSON object key", offset};
-                }
-            } else if (event == nlohmann::json::parse_event_t::object_end) {
-                object_keys.erase(depth);
-            }
-            return true;
+            return policy.on_event(depth, event, parsed);
         };
         const auto parsed = nlohmann::ordered_json::parse(source, callback, true, false);
-        root_value = wrap_json(parsed, source);
+        return wrap_json(parsed, source);
     } catch (const json_policy_error_t& error) {
-        add_error(bmson_parse_diagnostic_code_t::invalid_json, error.message, "$", error.offset);
-        return result;
+        add_parse_error(result, bmson_parse_diagnostic_code_t::invalid_json, error.message,
+                        "$", error.offset);
     } catch (const nlohmann::json::parse_error& error) {
         const auto offset = error.byte == 0 ? 0 : std::min(error.byte - 1, source.size());
-        add_error(bmson_parse_diagnostic_code_t::invalid_json, error.what(), "$", offset);
-        return result;
+        add_parse_error(result, bmson_parse_diagnostic_code_t::invalid_json, error.what(),
+                        "$", offset);
     } catch (const nlohmann::json::exception& error) {
-        add_error(bmson_parse_diagnostic_code_t::invalid_json, error.what(), "$", 0);
-        return result;
+        add_parse_error(result, bmson_parse_diagnostic_code_t::invalid_json, error.what(), "$", 0);
     }
-    if (!root_value.has_value()) {
-        add_error(bmson_parse_diagnostic_code_t::invalid_json, "JSON root is missing", "$", 0);
-        return result;
+    return std::nullopt;
+}
+
+auto bmson_resolution(const json_value_t& info) -> std::uint32_t {
+    const auto* source_resolution = member(info, "resolution");
+    if (!source_resolution || source_resolution->kind == json_value_t::kind_t::null_value) {
+        return 240;
     }
-    const auto& root = *root_value;
-    try {
-        required_object(root, "$" );
-        const auto& version = required_string(required_member(root, "version", "$.version"),
-                                              "$.version");
-        if (version != "1.0.0") {
-            fail(bmson_parse_diagnostic_code_t::unsupported_version,
-                 "only BMSON version 1.0.0 is supported", "$.version",
-                 member(root, "version")->begin);
-        }
-        const auto& info = required_object(required_member(root, "info", "$.info"), "$.info");
-        const auto* sound_channels_value = member(root, "sound_channels");
-        if (sound_channels_value && sound_channels_value->kind != json_value_t::kind_t::array) {
-            fail(bmson_parse_diagnostic_code_t::invalid_type,
-                 "sound_channels must be an array", "$.sound_channels", sound_channels_value->begin);
-        }
+    if (source_resolution->kind != json_value_t::kind_t::number) {
+        fail(bmson_parse_diagnostic_code_t::invalid_type,
+             "resolution must be an integer, null, or omitted", "$.info.resolution",
+             source_resolution->begin);
+    }
+    std::int64_t signed_value{};
+    const auto parsed = std::from_chars(source_resolution->text.data(),
+                                        source_resolution->text.data() + source_resolution->text.size(),
+                                        signed_value);
+    if (parsed.ec == std::errc::result_out_of_range) {
+        fail(bmson_parse_diagnostic_code_t::integer_out_of_range,
+             "resolution exceeds its supported integer range", "$.info.resolution",
+             source_resolution->begin);
+    }
+    if (parsed.ec != std::errc{} ||
+        parsed.ptr != source_resolution->text.data() + source_resolution->text.size()) {
+        fail(bmson_parse_diagnostic_code_t::invalid_type,
+             "resolution must be an integer without a fraction or exponent",
+             "$.info.resolution", source_resolution->begin);
+    }
+    const auto magnitude = signed_value < 0
+                               ? static_cast<std::uint64_t>(-(signed_value + 1)) + 1U
+                               : static_cast<std::uint64_t>(signed_value);
+    if (magnitude > UINT32_MAX) {
+        fail(bmson_parse_diagnostic_code_t::integer_out_of_range,
+             "resolution magnitude exceeds the unsigned 32-bit range", "$.info.resolution",
+             source_resolution->begin);
+    }
+    return magnitude == 0 ? 240U : static_cast<std::uint32_t>(magnitude);
+}
 
-        std::uint32_t resolution = 240;
-        if (const auto* source_resolution = member(info, "resolution")) {
-            if (source_resolution->kind == json_value_t::kind_t::null_value) {
-                resolution = 240;
-            } else {
-                if (source_resolution->kind != json_value_t::kind_t::number) {
-                    fail(bmson_parse_diagnostic_code_t::invalid_type,
-                         "resolution must be an integer, null, or omitted", "$.info.resolution",
-                         source_resolution->begin);
-                }
-                std::int64_t signed_value{};
-                const auto parsed = std::from_chars(source_resolution->text.data(),
-                                                    source_resolution->text.data() + source_resolution->text.size(),
-                                                    signed_value);
-                if (parsed.ec == std::errc::result_out_of_range) {
-                    fail(bmson_parse_diagnostic_code_t::integer_out_of_range,
-                         "resolution exceeds its supported integer range", "$.info.resolution",
-                         source_resolution->begin);
-                }
-                if (parsed.ec != std::errc{} ||
-                    parsed.ptr != source_resolution->text.data() + source_resolution->text.size()) {
-                    fail(bmson_parse_diagnostic_code_t::invalid_type,
-                         "resolution must be an integer without a fraction or exponent",
-                         "$.info.resolution", source_resolution->begin);
-                }
-                const auto magnitude = signed_value < 0
-                                           ? static_cast<std::uint64_t>(-(signed_value + 1)) + 1U
-                                           : static_cast<std::uint64_t>(signed_value);
-                if (magnitude > UINT32_MAX) {
-                    fail(bmson_parse_diagnostic_code_t::integer_out_of_range,
-                         "resolution magnitude exceeds the unsigned 32-bit range", "$.info.resolution",
-                         source_resolution->begin);
-                }
-                resolution = magnitude == 0 ? 240U : static_cast<std::uint32_t>(magnitude);
-            }
+auto bmson_authored_lines(const json_value_t& root, const bmson_parse_options_t& options)
+    -> std::pair<std::vector<std::uint64_t>, bool> {
+    std::vector<std::uint64_t> authored_lines;
+    bool generated_lines = true;
+    const auto* lines = member(root, "lines");
+    if (!lines || lines->kind == json_value_t::kind_t::null_value) {
+        return {authored_lines, generated_lines};
+    }
+    generated_lines = false;
+    required_array(*lines, "$.lines");
+    for (std::size_t index = 0; index < lines->array.size(); ++index) {
+        const auto path = "$.lines[" + std::to_string(index) + "]";
+        const auto& line = required_object(lines->array[index], path);
+        const auto y = required_u32(required_member(line, "y", path + ".y"), path + ".y");
+        if (!authored_lines.empty() && y <= authored_lines.back()) {
+            fail(bmson_parse_diagnostic_code_t::invalid_geometry,
+                 "bar-line positions must be strictly increasing", path + ".y",
+                 member(line, "y")->begin);
         }
-        const std::uint64_t divisions = static_cast<std::uint64_t>(resolution) * 4U;
-
-        const auto source_bytes = std::make_shared<const std::vector<std::byte>>(bytes.begin(), bytes.end());
-        song_document_t song;
-        song.id = song_id_t{1};
-        const auto* title = member(info, "title");
-        const auto* artist = member(info, "artist");
-        if (title) song.metadata.title = required_string(*title, "$.info.title");
-        if (artist) song.metadata.artist = required_string(*artist, "$.info.artist");
-        const auto shared_group = add_format_group(source, root, source_bytes);
-        song.metadata.format_groups.push_back(shared_group);
-
-        chart_document_t chart;
-        chart.id = chart_id_t{1};
-        chart.source_family = format_family_t::bmson;
-        chart.divisions_per_standard_measure = divisions;
-        chart.metadata.format_groups.push_back(shared_group);
-        chart.metadata.name = song.metadata.title;
-        if (const auto* chart_name = member(info, "chart_name")) {
-            chart.metadata.name = required_string(*chart_name, "$.info.chart_name");
+        authored_lines.push_back(y);
+        if (authored_lines.size() > options.max_measures) {
+            fail(bmson_parse_diagnostic_code_t::invalid_geometry,
+                 "bar-line count exceeds the configured measure limit", "$.lines", lines->begin);
         }
-        chart.metadata.author = song.metadata.artist;
-        if (artist) chart.metadata.author = required_string(*artist, "$.info.artist");
-        if (const auto* level = member(info, "level")) {
-            const auto rating = unsigned_integer(*level);
-            if (!rating.has_value() || *rating > static_cast<std::uint64_t>(INT64_MAX)) {
-                fail(bmson_parse_diagnostic_code_t::invalid_type,
-                     "level must be a non-negative integer", "$.info.level", level->begin);
-            }
-            chart.metadata.rating = signed_rational_t{static_cast<std::int64_t>(*rating), 1};
-        }
+    }
+    return {authored_lines, generated_lines};
+}
 
-        id_source_t object_ids;
-        id_source_t asset_ids;
-        id_source_t resource_ids;
-        std::unordered_map<std::string, asset_id_t> audio_by_path;
-        std::unordered_map<std::string, asset_id_t> visual_by_path;
-        const auto path_key = [](const std::filesystem::path& path) {
-            auto value = path.generic_u8string();
-            return std::string(reinterpret_cast<const char*>(value.data()), value.size());
-        };
-        const auto validate_resource_path = [&](std::string_view name, std::string path)
-            -> std::filesystem::path {
-            if (name.find('\0') != std::string_view::npos) {
-                fail(bmson_parse_diagnostic_code_t::invalid_value,
-                     "resource path may not contain a NUL character", std::move(path));
-            }
-            std::string normalized_name(name);
-            std::ranges::replace(normalized_name, '\\', '/');
-            if ((!normalized_name.empty() && normalized_name.front() == '/') ||
-                (normalized_name.size() >= 2 &&
-                 std::isalpha(static_cast<unsigned char>(normalized_name[0])) &&
-                 normalized_name[1] == ':')) {
-                fail(bmson_parse_diagnostic_code_t::invalid_value,
-                     "resource path must be a non-empty relative path", std::move(path));
-            }
-            auto source_path = path_from_utf8(normalized_name);
-            if (source_path.empty() || source_path.is_absolute() || source_path.has_root_name() ||
-                source_path.has_root_directory()) {
-                fail(bmson_parse_diagnostic_code_t::invalid_value,
-                     "resource path must be a non-empty relative path", std::move(path));
-            }
-            for (const auto& component : source_path) {
-                if (component == "..") {
-                    fail(bmson_parse_diagnostic_code_t::invalid_value,
-                         "resource path may not escape its asset directory", std::move(path));
-                }
-            }
-            return source_path.lexically_normal();
-        };
-        const auto add_audio_asset = [&](const std::filesystem::path& source_path) -> std::pair<asset_id_t, bool> {
-            const auto key = path_key(source_path);
-            if (const auto found = audio_by_path.find(key); found != audio_by_path.end()) {
-                return {found->second, false};
-            }
-            const auto id = asset_ids.take<asset_id_t>();
-            song.audio_assets.push_back({.id = id, .source_path = source_path});
-            audio_by_path.emplace(key, id);
-            return {id, true};
-        };
-        const auto add_visual_asset = [&](const std::filesystem::path& source_path) -> std::pair<asset_id_t, bool> {
-            const auto key = path_key(source_path);
-            if (const auto found = visual_by_path.find(key); found != visual_by_path.end()) {
-                return {found->second, false};
-            }
-            const auto id = asset_ids.take<asset_id_t>();
-            song.visual_assets.push_back({.id = id, .kind = asset_kind_t::image, .source_path = source_path});
-            visual_by_path.emplace(key, id);
-            return {id, true};
-        };
-        const auto resource_missing = [&](const std::filesystem::path& source_path) {
-            if (!options.asset_base_directory.has_value()) {
-                return true;
-            }
-            std::error_code error;
-            return !std::filesystem::exists(*options.asset_base_directory / source_path, error) || error;
-        };
-        const auto add_resource = [&](std::string name, asset_id_t asset,
-                                      std::vector<resource_role_t> roles,
-                                      std::string identity_namespace, std::string identity,
-                                      std::filesystem::path source_path, std::string path,
-                                      std::string source_spelling) -> resource_id_t {
-            const auto id = resource_ids.take<resource_id_t>();
-            const bool missing = resource_missing(source_path);
-            song.resources.push_back({.id = id,
-                                      .name = std::move(name),
-                                      .asset = asset,
-                                      .roles = std::move(roles),
-                                      .target_identities = {{format_family_t::bmson,
-                                                             std::move(identity),
-                                                             std::move(identity_namespace)}},
-                                      .missing = missing,
-                                      .provenance = provenance(std::move(path),
-                                                               std::move(source_spelling))});
-            if (missing) {
-                add_warning(result, bmson_parse_diagnostic_code_t::unresolved_resource,
-                            options.asset_base_directory.has_value()
-                                ? "resource file was not found under the configured asset directory"
-                                : "resource path retained but unresolved until an asset directory is selected",
-                            song.resources.back().provenance.source_field);
-            }
-            return id;
-        };
+struct raw_bmson_events_t {
+    const json_value_t& root;
+    std::string_view source;
+    const bmson_parse_options_t& options;
+    const json_value_t* sound_channels_value;
+    std::vector<raw_timing_t> bpm_events;
+    std::vector<raw_stop_t> stops;
+    std::vector<raw_sound_channel_t> raw_channels;
+    std::vector<raw_visual_header_t> visual_headers;
+    std::vector<raw_visual_event_t> visual_events;
+    std::vector<pulse_position_t> all_positions;
+    std::size_t source_order{};
 
-        // Catalog standard info images and preview audio without changing their source spelling.
-        for (const auto [field, kind, role] : {
-                 std::tuple{std::string_view{"back_image"}, asset_kind_t::image, resource_role_t::bga},
-                 std::tuple{std::string_view{"eyecatch_image"}, asset_kind_t::image, resource_role_t::bga},
-                 std::tuple{std::string_view{"title_image"}, asset_kind_t::image, resource_role_t::bga},
-                 std::tuple{std::string_view{"banner_image"}, asset_kind_t::image, resource_role_t::bga},
-                 std::tuple{std::string_view{"preview_music"}, asset_kind_t::audio, resource_role_t::preview}}) {
-            const auto* source_field = member(info, field);
-            if (!source_field || source_field->kind == json_value_t::kind_t::null_value) continue;
-            const auto& name = required_string(*source_field, "$.info." + std::string(field));
-            if (name.empty()) continue;
-            const auto source_path = validate_resource_path(name, "$.info." + std::string(field));
-            asset_id_t asset;
-            bool is_new{};
-            if (kind == asset_kind_t::audio) {
-                std::tie(asset, is_new) = add_audio_asset(source_path);
-            } else {
-                std::tie(asset, is_new) = add_visual_asset(source_path);
-            }
-            (void)is_new;
-            const auto resource = add_resource(name, asset, {role}, "info",
-                                               std::string(field), source_path,
-                                               "$.info." + std::string(field),
-                                               raw_spelling(source, *source_field));
-            (void)resource;
-        }
+    raw_bmson_events_t(const json_value_t& root_value, std::string_view source_value,
+                       const bmson_parse_options_t& parse_options,
+                       const json_value_t* channels)
+        : root(root_value), source(source_value), options(parse_options),
+          sound_channels_value(channels) {}
 
-        // Parse bar-line declaration. Absence and null use generated 4/4 bars;
-        // an explicit array is retained and controls authored measure boundaries.
-        std::vector<std::uint64_t> authored_lines;
-        bool generated_lines = true;
-        if (const auto* lines = member(root, "lines")) {
-            if (lines->kind == json_value_t::kind_t::null_value) {
-                generated_lines = true;
-            } else {
-                generated_lines = false;
-                required_array(*lines, "$.lines");
-                for (std::size_t index = 0; index < lines->array.size(); ++index) {
-                    const auto path = "$.lines[" + std::to_string(index) + "]";
-                    const auto& line = required_object(lines->array[index], path);
-                    const auto y = required_u32(required_member(line, "y", path + ".y"), path + ".y");
-                    if (!authored_lines.empty() && y <= authored_lines.back()) {
-                        fail(bmson_parse_diagnostic_code_t::invalid_geometry,
-                             "bar-line positions must be strictly increasing", path + ".y",
-                             member(line, "y")->begin);
-                    }
-                    authored_lines.push_back(y);
-                    if (authored_lines.size() > options.max_measures) {
-                        fail(bmson_parse_diagnostic_code_t::invalid_geometry,
-                             "bar-line count exceeds the configured measure limit", "$.lines", lines->begin);
-                    }
-                }
-            }
-        }
-
-        std::vector<raw_timing_t> bpm_events;
-        std::vector<raw_stop_t> stops;
-        std::vector<raw_sound_channel_t> raw_channels;
-        std::vector<raw_visual_header_t> visual_headers;
-        std::vector<raw_visual_event_t> visual_events;
-        std::vector<pulse_position_t> all_positions;
-        std::size_t source_order{};
+    auto parse_timing() -> void {
         const auto parse_timing_array = [&](std::string_view field, bool is_bpm) {
             const auto* array = member(root, field);
             if (!array || array->kind == json_value_t::kind_t::null_value) return;
@@ -805,6 +658,9 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
         parse_timing_array("bpm_events", true);
         parse_timing_array("stop_events", false);
 
+    }
+
+    auto parse_sound() -> void {
         if (sound_channels_value) {
             if (sound_channels_value->array.size() > options.max_events) {
                 fail(bmson_parse_diagnostic_code_t::invalid_value,
@@ -828,43 +684,49 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
                 for (std::size_t note_index = 0; note_index < notes.array.size(); ++note_index) {
                     const auto note_path = path + ".notes[" + std::to_string(note_index) + "]";
                     const auto& note = required_object(notes.array[note_index], note_path);
-                    raw_sound_note_t parsed;
-                    const auto& x = required_member(note, "x", note_path + ".x");
-                    parsed.x = x.kind == json_value_t::kind_t::null_value
-                                   ? 0U
-                                   : required_u32(x, note_path + ".x");
-                    parsed.y = required_u32(required_member(note, "y", note_path + ".y"), note_path + ".y");
-                    if (const auto* length = member(note, "l")) {
-                        parsed.length = required_u32(*length, note_path + ".l");
-                    }
-                    if (const auto* continuation = member(note, "c")) {
-                        if (continuation->kind != json_value_t::kind_t::boolean) {
-                            fail(bmson_parse_diagnostic_code_t::invalid_type,
-                                 "continuation flag must be a boolean", note_path + ".c",
-                                 continuation->begin);
-                        }
-                        parsed.continuation = continuation->boolean;
-                    }
-                    parsed.order = source_order++;
-                    parsed.path = note_path;
-                    parsed.spelling = raw_spelling(source, note);
-                    parsed.offset = note.begin;
-                    all_positions.push_back({parsed.y, note_path + ".y", parsed.order});
-                    std::uint64_t endpoint{};
-                    if (parsed.length > UINT64_MAX - parsed.y) {
-                        fail(bmson_parse_diagnostic_code_t::integer_out_of_range,
-                             "note endpoint overflows the pulse range", note_path + ".l", note.begin);
-                    }
-                    endpoint = static_cast<std::uint64_t>(parsed.y) + parsed.length;
-                    if (parsed.length != 0) {
-                        all_positions.push_back({endpoint, note_path + ".l", parsed.order});
-                    }
-                    channel.notes.push_back(std::move(parsed));
+                    channel.notes.push_back(parse_sound_note(note, note_path));
                 }
                 raw_channels.push_back(std::move(channel));
             }
         }
 
+    }
+
+    auto parse_sound_note(const json_value_t& note, const std::string& note_path)
+        -> raw_sound_note_t {
+        raw_sound_note_t parsed;
+        const auto& x = required_member(note, "x", note_path + ".x");
+        parsed.x = x.kind == json_value_t::kind_t::null_value
+                       ? 0U : required_u32(x, note_path + ".x");
+        parsed.y = required_u32(required_member(note, "y", note_path + ".y"), note_path + ".y");
+        if (const auto* length = member(note, "l")) {
+            parsed.length = required_u32(*length, note_path + ".l");
+        }
+        if (const auto* continuation = member(note, "c")) {
+            if (continuation->kind != json_value_t::kind_t::boolean) {
+                fail(bmson_parse_diagnostic_code_t::invalid_type,
+                     "continuation flag must be a boolean", note_path + ".c",
+                     continuation->begin);
+            }
+            parsed.continuation = continuation->boolean;
+        }
+        parsed.order = source_order++;
+        parsed.path = note_path;
+        parsed.spelling = raw_spelling(source, note);
+        parsed.offset = note.begin;
+        all_positions.push_back({parsed.y, note_path + ".y", parsed.order});
+        if (parsed.length > UINT64_MAX - parsed.y) {
+            fail(bmson_parse_diagnostic_code_t::integer_out_of_range,
+                 "note endpoint overflows the pulse range", note_path + ".l", note.begin);
+        }
+        const auto endpoint = static_cast<std::uint64_t>(parsed.y) + parsed.length;
+        if (parsed.length != 0) {
+            all_positions.push_back({endpoint, note_path + ".l", parsed.order});
+        }
+        return parsed;
+    }
+
+    auto parse_visual() -> void {
         std::unordered_map<std::uint32_t, std::size_t> header_index;
         if (const auto* bga = member(root, "bga"); bga && bga->kind != json_value_t::kind_t::null_value) {
             required_object(*bga, "$.bga");
@@ -916,6 +778,14 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
             }
         }
 
+    }
+};
+
+auto create_bmson_measures(const std::vector<pulse_position_t>& all_positions,
+                           const std::vector<std::uint64_t>& authored_lines,
+                           bool generated_lines, std::uint64_t divisions,
+                           const bmson_parse_options_t& options, chart_document_t& chart)
+    -> std::vector<std::uint64_t> {
         std::uint64_t max_pulse{};
         for (const auto& position : all_positions) max_pulse = std::max(max_pulse, position.y);
         std::vector<std::uint64_t> boundaries{0};
@@ -945,29 +815,201 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
         if (boundaries.size() < 2) boundaries.push_back(divisions);
         // If authored boundaries include the final event exactly, the loop above creates a
         // following geometry interval so that the event belongs to a real measure.
-        std::vector<measure_id_t> measure_by_index;
-        measure_by_index.reserve(boundaries.size() - 1);
         for (std::size_t index = 0; index + 1 < boundaries.size(); ++index) {
             const auto delta = boundaries[index + 1] - boundaries[index];
             const auto id = measure_id_t{static_cast<std::uint64_t>(index + 1)};
-            measure_by_index.push_back(id);
             chart.measures.push_back({.id = id,
                                       .definition = {rational_length(delta, divisions), std::nullopt}});
         }
-        const auto map_position = [&](std::uint64_t pulse, std::string path) -> local_position_t {
-            const auto found = std::upper_bound(boundaries.begin(), boundaries.end(), pulse);
-            if (found == boundaries.begin() || found == boundaries.end()) {
-                fail(bmson_parse_diagnostic_code_t::invalid_geometry,
-                     "event pulse is outside generated measure geometry", std::move(path));
-            }
-            const auto index = static_cast<std::size_t>(std::distance(boundaries.begin(), found) - 1);
-            return {measure_by_index[index], pulse - boundaries[index]};
-        };
-        const auto measure_for = [&](measure_id_t id) -> measure_chunk_t& {
-            return chart.measures.at(static_cast<std::size_t>(id.value - 1));
-        };
+        return boundaries;
+}
 
-        // Select source lane layout from mode_hint while preserving BMSON x as stable lane IDs.
+struct bmson_mode_lanes_t {
+    std::string mode_hint;
+    std::vector<std::uint32_t> lane_positions;
+    std::set<std::uint32_t> scratches;
+    std::set<std::uint32_t> right_stage;
+};
+
+auto select_bmson_beat_lanes(bmson_mode_lanes_t& mode) -> bool {
+    const auto& hint = mode.mode_hint;
+    if (hint != "beat-5k" && hint != "beat-7k" &&
+        hint != "beat-10k" && hint != "beat-14k") {
+        return false;
+    }
+    const auto keys = hint == "beat-5k" || hint == "beat-10k" ? 5U : 7U;
+    for (std::uint32_t x = 1; x <= keys; ++x) mode.lane_positions.push_back(x);
+    mode.lane_positions.push_back(8);
+    mode.scratches.insert(8);
+    if (hint == "beat-10k" || hint == "beat-14k") {
+        for (std::uint32_t x = 9; x <= 8 + keys; ++x) mode.lane_positions.push_back(x);
+        mode.lane_positions.push_back(16);
+        mode.scratches.insert(16);
+        for (std::uint32_t x = 9; x <= 16; ++x) mode.right_stage.insert(x);
+    }
+    return true;
+}
+
+auto select_bmson_mode_lanes(std::string mode_hint, std::uint32_t max_x,
+                             bmson_parse_result_t& result) -> bmson_mode_lanes_t {
+        bmson_mode_lanes_t mode;
+        mode.mode_hint = std::move(mode_hint);
+        if (select_bmson_beat_lanes(mode)) {
+            return mode;
+        }
+        auto& lane_positions = mode.lane_positions;
+        auto& right_stage = mode.right_stage;
+        const auto& hint = mode.mode_hint;
+        if (hint == "popn-5k") {
+            for (std::uint32_t x = 1; x <= 5; ++x) lane_positions.push_back(x);
+        } else if (hint == "popn-9k") {
+            for (std::uint32_t x = 1; x <= 9; ++x) lane_positions.push_back(x);
+        } else if (hint == "generic-24keys") {
+            for (std::uint32_t x = 1; x <= 24; ++x) lane_positions.push_back(x);
+        } else if (hint == "generic-48keys") {
+            for (std::uint32_t x = 1; x <= 48; ++x) lane_positions.push_back(x);
+            for (std::uint32_t x = 25; x <= 48; ++x) right_stage.insert(x);
+        } else if (hint != "generic-nkeys") {
+            add_warning(result, bmson_parse_diagnostic_code_t::invalid_value,
+                        "unknown mode_hint retained; using generic-nkeys lane layout", "$.info.mode_hint");
+            mode.mode_hint = "generic-nkeys";
+        }
+        if (mode.mode_hint == "generic-nkeys") {
+            for (std::uint32_t x = 1; x <= max_x; ++x) lane_positions.push_back(x);
+        }
+        return mode;
+}
+
+auto validate_bmson_resource_path(std::string_view name, std::string path)
+    -> std::filesystem::path {
+            if (name.find('\0') != std::string_view::npos) {
+                fail(bmson_parse_diagnostic_code_t::invalid_value,
+                     "resource path may not contain a NUL character", std::move(path));
+            }
+            std::string normalized_name(name);
+            std::ranges::replace(normalized_name, '\\', '/');
+            if ((!normalized_name.empty() && normalized_name.front() == '/') ||
+                (normalized_name.size() >= 2 &&
+                 std::isalpha(static_cast<unsigned char>(normalized_name[0])) &&
+                 normalized_name[1] == ':')) {
+                fail(bmson_parse_diagnostic_code_t::invalid_value,
+                     "resource path must be a non-empty relative path", std::move(path));
+            }
+            auto source_path = path_from_utf8(normalized_name);
+            if (source_path.empty() || source_path.is_absolute() || source_path.has_root_name() ||
+                source_path.has_root_directory()) {
+                fail(bmson_parse_diagnostic_code_t::invalid_value,
+                     "resource path must be a non-empty relative path", std::move(path));
+            }
+            for (const auto& component : source_path) {
+                if (component == "..") {
+                    fail(bmson_parse_diagnostic_code_t::invalid_value,
+                         "resource path may not escape its asset directory", std::move(path));
+                }
+            }
+            return source_path.lexically_normal();
+}
+
+struct bmson_resource_catalog_t {
+    const bmson_parse_options_t& options;
+    bmson_parse_result_t& result;
+    song_document_t& song;
+    id_source_t& asset_ids;
+    id_source_t& resource_ids;
+    std::unordered_map<std::string, asset_id_t> audio_by_path;
+    std::unordered_map<std::string, asset_id_t> visual_by_path;
+
+    bmson_resource_catalog_t(const bmson_parse_options_t& parse_options,
+                             bmson_parse_result_t& parse_result, song_document_t& document,
+                             id_source_t& assets, id_source_t& resources)
+        : options(parse_options), result(parse_result), song(document),
+          asset_ids(assets), resource_ids(resources) {}
+
+    static auto path_key(const std::filesystem::path& path) -> std::string {
+        const auto value = path.generic_u8string();
+        return std::string(reinterpret_cast<const char*>(value.data()), value.size());
+    }
+
+    auto add_audio_asset(const std::filesystem::path& source_path) -> std::pair<asset_id_t, bool> {
+        const auto key = path_key(source_path);
+        if (const auto found = audio_by_path.find(key); found != audio_by_path.end()) {
+            return {found->second, false};
+        }
+        const auto id = asset_ids.take<asset_id_t>();
+        song.audio_assets.push_back({.id = id, .source_path = source_path});
+        audio_by_path.emplace(key, id);
+        return {id, true};
+    }
+
+    auto add_visual_asset(const std::filesystem::path& source_path) -> std::pair<asset_id_t, bool> {
+        const auto key = path_key(source_path);
+        if (const auto found = visual_by_path.find(key); found != visual_by_path.end()) {
+            return {found->second, false};
+        }
+        const auto id = asset_ids.take<asset_id_t>();
+        song.visual_assets.push_back({.id = id, .kind = asset_kind_t::image, .source_path = source_path});
+        visual_by_path.emplace(key, id);
+        return {id, true};
+    }
+
+    auto resource_missing(const std::filesystem::path& source_path) const -> bool {
+        if (!options.asset_base_directory.has_value()) return true;
+        std::error_code error;
+        return !std::filesystem::exists(*options.asset_base_directory / source_path, error) || error;
+    }
+
+    auto add_resource(std::string name, asset_id_t asset, std::vector<resource_role_t> roles,
+                      std::string identity_namespace, std::string identity,
+                      std::filesystem::path source_path, std::string path,
+                      std::string source_spelling) -> resource_id_t {
+        const auto id = resource_ids.take<resource_id_t>();
+        const bool missing = resource_missing(source_path);
+        song.resources.push_back({.id = id,
+                                  .name = std::move(name),
+                                  .asset = asset,
+                                  .roles = std::move(roles),
+                                  .target_identities = {{format_family_t::bmson,
+                                                         std::move(identity),
+                                                         std::move(identity_namespace)}},
+                                  .missing = missing,
+                                  .provenance = provenance(std::move(path),
+                                                           std::move(source_spelling))});
+        if (missing) {
+            add_warning(result, bmson_parse_diagnostic_code_t::unresolved_resource,
+                        options.asset_base_directory.has_value()
+                            ? "resource file was not found under the configured asset directory"
+                            : "resource path retained but unresolved until an asset directory is selected",
+                        song.resources.back().provenance.source_field);
+        }
+        return id;
+    }
+
+    auto catalog_info(const json_value_t& info, std::string_view source) -> void {
+        for (const auto [field, kind, role] : {
+                 std::tuple{std::string_view{"back_image"}, asset_kind_t::image, resource_role_t::bga},
+                 std::tuple{std::string_view{"eyecatch_image"}, asset_kind_t::image, resource_role_t::bga},
+                 std::tuple{std::string_view{"title_image"}, asset_kind_t::image, resource_role_t::bga},
+                 std::tuple{std::string_view{"banner_image"}, asset_kind_t::image, resource_role_t::bga},
+                 std::tuple{std::string_view{"preview_music"}, asset_kind_t::audio, resource_role_t::preview}}) {
+            const auto* source_field = member(info, field);
+            if (!source_field || source_field->kind == json_value_t::kind_t::null_value) continue;
+            const auto& name = required_string(*source_field, "$.info." + std::string(field));
+            if (name.empty()) continue;
+            const auto source_path = validate_bmson_resource_path(name, "$.info." + std::string(field));
+            const auto [asset, is_new] = kind == asset_kind_t::audio
+                                             ? add_audio_asset(source_path) : add_visual_asset(source_path);
+            (void)is_new;
+            add_resource(name, asset, {role}, "info", std::string(field), source_path,
+                         "$.info." + std::string(field), raw_spelling(source, *source_field));
+        }
+    }
+};
+
+auto create_bmson_lane_layout(const json_value_t& info,
+                              const std::vector<raw_sound_channel_t>& raw_channels,
+                              const bmson_parse_options_t& options,
+                              bmson_parse_result_t& result, chart_document_t& chart,
+                              id_source_t& object_ids) -> std::set<std::uint32_t> {
         std::uint32_t max_x{};
         for (const auto& channel : raw_channels) {
             for (const auto& note : channel.notes) max_x = std::max(max_x, note.x);
@@ -976,48 +1018,11 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
         if (const auto* hint = member(info, "mode_hint")) {
             mode_hint = required_string(*hint, "$.info.mode_hint");
         }
-        std::vector<std::uint32_t> lane_positions;
-        std::set<std::uint32_t> scratches;
-        std::set<std::uint32_t> right_stage;
-        if (mode_hint == "beat-5k") {
-            for (std::uint32_t x = 1; x <= 5; ++x) lane_positions.push_back(x);
-            lane_positions.push_back(8);
-            scratches.insert(8);
-        } else if (mode_hint == "beat-7k") {
-            for (std::uint32_t x = 1; x <= 7; ++x) lane_positions.push_back(x);
-            lane_positions.push_back(8);
-            scratches.insert(8);
-        } else if (mode_hint == "beat-10k") {
-            for (std::uint32_t x = 1; x <= 5; ++x) lane_positions.push_back(x);
-            lane_positions.push_back(8);
-            for (std::uint32_t x = 9; x <= 13; ++x) lane_positions.push_back(x);
-            lane_positions.push_back(16);
-            scratches = {8, 16};
-            for (std::uint32_t x = 9; x <= 16; ++x) right_stage.insert(x);
-        } else if (mode_hint == "beat-14k") {
-            for (std::uint32_t x = 1; x <= 7; ++x) lane_positions.push_back(x);
-            lane_positions.push_back(8);
-            for (std::uint32_t x = 9; x <= 15; ++x) lane_positions.push_back(x);
-            lane_positions.push_back(16);
-            scratches = {8, 16};
-            for (std::uint32_t x = 9; x <= 16; ++x) right_stage.insert(x);
-        } else if (mode_hint == "popn-5k") {
-            for (std::uint32_t x = 1; x <= 5; ++x) lane_positions.push_back(x);
-        } else if (mode_hint == "popn-9k") {
-            for (std::uint32_t x = 1; x <= 9; ++x) lane_positions.push_back(x);
-        } else if (mode_hint == "generic-24keys") {
-            for (std::uint32_t x = 1; x <= 24; ++x) lane_positions.push_back(x);
-        } else if (mode_hint == "generic-48keys") {
-            for (std::uint32_t x = 1; x <= 48; ++x) lane_positions.push_back(x);
-            for (std::uint32_t x = 25; x <= 48; ++x) right_stage.insert(x);
-        } else if (mode_hint != "generic-nkeys") {
-            add_warning(result, bmson_parse_diagnostic_code_t::invalid_value,
-                        "unknown mode_hint retained; using generic-nkeys lane layout", "$.info.mode_hint");
-            mode_hint = "generic-nkeys";
-        }
-        if (mode_hint == "generic-nkeys") {
-            for (std::uint32_t x = 1; x <= max_x; ++x) lane_positions.push_back(x);
-        }
+        auto mode = select_bmson_mode_lanes(std::move(mode_hint), max_x, result);
+        const auto& lane_positions = mode.lane_positions;
+        const auto& scratches = mode.scratches;
+        const auto& right_stage = mode.right_stage;
+        mode_hint = std::move(mode.mode_hint);
         const std::set<std::uint32_t> valid_lane_positions(lane_positions.begin(), lane_positions.end());
         if (lane_positions.size() > options.max_events) {
             fail(bmson_parse_diagnostic_code_t::invalid_value,
@@ -1046,9 +1051,39 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
                                       .position = {chart.measures.front().id, 0},
                                       .layout = std::move(layout)});
 
+        return valid_lane_positions;
+}
+
+struct bmson_materialization_t {
+    std::string_view source;
+    const json_value_t& info;
+    const bmson_parse_options_t& options;
+    std::uint32_t resolution;
+    chart_document_t& chart;
+    id_source_t& object_ids;
+    bmson_resource_catalog_t& catalog;
+    raw_bmson_events_t& raw;
+    const std::vector<std::uint64_t>& boundaries;
+    const std::set<std::uint32_t>& valid_lane_positions;
+
+    auto map_position(std::uint64_t pulse, std::string path) const -> local_position_t {
+        const auto found = std::upper_bound(boundaries.begin(), boundaries.end(), pulse);
+        if (found == boundaries.begin() || found == boundaries.end()) {
+            fail(bmson_parse_diagnostic_code_t::invalid_geometry,
+                 "event pulse is outside generated measure geometry", std::move(path));
+        }
+        const auto index = static_cast<std::size_t>(std::distance(boundaries.begin(), found) - 1);
+        return {measure_id_t{static_cast<std::uint64_t>(index + 1)}, pulse - boundaries[index]};
+    }
+
+    auto measure_for(measure_id_t id) -> measure_chunk_t& {
+        return chart.measures.at(static_cast<std::size_t>(id.value - 1));
+    }
+
+    auto materialize_timing() -> void {
         // Timing events retain exact numeric spellings and source order. The info BPM is
         // materialized only when no explicit BPM event replaces it at pulse zero.
-        bool has_initial_bpm = std::ranges::any_of(bpm_events, [](const auto& event) { return event.y == 0; });
+        bool has_initial_bpm = std::ranges::any_of(raw.bpm_events, [](const auto& event) { return event.y == 0; });
         const auto& initial_bpm_source = required_member(info, "init_bpm", "$.info.init_bpm");
         const auto initial_bpm = required_bpm(initial_bpm_source, "$.info.init_bpm");
         if (!has_initial_bpm) {
@@ -1058,15 +1093,15 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
                                   .provenance = provenance("$.info.init_bpm",
                                                            raw_spelling(source, initial_bpm_source))});
         }
-        std::ranges::stable_sort(bpm_events, {}, &raw_timing_t::order);
-        for (const auto& event : bpm_events) {
+        std::ranges::stable_sort(raw.bpm_events, {}, &raw_timing_t::order);
+        for (const auto& event : raw.bpm_events) {
             chart.bpms.push_back({.id = object_ids.take<object_id_t>(),
                                   .position = map_position(event.y, event.path),
                                   .beats_per_minute = event.value,
                                   .provenance = provenance(event.path, event.spelling, event.order)});
         }
-        std::ranges::stable_sort(stops, {}, &raw_stop_t::order);
-        for (const auto& stop : stops) {
+        std::ranges::stable_sort(raw.stops, {}, &raw_stop_t::order);
+        for (const auto& stop : raw.stops) {
             const auto divisor = std::gcd<std::uint64_t>(stop.duration, resolution);
             chart.pauses.push_back({.id = object_ids.take<object_id_t>(),
                                     .position = map_position(stop.y, stop.path),
@@ -1077,17 +1112,20 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
                                     .provenance = provenance(stop.path, stop.spelling, stop.order)});
         }
 
+    }
+
+    auto materialize_visual() -> void {
         std::unordered_map<std::uint32_t, resource_id_t> visual_resources;
-        for (const auto& header : visual_headers) {
-            const auto source_path = validate_resource_path(header.name, header.path + ".name");
-            const auto [asset, is_new] = add_visual_asset(source_path);
+        for (const auto& header : raw.visual_headers) {
+            const auto source_path = validate_bmson_resource_path(header.name, header.path + ".name");
+            const auto [asset, is_new] = catalog.add_visual_asset(source_path);
             (void)is_new;
             visual_resources.emplace(header.id,
-                                      add_resource(header.name, asset, {resource_role_t::bga}, "bga",
+                                      catalog.add_resource(header.name, asset, {resource_role_t::bga}, "bga",
                                                    std::to_string(header.id), source_path,
                                                    header.path + ".name", header.name_spelling));
         }
-        for (const auto& event : visual_events) {
+        for (const auto& event : raw.visual_events) {
             const auto resource = visual_resources.find(event.id);
             if (resource == visual_resources.end()) {
                 fail(bmson_parse_diagnostic_code_t::unresolved_resource,
@@ -1100,19 +1138,22 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
                                         .provenance = provenance(event.path, event.spelling, event.order)});
         }
 
+    }
+
+    auto materialize_sound() -> void {
         std::size_t total_sound_events{};
-        for (const auto& channel : raw_channels) total_sound_events += channel.notes.size();
+        for (const auto& channel : raw.raw_channels) total_sound_events += channel.notes.size();
         if (total_sound_events > options.max_events) {
             fail(bmson_parse_diagnostic_code_t::invalid_value,
                  "sound event count exceeds the configured limit", "$.sound_channels");
         }
-        for (std::size_t channel_index = 0; channel_index < raw_channels.size(); ++channel_index) {
-            const auto& raw_channel = raw_channels[channel_index];
-            const auto source_path = validate_resource_path(raw_channel.name,
+        for (std::size_t channel_index = 0; channel_index < raw.raw_channels.size(); ++channel_index) {
+            const auto& raw_channel = raw.raw_channels[channel_index];
+            const auto source_path = validate_bmson_resource_path(raw_channel.name,
                 "$.sound_channels[" + std::to_string(channel_index) + "].name");
-            const auto [asset, is_new] = add_audio_asset(source_path);
+            const auto [asset, is_new] = catalog.add_audio_asset(source_path);
             (void)is_new;
-            const auto channel_resource = add_resource(
+            const auto channel_resource = catalog.add_resource(
                 raw_channel.name, asset, {resource_role_t::sample, resource_role_t::bgm},
                 "sound_channel", std::to_string(channel_index), source_path,
                 "$.sound_channels[" + std::to_string(channel_index) + "].name",
@@ -1138,10 +1179,26 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
                                                   .name = raw_channel.name,
                                                   .source_order = channel_index});
             }
-            for (const auto& note : raw_channel.notes) {
+            sound_note_context_t context{channel, channel_resource, bgm_source_lane,
+                                         restart_at_pulse, has_playable_at_pulse};
+            for (const auto& note : raw_channel.notes) append_sound_note(note, context);
+            chart.sound_channels.push_back(std::move(channel));
+        }
+
+    }
+
+    struct sound_note_context_t {
+        sound_channel_t& channel;
+        resource_id_t channel_resource;
+        object_id_t bgm_source_lane;
+        std::map<std::uint32_t, bool>& restart_at_pulse;
+        std::map<std::uint32_t, bool>& has_playable_at_pulse;
+    };
+
+    auto append_sound_note(const raw_sound_note_t& note, sound_note_context_t& context) -> void {
                 const bool playable = note.x != 0;
-                const bool suppress_bgm = !playable && has_playable_at_pulse[note.y];
-                const bool continuation = !restart_at_pulse[note.y];
+                const bool suppress_bgm = !playable && context.has_playable_at_pulse[note.y];
+                const bool continuation = !context.restart_at_pulse[note.y];
                 std::optional<local_position_t> end;
                 if (note.length != 0) {
                     end = map_position(static_cast<std::uint64_t>(note.y) + note.length,
@@ -1158,7 +1215,7 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
                 }
                 const auto position = map_position(note.y, note.path + ".y");
                 const auto sound_event_id = object_ids.take<object_id_t>();
-                channel.events.push_back({.id = sound_event_id,
+                context.channel.events.push_back({.id = sound_event_id,
                                           .position = position,
                                           .end = end,
                                           .lane = lane,
@@ -1172,22 +1229,131 @@ auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t o
                                              .lane = lane,
                                              .kind = note.length == 0 ? note_kind_t::tap : note_kind_t::hold,
                                              .end = end,
-                                             .sound = channel_resource,
+                                             .sound = context.channel_resource,
                                              .sound_channel_event = sound_event_id,
                                              .provenance = provenance(note.path, note.spelling, note.order)});
                 } else if (!suppress_bgm) {
                     auto& measure = measure_for(position.measure);
                     measure.bgm_events.push_back({.id = object_ids.take<object_id_t>(),
                                                   .position = position,
-                                                  .source_lane = bgm_source_lane,
-                                                  .sound = channel_resource,
+                                                  .source_lane = context.bgm_source_lane,
+                                                  .sound = context.channel_resource,
                                                   .sound_channel_event = sound_event_id,
                                                   .structural_slot = 0,
                                                   .provenance = provenance(note.path, note.spelling, note.order)});
                 }
-            }
-            chart.sound_channels.push_back(std::move(channel));
+    }
+};
+
+} // namespace
+
+auto bmson_parse_result_t::has_errors() const -> bool {
+    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
+        return diagnostic.severity == diagnostic_severity_t::error;
+    });
+}
+
+auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t options)
+    -> bmson_parse_result_t {
+    bmson_parse_result_t result;
+    const auto add_error = [&](bmson_parse_diagnostic_code_t code, std::string message,
+                               std::string path, std::optional<std::size_t> offset = {}) {
+        add_parse_error(result, code, std::move(message), std::move(path), offset);
+    };
+    if (bytes.size() > options.max_source_bytes) {
+        add_error(bmson_parse_diagnostic_code_t::invalid_value,
+                  "BMSON source exceeds the configured byte limit", "$", 0);
+        return result;
+    }
+    const auto* chars = reinterpret_cast<const char*>(bytes.data());
+    const std::string_view source(bytes.empty() ? "" : chars, bytes.size());
+    if (const auto invalid = valid_utf8(source); invalid.has_value()) {
+        add_error(bmson_parse_diagnostic_code_t::invalid_json,
+                  "BMSON input is not valid UTF-8", "$", *invalid);
+        return result;
+    }
+    auto root_value = parse_json_root(source, options, result);
+    if (!root_value.has_value()) {
+        if (result.diagnostics.empty()) {
+            add_error(bmson_parse_diagnostic_code_t::invalid_json, "JSON root is missing", "$", 0);
         }
+        return result;
+    }
+    const auto& root = *root_value;
+    try {
+        required_object(root, "$" );
+        const auto& version = required_string(required_member(root, "version", "$.version"),
+                                              "$.version");
+        if (version != "1.0.0") {
+            fail(bmson_parse_diagnostic_code_t::unsupported_version,
+                 "only BMSON version 1.0.0 is supported", "$.version",
+                 member(root, "version")->begin);
+        }
+        const auto& info = required_object(required_member(root, "info", "$.info"), "$.info");
+        const auto* sound_channels_value = member(root, "sound_channels");
+        if (sound_channels_value && sound_channels_value->kind != json_value_t::kind_t::array) {
+            fail(bmson_parse_diagnostic_code_t::invalid_type,
+                 "sound_channels must be an array", "$.sound_channels", sound_channels_value->begin);
+        }
+
+        const auto resolution = bmson_resolution(info);
+        const std::uint64_t divisions = static_cast<std::uint64_t>(resolution) * 4U;
+
+        const auto source_bytes = std::make_shared<const std::vector<std::byte>>(bytes.begin(), bytes.end());
+        song_document_t song;
+        song.id = song_id_t{1};
+        const auto* title = member(info, "title");
+        const auto* artist = member(info, "artist");
+        if (title) song.metadata.title = required_string(*title, "$.info.title");
+        if (artist) song.metadata.artist = required_string(*artist, "$.info.artist");
+        const auto shared_group = add_format_group(source, root, source_bytes);
+        song.metadata.format_groups.push_back(shared_group);
+
+        chart_document_t chart;
+        chart.id = chart_id_t{1};
+        chart.source_family = format_family_t::bmson;
+        chart.divisions_per_standard_measure = divisions;
+        chart.metadata.format_groups.push_back(shared_group);
+        chart.metadata.name = song.metadata.title;
+        if (const auto* chart_name = member(info, "chart_name")) {
+            chart.metadata.name = required_string(*chart_name, "$.info.chart_name");
+        }
+        chart.metadata.author = song.metadata.artist;
+        if (artist) chart.metadata.author = required_string(*artist, "$.info.artist");
+        if (const auto* level = member(info, "level")) {
+            const auto rating = unsigned_integer(*level);
+            if (!rating.has_value() || *rating > static_cast<std::uint64_t>(INT64_MAX)) {
+                fail(bmson_parse_diagnostic_code_t::invalid_type,
+                     "level must be a non-negative integer", "$.info.level", level->begin);
+            }
+            chart.metadata.rating = signed_rational_t{static_cast<std::int64_t>(*rating), 1};
+        }
+
+        id_source_t object_ids;
+        id_source_t asset_ids;
+        id_source_t resource_ids;
+        bmson_resource_catalog_t catalog{options, result, song, asset_ids, resource_ids};
+        catalog.catalog_info(info, source);
+
+        // Parse bar-line declaration. Absence and null use generated 4/4 bars;
+        // an explicit array is retained and controls authored measure boundaries.
+        const auto [authored_lines, generated_lines] = bmson_authored_lines(root, options);
+
+        raw_bmson_events_t raw{root, source, options, sound_channels_value};
+        raw.parse_timing();
+        raw.parse_sound();
+        raw.parse_visual();
+        const auto boundaries = create_bmson_measures(raw.all_positions, authored_lines,
+                                                       generated_lines, divisions, options, chart);
+        // Select source lane layout from mode_hint while preserving BMSON x as stable lane IDs.
+        const auto valid_lane_positions = create_bmson_lane_layout(
+            info, raw.raw_channels, options, result, chart, object_ids);
+        bmson_materialization_t materialization{source, info, options, resolution, chart,
+                                                object_ids, catalog, raw, boundaries,
+                                                valid_lane_positions};
+        materialization.materialize_timing();
+        materialization.materialize_visual();
+        materialization.materialize_sound();
 
         song.charts.push_back(std::move(chart));
         auto validation = validate_document(song);

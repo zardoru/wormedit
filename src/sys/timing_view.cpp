@@ -129,6 +129,76 @@ void set_recipe_rational_text(WormUiTimingRecipeRationalText& target, wormedit::
                         static_cast<unsigned long long>(value.denominator));
 }
 
+struct recipe_point_projection_t {
+    std::uint64_t total_rows{};
+    long double minimum{};
+    long double scale{};
+};
+
+template <typename Points>
+auto recipe_bucket_for(const Points& points, std::size_t index,
+                       const recipe_point_projection_t& projection, std::size_t bucket_count)
+    -> std::size_t {
+    const auto fraction = static_cast<long double>(points[index].absolute_row) /
+                          static_cast<long double>(projection.total_rows);
+    return std::min(static_cast<std::size_t>(fraction * bucket_count), bucket_count - 1);
+}
+
+template <typename Points>
+void append_recipe_point(const Points& points, std::size_t index,
+                         std::vector<WormUiTimingRecipePoint>& destination,
+                         const recipe_point_projection_t& projection) {
+    const auto& point = points[index];
+    const auto row_fraction = static_cast<long double>(point.absolute_row) /
+                              static_cast<long double>(projection.total_rows);
+    const auto value_fraction =
+        (static_cast<long double>(point.value) - projection.minimum) / projection.scale;
+    destination.push_back({
+        .row_fraction = static_cast<double>(std::clamp(row_fraction, 0.0L, 1.0L)),
+        .value_fraction = static_cast<double>(std::clamp(value_fraction, 0.0L, 1.0L)),
+    });
+}
+
+template <typename Points>
+void append_recipe_points(const Points& source, std::vector<WormUiTimingRecipePoint>& destination,
+                          const recipe_point_projection_t& projection) {
+    destination.reserve(std::min<std::size_t>(source.size(), WORM_UI_TIMING_RECIPE_POINT_CAPACITY));
+    if (source.size() <= WORM_UI_TIMING_RECIPE_POINT_CAPACITY) {
+        for (std::size_t index = 0; index < source.size(); ++index) {
+            append_recipe_point(source, index, destination, projection);
+        }
+        return;
+    }
+
+    // Preserve the endpoints and extrema in each vertical row bucket.
+    constexpr std::size_t bucket_count = (WORM_UI_TIMING_RECIPE_POINT_CAPACITY - 2) / 4;
+    append_recipe_point(source, 0, destination, projection);
+    for (std::size_t first = 1; first + 1 < source.size();) {
+        const auto bucket = recipe_bucket_for(source, first, projection, bucket_count);
+        auto after = first + 1;
+        auto minimum_index = first;
+        auto maximum_index = first;
+        while (after + 1 < source.size() &&
+               recipe_bucket_for(source, after, projection, bucket_count) == bucket) {
+            if (source[after].value < source[minimum_index].value) {
+                minimum_index = after;
+            }
+            if (source[after].value > source[maximum_index].value) {
+                maximum_index = after;
+            }
+            ++after;
+        }
+        std::array candidates{first, minimum_index, maximum_index, after - 1};
+        std::ranges::sort(candidates);
+        const auto unique_end = std::ranges::unique(candidates).begin();
+        for (auto candidate = candidates.begin(); candidate != unique_end; ++candidate) {
+            append_recipe_point(source, *candidate, destination, projection);
+        }
+        first = after;
+    }
+    append_recipe_point(source, source.size() - 1, destination, projection);
+}
+
 void populate_timing_recipe_view(flattened_workspace_t& flattened,
                                  const wormedit::chart_document_t& chart,
                                  const wormedit::measure_index_t* measures,
@@ -220,67 +290,46 @@ void populate_timing_recipe_view(flattened_workspace_t& flattened,
     include_values(preview->candidate_points.points);
     include_values(preview->effective_output.points);
     const auto scale = maximum > minimum ? maximum - minimum : 1.0L;
-    const auto append_points = [&](const auto& source, auto& destination) {
-        destination.reserve(
-            std::min<std::size_t>(source.size(), WORM_UI_TIMING_RECIPE_POINT_CAPACITY));
-        const auto append = [&](std::size_t source_index) {
-            const auto& point = source[source_index];
-            const auto row_fraction = static_cast<long double>(point.absolute_row) /
-                                      static_cast<long double>(measures->total_rows);
-            const auto value_fraction = (static_cast<long double>(point.value) - minimum) / scale;
-            destination.push_back({
-                .row_fraction = static_cast<double>(std::clamp(row_fraction, 0.0L, 1.0L)),
-                .value_fraction = static_cast<double>(std::clamp(value_fraction, 0.0L, 1.0L)),
-            });
-        };
-        if (source.size() <= WORM_UI_TIMING_RECIPE_POINT_CAPACITY) {
-            for (std::size_t index = 0; index < source.size(); ++index) {
-                append(index);
-            }
-            return;
-        }
-
-        // Keep the first/last point plus the first, last, minimum, and maximum
-        // value in each vertical row bucket. This bounded screen-oriented
-        // decimator preserves narrow extrema and structural boundaries that
-        // uniform index skipping can make disappear.
-        constexpr std::size_t bucket_count = (WORM_UI_TIMING_RECIPE_POINT_CAPACITY - 2) / 4;
-        const auto bucket_for = [&](std::size_t index) {
-            const auto fraction = static_cast<long double>(source[index].absolute_row) /
-                                  static_cast<long double>(measures->total_rows);
-            return std::min(static_cast<std::size_t>(fraction * bucket_count), bucket_count - 1);
-        };
-        append(0);
-        for (std::size_t first = 1; first + 1 < source.size();) {
-            const auto bucket = bucket_for(first);
-            auto after = first + 1;
-            auto minimum_index = first;
-            auto maximum_index = first;
-            while (after + 1 < source.size() && bucket_for(after) == bucket) {
-                if (source[after].value < source[minimum_index].value) {
-                    minimum_index = after;
-                }
-                if (source[after].value > source[maximum_index].value) {
-                    maximum_index = after;
-                }
-                ++after;
-            }
-            std::array candidates{first, minimum_index, maximum_index, after - 1};
-            std::ranges::sort(candidates);
-            const auto unique_end = std::ranges::unique(candidates).begin();
-            for (auto candidate = candidates.begin(); candidate != unique_end; ++candidate) {
-                append(*candidate);
-            }
-            first = after;
-        }
-        append(source.size() - 1);
-    };
-    append_points(preview->candidate_points.points, flattened.timing.recipe_candidate);
-    append_points(preview->effective_output.points, flattened.timing.recipe_composed);
+    const recipe_point_projection_t projection{measures->total_rows, minimum, scale};
+    append_recipe_points(preview->candidate_points.points, flattened.timing.recipe_candidate,
+                         projection);
+    append_recipe_points(preview->effective_output.points, flattened.timing.recipe_composed,
+                         projection);
     view.candidate_points = flattened.timing.recipe_candidate.data();
     view.candidate_point_count = flattened.timing.recipe_candidate.size();
     view.composed_points = flattened.timing.recipe_composed.data();
     view.composed_point_count = flattened.timing.recipe_composed.size();
+}
+
+void append_speed_spans_to_cache(timing_scene_cache_t& cache,
+                                 const wormedit::chart_document_t& chart,
+                                 const wormedit::scroll_speed_index_t& scroll_speed,
+                                 const wormedit::scroll_speed_transition_spans_result_t& spans) {
+    std::unordered_map<std::uint64_t, std::pair<std::uint64_t, std::uint64_t>> speed_orders;
+    speed_orders.reserve(chart.speeds.size());
+    for (std::size_t storage_order = 0; storage_order < chart.speeds.size(); ++storage_order) {
+        const auto& event = chart.speeds[storage_order];
+        speed_orders.emplace(event.id.value,
+                             std::pair{static_cast<std::uint64_t>(event.provenance.source_order),
+                                       static_cast<std::uint64_t>(storage_order)});
+    }
+    cache.speeds.reserve(spans.spans.size());
+    for (std::size_t index = 0; index < spans.spans.size(); ++index) {
+        const auto& speed = scroll_speed.speed_segments[index];
+        const auto& span = spans.spans[index];
+        cache.speeds.push_back({
+            .object_id = speed.source_event.value,
+            .source_order = speed_orders[speed.source_event.value].first,
+            .storage_order = speed_orders[speed.source_event.value].second,
+            .marker_row = static_cast<long double>(speed.begin_row),
+            .affected_begin_row = rational_as_long_double(span.begin_row),
+            .affected_end_row = rational_as_long_double(span.end_row),
+            .multiplier = static_cast<double>(rational_as_long_double(speed.target_multiplier)),
+            .transition_duration = rational_as_double(speed.transition_duration),
+            .transition_is_seconds = speed.transition_is_seconds,
+            .transition_clipped = span.clipped,
+        });
+    }
 }
 
 void populate_speed_cache(timing_scene_cache_t& cache, const wormedit::chart_document_t& chart,
@@ -309,37 +358,89 @@ void populate_speed_cache(timing_scene_cache_t& cache, const wormedit::chart_doc
                                        : spans.diagnostics.front().message;
                 }
                 cache.truncated = spans.truncated;
-                cache.speeds.reserve(spans.spans.size());
-                std::unordered_map<std::uint64_t, std::pair<std::uint64_t, std::uint64_t>>
-                    speed_orders;
-                speed_orders.reserve(chart.speeds.size());
-                for (std::size_t storage_order = 0; storage_order < chart.speeds.size();
-                     ++storage_order) {
-                    const auto& event = chart.speeds[storage_order];
-                    speed_orders.emplace(
-                        event.id.value,
-                        std::pair{static_cast<std::uint64_t>(event.provenance.source_order),
-                                  static_cast<std::uint64_t>(storage_order)});
-                }
-                for (std::size_t index = 0; index < spans.spans.size(); ++index) {
-                    const auto& speed = scroll_speed.index->speed_segments[index];
-                    const auto& span = spans.spans[index];
-                    cache.speeds.push_back({
-                        .object_id = speed.source_event.value,
-                        .source_order = speed_orders[speed.source_event.value].first,
-                        .storage_order = speed_orders[speed.source_event.value].second,
-                        .marker_row = static_cast<long double>(speed.begin_row),
-                        .affected_begin_row = rational_as_long_double(span.begin_row),
-                        .affected_end_row = rational_as_long_double(span.end_row),
-                        .multiplier =
-                            static_cast<double>(rational_as_long_double(speed.target_multiplier)),
-                        .transition_duration = rational_as_double(speed.transition_duration),
-                        .transition_is_seconds = speed.transition_is_seconds,
-                        .transition_clipped = span.clipped,
-                    });
-                }
+                append_speed_spans_to_cache(cache, chart, *scroll_speed.index, spans);
             }
         }
+    }
+}
+
+struct timing_stage_value_context_t {
+    WormUiTimingView& view;
+    const wormedit::chart_document_t& chart;
+    const wormedit::measure_index_t* measures;
+    const wormedit::timing_lane_pseudonote_preview_t& stage;
+    const timing_grid_state_t& timing_grid;
+    std::optional<std::uint64_t> stage_row;
+};
+
+template <typename Value>
+void project_timing_stage_value(timing_stage_value_context_t& context, const Value& value) {
+    auto& view = context.view;
+    const auto set_primary = [&](std::int64_t numerator, std::uint64_t denominator) {
+        (void)std::snprintf(view.stage_primary_numerator_text,
+                            sizeof(view.stage_primary_numerator_text), "%lld",
+                            static_cast<long long>(numerator));
+        (void)std::snprintf(view.stage_primary_denominator_text,
+                            sizeof(view.stage_primary_denominator_text), "%llu",
+                            static_cast<unsigned long long>(denominator));
+    };
+    const auto set_secondary = [&](std::uint64_t numerator, std::uint64_t denominator) {
+        (void)std::snprintf(view.stage_secondary_numerator_text,
+                            sizeof(view.stage_secondary_numerator_text), "%llu",
+                            static_cast<unsigned long long>(numerator));
+        (void)std::snprintf(view.stage_secondary_denominator_text,
+                            sizeof(view.stage_secondary_denominator_text), "%llu",
+                            static_cast<unsigned long long>(denominator));
+    };
+    if constexpr (std::is_same_v<Value, wormedit::timing_bpm_value_t>) {
+        view.stage_value = static_cast<double>(rational_as_long_double(value.beats_per_minute));
+        set_primary(value.beats_per_minute.numerator, value.beats_per_minute.denominator);
+        if (const auto formatted = wormedit::format_bpm_text(value.beats_per_minute)) {
+            (void)std::snprintf(view.stage_primary_decimal_text,
+                                sizeof(view.stage_primary_decimal_text), "%s",
+                                formatted->decimal.c_str());
+            view.stage_primary_decimal_exact = formatted->decimal_exact;
+        }
+    } else if constexpr (std::is_same_v<Value, wormedit::timing_scroll_value_t>) {
+        view.stage_value = static_cast<double>(rational_as_long_double(value.multiplier));
+        set_primary(value.multiplier.numerator, value.multiplier.denominator);
+    } else if constexpr (std::is_same_v<Value, wormedit::timing_speed_value_t>) {
+        view.stage_value = static_cast<double>(rational_as_long_double(value.multiplier));
+        view.stage_secondary_value = rational_as_double(value.transition_beats);
+        view.stage_transition_is_seconds = value.transition_is_seconds;
+        set_primary(value.multiplier.numerator, value.multiplier.denominator);
+        set_secondary(value.transition_beats.numerator, value.transition_beats.denominator);
+    } else if constexpr (std::is_same_v<Value, wormedit::timing_pause_value_t>) {
+        view.stage_value = static_cast<double>(rational_as_long_double(value.duration));
+        view.stage_pause_unit = timing_pause_unit_to_ui(value.source_unit);
+        set_primary(value.duration.numerator, value.duration.denominator);
+    } else if constexpr (std::is_same_v<Value, wormedit::timing_warp_value_t>) {
+        const auto end_row = context.measures
+                                 ? wormedit::absolute_row(*context.measures, value.end)
+                                 : std::nullopt;
+        const auto step = context.stage.existing_event.has_value()
+                              ? std::uint64_t{1}
+                              : timing_stage_grid_step(context.chart,
+                                                       context.timing_grid.active_denominator);
+        const auto length_steps = end_row && context.stage_row &&
+                                          *end_row > *context.stage_row
+                                      ? static_cast<long double>(*end_row - *context.stage_row) /
+                                            static_cast<long double>(step)
+                                      : 1.0L;
+        view.stage_secondary_value = static_cast<double>(length_steps);
+        (void)std::snprintf(view.stage_secondary_numerator_text,
+                            sizeof(view.stage_secondary_numerator_text), "%.0Lf", length_steps);
+        (void)std::snprintf(view.stage_secondary_denominator_text,
+                            sizeof(view.stage_secondary_denominator_text), "1");
+    } else if constexpr (std::is_same_v<Value, wormedit::timing_kiai_value_t>) {
+        view.stage_toggle_primary = value.enabled;
+    } else if constexpr (std::is_same_v<Value, wormedit::timing_anchor_value_t>) {
+        view.stage_toggle_primary = value.locked;
+        (void)std::snprintf(view.stage_primary_numerator_text,
+                            sizeof(view.stage_primary_numerator_text), "%llu",
+                            static_cast<unsigned long long>(value.source_sample_frame));
+        (void)std::snprintf(view.stage_primary_denominator_text,
+                            sizeof(view.stage_primary_denominator_text), "1");
     }
 }
 
@@ -363,81 +464,11 @@ void populate_timing_stage_view(
         view.stage_transition_is_seconds = false;
         view.stage_toggle_primary = false;
         view.stage_pause_unit = WORM_UI_TIMING_PAUSE_SECONDS;
+        timing_stage_value_context_t value_context{view, chart, measures, *stage, timing_grid,
+                                                   stage_row};
         std::visit(
             [&](const auto& value) {
-                using value_t = std::decay_t<decltype(value)>;
-                const auto set_primary = [&](std::int64_t numerator, std::uint64_t denominator) {
-                    (void)std::snprintf(view.stage_primary_numerator_text,
-                                        sizeof(view.stage_primary_numerator_text), "%lld",
-                                        static_cast<long long>(numerator));
-                    (void)std::snprintf(view.stage_primary_denominator_text,
-                                        sizeof(view.stage_primary_denominator_text), "%llu",
-                                        static_cast<unsigned long long>(denominator));
-                };
-                const auto set_secondary = [&](std::uint64_t numerator, std::uint64_t denominator) {
-                    (void)std::snprintf(view.stage_secondary_numerator_text,
-                                        sizeof(view.stage_secondary_numerator_text), "%llu",
-                                        static_cast<unsigned long long>(numerator));
-                    (void)std::snprintf(view.stage_secondary_denominator_text,
-                                        sizeof(view.stage_secondary_denominator_text), "%llu",
-                                        static_cast<unsigned long long>(denominator));
-                };
-                if constexpr (std::is_same_v<value_t, wormedit::timing_bpm_value_t>) {
-                    view.stage_value =
-                        static_cast<double>(rational_as_long_double(value.beats_per_minute));
-                    set_primary(value.beats_per_minute.numerator,
-                                value.beats_per_minute.denominator);
-                    if (const auto formatted = wormedit::format_bpm_text(value.beats_per_minute)) {
-                        (void)std::snprintf(view.stage_primary_decimal_text,
-                                            sizeof(view.stage_primary_decimal_text), "%s",
-                                            formatted->decimal.c_str());
-                        view.stage_primary_decimal_exact = formatted->decimal_exact;
-                    }
-                } else if constexpr (std::is_same_v<value_t, wormedit::timing_scroll_value_t>) {
-                    view.stage_value =
-                        static_cast<double>(rational_as_long_double(value.multiplier));
-                    set_primary(value.multiplier.numerator, value.multiplier.denominator);
-                } else if constexpr (std::is_same_v<value_t, wormedit::timing_speed_value_t>) {
-                    view.stage_value =
-                        static_cast<double>(rational_as_long_double(value.multiplier));
-                    view.stage_secondary_value = rational_as_double(value.transition_beats);
-                    view.stage_transition_is_seconds = value.transition_is_seconds;
-                    set_primary(value.multiplier.numerator, value.multiplier.denominator);
-                    set_secondary(value.transition_beats.numerator,
-                                  value.transition_beats.denominator);
-                } else if constexpr (std::is_same_v<value_t, wormedit::timing_pause_value_t>) {
-                    view.stage_value = static_cast<double>(rational_as_long_double(value.duration));
-                    view.stage_pause_unit = timing_pause_unit_to_ui(value.source_unit);
-                    set_primary(value.duration.numerator, value.duration.denominator);
-                } else if constexpr (std::is_same_v<value_t, wormedit::timing_warp_value_t>) {
-                    const auto end_row =
-                        measures ? wormedit::absolute_row(*measures, value.end) : std::nullopt;
-                    const auto start_row = stage_row;
-                    const auto step =
-                        stage->existing_event.has_value()
-                            ? std::uint64_t{1}
-                            : timing_stage_grid_step(chart, timing_grid.active_denominator);
-                    const auto length_steps =
-                        end_row && start_row && *end_row > *start_row
-                            ? static_cast<long double>(*end_row - *start_row) /
-                                  static_cast<long double>(step)
-                            : 1.0L;
-                    view.stage_secondary_value = static_cast<double>(length_steps);
-                    (void)std::snprintf(view.stage_secondary_numerator_text,
-                                        sizeof(view.stage_secondary_numerator_text), "%.0Lf",
-                                        length_steps);
-                    (void)std::snprintf(view.stage_secondary_denominator_text,
-                                        sizeof(view.stage_secondary_denominator_text), "1");
-                } else if constexpr (std::is_same_v<value_t, wormedit::timing_kiai_value_t>) {
-                    view.stage_toggle_primary = value.enabled;
-                } else if constexpr (std::is_same_v<value_t, wormedit::timing_anchor_value_t>) {
-                    view.stage_toggle_primary = value.locked;
-                    (void)std::snprintf(view.stage_primary_numerator_text,
-                                        sizeof(view.stage_primary_numerator_text), "%llu",
-                                        static_cast<unsigned long long>(value.source_sample_frame));
-                    (void)std::snprintf(view.stage_primary_denominator_text,
-                                        sizeof(view.stage_primary_denominator_text), "1");
-                }
+                project_timing_stage_value(value_context, value);
             },
             stage->value);
         if (!stage->diagnostics.empty()) {
@@ -524,6 +555,35 @@ auto populate_timing_grid_and_speeds(flattened_workspace_t& flattened,
     return true;
 }
 
+void sort_and_spread_timing_markers(std::vector<WormUiTimingMarkerView>& markers) {
+    std::ranges::sort(markers, [](const auto& left, const auto& right) {
+        if (left.lane != right.lane) {
+            return left.lane < right.lane;
+        }
+        if (left.marker_y_pixels != right.marker_y_pixels) {
+            return left.marker_y_pixels < right.marker_y_pixels;
+        }
+        if (left.source_order != right.source_order) {
+            return left.source_order < right.source_order;
+        }
+        return left.storage_order != right.storage_order ? left.storage_order < right.storage_order
+                                                         : left.object_id < right.object_id;
+    });
+    for (std::size_t first = 0; first < markers.size();) {
+        auto after = first + 1;
+        while (after < markers.size() && markers[after].lane == markers[first].lane &&
+               markers[after].marker_y_pixels == markers[first].marker_y_pixels) {
+            ++after;
+        }
+        const auto count = static_cast<double>(after - first);
+        for (auto index = first; index < after; ++index) {
+            markers[index].marker_left_fraction = static_cast<double>(index - first) / count;
+            markers[index].marker_right_fraction = static_cast<double>(index - first + 1) / count;
+        }
+        first = after;
+    }
+}
+
 template <typename RowToPixels>
 void populate_timing_markers(flattened_workspace_t& flattened,
                              const wormedit::chart_document_t& chart,
@@ -584,38 +644,7 @@ void populate_timing_markers(flattened_workspace_t& flattened,
             append_marker(chart.timing_anchors[index].position,
                           chart.timing_anchors[index].id.value, index, index,
                           WORM_UI_TIMING_LANE_ANCHOR);
-        std::ranges::sort(flattened.timing.marker, [](const auto& left, const auto& right) {
-            if (left.lane != right.lane) {
-                return left.lane < right.lane;
-            }
-            if (left.marker_y_pixels != right.marker_y_pixels) {
-                return left.marker_y_pixels < right.marker_y_pixels;
-            }
-            if (left.source_order != right.source_order) {
-                return left.source_order < right.source_order;
-            }
-            return left.storage_order != right.storage_order
-                       ? left.storage_order < right.storage_order
-                       : left.object_id < right.object_id;
-        });
-        for (std::size_t first = 0; first < flattened.timing.marker.size();) {
-            auto after = first + 1;
-            while (after < flattened.timing.marker.size() &&
-                   flattened.timing.marker[after].lane ==
-                       flattened.timing.marker[first].lane &&
-                   flattened.timing.marker[after].marker_y_pixels ==
-                       flattened.timing.marker[first].marker_y_pixels) {
-                ++after;
-            }
-            const auto count = static_cast<double>(after - first);
-            for (auto index = first; index < after; ++index) {
-                flattened.timing.marker[index].marker_left_fraction =
-                    static_cast<double>(index - first) / count;
-                flattened.timing.marker[index].marker_right_fraction =
-                    static_cast<double>(index - first + 1) / count;
-            }
-            first = after;
-        }
+        sort_and_spread_timing_markers(flattened.timing.marker);
     }
 }
 

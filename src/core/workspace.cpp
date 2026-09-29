@@ -348,345 +348,420 @@ auto bounded_utf8_prefix(std::string_view text, std::size_t maximum_bytes) -> st
     return std::string(text.substr(0, length));
 }
 
-auto make_branch_outline(const chart_document_t& chart, const workspace_limits_t& limits)
-    -> workspace_bms_branch_outline_t {
-    workspace_bms_branch_outline_t outline;
-    if (!chart.bms_control_tree.has_value()) {
-        return outline;
-    }
-    outline.available = true;
-
-    const auto maximum_diagnostics = limits.maximum_validation_diagnostics;
-    bool diagnostic_cap_reported{};
-    const auto add_diagnostic = [&outline, maximum_diagnostics, &diagnostic_cap_reported](
-                                    diagnostic_code_t code, std::string message) {
-        if (outline.diagnostics.size() < maximum_diagnostics) {
-            outline.diagnostics.push_back({
-                .severity = diagnostic_severity_t::warning,
-                .code = code,
-                .message = std::move(message),
-            });
-        } else if (!diagnostic_cap_reported) {
-            diagnostic_cap_reported = true;
-            outline.diagnostics_truncated = true;
-            if (!outline.diagnostics.empty()) {
-                outline.diagnostics.back() = {
-                    .severity = diagnostic_severity_t::warning,
-                    .code = diagnostic_code_t::invalid_resolution,
-                    .message = "additional BMS branch outline diagnostics were capped",
-                };
-            }
-        }
-    };
-
-    const auto selection_limit = std::max<std::size_t>(limits.maximum_bms_branch_rows, 1);
+struct branch_outline_context_t {
+    const chart_document_t& chart;
+    const workspace_limits_t& limits;
+    workspace_bms_branch_outline_t& outline;
+    std::size_t maximum_diagnostics{};
     std::unordered_map<std::uint64_t, std::vector<std::size_t>> selections_by_id;
-    const auto indexed_selection_count =
-        std::min(chart.active_branch_selection.size(), selection_limit);
-    selections_by_id.reserve(indexed_selection_count);
-    for (std::size_t index = 0; index < indexed_selection_count; ++index) {
-        const auto& selection = chart.active_branch_selection[index];
-        selections_by_id[selection.branch.value].push_back(index);
-    }
-    if (chart.active_branch_selection.size() > indexed_selection_count) {
-        add_diagnostic(diagnostic_code_t::invalid_resolution,
-                       "BMS branch choice metadata exceeds the outline inspection cap");
-    }
-    std::vector<bool> matched_selections(indexed_selection_count);
-    std::vector<bool> active_selections(indexed_selection_count);
+    std::vector<bool> matched_selections;
+    std::vector<bool> active_selections;
     std::unordered_set<std::uint64_t> diagnosed_selection_ids;
     std::unordered_set<std::uint64_t> node_ids;
     std::size_t stored_text_bytes{};
+    bool diagnostic_cap_reported{};
     bool row_cap_reported{};
     bool depth_cap_reported{};
     bool text_cap_reported{};
 
-    const auto diagnostic_once = [&](bool& reported, diagnostic_code_t code, std::string message) {
-        if (!reported) {
-            reported = true;
-            add_diagnostic(code, std::move(message));
-        }
-    };
+    branch_outline_context_t(const chart_document_t& chart_value,
+                             const workspace_limits_t& limits_value,
+                             workspace_bms_branch_outline_t& outline_value,
+                             std::size_t diagnostic_limit)
+        : chart(chart_value), limits(limits_value), outline(outline_value),
+          maximum_diagnostics(diagnostic_limit) {}
+};
 
-    std::function<void(const bms_control_node_t&, std::size_t, bool, std::optional<std::int64_t>,
-                       bool, bool*)>
-        visit;
-    visit = [&](const bms_control_node_t& node, std::size_t depth, bool active,
-                std::optional<std::int64_t> random_value, bool selected, bool* switch_stopped) {
-        if (outline.rows_truncated) {
-            return;
-        }
-        if (depth > limits.maximum_bms_branch_depth) {
-            outline.rows_truncated = true;
-            outline.choices_truncated = true;
-            diagnostic_once(depth_cap_reported, diagnostic_code_t::invalid_resolution,
-                            "BMS branch outline was truncated at the configured depth cap");
-            return;
-        }
-        if (outline.rows.size() >= limits.maximum_bms_branch_rows) {
-            outline.rows_truncated = true;
-            outline.choices_truncated = true;
-            diagnostic_once(row_cap_reported, diagnostic_code_t::invalid_resolution,
-                            "BMS branch outline was truncated at the configured row cap");
-            return;
-        }
-        if (!node.id || !node_ids.insert(node.id.value).second) {
-            add_diagnostic(diagnostic_code_t::invalid_id,
-                           "BMS branch outline contains a zero or duplicate node ID");
-        }
+struct branch_row_info_t {
+    std::optional<std::size_t> source_order;
+    std::optional<std::int64_t> stored_choice_value;
+    std::optional<std::int64_t> choice_value;
+    bool choice_identity_unambiguous{true};
+};
 
-        auto display_source = std::string_view(node.original_text);
-        std::string fallback_display;
-        if (display_source.empty()) {
-            fallback_display = branch_kind_name(node.kind);
-            if (!node.raw_value.empty()) {
-                fallback_display += " ";
-                fallback_display += node.raw_value;
-            }
-            display_source = fallback_display;
-        }
-        const auto available_text_bytes =
-            limits.maximum_bms_branch_display_bytes > stored_text_bytes
-                ? limits.maximum_bms_branch_display_bytes - stored_text_bytes
-                : 0;
-        const auto text_budget =
-            std::min(limits.maximum_bms_branch_text_bytes, available_text_bytes);
-        auto display_text = bounded_utf8_prefix(display_source, text_budget);
-        const bool display_text_truncated = display_text.size() < display_source.size();
-        if (display_text_truncated) {
-            outline.display_text_truncated = true;
-            diagnostic_once(text_cap_reported, diagnostic_code_t::invalid_resolution,
-                            "BMS branch display text was truncated at the configured byte cap");
-        }
-        stored_text_bytes += display_text.size();
-
-        auto source_order = std::optional<std::size_t>{node.source_order};
-        if (node.kind == bms_control_kind_t::root) {
-            source_order.reset();
-        } else if (node.kind == bms_control_kind_t::if_group && !node.children.empty()) {
-            source_order = node.children.front().source_order;
-        }
-
-        auto stored_choice_value = std::optional<std::int64_t>{};
-        auto choice_value = std::optional<std::int64_t>{};
-        bool choice_identity_unambiguous = true;
-        auto choice_indices = selections_by_id.find(node.id.value);
-        if (is_branch_choice_control(node.kind) && choice_indices != selections_by_id.end()) {
-            for (const auto index : choice_indices->second) {
-                matched_selections[index] = true;
-                active_selections[index] = active_selections[index] || active;
-            }
-            if (choice_indices->second.size() > 1) {
-                choice_identity_unambiguous = false;
-                if (diagnosed_selection_ids.insert(node.id.value).second) {
-                    add_diagnostic(diagnostic_code_t::invalid_id,
-                                   "BMS branch control has duplicate selected values");
-                }
-            } else {
-                stored_choice_value =
-                    chart.active_branch_selection[choice_indices->second.front()].selected_value;
-                if (active) {
-                    choice_value = stored_choice_value;
-                }
-            }
-        }
-
-        outline.rows.push_back({
-            .kind = node.kind,
-            .id = node.id,
-            .depth = depth,
-            .source_order = source_order,
-            .active = active,
-            .selected = selected,
-            .display_text = std::move(display_text),
-            .display_text_truncated = display_text_truncated,
-        });
-
-        const auto recurse_children = [&](bool child_active,
-                                          std::optional<std::int64_t> child_random_value,
-                                          bool* child_switch_stopped) {
-            for (const auto& child : node.children) {
-                if (outline.rows_truncated) {
-                    break;
-                }
-                const bool effective_active =
-                    child_active && (child_switch_stopped == nullptr || !*child_switch_stopped);
-                visit(child, depth + 1, effective_active, child_random_value, false,
-                      child_switch_stopped);
-            }
+auto add_branch_diagnostic(branch_outline_context_t& context, diagnostic_code_t code,
+                           std::string message) -> void {
+    auto& diagnostics = context.outline.diagnostics;
+    if (diagnostics.size() < context.maximum_diagnostics) {
+        diagnostics.push_back({.severity = diagnostic_severity_t::warning,
+                               .code = code,
+                               .message = std::move(message),
+                               .object = {}});
+        return;
+    }
+    if (context.diagnostic_cap_reported)
+        return;
+    context.diagnostic_cap_reported = true;
+    context.outline.diagnostics_truncated = true;
+    if (!diagnostics.empty())
+        diagnostics.back() = {
+            .severity = diagnostic_severity_t::warning,
+            .code = diagnostic_code_t::invalid_resolution,
+            .message = "additional BMS branch outline diagnostics were capped",
+            .object = {},
         };
+}
 
-        if (node.kind == bms_control_kind_t::skip) {
-            if (active && switch_stopped != nullptr) {
-                *switch_stopped = true;
-            }
-            return;
-        }
-        if (node.kind == bms_control_kind_t::random) {
-            const bool valid_choice = active && choice_value.has_value() &&
-                                      node.value.has_value() && *choice_value >= 1 &&
-                                      *choice_value <= *node.value;
-            workspace_bms_branch_choice_t choice{
-                .id = node.id,
-                .kind = node.kind,
-                .source_order = source_order,
-                .active = active,
-                .editable = active && choice_identity_unambiguous && node.value.has_value() &&
-                            *node.value > 0 && (!stored_choice_value.has_value() || valid_choice),
-                .selected_value = stored_choice_value,
-                .can_clear =
-                    active && choice_identity_unambiguous && stored_choice_value.has_value(),
-            };
-            if (choice.editable) {
-                if (!stored_choice_value.has_value()) {
-                    choice.next_value = 1;
-                } else {
-                    if (*stored_choice_value > 1) {
-                        choice.previous_value = *stored_choice_value - 1;
-                    }
-                    if (*stored_choice_value < *node.value) {
-                        choice.next_value = *stored_choice_value + 1;
-                    }
-                }
-            }
-            outline.choices.push_back(std::move(choice));
-            outline.rows.back().selected = valid_choice;
-            if (active && choice_value.has_value() && !valid_choice) {
-                add_diagnostic(diagnostic_code_t::invalid_resolution,
-                               "BMS RANDOM selection is outside the declared range");
-            }
-            if (valid_choice) {
-                const auto indices = selections_by_id.find(node.id.value);
-                if (indices != selections_by_id.end() && indices->second.size() == 1) {
-                    active_selections[indices->second.front()] = true;
-                }
-            }
-            recurse_children(valid_choice, valid_choice ? choice_value : std::nullopt,
-                             switch_stopped);
-            return;
-        }
-        if (node.kind == bms_control_kind_t::if_group) {
-            const bms_control_node_t* selected_branch{};
-            if (active && random_value.has_value()) {
-                for (const auto& child : node.children) {
-                    if ((child.kind == bms_control_kind_t::if_branch ||
-                         child.kind == bms_control_kind_t::else_if_branch) &&
-                        child.value == random_value) {
-                        selected_branch = &child;
-                        break;
-                    }
-                    if (child.kind == bms_control_kind_t::else_branch) {
-                        selected_branch = &child;
-                    }
-                }
-            }
-            outline.rows.back().selected = selected_branch != nullptr;
-            for (const auto& child : node.children) {
-                if (outline.rows_truncated) {
-                    break;
-                }
-                visit(child, depth + 1, active && &child == selected_branch, random_value,
-                      &child == selected_branch, switch_stopped);
-            }
-            return;
-        }
-        if (node.kind == bms_control_kind_t::switch_block) {
-            const bms_control_node_t* selected_branch{};
-            const bms_control_node_t* fallback_branch{};
-            std::vector<std::int64_t> case_values;
-            bool has_default{};
-            if (active && choice_value.has_value()) {
-                for (const auto& child : node.children) {
-                    if (child.kind == bms_control_kind_t::case_branch &&
-                        child.value == choice_value) {
-                        selected_branch = &child;
-                        break;
-                    }
-                    if (child.kind == bms_control_kind_t::default_branch) {
-                        fallback_branch = &child;
-                    }
-                }
-                if (selected_branch == nullptr) {
-                    selected_branch = fallback_branch;
-                }
-                if (selected_branch == nullptr) {
-                    add_diagnostic(diagnostic_code_t::invalid_resolution,
-                                   "BMS SWITCH selection has no matching CASE or DEFAULT");
-                }
-            }
-            for (const auto& child : node.children) {
-                if (child.kind == bms_control_kind_t::case_branch && child.value.has_value()) {
-                    case_values.push_back(*child.value);
-                } else if (child.kind == bms_control_kind_t::default_branch) {
-                    has_default = true;
-                }
-            }
-            std::ranges::sort(case_values);
-            case_values.erase(std::unique(case_values.begin(), case_values.end()),
-                              case_values.end());
-            const auto stored_matches_case =
-                stored_choice_value.has_value() &&
-                std::ranges::find(case_values, *stored_choice_value) != case_values.end();
-            const auto stored_is_valid =
-                !stored_choice_value.has_value() || stored_matches_case || has_default;
-            workspace_bms_branch_choice_t choice{
-                .id = node.id,
-                .kind = node.kind,
-                .source_order = source_order,
-                .active = active,
-                .editable = active && choice_identity_unambiguous && stored_is_valid &&
-                            (!case_values.empty() || has_default),
-                .selected_value = stored_choice_value,
-                .can_clear =
-                    active && choice_identity_unambiguous && stored_choice_value.has_value(),
-            };
-            if (choice.editable) {
-                if (!stored_choice_value.has_value()) {
-                    choice.next_value =
-                        case_values.empty() ? std::optional<std::int64_t>{0} : case_values.front();
-                } else {
-                    const auto lower = std::ranges::lower_bound(case_values, *stored_choice_value);
-                    if (lower != case_values.begin()) {
-                        choice.previous_value = *std::prev(lower);
-                    }
-                    const auto upper = std::ranges::upper_bound(case_values, *stored_choice_value);
-                    if (upper != case_values.end()) {
-                        choice.next_value = *upper;
-                    }
-                }
-            }
-            outline.choices.push_back(std::move(choice));
-            outline.rows.back().selected = selected_branch != nullptr;
-            bool entered{};
-            bool stopped{};
-            for (const auto& child : node.children) {
-                if (outline.rows_truncated) {
-                    break;
-                }
-                if (is_switch_branch(child.kind)) {
-                    entered = entered || &child == selected_branch;
-                }
-                const bool child_active = active && entered && !stopped;
-                visit(child, depth + 1, child_active, random_value, &child == selected_branch,
-                      &stopped);
-            }
-            return;
-        }
-        recurse_children(active, random_value, switch_stopped);
-    };
+auto add_branch_diagnostic_once(branch_outline_context_t& context, bool& reported,
+                                diagnostic_code_t code, std::string message) -> void {
+    if (reported)
+        return;
+    reported = true;
+    add_branch_diagnostic(context, code, std::move(message));
+}
 
-    visit(*chart.bms_control_tree, 0, true, std::nullopt, false, nullptr);
-    if (!outline.rows_truncated) {
-        for (std::size_t index = 0; index < indexed_selection_count; ++index) {
-            if (!matched_selections[index]) {
-                add_diagnostic(diagnostic_code_t::invalid_id,
-                               "BMS branch choice refers to a missing control node");
-            } else if (!active_selections[index]) {
-                add_diagnostic(diagnostic_code_t::invalid_id,
-                               "BMS branch choice is stored beneath an inactive branch");
-            }
+auto index_branch_selections(branch_outline_context_t& context) -> void {
+    const auto limit = std::max<std::size_t>(context.limits.maximum_bms_branch_rows, 1);
+    const auto count = std::min(context.chart.active_branch_selection.size(), limit);
+    context.selections_by_id.reserve(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& selection = context.chart.active_branch_selection[index];
+        context.selections_by_id[selection.branch.value].push_back(index);
+    }
+    if (context.chart.active_branch_selection.size() > count)
+        add_branch_diagnostic(context, diagnostic_code_t::invalid_resolution,
+                              "BMS branch choice metadata exceeds the outline inspection cap");
+    context.matched_selections.resize(count);
+    context.active_selections.resize(count);
+}
+
+auto branch_row_allowed(branch_outline_context_t& context, std::size_t depth) -> bool {
+    if (context.outline.rows_truncated)
+        return false;
+    if (depth > context.limits.maximum_bms_branch_depth) {
+        context.outline.rows_truncated = true;
+        context.outline.choices_truncated = true;
+        add_branch_diagnostic_once(context, context.depth_cap_reported,
+                                   diagnostic_code_t::invalid_resolution,
+                                   "BMS branch outline was truncated at the configured depth cap");
+        return false;
+    }
+    if (context.outline.rows.size() >= context.limits.maximum_bms_branch_rows) {
+        context.outline.rows_truncated = true;
+        context.outline.choices_truncated = true;
+        add_branch_diagnostic_once(context, context.row_cap_reported,
+                                   diagnostic_code_t::invalid_resolution,
+                                   "BMS branch outline was truncated at the configured row cap");
+        return false;
+    }
+    return true;
+}
+
+auto prepare_branch_row(branch_outline_context_t& context, const bms_control_node_t& node,
+                        std::size_t depth, bool active, bool selected)
+    -> std::optional<branch_row_info_t> {
+    auto& outline = context.outline;
+    if (!branch_row_allowed(context, depth))
+        return std::nullopt;
+    if (!node.id || !context.node_ids.insert(node.id.value).second)
+        add_branch_diagnostic(context, diagnostic_code_t::invalid_id,
+                              "BMS branch outline contains a zero or duplicate node ID");
+
+    auto display_source = std::string_view(node.original_text);
+    std::string fallback_display;
+    if (display_source.empty()) {
+        fallback_display = branch_kind_name(node.kind);
+        if (!node.raw_value.empty()) {
+            fallback_display += " ";
+            fallback_display += node.raw_value;
+        }
+        display_source = fallback_display;
+    }
+    const auto available_text_bytes = context.limits.maximum_bms_branch_display_bytes >
+                                              context.stored_text_bytes
+        ? context.limits.maximum_bms_branch_display_bytes - context.stored_text_bytes
+        : 0;
+    const auto text_budget = std::min(context.limits.maximum_bms_branch_text_bytes,
+                                      available_text_bytes);
+    auto display_text = bounded_utf8_prefix(display_source, text_budget);
+    const bool display_text_truncated = display_text.size() < display_source.size();
+    if (display_text_truncated) {
+        outline.display_text_truncated = true;
+        add_branch_diagnostic_once(context, context.text_cap_reported,
+                                   diagnostic_code_t::invalid_resolution,
+                                   "BMS branch display text was truncated at the configured byte cap");
+    }
+    context.stored_text_bytes += display_text.size();
+    auto source_order = std::optional<std::size_t>{node.source_order};
+    if (node.kind == bms_control_kind_t::root)
+        source_order.reset();
+    else if (node.kind == bms_control_kind_t::if_group && !node.children.empty())
+        source_order = node.children.front().source_order;
+
+    branch_row_info_t info{.source_order = source_order,
+                           .stored_choice_value = {},
+                           .choice_value = {},
+                           .choice_identity_unambiguous = true};
+    const auto choice_indices = context.selections_by_id.find(node.id.value);
+    if (is_branch_choice_control(node.kind) && choice_indices != context.selections_by_id.end()) {
+        for (const auto index : choice_indices->second) {
+            context.matched_selections[index] = true;
+            context.active_selections[index] = context.active_selections[index] || active;
+        }
+        if (choice_indices->second.size() > 1) {
+            info.choice_identity_unambiguous = false;
+            if (context.diagnosed_selection_ids.insert(node.id.value).second)
+                add_branch_diagnostic(context, diagnostic_code_t::invalid_id,
+                                      "BMS branch control has duplicate selected values");
+        } else {
+            info.stored_choice_value = context.chart.active_branch_selection[
+                choice_indices->second.front()].selected_value;
+            if (active)
+                info.choice_value = info.stored_choice_value;
         }
     }
+    outline.rows.push_back({.kind = node.kind,
+                            .id = node.id,
+                            .depth = depth,
+                            .source_order = source_order,
+                            .active = active,
+                            .selected = selected,
+                            .display_text = std::move(display_text),
+                            .display_text_truncated = display_text_truncated});
+    return info;
+}
+
+void visit_branch_node(branch_outline_context_t& context, const bms_control_node_t& node,
+                       std::size_t depth, bool active,
+                       std::optional<std::int64_t> random_value, bool selected,
+                       bool* switch_stopped);
+
+auto visit_branch_children(branch_outline_context_t& context,
+                           const bms_control_node_t& node, std::size_t depth,
+                           bool active, std::optional<std::int64_t> random_value,
+                           bool* switch_stopped) -> void {
+    for (const auto& child : node.children) {
+        if (context.outline.rows_truncated)
+            break;
+        const bool effective_active = active &&
+            (switch_stopped == nullptr || !*switch_stopped);
+        visit_branch_node(context, child, depth + 1, effective_active,
+                          random_value, false, switch_stopped);
+    }
+}
+
+auto append_random_choice(branch_outline_context_t& context, const bms_control_node_t& node,
+                          const branch_row_info_t& info, std::size_t depth, bool active,
+                          bool* switch_stopped) -> void {
+    const bool valid_choice = active && info.choice_value && node.value &&
+        *info.choice_value >= 1 && *info.choice_value <= *node.value;
+    workspace_bms_branch_choice_t choice{
+        .id = node.id,
+        .kind = node.kind,
+        .source_order = info.source_order,
+        .active = active,
+        .editable = active && info.choice_identity_unambiguous && node.value &&
+                    *node.value > 0 && (!info.stored_choice_value || valid_choice),
+        .selected_value = info.stored_choice_value,
+        .previous_value = {},
+        .next_value = {},
+        .can_clear = active && info.choice_identity_unambiguous && info.stored_choice_value,
+    };
+    if (choice.editable) {
+        if (!info.stored_choice_value) {
+            choice.next_value = 1;
+        } else {
+            if (*info.stored_choice_value > 1)
+                choice.previous_value = *info.stored_choice_value - 1;
+            if (*info.stored_choice_value < *node.value)
+                choice.next_value = *info.stored_choice_value + 1;
+        }
+    }
+    context.outline.choices.push_back(std::move(choice));
+    context.outline.rows.back().selected = valid_choice;
+    if (active && info.choice_value && !valid_choice)
+        add_branch_diagnostic(context, diagnostic_code_t::invalid_resolution,
+                              "BMS RANDOM selection is outside the declared range");
+    if (valid_choice) {
+        const auto indices = context.selections_by_id.find(node.id.value);
+        if (indices != context.selections_by_id.end() && indices->second.size() == 1)
+            context.active_selections[indices->second.front()] = true;
+    }
+    visit_branch_children(context, node, depth, valid_choice,
+                          valid_choice ? info.choice_value : std::nullopt, switch_stopped);
+}
+
+auto selected_if_branch(const bms_control_node_t& node, bool active,
+                        std::optional<std::int64_t> random_value)
+    -> const bms_control_node_t* {
+    const bms_control_node_t* selected{};
+    if (!active || !random_value)
+        return selected;
+    for (const auto& child : node.children) {
+        if ((child.kind == bms_control_kind_t::if_branch ||
+             child.kind == bms_control_kind_t::else_if_branch) && child.value == random_value) {
+            selected = &child;
+            break;
+        }
+        if (child.kind == bms_control_kind_t::else_branch)
+            selected = &child;
+    }
+    return selected;
+}
+
+auto append_if_branches(branch_outline_context_t& context, const bms_control_node_t& node,
+                        std::size_t depth, bool active,
+                        std::optional<std::int64_t> random_value,
+                        bool* switch_stopped) -> void {
+    const auto selected = selected_if_branch(node, active, random_value);
+    context.outline.rows.back().selected = selected != nullptr;
+    for (const auto& child : node.children) {
+        if (context.outline.rows_truncated)
+            break;
+        const bool is_selected = &child == selected;
+        visit_branch_node(context, child, depth + 1, active && is_selected,
+                          random_value, is_selected, switch_stopped);
+    }
+}
+
+auto selected_switch_branch(branch_outline_context_t& context,
+                            const bms_control_node_t& node, bool active,
+                            std::optional<std::int64_t> choice_value)
+    -> const bms_control_node_t* {
+    const bms_control_node_t* selected{};
+    const bms_control_node_t* fallback{};
+    if (!active || !choice_value)
+        return selected;
+    for (const auto& child : node.children) {
+        if (child.kind == bms_control_kind_t::case_branch && child.value == choice_value) {
+            selected = &child;
+            break;
+        }
+        if (child.kind == bms_control_kind_t::default_branch)
+            fallback = &child;
+    }
+    if (!selected)
+        selected = fallback;
+    if (!selected)
+        add_branch_diagnostic(context, diagnostic_code_t::invalid_resolution,
+                              "BMS SWITCH selection has no matching CASE or DEFAULT");
+    return selected;
+}
+
+auto switch_case_values(const bms_control_node_t& node, bool& has_default)
+    -> std::vector<std::int64_t> {
+    std::vector<std::int64_t> values;
+    for (const auto& child : node.children) {
+        if (child.kind == bms_control_kind_t::case_branch && child.value)
+            values.push_back(*child.value);
+        else if (child.kind == bms_control_kind_t::default_branch)
+            has_default = true;
+    }
+    std::ranges::sort(values);
+    values.erase(std::unique(values.begin(), values.end()), values.end());
+    return values;
+}
+
+auto make_switch_choice(const bms_control_node_t& node, const branch_row_info_t& info,
+                        bool active, const std::vector<std::int64_t>& case_values,
+                        bool has_default) -> workspace_bms_branch_choice_t {
+    const bool stored_matches_case = info.stored_choice_value &&
+        std::ranges::find(case_values, *info.stored_choice_value) != case_values.end();
+    const bool stored_is_valid = !info.stored_choice_value || stored_matches_case || has_default;
+    workspace_bms_branch_choice_t choice{
+        .id = node.id,
+        .kind = node.kind,
+        .source_order = info.source_order,
+        .active = active,
+        .editable = active && info.choice_identity_unambiguous && stored_is_valid &&
+                    (!case_values.empty() || has_default),
+        .selected_value = info.stored_choice_value,
+        .previous_value = {},
+        .next_value = {},
+        .can_clear = active && info.choice_identity_unambiguous && info.stored_choice_value,
+    };
+    if (!choice.editable)
+        return choice;
+    if (!info.stored_choice_value) {
+        choice.next_value = case_values.empty() ? std::optional<std::int64_t>{0}
+                                               : std::optional{case_values.front()};
+        return choice;
+    }
+    const auto lower = std::ranges::lower_bound(case_values, *info.stored_choice_value);
+    if (lower != case_values.begin())
+        choice.previous_value = *std::prev(lower);
+    const auto upper = std::ranges::upper_bound(case_values, *info.stored_choice_value);
+    if (upper != case_values.end())
+        choice.next_value = *upper;
+    return choice;
+}
+
+auto append_switch_branches(branch_outline_context_t& context, const bms_control_node_t& node,
+                            const branch_row_info_t& info, std::size_t depth, bool active,
+                            std::optional<std::int64_t> random_value,
+                            bool* switch_stopped) -> void {
+    const auto selected = selected_switch_branch(context, node, active, info.choice_value);
+    bool has_default{};
+    const auto cases = switch_case_values(node, has_default);
+    context.outline.choices.push_back(
+        make_switch_choice(node, info, active, cases, has_default));
+    context.outline.rows.back().selected = selected != nullptr;
+    bool entered{};
+    bool stopped{};
+    for (const auto& child : node.children) {
+        if (context.outline.rows_truncated)
+            break;
+        if (is_switch_branch(child.kind))
+            entered = entered || &child == selected;
+        const bool child_active = active && entered && !stopped;
+        visit_branch_node(context, child, depth + 1, child_active, random_value,
+                          &child == selected, &stopped);
+    }
+    (void)switch_stopped;
+}
+
+auto visit_branch_node(branch_outline_context_t& context, const bms_control_node_t& node,
+                       std::size_t depth, bool active,
+                       std::optional<std::int64_t> random_value, bool selected,
+                       bool* switch_stopped) -> void {
+    auto info = prepare_branch_row(context, node, depth, active, selected);
+    if (!info)
+        return;
+    if (node.kind == bms_control_kind_t::skip) {
+        if (active && switch_stopped)
+            *switch_stopped = true;
+        return;
+    }
+    if (node.kind == bms_control_kind_t::random) {
+        append_random_choice(context, node, *info, depth, active, switch_stopped);
+        return;
+    }
+    if (node.kind == bms_control_kind_t::if_group) {
+        append_if_branches(context, node, depth, active, random_value, switch_stopped);
+        return;
+    }
+    if (node.kind == bms_control_kind_t::switch_block) {
+        append_switch_branches(context, node, *info, depth, active, random_value,
+                               switch_stopped);
+        return;
+    }
+    visit_branch_children(context, node, depth, active, random_value, switch_stopped);
+}
+
+auto report_unmatched_branch_selections(branch_outline_context_t& context) -> void {
+    if (context.outline.rows_truncated)
+        return;
+    for (std::size_t index = 0; index < context.matched_selections.size(); ++index) {
+        if (!context.matched_selections[index])
+            add_branch_diagnostic(context, diagnostic_code_t::invalid_id,
+                                  "BMS branch choice refers to a missing control node");
+        else if (!context.active_selections[index])
+            add_branch_diagnostic(context, diagnostic_code_t::invalid_id,
+                                  "BMS branch choice is stored beneath an inactive branch");
+    }
+}
+
+auto make_branch_outline(const chart_document_t& chart, const workspace_limits_t& limits)
+    -> workspace_bms_branch_outline_t {
+    workspace_bms_branch_outline_t outline;
+    if (!chart.bms_control_tree)
+        return outline;
+    outline.available = true;
+    branch_outline_context_t context{chart, limits, outline,
+                                     limits.maximum_validation_diagnostics};
+    index_branch_selections(context);
+    visit_branch_node(context, *chart.bms_control_tree, 0, true, std::nullopt, false, nullptr);
+    report_unmatched_branch_selections(context);
     return outline;
 }
 
@@ -730,19 +805,35 @@ auto make_workspace_controller(const document_history_t& history, workspace_limi
     return result;
 }
 
-auto rebind_workspace(workspace_controller_t& workspace, const song_document_t& document)
-    -> workspace_action_result_t {
-    workspace_action_result_t result;
-    if (document.id != workspace.song) {
-        add_error(result.diagnostics, diagnostic_code_t::invalid_id,
-                  "workspace cannot be rebound to a different song identity");
-        return result;
+auto rebind_transport(workspace_transport_t& transport, const song_document_t& document) -> void {
+    if (!transport.audio_asset.has_value()) {
+        return;
     }
-    result.diagnostics = validate_binding_bounds(document, workspace.limits);
-    if (has_errors(result.diagnostics)) {
-        return result;
+    const auto* asset = find_audio_asset(document, *transport.audio_asset);
+    if (asset == nullptr) {
+        transport = {};
+        return;
     }
+    const auto frame_count = asset->stream.frame_count;
+    if (frame_count.has_value()) {
+        transport.position_frame = std::min(transport.position_frame, *frame_count);
+    }
+    if (transport.selected_clip.has_value()) {
+        const auto clip = find_clip(document, *transport.selected_clip);
+        if (clip.clip == nullptr || clip.duplicate || clip.clip->source != asset->id ||
+            !audio_clip_is_valid_for_asset(*clip.clip, *asset)) {
+            transport.selected_clip.reset();
+        }
+    }
+    if (transport.loop_frames.has_value()) {
+        const auto [begin, end] = *transport.loop_frames;
+        if (begin >= end || (frame_count.has_value() && end > *frame_count)) {
+            transport.loop_frames.reset();
+        }
+    }
+}
 
+auto rebind_selection(workspace_controller_t& workspace, const song_document_t& document) -> void {
     if (!index_of(workspace.active_tab).has_value() ||
         !workspace_tab_enabled(workspace.active_tab)) {
         workspace.active_tab = workspace_tab_t::setup;
@@ -757,7 +848,6 @@ auto rebind_workspace(workspace_controller_t& workspace, const song_document_t& 
         workspace.comparison_charts =
             default_comparison_charts(document, workspace.limits.maximum_comparison_charts);
     }
-
     for (auto& focus : workspace.tab_focus) {
         if (focus.region.size() > workspace.limits.maximum_focus_region_bytes ||
             !contains_focus_target(document, focus.target)) {
@@ -771,31 +861,23 @@ auto rebind_workspace(workspace_controller_t& workspace, const song_document_t& 
         })) {
         workspace.selected_visual_asset.reset();
     }
+}
 
-    if (workspace.transport.audio_asset.has_value() &&
-        find_audio_asset(document, *workspace.transport.audio_asset) == nullptr) {
-        workspace.transport = {};
-    } else if (workspace.transport.audio_asset.has_value()) {
-        const auto* asset = find_audio_asset(document, *workspace.transport.audio_asset);
-        const auto frame_count = asset->stream.frame_count;
-        if (frame_count.has_value()) {
-            workspace.transport.position_frame =
-                std::min(workspace.transport.position_frame, *frame_count);
-        }
-        if (workspace.transport.selected_clip.has_value()) {
-            const auto clip = find_clip(document, *workspace.transport.selected_clip);
-            if (clip.clip == nullptr || clip.duplicate || clip.clip->source != asset->id ||
-                !audio_clip_is_valid_for_asset(*clip.clip, *asset)) {
-                workspace.transport.selected_clip.reset();
-            }
-        }
-        if (workspace.transport.loop_frames.has_value()) {
-            const auto [begin, end] = *workspace.transport.loop_frames;
-            if (begin >= end || (frame_count.has_value() && end > *frame_count)) {
-                workspace.transport.loop_frames.reset();
-            }
-        }
+auto rebind_workspace(workspace_controller_t& workspace, const song_document_t& document)
+    -> workspace_action_result_t {
+    workspace_action_result_t result;
+    if (document.id != workspace.song) {
+        add_error(result.diagnostics, diagnostic_code_t::invalid_id,
+                  "workspace cannot be rebound to a different song identity");
+        return result;
     }
+    result.diagnostics = validate_binding_bounds(document, workspace.limits);
+    if (has_errors(result.diagnostics)) {
+        return result;
+    }
+
+    rebind_selection(workspace, document);
+    rebind_transport(workspace.transport, document);
 
     workspace.document_revision = document.revision;
     result.applied = true;
@@ -814,6 +896,187 @@ auto rebind_workspace(workspace_controller_t& workspace, const document_history_
     return result;
 }
 
+struct workspace_action_context_t {
+    workspace_controller_t& proposal;
+    const song_document_t& document;
+    diagnostic_list_t& diagnostics;
+
+    auto reject(diagnostic_code_t code, std::string message) -> void {
+        add_error(diagnostics, code, std::move(message));
+    }
+};
+
+auto apply_action(workspace_action_context_t& context, const workspace_switch_tab_action_t& action)
+    -> void {
+    if (!index_of(action.tab).has_value()) {
+        context.reject(diagnostic_code_t::invalid_id, "workspace tab value is invalid");
+    } else if (!workspace_tab_enabled(action.tab)) {
+        context.reject(diagnostic_code_t::unsupported_feature,
+                       "storyboard editing is not available yet");
+    } else {
+        context.proposal.active_tab = action.tab;
+    }
+}
+
+auto apply_action(workspace_action_context_t& context,
+                  const workspace_select_chart_action_t& action) -> void {
+    if (!action.chart) {
+        context.reject(diagnostic_code_t::invalid_id, "selected chart uses the reserved zero ID");
+    } else if (find_chart(context.document, action.chart) == nullptr) {
+        context.reject(diagnostic_code_t::invalid_id,
+                       "selected chart does not exist in the bound document");
+    } else {
+        context.proposal.selected_chart = action.chart;
+    }
+}
+
+auto apply_action(workspace_action_context_t& context,
+                  const workspace_set_comparison_charts_action_t& action) -> void {
+    if (action.charts.size() < 2 ||
+        action.charts.size() > context.proposal.limits.maximum_comparison_charts) {
+        context.reject(diagnostic_code_t::invalid_resolution,
+                       "comparison requires two or more charts within its configured cap");
+        return;
+    }
+    std::unordered_set<std::uint64_t> charts;
+    for (const auto chart : action.charts) {
+        if (!chart || find_chart(context.document, chart) == nullptr ||
+            !charts.insert(chart.value).second) {
+            context.reject(diagnostic_code_t::invalid_id,
+                           "comparison charts must be present and unique");
+            return;
+        }
+    }
+    context.proposal.comparison_charts = action.charts;
+}
+
+auto apply_action(workspace_action_context_t& context, const workspace_set_focus_action_t& action)
+    -> void {
+    const auto tab_index = index_of(action.tab);
+    if (!tab_index.has_value() || !workspace_tab_enabled(action.tab)) {
+        context.reject(diagnostic_code_t::unsupported_feature,
+                       "focus cannot be assigned to an invalid or disabled tab");
+    } else if (action.region.empty() ||
+               action.region.size() > context.proposal.limits.maximum_focus_region_bytes) {
+        context.reject(diagnostic_code_t::invalid_resolution,
+                       "logical focus region is empty or exceeds its byte cap");
+    } else if (!contains_focus_target(context.document, action.target)) {
+        context.reject(diagnostic_code_t::invalid_id,
+                       "logical focus target does not exist in the bound document");
+    } else {
+        context.proposal.tab_focus[*tab_index] = {.region = action.region, .target = action.target};
+    }
+}
+
+auto apply_action(workspace_action_context_t& context, const workspace_clear_focus_action_t& action)
+    -> void {
+    const auto tab_index = index_of(action.tab);
+    if (!tab_index.has_value()) {
+        context.reject(diagnostic_code_t::invalid_id, "workspace tab value is invalid");
+    } else {
+        context.proposal.tab_focus[*tab_index] = {};
+    }
+}
+
+auto apply_action(workspace_action_context_t& context,
+                  const workspace_select_audio_asset_action_t& action) -> void {
+    if (action.asset.has_value() &&
+        (!*action.asset || find_audio_asset(context.document, *action.asset) == nullptr)) {
+        context.reject(diagnostic_code_t::invalid_id,
+                       "selected audio asset does not exist in the bound document");
+    } else if (context.proposal.transport.audio_asset != action.asset) {
+        context.proposal.transport = {};
+        context.proposal.transport.audio_asset = action.asset;
+    }
+}
+
+auto apply_action(workspace_action_context_t& context,
+                  const workspace_select_visual_asset_action_t& action) -> void {
+    if (action.asset &&
+        (!*action.asset ||
+         std::ranges::none_of(context.document.visual_assets, [&](const auto& asset) {
+             return asset.id == *action.asset && asset.kind == asset_kind_t::image;
+         }))) {
+        context.reject(diagnostic_code_t::invalid_id,
+                       "selected image asset does not exist in the bound document");
+    } else {
+        context.proposal.selected_visual_asset = action.asset;
+    }
+}
+
+auto apply_action(workspace_action_context_t& context, const workspace_select_clip_action_t& action)
+    -> void {
+    if (!action.clip.has_value()) {
+        context.proposal.transport.selected_clip.reset();
+        return;
+    }
+    const auto clip = find_clip(context.document, *action.clip);
+    if (!*action.clip || clip.clip == nullptr || clip.duplicate) {
+        context.reject(diagnostic_code_t::invalid_id,
+                       "selected audio clip does not exist in the bound document");
+        return;
+    }
+    const auto* asset = find_audio_asset(context.document, clip.clip->source);
+    if (asset == nullptr || !audio_clip_is_valid_for_asset(*clip.clip, *asset)) {
+        context.reject(diagnostic_code_t::invalid_id,
+                       "selected audio clip refers to an invalid source range");
+        return;
+    }
+    context.proposal.transport.audio_asset = asset->id;
+    context.proposal.transport.selected_clip = action.clip;
+    context.proposal.transport.position_frame = clip.clip->begin_frame;
+    context.proposal.transport.playing = false;
+    context.proposal.transport.loop_frames.reset();
+}
+
+auto apply_action(workspace_action_context_t& context, const workspace_seek_action_t& action)
+    -> void {
+    if (!context.proposal.transport.audio_asset.has_value()) {
+        context.reject(diagnostic_code_t::invalid_id, "cannot seek without a selected audio asset");
+        return;
+    }
+    const auto* asset = find_audio_asset(context.document, *context.proposal.transport.audio_asset);
+    if (asset == nullptr ||
+        (asset->stream.frame_count.has_value() && action.frame > *asset->stream.frame_count)) {
+        context.reject(diagnostic_code_t::invalid_resolution,
+                       "seek frame is outside the selected audio asset");
+    } else {
+        context.proposal.transport.position_frame = action.frame;
+    }
+}
+
+auto apply_action(workspace_action_context_t& context, const workspace_set_playing_action_t& action)
+    -> void {
+    if (action.playing && !context.proposal.transport.audio_asset.has_value()) {
+        context.reject(diagnostic_code_t::invalid_id,
+                       "cannot start transport without a selected audio asset");
+    } else {
+        context.proposal.transport.playing = action.playing;
+    }
+}
+
+auto apply_action(workspace_action_context_t& context, const workspace_set_loop_action_t& action)
+    -> void {
+    if (!action.frames.has_value()) {
+        context.proposal.transport.loop_frames.reset();
+        return;
+    }
+    if (!context.proposal.transport.audio_asset.has_value()) {
+        context.reject(diagnostic_code_t::invalid_id,
+                       "cannot set a loop without a selected audio asset");
+        return;
+    }
+    const auto [begin, end] = *action.frames;
+    const auto* asset = find_audio_asset(context.document, *context.proposal.transport.audio_asset);
+    if (begin >= end || asset == nullptr ||
+        (asset->stream.frame_count.has_value() && end > *asset->stream.frame_count)) {
+        context.reject(diagnostic_code_t::invalid_resolution,
+                       "loop frame range is empty or outside the selected audio asset");
+    } else {
+        context.proposal.transport.loop_frames = action.frames;
+    }
+}
+
 auto apply_workspace_action(workspace_controller_t& workspace, const song_document_t& document,
                             std::uint64_t expected_revision, const workspace_action_t& action)
     -> workspace_action_result_t {
@@ -826,162 +1089,9 @@ auto apply_workspace_action(workspace_controller_t& workspace, const song_docume
     }
 
     auto proposal = workspace;
-    const auto reject = [&result](diagnostic_code_t code, std::string message) {
-        add_error(result.diagnostics, code, std::move(message));
-    };
-    std::visit(
-        [&](const auto& typed_action) {
-            using action_t = std::remove_cvref_t<decltype(typed_action)>;
-            if constexpr (std::is_same_v<action_t, workspace_switch_tab_action_t>) {
-                if (!index_of(typed_action.tab).has_value()) {
-                    reject(diagnostic_code_t::invalid_id, "workspace tab value is invalid");
-                } else if (!workspace_tab_enabled(typed_action.tab)) {
-                    reject(diagnostic_code_t::unsupported_feature,
-                           "storyboard editing is not available yet");
-                } else {
-                    proposal.active_tab = typed_action.tab;
-                }
-            } else if constexpr (std::is_same_v<action_t, workspace_select_chart_action_t>) {
-                if (!typed_action.chart) {
-                    reject(diagnostic_code_t::invalid_id,
-                           "selected chart uses the reserved zero ID");
-                } else if (find_chart(document, typed_action.chart) == nullptr) {
-                    reject(diagnostic_code_t::invalid_id,
-                           "selected chart does not exist in the bound document");
-                } else {
-                    proposal.selected_chart = typed_action.chart;
-                }
-            } else if constexpr (std::is_same_v<action_t,
-                                                workspace_set_comparison_charts_action_t>) {
-                if (typed_action.charts.size() < 2 ||
-                    typed_action.charts.size() > workspace.limits.maximum_comparison_charts) {
-                    reject(diagnostic_code_t::invalid_resolution,
-                           "comparison requires two or more charts within its configured cap");
-                } else {
-                    std::unordered_set<std::uint64_t> charts;
-                    for (const auto chart : typed_action.charts) {
-                        if (!chart || find_chart(document, chart) == nullptr ||
-                            !charts.insert(chart.value).second) {
-                            reject(diagnostic_code_t::invalid_id,
-                                   "comparison charts must be present and unique");
-                            break;
-                        }
-                    }
-                    if (!has_errors(result.diagnostics)) {
-                        proposal.comparison_charts = typed_action.charts;
-                    }
-                }
-            } else if constexpr (std::is_same_v<action_t, workspace_set_focus_action_t>) {
-                const auto tab_index = index_of(typed_action.tab);
-                if (!tab_index.has_value() || !workspace_tab_enabled(typed_action.tab)) {
-                    reject(diagnostic_code_t::unsupported_feature,
-                           "focus cannot be assigned to an invalid or disabled tab");
-                } else if (typed_action.region.empty() ||
-                           typed_action.region.size() >
-                               workspace.limits.maximum_focus_region_bytes) {
-                    reject(diagnostic_code_t::invalid_resolution,
-                           "logical focus region is empty or exceeds its byte cap");
-                } else if (!contains_focus_target(document, typed_action.target)) {
-                    reject(diagnostic_code_t::invalid_id,
-                           "logical focus target does not exist in the bound document");
-                } else {
-                    proposal.tab_focus[*tab_index] = {.region = typed_action.region,
-                                                      .target = typed_action.target};
-                }
-            } else if constexpr (std::is_same_v<action_t, workspace_clear_focus_action_t>) {
-                const auto tab_index = index_of(typed_action.tab);
-                if (!tab_index.has_value()) {
-                    reject(diagnostic_code_t::invalid_id, "workspace tab value is invalid");
-                } else {
-                    proposal.tab_focus[*tab_index] = {};
-                }
-            } else if constexpr (std::is_same_v<action_t, workspace_select_audio_asset_action_t>) {
-                if (typed_action.asset.has_value() &&
-                    (!*typed_action.asset ||
-                     find_audio_asset(document, *typed_action.asset) == nullptr)) {
-                    reject(diagnostic_code_t::invalid_id,
-                           "selected audio asset does not exist in the bound document");
-                } else if (proposal.transport.audio_asset != typed_action.asset) {
-                    proposal.transport = {};
-                    proposal.transport.audio_asset = typed_action.asset;
-                }
-            } else if constexpr (std::is_same_v<action_t, workspace_select_visual_asset_action_t>) {
-                if (typed_action.asset &&
-                    (!*typed_action.asset ||
-                     std::ranges::none_of(document.visual_assets, [&](const auto& asset) {
-                         return asset.id == *typed_action.asset &&
-                                asset.kind == asset_kind_t::image;
-                     }))) {
-                    reject(diagnostic_code_t::invalid_id,
-                           "selected image asset does not exist in the bound document");
-                } else {
-                    proposal.selected_visual_asset = typed_action.asset;
-                }
-            } else if constexpr (std::is_same_v<action_t, workspace_select_clip_action_t>) {
-                if (!typed_action.clip.has_value()) {
-                    proposal.transport.selected_clip.reset();
-                } else {
-                    const auto clip = find_clip(document, *typed_action.clip);
-                    if (!*typed_action.clip || clip.clip == nullptr || clip.duplicate) {
-                        reject(diagnostic_code_t::invalid_id,
-                               "selected audio clip does not exist in the bound document");
-                    } else {
-                        const auto* asset = find_audio_asset(document, clip.clip->source);
-                        if (asset == nullptr ||
-                            !audio_clip_is_valid_for_asset(*clip.clip, *asset)) {
-                            reject(diagnostic_code_t::invalid_id,
-                                   "selected audio clip refers to an invalid source range");
-                        } else {
-                            proposal.transport.audio_asset = asset->id;
-                            proposal.transport.selected_clip = typed_action.clip;
-                            proposal.transport.position_frame = clip.clip->begin_frame;
-                            proposal.transport.playing = false;
-                            proposal.transport.loop_frames.reset();
-                        }
-                    }
-                }
-            } else if constexpr (std::is_same_v<action_t, workspace_seek_action_t>) {
-                if (!proposal.transport.audio_asset.has_value()) {
-                    reject(diagnostic_code_t::invalid_id,
-                           "cannot seek without a selected audio asset");
-                } else {
-                    const auto* asset = find_audio_asset(document, *proposal.transport.audio_asset);
-                    if (asset == nullptr || (asset->stream.frame_count.has_value() &&
-                                             typed_action.frame > *asset->stream.frame_count)) {
-                        reject(diagnostic_code_t::invalid_resolution,
-                               "seek frame is outside the selected audio asset");
-                    } else {
-                        proposal.transport.position_frame = typed_action.frame;
-                    }
-                }
-            } else if constexpr (std::is_same_v<action_t, workspace_set_playing_action_t>) {
-                if (typed_action.playing && !proposal.transport.audio_asset.has_value()) {
-                    reject(diagnostic_code_t::invalid_id,
-                           "cannot start transport without a selected audio asset");
-                } else {
-                    proposal.transport.playing = typed_action.playing;
-                }
-            } else if constexpr (std::is_same_v<action_t, workspace_set_loop_action_t>) {
-                if (!typed_action.frames.has_value()) {
-                    proposal.transport.loop_frames.reset();
-                } else if (!proposal.transport.audio_asset.has_value()) {
-                    reject(diagnostic_code_t::invalid_id,
-                           "cannot set a loop without a selected audio asset");
-                } else {
-                    const auto [begin, end] = *typed_action.frames;
-                    const auto* asset = find_audio_asset(document, *proposal.transport.audio_asset);
-                    if (begin >= end || asset == nullptr ||
-                        (asset->stream.frame_count.has_value() &&
-                         end > *asset->stream.frame_count)) {
-                        reject(diagnostic_code_t::invalid_resolution,
-                               "loop frame range is empty or outside the selected audio asset");
-                    } else {
-                        proposal.transport.loop_frames = typed_action.frames;
-                    }
-                }
-            }
-        },
-        action);
+    workspace_action_context_t context{proposal, document, result.diagnostics};
+    std::visit([&context](const auto& typed_action) { apply_action(context, typed_action); },
+               action);
 
     if (has_errors(result.diagnostics)) {
         return result;
@@ -989,6 +1099,275 @@ auto apply_workspace_action(workspace_controller_t& workspace, const song_docume
     workspace = std::move(proposal);
     result.applied = true;
     return result;
+}
+
+struct workspace_view_build_context_t {
+    const workspace_controller_t& workspace;
+    const song_document_t& document;
+    const chart_document_t* chart;
+    workspace_view_result_t& result;
+    workspace_view_t& view;
+};
+
+struct metadata_view_budget_t {
+    std::size_t item_count{};
+    std::size_t text_bytes{};
+    std::size_t maximum_text_bytes{};
+};
+
+auto account_metadata_text(metadata_view_budget_t& budget, std::string_view text) -> bool {
+    return checked_add(budget.text_bytes, text.size()) &&
+           budget.text_bytes <= budget.maximum_text_bytes;
+}
+
+auto account_metadata_groups(metadata_view_budget_t& budget,
+                             const std::vector<format_metadata_t>& groups) -> bool {
+    for (const auto& group : groups) {
+        if (!checked_add(budget.item_count, group.ordered_fields.size())) {
+            return false;
+        }
+        for (const auto& [name, value] : group.ordered_fields) {
+            if (!account_metadata_text(budget, name) || !account_metadata_text(budget, value)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+auto append_metadata_groups(workspace_metadata_view_t& content,
+                            const std::vector<format_metadata_t>& groups, bool chart_scoped)
+    -> void {
+    constexpr auto format_family_count = static_cast<std::size_t>(format_family_t::quaver) + 1U;
+    std::array<bool, format_family_count> seen_families{};
+    for (std::size_t group_index = 0; group_index < groups.size(); ++group_index) {
+        const auto& group = groups[group_index];
+        const auto family_index = static_cast<std::size_t>(group.family);
+        const auto first_group_for_family =
+            family_index < seen_families.size() && !seen_families[family_index];
+        if (family_index < seen_families.size()) {
+            seen_families[family_index] = true;
+        }
+        for (std::size_t field_index = 0; field_index < group.ordered_fields.size();
+             ++field_index) {
+            const auto& [name, value] = group.ordered_fields[field_index];
+            content.format_fields.push_back({
+                .chart_scoped = chart_scoped,
+                .family = group.family,
+                .first_group_for_family = first_group_for_family,
+                .group_index = group_index,
+                .field_index = field_index,
+                .group_field_count = group.ordered_fields.size(),
+                .name = name,
+                .value = value,
+                .source_order =
+                    field_index < group.ordered_field_source_orders.size()
+                        ? std::optional<std::size_t>{group.ordered_field_source_orders[field_index]}
+                        : std::nullopt,
+            });
+        }
+    }
+}
+
+auto build_metadata_tab(workspace_view_build_context_t& context) -> bool {
+    const auto& [workspace, document, chart, result, view] = context;
+    metadata_view_budget_t budget{
+        .item_count = document.metadata.ordered_search_tags.size(),
+        .maximum_text_bytes = workspace.limits.maximum_metadata_text_bytes,
+    };
+    if (!account_metadata_text(budget, document.metadata.title) ||
+        !account_metadata_text(budget, document.metadata.artist)) {
+        add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
+                  "metadata text exceeds the configured view byte cap");
+        return false;
+    }
+    for (const auto& tag : document.metadata.ordered_search_tags) {
+        if (!account_metadata_text(budget, tag)) {
+            add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
+                      "metadata text exceeds the configured view byte cap");
+            return false;
+        }
+    }
+    if ((chart != nullptr && (!account_metadata_text(budget, chart->metadata.name) ||
+                              !account_metadata_text(budget, chart->metadata.author))) ||
+        !account_metadata_groups(budget, document.metadata.format_groups) ||
+        (chart != nullptr && !account_metadata_groups(budget, chart->metadata.format_groups))) {
+        add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
+                  "metadata field count or text bytes overflow the configured view bounds");
+        return false;
+    }
+    if (!enforce_summary_cap(budget.item_count, workspace, "metadata field list",
+                             result.diagnostics)) {
+        return false;
+    }
+    workspace_metadata_view_t content{
+        .title = document.metadata.title,
+        .artist = document.metadata.artist,
+        .search_tags = document.metadata.ordered_search_tags,
+        .selected_difficulty = view.selected_difficulty,
+        .chart_author = chart == nullptr ? std::string{} : chart->metadata.author,
+        .beat_zero_audio_offset_seconds =
+            chart == nullptr ? signed_rational_t{} : chart->beat_zero_audio_offset_seconds,
+    };
+    content.format_fields.reserve(budget.item_count - document.metadata.ordered_search_tags.size());
+    append_metadata_groups(content, document.metadata.format_groups, false);
+    if (chart != nullptr) {
+        append_metadata_groups(content, chart->metadata.format_groups, true);
+    }
+    view.tab_view = std::move(content);
+    return true;
+}
+
+auto build_setup_tab(workspace_view_build_context_t& context) -> bool {
+    const auto& [workspace, document, chart, result, view] = context;
+    if (!enforce_summary_cap(document.charts.size(), workspace, "chart list", result.diagnostics) ||
+        !enforce_summary_cap(document.audio_assets.size(), workspace, "audio asset list",
+                             result.diagnostics) ||
+        !enforce_summary_cap(document.visual_assets.size(), workspace, "visual asset list",
+                             result.diagnostics)) {
+        return false;
+    }
+    workspace_setup_view_t content{
+        .title = document.metadata.title,
+        .artist = document.metadata.artist,
+        .audio_asset_count = document.audio_assets.size(),
+        .visual_asset_count = document.visual_assets.size(),
+    };
+    content.charts.reserve(document.charts.size());
+    for (const auto& item : document.charts) {
+        content.charts.push_back(make_chart_option(item));
+    }
+    view.tab_view = std::move(content);
+    return true;
+}
+
+auto build_timing_tab(workspace_view_build_context_t& context) -> bool {
+    const auto& [workspace, document, chart, result, view] = context;
+    if (chart == nullptr) {
+        add_error(result.diagnostics, diagnostic_code_t::invalid_id,
+                  "timing tab requires a selected chart");
+        return false;
+    }
+    std::size_t item_count = chart->measures.size();
+    const auto counts_valid = checked_add(item_count, chart->bpms.size()) &&
+                              checked_add(item_count, chart->pauses.size()) &&
+                              checked_add(item_count, chart->warps.size()) &&
+                              checked_add(item_count, chart->bookmarks.size()) &&
+                              checked_add(item_count, chart->sections.size()) &&
+                              checked_add(item_count, chart->timing_anchors.size());
+    if (!counts_valid) {
+        add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
+                  "timing summary count overflows the supported range");
+        return false;
+    }
+    if (!enforce_summary_cap(item_count, workspace, "timing summary", result.diagnostics)) {
+        return false;
+    }
+    view.tab_view = workspace_timing_view_t{
+        .chart = chart->id,
+        .measure_count = chart->measures.size(),
+        .bpm_count = chart->bpms.size(),
+        .pause_count = chart->pauses.size(),
+        .warp_count = chart->warps.size(),
+        .bookmark_count = chart->bookmarks.size(),
+        .section_count = chart->sections.size(),
+        .anchor_count = chart->timing_anchors.size(),
+    };
+    return true;
+}
+
+auto build_compose_tab(workspace_view_build_context_t& context) -> bool {
+    const auto& [workspace, document, chart, result, view] = context;
+    if (chart == nullptr) {
+        add_error(result.diagnostics, diagnostic_code_t::invalid_id,
+                  "compose tab requires a selected chart");
+        return false;
+    }
+    std::size_t note_count = 0;
+    std::size_t lane_count = 0;
+    bool counts_valid = true;
+    for (const auto& measure : chart->measures) {
+        counts_valid = counts_valid && checked_add(note_count, measure.notes.size());
+    }
+    for (const auto& layout : chart->lane_layouts) {
+        counts_valid = counts_valid && checked_add(lane_count, layout.layout.lanes.size());
+    }
+    std::size_t item_count = chart->measures.size();
+    counts_valid = counts_valid && checked_add(item_count, note_count) &&
+                   checked_add(item_count, chart->lane_layouts.size()) &&
+                   checked_add(item_count, lane_count) &&
+                   checked_add(item_count, chart->semantic_layers.size());
+    if (!counts_valid ||
+        !enforce_summary_cap(item_count, workspace, "compose summary", result.diagnostics)) {
+        if (!counts_valid) {
+            add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
+                      "compose summary count overflows the supported range");
+        }
+        return false;
+    }
+    view.tab_view = workspace_compose_view_t{
+        .chart = chart->id,
+        .measure_count = chart->measures.size(),
+        .note_count = note_count,
+        .layout_segment_count = chart->lane_layouts.size(),
+        .lane_count = lane_count,
+        .layer_count = chart->semantic_layers.size(),
+        .bms_branch_outline = make_branch_outline(*chart, workspace.limits),
+    };
+    return true;
+}
+
+auto build_audio_slices_tab(workspace_view_build_context_t& context) -> bool {
+    const auto& [workspace, document, chart, result, view] = context;
+    std::size_t clip_count = 0;
+    for (const auto& item : document.charts) {
+        if (!checked_add(clip_count, item.sound_channels.size())) {
+            add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
+                      "audio clip count overflows the supported range");
+            return false;
+        }
+    }
+    if (!enforce_summary_cap(document.audio_assets.size(), workspace, "audio asset list",
+                             result.diagnostics) ||
+        !enforce_summary_cap(clip_count, workspace, "audio clip list", result.diagnostics)) {
+        return false;
+    }
+    workspace_audio_slices_view_t content{
+        .clip_count = clip_count,
+        .transport = workspace.transport,
+    };
+    content.audio_assets.reserve(document.audio_assets.size());
+    for (const auto& asset : document.audio_assets) {
+        content.audio_assets.push_back(asset.id);
+    }
+    if (chart != nullptr) {
+        content.sound_channel_count = chart->sound_channels.size();
+    }
+    view.tab_view = std::move(content);
+    return true;
+}
+
+auto build_compare_validate_tab(workspace_view_build_context_t& context) -> bool {
+    const auto& [workspace, document, chart, result, view] = context;
+    auto diagnostics = validate_document(document);
+    if (diagnostics.size() > workspace.limits.maximum_validation_diagnostics) {
+        add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
+                  "document diagnostics exceed the workspace validation cap");
+        return false;
+    }
+    workspace_compare_validate_view_t content{
+        .comparison_charts = workspace.comparison_charts,
+    };
+    for (const auto& diagnostic : diagnostics) {
+        if (diagnostic.severity == diagnostic_severity_t::error) {
+            ++content.error_count;
+        } else if (diagnostic.severity == diagnostic_severity_t::warning) {
+            ++content.warning_count;
+        }
+    }
+    content.diagnostics = std::move(diagnostics);
+    view.tab_view = std::move(content);
+    return true;
 }
 
 auto make_workspace_view(const workspace_controller_t& workspace, const song_document_t& document)
@@ -1053,189 +1432,28 @@ auto make_workspace_view(const workspace_controller_t& workspace, const song_doc
         .history = workspace.history,
         .focus = focus,
     };
+    workspace_view_build_context_t context{workspace, document, chart, result, view};
     switch (requested_tab) {
-    case workspace_tab_t::setup: {
-        if (!enforce_summary_cap(document.charts.size(), workspace, "chart list",
-                                 result.diagnostics) ||
-            !enforce_summary_cap(document.audio_assets.size(), workspace, "audio asset list",
-                                 result.diagnostics) ||
-            !enforce_summary_cap(document.visual_assets.size(), workspace, "visual asset list",
-                                 result.diagnostics)) {
+    case workspace_tab_t::setup:
+        if (!build_setup_tab(context)) {
             return result;
         }
-        workspace_setup_view_t content{
-            .title = document.metadata.title,
-            .artist = document.metadata.artist,
-            .audio_asset_count = document.audio_assets.size(),
-            .visual_asset_count = document.visual_assets.size(),
-        };
-        content.charts.reserve(document.charts.size());
-        for (const auto& item : document.charts) {
-            content.charts.push_back(make_chart_option(item));
-        }
-        view.tab_view = std::move(content);
         break;
-    }
-    case workspace_tab_t::metadata: {
-        std::size_t item_count = document.metadata.ordered_search_tags.size();
-        std::size_t text_bytes{};
-        const auto account_text = [&](std::string_view text) {
-            return checked_add(text_bytes, text.size()) &&
-                   text_bytes <= workspace.limits.maximum_metadata_text_bytes;
-        };
-        const auto account_groups = [&](const auto& groups) {
-            for (const auto& group : groups) {
-                if (!checked_add(item_count, group.ordered_fields.size()))
-                    return false;
-                for (const auto& [name, value] : group.ordered_fields)
-                    if (!account_text(name) || !account_text(value))
-                        return false;
-            }
-            return true;
-        };
-        if (!account_text(document.metadata.title) || !account_text(document.metadata.artist)) {
-            add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
-                      "metadata text exceeds the configured view byte cap");
+    case workspace_tab_t::metadata:
+        if (!build_metadata_tab(context)) {
             return result;
         }
-        for (const auto& tag : document.metadata.ordered_search_tags)
-            if (!account_text(tag)) {
-                add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
-                          "metadata text exceeds the configured view byte cap");
-                return result;
-            }
-        if ((chart != nullptr &&
-             (!account_text(chart->metadata.name) || !account_text(chart->metadata.author))) ||
-            !account_groups(document.metadata.format_groups) ||
-            (chart != nullptr && !account_groups(chart->metadata.format_groups))) {
-            add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
-                      "metadata field count or text bytes overflow the configured view bounds");
-            return result;
-        }
-        if (!enforce_summary_cap(item_count, workspace, "metadata field list",
-                                 result.diagnostics)) {
-            return result;
-        }
-        workspace_metadata_view_t content{
-            .title = document.metadata.title,
-            .artist = document.metadata.artist,
-            .search_tags = document.metadata.ordered_search_tags,
-            .selected_difficulty = selected_difficulty,
-            .chart_author = chart == nullptr ? std::string{} : chart->metadata.author,
-            .beat_zero_audio_offset_seconds =
-                chart == nullptr ? signed_rational_t{} : chart->beat_zero_audio_offset_seconds,
-        };
-        content.format_fields.reserve(item_count - document.metadata.ordered_search_tags.size());
-        const auto append_groups = [&](const auto& groups, bool chart_scoped) {
-            constexpr auto format_family_count =
-                static_cast<std::size_t>(format_family_t::quaver) + 1U;
-            std::array<bool, format_family_count> seen_families{};
-            for (std::size_t group_index = 0; group_index < groups.size(); ++group_index) {
-                const auto& group = groups[group_index];
-                const auto family_index = static_cast<std::size_t>(group.family);
-                const auto first_group_for_family =
-                    family_index < seen_families.size() && !seen_families[family_index];
-                if (family_index < seen_families.size())
-                    seen_families[family_index] = true;
-                for (std::size_t field_index = 0; field_index < group.ordered_fields.size();
-                     ++field_index) {
-                    const auto& [name, value] = group.ordered_fields[field_index];
-                    content.format_fields.push_back({
-                        .chart_scoped = chart_scoped,
-                        .family = group.family,
-                        .first_group_for_family = first_group_for_family,
-                        .group_index = group_index,
-                        .field_index = field_index,
-                        .group_field_count = group.ordered_fields.size(),
-                        .name = name,
-                        .value = value,
-                        .source_order =
-                            field_index < group.ordered_field_source_orders.size()
-                                ? std::optional<
-                                      std::size_t>{group.ordered_field_source_orders[field_index]}
-                                : std::nullopt,
-                    });
-                }
-            }
-        };
-        append_groups(document.metadata.format_groups, false);
-        if (chart != nullptr)
-            append_groups(chart->metadata.format_groups, true);
-        view.tab_view = std::move(content);
         break;
-    }
-    case workspace_tab_t::timing: {
-        if (chart == nullptr) {
-            add_error(result.diagnostics, diagnostic_code_t::invalid_id,
-                      "timing tab requires a selected chart");
+    case workspace_tab_t::timing:
+        if (!build_timing_tab(context)) {
             return result;
         }
-        std::size_t item_count = chart->measures.size();
-        const auto counts_valid = checked_add(item_count, chart->bpms.size()) &&
-                                  checked_add(item_count, chart->pauses.size()) &&
-                                  checked_add(item_count, chart->warps.size()) &&
-                                  checked_add(item_count, chart->bookmarks.size()) &&
-                                  checked_add(item_count, chart->sections.size()) &&
-                                  checked_add(item_count, chart->timing_anchors.size());
-        if (!counts_valid) {
-            add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
-                      "timing summary count overflows the supported range");
-            return result;
-        }
-        if (!enforce_summary_cap(item_count, workspace, "timing summary", result.diagnostics)) {
-            return result;
-        }
-        view.tab_view = workspace_timing_view_t{
-            .chart = chart->id,
-            .measure_count = chart->measures.size(),
-            .bpm_count = chart->bpms.size(),
-            .pause_count = chart->pauses.size(),
-            .warp_count = chart->warps.size(),
-            .bookmark_count = chart->bookmarks.size(),
-            .section_count = chart->sections.size(),
-            .anchor_count = chart->timing_anchors.size(),
-        };
         break;
-    }
-    case workspace_tab_t::compose: {
-        if (chart == nullptr) {
-            add_error(result.diagnostics, diagnostic_code_t::invalid_id,
-                      "compose tab requires a selected chart");
+    case workspace_tab_t::compose:
+        if (!build_compose_tab(context)) {
             return result;
         }
-        std::size_t note_count = 0;
-        std::size_t lane_count = 0;
-        bool counts_valid = true;
-        for (const auto& measure : chart->measures) {
-            counts_valid = counts_valid && checked_add(note_count, measure.notes.size());
-        }
-        for (const auto& layout : chart->lane_layouts) {
-            counts_valid = counts_valid && checked_add(lane_count, layout.layout.lanes.size());
-        }
-        std::size_t item_count = chart->measures.size();
-        counts_valid = counts_valid && checked_add(item_count, note_count) &&
-                       checked_add(item_count, chart->lane_layouts.size()) &&
-                       checked_add(item_count, lane_count) &&
-                       checked_add(item_count, chart->semantic_layers.size());
-        if (!counts_valid ||
-            !enforce_summary_cap(item_count, workspace, "compose summary", result.diagnostics)) {
-            if (!counts_valid) {
-                add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
-                          "compose summary count overflows the supported range");
-            }
-            return result;
-        }
-        view.tab_view = workspace_compose_view_t{
-            .chart = chart->id,
-            .measure_count = chart->measures.size(),
-            .note_count = note_count,
-            .layout_segment_count = chart->lane_layouts.size(),
-            .lane_count = lane_count,
-            .layer_count = chart->semantic_layers.size(),
-            .bms_branch_outline = make_branch_outline(*chart, workspace.limits),
-        };
         break;
-    }
     case workspace_tab_t::storyboard:
         view.tab_view = workspace_storyboard_view_t{
             .enabled = false,
@@ -1243,55 +1461,16 @@ auto make_workspace_view(const workspace_controller_t& workspace, const song_doc
             .storyboard_count = document.storyboards.size(),
         };
         break;
-    case workspace_tab_t::audio_slices: {
-        std::size_t clip_count = 0;
-        for (const auto& item : document.charts) {
-            if (!checked_add(clip_count, item.sound_channels.size())) {
-                add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
-                          "audio clip count overflows the supported range");
-                return result;
-            }
-        }
-        if (!enforce_summary_cap(document.audio_assets.size(), workspace, "audio asset list",
-                                 result.diagnostics) ||
-            !enforce_summary_cap(clip_count, workspace, "audio clip list", result.diagnostics)) {
+    case workspace_tab_t::audio_slices:
+        if (!build_audio_slices_tab(context)) {
             return result;
         }
-        workspace_audio_slices_view_t content{
-            .clip_count = clip_count,
-            .transport = workspace.transport,
-        };
-        content.audio_assets.reserve(document.audio_assets.size());
-        for (const auto& asset : document.audio_assets) {
-            content.audio_assets.push_back(asset.id);
-        }
-        if (chart != nullptr) {
-            content.sound_channel_count = chart->sound_channels.size();
-        }
-        view.tab_view = std::move(content);
         break;
-    }
-    case workspace_tab_t::compare_validate: {
-        auto diagnostics = validate_document(document);
-        if (diagnostics.size() > workspace.limits.maximum_validation_diagnostics) {
-            add_error(result.diagnostics, diagnostic_code_t::invalid_resolution,
-                      "document diagnostics exceed the workspace validation cap");
+    case workspace_tab_t::compare_validate:
+        if (!build_compare_validate_tab(context)) {
             return result;
         }
-        workspace_compare_validate_view_t content{
-            .comparison_charts = workspace.comparison_charts,
-        };
-        for (const auto& diagnostic : diagnostics) {
-            if (diagnostic.severity == diagnostic_severity_t::error) {
-                ++content.error_count;
-            } else if (diagnostic.severity == diagnostic_severity_t::warning) {
-                ++content.warning_count;
-            }
-        }
-        content.diagnostics = std::move(diagnostics);
-        view.tab_view = std::move(content);
         break;
-    }
     }
     result.view = std::move(view);
     return result;

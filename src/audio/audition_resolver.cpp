@@ -163,6 +163,69 @@ class audition_resolver_index_t {
     }
 
   private:
+    struct layer_source_t {
+        asset_id_t asset_id;
+        const audio_asset_t* asset;
+        const audition_source_binding_t* binding;
+    };
+
+    [[nodiscard]] auto validated_layer_source(const semantic_sound_t& layer,
+                                               audition_resolve_result_t& result) const
+        -> std::optional<layer_source_t> {
+        const auto resource = resources_.find(layer.resource->value);
+        if (resource == resources_.end()) {
+            result.diagnostics.push_back(error(audition_resolve_code_t::missing_resource,
+                                               "audition sound resource does not exist", layer.id));
+            return std::nullopt;
+        }
+        const auto asset_id = resource->second->asset;
+        const auto asset = assets_.find(asset_id.value);
+        const auto source = sources_.find(asset_id.value);
+        if (duplicate_sources_.contains(asset_id.value)) {
+            result.diagnostics.push_back(error(
+                audition_resolve_code_t::duplicate_source_binding,
+                "audio asset has more than one runtime audition binding", layer.id));
+            return std::nullopt;
+        }
+        if (asset == assets_.end() || source == sources_.end() ||
+            source->second->source.asset_identity.empty() ||
+            source->second->source.source_identity.empty()) {
+            result.diagnostics.push_back(error(audition_resolve_code_t::missing_source_binding,
+                                               "audio asset has no decoded audition binding",
+                                               layer.id));
+            return std::nullopt;
+        }
+        const auto& binding = *source->second;
+        if (binding.source_sample_rate == 0 || binding.output_sample_rate != output_sample_rate ||
+            binding.output_frame_count == 0) {
+            result.diagnostics.push_back(error(audition_resolve_code_t::invalid_source_geometry,
+                                               "decoded audition binding has invalid geometry",
+                                               layer.id));
+            return std::nullopt;
+        }
+        return layer_source_t{asset_id, asset->second, &binding};
+    }
+
+    auto cached_channel_slices(std::size_t channel_index, const sound_channel_t& owner,
+                               const audition_source_binding_t& binding)
+        -> channel_slice_cache_t& {
+        auto& cached = slice_cache_[channel_index];
+        if (!cached.has_value()) {
+            channel_slice_cache_t built;
+            built.result = derive_sound_channel_slices(
+                chart_, owner, binding.source_sample_rate, binding.source_frame_count,
+                {.maximum_events = options_.maximum_channel_events, .rounding = options_.rounding});
+            for (std::size_t slice_index = 0; slice_index < built.result.slices.size();
+                 ++slice_index) {
+                for (const auto event : built.result.slices[slice_index].events) {
+                    built.slice_by_event.emplace(event.value, slice_index);
+                }
+            }
+            cached = std::move(built);
+        }
+        return *cached;
+    }
+
     void add_semantic(semantic_sound_t sound) {
         const auto index = semantics_.size();
         semantic_by_id_.emplace(sound.id.value, index);
@@ -188,37 +251,12 @@ class audition_resolver_index_t {
     append_layer(const semantic_sound_t& layer,
                  std::set<std::pair<std::uint64_t, std::uint64_t>>& emitted_slices,
                  audition_resolve_result_t& result) -> bool {
-        const auto resource = resources_.find(layer.resource->value);
-        if (resource == resources_.end()) {
-            result.diagnostics.push_back(error(audition_resolve_code_t::missing_resource,
-                                               "audition sound resource does not exist", layer.id));
+        const auto source = validated_layer_source(layer, result);
+        if (!source.has_value()) {
             return false;
         }
-        const auto asset_id = resource->second->asset;
-        const auto asset = assets_.find(asset_id.value);
-        const auto source = sources_.find(asset_id.value);
-        if (duplicate_sources_.contains(asset_id.value)) {
-            result.diagnostics.push_back(
-                error(audition_resolve_code_t::duplicate_source_binding,
-                      "audio asset has more than one runtime audition binding", layer.id));
-            return false;
-        }
-        if (asset == assets_.end() || source == sources_.end() ||
-            source->second->source.asset_identity.empty() ||
-            source->second->source.source_identity.empty()) {
-            result.diagnostics.push_back(error(audition_resolve_code_t::missing_source_binding,
-                                               "audio asset has no decoded audition binding",
-                                               layer.id));
-            return false;
-        }
-        const auto& binding = *source->second;
-        if (binding.source_sample_rate == 0 || binding.output_sample_rate != output_sample_rate ||
-            binding.output_frame_count == 0) {
-            result.diagnostics.push_back(error(audition_resolve_code_t::invalid_source_geometry,
-                                               "decoded audition binding has invalid geometry",
-                                               layer.id));
-            return false;
-        }
+        const auto asset_id = source->asset_id;
+        const auto& binding = *source->binding;
         if (!layer.linked_event) {
             result.clips.push_back({binding.source, 0, binding.output_frame_count, 1.0F});
             return true;
@@ -239,49 +277,37 @@ class audition_resolver_index_t {
                                                layer.id));
             return false;
         }
-        if (asset->second->stream.sample_rate != 0 &&
-            asset->second->stream.sample_rate != binding.source_sample_rate) {
+        if (source->asset->stream.sample_rate != 0 &&
+            source->asset->stream.sample_rate != binding.source_sample_rate) {
             result.diagnostics.push_back(error(audition_resolve_code_t::invalid_source_geometry,
                                                "stored and decoded source sample rates disagree",
                                                layer.id));
             return false;
         }
-        if (asset->second->stream.frame_count.has_value() &&
+        if (source->asset->stream.frame_count.has_value() &&
             binding.source_frame_count.has_value() &&
-            asset->second->stream.frame_count != binding.source_frame_count) {
+            source->asset->stream.frame_count != binding.source_frame_count) {
             result.diagnostics.push_back(error(audition_resolve_code_t::invalid_source_geometry,
                                                "stored and decoded source frame counts disagree",
                                                layer.id));
             return false;
         }
 
-        auto& cached = slice_cache_[retained->second.channel_index];
-        if (!cached.has_value()) {
-            channel_slice_cache_t built;
-            built.result = derive_sound_channel_slices(
-                chart_, owner, binding.source_sample_rate, binding.source_frame_count,
-                {.maximum_events = options_.maximum_channel_events, .rounding = options_.rounding});
-            for (std::size_t slice_index = 0; slice_index < built.result.slices.size();
-                 ++slice_index) {
-                for (const auto event : built.result.slices[slice_index].events)
-                    built.slice_by_event.emplace(event.value, slice_index);
-            }
-            cached = std::move(built);
-        }
-        const auto slice_position = cached->slice_by_event.find(retained->second.event->id.value);
-        const auto* slice = slice_position == cached->slice_by_event.end()
+        const auto& cached = cached_channel_slices(retained->second.channel_index, owner, binding);
+        const auto slice_position = cached.slice_by_event.find(retained->second.event->id.value);
+        const auto* slice = slice_position == cached.slice_by_event.end()
                                 ? nullptr
-                                : &cached->result.slices[slice_position->second];
+                                : &cached.result.slices[slice_position->second];
         if (slice == nullptr) {
             auto code = audition_resolve_code_t::invalid_timing;
-            if (!cached->result.diagnostics.empty() &&
-                cached->result.diagnostics.front().code ==
+            if (!cached.result.diagnostics.empty() &&
+                cached.result.diagnostics.front().code ==
                     sound_slice_error_code_t::capacity_exceeded) {
                 code = audition_resolve_code_t::capacity_exceeded;
-            } else if (!cached->result.diagnostics.empty() &&
-                       (cached->result.diagnostics.front().code ==
+            } else if (!cached.result.diagnostics.empty() &&
+                       (cached.result.diagnostics.front().code ==
                             sound_slice_error_code_t::invalid_sample_rate ||
-                        cached->result.diagnostics.front().code ==
+                        cached.result.diagnostics.front().code ==
                             sound_slice_error_code_t::invalid_source_range)) {
                 code = audition_resolve_code_t::invalid_source_geometry;
             }
@@ -326,6 +352,42 @@ class audition_resolver_index_t {
 auto find_chart(const song_document_t& song, chart_id_t chart) -> const chart_document_t* {
     const auto found = std::ranges::find(song.charts, chart, &chart_document_t::id);
     return found == song.charts.end() ? nullptr : &*found;
+}
+
+auto reference_sound_event(const chart_document_t& chart, object_id_t reference_bgm_event)
+    -> std::optional<object_id_t> {
+    for (const auto& measure : chart.measures) {
+        const auto reference =
+            std::ranges::find(measure.bgm_events, reference_bgm_event, &bgm_event_t::id);
+        if (reference != measure.bgm_events.end() && reference->sound_channel_event) {
+            return reference->sound_channel_event;
+        }
+    }
+    return std::nullopt;
+}
+
+auto transient_audition_event(const chart_document_t& chart, local_position_t target,
+                              object_id_t source_event) -> object_id_t {
+    object_id_t result{};
+    for (const auto& measure : chart.measures) {
+        if (measure.id != target.measure) {
+            continue;
+        }
+        for (const auto& note : measure.notes) {
+            if (note.sound_channel_event == source_event) {
+                result = note.id;
+                break;
+            }
+        }
+        for (const auto& event : measure.bgm_events) {
+            if (event.sound_channel_event == source_event) {
+                result = event.id;
+                break;
+            }
+        }
+        break;
+    }
+    return result;
 }
 
 } // namespace
@@ -431,16 +493,18 @@ auto resolve_preview_bindings(const song_document_t& song, chart_id_t chart_id,
     return result;
 }
 
-auto resolve_bmson_draft_audition(const song_document_t& song, std::uint64_t expected_revision,
-                                  chart_id_t chart_id, object_id_t reference_bgm_event,
-                                  std::span<const bmson_sound_marker_insertion_t> markers,
-                                  std::size_t marker_index,
+auto resolve_bmson_draft_audition(const song_document_t& song,
+                                  bmson_draft_audition_request_t request,
                                   std::span<const audition_source_binding_t> bindings,
                                   audition_resolve_options_t options) -> audition_resolve_result_t {
+    const auto chart_id = request.chart;
+    const auto reference_bgm_event = request.reference_bgm_event;
+    const auto markers = request.markers;
+    const auto marker_index = request.marker_index;
     audition_resolve_result_t result{
         .document_revision = song.revision, .chart = chart_id, .object = {},
         .clips = {}, .diagnostics = {}};
-    if (expected_revision != song.revision || marker_index >= markers.size()) {
+    if (request.expected_revision != song.revision || marker_index >= markers.size()) {
         result.diagnostics.push_back(error(
             audition_resolve_code_t::invalid_link,
             "BMSON draft audition has a stale revision or unknown marker"));
@@ -453,15 +517,7 @@ auto resolve_bmson_draft_audition(const song_document_t& song, std::uint64_t exp
             "BMSON draft audition requires a known BMSON chart"));
         return result;
     }
-    std::optional<object_id_t> reference_source;
-    for (const auto& measure : original->measures) {
-        const auto reference = std::ranges::find(measure.bgm_events, reference_bgm_event,
-                                                 &bgm_event_t::id);
-        if (reference != measure.bgm_events.end() && reference->sound_channel_event) {
-            reference_source = reference->sound_channel_event;
-            break;
-        }
-    }
+    const auto reference_source = reference_sound_event(*original, reference_bgm_event);
     if (!reference_source) {
         result.diagnostics.push_back(error(
             audition_resolve_code_t::invalid_link,
@@ -511,25 +567,7 @@ auto resolve_bmson_draft_audition(const song_document_t& song, std::uint64_t exp
                   "BMSON draft marker has no retained transient sound event"));
         return result;
     }
-    object_id_t transient_event{};
-    for (const auto& measure : transient_chart->measures) {
-        if (measure.id != target.measure) {
-            continue;
-        }
-        for (const auto& note : measure.notes) {
-            if (note.sound_channel_event == source->id) {
-                transient_event = note.id;
-                break;
-            }
-        }
-        for (const auto& event : measure.bgm_events) {
-            if (event.sound_channel_event == source->id) {
-                transient_event = event.id;
-                break;
-            }
-        }
-        break;
-    }
+    const auto transient_event = transient_audition_event(*transient_chart, target, source->id);
     if (!transient_event) {
         result.diagnostics.push_back(
             error(audition_resolve_code_t::invalid_link,

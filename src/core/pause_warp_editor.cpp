@@ -5,7 +5,6 @@
 #include <ranges>
 #include <string>
 #include <string_view>
-#include <type_traits>
 #include <utility>
 #include <variant>
 
@@ -251,6 +250,240 @@ auto matching_pause_projection(chart_document_t& chart, const pause_event_t& eve
     return &*found;
 }
 
+struct pause_warp_edit_context_t {
+    song_document_t& proposed;
+    document_command_result_t& result;
+    pause_warp_edit_limits_t limits;
+    std::string command_label;
+    bool changed{};
+};
+
+auto target_chart(pause_warp_edit_context_t& context, chart_id_t id) -> chart_document_t* {
+    const auto found = std::ranges::find(context.proposed.charts, id, &chart_document_t::id);
+    if (!id || found == context.proposed.charts.end()) {
+        reject(context.result, diagnostic_code_t::invalid_id,
+               "pause/warp edit refers to an unknown chart");
+        return nullptr;
+    }
+    return &*found;
+}
+
+auto pause_event_cap(pause_warp_edit_context_t& context, const chart_document_t& chart)
+    -> bool {
+    if (chart.pauses.size() <= context.limits.maximum_pause_events) return true;
+    reject(context.result, diagnostic_code_t::invalid_resolution,
+           "selected chart exceeds the pause event cap");
+    return false;
+}
+
+auto warp_event_cap(pause_warp_edit_context_t& context, const chart_document_t& chart)
+    -> bool {
+    if (chart.warps.size() <= context.limits.maximum_warp_events) return true;
+    reject(context.result, diagnostic_code_t::invalid_resolution,
+           "selected chart exceeds the warp event cap");
+    return false;
+}
+
+auto allocate_event_id(pause_warp_edit_context_t& context, const chart_document_t& chart)
+    -> std::optional<object_id_t> {
+    const auto allocation = next_chart_object_id(chart, context.limits.maximum_chart_objects);
+    if (allocation.id) return allocation.id;
+    reject(context.result, diagnostic_code_t::invalid_resolution,
+           allocation.over_limit ? "selected chart exceeds the object ID allocation cap"
+                                 : "chart object ID sequence is exhausted");
+    return std::nullopt;
+}
+
+auto insert_pause(pause_warp_edit_context_t& context, chart_document_t& chart,
+                  const insert_pause_event_action_t& edit) -> void {
+    if (!pause_event_cap(context, chart)) return;
+    if (chart.pauses.size() >= context.limits.maximum_pause_events) {
+        reject(context.result, diagnostic_code_t::invalid_resolution,
+               "pause insertion would exceed the configured event cap");
+        return;
+    }
+    if (!validate_position(chart, edit.position, context.result, "pause event") ||
+        !validate_pause_values(edit.kind, edit.duration, edit.source_unit, context.result)) return;
+    const auto id = allocate_event_id(context, chart);
+    if (!id) return;
+    const auto source_order = next_source_order(chart.pauses);
+    if (!source_order) {
+        reject(context.result, diagnostic_code_t::invalid_resolution,
+               "pause source-order sequence is exhausted");
+        return;
+    }
+    chart.pauses.push_back({.id = *id, .position = edit.position, .kind = edit.kind,
+        .duration = edit.duration, .source_unit = edit.source_unit,
+        .provenance = {.source_order = *source_order}});
+    context.command_label = "Insert pause event";
+    context.changed = true;
+}
+
+struct pause_update_target_t {
+    pause_event_t* event{};
+    bms_pause_projection_t* projection{};
+};
+
+auto validate_pause_update(pause_warp_edit_context_t& context, chart_document_t& chart,
+                           const update_pause_event_action_t& edit)
+    -> std::optional<pause_update_target_t> {
+    if (!edit.event) {
+        reject(context.result, diagnostic_code_t::invalid_id,
+               "pause update uses the reserved zero event ID");
+        return std::nullopt;
+    }
+    auto* event = unique_event(chart, chart.pauses, edit.event, "pause", context.result);
+    if (!event || !validate_position(chart, edit.position, context.result, "pause event") ||
+        !validate_pause_values(edit.kind, edit.duration, edit.source_unit, context.result))
+        return std::nullopt;
+    auto* projection = matching_pause_projection(chart, *event, context.result);
+    if (!context.result.diagnostics.empty()) return std::nullopt;
+    if (event->provenance.family == format_family_t::bms && !projection) {
+        reject(context.result, diagnostic_code_t::invalid_id,
+               "source-backed BMS pause has no matching import projection");
+        return std::nullopt;
+    }
+    if (projection && (projection->imported_kind != edit.kind ||
+                       projection->imported_source_unit != edit.source_unit)) {
+        reject(context.result, diagnostic_code_t::invalid_resolution,
+               "pause update would make its BMS source projection incoherent");
+        return std::nullopt;
+    }
+    return pause_update_target_t{event, projection};
+}
+
+auto update_pause(pause_warp_edit_context_t& context, chart_document_t& chart,
+                  const update_pause_event_action_t& edit) -> void {
+    if (!pause_event_cap(context, chart)) return;
+    const auto target = validate_pause_update(context, chart, edit);
+    if (!target) return;
+    auto& event = *target->event;
+    context.changed = event.position != edit.position || event.kind != edit.kind ||
+                      event.duration != edit.duration || event.source_unit != edit.source_unit;
+    if (!context.changed) return;
+    event.position = edit.position;
+    event.kind = edit.kind;
+    event.duration = edit.duration;
+    event.source_unit = edit.source_unit;
+    context.command_label = "Update pause event";
+}
+
+auto delete_pause(pause_warp_edit_context_t& context, chart_document_t& chart,
+                  const delete_pause_event_action_t& edit) -> void {
+    if (!pause_event_cap(context, chart)) return;
+    if (!edit.event) {
+        reject(context.result, diagnostic_code_t::invalid_id,
+               "pause deletion uses the reserved zero event ID");
+        return;
+    }
+    auto* event = unique_event(chart, chart.pauses, edit.event, "pause", context.result);
+    if (!event) return;
+    const auto id = event->id;
+    std::erase_if(chart.bms_pause_projections,
+                  [id](const auto& projection) { return projection.event == id; });
+    std::erase_if(chart.pauses, [id](const auto& item) { return item.id == id; });
+    context.command_label = "Delete pause event";
+    context.changed = true;
+}
+
+auto insert_warp(pause_warp_edit_context_t& context, chart_document_t& chart,
+                 const insert_warp_event_action_t& edit) -> void {
+    if (!warp_event_cap(context, chart)) return;
+    if (chart.warps.size() >= context.limits.maximum_warp_events) {
+        reject(context.result, diagnostic_code_t::invalid_resolution,
+               "warp insertion would exceed the configured event cap");
+        return;
+    }
+    if (!validate_span(chart, edit.span, context.result)) return;
+    if (!valid_warp_encoding(edit.source_encoding)) {
+        reject(context.result, diagnostic_code_t::invalid_resolution,
+               "warp event has an unknown source encoding");
+        return;
+    }
+    const auto id = allocate_event_id(context, chart);
+    if (!id) return;
+    const auto source_order = next_source_order(chart.warps);
+    if (!source_order) {
+        reject(context.result, diagnostic_code_t::invalid_resolution,
+               "warp source-order sequence is exhausted");
+        return;
+    }
+    chart.warps.push_back({.id = *id, .span = edit.span,
+        .source_encoding = edit.source_encoding,
+        .provenance = {.source_order = *source_order}});
+    context.command_label = "Insert warp event";
+    context.changed = true;
+}
+
+auto update_warp(pause_warp_edit_context_t& context, chart_document_t& chart,
+                 const update_warp_event_action_t& edit) -> void {
+    if (!warp_event_cap(context, chart)) return;
+    if (!edit.event) {
+        reject(context.result, diagnostic_code_t::invalid_id,
+               "warp update uses the reserved zero event ID");
+        return;
+    }
+    auto* event = unique_event(chart, chart.warps, edit.event, "warp", context.result);
+    if (!event || !validate_span(chart, edit.span, context.result)) return;
+    if (edit.source_encoding && !valid_warp_encoding(*edit.source_encoding)) {
+        reject(context.result, diagnostic_code_t::invalid_resolution,
+               "warp event has an unknown source encoding");
+        return;
+    }
+    const auto encoding = edit.source_encoding.value_or(event->source_encoding);
+    context.changed = event->span.begin != edit.span.begin || event->span.end != edit.span.end ||
+                      event->source_encoding != encoding;
+    if (!context.changed) return;
+    event->span = edit.span;
+    event->source_encoding = encoding;
+    context.command_label = "Update warp event";
+}
+
+auto delete_warp(pause_warp_edit_context_t& context, chart_document_t& chart,
+                 const delete_warp_event_action_t& edit) -> void {
+    if (!warp_event_cap(context, chart)) return;
+    if (!edit.event) {
+        reject(context.result, diagnostic_code_t::invalid_id,
+               "warp deletion uses the reserved zero event ID");
+        return;
+    }
+    if (!unique_event(chart, chart.warps, edit.event, "warp", context.result)) return;
+    std::erase_if(chart.warps, [&](const auto& item) { return item.id == edit.event; });
+    context.command_label = "Delete warp event";
+    context.changed = true;
+}
+
+auto apply_pause_warp_action(pause_warp_edit_context_t& context, chart_document_t& chart,
+                             const insert_pause_event_action_t& edit) -> void {
+    insert_pause(context, chart, edit);
+}
+auto apply_pause_warp_action(pause_warp_edit_context_t& context, chart_document_t& chart,
+                             const update_pause_event_action_t& edit) -> void {
+    update_pause(context, chart, edit);
+}
+auto apply_pause_warp_action(pause_warp_edit_context_t& context, chart_document_t& chart,
+                             const delete_pause_event_action_t& edit) -> void {
+    delete_pause(context, chart, edit);
+}
+auto apply_pause_warp_action(pause_warp_edit_context_t& context, chart_document_t& chart,
+                             const insert_warp_event_action_t& edit) -> void {
+    insert_warp(context, chart, edit);
+}
+auto apply_pause_warp_action(pause_warp_edit_context_t& context, chart_document_t& chart,
+                             const update_warp_event_action_t& edit) -> void {
+    update_warp(context, chart, edit);
+}
+auto apply_pause_warp_action(pause_warp_edit_context_t& context, chart_document_t& chart,
+                             const delete_warp_event_action_t& edit) -> void {
+    delete_warp(context, chart, edit);
+}
+
+template <typename Edit>
+auto apply_pause_warp_operation(pause_warp_edit_context_t& context, const Edit& edit) -> void {
+    auto* chart = target_chart(context, edit.chart);
+    if (chart) apply_pause_warp_action(context, *chart, edit);
+}
+
 } // namespace
 
 auto apply_pause_warp_edit(document_history_t& history, std::uint64_t expected_revision,
@@ -269,210 +502,14 @@ auto apply_pause_warp_edit(document_history_t& history, std::uint64_t expected_r
     }
 
     auto proposed = history.document;
-    std::string command_label;
-    bool changed{};
-    std::visit(
-        [&](const auto& edit) {
-            using edit_t = std::remove_cvref_t<decltype(edit)>;
-            const auto chart =
-                std::ranges::find(proposed.charts, edit.chart, &chart_document_t::id);
-            if (!edit.chart || chart == proposed.charts.end()) {
-                reject(result, diagnostic_code_t::invalid_id,
-                       "pause/warp edit refers to an unknown chart");
-                return;
-            }
+    pause_warp_edit_context_t context{.proposed = proposed, .result = result,
+        .limits = limits, .command_label = {}, .changed = false};
+    std::visit([&](const auto& edit) { apply_pause_warp_operation(context, edit); }, action);
 
-            if constexpr (std::is_same_v<edit_t, insert_pause_event_action_t> ||
-                          std::is_same_v<edit_t, update_pause_event_action_t> ||
-                          std::is_same_v<edit_t, delete_pause_event_action_t>) {
-                if (chart->pauses.size() > limits.maximum_pause_events) {
-                    reject(result, diagnostic_code_t::invalid_resolution,
-                           "selected chart exceeds the pause event cap");
-                    return;
-                }
-                if constexpr (std::is_same_v<edit_t, insert_pause_event_action_t>) {
-                    if (chart->pauses.size() >= limits.maximum_pause_events) {
-                        reject(result, diagnostic_code_t::invalid_resolution,
-                               "pause insertion would exceed the configured event cap");
-                        return;
-                    }
-                    if (!validate_position(*chart, edit.position, result, "pause event") ||
-                        !validate_pause_values(edit.kind, edit.duration, edit.source_unit,
-                                               result)) {
-                        return;
-                    }
-                    const auto allocation =
-                        next_chart_object_id(*chart, limits.maximum_chart_objects);
-                    if (!allocation.id.has_value()) {
-                        reject(result, diagnostic_code_t::invalid_resolution,
-                               allocation.over_limit
-                                   ? "selected chart exceeds the object ID allocation cap"
-                                   : "chart object ID sequence is exhausted");
-                        return;
-                    }
-                    const auto source_order = next_source_order(chart->pauses);
-                    if (!source_order.has_value()) {
-                        reject(result, diagnostic_code_t::invalid_resolution,
-                               "pause source-order sequence is exhausted");
-                        return;
-                    }
-                    chart->pauses.push_back({.id = *allocation.id,
-                                             .position = edit.position,
-                                             .kind = edit.kind,
-                                             .duration = edit.duration,
-                                             .source_unit = edit.source_unit,
-                                             .provenance = {.source_order = *source_order}});
-                    command_label = "Insert pause event";
-                    changed = true;
-                } else if constexpr (std::is_same_v<edit_t, update_pause_event_action_t>) {
-                    if (!edit.event) {
-                        reject(result, diagnostic_code_t::invalid_id,
-                               "pause update uses the reserved zero event ID");
-                        return;
-                    }
-                    auto* event = unique_event(*chart, chart->pauses, edit.event, "pause", result);
-                    if (event == nullptr ||
-                        !validate_position(*chart, edit.position, result, "pause event") ||
-                        !validate_pause_values(edit.kind, edit.duration, edit.source_unit,
-                                               result)) {
-                        return;
-                    }
-                    auto* projection = matching_pause_projection(*chart, *event, result);
-                    if (!result.diagnostics.empty()) {
-                        return;
-                    }
-                    if (event->provenance.family == format_family_t::bms && projection == nullptr) {
-                        reject(result, diagnostic_code_t::invalid_id,
-                               "source-backed BMS pause has no matching import projection");
-                        return;
-                    }
-                    if (projection != nullptr &&
-                        (projection->imported_kind != edit.kind ||
-                         projection->imported_source_unit != edit.source_unit)) {
-                        reject(result, diagnostic_code_t::invalid_resolution,
-                               "pause update would make its BMS source projection incoherent");
-                        return;
-                    }
-                    changed = event->position != edit.position || event->kind != edit.kind ||
-                              event->duration != edit.duration ||
-                              event->source_unit != edit.source_unit;
-                    if (!changed) {
-                        return;
-                    }
-                    event->position = edit.position;
-                    event->kind = edit.kind;
-                    event->duration = edit.duration;
-                    event->source_unit = edit.source_unit;
-                    command_label = "Update pause event";
-                } else {
-                    if (!edit.event) {
-                        reject(result, diagnostic_code_t::invalid_id,
-                               "pause deletion uses the reserved zero event ID");
-                        return;
-                    }
-                    auto* event = unique_event(*chart, chart->pauses, edit.event, "pause", result);
-                    if (event == nullptr) {
-                        return;
-                    }
-                    const auto event_id = event->id;
-                    std::erase_if(chart->bms_pause_projections, [event_id](const auto& projection) {
-                        return projection.event == event_id;
-                    });
-                    std::erase_if(chart->pauses,
-                                  [event_id](const auto& item) { return item.id == event_id; });
-                    command_label = "Delete pause event";
-                    changed = true;
-                }
-            } else {
-                if (chart->warps.size() > limits.maximum_warp_events) {
-                    reject(result, diagnostic_code_t::invalid_resolution,
-                           "selected chart exceeds the warp event cap");
-                    return;
-                }
-                if constexpr (std::is_same_v<edit_t, insert_warp_event_action_t>) {
-                    if (chart->warps.size() >= limits.maximum_warp_events) {
-                        reject(result, diagnostic_code_t::invalid_resolution,
-                               "warp insertion would exceed the configured event cap");
-                        return;
-                    }
-                    if (!validate_span(*chart, edit.span, result)) {
-                        return;
-                    }
-                    if (!valid_warp_encoding(edit.source_encoding)) {
-                        reject(result, diagnostic_code_t::invalid_resolution,
-                               "warp event has an unknown source encoding");
-                        return;
-                    }
-                    const auto allocation =
-                        next_chart_object_id(*chart, limits.maximum_chart_objects);
-                    if (!allocation.id.has_value()) {
-                        reject(result, diagnostic_code_t::invalid_resolution,
-                               allocation.over_limit
-                                   ? "selected chart exceeds the object ID allocation cap"
-                                   : "chart object ID sequence is exhausted");
-                        return;
-                    }
-                    const auto source_order = next_source_order(chart->warps);
-                    if (!source_order.has_value()) {
-                        reject(result, diagnostic_code_t::invalid_resolution,
-                               "warp source-order sequence is exhausted");
-                        return;
-                    }
-                    chart->warps.push_back({.id = *allocation.id,
-                                            .span = edit.span,
-                                            .source_encoding = edit.source_encoding,
-                                            .provenance = {.source_order = *source_order}});
-                    command_label = "Insert warp event";
-                    changed = true;
-                } else if constexpr (std::is_same_v<edit_t, update_warp_event_action_t>) {
-                    if (!edit.event) {
-                        reject(result, diagnostic_code_t::invalid_id,
-                               "warp update uses the reserved zero event ID");
-                        return;
-                    }
-                    auto* event = unique_event(*chart, chart->warps, edit.event, "warp", result);
-                    if (event == nullptr || !validate_span(*chart, edit.span, result)) {
-                        return;
-                    }
-                    if (edit.source_encoding.has_value() &&
-                        !valid_warp_encoding(*edit.source_encoding)) {
-                        reject(result, diagnostic_code_t::invalid_resolution,
-                               "warp event has an unknown source encoding");
-                        return;
-                    }
-                    const auto source_encoding =
-                        edit.source_encoding.value_or(event->source_encoding);
-                    changed = event->span.begin != edit.span.begin ||
-                              event->span.end != edit.span.end ||
-                              event->source_encoding != source_encoding;
-                    if (!changed) {
-                        return;
-                    }
-                    event->span = edit.span;
-                    event->source_encoding = source_encoding;
-                    command_label = "Update warp event";
-                } else {
-                    if (!edit.event) {
-                        reject(result, diagnostic_code_t::invalid_id,
-                               "warp deletion uses the reserved zero event ID");
-                        return;
-                    }
-                    if (unique_event(*chart, chart->warps, edit.event, "warp", result) == nullptr) {
-                        return;
-                    }
-                    std::erase_if(chart->warps,
-                                  [&edit](const auto& item) { return item.id == edit.event; });
-                    command_label = "Delete warp event";
-                    changed = true;
-                }
-            }
-        },
-        action);
-
-    if (!result.diagnostics.empty() || !changed) {
+    if (!result.diagnostics.empty() || !context.changed) {
         return result;
     }
-    return commit_document_command(history, std::move(proposed), std::move(command_label));
+    return commit_document_command(history, std::move(proposed), std::move(context.command_label));
 }
 
 } // namespace wormedit

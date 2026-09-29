@@ -9,6 +9,44 @@
 #include <ranges>
 
 namespace wormedit::sys::runtime {
+namespace {
+
+auto preview_end_frame(
+    const preview_schedule_t& schedule,
+    const std::vector<audio::preview_object_source_binding_t>& bindings,
+    const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings)
+    -> std::uint64_t {
+    std::uint64_t end_frame{};
+    const auto include_event_ends = [&](const auto& events) {
+        for (const auto& event : events) {
+            const auto binding = std::ranges::lower_bound(
+                bindings, event.object, {}, &audio::preview_object_source_binding_t::object);
+            if (binding == bindings.end() || binding->object != event.object) {
+                continue;
+            }
+            for (const auto& voice : binding->voices) {
+                if (voice.frame_count <=
+                    std::numeric_limits<std::uint64_t>::max() - event.sample_frame) {
+                    end_frame = std::max(end_frame, event.sample_frame + voice.frame_count);
+                }
+            }
+        }
+    };
+    include_event_ends(schedule.playable);
+    include_event_ends(schedule.bgm);
+    for (const auto& event : schedule.metronome) {
+        const auto binding = std::ranges::find(metronome_bindings, event.accent,
+                                               &audio::preview_metronome_source_binding_t::accent);
+        if (binding != metronome_bindings.end() &&
+            binding->voice.frame_count <=
+                std::numeric_limits<std::uint64_t>::max() - event.sample_frame) {
+            end_frame = std::max(end_frame, event.sample_frame + binding->voice.frame_count);
+        }
+    }
+    return end_frame;
+}
+
+} // namespace
 
 bool chart_preview_t::reusable(chart_id_t chart_id,
                                      std::uint64_t document_revision) const {
@@ -46,35 +84,8 @@ auto chart_preview_t::compile_if_needed(
         return resolved.diagnostics.empty() ? "Chart audio could not be resolved."
                                             : resolved.diagnostics.front().message;
 
-    std::uint64_t compiled_end_frame{};
-    const auto include_event_ends = [&](const auto& events) {
-        for (const auto& event : events) {
-            const auto binding = std::ranges::lower_bound(
-                resolved.bindings, event.object, {},
-                &audio::preview_object_source_binding_t::object);
-            if (binding == resolved.bindings.end() || binding->object != event.object)
-                continue;
-            for (const auto& voice : binding->voices) {
-                if (voice.frame_count <=
-                    std::numeric_limits<std::uint64_t>::max() - event.sample_frame) {
-                    compiled_end_frame =
-                        std::max(compiled_end_frame, event.sample_frame + voice.frame_count);
-                }
-            }
-        }
-    };
-    include_event_ends(built_schedule.schedule->playable);
-    include_event_ends(built_schedule.schedule->bgm);
-    for (const auto& event : built_schedule.schedule->metronome) {
-        const auto binding = std::ranges::find(metronome_bindings, event.accent,
-                                                &audio::preview_metronome_source_binding_t::accent);
-        if (binding != metronome_bindings.end() &&
-            binding->voice.frame_count <=
-                std::numeric_limits<std::uint64_t>::max() - event.sample_frame) {
-            compiled_end_frame =
-                std::max(compiled_end_frame, event.sample_frame + binding->voice.frame_count);
-        }
-    }
+    const auto compiled_end_frame =
+        preview_end_frame(*built_schedule.schedule, resolved.bindings, metronome_bindings);
 
     schedule = std::move(*built_schedule.schedule);
     timing = std::move(*built_timing.index);

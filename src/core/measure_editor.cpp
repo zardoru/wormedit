@@ -86,6 +86,107 @@ void shift_projections_for_delete(chart_document_t& chart, std::size_t removed_i
     }
 }
 
+struct measure_edit_context_t {
+    song_document_t& proposed;
+    measure_edit_limits_t limits;
+    document_command_result_t& result;
+    std::string label;
+    bool changed{};
+};
+
+auto target_measure_chart(measure_edit_context_t& context, chart_id_t id) -> chart_document_t* {
+    const auto chart = std::ranges::find(context.proposed.charts, id, &chart_document_t::id);
+    if (!id || chart == context.proposed.charts.end()) {
+        reject(context.result, diagnostic_code_t::invalid_id,
+               "measure edit refers to an unknown chart");
+        return nullptr;
+    }
+    if (chart->measures.size() > context.limits.maximum_measures) {
+        reject(context.result, diagnostic_code_t::invalid_resolution,
+               "selected chart exceeds the configured measure cap");
+        return nullptr;
+    }
+    return &*chart;
+}
+
+auto apply_measure_action(measure_edit_context_t& context,
+                          const insert_measure_action_t& edit) -> void {
+    auto* chart = target_measure_chart(context, edit.chart);
+    if (chart == nullptr) {
+        return;
+    }
+    if (chart->measures.size() >= context.limits.maximum_measures) {
+        reject(context.result, diagnostic_code_t::invalid_resolution,
+               "measure insertion would exceed the configured measure cap");
+        return;
+    }
+    if (edit.before_index > chart->measures.size()) {
+        reject(context.result, diagnostic_code_t::invalid_measure,
+               "measure insertion index lies beyond the chart");
+        return;
+    }
+    if (!validate_definition(*chart, edit.definition, context.limits, context.result)) {
+        return;
+    }
+    const auto id = next_measure_id(*chart);
+    if (!id) {
+        reject(context.result, diagnostic_code_t::invalid_id, "measure ID sequence is exhausted");
+        return;
+    }
+    shift_projections_for_insert(*chart, edit.before_index);
+    chart->measures.insert(chart->measures.begin() + static_cast<std::ptrdiff_t>(edit.before_index),
+                           measure_chunk_t{.id = *id, .definition = edit.definition});
+    context.label = "Insert measure";
+    context.changed = true;
+}
+
+auto apply_measure_action(measure_edit_context_t& context,
+                          const update_measure_definition_action_t& edit) -> void {
+    auto* chart = target_measure_chart(context, edit.chart);
+    if (chart == nullptr) {
+        return;
+    }
+    const auto measure = unique_measure(*chart, edit.measure, context.result);
+    if (measure == chart->measures.end() ||
+        !validate_definition(*chart, edit.definition, context.limits, context.result)) {
+        return;
+    }
+    if (same_definition(measure->definition, edit.definition)) {
+        return;
+    }
+    measure->definition = edit.definition;
+    context.label = "Update measure definition";
+    context.changed = true;
+}
+
+auto apply_measure_action(measure_edit_context_t& context,
+                          const delete_measure_action_t& edit) -> void {
+    auto* chart = target_measure_chart(context, edit.chart);
+    if (chart == nullptr) {
+        return;
+    }
+    const auto measure = unique_measure(*chart, edit.measure, context.result);
+    if (measure == chart->measures.end()) {
+        return;
+    }
+    if (chart->measures.size() == 1) {
+        reject(context.result, diagnostic_code_t::invalid_measure,
+               "a chart must retain at least one measure");
+        return;
+    }
+    if (!measure->notes.empty() || !measure->bgm_events.empty()) {
+        reject(context.result, diagnostic_code_t::invalid_measure,
+               "measure deletion requires an empty note and BGM bucket");
+        return;
+    }
+    const auto removed_index =
+        static_cast<std::size_t>(std::distance(chart->measures.begin(), measure));
+    chart->measures.erase(measure);
+    shift_projections_for_delete(*chart, removed_index);
+    context.label = "Delete measure";
+    context.changed = true;
+}
+
 } // namespace
 
 auto apply_measure_edit(document_history_t& history, std::uint64_t expected_revision,
@@ -103,91 +204,17 @@ auto apply_measure_edit(document_history_t& history, std::uint64_t expected_revi
     }
 
     auto proposed = history.document;
-    std::string label;
-    bool changed{};
-    std::visit(
-        [&](const auto& edit) {
-            using edit_t = std::remove_cvref_t<decltype(edit)>;
-            const auto chart =
-                std::ranges::find(proposed.charts, edit.chart, &chart_document_t::id);
-            if (!edit.chart || chart == proposed.charts.end()) {
-                reject(result, diagnostic_code_t::invalid_id,
-                       "measure edit refers to an unknown chart");
-                return;
-            }
-            if (chart->measures.size() > limits.maximum_measures) {
-                reject(result, diagnostic_code_t::invalid_resolution,
-                       "selected chart exceeds the configured measure cap");
-                return;
-            }
+    measure_edit_context_t context{.proposed = proposed,
+                                   .limits = limits,
+                                   .result = result,
+                                   .label = {},
+                                   .changed = false};
+    std::visit([&context](const auto& edit) { apply_measure_action(context, edit); }, action);
 
-            if constexpr (std::is_same_v<edit_t, insert_measure_action_t>) {
-                if (chart->measures.size() >= limits.maximum_measures) {
-                    reject(result, diagnostic_code_t::invalid_resolution,
-                           "measure insertion would exceed the configured measure cap");
-                    return;
-                }
-                if (edit.before_index > chart->measures.size()) {
-                    reject(result, diagnostic_code_t::invalid_measure,
-                           "measure insertion index lies beyond the chart");
-                    return;
-                }
-                if (!validate_definition(*chart, edit.definition, limits, result)) {
-                    return;
-                }
-                const auto id = next_measure_id(*chart);
-                if (!id) {
-                    reject(result, diagnostic_code_t::invalid_id,
-                           "measure ID sequence is exhausted");
-                    return;
-                }
-                shift_projections_for_insert(*chart, edit.before_index);
-                chart->measures.insert(chart->measures.begin() +
-                                           static_cast<std::ptrdiff_t>(edit.before_index),
-                                       measure_chunk_t{.id = *id, .definition = edit.definition});
-                label = "Insert measure";
-                changed = true;
-            } else if constexpr (std::is_same_v<edit_t, update_measure_definition_action_t>) {
-                const auto measure = unique_measure(*chart, edit.measure, result);
-                if (measure == chart->measures.end() ||
-                    !validate_definition(*chart, edit.definition, limits, result)) {
-                    return;
-                }
-                if (same_definition(measure->definition, edit.definition)) {
-                    return;
-                }
-                measure->definition = edit.definition;
-                label = "Update measure definition";
-                changed = true;
-            } else {
-                const auto measure = unique_measure(*chart, edit.measure, result);
-                if (measure == chart->measures.end()) {
-                    return;
-                }
-                if (chart->measures.size() == 1) {
-                    reject(result, diagnostic_code_t::invalid_measure,
-                           "a chart must retain at least one measure");
-                    return;
-                }
-                if (!measure->notes.empty() || !measure->bgm_events.empty()) {
-                    reject(result, diagnostic_code_t::invalid_measure,
-                           "measure deletion requires an empty note and BGM bucket");
-                    return;
-                }
-                const auto removed_index =
-                    static_cast<std::size_t>(std::distance(chart->measures.begin(), measure));
-                chart->measures.erase(measure);
-                shift_projections_for_delete(*chart, removed_index);
-                label = "Delete measure";
-                changed = true;
-            }
-        },
-        action);
-
-    if (!result.diagnostics.empty() || !changed) {
+    if (!result.diagnostics.empty() || !context.changed) {
         return result;
     }
-    return commit_document_command(history, std::move(proposed), std::move(label));
+    return commit_document_command(history, std::move(proposed), std::move(context.label));
 }
 
 } // namespace wormedit

@@ -287,41 +287,40 @@ struct compose_scene_projection_context_t {
     bool lane_key_bindings_truncated;
 };
 
-void project_compose_layout_and_notes(const compose_scene_projection_context_t& projection) {
+void populate_compose_bgm_sound_labels(const compose_scene_projection_context_t& projection,
+                                       std::size_t bgm_event_count) {
+    auto& flattened = projection.flattened;
+    const auto& history = projection.history;
+    const auto& bgm_events = projection.scene.bgm_events;
+    std::unordered_set<std::uint64_t> visible_sound_ids;
+    visible_sound_ids.reserve(bgm_event_count);
+    for (std::size_t index = 0; index < bgm_event_count; ++index) {
+        if (bgm_events[index].sound) visible_sound_ids.insert(bgm_events[index].sound->value);
+    }
+    flattened.compose.bgm.sound_labels.reserve(visible_sound_ids.size());
+    for (const auto& resource : history.document.resources) {
+        if (!visible_sound_ids.contains(resource.id.value)) continue;
+        const auto bms_identity = std::ranges::find_if(
+            resource.target_identities, [](const auto& identity) {
+                return identity.family == wormedit::format_family_t::bms;
+            });
+        const auto name = resource.name.empty()
+                              ? "Resource " + std::to_string(resource.id.value)
+                              : resource.name;
+        const auto label = bms_identity != resource.target_identities.end()
+                               ? bms_identity->identifier
+                               : std::filesystem::path{name}.stem().string();
+        flattened.compose.bgm.sound_labels.emplace(
+            resource.id.value,
+            std::pair{label.empty() ? std::to_string(resource.id.value) : label, name});
+    }
+}
+
+void project_compose_grid_lines(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.flattened;
     const auto& chart = projection.chart;
     const auto& scene = projection.scene;
     auto& view = projection.view;
-    const auto field_left_pixels = projection.field_left_pixels;
-    const auto playable_field_width = projection.playable_field_width;
-    const auto convert_rect = [](const wormedit::editor_field_rect_t& rect) {
-        return WormUiComposeRect{rect.left, rect.top, rect.right, rect.bottom};
-    };
-    const auto& bands = scene.layout_bands;
-    const auto band_count =
-        std::min(bands.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BAND_CAPACITY));
-    flattened.compose.band.reserve(band_count);
-    for (std::size_t index = 0; index < band_count; ++index) {
-        const auto& band = bands[index];
-        flattened.compose.band.push_back(
-            {.bounds = {field_left_pixels, band.top_pixels,
-                        field_left_pixels + playable_field_width,
-                        band.bottom_pixels},
-             .split_stage = band.split_stage});
-    }
-    const auto& lanes = scene.lanes;
-    const auto lane_count =
-        std::min(lanes.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_LANE_CAPACITY));
-    flattened.compose.lane.reserve(lane_count);
-    for (std::size_t index = 0; index < lane_count; ++index) {
-        const auto& lane = lanes[index];
-        flattened.compose.lane.push_back({.bounds = convert_rect(lane.bounds),
-                                                  .lane_id = lane.lane.value,
-                                                  .display_order = lane.display_order,
-                                                  .role = static_cast<std::uint8_t>(lane.role),
-                                                  .stage = static_cast<std::uint8_t>(lane.stage),
-                                                  .glyph = static_cast<std::uint8_t>(lane.glyph)});
-    }
     const auto& lines = scene.grid_lines;
     const auto line_count =
         std::min(lines.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_GRID_CAPACITY));
@@ -361,8 +360,19 @@ void project_compose_layout_and_notes(const compose_scene_projection_context_t& 
                                    ? measure_number
                                    : 0,
              .chart_row =
-                 line.chart_row.fractional_rows.numerator == 0 ? line.chart_row.whole_rows : 0});
+             line.chart_row.fractional_rows.numerator == 0 ? line.chart_row.whole_rows : 0});
     }
+    view.truncated = view.truncated || line_count != lines.size();
+
+}
+
+void project_compose_scene_objects(const compose_scene_projection_context_t& projection) {
+    auto& flattened = projection.flattened;
+    const auto& scene = projection.scene;
+    auto& view = projection.view;
+    const auto convert_rect = [](const wormedit::editor_field_rect_t& rect) {
+        return WormUiComposeRect{rect.left, rect.top, rect.right, rect.bottom};
+    };
     const auto& differences = scene.comparison_differences;
     const auto difference_count =
         std::min(differences.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_DIFFERENCE_CAPACITY));
@@ -423,17 +433,55 @@ void project_compose_layout_and_notes(const compose_scene_projection_context_t& 
              .paint_erase_preview = endpoint.paint_erase_preview,
              .paint_invalid_preview = endpoint.paint_invalid_preview});
     }
-
-    view.truncated = view.truncated || projection.lane_key_bindings_truncated ||
-                     band_count != bands.size() || lane_count != lanes.size() ||
-                     line_count != lines.size() || difference_count != differences.size() ||
+    view.truncated = view.truncated || difference_count != differences.size() ||
                      hold_count != holds.size() || endpoint_count != endpoints.size();
+
+
+}
+
+void project_compose_layout_and_notes(const compose_scene_projection_context_t& projection) {
+    auto& flattened = projection.flattened;
+    const auto& scene = projection.scene;
+    auto& view = projection.view;
+    const auto field_left_pixels = projection.field_left_pixels;
+    const auto playable_field_width = projection.playable_field_width;
+    const auto convert_rect = [](const wormedit::editor_field_rect_t& rect) {
+        return WormUiComposeRect{rect.left, rect.top, rect.right, rect.bottom};
+    };
+    const auto& bands = scene.layout_bands;
+    const auto band_count =
+        std::min(bands.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BAND_CAPACITY));
+    flattened.compose.band.reserve(band_count);
+    for (std::size_t index = 0; index < band_count; ++index) {
+        const auto& band = bands[index];
+        flattened.compose.band.push_back(
+            {.bounds = {field_left_pixels, band.top_pixels,
+                        field_left_pixels + playable_field_width,
+                        band.bottom_pixels},
+             .split_stage = band.split_stage});
+    }
+    const auto& lanes = scene.lanes;
+    const auto lane_count =
+        std::min(lanes.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_LANE_CAPACITY));
+    flattened.compose.lane.reserve(lane_count);
+    for (std::size_t index = 0; index < lane_count; ++index) {
+        const auto& lane = lanes[index];
+        flattened.compose.lane.push_back({.bounds = convert_rect(lane.bounds),
+                                                  .lane_id = lane.lane.value,
+                                                  .display_order = lane.display_order,
+                                                  .role = static_cast<std::uint8_t>(lane.role),
+                                                  .stage = static_cast<std::uint8_t>(lane.stage),
+                                                  .glyph = static_cast<std::uint8_t>(lane.glyph)});
+    }
+    project_compose_grid_lines(projection);
+    project_compose_scene_objects(projection);
+    view.truncated = view.truncated || projection.lane_key_bindings_truncated ||
+                     band_count != bands.size() || lane_count != lanes.size();
 }
 
 void project_compose_bgm(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.flattened;
     const auto& scene = projection.scene;
-    const auto& history = projection.history;
     auto& view = projection.view;
     const auto convert_rect = [](const wormedit::editor_field_rect_t& rect) {
         return WormUiComposeRect{rect.left, rect.top, rect.right, rect.bottom};
@@ -451,30 +499,7 @@ void project_compose_bgm(const compose_scene_projection_context_t& projection) {
     const auto& bgm_events = scene.bgm_events;
     const auto bgm_event_count =
         std::min(bgm_events.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BGM_EVENT_CAPACITY));
-    std::unordered_set<std::uint64_t> visible_sound_ids;
-    visible_sound_ids.reserve(bgm_event_count);
-    for (std::size_t index = 0; index < bgm_event_count; ++index) {
-        if (bgm_events[index].sound)
-            visible_sound_ids.insert(bgm_events[index].sound->value);
-    }
-    flattened.compose.bgm.sound_labels.reserve(visible_sound_ids.size());
-    for (const auto& resource : history.document.resources) {
-        if (!visible_sound_ids.contains(resource.id.value))
-            continue;
-        const auto bms_identity =
-            std::ranges::find_if(resource.target_identities, [](const auto& identity) {
-                return identity.family == wormedit::format_family_t::bms;
-            });
-        const auto name = resource.name.empty()
-                              ? "Resource " + std::to_string(resource.id.value)
-                              : resource.name;
-        const auto label = bms_identity != resource.target_identities.end()
-                               ? bms_identity->identifier
-                               : std::filesystem::path{name}.stem().string();
-        flattened.compose.bgm.sound_labels.emplace(
-            resource.id.value,
-            std::pair{label.empty() ? std::to_string(resource.id.value) : label, name});
-    }
+    populate_compose_bgm_sound_labels(projection, bgm_event_count);
     flattened.compose.bgm.event.reserve(bgm_event_count);
     for (std::size_t index = 0; index < bgm_event_count; ++index) {
         const auto& event = bgm_events[index];
@@ -502,11 +527,59 @@ void project_compose_bgm(const compose_scene_projection_context_t& projection) {
                      bgm_event_count != bgm_events.size();
 }
 
+const wormedit::bgm_event_t* find_compose_bgm_event(
+    const wormedit::chart_document_t& chart, const auto& event_id) {
+    for (const auto& measure : chart.measures) {
+        const auto found = std::ranges::find(measure.bgm_events, event_id,
+                                             &wormedit::bgm_event_t::id);
+        if (found != measure.bgm_events.end()) return &*found;
+    }
+    return nullptr;
+}
+
+void project_compose_draft_marker(const compose_scene_projection_context_t& projection,
+                                 const auto& marker,
+                                 const wormedit::editor_field_rect_t* bgm_bounds) {
+    const auto& scene = projection.scene;
+    const auto& view = projection.view;
+    const auto& interaction_view = projection.interaction_view;
+    const auto row = wormedit::absolute_row(projection.index.measures, marker.position);
+    if (!row) return;
+    const auto y = compose_project_y(*row, projection.pixels_per_row,
+                                     interaction_view.viewport_scroll_pixels,
+                                     view.viewport_height_pixels, projection.downscroll);
+    if (y < -8.0 || y > view.viewport_height_pixels + 8.0) return;
+    const wormedit::editor_field_rect_t* bounds = bgm_bounds;
+    if (marker.playable_lane) {
+        const auto playable = std::ranges::find_if(scene.lanes, [&](const auto& candidate) {
+            return candidate.lane == *marker.playable_lane &&
+                   y >= candidate.bounds.top - 8.0 && y <= candidate.bounds.bottom + 8.0;
+        });
+        bounds = playable == scene.lanes.end() ? nullptr : &playable->bounds;
+    }
+    if (!bounds) return;
+    projection.flattened.compose.bgm.draft.push_back(
+        {.bounds = {bounds->left, y - 8.0, bounds->right, y + 8.0},
+         .restart = marker.restart,
+         .playable = marker.playable_lane.has_value()});
+}
+
+void project_compose_marker_draft(const compose_scene_projection_context_t& projection) {
+    const auto& draft = projection.application_state.bmson_marker_draft;
+    if (!draft || projection.pixels_per_row <= 0.0) return;
+    const auto* reference = find_compose_bgm_event(projection.chart, draft->reference);
+    if (!reference) return;
+    const auto lane = std::ranges::find_if(projection.scene.bgm_lanes, [&](const auto& candidate) {
+        return candidate.source_lane == reference->source_lane;
+    });
+    const auto* bounds = lane == projection.scene.bgm_lanes.end() ? nullptr : &lane->bounds;
+    for (const auto& marker : draft->markers)
+        project_compose_draft_marker(projection, marker, bounds);
+}
+
 void project_compose_marker_previews(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.flattened;
-    const auto& chart = projection.chart;
     const auto& scene = projection.scene;
-    const auto& index = projection.index;
     const auto& application_state = projection.application_state;
     const auto& interaction_view = projection.interaction_view;
     auto& view = projection.view;
@@ -515,56 +588,7 @@ void project_compose_marker_previews(const compose_scene_projection_context_t& p
     const auto convert_rect = [](const wormedit::editor_field_rect_t& rect) {
         return WormUiComposeRect{rect.left, rect.top, rect.right, rect.bottom};
     };
-    if (application_state.bmson_marker_draft && pixels_per_row > 0.0) {
-        const auto& draft = *application_state.bmson_marker_draft;
-        const wormedit::bgm_event_t* reference{};
-        for (const auto& measure : chart.measures) {
-            const auto event = std::ranges::find(measure.bgm_events, draft.reference,
-                                                  &wormedit::bgm_event_t::id);
-            if (event != measure.bgm_events.end()) {
-                reference = &*event;
-                break;
-            }
-        }
-        if (reference) {
-            const auto lane = std::ranges::find_if(scene.bgm_lanes, [&](const auto& candidate) {
-                return candidate.source_lane == reference->source_lane;
-            });
-            for (const auto& marker : draft.markers) {
-                const auto row = wormedit::absolute_row(projection.index.measures, marker.position);
-                if (!row) {
-                    continue;
-                }
-                const auto y = compose_project_y(*row, pixels_per_row,
-                                                 interaction_view.viewport_scroll_pixels,
-                                                 view.viewport_height_pixels, downscroll);
-                if (y < -8.0 || y > view.viewport_height_pixels + 8.0) {
-                    continue;
-                }
-                const wormedit::editor_field_rect_t* bounds{};
-                if (marker.playable_lane) {
-                    const auto playable =
-                        std::ranges::find_if(scene.lanes, [&](const auto& candidate) {
-                            return candidate.lane == *marker.playable_lane &&
-                                   y >= candidate.bounds.top - 8.0 &&
-                                   y <= candidate.bounds.bottom + 8.0;
-                        });
-                    if (playable != scene.lanes.end()) {
-                        bounds = &playable->bounds;
-                    }
-                } else if (lane != scene.bgm_lanes.end()) {
-                    bounds = &lane->bounds;
-                }
-                if (!bounds) {
-                    continue;
-                }
-                flattened.compose.bgm.draft.push_back(
-                    {.bounds = {bounds->left, y - 8.0, bounds->right, y + 8.0},
-                     .restart = marker.restart,
-                     .playable = marker.playable_lane.has_value()});
-            }
-        }
-    }
+    project_compose_marker_draft(projection);
     if (application_state.bmson_marker_move_preview && pixels_per_row > 0.0) {
         const auto& preview = *application_state.bmson_marker_move_preview;
         const auto lane = std::ranges::find_if(scene.bgm_lanes, [&](const auto& candidate) {
@@ -740,6 +764,25 @@ bool initialize_compose_view_state(
     return true;
 }
 
+void populate_semantic_layer_target_state(WormUiComposeView& view,
+                                         const application_command_state_t& application_state,
+                                         const auto& layer, bool selected) {
+    view.semantic_layer_target_locked = view.semantic_layer_target_locked ||
+                                        (selected && layer.locked);
+    view.semantic_layer_target_visible = view.semantic_layer_target_visible ||
+                                         (selected && layer.visible);
+    view.semantic_layer_target_required_filter =
+        view.semantic_layer_target_required_filter ||
+        (selected && std::ranges::find(application_state.required_semantic_layer_filters,
+                                       layer.id) !=
+                         application_state.required_semantic_layer_filters.end());
+    view.semantic_layer_target_excluded_filter =
+        view.semantic_layer_target_excluded_filter ||
+        (selected && std::ranges::find(application_state.excluded_semantic_layer_filters,
+                                       layer.id) !=
+                         application_state.excluded_semantic_layer_filters.end());
+}
+
 bool populate_semantic_layer_palette(
     flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
     compose_scene_cache_t& cache, const wormedit::document_history_t& history,
@@ -798,20 +841,7 @@ bool populate_semantic_layer_palette(
             .locked = layer.locked,
             .selected = selected,
         };
-        view.semantic_layer_target_locked =
-            view.semantic_layer_target_locked || (selected && layer.locked);
-        view.semantic_layer_target_visible =
-            view.semantic_layer_target_visible || (selected && layer.visible);
-        view.semantic_layer_target_required_filter =
-            view.semantic_layer_target_required_filter ||
-            (selected &&
-             std::ranges::find(application_state.required_semantic_layer_filters, layer.id) !=
-                 application_state.required_semantic_layer_filters.end());
-        view.semantic_layer_target_excluded_filter =
-            view.semantic_layer_target_excluded_filter ||
-            (selected &&
-             std::ranges::find(application_state.excluded_semantic_layer_filters, layer.id) !=
-                 application_state.excluded_semantic_layer_filters.end());
+        populate_semantic_layer_target_state(view, application_state, layer, selected);
     }
     return true;
 }
@@ -978,11 +1008,77 @@ bool populate_compose_bookmark_and_section_storage(
            populate_compose_section_storage(flattened, chart, measures, view);
 }
 
-void project_compose_markers(
-    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
-    const compose_scene_cache_t& cache,
-    const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
-    bool downscroll) {
+template <typename AppendMarker>
+void append_compose_chart_timing_markers(const wormedit::chart_document_t& chart,
+                                         AppendMarker&& append) {
+    for (std::size_t index = 0; index < chart.bpms.size(); ++index)
+        append(chart.bpms[index].position, chart.bpms[index].id.value,
+               chart.bpms[index].provenance.source_order, index, WORM_UI_TIMING_LANE_BPM);
+    for (std::size_t index = 0; index < chart.scrolls.size(); ++index)
+        append(chart.scrolls[index].position, chart.scrolls[index].id.value,
+               chart.scrolls[index].provenance.source_order, index, WORM_UI_TIMING_LANE_SCROLL);
+    for (std::size_t index = 0; index < chart.speeds.size(); ++index)
+        append(chart.speeds[index].position, chart.speeds[index].id.value,
+               chart.speeds[index].provenance.source_order, index, WORM_UI_TIMING_LANE_SPEED);
+    for (std::size_t index = 0; index < chart.pauses.size(); ++index)
+        append(chart.pauses[index].position, chart.pauses[index].id.value,
+               chart.pauses[index].provenance.source_order, index,
+               chart.pauses[index].kind == wormedit::pause_kind_t::stop
+                   ? WORM_UI_TIMING_LANE_STOP
+                   : WORM_UI_TIMING_LANE_DELAY);
+    for (std::size_t index = 0; index < chart.warps.size(); ++index)
+        append(chart.warps[index].span.begin, chart.warps[index].id.value,
+               chart.warps[index].provenance.source_order, index, WORM_UI_TIMING_LANE_WARP);
+    for (std::size_t index = 0; index < chart.kiai.size(); ++index)
+        append(chart.kiai[index].position, chart.kiai[index].id.value,
+               chart.kiai[index].provenance.source_order, index, WORM_UI_TIMING_LANE_KIAI);
+    for (std::size_t index = 0; index < chart.timing_anchors.size(); ++index)
+        append(chart.timing_anchors[index].position, chart.timing_anchors[index].id.value,
+               index, index, WORM_UI_TIMING_LANE_ANCHOR);
+}
+
+void assign_compose_timing_marker_fractions(flattened_workspace_t& flattened) {
+    std::ranges::sort(flattened.compose.timing_marker, [](const auto& left, const auto& right) {
+        return std::tie(left.lane, left.marker_y_pixels, left.source_order, left.storage_order,
+                        left.object_id) <
+               std::tie(right.lane, right.marker_y_pixels, right.source_order, right.storage_order,
+                        right.object_id);
+    });
+    for (std::size_t first = 0; first < flattened.compose.timing_marker.size();) {
+        auto after = first + 1;
+        while (after < flattened.compose.timing_marker.size() &&
+               flattened.compose.timing_marker[after].lane ==
+                   flattened.compose.timing_marker[first].lane &&
+               flattened.compose.timing_marker[after].marker_y_pixels ==
+                   flattened.compose.timing_marker[first].marker_y_pixels) {
+            ++after;
+        }
+        const auto count = static_cast<double>(after - first);
+        for (auto index = first; index < after; ++index) {
+            flattened.compose.timing_marker[index].marker_left_fraction =
+                static_cast<double>(index - first) / count;
+            flattened.compose.timing_marker[index].marker_right_fraction =
+                static_cast<double>(index - first + 1) / count;
+        }
+        first = after;
+    }
+}
+
+struct compose_marker_projection_context_t {
+    flattened_workspace_t& flattened;
+    const wormedit::chart_document_t& chart;
+    const compose_scene_cache_t& cache;
+    const wormedit::editor_interaction_view_model_t& interaction_view;
+    WormUiComposeView& view;
+    bool downscroll;
+};
+
+void project_compose_beat_markers(const compose_marker_projection_context_t& input) {
+    auto& flattened = input.flattened;
+    const auto& chart = input.chart;
+    const auto& interaction_view = input.interaction_view;
+    auto& view = input.view;
+    const auto downscroll = input.downscroll;
     const auto beat_pixels_per_row =
         interaction_view.pixels_per_standard_measure / chart.divisions_per_standard_measure;
     const auto visible_beat_y = [&](std::uint64_t row) -> std::optional<double> {
@@ -1025,66 +1121,90 @@ void project_compose_markers(
                 std::clamp(span_bottom, 0.0, view.viewport_height_pixels);
         }
     }
-    if (cache.marker_timing_index) {
-        const auto projected_y = [&](std::int64_t milliseconds) -> std::optional<double> {
-            const auto projected = wormedit::musical_position_at(
-                *cache.marker_timing_index, wormedit::signed_rational_t{milliseconds, 1'000});
-            if (!projected || !projected.absolute_row || projected.absolute_row->denominator == 0) {
-                return std::nullopt;
-            }
-            const auto row = static_cast<long double>(projected.absolute_row->numerator) /
-                             static_cast<long double>(projected.absolute_row->denominator);
-            const auto pixels_per_row =
-                static_cast<long double>(interaction_view.pixels_per_standard_measure) /
-                static_cast<long double>(chart.divisions_per_standard_measure);
-            const auto y = compose_project_y(row, static_cast<double>(pixels_per_row),
-                                             interaction_view.viewport_scroll_pixels,
-                                             view.viewport_height_pixels, downscroll);
-            if (!std::isfinite(y) ||
-                y < static_cast<long double>(std::numeric_limits<double>::lowest()) ||
-                y > static_cast<long double>(std::numeric_limits<double>::max())) {
-                return std::nullopt;
-            }
-            return static_cast<double>(y);
-        };
-        const auto visible_y = [&](double y) {
-            return std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels;
-        };
-        for (std::size_t index = 0; index < view.audio_bookmark_count; ++index) {
-            auto& bookmark = flattened.compose.audio_marker.bookmark[index];
-            const auto y = projected_y(bookmark.audio_milliseconds);
-            if (y && visible_y(*y)) {
-                bookmark.projection_visible = true;
-                bookmark.projected_y_pixels = *y;
-            }
-        }
-        for (std::size_t index = 0; index < view.audio_section_count; ++index) {
-            auto& section = flattened.compose.audio_marker.section[index];
-            const auto begin = projected_y(section.begin_audio_milliseconds);
-            const auto end = projected_y(section.end_audio_milliseconds);
-            if (!begin || !end) {
-                continue;
-            }
-            section.begin_projection_visible = visible_y(*begin);
-            section.end_projection_visible = visible_y(*end);
-            if (section.begin_projection_visible) {
-                section.projected_begin_y_pixels = *begin;
-            }
-            if (section.end_projection_visible) {
-                section.projected_end_y_pixels = *end;
-            }
-            const auto top = std::min(*begin, *end);
-            const auto bottom = std::max(*begin, *end);
-            if (bottom >= 0.0 && top <= view.viewport_height_pixels) {
-                section.span_projection_visible = true;
-                section.projected_span_top_y_pixels =
-                    std::clamp(top, 0.0, view.viewport_height_pixels);
-                section.projected_span_bottom_y_pixels =
-                    std::clamp(bottom, 0.0, view.viewport_height_pixels);
-            }
+
+}
+
+std::optional<double> project_compose_audio_marker_y(
+    const compose_marker_projection_context_t& input, const auto& timing_index,
+    std::int64_t milliseconds) {
+    const auto projected = wormedit::musical_position_at(
+        timing_index, wormedit::signed_rational_t{milliseconds, 1'000});
+    if (!projected || !projected.absolute_row || projected.absolute_row->denominator == 0)
+        return std::nullopt;
+    const auto row = static_cast<long double>(projected.absolute_row->numerator) /
+                     static_cast<long double>(projected.absolute_row->denominator);
+    const auto pixels_per_row =
+        static_cast<long double>(input.interaction_view.pixels_per_standard_measure) /
+        static_cast<long double>(input.chart.divisions_per_standard_measure);
+    const auto y = compose_project_y(row, static_cast<double>(pixels_per_row),
+                                     input.interaction_view.viewport_scroll_pixels,
+                                     input.view.viewport_height_pixels, input.downscroll);
+    if (!std::isfinite(y) ||
+        y < static_cast<long double>(std::numeric_limits<double>::lowest()) ||
+        y > static_cast<long double>(std::numeric_limits<double>::max())) return std::nullopt;
+    return static_cast<double>(y);
+}
+
+bool compose_audio_marker_y_visible(double y, const WormUiComposeView& view) {
+    return std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels;
+}
+
+void project_compose_audio_bookmarks(const compose_marker_projection_context_t& input,
+                                    const auto& timing_index) {
+    for (std::size_t index = 0; index < input.view.audio_bookmark_count; ++index) {
+        auto& bookmark = input.flattened.compose.audio_marker.bookmark[index];
+        const auto y = project_compose_audio_marker_y(input, timing_index,
+                                                      bookmark.audio_milliseconds);
+        if (y && compose_audio_marker_y_visible(*y, input.view)) {
+            bookmark.projection_visible = true;
+            bookmark.projected_y_pixels = *y;
         }
     }
 }
+
+void project_compose_audio_sections(const compose_marker_projection_context_t& input,
+                                   const auto& timing_index) {
+    auto& view = input.view;
+    for (std::size_t index = 0; index < view.audio_section_count; ++index) {
+        auto& section = input.flattened.compose.audio_marker.section[index];
+        const auto begin = project_compose_audio_marker_y(input, timing_index,
+                                                          section.begin_audio_milliseconds);
+        const auto end = project_compose_audio_marker_y(input, timing_index,
+                                                        section.end_audio_milliseconds);
+        if (!begin || !end) continue;
+        section.begin_projection_visible = compose_audio_marker_y_visible(*begin, view);
+        section.end_projection_visible = compose_audio_marker_y_visible(*end, view);
+        if (section.begin_projection_visible) section.projected_begin_y_pixels = *begin;
+        if (section.end_projection_visible) section.projected_end_y_pixels = *end;
+        const auto top = std::min(*begin, *end);
+        const auto bottom = std::max(*begin, *end);
+        if (bottom >= 0.0 && top <= view.viewport_height_pixels) {
+            section.span_projection_visible = true;
+            section.projected_span_top_y_pixels = std::clamp(top, 0.0, view.viewport_height_pixels);
+            section.projected_span_bottom_y_pixels =
+                std::clamp(bottom, 0.0, view.viewport_height_pixels);
+        }
+    }
+}
+
+void project_compose_audio_markers(const compose_marker_projection_context_t& input) {
+    if (!input.cache.marker_timing_index) return;
+    const auto& timing_index = *input.cache.marker_timing_index;
+    project_compose_audio_bookmarks(input, timing_index);
+    project_compose_audio_sections(input, timing_index);
+}
+
+void project_compose_markers(
+    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    const compose_scene_cache_t& cache,
+    const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
+    bool downscroll) {
+    const compose_marker_projection_context_t input{
+        flattened, chart, cache, interaction_view, view, downscroll};
+    project_compose_beat_markers(input);
+    project_compose_audio_markers(input);
+}
+
 void populate_compose_timing_markers(
     flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
     const compose_scene_cache_t& cache,
@@ -1130,61 +1250,8 @@ void populate_compose_timing_markers(
             .lane = lane,
         });
     };
-    for (std::size_t index = 0; index < chart.bpms.size(); ++index)
-        append_timing_marker(chart.bpms[index].position, chart.bpms[index].id.value,
-                             chart.bpms[index].provenance.source_order, index,
-                             WORM_UI_TIMING_LANE_BPM);
-    for (std::size_t index = 0; index < chart.scrolls.size(); ++index)
-        append_timing_marker(chart.scrolls[index].position, chart.scrolls[index].id.value,
-                             chart.scrolls[index].provenance.source_order, index,
-                             WORM_UI_TIMING_LANE_SCROLL);
-    for (std::size_t index = 0; index < chart.speeds.size(); ++index)
-        append_timing_marker(chart.speeds[index].position, chart.speeds[index].id.value,
-                             chart.speeds[index].provenance.source_order, index,
-                             WORM_UI_TIMING_LANE_SPEED);
-    for (std::size_t index = 0; index < chart.pauses.size(); ++index)
-        append_timing_marker(chart.pauses[index].position, chart.pauses[index].id.value,
-                             chart.pauses[index].provenance.source_order, index,
-                             chart.pauses[index].kind == wormedit::pause_kind_t::stop
-                                 ? WORM_UI_TIMING_LANE_STOP
-                                 : WORM_UI_TIMING_LANE_DELAY);
-    for (std::size_t index = 0; index < chart.warps.size(); ++index)
-        append_timing_marker(chart.warps[index].span.begin, chart.warps[index].id.value,
-                             chart.warps[index].provenance.source_order, index,
-                             WORM_UI_TIMING_LANE_WARP);
-    for (std::size_t index = 0; index < chart.kiai.size(); ++index)
-        append_timing_marker(chart.kiai[index].position, chart.kiai[index].id.value,
-                             chart.kiai[index].provenance.source_order, index,
-                             WORM_UI_TIMING_LANE_KIAI);
-    for (std::size_t index = 0; index < chart.timing_anchors.size(); ++index)
-        append_timing_marker(chart.timing_anchors[index].position,
-                             chart.timing_anchors[index].id.value, index, index,
-                             WORM_UI_TIMING_LANE_ANCHOR);
-    std::ranges::sort(flattened.compose.timing_marker,
-                      [](const auto& left, const auto& right) {
-                          return std::tie(left.lane, left.marker_y_pixels, left.source_order,
-                                          left.storage_order, left.object_id) <
-                                 std::tie(right.lane, right.marker_y_pixels, right.source_order,
-                                          right.storage_order, right.object_id);
-                      });
-    for (std::size_t first = 0; first < flattened.compose.timing_marker.size();) {
-        auto after = first + 1;
-        while (after < flattened.compose.timing_marker.size() &&
-               flattened.compose.timing_marker[after].lane ==
-                   flattened.compose.timing_marker[first].lane &&
-               flattened.compose.timing_marker[after].marker_y_pixels ==
-                   flattened.compose.timing_marker[first].marker_y_pixels) {
-            ++after;
-        }
-        const auto count = static_cast<double>(after - first);
-        for (auto index = first; index < after; ++index) {
-            flattened.compose.timing_marker[index].marker_left_fraction =
-                static_cast<double>(index - first) / count;
-            flattened.compose.timing_marker[index].marker_right_fraction =
-                static_cast<double>(index - first + 1) / count;
-        }
-        first = after;
-    }
+    append_compose_chart_timing_markers(chart, append_timing_marker);
+    assign_compose_timing_marker_fractions(flattened);
     view.timing_markers = flattened.compose.timing_marker.data();
     view.timing_marker_count = flattened.compose.timing_marker.size();
     if (timing_stage &&
@@ -1274,6 +1341,18 @@ void populate_compose_selection_preview(
     view.selected_object_count = retained_state->selected_objects.size();
 }
 
+void populate_compose_staged_draft(flattened_workspace_t& flattened,
+                                   application_command_state_t& application_state,
+                                   WormUiComposeView& view);
+void populate_compose_selected_bgm(
+    const wormedit::chart_document_t& chart,
+    const std::optional<wormedit::editor_interaction_state_t>& retained_state,
+    WormUiComposeView& view);
+void populate_compose_selected_note(
+    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    const std::optional<wormedit::editor_interaction_state_t>& retained_state,
+    WormUiComposeView& view);
+
 void populate_compose_selected_objects_and_drafts(
     flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
     const wormedit::document_history_t& history,
@@ -1286,98 +1365,82 @@ void populate_compose_selected_objects_and_drafts(
         application_state.bmson_marker_draft.reset();
         application_state.bmson_razor_stroke.reset();
     }
-    if (application_state.bmson_marker_draft) {
-        view.staged_bmson_marker_count = application_state.bmson_marker_draft->markers.size();
-        flattened.compose.bmson_draft_playable_lane.clear();
-        flattened.compose.bmson_draft_restart.clear();
-        flattened.compose.bmson_draft_playable_lane.reserve(view.staged_bmson_marker_count);
-        flattened.compose.bmson_draft_restart.reserve(view.staged_bmson_marker_count);
-        for (const auto& marker : application_state.bmson_marker_draft->markers) {
-            flattened.compose.bmson_draft_playable_lane.push_back(
-                marker.playable_lane.value_or(wormedit::lane_id_t{}).value);
-            flattened.compose.bmson_draft_restart.push_back(marker.restart ? 1 : 0);
-        }
-        view.staged_bmson_marker_playable_lanes =
-            flattened.compose.bmson_draft_playable_lane.data();
-        view.staged_bmson_marker_restarts = flattened.compose.bmson_draft_restart.data();
-    }
+    populate_compose_staged_draft(flattened, application_state, view);
     if (application_state.bmson_marker_move_preview &&
         (application_state.bmson_marker_move_preview->chart != chart.id ||
          application_state.bmson_marker_move_preview->revision != history.document.revision)) {
         application_state.bmson_marker_move_preview.reset();
     }
-    if (retained_state->selected_objects.size() == 1 &&
-        retained_state->selected_objects.front().kind ==
-            wormedit::editor_selection_object_kind_t::bgm_event) {
-        const auto selected = retained_state->selected_objects.front().id;
-        for (const auto& measure : chart.measures) {
-            const auto event = std::ranges::find(measure.bgm_events, selected,
-                                                  &wormedit::bgm_event_t::id);
-            if (event != measure.bgm_events.end()) {
-                view.selected_bgm_event_id = selected.value;
-                view.selected_assigned_resource_id =
-                    event->sound.value_or(wormedit::resource_id_t{}).value;
-                if (chart.source_family == wormedit::format_family_t::bmson &&
-                    event->sound_channel_event) {
-                    view.selected_bmson_bgm_event_id = selected.value;
-                    view.selected_bmson_source_lane_id = event->source_lane.value;
-                }
-                break;
-            }
-        }
+    populate_compose_selected_bgm(chart, retained_state, view);
+    populate_compose_selected_note(flattened, chart, retained_state, view);
+}
+
+void populate_compose_staged_draft(flattened_workspace_t& flattened,
+                                   application_command_state_t& application_state,
+                                   WormUiComposeView& view) {
+    if (!application_state.bmson_marker_draft) return;
+    view.staged_bmson_marker_count = application_state.bmson_marker_draft->markers.size();
+    flattened.compose.bmson_draft_playable_lane.clear();
+    flattened.compose.bmson_draft_restart.clear();
+    flattened.compose.bmson_draft_playable_lane.reserve(view.staged_bmson_marker_count);
+    flattened.compose.bmson_draft_restart.reserve(view.staged_bmson_marker_count);
+    for (const auto& marker : application_state.bmson_marker_draft->markers) {
+        flattened.compose.bmson_draft_playable_lane.push_back(
+            marker.playable_lane.value_or(wormedit::lane_id_t{}).value);
+        flattened.compose.bmson_draft_restart.push_back(marker.restart ? 1 : 0);
     }
-    if (retained_state->selected_notes.size() == 1) {
-        const auto note_id = retained_state->selected_notes.front();
-        for (const auto& measure : chart.measures) {
-            const auto note = std::ranges::find(measure.notes, note_id, &wormedit::note_t::id);
-            if (note == measure.notes.end()) {
-                continue;
-            }
-            if (note->label.has_value()) {
-                flattened.compose.selected_note_label = *note->label;
-            }
-            view.selected_note_label = flattened.compose.selected_note_label.c_str();
-            view.selected_note_label_note_id = note_id.value;
-            view.selected_assigned_resource_id =
-                note->sound.value_or(wormedit::resource_id_t{}).value;
-            if (chart.source_family == wormedit::format_family_t::bmson &&
-                note->sound_channel_event && note->kind == wormedit::note_kind_t::tap) {
-                view.selected_bmson_note_event_id = note_id.value;
-            }
-            break;
+    view.staged_bmson_marker_playable_lanes = flattened.compose.bmson_draft_playable_lane.data();
+    view.staged_bmson_marker_restarts = flattened.compose.bmson_draft_restart.data();
+}
+
+void populate_compose_selected_bgm(
+    const wormedit::chart_document_t& chart,
+    const std::optional<wormedit::editor_interaction_state_t>& retained_state,
+    WormUiComposeView& view) {
+    if (retained_state->selected_objects.size() != 1 ||
+        retained_state->selected_objects.front().kind !=
+            wormedit::editor_selection_object_kind_t::bgm_event) return;
+    const auto selected = retained_state->selected_objects.front().id;
+    for (const auto& measure : chart.measures) {
+        const auto event = std::ranges::find(measure.bgm_events, selected,
+                                              &wormedit::bgm_event_t::id);
+        if (event == measure.bgm_events.end()) continue;
+        view.selected_bgm_event_id = selected.value;
+        view.selected_assigned_resource_id = event->sound.value_or(wormedit::resource_id_t{}).value;
+        if (chart.source_family == wormedit::format_family_t::bmson && event->sound_channel_event) {
+            view.selected_bmson_bgm_event_id = selected.value;
+            view.selected_bmson_source_lane_id = event->source_lane.value;
         }
+        break;
+    }
+}
+
+void populate_compose_selected_note(
+    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    const std::optional<wormedit::editor_interaction_state_t>& retained_state,
+    WormUiComposeView& view) {
+    if (retained_state->selected_notes.size() != 1) return;
+    const auto note_id = retained_state->selected_notes.front();
+    for (const auto& measure : chart.measures) {
+        const auto note = std::ranges::find(measure.notes, note_id, &wormedit::note_t::id);
+        if (note == measure.notes.end()) continue;
+        if (note->label) flattened.compose.selected_note_label = *note->label;
+        view.selected_note_label = flattened.compose.selected_note_label.c_str();
+        view.selected_note_label_note_id = note_id.value;
+        view.selected_assigned_resource_id = note->sound.value_or(wormedit::resource_id_t{}).value;
+        if (chart.source_family == wormedit::format_family_t::bmson && note->sound_channel_event &&
+            note->kind == wormedit::note_kind_t::tap)
+            view.selected_bmson_note_event_id = note_id.value;
+        break;
     }
 }
 
 
-} // namespace
-
-void populate_compose_view(flattened_workspace_t& flattened,
-                           wormedit::document_history_t& history,
-                           const wormedit::workspace_controller_t& workspace,
-                           compose_scene_cache_t& cache, int window_width, int window_height,
-                           std::optional<wormedit::editor_interaction_state_t>& retained_state,
-                           application_command_state_t& application_state,
-                           const wormedit::timing_lane_pseudonote_preview_t* timing_stage) {
-    if (!initialize_compose_view_state(flattened, cache, window_width, window_height,
-                                       retained_state, application_state)) {
-        return;
-    }
+std::optional<wormedit::measure_index_t> prepare_compose_chart_view(
+    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    wormedit::document_history_t& history, compose_scene_cache_t& cache,
+    application_command_state_t& application_state) {
     auto& view = flattened.view.compose;
-    if (!workspace.selected_chart) {
-        flattened.compose.status = "Choose a difficulty to display its chart field.";
-        view.status_text = flattened.compose.status.c_str();
-        return;
-    }
-    const auto chart_it = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                            &wormedit::chart_document_t::id);
-    if (chart_it == history.document.charts.end()) {
-        flattened.compose.status = "The selected difficulty is no longer available.";
-        view.status_text = flattened.compose.status.c_str();
-        return;
-    }
-    const auto& chart = *chart_it;
-    const auto downscroll = compose_field_downscroll(chart);
     view.waveform_audio_offset_numerator = chart.beat_zero_audio_offset_seconds.numerator;
     view.waveform_audio_offset_denominator = chart.beat_zero_audio_offset_seconds.denominator;
     view.beat_marker_navigation_available = has_beat_marker_navigation(chart);
@@ -1404,7 +1467,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     view.chart_id = chart.id.value;
     view.document_revision = history.document.revision;
     if (!populate_semantic_layer_palette(flattened, chart, cache, history, application_state)) {
-        return;
+        return std::nullopt;
     }
     if (!cache.attempted || cache.chart != chart.id ||
         cache.revision != history.document.revision) {
@@ -1454,12 +1517,12 @@ void populate_compose_view(flattened_workspace_t& flattened,
     if (!cache.index) {
         flattened.compose.status = cache.status;
         view.status_text = flattened.compose.status.c_str();
-        return;
+        return std::nullopt;
     }
     if (chart.measures.empty()) {
         flattened.compose.status = "This difficulty has no measures to display.";
         view.status_text = flattened.compose.status.c_str();
-        return;
+        return std::nullopt;
     }
 
     const auto measure_index = wormedit::build_measure_index(chart);
@@ -1469,19 +1532,41 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                                ? "The chart measure geometry is invalid."
                                                : diagnostics.front().message;
         view.status_text = flattened.compose.status.c_str();
-        return;
+        return std::nullopt;
     }
     const auto& measures = std::get<wormedit::measure_index_t>(measure_index);
     if (!populate_compose_bookmark_and_section_storage(flattened, chart, measures, view)) {
-        return;
+        return std::nullopt;
     }
+    return measures;
+}
+
+struct compose_interaction_population_context_t {
+    flattened_workspace_t& flattened;
+    wormedit::document_history_t& history;
+    const wormedit::chart_document_t& chart;
+    const wormedit::measure_index_t& measures;
+    std::optional<wormedit::editor_interaction_state_t>& retained_state;
+    application_command_state_t& application_state;
+    WormUiComposeView& view;
+    bool downscroll;
+};
+
+bool initialize_compose_interaction(const compose_interaction_population_context_t& input) {
+    auto& flattened = input.flattened;
+    auto& history = input.history;
+    const auto& chart = input.chart;
+    const auto& measures = input.measures;
+    auto& retained_state = input.retained_state;
+    auto& application_state = input.application_state;
+    auto& view = input.view;
+    const auto downscroll = input.downscroll;
     const auto initial_interaction = [&]() -> wormedit::editor_interaction_setup_t {
         std::optional<wormedit::local_position_t> initial_cursor;
         std::optional<wormedit::lane_id_t> initial_lane;
         std::uint64_t earliest_layout_row = std::numeric_limits<std::uint64_t>::max();
         for (const auto& segment : chart.lane_layouts) {
-            const auto row = wormedit::absolute_row(
-                std::get<wormedit::measure_index_t>(measure_index), segment.position);
+            const auto row = wormedit::absolute_row(measures, segment.position);
             if (!row || *row >= earliest_layout_row)
                 continue;
             const auto lane = std::ranges::find_if(segment.layout.lanes, compose_lane_is_editable);
@@ -1508,7 +1593,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
                     "This difficulty has no editable lanes to display.";
             }
             view.status_text = flattened.compose.status.c_str();
-            return;
+            return false;
         }
         retained_state = *initial.state;
         const auto initial_cursor_row = *wormedit::absolute_row(measures, retained_state->cursor);
@@ -1525,9 +1610,16 @@ void populate_compose_view(flattened_workspace_t& flattened,
                            : wormedit::editor_field_scroll_direction_t::up});
     }
 
-    // Compose and Timing consume the same chart-scoped snap preference. Do
-    // not replace a gesture's captured grid mid-drag: the next idle frame
-    // applies a Timing selection or a Compose snap-cycle uniformly.
+    return true;
+}
+
+bool update_compose_snap_preferences(const compose_interaction_population_context_t& input) {
+    const auto& chart = input.chart;
+    auto& retained_state = input.retained_state;
+    auto& application_state = input.application_state;
+    auto& flattened = input.flattened;
+    auto& view = input.view;
+    // Keep a gesture's captured grid stable until the next idle frame.
     if (!editor_interaction_has_pending_gesture(*retained_state)) {
         const auto snap = wormedit::filter_snap_denominators(
             chart.divisions_per_standard_measure, chart_snap_preferences,
@@ -1535,32 +1627,83 @@ void populate_compose_view(flattened_workspace_t& flattened,
         if (!snap) {
             flattened.compose.status = "The chart snap configuration is invalid.";
             view.status_text = flattened.compose.status.c_str();
-            return;
+            return false;
         }
         retained_state->supported_snap_denominators = snap.supported_denominators;
         retained_state->active_snap_denominator = snap.active_denominator;
         retained_state->active_snap_was_fallback = snap.active_was_fallback;
     }
+    return true;
+}
 
+std::optional<wormedit::editor_interaction_view_model_t> inspect_compose_interaction(
+    const compose_interaction_population_context_t& input) {
+    auto& history = input.history;
+    auto& retained_state = input.retained_state;
+    auto& flattened = input.flattened;
+    auto& view = input.view;
     retained_state->viewport_height_pixels = view.viewport_height_pixels;
     auto inspected = wormedit::inspect_editor_interaction(history, *retained_state);
     if (!std::holds_alternative<wormedit::editor_interaction_view_model_t>(inspected)) {
-        // Undoing the first edit in a virtual measure can remove the cursor's
-        // measure. Rebind it immediately and keep the virtual viewport in place.
         auto recovered = wormedit::recover_editor_interaction(history, *retained_state);
         if (!recovered.state || !recovered.view) {
             retained_state.reset();
             flattened.compose.status = recovered.diagnostics.empty()
-                                                   ? "The chart field view could not be recovered."
-                                                   : recovered.diagnostics.front().message;
+                                          ? "The chart field view could not be recovered."
+                                          : recovered.diagnostics.front().message;
             view.status_text = flattened.compose.status.c_str();
-            return;
+            return std::nullopt;
         }
         retained_state = std::move(*recovered.state);
         inspected = std::move(*recovered.view);
     }
-    auto interaction_view =
-        std::get<wormedit::editor_interaction_view_model_t>(std::move(inspected));
+    return std::get<wormedit::editor_interaction_view_model_t>(std::move(inspected));
+}
+
+std::optional<wormedit::editor_interaction_view_model_t> prepare_compose_interaction(
+    const compose_interaction_population_context_t& input) {
+    if (!initialize_compose_interaction(input) || !update_compose_snap_preferences(input))
+        return std::nullopt;
+    return inspect_compose_interaction(input);
+}
+
+struct compose_final_projection_context_t {
+    flattened_workspace_t& flattened;
+    wormedit::document_history_t& history;
+    const wormedit::chart_document_t& chart;
+    compose_scene_cache_t& cache;
+    std::optional<wormedit::editor_interaction_state_t>& retained_state;
+    application_command_state_t& application_state;
+    WormUiComposeView& view;
+    wormedit::editor_interaction_view_model_t& interaction_view;
+    const wormedit::measure_index_t& measures;
+    bool downscroll;
+    const wormedit::timing_lane_pseudonote_preview_t* timing_stage;
+};
+
+WormUiComposeSelectionMode compose_scalar_selection_mode(
+    wormedit::editor_area_selection_mode_t mode) {
+    switch (mode) {
+    case wormedit::editor_area_selection_mode_t::replace:
+        return WORM_UI_COMPOSE_SELECTION_REPLACE;
+    case wormedit::editor_area_selection_mode_t::add:
+        return WORM_UI_COMPOSE_SELECTION_ADD;
+    case wormedit::editor_area_selection_mode_t::toggle:
+        return WORM_UI_COMPOSE_SELECTION_TOGGLE;
+    }
+    return WORM_UI_COMPOSE_SELECTION_REPLACE;
+}
+
+std::uint64_t prepare_compose_projection_state(const compose_final_projection_context_t& input) {
+    auto& flattened = input.flattened;
+    const auto& history = input.history;
+    const auto& chart = input.chart;
+    auto& cache = input.cache;
+    auto& retained_state = input.retained_state;
+    auto& application_state = input.application_state;
+    auto& view = input.view;
+    auto& interaction_view = input.interaction_view;
+    const auto downscroll = input.downscroll;
     project_compose_markers(flattened, chart, cache, interaction_view, view, downscroll);
     if (application_state.preview_playhead_absolute_row) {
         const auto pixels_per_row = interaction_view.pixels_per_standard_measure /
@@ -1615,22 +1758,21 @@ void populate_compose_view(flattened_workspace_t& flattened,
         retained_state->selected_notes.size() == 1) {
         view.focus_note_label_editor = true;
     }
-    const auto scalar_selection_mode = [](wormedit::editor_area_selection_mode_t mode) {
-        switch (mode) {
-        case wormedit::editor_area_selection_mode_t::replace:
-            return WORM_UI_COMPOSE_SELECTION_REPLACE;
-        case wormedit::editor_area_selection_mode_t::add:
-            return WORM_UI_COMPOSE_SELECTION_ADD;
-        case wormedit::editor_area_selection_mode_t::toggle:
-            return WORM_UI_COMPOSE_SELECTION_TOGGLE;
-        }
-        return WORM_UI_COMPOSE_SELECTION_REPLACE;
-    };
+    return canvas_rows;
+}
+
+void populate_compose_pending_previews(const compose_final_projection_context_t& input) {
+    const auto& chart = input.chart;
+    auto& retained_state = input.retained_state;
+    auto& view = input.view;
+    auto& interaction_view = input.interaction_view;
+    const auto& measures = input.measures;
+    const auto downscroll = input.downscroll;
     if (interaction_view.pending_editor_area_selection) {
         const auto& preview = *interaction_view.pending_editor_area_selection;
         view.area_selection_preview_visible = true;
         view.area_selection_preview_mode =
-            scalar_selection_mode(retained_state->pending_editor_area_selection->mode);
+            compose_scalar_selection_mode(retained_state->pending_editor_area_selection->mode);
         view.area_selection_preview_bounds = {
             std::clamp(preview.left_pixels, 0.0, view.viewport_width_pixels),
             std::clamp(downscroll ? view.viewport_height_pixels - preview.bottom_pixels
@@ -1646,9 +1788,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
         const auto& pending = *retained_state->pending_space_range_selection;
         const auto cursor_row = retained_state->virtual_bms_cursor_row
                                     ? retained_state->virtual_bms_cursor_row
-                                    : wormedit::absolute_row(
-                                          std::get<wormedit::measure_index_t>(measure_index),
-                                          retained_state->cursor);
+                                    : wormedit::absolute_row(measures, retained_state->cursor);
         if (cursor_row) {
             const auto pixels_per_row = interaction_view.pixels_per_standard_measure /
                                         static_cast<double>(chart.divisions_per_standard_measure);
@@ -1663,7 +1803,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
             const auto top = std::min(first_y, last_y);
             const auto bottom = std::max(first_y, last_y);
             view.space_range_preview_visible = true;
-            view.space_range_preview_mode = scalar_selection_mode(pending.mode);
+            view.space_range_preview_mode = compose_scalar_selection_mode(pending.mode);
             view.space_range_preview_bounds = {
                 0.0,
                 std::clamp(top, 0.0, view.viewport_height_pixels),
@@ -1681,6 +1821,21 @@ void populate_compose_view(flattened_workspace_t& flattened,
             view.space_range_tail_y_pixels = row_center(*cursor_row);
         }
     }
+
+}
+
+bool compose_project_scene(const compose_final_projection_context_t& input,
+                           std::uint64_t canvas_rows) {
+    auto& flattened = input.flattened;
+    auto& history = input.history;
+    const auto& chart = input.chart;
+    auto& cache = input.cache;
+    auto& retained_state = input.retained_state;
+    auto& application_state = input.application_state;
+    auto& view = input.view;
+    auto& interaction_view = input.interaction_view;
+    const auto& timing_stage = input.timing_stage;
+    const auto downscroll = input.downscroll;
     flattened.compose.interaction_view = interaction_view;
     view.bms_measure_labels = chart.source_family == wormedit::format_family_t::bms;
     view.selected_bms_measure_number_plus_one =
@@ -1757,7 +1912,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
                                                ? "The chart field could not be composed."
                                                : composed.diagnostics.front().message;
         view.status_text = flattened.compose.status.c_str();
-        return;
+        return false;
     }
     const auto& scene = *composed.scene;
     view.scene_available = true;
@@ -1769,7 +1924,56 @@ void populate_compose_view(flattened_workspace_t& flattened,
     project_compose_bgm(projection);
     project_compose_marker_previews(projection);
     publish_compose_scene(projection);
+    return true;
 }
 
+void populate_compose_final_projection(const compose_final_projection_context_t& input) {
+    const auto rows = prepare_compose_projection_state(input);
+    populate_compose_pending_previews(input);
+    (void)compose_project_scene(input, rows);
+}
+
+} // namespace
+
+void populate_compose_view(flattened_workspace_t& flattened,
+                           wormedit::document_history_t& history,
+                           const wormedit::workspace_controller_t& workspace,
+                           compose_scene_cache_t& cache, int window_width, int window_height,
+                           std::optional<wormedit::editor_interaction_state_t>& retained_state,
+                           application_command_state_t& application_state,
+                           const wormedit::timing_lane_pseudonote_preview_t* timing_stage) {
+    if (!initialize_compose_view_state(flattened, cache, window_width, window_height,
+                                       retained_state, application_state)) {
+        return;
+    }
+    auto& view = flattened.view.compose;
+    if (!workspace.selected_chart) {
+        flattened.compose.status = "Choose a difficulty to display its chart field.";
+        view.status_text = flattened.compose.status.c_str();
+        return;
+    }
+    const auto chart_it = std::ranges::find(history.document.charts, *workspace.selected_chart,
+                                            &wormedit::chart_document_t::id);
+    if (chart_it == history.document.charts.end()) {
+        flattened.compose.status = "The selected difficulty is no longer available.";
+        view.status_text = flattened.compose.status.c_str();
+        return;
+    }
+    const auto& chart = *chart_it;
+    const auto downscroll = compose_field_downscroll(chart);
+    const auto measure_data = prepare_compose_chart_view(flattened, chart, history, cache,
+                                                         application_state);
+    if (!measure_data) return;
+    const auto& measures = *measure_data;
+    const compose_interaction_population_context_t interaction_context{
+        flattened, history, chart, measures, retained_state, application_state, view, downscroll};
+    auto interaction_data = prepare_compose_interaction(interaction_context);
+    if (!interaction_data) return;
+    auto interaction_view = std::move(*interaction_data);
+    const compose_final_projection_context_t final_context{
+        flattened, history, chart, cache, retained_state, application_state, view,
+        interaction_view, measures, downscroll, timing_stage};
+    populate_compose_final_projection(final_context);
+}
 
 } // namespace wormedit::sys

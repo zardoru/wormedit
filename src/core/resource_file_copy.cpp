@@ -108,6 +108,25 @@ auto same_identity(const project_asset_copy_result_t::published_identity_t& firs
            first.size == second.size && first.modified == second.modified;
 }
 
+auto existing_copy_directory_is_safe(const std::filesystem::path& project_directory,
+                                     const std::filesystem::path& relative_directory) -> bool {
+    namespace fs = std::filesystem;
+    std::error_code error;
+    const auto root = fs::symlink_status(project_directory, error);
+    if (error || fs::is_symlink(root) || !fs::is_directory(root)) {
+        return false;
+    }
+    auto directory = project_directory;
+    for (const auto& component : relative_directory) {
+        directory /= component;
+        const auto status = fs::symlink_status(directory, error);
+        if (error || fs::is_symlink(status) || !fs::is_directory(status)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 auto discard_unlinked_copy(const project_asset_copy_request_t& request,
                            const std::filesystem::path& relative_directory,
                            const project_asset_copy_result_t& copy) -> bool {
@@ -122,16 +141,8 @@ auto discard_unlinked_copy(const project_asset_copy_request_t& request,
         copy.absolute_path != request.project_directory / relative)
         return false;
     std::error_code error;
-    const auto root = fs::symlink_status(request.project_directory, error);
-    if (error || fs::is_symlink(root) || !fs::is_directory(root))
+    if (!existing_copy_directory_is_safe(request.project_directory, relative_directory))
         return false;
-    auto directory = request.project_directory;
-    for (const auto& component : relative_directory) {
-        directory /= component;
-        const auto status = fs::symlink_status(directory, error);
-        if (error || fs::is_symlink(status) || !fs::is_directory(status))
-            return false;
-    }
     const auto identity = published_identity(copy.absolute_path);
     if (!identity || !same_identity(*identity, *copy.published_identity))
         return false;
@@ -144,6 +155,36 @@ auto discard_unlinked_copy(const project_asset_copy_request_t& request,
     if (!final_identity || !same_identity(*final_identity, *copy.published_identity))
         return false;
     return fs::remove(copy.absolute_path, error) && !error;
+}
+
+#if defined(_WIN32)
+using copy_output_handle_t = HANDLE;
+#else
+using copy_output_handle_t = int;
+#endif
+
+auto write_chunk(copy_output_handle_t output, const char* data, std::size_t size) -> bool {
+    std::size_t position = 0;
+    while (position < size) {
+#if defined(_WIN32)
+        DWORD n = 0;
+        const auto ok = WriteFile(output, data + position, static_cast<DWORD>(size - position),
+                                  &n, nullptr);
+        if (!ok || n == 0) {
+            return false;
+        }
+#else
+        const auto n = ::write(output, data + position, size - position);
+        if (n <= 0) {
+            if (n < 0 && errno == EINTR) {
+                continue;
+            }
+            return false;
+        }
+#endif
+        position += static_cast<std::size_t>(n);
+    }
+    return true;
 }
 
 auto write_flushed(const std::filesystem::path& path, const std::filesystem::path& source,
@@ -176,30 +217,8 @@ auto write_flushed(const std::filesystem::path& path, const std::filesystem::pat
                 status = project_asset_copy_status_t::invalid_request;
                 break;
             }
-            std::size_t position = 0;
-            while (position < static_cast<std::size_t>(count)) {
-#if defined(_WIN32)
-                DWORD n = 0;
-                const auto ok = WriteFile(output, buffer.data() + position,
-                                          static_cast<DWORD>(count - position), &n, nullptr);
-                if (!ok || n == 0) {
-                    status = project_asset_copy_status_t::io_error;
-                    break;
-                }
-#else
-                const auto n = ::write(output, buffer.data() + position,
-                                       static_cast<std::size_t>(count) - position);
-                if (n <= 0) {
-                    if (n < 0 && errno == EINTR) {
-                        continue;
-                    }
-                    status = project_asset_copy_status_t::io_error;
-                    break;
-                }
-#endif
-                position += static_cast<std::size_t>(n);
-            }
-            if (status != project_asset_copy_status_t::copied) {
+            if (!write_chunk(output, buffer.data(), static_cast<std::size_t>(count))) {
+                status = project_asset_copy_status_t::io_error;
                 break;
             }
             written += static_cast<std::uintmax_t>(count);
@@ -238,6 +257,129 @@ auto write_flushed(const std::filesystem::path& path, const std::filesystem::pat
     return status;
 }
 
+auto prepare_copy_directory(const std::filesystem::path& project_directory,
+                            const std::filesystem::path& relative_directory, bool inspect_only,
+                            std::filesystem::path& directory)
+    -> std::optional<project_asset_copy_result_t> {
+    namespace fs = std::filesystem;
+    std::error_code error;
+    directory = project_directory;
+    for (const auto& component : relative_directory) {
+        directory /= component;
+        error.clear();
+        const auto status = fs::symlink_status(directory, error);
+        if (error == std::errc::no_such_file_or_directory) {
+            error.clear();
+            if (inspect_only) {
+                return failure(project_asset_copy_status_t::not_staged,
+                               "Asset copy destination is available.");
+            }
+            if (!fs::create_directory(directory, error) && error) {
+                return failure(project_asset_copy_status_t::io_error,
+                               "Could not create the asset destination directory.");
+            }
+            error.clear();
+            const auto created = fs::symlink_status(directory, error);
+            if (error || fs::is_symlink(created) || !fs::is_directory(created)) {
+                return failure(project_asset_copy_status_t::invalid_request,
+                               "Asset destination directory changed during creation.");
+            }
+        } else if (error || fs::is_symlink(status) || !fs::is_directory(status)) {
+            return failure(project_asset_copy_status_t::invalid_request,
+                           "Asset destination contains a symlink or non-directory component.");
+        }
+    }
+    return std::nullopt;
+}
+
+struct copy_location_t {
+    std::filesystem::path source;
+    std::filesystem::path directory;
+    std::filesystem::path relative;
+    std::filesystem::path destination;
+};
+
+auto copy_success(const copy_location_t& location, project_asset_copy_status_t status)
+    -> project_asset_copy_result_t {
+    return {.status = status,
+            .relative_path = location.relative,
+            .absolute_path = location.destination,
+            .message = {},
+            .published_identity = status == project_asset_copy_status_t::copied
+                                      ? published_identity(location.destination)
+                                      : std::nullopt};
+}
+
+auto publish_copy(const project_asset_copy_request_t& request, const copy_location_t& location,
+                  std::stop_token stop) -> project_asset_copy_result_t {
+    namespace fs = std::filesystem;
+    static std::atomic<std::uint64_t> sequence{0};
+    const auto temporary =
+        location.directory /
+        (".wormedit-copy-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" +
+         std::to_string(sequence.fetch_add(1, std::memory_order_relaxed)));
+    std::error_code error;
+    const auto copied = write_flushed(temporary, location.source, request.maximum_bytes, stop);
+    if (copied != project_asset_copy_status_t::copied || stop.stop_requested() ||
+        !same_bytes(location.source, temporary, stop)) {
+        fs::remove(temporary, error);
+        const auto status = stop.stop_requested() ? project_asset_copy_status_t::cancelled
+                            : copied != project_asset_copy_status_t::copied
+                                ? copied
+                                : project_asset_copy_status_t::source_unavailable;
+        return failure(status, "Source changed, copy failed, or copy was cancelled.");
+    }
+    if (stop.stop_requested()) {
+        fs::remove(temporary, error);
+        return failure(project_asset_copy_status_t::cancelled, "Copy cancelled.");
+    }
+    if (request.validate_temporary) {
+        bool valid{};
+        try {
+            valid = request.validate_temporary(temporary);
+        } catch (...) {
+            valid = false;
+        }
+        if (!valid) {
+            fs::remove(temporary, error);
+            return failure(project_asset_copy_status_t::validation_failed,
+                           "Copied asset failed validation before publication.");
+        }
+    }
+    if (stop.stop_requested()) {
+        fs::remove(temporary, error);
+        return failure(project_asset_copy_status_t::cancelled, "Copy cancelled.");
+    }
+#if defined(_WIN32)
+    const auto installed = MoveFileExW(temporary.c_str(), location.destination.c_str(),
+                                       MOVEFILE_WRITE_THROUGH) != 0;
+#else
+    const auto installed = ::link(temporary.c_str(), location.destination.c_str()) == 0;
+#endif
+    fs::remove(temporary, error);
+    if (!installed) {
+        const auto destination_status = fs::symlink_status(location.destination, error);
+        if (!error && !fs::is_symlink(destination_status) &&
+            fs::is_regular_file(destination_status) &&
+            same_bytes(location.source, location.destination, stop)) {
+            return copy_success(location, project_asset_copy_status_t::reused);
+        }
+        return failure(fs::exists(location.destination, error)
+                           ? project_asset_copy_status_t::destination_collision
+                           : project_asset_copy_status_t::io_error,
+                       "Could not publish the project asset without overwriting a file.");
+    }
+#if !defined(_WIN32)
+    const auto fd = ::open(location.directory.c_str(), O_RDONLY);
+    if (fd >= 0) {
+        (void)::fsync(fd);
+        (void)::close(fd);
+    }
+#endif
+    return copy_success(location, project_asset_copy_status_t::copied);
+}
+
 } // namespace
 
 static auto copy_resource_file_to_relative_directory(
@@ -273,52 +415,23 @@ static auto copy_resource_file_to_relative_directory(
         return failure(project_asset_copy_status_t::invalid_request,
                        "Source file exceeds the copy limit or cannot be measured.");
     }
-    auto directory = request.project_directory;
-    for (const auto& component : relative_directory) {
-        directory /= component;
-        error.clear();
-        const auto status = fs::symlink_status(directory, error);
-        if (error == std::errc::no_such_file_or_directory) {
-            error.clear();
-            if (inspect_only)
-                return failure(project_asset_copy_status_t::not_staged,
-                               "Asset copy destination is available.");
-            if (!fs::create_directory(directory, error) && error) {
-                return failure(project_asset_copy_status_t::io_error,
-                               "Could not create the asset destination directory.");
-            }
-            error.clear();
-            const auto created = fs::symlink_status(directory, error);
-            if (error || fs::is_symlink(created) || !fs::is_directory(created)) {
-                return failure(project_asset_copy_status_t::invalid_request,
-                               "Asset destination directory changed during creation.");
-            }
-        } else if (error || fs::is_symlink(status) || !fs::is_directory(status)) {
-            return failure(project_asset_copy_status_t::invalid_request,
-                           "Asset destination contains a symlink or non-directory component.");
-        }
+    std::filesystem::path directory;
+    if (auto preparation = prepare_copy_directory(request.project_directory, relative_directory,
+                                                  inspect_only, directory)) {
+        return *preparation;
     }
     const auto relative =
         relative_directory / (std::to_string(request.asset.value) + "-" + filename.string());
-    const auto destination = request.project_directory / relative;
-    auto success = [&](project_asset_copy_status_t status) {
-        return project_asset_copy_result_t{.status = status,
-                                           .relative_path = relative,
-                                           .absolute_path = destination,
-                                           .message = {},
-                                           .published_identity =
-                                               status == project_asset_copy_status_t::copied
-                                                   ? published_identity(destination)
-                                                   : std::nullopt};
-    };
+    const copy_location_t location{source, directory, relative,
+                                   request.project_directory / relative};
     if (stop.stop_requested()) {
         return failure(project_asset_copy_status_t::cancelled, "Copy cancelled.");
     }
-    const auto destination_status = fs::symlink_status(destination, error);
+    const auto destination_status = fs::symlink_status(location.destination, error);
     if (!error) {
         if (!fs::is_symlink(destination_status) && fs::is_regular_file(destination_status) &&
-            same_bytes(source, destination, stop)) {
-            return success(project_asset_copy_status_t::reused);
+            same_bytes(source, location.destination, stop)) {
+            return copy_success(location, project_asset_copy_status_t::reused);
         }
         return failure(stop.stop_requested() ? project_asset_copy_status_t::cancelled
                                              : project_asset_copy_status_t::destination_collision,
@@ -332,68 +445,7 @@ static auto copy_resource_file_to_relative_directory(
     if (inspect_only)
         return failure(project_asset_copy_status_t::not_staged,
                        "Asset copy destination is available.");
-    static std::atomic<std::uint64_t> sequence{0};
-    const auto temporary =
-        directory / (".wormedit-copy-" +
-                     std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) +
-                     "-" + std::to_string(sequence.fetch_add(1, std::memory_order_relaxed)));
-    const auto copied = write_flushed(temporary, source, request.maximum_bytes, stop);
-    if (copied != project_asset_copy_status_t::copied || stop.stop_requested() ||
-        !same_bytes(source, temporary, stop)) {
-        fs::remove(temporary, error);
-        const auto status = stop.stop_requested() ? project_asset_copy_status_t::cancelled
-                            : copied != project_asset_copy_status_t::copied
-                                ? copied
-                                : project_asset_copy_status_t::source_unavailable;
-        return failure(status, "Source changed, copy failed, or copy was cancelled.");
-    }
-    if (stop.stop_requested()) {
-        fs::remove(temporary, error);
-        return failure(project_asset_copy_status_t::cancelled, "Copy cancelled.");
-    }
-    if (request.validate_temporary) {
-        bool valid{};
-        try {
-            valid = request.validate_temporary(temporary);
-        } catch (...) {
-            valid = false;
-        }
-        if (!valid) {
-            fs::remove(temporary, error);
-            return failure(project_asset_copy_status_t::validation_failed,
-                           "Copied asset failed validation before publication.");
-        }
-    }
-    if (stop.stop_requested()) {
-        fs::remove(temporary, error);
-        return failure(project_asset_copy_status_t::cancelled, "Copy cancelled.");
-    }
-#if defined(_WIN32)
-    const auto installed =
-        MoveFileExW(temporary.c_str(), destination.c_str(), MOVEFILE_WRITE_THROUGH) != 0;
-#else
-    const auto installed = ::link(temporary.c_str(), destination.c_str()) == 0;
-#endif
-    fs::remove(temporary, error);
-    if (!installed) {
-        const auto destination_status = fs::symlink_status(destination, error);
-        if (!error && !fs::is_symlink(destination_status) &&
-            fs::is_regular_file(destination_status) && same_bytes(source, destination, stop)) {
-            return success(project_asset_copy_status_t::reused);
-        }
-        return failure(fs::exists(destination, error)
-                           ? project_asset_copy_status_t::destination_collision
-                           : project_asset_copy_status_t::io_error,
-                       "Could not publish the project asset without overwriting a file.");
-    }
-#if !defined(_WIN32)
-    const auto fd = ::open(directory.c_str(), O_RDONLY);
-    if (fd >= 0) {
-        (void)::fsync(fd);
-        (void)::close(fd);
-    }
-#endif
-    return success(project_asset_copy_status_t::copied);
+    return publish_copy(request, location, stop);
 }
 
 auto copy_resource_file_into_project(const project_asset_copy_request_t& request,

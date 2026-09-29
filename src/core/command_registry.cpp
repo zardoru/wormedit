@@ -609,6 +609,27 @@ auto parse_shortcut_profile(std::string_view serialized) -> shortcut_profile_par
     return result;
 }
 
+namespace {
+
+auto shortcut_candidates(const command_registry_t& registry, const shortcut_event_t& event,
+                         const command_focus_t& focus, shortcut_primary_modifier_t primary_modifier,
+                         std::optional<command_focus_scope_t> restricted)
+    -> std::vector<const command_t*> {
+    std::vector<const command_t*> candidates;
+    candidates.reserve(registry.commands.size());
+    for (const auto& command : registry.commands) {
+        if (restricted && command.focus_scope != *restricted) {
+            continue;
+        }
+        if (eligible(command, focus) && has_binding(command, event.chord, primary_modifier)) {
+            candidates.push_back(&command);
+        }
+    }
+    return candidates;
+}
+
+} // namespace
+
 auto dispatch_shortcut(const command_registry_t& registry, const shortcut_event_t& event,
                        const command_focus_t& focus, shortcut_primary_modifier_t primary_modifier)
     -> command_dispatch_result_t {
@@ -626,17 +647,7 @@ auto dispatch_shortcut(const command_registry_t& registry, const shortcut_event_
     }
 
     const auto restricted = restricted_focus_scope(focus);
-    std::vector<const command_t*> candidates;
-    candidates.reserve(registry.commands.size());
-    for (const auto& command : registry.commands) {
-        if (restricted && command.focus_scope != *restricted) {
-            continue;
-        }
-        if (!eligible(command, focus) || !has_binding(command, event.chord, primary_modifier)) {
-            continue;
-        }
-        candidates.push_back(&command);
-    }
+    auto candidates = shortcut_candidates(registry, event, focus, primary_modifier, restricted);
     if (candidates.empty()) {
         result.status = restricted ? command_dispatch_status_t::focus_consumed
                                    : command_dispatch_status_t::no_match;

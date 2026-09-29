@@ -252,8 +252,8 @@ auto valid_header_token(std::string_view value) noexcept -> bool {
            value.find('"') == std::string_view::npos;
 }
 
-auto emit_node(std::string& output, const storyboard_node_t& node, std::size_t indentation,
-               std::size_t maximum_bytes, std::size_t depth, std::size_t& node_count) -> bool {
+auto valid_emit_node(const storyboard_node_t& node, std::size_t depth,
+                     std::size_t node_count) -> bool {
     if (depth > 128 || node_count >= 250'000 ||
         (node.kind != storyboard_node_kind_t::command &&
          node.kind != storyboard_node_kind_t::loop &&
@@ -261,40 +261,44 @@ auto emit_node(std::string& output, const storyboard_node_t& node, std::size_t i
         !valid_opcode(node.command.opcode) ||
         !std::ranges::all_of(node.command.from,
                              [](double value) { return std::isfinite(value); }) ||
-        !std::ranges::all_of(node.command.to, [](double value) { return std::isfinite(value); }))
+        !std::ranges::all_of(node.command.to, [](double value) { return std::isfinite(value); })) {
         return false;
-    ++node_count;
-    const auto prefix = line_prefix(indentation);
-    if (node.kind == storyboard_node_kind_t::retained_line) {
-        if (!valid_single_line(node.retained_line))
-            return false;
-        return append_bounded(output, node.retained_line, maximum_bytes) &&
-               append_bounded(output, "\n", maximum_bytes);
     }
-    if (node.kind == storyboard_node_kind_t::loop) {
-        if (!append_bounded(output, prefix, maximum_bytes) ||
-            !append_bounded(output, "L,", maximum_bytes) ||
-            !append_integer(output, node.loop_start_time_ms) ||
-            !append_bounded(output, ",", maximum_bytes) ||
-            !append_unsigned(output, node.loop_iteration_count) ||
-            !append_bounded(output, "\n", maximum_bytes)) {
-            return false;
-        }
-        if (indentation == std::numeric_limits<std::size_t>::max())
-            return false;
-        for (const auto& child : node.children) {
-            if (!emit_node(output, child, indentation + 1, maximum_bytes, depth + 1, node_count)) {
-                return false;
-            }
-        }
-        return true;
-    }
+    return true;
+}
 
+auto emit_node(std::string& output, const storyboard_node_t& node, std::size_t indentation,
+               std::size_t maximum_bytes, std::size_t depth, std::size_t& node_count) -> bool;
+
+auto emit_loop_node(std::string& output, const storyboard_node_t& node,
+                    std::size_t indentation, std::size_t maximum_bytes, std::size_t depth,
+                    std::size_t& node_count) -> bool {
+    const auto prefix = line_prefix(indentation);
+    if (!append_bounded(output, prefix, maximum_bytes) ||
+        !append_bounded(output, "L,", maximum_bytes) ||
+        !append_integer(output, node.loop_start_time_ms) ||
+        !append_bounded(output, ",", maximum_bytes) ||
+        !append_unsigned(output, node.loop_iteration_count) ||
+        !append_bounded(output, "\n", maximum_bytes)) {
+        return false;
+    }
+    if (indentation == std::numeric_limits<std::size_t>::max()) {
+        return false;
+    }
+    for (const auto& child : node.children) {
+        if (!emit_node(output, child, indentation + 1, maximum_bytes, depth + 1, node_count)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+auto emit_command_node(std::string& output, const storyboard_node_t& node,
+                       std::size_t indentation, std::size_t maximum_bytes) -> bool {
     const auto& command = node.command;
-    if (!valid_opcode(command.opcode) ||
-        command.value_count != expected_value_count(command.opcode) ||
+    if (command.value_count != expected_value_count(command.opcode) ||
         !valid_easing(command.easing) || command.start_time_ms > command.end_time_ms ||
-        !append_bounded(output, prefix, maximum_bytes) ||
+        !append_bounded(output, line_prefix(indentation), maximum_bytes) ||
         !append_bounded(output, opcode_name(command.opcode), maximum_bytes) ||
         !append_bounded(output, ",", maximum_bytes) || !append_integer(output, command.easing) ||
         !append_bounded(output, ",", maximum_bytes) ||
@@ -304,8 +308,7 @@ auto emit_node(std::string& output, const storyboard_node_t& node, std::size_t i
         return false;
     }
     for (std::size_t index = 0; index < command.value_count; ++index) {
-        if (!std::isfinite(command.from[index]) || !std::isfinite(command.to[index]) ||
-            !append_bounded(output, ",", maximum_bytes) ||
+        if (!append_bounded(output, ",", maximum_bytes) ||
             !append_double(output, command.from[index])) {
             return false;
         }
@@ -317,6 +320,23 @@ auto emit_node(std::string& output, const storyboard_node_t& node, std::size_t i
         }
     }
     return append_bounded(output, "\n", maximum_bytes);
+}
+
+auto emit_node(std::string& output, const storyboard_node_t& node, std::size_t indentation,
+               std::size_t maximum_bytes, std::size_t depth, std::size_t& node_count) -> bool {
+    if (!valid_emit_node(node, depth, node_count)) {
+        return false;
+    }
+    ++node_count;
+    if (node.kind == storyboard_node_kind_t::retained_line) {
+        return valid_single_line(node.retained_line) &&
+               append_bounded(output, node.retained_line, maximum_bytes) &&
+               append_bounded(output, "\n", maximum_bytes);
+    }
+    if (node.kind == storyboard_node_kind_t::loop) {
+        return emit_loop_node(output, node, indentation, maximum_bytes, depth, node_count);
+    }
+    return emit_command_node(output, node, indentation, maximum_bytes);
 }
 
 auto extent_of_nodes(const std::vector<storyboard_node_t>& nodes, std::size_t depth,
@@ -383,6 +403,24 @@ auto extent_of_nodes(const std::vector<storyboard_node_t>& nodes, std::size_t de
     return std::nullopt;
 }
 
+auto bounce_out(double value) noexcept -> double {
+    constexpr double n = 7.5625;
+    constexpr double d = 2.75;
+    if (value < 1.0 / d) {
+        return n * value * value;
+    }
+    if (value < 2.0 / d) {
+        const auto shifted = value - 1.5 / d;
+        return n * shifted * shifted + 0.75;
+    }
+    if (value < 2.5 / d) {
+        const auto shifted = value - 2.25 / d;
+        return n * shifted * shifted + 0.9375;
+    }
+    const auto shifted = value - 2.625 / d;
+    return n * shifted * shifted + 0.984375;
+}
+
 auto ease(std::int32_t easing, double progress) noexcept -> double {
     const auto t = std::clamp(progress, 0.0, 1.0);
     if (t == 0.0 || t == 1.0)
@@ -401,22 +439,6 @@ auto ease(std::int32_t easing, double progress) noexcept -> double {
         return std::pow(2.0, -10.0 * value) *
                    std::sin((value - elastic_phase) * elastic_frequency) +
                1.0 - elastic_offset_full * value;
-    };
-    const auto bounce_out = [](double value) noexcept {
-        constexpr double n = 7.5625;
-        constexpr double d = 2.75;
-        if (value < 1.0 / d)
-            return n * value * value;
-        if (value < 2.0 / d) {
-            const auto shifted = value - 1.5 / d;
-            return n * shifted * shifted + 0.75;
-        }
-        if (value < 2.5 / d) {
-            const auto shifted = value - 2.25 / d;
-            return n * shifted * shifted + 0.9375;
-        }
-        const auto shifted = value - 2.625 / d;
-        return n * shifted * shifted + 0.984375;
     };
     switch (easing) {
     case 0:
@@ -539,138 +561,173 @@ struct evaluation_context_t {
 };
 
 void evaluate_nodes(const std::vector<storyboard_node_t>& nodes, std::int64_t parent_start_ms,
-                    std::int64_t query_time_ms, std::size_t depth, evaluation_context_t& context) {
-    if (context.failed)
+                    std::int64_t query_time_ms, std::size_t depth, evaluation_context_t& context);
+
+void set_evaluation_error(evaluation_context_t& context, storyboard_diagnostic_code_t code,
+                          std::string message) {
+    context.failed = true;
+    context.diagnostic = {code, 0, std::move(message)};
+}
+
+void evaluate_command_node(const storyboard_node_t& node, std::int64_t parent_start_ms,
+                           std::int64_t query_time_ms, std::uint64_t visit_order,
+                           evaluation_context_t& context) {
+    const auto& command = node.command;
+    if (command.opcode != context.opcode) {
         return;
+    }
+    std::int64_t start{};
+    std::int64_t end{};
+    if (!checked_add_i64(parent_start_ms, command.start_time_ms, start) ||
+        !checked_add_i64(parent_start_ms, command.end_time_ms, end)) {
+        set_evaluation_error(context, storyboard_diagnostic_code_t::time_overflow,
+                             "storyboard command time overflowed");
+        return;
+    }
+    if (start > query_time_ms) {
+        return;
+    }
+    if (!valid_opcode(command.opcode) ||
+        command.value_count != expected_value_count(command.opcode) ||
+        !valid_easing(command.easing)) {
+        set_evaluation_error(context, storyboard_diagnostic_code_t::invalid_model,
+                             "storyboard command has invalid fields or easing");
+        return;
+    }
+    auto progress = 1.0;
+    if (end > start && query_time_ms < end) {
+        progress = static_cast<double>(distance_i64(start, query_time_ms)) /
+                   static_cast<double>(distance_i64(start, end));
+    }
+    progress = ease(command.easing, progress);
+    storyboard_value_t value;
+    value.present = true;
+    value.value_count = command.value_count;
+    for (std::size_t index = 0; index < command.value_count; ++index) {
+        value.values[index] =
+            command.from[index] + (command.to[index] - command.from[index]) * progress;
+    }
+    const auto source_order = command.source_order != 0 ? command.source_order : node.source_order;
+    const auto candidate_key = std::tie(start, source_order, visit_order);
+    const auto current_key =
+        std::tie(context.candidate.start_time_ms, context.candidate.source_order,
+                 context.candidate.visit_order);
+    if (!context.candidate.present || candidate_key >= current_key) {
+        context.candidate = {value, start, source_order, visit_order, true};
+    }
+}
+
+struct loop_evaluation_window_t {
+    std::int64_t iteration_start{};
+    std::int64_t previous_start{};
+    std::int64_t previous_end{};
+    std::int64_t child_query{};
+    std::uint64_t iteration{};
+    std::int64_t period{};
+};
+
+auto loop_window(const storyboard_node_t& node, std::int64_t parent_start_ms,
+                 std::int64_t query_time_ms, std::size_t depth, evaluation_context_t& context)
+    -> std::optional<loop_evaluation_window_t> {
+    std::int64_t loop_start{};
+    if (!checked_add_i64(parent_start_ms, node.loop_start_time_ms, loop_start)) {
+        set_evaluation_error(context, storyboard_diagnostic_code_t::time_overflow,
+                             "storyboard loop start overflowed");
+        return std::nullopt;
+    }
+    if (node.loop_iteration_count == 0 || query_time_ms < loop_start) {
+        return std::nullopt;
+    }
+    std::size_t count{};
+    std::int64_t period{};
+    const auto extent_error = extent_of_nodes(node.children, depth + 1, context.maximum_nesting,
+                                              context.maximum_nodes, count, period);
+    if (extent_error.has_value()) {
+        set_evaluation_error(context, *extent_error, "could not determine storyboard loop duration");
+        return std::nullopt;
+    }
+    auto loop_end = loop_start;
+    std::uint64_t iteration = node.loop_iteration_count - 1;
+    if (period > 0) {
+        std::int64_t repeated{};
+        if (!checked_mul_nonnegative(period, node.loop_iteration_count, repeated) ||
+            !checked_add_i64(loop_start, repeated, loop_end)) {
+            set_evaluation_error(context, storyboard_diagnostic_code_t::time_overflow,
+                                 "storyboard loop end overflowed");
+            return std::nullopt;
+        }
+        if (query_time_ms < loop_end) {
+            iteration = distance_i64(loop_start, query_time_ms) /
+                        static_cast<std::uint64_t>(period);
+        }
+    }
+    std::int64_t offset{};
+    std::int64_t iteration_start{};
+    if (!checked_mul_nonnegative(period, iteration, offset) ||
+        !checked_add_i64(loop_start, offset, iteration_start)) {
+        set_evaluation_error(context, storyboard_diagnostic_code_t::time_overflow,
+                             "storyboard loop iteration time overflowed");
+        return std::nullopt;
+    }
+    loop_evaluation_window_t window{.iteration_start = iteration_start,
+                                    .child_query = std::min(query_time_ms, loop_end),
+                                    .iteration = iteration,
+                                    .period = period};
+    if (period > 0 && iteration > 0) {
+        std::int64_t previous_offset{};
+        if (!checked_mul_nonnegative(period, iteration - 1, previous_offset) ||
+            !checked_add_i64(loop_start, previous_offset, window.previous_start) ||
+            !checked_add_i64(window.previous_start, period, window.previous_end)) {
+            set_evaluation_error(context, storyboard_diagnostic_code_t::time_overflow,
+                                 "storyboard prior loop iteration time overflowed");
+            return std::nullopt;
+        }
+    }
+    return window;
+}
+
+void evaluate_loop_node(const storyboard_node_t& node, std::int64_t parent_start_ms,
+                        std::int64_t query_time_ms, std::size_t depth,
+                        evaluation_context_t& context) {
+    const auto window = loop_window(node, parent_start_ms, query_time_ms, depth, context);
+    if (!window.has_value()) {
+        return;
+    }
+    if (window->period > 0 && window->iteration > 0) {
+        evaluate_nodes(node.children, window->previous_start, window->previous_end, depth + 1,
+                       context);
+    }
+    evaluate_nodes(node.children, window->iteration_start, window->child_query, depth + 1, context);
+}
+
+void evaluate_nodes(const std::vector<storyboard_node_t>& nodes, std::int64_t parent_start_ms,
+                    std::int64_t query_time_ms, std::size_t depth, evaluation_context_t& context) {
+    if (context.failed) {
+        return;
+    }
     if (depth > context.maximum_nesting) {
-        context.failed = true;
-        context.diagnostic = {storyboard_diagnostic_code_t::nesting_limit, 0,
-                              "storyboard evaluation exceeded its nesting limit"};
+        set_evaluation_error(context, storyboard_diagnostic_code_t::nesting_limit,
+                             "storyboard evaluation exceeded its nesting limit");
         return;
     }
     for (const auto& node : nodes) {
         if (context.visit_order >= context.maximum_nodes) {
-            context.failed = true;
-            context.diagnostic = {storyboard_diagnostic_code_t::node_limit, 0,
-                                  "storyboard evaluation exceeded its node limit"};
+            set_evaluation_error(context, storyboard_diagnostic_code_t::node_limit,
+                                 "storyboard evaluation exceeded its node limit");
             return;
         }
         const auto visit_order = context.visit_order++;
-        if (node.kind == storyboard_node_kind_t::retained_line)
+        if (node.kind == storyboard_node_kind_t::retained_line) {
             continue;
+        }
         if (node.kind == storyboard_node_kind_t::command) {
-            const auto& command = node.command;
-            if (command.opcode != context.opcode)
-                continue;
-            std::int64_t start{};
-            std::int64_t end{};
-            if (!checked_add_i64(parent_start_ms, command.start_time_ms, start) ||
-                !checked_add_i64(parent_start_ms, command.end_time_ms, end)) {
-                context.failed = true;
-                context.diagnostic = {storyboard_diagnostic_code_t::time_overflow, 0,
-                                      "storyboard command time overflowed"};
-                return;
-            }
-            if (start > query_time_ms)
-                continue;
-            if (!valid_opcode(command.opcode) ||
-                command.value_count != expected_value_count(command.opcode) ||
-                !valid_easing(command.easing)) {
-                context.failed = true;
-                context.diagnostic = {storyboard_diagnostic_code_t::invalid_model, 0,
-                                      "storyboard command has invalid fields or easing"};
-                return;
-            }
-            double progress = 1.0;
-            if (end > start && query_time_ms < end) {
-                progress = static_cast<double>(distance_i64(start, query_time_ms)) /
-                           static_cast<double>(distance_i64(start, end));
-            }
-            progress = ease(command.easing, progress);
-            storyboard_value_t value;
-            value.present = true;
-            value.value_count = command.value_count;
-            for (std::size_t index = 0; index < command.value_count; ++index) {
-                value.values[index] =
-                    command.from[index] + (command.to[index] - command.from[index]) * progress;
-            }
-            const auto source_order =
-                command.source_order != 0 ? command.source_order : node.source_order;
-            const auto candidate_key = std::tie(start, source_order, visit_order);
-            const auto current_key =
-                std::tie(context.candidate.start_time_ms, context.candidate.source_order,
-                         context.candidate.visit_order);
-            if (!context.candidate.present || candidate_key >= current_key) {
-                context.candidate = {value, start, source_order, visit_order, true};
-            }
-            continue;
-        }
-
-        std::int64_t loop_start{};
-        if (!checked_add_i64(parent_start_ms, node.loop_start_time_ms, loop_start)) {
-            context.failed = true;
-            context.diagnostic = {storyboard_diagnostic_code_t::time_overflow, 0,
-                                  "storyboard loop start overflowed"};
-            return;
-        }
-        if (node.loop_iteration_count == 0 || query_time_ms < loop_start)
-            continue;
-        std::size_t count = 0;
-        std::int64_t period{};
-        const auto error = extent_of_nodes(node.children, depth + 1, context.maximum_nesting,
-                                           context.maximum_nodes, count, period);
-        if (error.has_value()) {
-            context.failed = true;
-            context.diagnostic = {*error, 0, "could not determine storyboard loop duration"};
-            return;
-        }
-        std::uint64_t iteration = 0;
-        std::int64_t loop_end = loop_start;
-        if (period > 0) {
-            std::int64_t repeated{};
-            if (!checked_mul_nonnegative(period, node.loop_iteration_count, repeated) ||
-                !checked_add_i64(loop_start, repeated, loop_end)) {
-                context.failed = true;
-                context.diagnostic = {storyboard_diagnostic_code_t::time_overflow, 0,
-                                      "storyboard loop end overflowed"};
-                return;
-            }
-            if (query_time_ms >= loop_end) {
-                iteration = node.loop_iteration_count - 1;
-            } else {
-                const auto elapsed = distance_i64(loop_start, query_time_ms);
-                iteration = elapsed / static_cast<std::uint64_t>(period);
-            }
+            evaluate_command_node(node, parent_start_ms, query_time_ms, visit_order, context);
         } else {
-            iteration = node.loop_iteration_count - 1;
+            evaluate_loop_node(node, parent_start_ms, query_time_ms, depth, context);
         }
-        std::int64_t iteration_offset{};
-        std::int64_t iteration_start{};
-        if (!checked_mul_nonnegative(period, iteration, iteration_offset) ||
-            !checked_add_i64(loop_start, iteration_offset, iteration_start)) {
-            context.failed = true;
-            context.diagnostic = {storyboard_diagnostic_code_t::time_overflow, 0,
-                                  "storyboard loop iteration time overflowed"};
+        if (context.failed) {
             return;
         }
-        const auto child_query = std::min(query_time_ms, loop_end);
-        if (period > 0 && iteration > 0) {
-            std::int64_t previous_offset{};
-            std::int64_t previous_start{};
-            std::int64_t previous_end{};
-            if (!checked_mul_nonnegative(period, iteration - 1, previous_offset) ||
-                !checked_add_i64(loop_start, previous_offset, previous_start) ||
-                !checked_add_i64(previous_start, period, previous_end)) {
-                context.failed = true;
-                context.diagnostic = {storyboard_diagnostic_code_t::time_overflow, 0,
-                                      "storyboard prior loop iteration time overflowed"};
-                return;
-            }
-            evaluate_nodes(node.children, previous_start, previous_end, depth + 1, context);
-        }
-        evaluate_nodes(node.children, iteration_start, child_query, depth + 1, context);
-        if (context.failed)
-            return;
     }
 }
 
@@ -850,495 +907,617 @@ auto storyboard_frame_arena_t::used_bytes() const noexcept -> std::size_t {
     return impl_ ? impl_->used_bytes : 0;
 }
 
-auto parse_osb(std::string_view text, storyboard_parse_options_t options)
-    -> storyboard_parse_result_t {
-    storyboard_parse_result_t result;
-    if (text.size() > options.maximum_input_bytes) {
-        result.diagnostics.push_back({storyboard_diagnostic_code_t::input_too_large, 0,
-                                      "OSB input exceeds the configured byte limit"});
-        return result;
+namespace {
+
+class osb_parser_t {
+  public:
+    explicit osb_parser_t(storyboard_parse_options_t options) : options_(options) {}
+
+    auto parse(std::string_view text) -> storyboard_parse_result_t {
+        if (text.size() > options_.maximum_input_bytes) {
+            fail(storyboard_diagnostic_code_t::input_too_large,
+                 "OSB input exceeds the configured byte limit");
+            return std::move(result_);
+        }
+        try {
+            std::size_t cursor{};
+            while (cursor < text.size()) {
+                const auto newline = text.find('\n', cursor);
+                const auto end = newline == std::string_view::npos ? text.size() : newline;
+                auto line = text.substr(cursor, end - cursor);
+                if (!line.empty() && line.back() == '\r') {
+                    line.remove_suffix(1);
+                }
+                cursor = newline == std::string_view::npos ? text.size() : newline + 1;
+                if (!process_line(line)) {
+                    return std::move(result_);
+                }
+            }
+            result_.document = std::move(document_);
+        } catch (const std::bad_alloc&) {
+            result_.document.reset();
+            try {
+                fail(storyboard_diagnostic_code_t::capacity_exceeded,
+                     "OSB parser allocation failed");
+            } catch (...) {
+            }
+        }
+        return std::move(result_);
     }
-    storyboard_document_model_t candidate;
-    std::vector<std::size_t> loop_path;
-    std::vector<std::size_t> loop_indentation;
-    std::optional<std::size_t> active_sprite;
-    std::size_t line_number = 0;
-    std::size_t node_count = 0;
-    std::uint64_t source_order = 0;
-    std::size_t cursor = 0;
-    auto fail = [&](storyboard_diagnostic_code_t code, std::string message) {
-        result.diagnostics.push_back({code, line_number, std::move(message)});
-    };
 
-    try {
-        while (cursor < text.size()) {
-            const auto newline = text.find('\n', cursor);
-            const auto line_end = newline == std::string_view::npos ? text.size() : newline;
-            auto line = text.substr(cursor, line_end - cursor);
-            if (!line.empty() && line.back() == '\r')
-                line.remove_suffix(1);
-            cursor = newline == std::string_view::npos ? text.size() : newline + 1;
-            ++line_number;
-            if (line_number > options.maximum_lines) {
-                fail(storyboard_diagnostic_code_t::line_limit,
-                     "OSB input exceeds the configured line limit");
-                return result;
-            }
-            if (source_order == std::numeric_limits<std::uint64_t>::max()) {
-                fail(storyboard_diagnostic_code_t::invalid_model, "OSB source order overflowed");
-                return result;
-            }
-            ++source_order;
-            std::size_t indentation = 0;
-            while (indentation < line.size() &&
-                   (line[indentation] == ' ' || line[indentation] == '\t')) {
-                ++indentation;
-            }
-            const auto content = trim(line);
-            if (content.empty()) {
-                if (!active_sprite.has_value()) {
-                    candidate.retained_top_level_lines.push_back({source_order, std::string(line)});
-                } else {
-                    auto& nodes = candidate.sprites[*active_sprite].nodes;
-                    auto* destination = &nodes;
-                    for (const auto index : loop_path)
-                        destination = &(*destination)[index].children;
-                    storyboard_node_t node;
-                    node.kind = storyboard_node_kind_t::retained_line;
-                    node.source_order = source_order;
-                    node.retained_line = std::string(line);
-                    if (++node_count > options.maximum_nodes) {
-                        fail(storyboard_diagnostic_code_t::node_limit,
-                             "OSB input exceeds the configured node limit");
-                        return result;
-                    }
-                    destination->push_back(std::move(node));
-                }
-                continue;
-            }
+  private:
+    void fail(storyboard_diagnostic_code_t code, std::string message) {
+        result_.diagnostics.push_back({code, line_number_, std::move(message)});
+    }
 
-            const auto fields = split_csv(content);
-            if (indentation == 0 && fields.front() == "Sprite") {
-                if (fields.size() != 6 || fields[1].empty() || fields[2].empty() ||
-                    fields[3].size() > options.maximum_path_bytes || fields[3].empty()) {
-                    fail(storyboard_diagnostic_code_t::malformed_line,
-                         "OSB Sprite header must contain layer, origin, path, and position");
-                    return result;
-                }
-                storyboard_sprite_t sprite;
-                sprite.stable_id = source_order;
-                sprite.source_order = source_order;
-                sprite.layer = fields[1];
-                sprite.origin = fields[2];
-                sprite.path = fields[3];
-                if (!parse_double(fields[4], sprite.x) || !parse_double(fields[5], sprite.y)) {
-                    fail(storyboard_diagnostic_code_t::invalid_number,
-                         "OSB Sprite position is not a finite number");
-                    return result;
-                }
-                candidate.sprites.push_back(std::move(sprite));
-                active_sprite = candidate.sprites.size() - 1;
-                loop_path.clear();
-                loop_indentation.clear();
-                continue;
-            }
+    auto process_line(std::string_view line) -> bool {
+        ++line_number_;
+        if (line_number_ > options_.maximum_lines) {
+            fail(storyboard_diagnostic_code_t::line_limit,
+                 "OSB input exceeds the configured line limit");
+            return false;
+        }
+        if (source_order_ == std::numeric_limits<std::uint64_t>::max()) {
+            fail(storyboard_diagnostic_code_t::invalid_model, "OSB source order overflowed");
+            return false;
+        }
+        ++source_order_;
+        std::size_t indentation{};
+        while (indentation < line.size() && (line[indentation] == ' ' || line[indentation] == '\t')) {
+            ++indentation;
+        }
+        const auto content = trim(line);
+        if (content.empty()) {
+            return retain_blank_line(line);
+        }
+        const auto fields = split_csv(content);
+        if (indentation == 0 && fields.front() == "Sprite") {
+            return parse_sprite(fields);
+        }
+        if (indentation == 0) {
+            active_sprite_.reset();
+            loop_path_.clear();
+            loop_indentation_.clear();
+            document_.retained_top_level_lines.push_back({source_order_, std::string(line)});
+            return true;
+        }
+        if (!active_sprite_) {
+            document_.retained_top_level_lines.push_back({source_order_, std::string(line)});
+            return true;
+        }
+        return parse_sprite_content(line, indentation, fields);
+    }
 
-            if (indentation == 0) {
-                active_sprite.reset();
-                loop_path.clear();
-                loop_indentation.clear();
-                candidate.retained_top_level_lines.push_back({source_order, std::string(line)});
-                continue;
-            }
-            if (!active_sprite.has_value()) {
-                candidate.retained_top_level_lines.push_back({source_order, std::string(line)});
-                continue;
-            }
-            if (indentation > 0 && indentation - 1 > options.maximum_nesting) {
-                fail(storyboard_diagnostic_code_t::nesting_limit,
-                     "OSB indentation exceeds the configured nesting limit");
-                return result;
-            }
-            while (!loop_indentation.empty() && loop_indentation.back() >= indentation) {
-                loop_indentation.pop_back();
-                loop_path.pop_back();
-            }
-            if (loop_path.size() > options.maximum_nesting) {
-                fail(storyboard_diagnostic_code_t::nesting_limit,
-                     "OSB loop nesting exceeds the configured nesting limit");
-                return result;
-            }
-            auto* destination = &candidate.sprites[*active_sprite].nodes;
-            for (const auto index : loop_path)
-                destination = &(*destination)[index].children;
+    auto retain_blank_line(std::string_view line) -> bool {
+        if (!active_sprite_) {
+            document_.retained_top_level_lines.push_back({source_order_, std::string(line)});
+            return true;
+        }
+        auto* destination = current_destination();
+        storyboard_node_t node;
+        node.kind = storyboard_node_kind_t::retained_line;
+        node.source_order = source_order_;
+        node.retained_line = std::string(line);
+        std::vector<storyboard_node_t> nodes;
+        nodes.push_back(std::move(node));
+        return insert_nodes(*destination, std::move(nodes), 0);
+    }
 
-            storyboard_node_t node;
-            node.source_order = source_order;
-            std::vector<storyboard_node_t> expanded_commands;
-            bool parsed = false;
-            if (fields.front() == "L") {
-                std::int64_t start{};
-                std::uint64_t count{};
-                if (fields.size() == 3 && parse_integer(fields[1], start) &&
-                    parse_integer(fields[2], count)) {
-                    node.kind = storyboard_node_kind_t::loop;
-                    node.loop_start_time_ms = start;
-                    node.loop_iteration_count = count;
-                    parsed = true;
-                }
-            } else if (const auto opcode = parse_opcode(fields.front()); opcode.has_value()) {
-                auto& command = node.command;
-                command.opcode = *opcode;
-                command.value_count = expected_value_count(*opcode);
-                const auto minimum_fields = 4 + static_cast<std::size_t>(command.value_count);
-                if (fields.size() >= minimum_fields && parse_integer(fields[1], command.easing) &&
-                    parse_integer(fields[2], command.start_time_ms)) {
-                    if (!valid_easing(command.easing)) {
-                        fail(storyboard_diagnostic_code_t::invalid_command,
-                             "OSB easing value must be between 0 and 34");
-                        return result;
-                    }
-                    if (fields[3].empty()) {
-                        command.end_time_ms = command.start_time_ms;
-                        parsed = true;
-                    } else {
-                        parsed = parse_integer(fields[3], command.end_time_ms);
-                    }
-                    parsed = parsed && command.start_time_ms <= command.end_time_ms;
-                    const auto parameter_count = fields.size() - 4;
-                    const auto values_per_group = static_cast<std::size_t>(command.value_count);
-                    parsed = parsed && parameter_count >= values_per_group &&
-                             parameter_count % values_per_group == 0;
-                    if (parsed) {
-                        std::vector<double> values(parameter_count);
-                        for (std::size_t index = 0; index < parameter_count; ++index)
-                            parsed = parsed && parse_double(fields[4 + index], values[index]);
+    auto parse_sprite(const std::vector<std::string>& fields) -> bool {
+        if (fields.size() != 6 || fields[1].empty() || fields[2].empty() ||
+            fields[3].size() > options_.maximum_path_bytes || fields[3].empty()) {
+            fail(storyboard_diagnostic_code_t::malformed_line,
+                 "OSB Sprite header must contain layer, origin, path, and position");
+            return false;
+        }
+        storyboard_sprite_t sprite;
+        sprite.stable_id = source_order_;
+        sprite.source_order = source_order_;
+        sprite.layer = fields[1];
+        sprite.origin = fields[2];
+        sprite.path = fields[3];
+        if (!parse_double(fields[4], sprite.x) || !parse_double(fields[5], sprite.y)) {
+            fail(storyboard_diagnostic_code_t::invalid_number,
+                 "OSB Sprite position is not a finite number");
+            return false;
+        }
+        document_.sprites.push_back(std::move(sprite));
+        active_sprite_ = document_.sprites.size() - 1;
+        loop_path_.clear();
+        loop_indentation_.clear();
+        return true;
+    }
 
-                        const auto group_count = parameter_count / values_per_group;
-                        command.source_order = source_order;
-                        if (parsed && group_count == 1) {
-                            command.from.fill(0.0);
-                            command.to.fill(0.0);
-                            for (std::size_t index = 0; index < values_per_group; ++index) {
-                                command.from[index] = values[index];
-                                command.to[index] = values[index];
-                            }
-                        } else if (parsed && group_count == 2) {
-                            command.from.fill(0.0);
-                            command.to.fill(0.0);
-                            for (std::size_t index = 0; index < values_per_group; ++index) {
-                                command.from[index] = values[index];
-                                command.to[index] = values[values_per_group + index];
-                            }
-                        } else if (parsed && group_count > 2) {
-                            expanded_commands.reserve(group_count - 1);
-                            const auto duration =
-                                distance_i64(command.start_time_ms, command.end_time_ms);
-                            for (std::size_t group = 0; group + 1 < group_count; ++group) {
-                                if (group != 0 &&
-                                    duration > std::numeric_limits<std::uint64_t>::max() / group) {
-                                    fail(storyboard_diagnostic_code_t::time_overflow,
-                                         "OSB sequential command time overflowed");
-                                    return result;
-                                }
-                                const auto offset = duration * static_cast<std::uint64_t>(group);
-                                storyboard_node_t expanded;
-                                expanded.kind = storyboard_node_kind_t::command;
-                                expanded.source_order = source_order;
-                                expanded.command.opcode = *opcode;
-                                expanded.command.easing = command.easing;
-                                expanded.command.value_count = command.value_count;
-                                expanded.command.source_order = source_order;
-                                if (!checked_add_unsigned_i64(command.start_time_ms, offset,
-                                                              expanded.command.start_time_ms) ||
-                                    !checked_add_unsigned_i64(command.end_time_ms, offset,
-                                                              expanded.command.end_time_ms)) {
-                                    fail(storyboard_diagnostic_code_t::time_overflow,
-                                         "OSB sequential command time overflowed");
-                                    return result;
-                                }
-                                for (std::size_t index = 0; index < values_per_group; ++index) {
-                                    expanded.command.from[index] =
-                                        values[group * values_per_group + index];
-                                    expanded.command.to[index] =
-                                        values[(group + 1) * values_per_group + index];
-                                }
-                                expanded_commands.push_back(std::move(expanded));
-                            }
-                        } else {
-                            parsed = false;
-                        }
-                    }
-                }
+    auto current_destination() -> std::vector<storyboard_node_t>* {
+        auto* nodes = &document_.sprites[*active_sprite_].nodes;
+        for (const auto index : loop_path_) {
+            nodes = &(*nodes)[index].children;
+        }
+        return nodes;
+    }
+
+    auto prepare_destination(std::size_t indentation)
+        -> std::optional<std::vector<storyboard_node_t>*> {
+        if (indentation > 0 && indentation - 1 > options_.maximum_nesting) {
+            fail(storyboard_diagnostic_code_t::nesting_limit,
+                 "OSB indentation exceeds the configured nesting limit");
+            return std::nullopt;
+        }
+        while (!loop_indentation_.empty() && loop_indentation_.back() >= indentation) {
+            loop_indentation_.pop_back();
+            loop_path_.pop_back();
+        }
+        if (loop_path_.size() > options_.maximum_nesting) {
+            fail(storyboard_diagnostic_code_t::nesting_limit,
+                 "OSB loop nesting exceeds the configured nesting limit");
+            return std::nullopt;
+        }
+        return current_destination();
+    }
+
+    auto parse_sprite_content(std::string_view line, std::size_t indentation,
+                              const std::vector<std::string>& fields) -> bool {
+        const auto destination = prepare_destination(indentation);
+        if (!destination.has_value()) {
+            return false;
+        }
+        auto nodes = parse_nodes(fields, line);
+        if (!nodes.has_value()) {
+            return false;
+        }
+        return insert_nodes(**destination, std::move(*nodes), indentation);
+    }
+
+    auto parse_nodes(const std::vector<std::string>& fields, std::string_view line)
+        -> std::optional<std::vector<storyboard_node_t>> {
+        storyboard_node_t node;
+        node.source_order = source_order_;
+        if (fields.front() == "L") {
+            if (fields.size() == 3 && parse_integer(fields[1], node.loop_start_time_ms) &&
+                parse_integer(fields[2], node.loop_iteration_count)) {
+                node.kind = storyboard_node_kind_t::loop;
+                return std::vector<storyboard_node_t>{std::move(node)};
             }
-            if (!parsed) {
-                if (fields.front() == "L" || parse_opcode(fields.front()).has_value()) {
-                    fail(storyboard_diagnostic_code_t::malformed_line,
-                         "recognized OSB command has invalid fields");
-                    return result;
-                }
-                node.kind = storyboard_node_kind_t::retained_line;
-                node.retained_line = std::string(line);
+            return malformed_command();
+        }
+        const auto opcode = parse_opcode(fields.front());
+        if (!opcode.has_value()) {
+            node.kind = storyboard_node_kind_t::retained_line;
+            node.retained_line = std::string(line);
+            return std::vector<storyboard_node_t>{std::move(node)};
+        }
+        node.kind = storyboard_node_kind_t::command;
+        node.command.opcode = *opcode;
+        node.command.value_count = expected_value_count(*opcode);
+        node.command.source_order = source_order_;
+        std::vector<storyboard_node_t> expanded;
+        const auto diagnostics_before = result_.diagnostics.size();
+        if (!parse_command_fields(fields, node, expanded)) {
+            if (result_.diagnostics.size() == diagnostics_before) {
+                return malformed_command();
             }
-            if (!expanded_commands.empty()) {
-                if (expanded_commands.size() >
-                    options.maximum_nodes - std::min(options.maximum_nodes, node_count)) {
-                    fail(storyboard_diagnostic_code_t::node_limit,
-                         "OSB input exceeds the configured node limit");
-                    return result;
-                }
-                node_count += expanded_commands.size();
-                for (auto& expanded : expanded_commands)
-                    destination->push_back(std::move(expanded));
-                continue;
+            return std::nullopt;
+        }
+        if (expanded.size() > 1) {
+            return expanded;
+        }
+        if (expanded.size() == 1) {
+            return expanded;
+        }
+        return std::vector<storyboard_node_t>{std::move(node)};
+    }
+
+    auto malformed_command() -> std::optional<std::vector<storyboard_node_t>> {
+        fail(storyboard_diagnostic_code_t::malformed_line,
+             "recognized OSB command has invalid fields");
+        return std::nullopt;
+    }
+
+    auto parse_command_fields(const std::vector<std::string>& fields, storyboard_node_t& node,
+                              std::vector<storyboard_node_t>& expanded) -> bool {
+        auto& command = node.command;
+        const auto values_per_group = static_cast<std::size_t>(command.value_count);
+        if (fields.size() < 4 + values_per_group || !parse_integer(fields[1], command.easing) ||
+            !parse_integer(fields[2], command.start_time_ms)) {
+            return false;
+        }
+        if (!valid_easing(command.easing)) {
+            fail(storyboard_diagnostic_code_t::invalid_command,
+                 "OSB easing value must be between 0 and 34");
+            return false;
+        }
+        if (fields[3].empty()) {
+            command.end_time_ms = command.start_time_ms;
+        } else if (!parse_integer(fields[3], command.end_time_ms)) {
+            return false;
+        }
+        if (command.start_time_ms > command.end_time_ms) {
+            return false;
+        }
+        const auto parameter_count = fields.size() - 4;
+        if (parameter_count < values_per_group || parameter_count % values_per_group != 0) {
+            return false;
+        }
+        std::vector<double> values(parameter_count);
+        for (std::size_t index = 0; index < parameter_count; ++index) {
+            if (!parse_double(fields[4 + index], values[index])) {
+                return false;
             }
-            if (node.kind == storyboard_node_kind_t::loop &&
-                loop_path.size() >= options.maximum_nesting) {
-                fail(storyboard_diagnostic_code_t::nesting_limit,
-                     "OSB loop nesting exceeds the configured nesting limit");
-                return result;
+        }
+        return populate_command_groups(command, values, expanded);
+    }
+
+    auto populate_command_groups(storyboard_command_t& command, const std::vector<double>& values,
+                                 std::vector<storyboard_node_t>& expanded) -> bool {
+        const auto per_group = static_cast<std::size_t>(command.value_count);
+        const auto group_count = values.size() / per_group;
+        if (group_count <= 2) {
+            command.from.fill(0.0);
+            command.to.fill(0.0);
+            for (std::size_t index = 0; index < per_group; ++index) {
+                command.from[index] = values[index];
+                command.to[index] = group_count == 1 ? values[index] : values[per_group + index];
             }
-            if (++node_count > options.maximum_nodes) {
+            return true;
+        }
+        return expand_sequential_groups(command, values, group_count, expanded);
+    }
+
+    auto expand_sequential_groups(const storyboard_command_t& command,
+                                  const std::vector<double>& values, std::size_t group_count,
+                                  std::vector<storyboard_node_t>& expanded) -> bool {
+        const auto duration = distance_i64(command.start_time_ms, command.end_time_ms);
+        const auto per_group = static_cast<std::size_t>(command.value_count);
+        expanded.reserve(group_count - 1);
+        for (std::size_t group = 0; group + 1 < group_count; ++group) {
+            if (group != 0 && duration > std::numeric_limits<std::uint64_t>::max() / group) {
+                fail(storyboard_diagnostic_code_t::time_overflow,
+                     "OSB sequential command time overflowed");
+                return false;
+            }
+            const auto offset = duration * static_cast<std::uint64_t>(group);
+            storyboard_node_t item;
+            item.kind = storyboard_node_kind_t::command;
+            item.source_order = source_order_;
+            item.command = command;
+            if (!checked_add_unsigned_i64(command.start_time_ms, offset,
+                                          item.command.start_time_ms) ||
+                !checked_add_unsigned_i64(command.end_time_ms, offset,
+                                          item.command.end_time_ms)) {
+                fail(storyboard_diagnostic_code_t::time_overflow,
+                     "OSB sequential command time overflowed");
+                return false;
+            }
+            for (std::size_t index = 0; index < per_group; ++index) {
+                item.command.from[index] = values[group * per_group + index];
+                item.command.to[index] = values[(group + 1) * per_group + index];
+            }
+            expanded.push_back(std::move(item));
+        }
+        return true;
+    }
+
+    auto insert_nodes(std::vector<storyboard_node_t>& destination,
+                      std::vector<storyboard_node_t> nodes, std::size_t indentation) -> bool {
+        if (nodes.size() > 1) {
+            const auto remaining = options_.maximum_nodes -
+                                   std::min(options_.maximum_nodes, node_count_);
+            if (nodes.size() > remaining) {
                 fail(storyboard_diagnostic_code_t::node_limit,
                      "OSB input exceeds the configured node limit");
-                return result;
+                return false;
             }
-            const auto inserted_index = destination->size();
-            destination->push_back(std::move(node));
-            if (destination->back().kind == storyboard_node_kind_t::loop) {
-                loop_path.push_back(inserted_index);
-                loop_indentation.push_back(indentation);
+            node_count_ += nodes.size();
+            for (auto& node : nodes) {
+                destination.push_back(std::move(node));
             }
+            return true;
         }
-        result.document = std::move(candidate);
+        auto& node = nodes.front();
+        if (node.kind == storyboard_node_kind_t::loop &&
+            loop_path_.size() >= options_.maximum_nesting) {
+            fail(storyboard_diagnostic_code_t::nesting_limit,
+                 "OSB loop nesting exceeds the configured nesting limit");
+            return false;
+        }
+        if (++node_count_ > options_.maximum_nodes) {
+            fail(storyboard_diagnostic_code_t::node_limit,
+                 "OSB input exceeds the configured node limit");
+            return false;
+        }
+        const auto inserted_index = destination.size();
+        destination.push_back(std::move(node));
+        if (destination.back().kind == storyboard_node_kind_t::loop) {
+            loop_path_.push_back(inserted_index);
+            loop_indentation_.push_back(indentation);
+        }
+        return true;
+    }
+
+    storyboard_parse_options_t options_;
+    storyboard_parse_result_t result_;
+    storyboard_document_model_t document_;
+    std::vector<std::size_t> loop_path_;
+    std::vector<std::size_t> loop_indentation_;
+    std::optional<std::size_t> active_sprite_;
+    std::size_t line_number_{};
+    std::size_t node_count_{};
+    std::uint64_t source_order_{};
+};
+
+} // namespace
+
+auto parse_osb(std::string_view text, storyboard_parse_options_t options)
+    -> storyboard_parse_result_t {
+    return osb_parser_t{options}.parse(text);
+}
+
+namespace {
+
+struct osb_top_item_t {
+    std::uint64_t order{};
+    bool sprite{};
+    std::size_t index{};
+};
+
+auto make_osb_top_items(const storyboard_document_model_t& document,
+                        storyboard_emit_result_t& result) -> std::optional<std::vector<osb_top_item_t>> {
+    if (document.sprites.size() > std::numeric_limits<std::size_t>::max() -
+                                      document.retained_top_level_lines.size()) {
+        result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded, 0,
+                                      "OSB top-level item count overflowed"});
+        return std::nullopt;
+    }
+    const auto count = document.sprites.size() + document.retained_top_level_lines.size();
+    if (count > 250'000) {
+        result.diagnostics.push_back({storyboard_diagnostic_code_t::node_limit, 0,
+                                      "OSB document exceeds the emitter node limit"});
+        return std::nullopt;
+    }
+    std::vector<osb_top_item_t> items;
+    try {
+        items.reserve(count);
+        for (std::size_t index = 0; index < document.sprites.size(); ++index) {
+            items.push_back({document.sprites[index].source_order, true, index});
+        }
+        for (std::size_t index = 0; index < document.retained_top_level_lines.size(); ++index) {
+            items.push_back({document.retained_top_level_lines[index].source_order, false, index});
+        }
     } catch (const std::bad_alloc&) {
-        result.document.reset();
-        try {
-            result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded,
-                                          line_number, "OSB parser allocation failed"});
-        } catch (...) {
+        result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded, 0,
+                                      "OSB ordering allocation failed"});
+        return std::nullopt;
+    }
+    std::ranges::sort(items, [](const auto& left, const auto& right) {
+        return std::tie(left.order, left.sprite, left.index) <
+               std::tie(right.order, right.sprite, right.index);
+    });
+    return items;
+}
+
+auto append_osb_sprite_header(std::string& output, const storyboard_sprite_t& sprite,
+                              std::size_t maximum_bytes,
+                              storyboard_emit_result_t& result) -> bool {
+    if (sprite.layer.empty() || sprite.origin.empty() || sprite.path.empty() ||
+        sprite.path.size() > storyboard_default_maximum_path_bytes ||
+        !valid_header_token(sprite.layer) || !valid_header_token(sprite.origin) ||
+        !valid_single_line(sprite.path) || !std::isfinite(sprite.x) || !std::isfinite(sprite.y)) {
+        result.diagnostics.push_back({storyboard_diagnostic_code_t::invalid_model, 0,
+                                      "OSB sprite has an invalid header"});
+        return false;
+    }
+    if (!append_bounded(output, "Sprite,", maximum_bytes) ||
+        !append_bounded(output, sprite.layer, maximum_bytes) ||
+        !append_bounded(output, ",", maximum_bytes) ||
+        !append_bounded(output, sprite.origin, maximum_bytes) ||
+        !append_bounded(output, ",\"", maximum_bytes)) {
+        return false;
+    }
+    for (const auto character : sprite.path) {
+        const auto piece = character == '"' ? std::string_view{"\"\""}
+                                             : std::string_view{&character, 1};
+        if (!append_bounded(output, piece, maximum_bytes)) {
+            return false;
         }
     }
-    return result;
+    return append_bounded(output, "\",", maximum_bytes) && append_double(output, sprite.x) &&
+           append_bounded(output, ",", maximum_bytes) && append_double(output, sprite.y) &&
+           append_bounded(output, "\n", maximum_bytes);
 }
+
+auto emit_osb_top_item(std::string& output, const storyboard_document_model_t& document,
+                       const osb_top_item_t& item, std::size_t maximum_bytes,
+                       std::size_t& node_count, storyboard_emit_result_t& result) -> bool {
+    if (!item.sprite) {
+        const auto& line = document.retained_top_level_lines[item.index].text;
+        if (valid_single_line(line) && append_bounded(output, line, maximum_bytes) &&
+            append_bounded(output, "\n", maximum_bytes)) {
+            return true;
+        }
+        result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded, 0,
+                                      "OSB output exceeds its configured byte limit"});
+        return false;
+    }
+    const auto& sprite = document.sprites[item.index];
+    if (!append_osb_sprite_header(output, sprite, maximum_bytes, result)) {
+        if (result.diagnostics.empty() ||
+            result.diagnostics.back().code != storyboard_diagnostic_code_t::invalid_model) {
+            result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded, 0,
+                                          "OSB output exceeds its configured byte limit"});
+        }
+        return false;
+    }
+    for (const auto& node : sprite.nodes) {
+        if (!emit_node(output, node, 1, maximum_bytes, 1, node_count)) {
+            result.diagnostics.push_back({storyboard_diagnostic_code_t::invalid_model, 0,
+                                         "OSB node is invalid or output exceeds its limit"});
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
 
 auto emit_osb(const storyboard_document_model_t& document, std::size_t maximum_output_bytes)
     -> storyboard_emit_result_t {
     storyboard_emit_result_t result;
-    struct top_item_t {
-        std::uint64_t order{};
-        bool sprite{};
-        std::size_t index{};
-    };
-    std::vector<top_item_t> top_items;
-    if (document.sprites.size() >
-        std::numeric_limits<std::size_t>::max() - document.retained_top_level_lines.size()) {
-        result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded, 0,
-                                      "OSB top-level item count overflowed"});
+    const auto items = make_osb_top_items(document, result);
+    if (!items.has_value()) {
         return result;
     }
-    if (document.sprites.size() + document.retained_top_level_lines.size() > 250'000) {
-        result.diagnostics.push_back({storyboard_diagnostic_code_t::node_limit, 0,
-                                      "OSB document exceeds the emitter node limit"});
-        return result;
-    }
-    try {
-        top_items.reserve(document.sprites.size() + document.retained_top_level_lines.size());
-        for (std::size_t index = 0; index < document.sprites.size(); ++index) {
-            top_items.push_back({document.sprites[index].source_order, true, index});
-        }
-        for (std::size_t index = 0; index < document.retained_top_level_lines.size(); ++index) {
-            top_items.push_back(
-                {document.retained_top_level_lines[index].source_order, false, index});
-        }
-    } catch (const std::bad_alloc&) {
-        result.diagnostics.push_back(
-            {storyboard_diagnostic_code_t::capacity_exceeded, 0, "OSB ordering allocation failed"});
-        return result;
-    }
-    std::ranges::sort(top_items, [](const auto& left, const auto& right) {
-        return std::tie(left.order, left.sprite, left.index) <
-               std::tie(right.order, right.sprite, right.index);
-    });
-
     std::string output;
-    const auto estimate = std::min(maximum_output_bytes, std::size_t{64 * 1024});
-    std::size_t node_count = 0;
+    std::size_t node_count{};
     try {
-        output.reserve(estimate);
-        for (const auto& item : top_items) {
-            if (!item.sprite) {
-                const auto& line = document.retained_top_level_lines[item.index].text;
-                if (!valid_single_line(line) ||
-                    !append_bounded(output, line, maximum_output_bytes) ||
-                    !append_bounded(output, "\n", maximum_output_bytes)) {
-                    result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded,
-                                                  0,
-                                                  "OSB output exceeds its configured byte limit"});
-                    return result;
-                }
-                continue;
-            }
-            const auto& sprite = document.sprites[item.index];
-            if (sprite.layer.empty() || sprite.origin.empty() || sprite.path.empty() ||
-                sprite.path.size() > storyboard_default_maximum_path_bytes ||
-                !valid_header_token(sprite.layer) || !valid_header_token(sprite.origin) ||
-                !valid_single_line(sprite.path) || !std::isfinite(sprite.x) ||
-                !std::isfinite(sprite.y)) {
-                result.diagnostics.push_back({storyboard_diagnostic_code_t::invalid_model, 0,
-                                              "OSB sprite has an invalid header"});
+        output.reserve(std::min(maximum_output_bytes, std::size_t{64 * 1024}));
+        for (const auto& item : *items) {
+            if (!emit_osb_top_item(output, document, item, maximum_output_bytes, node_count,
+                                   result)) {
                 return result;
-            }
-            if (!append_bounded(output, "Sprite,", maximum_output_bytes) ||
-                !append_bounded(output, sprite.layer, maximum_output_bytes) ||
-                !append_bounded(output, ",", maximum_output_bytes) ||
-                !append_bounded(output, sprite.origin, maximum_output_bytes) ||
-                !append_bounded(output, ",\"", maximum_output_bytes)) {
-                result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded, 0,
-                                              "OSB output exceeds its configured byte limit"});
-                return result;
-            }
-            for (const auto character : sprite.path) {
-                if (!append_bounded(output,
-                                    character == '"' ? "\"\"" : std::string_view{&character, 1},
-                                    maximum_output_bytes)) {
-                    result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded,
-                                                  0,
-                                                  "OSB output exceeds its configured byte limit"});
-                    return result;
-                }
-            }
-            if (!append_bounded(output, "\",", maximum_output_bytes) ||
-                !append_double(output, sprite.x) ||
-                !append_bounded(output, ",", maximum_output_bytes) ||
-                !append_double(output, sprite.y) ||
-                !append_bounded(output, "\n", maximum_output_bytes)) {
-                result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded, 0,
-                                              "OSB output exceeds its configured byte limit"});
-                return result;
-            }
-            for (const auto& node : sprite.nodes) {
-                if (!emit_node(output, node, 1, maximum_output_bytes, 1, node_count)) {
-                    result.diagnostics.push_back(
-                        {storyboard_diagnostic_code_t::invalid_model, 0,
-                         "OSB node is invalid or output exceeds its limit"});
-                    return result;
-                }
             }
         }
     } catch (const std::bad_alloc&) {
-        result.diagnostics.push_back(
-            {storyboard_diagnostic_code_t::capacity_exceeded, 0, "OSB output allocation failed"});
+        result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded, 0,
+                                      "OSB output allocation failed"});
         return result;
     }
     result.text = std::move(output);
     return result;
 }
 
+namespace {
+
+auto reserve_schedule_events(const storyboard_document_model_t& document,
+                             storyboard_schedule_options_t options,
+                             storyboard_schedule_result_t& result)
+    -> std::optional<std::size_t> {
+    std::size_t count{};
+    for (const auto& sprite : document.sprites) {
+        for (const auto& node : sprite.nodes) {
+            if (node.kind == storyboard_node_kind_t::retained_line) {
+                continue;
+            }
+            if (count > options.maximum_events || options.maximum_events - count < 2) {
+                result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded, 0,
+                                              "storyboard schedule exceeds its event limit"});
+                return std::nullopt;
+            }
+            count += 2;
+        }
+    }
+    return count;
+}
+
+auto schedule_node_times(const storyboard_node_t& node, storyboard_schedule_options_t options,
+                         storyboard_schedule_result_t& result)
+    -> std::optional<std::pair<std::int64_t, std::int64_t>> {
+    if (node.kind == storyboard_node_kind_t::command) {
+        if (!valid_opcode(node.command.opcode) ||
+            node.command.value_count != expected_value_count(node.command.opcode) ||
+            node.command.start_time_ms > node.command.end_time_ms) {
+            result.diagnostics.push_back({storyboard_diagnostic_code_t::invalid_model, 0,
+                                          "storyboard schedule contains an invalid command"});
+            return std::nullopt;
+        }
+        return std::pair{node.command.start_time_ms, node.command.end_time_ms};
+    }
+    std::int64_t repeated{};
+    std::size_t nested_count{};
+    std::int64_t period{};
+    const auto error = extent_of_nodes(node.children, 1, options.maximum_nesting,
+                                       options.maximum_nodes, nested_count, period);
+    std::int64_t end_time{};
+    if (error.has_value() ||
+        !checked_mul_nonnegative(period, node.loop_iteration_count, repeated) ||
+        !checked_add_i64(node.loop_start_time_ms, repeated, end_time)) {
+        result.diagnostics.push_back(
+            {error.value_or(storyboard_diagnostic_code_t::time_overflow), 0,
+             "storyboard loop duration overflowed"});
+        return std::nullopt;
+    }
+    return std::pair{node.loop_start_time_ms, end_time};
+}
+
+auto append_schedule_node(const storyboard_sprite_t& sprite, const storyboard_node_t& node,
+                          storyboard_schedule_options_t options, storyboard_schedule_t& schedule,
+                          std::size_t& node_count, std::uint64_t& stable_order,
+                          storyboard_schedule_result_t& result) -> bool {
+    if (node_count >= options.maximum_nodes) {
+        result.diagnostics.push_back({storyboard_diagnostic_code_t::node_limit, 0,
+                                      "storyboard schedule exceeds its node limit"});
+        return false;
+    }
+    std::size_t nested_count{};
+    std::int64_t ignored_extent{};
+    const auto error = extent_of_node(node, 1, options.maximum_nesting, options.maximum_nodes,
+                                      nested_count, ignored_extent);
+    if (error.has_value()) {
+        result.diagnostics.push_back({*error, 0,
+                                      "storyboard schedule contains an invalid or too-deep node"});
+        return false;
+    }
+    if (nested_count > options.maximum_nodes - node_count) {
+        result.diagnostics.push_back({storyboard_diagnostic_code_t::node_limit, 0,
+                                      "storyboard schedule exceeds its node limit"});
+        return false;
+    }
+    node_count += nested_count;
+    if (stable_order > std::numeric_limits<std::uint64_t>::max() - 2) {
+        result.diagnostics.push_back({storyboard_diagnostic_code_t::invalid_model, 0,
+                                      "storyboard schedule order overflowed"});
+        return false;
+    }
+    const auto times = schedule_node_times(node, options, result);
+    if (!times.has_value()) {
+        return false;
+    }
+    const auto node_order = node.source_order;
+    schedule.events.push_back({times->first, node_order, sprite.stable_id,
+                               node_order != 0 ? node_order : stable_order,
+                               storyboard_event_t::edge_t::begin, stable_order++});
+    schedule.events.push_back({times->second, node_order, sprite.stable_id,
+                               node_order != 0 ? node_order : stable_order,
+                               storyboard_event_t::edge_t::end, stable_order++});
+    return true;
+}
+
+auto schedule_event_less(const storyboard_event_t& left, const storyboard_event_t& right) -> bool {
+    return std::tie(left.time_ms, left.source_order, left.stable_object_id, left.stable_node_id,
+                    left.edge, left.schedule_order) <
+           std::tie(right.time_ms, right.source_order, right.stable_object_id,
+                    right.stable_node_id, right.edge, right.schedule_order);
+}
+
+} // namespace
+
 auto compile_storyboard_schedule(const storyboard_document_model_t& document,
                                  storyboard_schedule_options_t options)
     -> storyboard_schedule_result_t {
     storyboard_schedule_result_t result;
     storyboard_schedule_t candidate;
-    std::size_t expected_events = 0;
-    for (const auto& sprite : document.sprites) {
-        for (const auto& node : sprite.nodes) {
-            if (node.kind == storyboard_node_kind_t::retained_line)
-                continue;
-            if (expected_events > options.maximum_events ||
-                options.maximum_events - expected_events < 2) {
-                result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded, 0,
-                                              "storyboard schedule exceeds its event limit"});
-                return result;
-            }
-            expected_events += 2;
-        }
+    const auto expected_events = reserve_schedule_events(document, options, result);
+    if (!expected_events.has_value()) {
+        return result;
     }
     try {
-        candidate.events.reserve(expected_events);
+        candidate.events.reserve(*expected_events);
     } catch (const std::bad_alloc&) {
         result.diagnostics.push_back({storyboard_diagnostic_code_t::capacity_exceeded, 0,
                                       "storyboard schedule allocation failed"});
         return result;
     }
-    std::size_t node_count = 0;
-    std::uint64_t stable_order = 0;
+    std::size_t node_count{};
+    std::uint64_t stable_order{};
     for (const auto& sprite : document.sprites) {
         for (const auto& node : sprite.nodes) {
-            if (node.kind == storyboard_node_kind_t::retained_line)
-                continue;
-            if (node_count >= options.maximum_nodes) {
-                result.diagnostics.push_back({storyboard_diagnostic_code_t::node_limit, 0,
-                                              "storyboard schedule exceeds its node limit"});
+            if (node.kind != storyboard_node_kind_t::retained_line &&
+                !append_schedule_node(sprite, node, options, candidate, node_count, stable_order,
+                                      result)) {
                 return result;
             }
-            std::size_t nested_count = 0;
-            std::int64_t extent{};
-            const auto error = extent_of_node(node, 1, options.maximum_nesting,
-                                              options.maximum_nodes, nested_count, extent);
-            if (error.has_value()) {
-                result.diagnostics.push_back(
-                    {*error, 0, "storyboard schedule contains an invalid or too-deep node"});
-                return result;
-            }
-            if (nested_count > options.maximum_nodes - node_count) {
-                result.diagnostics.push_back({storyboard_diagnostic_code_t::node_limit, 0,
-                                              "storyboard schedule exceeds its node limit"});
-                return result;
-            }
-            node_count += nested_count;
-            if (stable_order > std::numeric_limits<std::uint64_t>::max() - 2) {
-                result.diagnostics.push_back({storyboard_diagnostic_code_t::invalid_model, 0,
-                                              "storyboard schedule order overflowed"});
-                return result;
-            }
-            std::int64_t begin_time{};
-            std::int64_t end_time{};
-            if (node.kind == storyboard_node_kind_t::command) {
-                if (!valid_opcode(node.command.opcode) ||
-                    node.command.value_count != expected_value_count(node.command.opcode) ||
-                    node.command.start_time_ms > node.command.end_time_ms) {
-                    result.diagnostics.push_back(
-                        {storyboard_diagnostic_code_t::invalid_model, 0,
-                         "storyboard schedule contains an invalid command"});
-                    return result;
-                }
-                begin_time = node.command.start_time_ms;
-                end_time = node.command.end_time_ms;
-            } else {
-                begin_time = node.loop_start_time_ms;
-                std::int64_t repeated{};
-                std::size_t depth_count = 0;
-                std::int64_t period{};
-                const auto period_error =
-                    extent_of_nodes(node.children, 1, options.maximum_nesting,
-                                    options.maximum_nodes, depth_count, period);
-                if (period_error.has_value() ||
-                    !checked_mul_nonnegative(period, node.loop_iteration_count, repeated) ||
-                    !checked_add_i64(begin_time, repeated, end_time)) {
-                    result.diagnostics.push_back(
-                        {period_error.value_or(storyboard_diagnostic_code_t::time_overflow), 0,
-                         "storyboard loop duration overflowed"});
-                    return result;
-                }
-            }
-            const auto node_order = node.source_order;
-            candidate.events.push_back({begin_time, node_order, sprite.stable_id,
-                                        node_order != 0 ? node_order : stable_order,
-                                        storyboard_event_t::edge_t::begin, stable_order});
-            ++stable_order;
-            candidate.events.push_back({end_time, node_order, sprite.stable_id,
-                                        node_order != 0 ? node_order : stable_order,
-                                        storyboard_event_t::edge_t::end, stable_order});
-            ++stable_order;
         }
     }
-    std::ranges::sort(candidate.events, [](const auto& left, const auto& right) {
-        return std::tie(left.time_ms, left.source_order, left.stable_object_id, left.stable_node_id,
-                        left.edge, left.schedule_order) <
-               std::tie(right.time_ms, right.source_order, right.stable_object_id,
-                        right.stable_node_id, right.edge, right.schedule_order);
-    });
+    std::ranges::sort(candidate.events, schedule_event_less);
     result.schedule = std::move(candidate);
     return result;
 }

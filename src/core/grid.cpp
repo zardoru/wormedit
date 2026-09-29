@@ -293,6 +293,392 @@ auto spacing_pixels(const exact_chart_row_t& earlier, const exact_chart_row_t& l
            static_cast<long double>(divisions);
 }
 
+struct editor_grid_build_context_t {
+    const chart_document_t& chart;
+    const editor_grid_request_t& request;
+    const measure_index_t& measure_index;
+    const std::optional<virtual_canvas_t>& virtual_canvas;
+    const std::unordered_map<std::uint64_t, const editor_grid_grouping_t*>& authored_groupings;
+    editor_grid_result_t& result;
+    std::uint64_t candidate_begin{};
+    std::uint64_t candidate_end{};
+    std::uint64_t divisions{};
+    std::vector<editor_grid_line_t> candidates;
+};
+
+auto validate_authored_groupings(
+    const chart_document_t& chart, const editor_grid_request_t& request,
+    std::unordered_map<std::uint64_t, const editor_grid_grouping_t*>& groupings,
+    diagnostic_list_t& diagnostics) -> bool {
+    for (const auto& grouping : request.authored_groupings) {
+        if (!grouping.measure ||
+            !groupings.emplace(grouping.measure.value, &grouping).second) {
+            diagnostics.push_back(error(diagnostic_code_t::invalid_measure,
+                                        "editor grid grouping has a missing or duplicate measure ID"));
+            continue;
+        }
+        const auto measure = std::ranges::find(chart.measures, grouping.measure,
+                                               &measure_chunk_t::id);
+        if (measure == chart.measures.end() || !measure->definition.meter) {
+            diagnostics.push_back(error(diagnostic_code_t::unknown_measure,
+                                        "editor grid grouping requires a metered chart measure"));
+            continue;
+        }
+        std::uint64_t sum{};
+        auto valid = !grouping.beat_counts.empty();
+        for (const auto beat_count : grouping.beat_counts)
+            valid = valid && beat_count != 0 && add_checked(sum, beat_count, sum);
+        if (!valid || sum != measure->definition.meter->numerator)
+            diagnostics.push_back(error(diagnostic_code_t::invalid_measure,
+                                        "authored beat grouping must be positive and cover its meter"));
+    }
+    return diagnostics.empty();
+}
+
+auto candidate_interval(const editor_grid_request_t& request, const chart_document_t& chart,
+                        std::uint64_t total_rows)
+    -> std::pair<std::uint64_t, std::uint64_t> {
+    const auto maximum_spacing = std::max({
+        request.density.minimum_group_spacing_pixels,
+        request.density.minimum_beat_spacing_pixels,
+        request.density.minimum_active_snap_spacing_pixels,
+    });
+    const auto overscan = std::ceil(static_cast<long double>(maximum_spacing) *
+                                    static_cast<long double>(chart.divisions_per_standard_measure) /
+                                    static_cast<long double>(request.pixels_per_standard_measure));
+    if (!std::isfinite(overscan) || overscan >= total_rows)
+        return {0, total_rows};
+    const auto margin = static_cast<std::uint64_t>(std::max(0.0L, overscan));
+    const auto begin = request.visible_begin_row > margin
+        ? request.visible_begin_row - margin
+        : 0;
+    const auto end = request.visible_end_row > total_rows - margin
+        ? total_rows
+        : request.visible_end_row + margin;
+    return {begin, end};
+}
+
+auto append_measure_candidates(editor_grid_build_context_t& context) -> bool {
+    for (const auto& entry : context.measure_index.entries) {
+        if (entry.absolute_begin_row >= context.candidate_end ||
+            entry.absolute_begin_row + entry.row_capacity <= context.candidate_begin)
+            continue;
+        if (!add_candidate(context.candidates, entry, {}, editor_grid_line_kind_t::measure,
+                           context.request.maximum_line_count, context.result.diagnostics))
+            return false;
+    }
+    return true;
+}
+
+auto append_authored_beats(editor_grid_build_context_t& context,
+                           const measure_index_entry_t& entry, std::uint64_t denominator,
+                           std::uint64_t last_beat) -> bool {
+    const auto spacing = context.request.pixels_per_standard_measure /
+                         static_cast<double>(denominator);
+    if (spacing < context.request.density.minimum_beat_spacing_pixels)
+        return true;
+    const auto first = first_visible_beat(context.divisions, denominator, entry,
+                                          context.candidate_begin, last_beat);
+    if (!first)
+        return true;
+    for (auto beat = *first; beat <= last_beat; ++beat) {
+        const auto offset = offset_for_beat(beat, context.divisions, denominator);
+        if (!offset) {
+            context.result.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_measure,
+                      "authored beat position overflows exact chart coordinates"));
+            return false;
+        }
+        const auto absolute = absolute_position(entry.absolute_begin_row, *offset);
+        if (!absolute || absolute->whole_rows >= context.candidate_end)
+            break;
+        if (absolute->whole_rows >= context.candidate_begin &&
+            !add_candidate(context.candidates, entry, *offset, editor_grid_line_kind_t::beat,
+                           context.request.maximum_line_count, context.result.diagnostics))
+            return false;
+        if (beat == last_beat)
+            break;
+    }
+    return true;
+}
+
+auto append_group_boundaries(editor_grid_build_context_t& context,
+                             const measure_index_entry_t& entry,
+                             const std::vector<std::uint32_t>& boundaries,
+                             std::uint64_t denominator) -> bool {
+    for (const auto boundary : boundaries) {
+        const auto offset = offset_for_beat(boundary, context.divisions, denominator);
+        if (!offset) {
+            context.result.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_measure,
+                      "authored group position overflows exact chart coordinates"));
+            return false;
+        }
+        const auto absolute = absolute_position(entry.absolute_begin_row, *offset);
+        if (!absolute || absolute->whole_rows >= context.candidate_end)
+            break;
+        if (absolute->whole_rows >= context.candidate_begin &&
+            !add_candidate(context.candidates, entry, *offset, editor_grid_line_kind_t::group,
+                           context.request.maximum_line_count, context.result.diagnostics))
+            return false;
+    }
+    return true;
+}
+
+auto append_unmetered_groups(editor_grid_build_context_t& context,
+                             const measure_index_entry_t& entry,
+                             std::uint64_t last_beat) -> bool {
+    const auto last_group = last_beat / 2;
+    const auto first_beat = first_visible_beat(context.divisions, 4, entry,
+                                               context.candidate_begin, last_beat);
+    auto group = first_beat ? *first_beat / 2 : last_group + 1;
+    if (first_beat && *first_beat % 2 != 0)
+        ++group;
+    for (; group <= last_group; ++group) {
+        const auto offset = offset_for_beat(group * 2, context.divisions, 4);
+        if (!offset) {
+            context.result.diagnostics.push_back(
+                error(diagnostic_code_t::invalid_measure,
+                      "default group position overflows exact chart coordinates"));
+            return false;
+        }
+        const auto absolute = absolute_position(entry.absolute_begin_row, *offset);
+        if (!absolute || absolute->whole_rows >= context.candidate_end)
+            break;
+        if (absolute->whole_rows >= context.candidate_begin &&
+            !add_candidate(context.candidates, entry, *offset, editor_grid_line_kind_t::group,
+                           context.request.maximum_line_count, context.result.diagnostics))
+            return false;
+        if (group == last_group || group == maximum)
+            break;
+    }
+    return true;
+}
+
+auto append_authored_groups(editor_grid_build_context_t& context,
+                            const measure_chunk_t& measure,
+                            const measure_index_entry_t& entry,
+                            std::uint64_t denominator,
+                            std::uint64_t last_beat) -> bool {
+    if (!measure.definition.meter)
+        return append_unmetered_groups(context, entry, last_beat);
+    std::vector<std::uint32_t> boundaries;
+    const auto authored = context.authored_groupings.find(measure.id.value);
+    if (authored != context.authored_groupings.end()) {
+        std::uint32_t cumulative{};
+        const auto& counts = authored->second->beat_counts;
+        for (std::size_t group = 0; group + 1 < counts.size(); ++group) {
+            cumulative += counts[group];
+            boundaries.push_back(cumulative);
+        }
+    } else {
+        boundaries = default_group_boundaries(*measure.definition.meter);
+    }
+    return append_group_boundaries(context, entry, boundaries, denominator);
+}
+
+auto append_authored_measure_candidates(editor_grid_build_context_t& context) -> bool {
+    for (const auto& measure : context.chart.measures) {
+        const auto entry = std::ranges::find(context.measure_index.entries, measure.id,
+                                             &measure_index_entry_t::id);
+        if (entry == context.measure_index.entries.end() ||
+            entry->absolute_begin_row >= context.candidate_end ||
+            entry->absolute_begin_row + entry->row_capacity <= context.candidate_begin)
+            continue;
+        const auto denominator = measure.definition.meter
+            ? measure.definition.meter->denominator
+            : 4U;
+        const auto last_beat = measure.definition.meter
+            ? static_cast<std::uint64_t>(measure.definition.meter->numerator - 1U)
+            : last_interior_beat(context.divisions, denominator, entry->row_capacity);
+        if (!append_authored_beats(context, *entry, denominator, last_beat) ||
+            !append_authored_groups(context, measure, *entry, denominator, last_beat))
+            return false;
+    }
+    return true;
+}
+
+auto append_virtual_measure_candidates(editor_grid_build_context_t& context,
+                                       const virtual_canvas_measure_t& measure) -> bool {
+    const measure_index_entry_t entry{.id = {}, .absolute_begin_row = measure.begin_row,
+                                      .row_capacity = measure.row_capacity};
+    if (!add_candidate(context.candidates, entry, {}, editor_grid_line_kind_t::measure,
+                       context.request.maximum_line_count, context.result.diagnostics))
+        return false;
+    const auto beat_spacing = context.request.pixels_per_standard_measure / 4.0;
+    if (beat_spacing >= context.request.density.minimum_beat_spacing_pixels) {
+        const auto first = first_visible_beat(context.divisions, 4, entry,
+                                              context.candidate_begin, 3);
+        if (first) {
+            for (auto beat = *first; beat <= 3; ++beat) {
+                const auto offset = offset_for_beat(beat, context.divisions, 4);
+                if (!offset) {
+                    context.result.diagnostics.push_back(
+                        error(diagnostic_code_t::invalid_measure,
+                              "virtual BMS beat overflows exact chart coordinates"));
+                    return false;
+                }
+                const auto absolute = absolute_position(entry.absolute_begin_row, *offset);
+                if (!absolute || absolute->whole_rows >= context.candidate_end)
+                    break;
+                if (!add_candidate(context.candidates, entry, *offset,
+                                   editor_grid_line_kind_t::beat,
+                                   context.request.maximum_line_count,
+                                   context.result.diagnostics))
+                    return false;
+            }
+        }
+    }
+    const auto group = offset_for_beat(2, context.divisions, 4);
+    if (!group) {
+        context.result.diagnostics.push_back(
+            error(diagnostic_code_t::invalid_measure,
+                  "virtual BMS group overflows exact chart coordinates"));
+        return false;
+    }
+    const auto group_row = absolute_position(entry.absolute_begin_row, *group);
+    return !(group_row && group_row->whole_rows >= context.candidate_begin &&
+             group_row->whole_rows < context.candidate_end) ||
+           add_candidate(context.candidates, entry, *group, editor_grid_line_kind_t::group,
+                         context.request.maximum_line_count, context.result.diagnostics);
+}
+
+auto append_virtual_tail_candidates(editor_grid_build_context_t& context) -> bool {
+    if (!context.virtual_canvas || context.candidate_end <= context.measure_index.total_rows)
+        return true;
+    const auto first_number = context.candidate_begin < context.measure_index.total_rows
+        ? context.measure_index.entries.size()
+        : context.virtual_canvas->measure_containing(context.candidate_begin)->number;
+    for (auto number = first_number; number < context.virtual_canvas->measure_count; ++number) {
+        const auto measure = context.virtual_canvas->measure_at(number);
+        if (!measure || measure->begin_row >= context.candidate_end)
+            break;
+        if (!append_virtual_measure_candidates(context, *measure))
+            return false;
+    }
+    return true;
+}
+
+auto append_active_snap_candidates(editor_grid_build_context_t& context) -> bool {
+    if (!context.request.active_snap_denominator ||
+        context.request.pixels_per_standard_measure /
+                static_cast<double>(*context.request.active_snap_denominator) <
+            context.request.density.minimum_active_snap_spacing_pixels)
+        return true;
+    const auto step = context.divisions / *context.request.active_snap_denominator;
+    auto multiple = context.candidate_begin / step;
+    if (context.candidate_begin % step != 0)
+        ++multiple;
+    if (multiple > maximum / step)
+        return true;
+    auto row = multiple * step;
+    while (row < context.candidate_end) {
+        auto* entry = locate_measure(context.measure_index, row);
+        std::optional<measure_index_entry_t> virtual_entry;
+        if (!entry && context.virtual_canvas) {
+            const auto measure = context.virtual_canvas->measure_containing(row);
+            if (measure && !measure->authored) {
+                virtual_entry = measure_index_entry_t{.id = {},
+                    .absolute_begin_row = measure->begin_row,
+                    .row_capacity = measure->row_capacity};
+                entry = &*virtual_entry;
+            }
+        }
+        if (entry && !add_candidate(context.candidates, *entry,
+                                    {.whole = row - entry->absolute_begin_row},
+                                    editor_grid_line_kind_t::active_snap,
+                                    context.request.maximum_line_count,
+                                    context.result.diagnostics))
+            return false;
+        if (step > maximum - row)
+            break;
+        row += step;
+    }
+    return true;
+}
+
+auto has_close_stronger_neighbor(const std::vector<editor_grid_line_t>& lines,
+                                 const std::vector<bool>& visible, std::size_t index,
+                                 editor_grid_line_kind_t kind, double threshold,
+                                 double pixels_per_standard_measure,
+                                 std::uint64_t divisions, bool backward) -> bool {
+    if (backward) {
+        for (auto neighbor = index; neighbor > 0;) {
+            --neighbor;
+            if (visible[neighbor] && priority(lines[neighbor].kind) > priority(kind))
+                return spacing_pixels(lines[neighbor].chart_row, lines[index].chart_row,
+                                      pixels_per_standard_measure, divisions) <
+                       static_cast<long double>(threshold);
+        }
+    } else {
+        for (auto neighbor = index + 1; neighbor < lines.size(); ++neighbor) {
+            if (visible[neighbor] && priority(lines[neighbor].kind) > priority(kind))
+                return spacing_pixels(lines[index].chart_row, lines[neighbor].chart_row,
+                                      pixels_per_standard_measure, divisions) <
+                       static_cast<long double>(threshold);
+        }
+    }
+    return false;
+}
+
+auto retain_grid_kind(const std::vector<editor_grid_line_t>& lines,
+                      std::vector<bool>& visible, editor_grid_line_kind_t kind,
+                      double threshold, double pixels_per_standard_measure,
+                      std::uint64_t divisions) -> void {
+    std::optional<std::size_t> previous_same;
+    for (std::size_t index = 0; index < lines.size(); ++index) {
+        if (lines[index].kind != kind)
+            continue;
+        auto dense = has_close_stronger_neighbor(lines, visible, index, kind, threshold,
+                                                 pixels_per_standard_measure, divisions, true) ||
+                     has_close_stronger_neighbor(lines, visible, index, kind, threshold,
+                                                 pixels_per_standard_measure, divisions, false);
+        if (!dense && previous_same && threshold != 0.0)
+            dense = spacing_pixels(lines[*previous_same].chart_row, lines[index].chart_row,
+                                   pixels_per_standard_measure, divisions) <
+                    static_cast<long double>(threshold);
+        if (!dense || threshold == 0.0) {
+            visible[index] = true;
+            previous_same = index;
+        }
+    }
+}
+
+auto thin_grid_candidates(editor_grid_build_context_t& context) -> void {
+    auto& candidates = context.candidates;
+    std::ranges::sort(candidates, [](const auto& left, const auto& right) {
+        return compare_row(left.chart_row, right.chart_row) < 0;
+    });
+    std::vector<editor_grid_line_t> unique_lines;
+    unique_lines.reserve(candidates.size());
+    for (const auto& candidate : candidates) {
+        if (!unique_lines.empty() && same_row(unique_lines.back().chart_row, candidate.chart_row)) {
+            if (priority(candidate.kind) > priority(unique_lines.back().kind))
+                unique_lines.back() = candidate;
+        } else {
+            unique_lines.push_back(candidate);
+        }
+    }
+    std::vector<bool> visible(unique_lines.size());
+    for (std::size_t index = 0; index < unique_lines.size(); ++index)
+        visible[index] = unique_lines[index].kind == editor_grid_line_kind_t::measure;
+    retain_grid_kind(unique_lines, visible, editor_grid_line_kind_t::group,
+                     context.request.density.minimum_group_spacing_pixels,
+                     context.request.pixels_per_standard_measure, context.divisions);
+    retain_grid_kind(unique_lines, visible, editor_grid_line_kind_t::beat,
+                     context.request.density.minimum_beat_spacing_pixels,
+                     context.request.pixels_per_standard_measure, context.divisions);
+    retain_grid_kind(unique_lines, visible, editor_grid_line_kind_t::active_snap,
+                     context.request.density.minimum_active_snap_spacing_pixels,
+                     context.request.pixels_per_standard_measure, context.divisions);
+    for (std::size_t index = 0; index < unique_lines.size(); ++index) {
+        const auto& line = unique_lines[index];
+        if (visible[index] && line.chart_row.whole_rows >= context.request.visible_begin_row &&
+            line.chart_row.whole_rows < context.request.visible_end_row)
+            context.result.lines.push_back(line);
+    }
+}
+
 } // namespace
 
 auto editor_grid_result_t::has_errors() const -> bool {
@@ -321,354 +707,24 @@ auto make_editor_grid_lines(const chart_document_t& chart, const editor_grid_req
     }
     const auto total_rows = virtual_canvas ? virtual_canvas->total_rows : measure_index.total_rows;
     result.diagnostics = error_if_invalid(chart, request, total_rows);
-    if (!result.diagnostics.empty()) {
+    if (!result.diagnostics.empty())
         return result;
-    }
 
     std::unordered_map<std::uint64_t, const editor_grid_grouping_t*> authored_groupings;
-    for (const auto& grouping : request.authored_groupings) {
-        if (!grouping.measure ||
-            !authored_groupings.emplace(grouping.measure.value, &grouping).second) {
-            result.diagnostics.push_back(
-                error(diagnostic_code_t::invalid_measure,
-                      "editor grid grouping has a missing or duplicate measure ID"));
-            continue;
-        }
-        const auto measure =
-            std::ranges::find(chart.measures, grouping.measure, &measure_chunk_t::id);
-        if (measure == chart.measures.end() || !measure->definition.meter.has_value()) {
-            result.diagnostics.push_back(
-                error(diagnostic_code_t::unknown_measure,
-                      "editor grid grouping requires a metered chart measure"));
-            continue;
-        }
-        std::uint64_t sum{};
-        auto valid = !grouping.beat_counts.empty();
-        for (const auto beat_count : grouping.beat_counts) {
-            valid = valid && beat_count != 0 && add_checked(sum, beat_count, sum);
-        }
-        if (!valid || sum != measure->definition.meter->numerator) {
-            result.diagnostics.push_back(
-                error(diagnostic_code_t::invalid_measure,
-                      "authored beat grouping must be positive and cover its meter"));
-        }
-    }
-    if (!result.diagnostics.empty()) {
+    if (!validate_authored_groupings(chart, request, authored_groupings, result.diagnostics))
         return result;
-    }
-
-    const auto maximum_spacing = std::max({
-        request.density.minimum_group_spacing_pixels,
-        request.density.minimum_beat_spacing_pixels,
-        request.density.minimum_active_snap_spacing_pixels,
-    });
-    const auto overscan = std::ceil(static_cast<long double>(maximum_spacing) *
-                                    static_cast<long double>(chart.divisions_per_standard_measure) /
-                                    static_cast<long double>(request.pixels_per_standard_measure));
-    std::uint64_t candidate_begin{};
-    std::uint64_t candidate_end{};
-    if (!std::isfinite(overscan) || overscan >= total_rows) {
-        candidate_begin = 0;
-        candidate_end = total_rows;
-    } else {
-        const auto margin = static_cast<std::uint64_t>(std::max(0.0L, overscan));
-        candidate_begin =
-            request.visible_begin_row > margin ? request.visible_begin_row - margin : 0;
-        candidate_end = request.visible_end_row > total_rows - margin
-                            ? total_rows
-                            : request.visible_end_row + margin;
-    }
-
-    std::vector<editor_grid_line_t> candidates;
-    candidates.reserve(std::min(request.maximum_line_count, std::size_t{4096}));
-    for (const auto& entry : measure_index.entries) {
-        if (entry.absolute_begin_row >= candidate_end ||
-            entry.absolute_begin_row + entry.row_capacity <= candidate_begin) {
-            continue;
-        }
-        if (!add_candidate(candidates, entry, {}, editor_grid_line_kind_t::measure,
-                           request.maximum_line_count, result.diagnostics)) {
-            return result;
-        }
-    }
-
-    const auto divisions = chart.divisions_per_standard_measure;
-    for (const auto& measure : chart.measures) {
-        const auto entry =
-            std::ranges::find(measure_index.entries, measure.id, &measure_index_entry_t::id);
-        if (entry == measure_index.entries.end() || entry->absolute_begin_row >= candidate_end ||
-            entry->absolute_begin_row + entry->row_capacity <= candidate_begin) {
-            continue;
-        }
-
-        const auto denominator =
-            measure.definition.meter.has_value() ? measure.definition.meter->denominator : 4U;
-        const auto last_beat =
-            measure.definition.meter.has_value()
-                ? static_cast<std::uint64_t>(measure.definition.meter->numerator - 1U)
-                : last_interior_beat(divisions, denominator, entry->row_capacity);
-        const auto beat_spacing =
-            request.pixels_per_standard_measure / static_cast<double>(denominator);
-        if (beat_spacing >= request.density.minimum_beat_spacing_pixels) {
-            const auto first =
-                first_visible_beat(divisions, denominator, *entry, candidate_begin, last_beat);
-            if (first.has_value()) {
-                for (auto beat = *first; beat <= last_beat; ++beat) {
-                    const auto offset = offset_for_beat(beat, divisions, denominator);
-                    if (!offset.has_value()) {
-                        result.diagnostics.push_back(
-                            error(diagnostic_code_t::invalid_measure,
-                                  "authored beat position overflows exact chart coordinates"));
-                        return result;
-                    }
-                    const auto absolute = absolute_position(entry->absolute_begin_row, *offset);
-                    if (!absolute.has_value() || absolute->whole_rows >= candidate_end) {
-                        break;
-                    }
-                    if (absolute->whole_rows >= candidate_begin &&
-                        !add_candidate(candidates, *entry, *offset, editor_grid_line_kind_t::beat,
-                                       request.maximum_line_count, result.diagnostics)) {
-                        return result;
-                    }
-                    if (beat == last_beat) {
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (measure.definition.meter.has_value()) {
-            std::vector<std::uint32_t> boundaries;
-            const auto authored = authored_groupings.find(measure.id.value);
-            if (authored != authored_groupings.end()) {
-                std::uint32_t cumulative{};
-                const auto& counts = authored->second->beat_counts;
-                for (std::size_t group = 0; group + 1 < counts.size(); ++group) {
-                    cumulative += counts[group];
-                    boundaries.push_back(cumulative);
-                }
-            } else {
-                boundaries = default_group_boundaries(*measure.definition.meter);
-            }
-            for (const auto boundary : boundaries) {
-                const auto offset = offset_for_beat(boundary, divisions, denominator);
-                if (!offset.has_value()) {
-                    result.diagnostics.push_back(
-                        error(diagnostic_code_t::invalid_measure,
-                              "authored group position overflows exact chart coordinates"));
-                    return result;
-                }
-                const auto absolute = absolute_position(entry->absolute_begin_row, *offset);
-                if (!absolute.has_value() || absolute->whole_rows >= candidate_end) {
-                    break;
-                }
-                if (absolute->whole_rows >= candidate_begin &&
-                    !add_candidate(candidates, *entry, *offset, editor_grid_line_kind_t::group,
-                                   request.maximum_line_count, result.diagnostics)) {
-                    return result;
-                }
-            }
-        } else {
-            // For an unmetered measure, use quarter-note beats and pair them
-            // into groups; the exact measure length still controls the cutoff.
-            const auto last_group = last_beat / 2;
-            const auto first_beat =
-                first_visible_beat(divisions, 4, *entry, candidate_begin, last_beat);
-            auto group = first_beat.has_value() ? *first_beat / 2 : last_group + 1;
-            if (first_beat.has_value() && *first_beat % 2 != 0) {
-                ++group;
-            }
-            for (; group <= last_group; ++group) {
-                const auto offset = offset_for_beat(group * 2, divisions, 4);
-                if (!offset.has_value()) {
-                    result.diagnostics.push_back(
-                        error(diagnostic_code_t::invalid_measure,
-                              "default group position overflows exact chart coordinates"));
-                    return result;
-                }
-                const auto absolute = absolute_position(entry->absolute_begin_row, *offset);
-                if (!absolute.has_value() || absolute->whole_rows >= candidate_end) {
-                    break;
-                }
-                if (absolute->whole_rows >= candidate_begin &&
-                    !add_candidate(candidates, *entry, *offset, editor_grid_line_kind_t::group,
-                                   request.maximum_line_count, result.diagnostics)) {
-                    return result;
-                }
-                if (group == last_group || group == maximum) {
-                    break;
-                }
-            }
-        }
-    }
-
-    if (virtual_canvas && candidate_end > measure_index.total_rows) {
-        const auto first_number = candidate_begin < measure_index.total_rows
-                                      ? measure_index.entries.size()
-                                      : virtual_canvas->measure_containing(candidate_begin)->number;
-        const auto divisions = chart.divisions_per_standard_measure;
-        const auto beat_spacing = request.pixels_per_standard_measure / static_cast<double>(4);
-        for (auto number = first_number; number < virtual_canvas->measure_count; ++number) {
-            const auto measure = virtual_canvas->measure_at(number);
-            if (!measure || measure->begin_row >= candidate_end)
-                break;
-            const measure_index_entry_t entry{.id = {},
-                                              .absolute_begin_row = measure->begin_row,
-                                              .row_capacity = measure->row_capacity};
-            if (!add_candidate(candidates, entry, {}, editor_grid_line_kind_t::measure,
-                               request.maximum_line_count, result.diagnostics))
-                return result;
-            if (beat_spacing >= request.density.minimum_beat_spacing_pixels) {
-                const auto first = first_visible_beat(divisions, 4, entry, candidate_begin, 3);
-                if (first) {
-                    for (auto beat = *first; beat <= 3; ++beat) {
-                        const auto offset = offset_for_beat(beat, divisions, 4);
-                        if (!offset) {
-                            result.diagnostics.push_back(
-                                error(diagnostic_code_t::invalid_measure,
-                                      "virtual BMS beat overflows exact chart coordinates"));
-                            return result;
-                        }
-                        const auto absolute = absolute_position(entry.absolute_begin_row, *offset);
-                        if (!absolute || absolute->whole_rows >= candidate_end)
-                            break;
-                        if (!add_candidate(candidates, entry, *offset,
-                                           editor_grid_line_kind_t::beat,
-                                           request.maximum_line_count, result.diagnostics))
-                            return result;
-                    }
-                }
-            }
-            const auto group = offset_for_beat(2, divisions, 4);
-            if (!group) {
-                result.diagnostics.push_back(
-                    error(diagnostic_code_t::invalid_measure,
-                          "virtual BMS group overflows exact chart coordinates"));
-                return result;
-            }
-            const auto group_row = absolute_position(entry.absolute_begin_row, *group);
-            if (group_row && group_row->whole_rows >= candidate_begin &&
-                group_row->whole_rows < candidate_end &&
-                !add_candidate(candidates, entry, *group, editor_grid_line_kind_t::group,
-                               request.maximum_line_count, result.diagnostics))
-                return result;
-        }
-    }
-
-    if (request.active_snap_denominator.has_value() &&
-        request.pixels_per_standard_measure /
-                static_cast<double>(*request.active_snap_denominator) >=
-            request.density.minimum_active_snap_spacing_pixels) {
-        const auto step = divisions / *request.active_snap_denominator;
-        auto multiple = candidate_begin / step;
-        if (candidate_begin % step != 0) {
-            ++multiple;
-        }
-        if (multiple <= maximum / step) {
-            auto absolute_row = multiple * step;
-            while (absolute_row < candidate_end) {
-                auto* entry = locate_measure(measure_index, absolute_row);
-                std::optional<measure_index_entry_t> virtual_entry;
-                if (!entry && virtual_canvas) {
-                    if (const auto measure = virtual_canvas->measure_containing(absolute_row);
-                        measure && !measure->authored) {
-                        virtual_entry = {.id = {},
-                                         .absolute_begin_row = measure->begin_row,
-                                         .row_capacity = measure->row_capacity};
-                        entry = &*virtual_entry;
-                    }
-                }
-                if (entry) {
-                    if (!add_candidate(candidates, *entry,
-                                       {.whole = absolute_row - entry->absolute_begin_row},
-                                       editor_grid_line_kind_t::active_snap,
-                                       request.maximum_line_count, result.diagnostics)) {
-                        return result;
-                    }
-                }
-                if (step > maximum - absolute_row) {
-                    break;
-                }
-                absolute_row += step;
-            }
-        }
-    }
-
-    std::ranges::sort(candidates, [](const auto& left, const auto& right) {
-        return compare_row(left.chart_row, right.chart_row) < 0;
-    });
-    std::vector<editor_grid_line_t> unique_lines;
-    unique_lines.reserve(candidates.size());
-    for (const auto& candidate : candidates) {
-        if (!unique_lines.empty() && same_row(unique_lines.back().chart_row, candidate.chart_row)) {
-            if (priority(candidate.kind) > priority(unique_lines.back().kind)) {
-                unique_lines.back() = candidate;
-            }
-        } else {
-            unique_lines.push_back(candidate);
-        }
-    }
-
-    // Thin from strongest to weakest. Previously each member of a close pair
-    // could hide the other; retaining the first eligible representative makes
-    // density reduction stable while stronger anchors always win.
-    std::vector<bool> visible(unique_lines.size(), false);
-    for (std::size_t i = 0; i < unique_lines.size(); ++i) {
-        visible[i] = unique_lines[i].kind == editor_grid_line_kind_t::measure;
-    }
-    const auto retain_kind = [&](editor_grid_line_kind_t kind, double threshold) {
-        std::optional<std::size_t> previous_same;
-        for (std::size_t i = 0; i < unique_lines.size(); ++i) {
-            if (unique_lines[i].kind != kind)
-                continue;
-            auto dense = false;
-            for (auto neighbor = i; neighbor > 0;) {
-                --neighbor;
-                if (!visible[neighbor] || priority(unique_lines[neighbor].kind) <= priority(kind)) {
-                    continue;
-                }
-                dense = spacing_pixels(unique_lines[neighbor].chart_row, unique_lines[i].chart_row,
-                                       request.pixels_per_standard_measure,
-                                       divisions) < static_cast<long double>(threshold);
-                break;
-            }
-            if (!dense) {
-                for (auto neighbor = i + 1; neighbor < unique_lines.size(); ++neighbor) {
-                    if (!visible[neighbor] ||
-                        priority(unique_lines[neighbor].kind) <= priority(kind)) {
-                        continue;
-                    }
-                    dense =
-                        spacing_pixels(unique_lines[i].chart_row, unique_lines[neighbor].chart_row,
-                                       request.pixels_per_standard_measure,
-                                       divisions) < static_cast<long double>(threshold);
-                    break;
-                }
-            }
-            if (!dense && previous_same.has_value() && threshold != 0.0) {
-                dense =
-                    spacing_pixels(unique_lines[*previous_same].chart_row,
-                                   unique_lines[i].chart_row, request.pixels_per_standard_measure,
-                                   divisions) < static_cast<long double>(threshold);
-            }
-            if (!dense || threshold == 0.0) {
-                visible[i] = true;
-                previous_same = i;
-            }
-        }
-    };
-    retain_kind(editor_grid_line_kind_t::group, request.density.minimum_group_spacing_pixels);
-    retain_kind(editor_grid_line_kind_t::beat, request.density.minimum_beat_spacing_pixels);
-    retain_kind(editor_grid_line_kind_t::active_snap,
-                request.density.minimum_active_snap_spacing_pixels);
-
-    for (std::size_t i = 0; i < unique_lines.size(); ++i) {
-        const auto& line = unique_lines[i];
-        if (visible[i] && line.chart_row.whole_rows >= request.visible_begin_row &&
-            line.chart_row.whole_rows < request.visible_end_row) {
-            result.lines.push_back(line);
-        }
-    }
+    const auto [candidate_begin, candidate_end] =
+        candidate_interval(request, chart, total_rows);
+    editor_grid_build_context_t context{
+        chart, request, measure_index, virtual_canvas, authored_groupings, result,
+        candidate_begin, candidate_end, chart.divisions_per_standard_measure, {}};
+    context.candidates.reserve(std::min(request.maximum_line_count, std::size_t{4096}));
+    if (!append_measure_candidates(context) ||
+        !append_authored_measure_candidates(context) ||
+        !append_virtual_tail_candidates(context) ||
+        !append_active_snap_candidates(context))
+        return result;
+    thin_grid_candidates(context);
     return result;
 }
 

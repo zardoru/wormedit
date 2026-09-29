@@ -61,8 +61,13 @@ void process_draft_request(const bmson_draft_audition_request_t& request,
                            sdl_audition_output_t& audition_output,
                            std::string& status) {
     const auto resolved = audio::resolve_bmson_draft_audition(
-        history.document, request.revision, request.chart, request.reference, request.markers,
-        request.marker_index, audition_sources.bindings());
+        history.document,
+        {.expected_revision = request.revision,
+         .chart = request.chart,
+         .reference_bgm_event = request.reference,
+         .markers = request.markers,
+         .marker_index = request.marker_index},
+        audition_sources.bindings());
     if (resolved) {
         pause_preview(preview_session, preview_output, preview_state);
         const auto started = audition_output.start(resolved.clips);

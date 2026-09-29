@@ -165,6 +165,16 @@ void cancel_graph_locked(scheduler_state_t& scheduler, const std::shared_ptr<gra
     prune_graphs_locked(scheduler);
 }
 
+void push_ready_dependents(graph_state_t& graph, std::uint32_t task) {
+    for (const auto dependent : graph.nodes[task].dependents) {
+        auto& child = graph.nodes[dependent];
+        if (!is_terminal(child.status) && child.dependencies_left > 0 &&
+            --child.dependencies_left == 0) {
+            graph.propagation.push_back(dependent);
+        }
+    }
+}
+
 void complete_locked(scheduler_state_t& scheduler, const std::shared_ptr<graph_state_t>& graph,
                      std::uint32_t task, task_result_t result) {
     if (scheduler.stopping) {
@@ -176,13 +186,7 @@ void complete_locked(scheduler_state_t& scheduler, const std::shared_ptr<graph_s
 
     mark_terminal_locked(scheduler, *graph, task, std::move(result));
     graph->propagation.clear();
-    for (const auto dependent : graph->nodes[task].dependents) {
-        auto& child = graph->nodes[dependent];
-        if (!is_terminal(child.status) && child.dependencies_left > 0 &&
-            --child.dependencies_left == 0) {
-            graph->propagation.push_back(dependent);
-        }
-    }
+    push_ready_dependents(*graph, task);
 
     while (!graph->propagation.empty()) {
         const auto ready = graph->propagation.back();
@@ -198,13 +202,7 @@ void complete_locked(scheduler_state_t& scheduler, const std::shared_ptr<graph_s
             const auto* reason =
                 scheduler.stopping ? "scheduler is shutting down" : "task graph was cancelled";
             mark_terminal_locked(scheduler, *graph, ready, cancelled_result(code, reason));
-            for (const auto dependent : node.dependents) {
-                auto& child = graph->nodes[dependent];
-                if (!is_terminal(child.status) && child.dependencies_left > 0 &&
-                    --child.dependencies_left == 0) {
-                    graph->propagation.push_back(dependent);
-                }
-            }
+            push_ready_dependents(*graph, ready);
         } else if (const auto failed_dependency =
                        std::ranges::find_if(node.dependencies,
                                             [&graph](const auto dependency) {
@@ -215,13 +213,7 @@ void complete_locked(scheduler_state_t& scheduler, const std::shared_ptr<graph_s
             mark_terminal_locked(scheduler, *graph, ready,
                                  cancelled_result(task_error_code_t::dependency_failed,
                                                   "dependency failed: " + error.message));
-            for (const auto dependent : node.dependents) {
-                auto& child = graph->nodes[dependent];
-                if (!is_terminal(child.status) && child.dependencies_left > 0 &&
-                    --child.dependencies_left == 0) {
-                    graph->propagation.push_back(dependent);
-                }
-            }
+            push_ready_dependents(*graph, ready);
         } else {
             enqueue_locked(scheduler, graph, ready);
         }

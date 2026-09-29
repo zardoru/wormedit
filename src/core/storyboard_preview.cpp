@@ -50,6 +50,51 @@ auto newer_than(const storyboard_evaluation_result_t& candidate,
            std::tie(current.start_time_ms, current.source_order, current.visit_order);
 }
 
+struct frame_evaluations_t {
+    const storyboard_evaluation_result_t& fade;
+    const storyboard_evaluation_result_t& move;
+    const storyboard_evaluation_result_t& move_x;
+    const storyboard_evaluation_result_t& move_y;
+    const storyboard_evaluation_result_t& scale;
+    const storyboard_evaluation_result_t& vector_scale;
+    const storyboard_evaluation_result_t& rotate;
+    const storyboard_evaluation_result_t& color;
+};
+
+auto apply_frame_evaluations(storyboard_draw_instance_t& instance,
+                             const frame_evaluations_t& evaluations) -> void {
+    const auto& [fade, move, move_x, move_y, scale, vector_scale, rotate, color] = evaluations;
+    if (move.value.present) {
+        instance.x = move.value.values[0];
+        instance.y = move.value.values[1];
+    }
+    if (newer_than(move_x, move)) {
+        instance.x = move_x.value.values[0];
+    }
+    if (newer_than(move_y, move)) {
+        instance.y = move_y.value.values[0];
+    }
+    if (scale.value.present) {
+        instance.scale_x = scale.value.values[0];
+        instance.scale_y = scale.value.values[0];
+    }
+    if (newer_than(vector_scale, scale)) {
+        instance.scale_x = vector_scale.value.values[0];
+        instance.scale_y = vector_scale.value.values[1];
+    }
+    if (fade.value.present) {
+        instance.opacity = fade.value.values[0];
+    }
+    if (rotate.value.present) {
+        instance.rotation_radians = rotate.value.values[0];
+    }
+    if (color.value.present) {
+        instance.red = color.value.values[0];
+        instance.green = color.value.values[1];
+        instance.blue = color.value.values[2];
+    }
+}
+
 } // namespace
 
 auto build_storyboard_preview_index(const storyboard_document_model_t& document,
@@ -180,31 +225,8 @@ auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
             .x = sprite.x,
             .y = sprite.y,
         };
-        if (move.value.present) {
-            instance.x = move.value.values[0];
-            instance.y = move.value.values[1];
-        }
-        if (newer_than(move_x, move))
-            instance.x = move_x.value.values[0];
-        if (newer_than(move_y, move))
-            instance.y = move_y.value.values[0];
-        if (scale.value.present) {
-            instance.scale_x = scale.value.values[0];
-            instance.scale_y = scale.value.values[0];
-        }
-        if (newer_than(vector_scale, scale)) {
-            instance.scale_x = vector_scale.value.values[0];
-            instance.scale_y = vector_scale.value.values[1];
-        }
-        if (fade.value.present)
-            instance.opacity = fade.value.values[0];
-        if (rotate.value.present)
-            instance.rotation_radians = rotate.value.values[0];
-        if (color.value.present) {
-            instance.red = color.value.values[0];
-            instance.green = color.value.values[1];
-            instance.blue = color.value.values[2];
-        }
+        apply_frame_evaluations(instance,
+                                {fade, move, move_x, move_y, scale, vector_scale, rotate, color});
         std::construct_at(output + output_count, instance);
         ++output_count;
     }

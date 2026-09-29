@@ -134,6 +134,243 @@ auto resolve_resource_placement_position(const chart_document_t& chart,
                                    snap_denominator);
 }
 
+auto next_bms_resource_identity(const song_document_t& document, bool visual_role)
+    -> std::optional<target_resource_identity_t> {
+    const std::string_view name_space = visual_role ? "BMP" : "WAV";
+    constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    std::array<bool, 36 * 36> occupied{};
+    const auto digit_value = [](unsigned char character) -> int {
+        const auto upper = std::toupper(character);
+        if (upper >= '0' && upper <= '9') return upper - '0';
+        if (upper >= 'A' && upper <= 'Z') return upper - 'A' + 10;
+        return -1;
+    };
+    for (const auto& existing : document.resources) {
+        for (const auto& identity : existing.target_identities) {
+            if (identity.family != format_family_t::bms ||
+                identity.namespace_name != name_space || identity.identifier.size() != 2) continue;
+            const auto high = digit_value(static_cast<unsigned char>(identity.identifier[0]));
+            const auto low = digit_value(static_cast<unsigned char>(identity.identifier[1]));
+            if (high >= 0 && low >= 0)
+                occupied[static_cast<std::size_t>(high * 36 + low)] = true;
+        }
+    }
+    for (std::size_t value = 1; value < occupied.size(); ++value) {
+        if (!occupied[value])
+            return target_resource_identity_t{format_family_t::bms,
+                std::string{digits[value / 36], digits[value % 36]}, std::string{name_space}};
+    }
+    return std::nullopt;
+}
+
+auto validate_placement_resource(const song_document_t& document,
+                                 const place_resource_action_t& action,
+                                 document_command_result_t& result)
+    -> std::optional<resource_role_t> {
+    const auto resource = std::ranges::find(document.resources, action.resource, &resource_entry_t::id);
+    if (!action.resource || resource == document.resources.end()) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "resource placement refers to an unknown catalog resource");
+        return std::nullopt;
+    }
+    if (resource->missing) {
+        reject(result, diagnostic_code_t::dangling_resource,
+               "cannot place a resource with a missing source");
+        return std::nullopt;
+    }
+    if (action.kind != resource_placement_kind_t::sample_note &&
+        action.kind != resource_placement_kind_t::bgm_event &&
+        action.kind != resource_placement_kind_t::bga_background) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "resource placement kind is unsupported");
+        return std::nullopt;
+    }
+    const auto role = action.kind == resource_placement_kind_t::sample_note
+        ? resource_role_t::sample : action.kind == resource_placement_kind_t::bgm_event
+        ? resource_role_t::bgm : resource_role_t::bga;
+    const auto audio = std::ranges::find(document.audio_assets, resource->asset, &audio_asset_t::id);
+    const auto visual = std::ranges::find(document.visual_assets, resource->asset, &visual_asset_t::id);
+    if (!has_role(*resource, role) ||
+        (role == resource_role_t::bga ? visual == document.visual_assets.end()
+                                      : audio == document.audio_assets.end())) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "resource is incompatible with the requested placement");
+        return std::nullopt;
+    }
+    return role;
+}
+
+struct resource_placement_target_t {
+    std::size_t chart_offset{};
+    measure_index_t index;
+    local_position_t position;
+    std::uint64_t row{};
+    object_id_t first_id;
+};
+
+auto resolve_placement_target(const song_document_t& document,
+                              const place_resource_action_t& action,
+                              document_command_result_t& result)
+    -> std::optional<resource_placement_target_t> {
+    const auto chart = std::ranges::find(document.charts, action.chart, &chart_document_t::id);
+    if (!action.chart || chart == document.charts.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "resource placement refers to an unknown chart");
+        return std::nullopt;
+    }
+    const auto built = build_measure_index(*chart);
+    const auto* index = std::get_if<measure_index_t>(&built);
+    if (!index) {
+        reject(result, diagnostic_code_t::invalid_measure,
+               "resource placement chart has no valid measure index");
+        return std::nullopt;
+    }
+    const auto position = snap_placement_position(*chart, *index, action.position,
+                                                  action.snap_denominator);
+    const auto row = position ? absolute_row(*index, *position) : std::nullopt;
+    if (!row) {
+        reject(result, diagnostic_code_t::row_out_of_range,
+               "resource placement row is outside the chart");
+        return std::nullopt;
+    }
+    const auto first_id = next_chart_object_id(*chart);
+    if (!first_id) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "resource placement chart object limit or ID space is exhausted");
+        return std::nullopt;
+    }
+    return resource_placement_target_t{
+        static_cast<std::size_t>(chart - document.charts.begin()), *index, *position, *row, *first_id};
+}
+
+struct resource_placement_context_t {
+    document_command_result_t& result;
+    chart_document_t& chart;
+    measure_chunk_t& measure;
+    const measure_index_t& index;
+    const place_resource_action_t& action;
+    local_position_t position;
+    std::uint64_t row;
+    object_id_t first_id;
+};
+
+auto place_sample_note(resource_placement_context_t& context) -> bool {
+    const auto& action = context.action;
+    if (!action.lane) {
+        reject(context.result, diagnostic_code_t::unknown_lane,
+               "Sample placement requires an active playable lane");
+        return false;
+    }
+    const lane_layout_segment_t* active{};
+    std::uint64_t active_row{};
+    for (const auto& segment : context.chart.lane_layouts) {
+        const auto begin = absolute_row(context.index, segment.position);
+        if (begin && *begin <= context.row && (!active || *begin >= active_row)) {
+            active = &segment;
+            active_row = *begin;
+        }
+    }
+    if (!active || std::ranges::find(active->layout.lanes, action.lane,
+                                      &lane_definition_t::id) == active->layout.lanes.end()) {
+        reject(context.result, diagnostic_code_t::unknown_lane,
+               "Sample placement lane is absent at the cursor row");
+        return false;
+    }
+    for (const auto& chunk : context.chart.measures)
+        for (const auto& note : chunk.notes) {
+            if (note.lane != action.lane) continue;
+            const auto begin = absolute_row(context.index, note.position);
+            const auto end = note.end ? absolute_row(context.index, *note.end) : begin;
+            if (begin && end && *begin <= context.row && context.row <= *end) {
+                reject(context.result, diagnostic_code_t::collision,
+                       "Sample placement overlaps a playable note or hold");
+                return false;
+            }
+        }
+    context.measure.notes.push_back({.id = context.first_id, .position = context.position,
+        .lane = action.lane, .kind = note_kind_t::tap, .end = std::nullopt,
+        .sound = action.resource, .sound_channel_event = std::nullopt,
+        .semantic_layers = {}, .label = std::nullopt, .branch = std::nullopt, .provenance = {}});
+    return true;
+}
+
+auto choose_bgm_placement_lane(resource_placement_context_t& context,
+    const std::unordered_set<std::uint64_t>& occupied) -> object_id_t {
+    const auto& chart = context.chart;
+    if (context.action.source_lane) {
+        const auto requested = std::ranges::find(chart.bgm_source_lanes,
+            context.action.source_lane, &bgm_source_lane_t::id);
+        if (requested == chart.bgm_source_lanes.end()) {
+            reject(context.result, diagnostic_code_t::invalid_id,
+                   "BGM placement refers to an unknown source lane");
+            return {};
+        }
+        if (occupied.contains(context.action.source_lane.value)) {
+            reject(context.result, diagnostic_code_t::collision,
+                   "BGM source lane is occupied at the requested row");
+            return {};
+        }
+        return context.action.source_lane;
+    }
+    const bgm_source_lane_t* available{};
+    for (const auto& lane : chart.bgm_source_lanes)
+        if (!occupied.contains(lane.id.value) &&
+            (!available || std::tie(lane.source_order, lane.id.value) <
+                           std::tie(available->source_order, available->id.value)))
+            available = &lane;
+    if (available) return available->id;
+    if (chart.bgm_source_lanes.size() >= 1000000 ||
+        context.first_id.value == std::numeric_limits<std::uint64_t>::max()) {
+        reject(context.result, diagnostic_code_t::invalid_id,
+               "BGM source lane or chart object ID space is exhausted");
+        return {};
+    }
+    std::size_t next_order{};
+    for (const auto& lane : chart.bgm_source_lanes) {
+        if (lane.source_order == std::numeric_limits<std::size_t>::max()) {
+            reject(context.result, diagnostic_code_t::invalid_id,
+                   "BGM source-lane order space is exhausted");
+            return {};
+        }
+        next_order = std::max(next_order, lane.source_order + 1);
+    }
+    const auto id = context.first_id;
+    context.chart.bgm_source_lanes.push_back({.id = id,
+        .name = "BGM " + std::to_string(context.chart.bgm_source_lanes.size() + 1),
+        .source_order = next_order});
+    return id;
+}
+
+auto place_bgm_event(resource_placement_context_t& context) -> bool {
+    std::unordered_set<std::uint64_t> occupied;
+    for (const auto& chunk : context.chart.measures)
+        for (const auto& event : chunk.bgm_events)
+            if (event.position == context.position) occupied.insert(event.source_lane.value);
+    const auto lane = choose_bgm_placement_lane(context, occupied);
+    if (!lane) return false;
+    const auto event_id = lane == context.first_id
+        ? object_id_t{context.first_id.value + 1} : context.first_id;
+    context.measure.bgm_events.push_back({.id = event_id, .position = context.position,
+        .source_lane = lane, .sound = context.action.resource,
+        .sound_channel_event = std::nullopt, .structural_slot = 0,
+        .branch = std::nullopt, .provenance = {}});
+    return true;
+}
+
+auto place_bga_background(resource_placement_context_t& context) -> bool {
+    if (std::ranges::any_of(context.chart.bga_events, [&](const auto& event) {
+            return event.kind == visual_event_kind_t::background &&
+                   event.position == context.position;
+        })) {
+        reject(context.result, diagnostic_code_t::collision,
+               "a BGA background already occupies the cursor row");
+        return false;
+    }
+    context.chart.bga_events.push_back({.id = context.first_id, .position = context.position,
+        .resource = context.action.resource, .kind = visual_event_kind_t::background,
+        .provenance = {}});
+    return true;
+}
+
 auto apply_resource_placement(document_history_t& history, std::uint64_t expected_revision,
                               const place_resource_action_t& action) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
@@ -142,221 +379,74 @@ auto apply_resource_placement(document_history_t& history, std::uint64_t expecte
                "resource placement document revision is stale");
         return result;
     }
-    const auto& document = history.document;
-    const auto resource =
-        std::ranges::find(document.resources, action.resource, &resource_entry_t::id);
-    if (!action.resource || resource == document.resources.end()) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "resource placement refers to an unknown catalog resource");
-        return result;
-    }
-    if (resource->missing) {
-        reject(result, diagnostic_code_t::dangling_resource,
-               "cannot place a resource with a missing source");
-        return result;
-    }
-    if (action.kind != resource_placement_kind_t::sample_note &&
-        action.kind != resource_placement_kind_t::bgm_event &&
-        action.kind != resource_placement_kind_t::bga_background) {
-        reject(result, diagnostic_code_t::unsupported_feature,
-               "resource placement kind is unsupported");
-        return result;
-    }
-    const auto role = action.kind == resource_placement_kind_t::sample_note
-                          ? resource_role_t::sample
-                          : action.kind == resource_placement_kind_t::bgm_event
-                                ? resource_role_t::bgm
-                                : resource_role_t::bga;
-    const auto audio =
-        std::ranges::find(document.audio_assets, resource->asset, &audio_asset_t::id);
-    const auto visual =
-        std::ranges::find(document.visual_assets, resource->asset, &visual_asset_t::id);
-    if (!has_role(*resource, role) ||
-        (role == resource_role_t::bga ? visual == document.visual_assets.end()
-                                     : audio == document.audio_assets.end())) {
-        reject(result, diagnostic_code_t::unsupported_feature,
-               "resource is incompatible with the requested placement");
-        return result;
-    }
-    const auto source_chart =
-        std::ranges::find(document.charts, action.chart, &chart_document_t::id);
-    if (!action.chart || source_chart == document.charts.end()) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "resource placement refers to an unknown chart");
-        return result;
-    }
-    const auto built = build_measure_index(*source_chart);
-    if (!std::holds_alternative<measure_index_t>(built)) {
-        reject(result, diagnostic_code_t::invalid_measure,
-               "resource placement chart has no valid measure index");
-        return result;
-    }
-    const auto& index = std::get<measure_index_t>(built);
-    const auto position =
-        snap_placement_position(*source_chart, index, action.position, action.snap_denominator);
-    const auto row = position ? absolute_row(index, *position) : std::nullopt;
-    if (!row) {
-        reject(result, diagnostic_code_t::row_out_of_range,
-               "resource placement row is outside the chart");
-        return result;
-    }
-    const auto first_id = next_chart_object_id(*source_chart);
-    if (!first_id) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "resource placement chart object limit or ID space is exhausted");
-        return result;
-    }
-    auto proposed = document;
-    auto& chart = proposed.charts[static_cast<std::size_t>(source_chart - document.charts.begin())];
-    auto measure =
-        std::ranges::find(chart.measures, position->measure, &measure_chunk_t::id);
+    if (!validate_placement_resource(history.document, action, result)) return result;
+    auto target = resolve_placement_target(history.document, action, result);
+    if (!target) return result;
+    auto proposed = history.document;
+    auto& chart = proposed.charts[target->chart_offset];
+    auto measure = std::ranges::find(chart.measures, target->position.measure, &measure_chunk_t::id);
     if (measure == chart.measures.end()) {
-        reject(result, diagnostic_code_t::invalid_measure,
-               "resource placement measure is missing");
+        reject(result, diagnostic_code_t::invalid_measure, "resource placement measure is missing");
         return result;
     }
+    resource_placement_context_t placement{result, chart, *measure, target->index, action,
+                                            target->position, target->row, target->first_id};
+    bool placed{};
     switch (action.kind) {
-    case resource_placement_kind_t::sample_note: {
-        if (!action.lane) {
-            reject(result, diagnostic_code_t::unknown_lane,
-                   "Sample placement requires an active playable lane");
-            return result;
-        }
-        const lane_layout_segment_t* active_layout{};
-        std::uint64_t active_layout_row{};
-        for (const auto& segment : chart.lane_layouts) {
-            const auto begin = absolute_row(index, segment.position);
-            if (begin && *begin <= *row &&
-                (!active_layout || *begin >= active_layout_row)) {
-                active_layout = &segment;
-                active_layout_row = *begin;
-            }
-        }
-        if (!active_layout ||
-            std::ranges::find(active_layout->layout.lanes, action.lane,
-                              &lane_definition_t::id) == active_layout->layout.lanes.end()) {
-            reject(result, diagnostic_code_t::unknown_lane,
-                   "Sample placement lane is absent at the cursor row");
-            return result;
-        }
-        for (const auto& chunk : chart.measures) {
-            for (const auto& note : chunk.notes) {
-                if (note.lane != action.lane) {
-                    continue;
-                }
-                const auto begin = absolute_row(index, note.position);
-                const auto end = note.end ? absolute_row(index, *note.end) : begin;
-                if (begin && end && *begin <= *row && *row <= *end) {
-                    reject(result, diagnostic_code_t::collision,
-                           "Sample placement overlaps a playable note or hold");
-                    return result;
-                }
-            }
-        }
-        measure->notes.push_back({.id = *first_id,
-                                  .position = *position,
-                                  .lane = action.lane,
-                                  .kind = note_kind_t::tap,
-                                  .end = std::nullopt,
-                                  .sound = action.resource,
-                                  .sound_channel_event = std::nullopt,
-                                  .semantic_layers = {},
-                                  .label = std::nullopt,
-                                  .branch = std::nullopt,
-                                  .provenance = {}});
-        break;
+    case resource_placement_kind_t::sample_note: placed = place_sample_note(placement); break;
+    case resource_placement_kind_t::bgm_event: placed = place_bgm_event(placement); break;
+    case resource_placement_kind_t::bga_background: placed = place_bga_background(placement); break;
     }
-    case resource_placement_kind_t::bgm_event: {
-        object_id_t lane{};
-        std::unordered_set<std::uint64_t> occupied_lanes;
-        for (const auto& chunk : chart.measures) {
-            for (const auto& event : chunk.bgm_events) {
-                if (event.position == *position) {
-                    occupied_lanes.insert(event.source_lane.value);
-                }
-            }
-        }
-        if (action.source_lane) {
-            const auto requested = std::ranges::find(chart.bgm_source_lanes,
-                                                     action.source_lane,
-                                                     &bgm_source_lane_t::id);
-            if (requested == chart.bgm_source_lanes.end()) {
-                reject(result, diagnostic_code_t::invalid_id,
-                       "BGM placement refers to an unknown source lane");
-                return result;
-            }
-            if (occupied_lanes.contains(action.source_lane.value)) {
-                reject(result, diagnostic_code_t::collision,
-                       "BGM source lane is occupied at the requested row");
-                return result;
-            }
-            lane = action.source_lane;
-        } else {
-            const bgm_source_lane_t* first_available{};
-            for (const auto& source_lane : chart.bgm_source_lanes) {
-                if (!occupied_lanes.contains(source_lane.id.value) &&
-                    (!first_available ||
-                     std::tie(source_lane.source_order, source_lane.id.value) <
-                         std::tie(first_available->source_order, first_available->id.value))) {
-                    first_available = &source_lane;
-                }
-            }
-            if (first_available) {
-                lane = first_available->id;
-            }
-        }
-        auto event_id = *first_id;
-        if (!lane) {
-            if (chart.bgm_source_lanes.size() >= 1'000'000 ||
-                event_id.value == std::numeric_limits<std::uint64_t>::max()) {
-                reject(result, diagnostic_code_t::invalid_id,
-                       "BGM source lane or chart object ID space is exhausted");
-                return result;
-            }
-            std::size_t next_source_order{};
-            for (const auto& source_lane : chart.bgm_source_lanes) {
-                if (source_lane.source_order == std::numeric_limits<std::size_t>::max()) {
-                    reject(result, diagnostic_code_t::invalid_id,
-                           "BGM source-lane order space is exhausted");
-                    return result;
-                }
-                next_source_order = std::max(next_source_order, source_lane.source_order + 1);
-            }
-            lane = event_id;
-            event_id = object_id_t{event_id.value + 1};
-            chart.bgm_source_lanes.push_back(
-                {.id = lane,
-                 .name = "BGM " + std::to_string(chart.bgm_source_lanes.size() + 1),
-                 .source_order = next_source_order});
-        }
-        measure->bgm_events.push_back({.id = event_id,
-                                       .position = *position,
-                                       .source_lane = lane,
-                                       .sound = action.resource,
-                                       .sound_channel_event = std::nullopt,
-                                       .structural_slot = 0,
-                                       .branch = std::nullopt,
-                                       .provenance = {}});
-        break;
-    }
-    case resource_placement_kind_t::bga_background: {
-        if (std::ranges::any_of(chart.bga_events, [&](const auto& event) {
-                return event.kind == visual_event_kind_t::background &&
-                       event.position == *position;
-            })) {
-            reject(result, diagnostic_code_t::collision,
-                   "a BGA background already occupies the cursor row");
-            return result;
-        }
-        chart.bga_events.push_back({.id = *first_id,
-                                    .position = *position,
-                                    .resource = action.resource,
-                                    .kind = visual_event_kind_t::background,
-                                    .provenance = {}});
-        break;
-    }
-    }
+    if (!placed) return result;
     return commit_document_command(history, std::move(proposed), "Place resource");
+}
+
+auto find_bgm_event(const chart_document_t& chart, object_id_t id) -> const bgm_event_t* {
+    for (const auto& measure : chart.measures) {
+        const auto found = std::ranges::find(measure.bgm_events, id, &bgm_event_t::id);
+        if (found != measure.bgm_events.end()) return &*found;
+    }
+    return nullptr;
+}
+
+auto is_branch_bgm_event(const chart_document_t& chart, const bgm_event_t& event) -> bool {
+    return event.sound_channel_event || event.branch ||
+        (event.provenance.family == format_family_t::bms &&
+         !event.provenance.source_spelling.empty() &&
+         branch_source_orders(chart).contains(event.provenance.source_order));
+}
+
+auto occupied_bgm_lanes_at(const chart_document_t& chart, local_position_t position,
+                           object_id_t except) -> std::unordered_set<std::uint64_t> {
+    std::unordered_set<std::uint64_t> occupied;
+    for (const auto& measure : chart.measures)
+        for (const auto& event : measure.bgm_events)
+            if (event.id != except && event.position == position)
+                occupied.insert(event.source_lane.value);
+    return occupied;
+}
+
+auto create_bgm_source_lane(chart_document_t& chart, document_command_result_t& result)
+    -> object_id_t {
+    const auto new_id = next_chart_object_id(chart);
+    if (!new_id || chart.bgm_source_lanes.size() >= 1'000'000) {
+        reject(result, diagnostic_code_t::invalid_id, "BGM source lane ID space is exhausted");
+        return {};
+    }
+    std::size_t order{};
+    for (const auto& lane : chart.bgm_source_lanes) {
+        if (lane.source_order == std::numeric_limits<std::size_t>::max()) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "BGM source lane order space is exhausted");
+            return {};
+        }
+        order = std::max(order, lane.source_order + 1);
+    }
+    const object_id_t id = *new_id;
+    chart.bgm_source_lanes.push_back({.id = id,
+        .name = "BGM " + std::to_string(chart.bgm_source_lanes.size() + 1),
+        .source_order = order});
+    return id;
 }
 
 auto apply_bgm_event_move(document_history_t& history, std::uint64_t expected_revision,
@@ -384,22 +474,12 @@ auto apply_bgm_event_move(document_history_t& history, std::uint64_t expected_re
         reject(result, diagnostic_code_t::row_out_of_range, "BGM move row is outside the chart");
         return result;
     }
-    const bgm_event_t* original{};
-    for (const auto& measure : source_chart->measures) {
-        const auto found = std::ranges::find(measure.bgm_events, action.event, &bgm_event_t::id);
-        if (found != measure.bgm_events.end()) {
-            original = &*found;
-            break;
-        }
-    }
+    const auto* original = find_bgm_event(*source_chart, action.event);
     if (!original) {
         reject(result, diagnostic_code_t::invalid_id, "BGM move event no longer exists");
         return result;
     }
-    if (original->sound_channel_event || original->branch ||
-        (original->provenance.family == format_family_t::bms &&
-         !original->provenance.source_spelling.empty() &&
-         branch_source_orders(*source_chart).contains(original->provenance.source_order))) {
+    if (is_branch_bgm_event(*source_chart, *original)) {
         reject(result, diagnostic_code_t::unsupported_feature,
                "BGM move requires an ordinary root event");
         return result;
@@ -411,11 +491,7 @@ auto apply_bgm_event_move(document_history_t& history, std::uint64_t expected_re
         reject(result, diagnostic_code_t::invalid_id, "BGM move source lane is missing");
         return result;
     }
-    std::unordered_set<std::uint64_t> occupied;
-    for (const auto& measure : source_chart->measures)
-        for (const auto& event : measure.bgm_events)
-            if (event.id != action.event && event.position == *target)
-                occupied.insert(event.source_lane.value);
+    const auto occupied = occupied_bgm_lanes_at(*source_chart, *target, action.event);
     std::vector<const bgm_source_lane_t*> lanes;
     lanes.reserve(source_chart->bgm_source_lanes.size());
     for (const auto& lane : source_chart->bgm_source_lanes)
@@ -437,24 +513,8 @@ auto apply_bgm_event_move(document_history_t& history, std::uint64_t expected_re
     auto proposed = history.document;
     auto& chart = proposed.charts[static_cast<std::size_t>(source_chart - history.document.charts.begin())];
     if (!destination_lane) {
-        const auto new_id = next_chart_object_id(chart);
-        if (!new_id || chart.bgm_source_lanes.size() >= 1'000'000) {
-            reject(result, diagnostic_code_t::invalid_id, "BGM source lane ID space is exhausted");
-            return result;
-        }
-        std::size_t next_order{};
-        for (const auto& lane : chart.bgm_source_lanes) {
-            if (lane.source_order == std::numeric_limits<std::size_t>::max()) {
-                reject(result, diagnostic_code_t::invalid_id,
-                       "BGM source lane order space is exhausted");
-                return result;
-            }
-            next_order = std::max(next_order, lane.source_order + 1);
-        }
-        destination_lane = *new_id;
-        chart.bgm_source_lanes.push_back({.id = destination_lane,
-                                          .name = "BGM " + std::to_string(chart.bgm_source_lanes.size() + 1),
-                                          .source_order = next_order});
+        destination_lane = create_bgm_source_lane(chart, result);
+        if (!destination_lane) return result;
     }
     bgm_event_t moved;
     for (auto& measure : chart.measures) {
@@ -736,51 +796,13 @@ auto apply_resource_creation(document_history_t& history, std::uint64_t expected
                               .missing = false,
                               .provenance = {}};
     if (action.allocate_bms_identifier) {
-        const std::string_view name_space = visual_role ? "BMP" : "WAV";
-        constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        std::array<bool, 36 * 36> occupied{};
-        const auto digit_value = [](unsigned char character) -> int {
-            const auto upper = std::toupper(character);
-            if (upper >= '0' && upper <= '9') {
-                return upper - '0';
-            }
-            if (upper >= 'A' && upper <= 'Z') {
-                return upper - 'A' + 10;
-            }
-            return -1;
-        };
-        for (const auto& existing : document.resources) {
-            for (const auto& identity : existing.target_identities) {
-                if (identity.family != format_family_t::bms ||
-                    identity.namespace_name != name_space || identity.identifier.size() != 2) {
-                    continue;
-                }
-                const auto high = digit_value(
-                    static_cast<unsigned char>(identity.identifier[0]));
-                const auto low = digit_value(
-                    static_cast<unsigned char>(identity.identifier[1]));
-                if (high >= 0 && low >= 0) {
-                    occupied[static_cast<std::size_t>(high * 36 + low)] = true;
-                }
-            }
-        }
-        bool found{};
-        for (std::size_t value = 1; value < 36 * 36; ++value) {
-            if (!occupied[value]) {
-                std::string candidate{digits[value / 36], digits[value % 36]};
-                resource.target_identities.push_back(
-                    {.family = format_family_t::bms,
-                     .identifier = std::move(candidate),
-                     .namespace_name = std::string{name_space}});
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
+        const auto identity = next_bms_resource_identity(document, visual_role);
+        if (!identity) {
             reject(result, diagnostic_code_t::invalid_resolution,
                    "BMS resource namespace has no free nonzero identifier");
             return result;
         }
+        resource.target_identities.push_back(*identity);
     }
     auto proposed = document;
     proposed.resources.push_back(std::move(resource));
@@ -804,6 +826,118 @@ auto next_resource_asset_id(const song_document_t& document) -> std::optional<as
     return asset_id_t{largest + 1};
 }
 
+auto validate_import_source_paths(const import_resource_asset_action_t& action,
+                                  document_command_result_t& result)
+    -> std::optional<std::pair<std::filesystem::path, std::optional<std::filesystem::path>>> {
+    const auto path = action.source_path.lexically_normal();
+    const auto text = path.generic_string();
+    if (!path.is_absolute() || path.filename().empty() || text.size() > 4096 ||
+        text.find('\0') != std::string::npos) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "resource import requires a bounded absolute source file path");
+        return std::nullopt;
+    }
+    if ((action.copied_project_relative_path || action.expected_new_asset_id) &&
+        (!action.expected_new_asset_id || !*action.expected_new_asset_id)) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "copied import requires a valid reserved asset ID");
+        return std::nullopt;
+    }
+    std::optional<std::filesystem::path> copied;
+    if (action.copied_project_relative_path) {
+        const auto candidate = action.copied_project_relative_path->lexically_normal();
+        const auto copied_text = candidate.generic_string();
+        if (candidate.empty() || candidate.is_absolute() || candidate.has_root_name() ||
+            candidate.filename().empty() || copied_text.size() > 4096 ||
+            copied_text.find('\0') != std::string::npos ||
+            std::ranges::any_of(candidate, [](const auto& part) { return part == ".."; }) ||
+            candidate.parent_path() != "assets" ||
+            !candidate.filename().string().starts_with(
+                std::to_string(action.expected_new_asset_id->value) + "-")) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "copied import path must be a safe ID-prefixed project asset path");
+            return std::nullopt;
+        }
+        copied = candidate;
+    }
+    return std::pair{path, copied};
+}
+
+auto validate_import_source_geometry(const import_resource_asset_action_t& action,
+                                     document_command_result_t& result) -> bool {
+    const bool audio = action.role == resource_role_t::sample || action.role == resource_role_t::bgm;
+    const bool visual = action.role == resource_role_t::bga;
+    if ((!audio && !visual) || (audio && (!action.audio_stream || action.image_geometry)) ||
+        (visual && (!action.image_geometry || action.audio_stream))) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "resource import role and decoded source type do not match");
+        return false;
+    }
+    if ((audio && (action.audio_stream->sample_rate == 0 || action.audio_stream->channels == 0 ||
+                   action.audio_stream->channels > 32)) ||
+        (visual && (action.image_geometry->first == 0 || action.image_geometry->second == 0 ||
+                    action.image_geometry->first > 16'384 || action.image_geometry->second > 16'384))) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "resource import decoded source geometry is invalid");
+        return false;
+    }
+    return true;
+}
+
+auto find_registered_import_asset(const song_document_t& document,
+                                 const import_resource_asset_action_t& action,
+                                 const std::filesystem::path& path,
+                                 bool audio_role, bool visual_role) -> asset_id_t {
+    if (audio_role && !action.copied_project_relative_path) {
+        const auto found = std::ranges::find_if(document.audio_assets, [&](const auto& item) {
+            return item.source_path.lexically_normal() == path;
+        });
+        return found == document.audio_assets.end() ? asset_id_t{} : found->id;
+    }
+    if (visual_role && !action.copied_project_relative_path) {
+        const auto found = std::ranges::find_if(document.visual_assets, [&](const auto& item) {
+            return item.kind == asset_kind_t::image && item.source_path.lexically_normal() == path;
+        });
+        return found == document.visual_assets.end() ? asset_id_t{} : found->id;
+    }
+    return {};
+}
+
+auto append_imported_asset(song_document_t& document, const import_resource_asset_action_t& action,
+                           const std::filesystem::path& source, asset_id_t& asset,
+                           document_command_result_t& result) -> bool {
+    const auto next_id = next_resource_asset_id(document);
+    if (!next_id) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "resource import asset catalog is full or IDs are exhausted");
+        return false;
+    }
+    asset = *next_id;
+    if (action.expected_new_asset_id && asset != *action.expected_new_asset_id) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "reserved asset ID changed before copied import could commit");
+        return false;
+    }
+    if (action.copied_project_relative_path &&
+        (std::ranges::any_of(document.audio_assets, [&](const auto& item) {
+             return item.source_path.lexically_normal() == source;
+         }) || std::ranges::any_of(document.visual_assets, [&](const auto& item) {
+             return item.source_path.lexically_normal() == source;
+         }))) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "copied import path is already registered to another asset");
+        return false;
+    }
+    if (action.role == resource_role_t::sample || action.role == resource_role_t::bgm)
+        document.audio_assets.push_back({.id = asset, .source_path = source,
+            .stream = *action.audio_stream, .waveform_cache_path = std::nullopt});
+    else
+        document.visual_assets.push_back({.id = asset, .kind = asset_kind_t::image,
+            .source_path = source, .width = action.image_geometry->first,
+            .height = action.image_geometry->second});
+    return true;
+}
+
 auto apply_resource_asset_import(document_history_t& history, std::uint64_t expected_revision,
                                  const import_resource_asset_action_t& action)
     -> document_command_result_t {
@@ -812,75 +946,14 @@ auto apply_resource_asset_import(document_history_t& history, std::uint64_t expe
         reject(result, diagnostic_code_t::invalid_id, "resource import document revision is stale");
         return result;
     }
-    const auto path = action.source_path.lexically_normal();
-    const auto path_text = path.generic_string();
-    if (!path.is_absolute() || path.filename().empty() || path_text.size() > 4096 ||
-        path_text.find('\0') != std::string::npos) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "resource import requires a bounded absolute source file path");
-        return result;
-    }
-    std::optional<std::filesystem::path> registered_copy;
-    if (action.copied_project_relative_path || action.expected_new_asset_id) {
-        if (!action.expected_new_asset_id || !*action.expected_new_asset_id) {
-            reject(result, diagnostic_code_t::invalid_id,
-                   "copied import requires a valid reserved asset ID");
-            return result;
-        }
-    }
-    if (action.copied_project_relative_path) {
-        const auto copied = action.copied_project_relative_path->lexically_normal();
-        const auto copied_text = copied.generic_string();
-        if (copied.empty() || copied.is_absolute() || copied.has_root_name() ||
-            copied.filename().empty() || copied_text.size() > 4096 ||
-            copied_text.find('\0') != std::string::npos ||
-            std::ranges::any_of(copied, [](const auto& part) { return part == ".."; }) ||
-            copied.parent_path() != "assets" ||
-            !copied.filename().string().starts_with(
-                std::to_string(action.expected_new_asset_id->value) + "-")) {
-            reject(result, diagnostic_code_t::invalid_id,
-                   "copied import path must be a safe ID-prefixed project asset path");
-            return result;
-        }
-        registered_copy = copied;
-    }
-    const auto audio_role =
-        action.role == resource_role_t::sample || action.role == resource_role_t::bgm;
+    const auto paths = validate_import_source_paths(action, result);
+    if (!paths || !validate_import_source_geometry(action, result)) return result;
+    const auto& path = paths->first;
+    const auto& registered_copy = paths->second;
+    const auto audio_role = action.role == resource_role_t::sample || action.role == resource_role_t::bgm;
     const auto visual_role = action.role == resource_role_t::bga;
-    if ((!audio_role && !visual_role) ||
-        (audio_role && (!action.audio_stream || action.image_geometry)) ||
-        (visual_role && (!action.image_geometry || action.audio_stream))) {
-        reject(result, diagnostic_code_t::unsupported_feature,
-               "resource import role and decoded source type do not match");
-        return result;
-    }
-    if ((audio_role &&
-         (action.audio_stream->sample_rate == 0 || action.audio_stream->channels == 0 ||
-          action.audio_stream->channels > 32)) ||
-        (visual_role &&
-         (action.image_geometry->first == 0 || action.image_geometry->second == 0 ||
-          action.image_geometry->first > 16'384 || action.image_geometry->second > 16'384))) {
-        reject(result, diagnostic_code_t::invalid_resolution,
-               "resource import decoded source geometry is invalid");
-        return result;
-    }
     const auto& document = history.document;
-    asset_id_t asset{};
-    if (audio_role && !registered_copy) {
-        const auto existing = std::ranges::find_if(document.audio_assets, [&](const auto& item) {
-            return item.source_path.lexically_normal() == path;
-        });
-        if (existing != document.audio_assets.end()) {
-            asset = existing->id;
-        }
-    } else if (visual_role && !registered_copy) {
-        const auto existing = std::ranges::find_if(document.visual_assets, [&](const auto& item) {
-            return item.kind == asset_kind_t::image && item.source_path.lexically_normal() == path;
-        });
-        if (existing != document.visual_assets.end()) {
-            asset = existing->id;
-        }
-    }
+    auto asset = find_registered_import_asset(document, action, path, audio_role, visual_role);
     if (asset && action.expected_new_asset_id) {
         reject(result, diagnostic_code_t::invalid_id,
                "reserved import expected a new asset but the source is already registered");
@@ -888,42 +961,8 @@ auto apply_resource_asset_import(document_history_t& history, std::uint64_t expe
     }
     auto proposed = document;
     if (!asset) {
-        const auto next_id = next_resource_asset_id(proposed);
-        if (!next_id) {
-            reject(result, diagnostic_code_t::invalid_resolution,
-                   "resource import asset catalog is full or IDs are exhausted");
+        if (!append_imported_asset(proposed, action, registered_copy.value_or(path), asset, result))
             return result;
-        }
-        asset = *next_id;
-        if (action.expected_new_asset_id && asset != *action.expected_new_asset_id) {
-            reject(result, diagnostic_code_t::invalid_id,
-                   "reserved asset ID changed before copied import could commit");
-            return result;
-        }
-        if (registered_copy &&
-            (std::ranges::any_of(proposed.audio_assets,
-                                 [&](const auto& item) {
-                                     return item.source_path.lexically_normal() == *registered_copy;
-                                 }) ||
-             std::ranges::any_of(proposed.visual_assets, [&](const auto& item) {
-                 return item.source_path.lexically_normal() == *registered_copy;
-             }))) {
-            reject(result, diagnostic_code_t::invalid_id,
-                   "copied import path is already registered to another asset");
-            return result;
-        }
-        if (audio_role) {
-            proposed.audio_assets.push_back({.id = asset,
-                                             .source_path = registered_copy.value_or(path),
-                                             .stream = *action.audio_stream,
-                                             .waveform_cache_path = std::nullopt});
-        } else {
-            proposed.visual_assets.push_back({.id = asset,
-                                              .kind = asset_kind_t::image,
-                                              .source_path = registered_copy.value_or(path),
-                                              .width = action.image_geometry->first,
-                                              .height = action.image_geometry->second});
-        }
     }
     auto draft = make_document_history(std::move(proposed), 1, false);
     const auto created =
@@ -997,6 +1036,117 @@ auto apply_resource_asset_relink(document_history_t& history, std::uint64_t expe
     return commit_document_command(history, std::move(proposed), "Relink resource asset");
 }
 
+auto validate_resource_assignment_selection(const song_document_t& document,
+    const assign_resource_action_t& action, resource_assignment_limits_t limits,
+    document_command_result_t& result)
+    -> std::optional<std::vector<editor_selection_object_t>> {
+    if (limits.maximum_selected_objects == 0 || limits.maximum_chart_objects == 0 ||
+        action.objects.empty() || action.objects.size() > limits.maximum_selected_objects) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "resource assignment requires a bounded nonempty selection");
+        return std::nullopt;
+    }
+    const auto resource = std::ranges::find(document.resources, action.resource, &resource_entry_t::id);
+    if (!action.resource || resource == document.resources.end()) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "resource assignment refers to an unknown catalog resource");
+        return std::nullopt;
+    }
+    if (resource->missing) {
+        reject(result, diagnostic_code_t::dangling_resource,
+               "cannot assign a resource with a missing source");
+        return std::nullopt;
+    }
+    const auto audio = std::ranges::find(document.audio_assets, resource->asset, &audio_asset_t::id);
+    const auto visual = std::ranges::find(document.visual_assets, resource->asset, &visual_asset_t::id);
+    const bool audio_eligible = audio != document.audio_assets.end() &&
+        (has_role(*resource, resource_role_t::sample) || has_role(*resource, resource_role_t::bgm));
+    const bool visual_eligible = visual != document.visual_assets.end() &&
+                                 has_role(*resource, resource_role_t::bga);
+    auto selected = action.objects;
+    std::ranges::sort(selected);
+    if (std::ranges::adjacent_find(selected) != selected.end()) {
+        reject(result, diagnostic_code_t::duplicate_id,
+               "resource assignment contains a duplicate typed object");
+        return std::nullopt;
+    }
+    for (const auto& object : selected) {
+        if (!object.id) {
+            reject(result, diagnostic_code_t::invalid_id,
+                   "resource assignment uses the reserved zero object ID");
+            return std::nullopt;
+        }
+        const bool compatible = object.kind == editor_selection_object_kind_t::note ||
+                object.kind == editor_selection_object_kind_t::bgm_event ? audio_eligible
+            : object.kind == editor_selection_object_kind_t::bga_event ? visual_eligible : false;
+        if (!compatible) {
+            reject(result, diagnostic_code_t::unsupported_feature,
+                   "selected object cannot use this resource type");
+            return std::nullopt;
+        }
+    }
+    return selected;
+}
+
+struct resource_assignment_scan_t {
+    const std::vector<editor_selection_object_t>& selected;
+    resource_id_t resource;
+    std::size_t maximum_objects;
+    std::vector<std::uint8_t>& occurrences;
+    document_command_result_t& result;
+    std::size_t visited{};
+    bool changed{};
+};
+
+template <typename Current>
+auto assign_selected_resource(resource_assignment_scan_t& scan,
+    editor_selection_object_t object, Current& current, bool retained_sound_link) -> bool {
+    if (++scan.visited > scan.maximum_objects) {
+        reject(scan.result, diagnostic_code_t::invalid_resolution,
+               "resource assignment chart scan exceeds its configured cap");
+        return false;
+    }
+    const auto found = std::ranges::lower_bound(scan.selected, object);
+    if (found == scan.selected.end() || *found != object) return true;
+    const auto index = static_cast<std::size_t>(found - scan.selected.begin());
+    if (++scan.occurrences[index] != 1) {
+        reject(scan.result, diagnostic_code_t::duplicate_id,
+               "resource assignment target has an ambiguous typed identity");
+        return false;
+    }
+    if (current == scan.resource) return true;
+    if (retained_sound_link) {
+        reject(scan.result, diagnostic_code_t::unsupported_feature,
+               "edit the retained BMSON sound channel before changing its resource");
+        return false;
+    }
+    current = scan.resource;
+    scan.changed = true;
+    return true;
+}
+
+auto scan_resource_assignment_targets(chart_document_t& chart, resource_assignment_scan_t& scan)
+    -> bool {
+    for (auto& measure : chart.measures) {
+        for (auto& note : measure.notes)
+            if (!assign_selected_resource(scan,
+                    {editor_selection_object_kind_t::note, note.id}, note.sound,
+                    note.sound_channel_event.has_value())) return false;
+        for (auto& event : measure.bgm_events)
+            if (!assign_selected_resource(scan,
+                    {editor_selection_object_kind_t::bgm_event, event.id}, event.sound,
+                    event.sound_channel_event.has_value())) return false;
+    }
+    for (auto& event : chart.bga_events)
+        if (!assign_selected_resource(scan,
+                {editor_selection_object_kind_t::bga_event, event.id}, event.resource, false))
+            return false;
+    if (std::ranges::find(scan.occurrences, std::uint8_t{0}) == scan.occurrences.end()) return true;
+    reject(scan.result, diagnostic_code_t::invalid_id,
+           "resource assignment refers to an unknown typed object");
+    return false;
+}
+
 auto apply_resource_assignment(document_history_t& history, std::uint64_t expected_revision,
                                const assign_resource_action_t& action,
                                resource_assignment_limits_t limits) -> document_command_result_t {
@@ -1006,65 +1156,8 @@ auto apply_resource_assignment(document_history_t& history, std::uint64_t expect
                "resource assignment document revision is stale");
         return result;
     }
-    if (limits.maximum_selected_objects == 0 || limits.maximum_chart_objects == 0 ||
-        action.objects.empty() || action.objects.size() > limits.maximum_selected_objects) {
-        reject(result, diagnostic_code_t::invalid_resolution,
-               "resource assignment requires a bounded nonempty selection");
-        return result;
-    }
-    const auto resource =
-        std::ranges::find(history.document.resources, action.resource, &resource_entry_t::id);
-    if (!action.resource || resource == history.document.resources.end()) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "resource assignment refers to an unknown catalog resource");
-        return result;
-    }
-    if (resource->missing) {
-        reject(result, diagnostic_code_t::dangling_resource,
-               "cannot assign a resource with a missing source");
-        return result;
-    }
-    const auto audio_asset =
-        std::ranges::find(history.document.audio_assets, resource->asset, &audio_asset_t::id);
-    const auto visual_asset =
-        std::ranges::find(history.document.visual_assets, resource->asset, &visual_asset_t::id);
-    const auto audio_eligible =
-        audio_asset != history.document.audio_assets.end() &&
-        (has_role(*resource, resource_role_t::sample) || has_role(*resource, resource_role_t::bgm));
-    const auto visual_eligible = visual_asset != history.document.visual_assets.end() &&
-                                 has_role(*resource, resource_role_t::bga);
-
-    auto selected = action.objects;
-    std::ranges::sort(selected);
-    if (std::ranges::adjacent_find(selected) != selected.end()) {
-        reject(result, diagnostic_code_t::duplicate_id,
-               "resource assignment contains a duplicate typed object");
-        return result;
-    }
-    for (const auto& object : selected) {
-        if (!object.id) {
-            reject(result, diagnostic_code_t::invalid_id,
-                   "resource assignment uses the reserved zero object ID");
-            return result;
-        }
-        const auto compatible = [&] {
-            switch (object.kind) {
-            case editor_selection_object_kind_t::note:
-            case editor_selection_object_kind_t::bgm_event:
-                return audio_eligible;
-            case editor_selection_object_kind_t::bga_event:
-                return visual_eligible;
-            default:
-                return false;
-            }
-        }();
-        if (!compatible) {
-            reject(result, diagnostic_code_t::unsupported_feature,
-                   "selected object cannot use this resource type");
-            return result;
-        }
-    }
-
+    auto selected = validate_resource_assignment_selection(history.document, action, limits, result);
+    if (!selected) return result;
     auto proposed = history.document;
     const auto chart = std::ranges::find(proposed.charts, action.chart, &chart_document_t::id);
     if (!action.chart || chart == proposed.charts.end()) {
@@ -1072,65 +1165,11 @@ auto apply_resource_assignment(document_history_t& history, std::uint64_t expect
                "resource assignment refers to an unknown chart");
         return result;
     }
-    std::vector<std::uint8_t> occurrences(selected.size());
-    std::size_t chart_objects{};
-    bool changed{};
-    const auto assign = [&](editor_selection_object_t object, auto& current,
-                            bool retained_sound_link) -> bool {
-        if (++chart_objects > limits.maximum_chart_objects) {
-            reject(result, diagnostic_code_t::invalid_resolution,
-                   "resource assignment chart scan exceeds its configured cap");
-            return false;
-        }
-        const auto found = std::ranges::lower_bound(selected, object);
-        if (found == selected.end() || *found != object) {
-            return true;
-        }
-        const auto index = static_cast<std::size_t>(found - selected.begin());
-        if (++occurrences[index] != 1) {
-            reject(result, diagnostic_code_t::duplicate_id,
-                   "resource assignment target has an ambiguous typed identity");
-            return false;
-        }
-        if (current == action.resource) {
-            return true;
-        }
-        if (retained_sound_link) {
-            reject(result, diagnostic_code_t::unsupported_feature,
-                   "edit the retained BMSON sound channel before changing its resource");
-            return false;
-        }
-        current = action.resource;
-        changed = true;
-        return true;
-    };
-    for (auto& measure : chart->measures) {
-        for (auto& note : measure.notes) {
-            if (!assign({editor_selection_object_kind_t::note, note.id}, note.sound,
-                        note.sound_channel_event.has_value())) {
-                return result;
-            }
-        }
-        for (auto& event : measure.bgm_events) {
-            if (!assign({editor_selection_object_kind_t::bgm_event, event.id}, event.sound,
-                        event.sound_channel_event.has_value())) {
-                return result;
-            }
-        }
-    }
-    for (auto& event : chart->bga_events) {
-        if (!assign({editor_selection_object_kind_t::bga_event, event.id}, event.resource, false)) {
-            return result;
-        }
-    }
-    if (std::ranges::find(occurrences, std::uint8_t{0}) != occurrences.end()) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "resource assignment refers to an unknown typed object");
-        return result;
-    }
-    if (!changed) {
-        return result;
-    }
+    std::vector<std::uint8_t> occurrences(selected->size());
+    resource_assignment_scan_t scan{*selected, action.resource, limits.maximum_chart_objects,
+                                    occurrences, result};
+    if (!scan_resource_assignment_targets(*chart, scan)) return result;
+    if (!scan.changed) return result;
     return commit_document_command(history, std::move(proposed), "Assign resource to selection");
 }
 

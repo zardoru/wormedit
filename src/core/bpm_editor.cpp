@@ -136,6 +136,122 @@ auto unique_bpm_event(chart_document_t& chart, object_id_t id, document_command_
     return &*found;
 }
 
+struct bpm_edit_outcome_t {
+    bool valid{true};
+    bool changed{};
+    std::string label;
+};
+
+struct bpm_edit_context_t {
+    chart_document_t& chart;
+    bpm_edit_limits_t limits;
+    document_command_result_t& result;
+};
+
+auto edit_context(song_document_t& document, chart_id_t id, bpm_edit_limits_t limits,
+                  document_command_result_t& result) -> chart_document_t* {
+    const auto found = std::ranges::find(document.charts, id, &chart_document_t::id);
+    if (!id || found == document.charts.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "BPM edit refers to an unknown chart");
+        return nullptr;
+    }
+    if (found->bpms.size() > limits.maximum_bpm_events) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "selected chart exceeds the BPM event cap");
+        return nullptr;
+    }
+    return &*found;
+}
+
+auto apply_insert(bpm_edit_context_t context, const insert_bpm_event_action_t& edit)
+    -> bpm_edit_outcome_t {
+    if (context.chart.bpms.size() >= context.limits.maximum_bpm_events) {
+        reject(context.result, diagnostic_code_t::invalid_resolution,
+               "BPM insertion would exceed the configured event cap");
+        return {false, false, {}};
+    }
+    if (!validate_bpm_position(context.chart, edit.position, context.result) ||
+        !validate_bpm_value(edit.beats_per_minute, context.result)) {
+        return {false, false, {}};
+    }
+    const auto allocation =
+        next_chart_object_id(context.chart, context.limits.maximum_chart_objects);
+    if (!allocation.id) {
+        reject(context.result, diagnostic_code_t::invalid_resolution,
+               allocation.over_limit ? "selected chart exceeds the object ID allocation cap"
+                                     : "chart object ID sequence is exhausted");
+        return {false, false, {}};
+    }
+    const auto source_order = next_bpm_source_order(context.chart);
+    if (!source_order) {
+        reject(context.result, diagnostic_code_t::invalid_resolution,
+               "BPM source-order sequence is exhausted");
+        return {false, false, {}};
+    }
+    context.chart.bpms.push_back({
+        .id = *allocation.id,
+        .position = edit.position,
+        .beats_per_minute = edit.beats_per_minute,
+        .provenance = {.source_order = *source_order},
+    });
+    return {true, true, "Insert BPM event"};
+}
+
+auto apply_update(bpm_edit_context_t context, const update_bpm_event_action_t& edit)
+    -> bpm_edit_outcome_t {
+    if (!edit.event) {
+        reject(context.result, diagnostic_code_t::invalid_id,
+               "BPM update uses the reserved zero event ID");
+        return {false, false, {}};
+    }
+    auto* event = unique_bpm_event(context.chart, edit.event, context.result);
+    if (event == nullptr || !validate_bpm_position(context.chart, edit.position, context.result) ||
+        !validate_bpm_value(edit.beats_per_minute, context.result)) {
+        return {false, false, {}};
+    }
+    if (event->position == edit.position && event->beats_per_minute == edit.beats_per_minute) {
+        return {true, false, {}};
+    }
+    event->position = edit.position;
+    event->beats_per_minute = edit.beats_per_minute;
+    return {true, true, "Update BPM event"};
+}
+
+auto apply_delete(bpm_edit_context_t context, const delete_bpm_event_action_t& edit)
+    -> bpm_edit_outcome_t {
+    if (!edit.event) {
+        reject(context.result, diagnostic_code_t::invalid_id,
+               "BPM deletion uses the reserved zero event ID");
+        return {false, false, {}};
+    }
+    auto* event = unique_bpm_event(context.chart, edit.event, context.result);
+    if (event == nullptr) {
+        return {false, false, {}};
+    }
+    const auto id = event->id;
+    std::erase_if(context.chart.bms_bpm_projections,
+                  [id](const auto& projection) { return projection.event == id; });
+    std::erase_if(context.chart.bpms, [id](const auto& item) { return item.id == id; });
+    return {true, true, "Delete BPM event"};
+}
+
+template <typename Edit>
+auto apply_chart_edit(song_document_t& document, const Edit& edit, bpm_edit_limits_t limits,
+                      document_command_result_t& result) -> bpm_edit_outcome_t {
+    auto* chart = edit_context(document, edit.chart, limits, result);
+    if (chart == nullptr) {
+        return {false, false, {}};
+    }
+    auto context = bpm_edit_context_t{*chart, limits, result};
+    if constexpr (std::is_same_v<Edit, insert_bpm_event_action_t>) {
+        return apply_insert(context, edit);
+    } else if constexpr (std::is_same_v<Edit, update_bpm_event_action_t>) {
+        return apply_update(context, edit);
+    } else {
+        return apply_delete(context, edit);
+    }
+}
+
 } // namespace
 
 auto parse_bpm_text(std::string_view text) -> std::optional<signed_rational_t> {
@@ -215,101 +331,12 @@ auto apply_bpm_edit(document_history_t& history, std::uint64_t expected_revision
     }
 
     auto proposed = history.document;
-    std::string command_label;
-    bool changed{};
-    std::visit(
-        [&](const auto& edit) {
-            using edit_t = std::remove_cvref_t<decltype(edit)>;
-            const auto chart =
-                std::ranges::find(proposed.charts, edit.chart, &chart_document_t::id);
-            if (!edit.chart || chart == proposed.charts.end()) {
-                reject(result, diagnostic_code_t::invalid_id,
-                       "BPM edit refers to an unknown chart");
-                return;
-            }
-            if (chart->bpms.size() > limits.maximum_bpm_events) {
-                reject(result, diagnostic_code_t::invalid_resolution,
-                       "selected chart exceeds the BPM event cap");
-                return;
-            }
-
-            if constexpr (std::is_same_v<edit_t, insert_bpm_event_action_t>) {
-                if (chart->bpms.size() >= limits.maximum_bpm_events) {
-                    reject(result, diagnostic_code_t::invalid_resolution,
-                           "BPM insertion would exceed the configured event cap");
-                    return;
-                }
-                if (!validate_bpm_position(*chart, edit.position, result) ||
-                    !validate_bpm_value(edit.beats_per_minute, result)) {
-                    return;
-                }
-                const auto allocation = next_chart_object_id(*chart, limits.maximum_chart_objects);
-                if (!allocation.id.has_value()) {
-                    reject(result, diagnostic_code_t::invalid_resolution,
-                           allocation.over_limit
-                               ? "selected chart exceeds the object ID allocation cap"
-                               : "chart object ID sequence is exhausted");
-                    return;
-                }
-                const auto source_order = next_bpm_source_order(*chart);
-                if (!source_order.has_value()) {
-                    reject(result, diagnostic_code_t::invalid_resolution,
-                           "BPM source-order sequence is exhausted");
-                    return;
-                }
-                chart->bpms.push_back({
-                    .id = *allocation.id,
-                    .position = edit.position,
-                    .beats_per_minute = edit.beats_per_minute,
-                    .provenance = {.source_order = *source_order},
-                });
-                command_label = "Insert BPM event";
-                changed = true;
-            } else if constexpr (std::is_same_v<edit_t, update_bpm_event_action_t>) {
-                if (!edit.event) {
-                    reject(result, diagnostic_code_t::invalid_id,
-                           "BPM update uses the reserved zero event ID");
-                    return;
-                }
-                auto* event = unique_bpm_event(*chart, edit.event, result);
-                if (event == nullptr || !validate_bpm_position(*chart, edit.position, result) ||
-                    !validate_bpm_value(edit.beats_per_minute, result)) {
-                    return;
-                }
-                changed = event->position != edit.position ||
-                          event->beats_per_minute != edit.beats_per_minute;
-                if (!changed) {
-                    return;
-                }
-                event->position = edit.position;
-                event->beats_per_minute = edit.beats_per_minute;
-                command_label = "Update BPM event";
-            } else {
-                if (!edit.event) {
-                    reject(result, diagnostic_code_t::invalid_id,
-                           "BPM deletion uses the reserved zero event ID");
-                    return;
-                }
-                auto* event = unique_bpm_event(*chart, edit.event, result);
-                if (event == nullptr) {
-                    return;
-                }
-                const auto event_id = event->id;
-                std::erase_if(chart->bms_bpm_projections, [event_id](const auto& projection) {
-                    return projection.event == event_id;
-                });
-                std::erase_if(chart->bpms,
-                              [event_id](const auto& item) { return item.id == event_id; });
-                command_label = "Delete BPM event";
-                changed = true;
-            }
-        },
-        action);
-
-    if (!result.diagnostics.empty() || !changed) {
+    auto outcome = std::visit(
+        [&](const auto& edit) { return apply_chart_edit(proposed, edit, limits, result); }, action);
+    if (!outcome.valid || !result.diagnostics.empty() || !outcome.changed) {
         return result;
     }
-    return commit_document_command(history, std::move(proposed), std::move(command_label));
+    return commit_document_command(history, std::move(proposed), std::move(outcome.label));
 }
 
 auto begin_beat_interval_drag(const song_document_t& document, chart_id_t chart,

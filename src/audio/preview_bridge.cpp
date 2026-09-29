@@ -22,6 +22,86 @@ struct event_candidate_t {
     metronome_accent_t accent{metronome_accent_t::regular};
 };
 
+struct preview_queue_cursor_t {
+    std::span<const preview_audio_event_t> playable;
+    std::span<const preview_audio_event_t> bgm;
+    std::span<const preview_metronome_event_t> clicks;
+    std::size_t playable_index{};
+    std::size_t bgm_index{};
+    std::size_t click_index{};
+};
+
+auto next_candidate(const preview_queue_cursor_t& queues) -> std::optional<event_candidate_t> {
+    std::optional<event_candidate_t> candidate;
+    const auto consider = [&candidate](event_candidate_t next) {
+        if (!candidate.has_value() || next.sample_frame < candidate->sample_frame) {
+            candidate = next;
+        }
+    };
+    if (queues.playable_index < queues.playable.size()) {
+        const auto& event = queues.playable[queues.playable_index];
+        consider({.sample_frame = event.sample_frame,
+                  .queue = queue_kind_t::playable,
+                  .object = event.object});
+    }
+    if (queues.bgm_index < queues.bgm.size()) {
+        const auto& event = queues.bgm[queues.bgm_index];
+        consider({.sample_frame = event.sample_frame,
+                  .queue = queue_kind_t::bgm,
+                  .object = event.object});
+    }
+    if (queues.click_index < queues.clicks.size()) {
+        const auto& event = queues.clicks[queues.click_index];
+        consider({.sample_frame = event.sample_frame,
+                  .queue = queue_kind_t::metronome,
+                  .object = {},
+                  .accent = event.accent});
+    }
+    return candidate;
+}
+
+struct candidate_sources_t {
+    std::span<const preview_voice_source_t> sources;
+    voice_kind_t kind{voice_kind_t::playable_note};
+};
+
+auto sources_for_candidate(const event_candidate_t& candidate,
+                           const std::vector<preview_object_source_binding_t>& objects,
+                           const std::vector<preview_metronome_source_binding_t>& metronome)
+    -> candidate_sources_t {
+    if (candidate.queue == queue_kind_t::metronome) {
+        const auto binding = std::ranges::lower_bound(metronome, candidate.accent, {},
+                                                      &preview_metronome_source_binding_t::accent);
+        if (binding != metronome.end() && binding->accent == candidate.accent) {
+            return {std::span<const preview_voice_source_t>{&binding->voice, 1},
+                    voice_kind_t::click_preview};
+        }
+        return {{}, voice_kind_t::click_preview};
+    }
+    const auto kind =
+        candidate.queue == queue_kind_t::bgm ? voice_kind_t::bgm : voice_kind_t::playable_note;
+    const auto binding = std::ranges::lower_bound(objects, candidate.object, {},
+                                                  &preview_object_source_binding_t::object);
+    if (binding != objects.end() && binding->object == candidate.object) {
+        return {binding->voices, kind};
+    }
+    return {{}, kind};
+}
+
+auto pump_error_for_schedule(voice_schedule_status_t status)
+    -> std::optional<preview_bridge_pump_status_t> {
+    switch (status) {
+    case voice_schedule_status_t::scheduled:
+        return std::nullopt;
+    case voice_schedule_status_t::capacity_exceeded:
+        return preview_bridge_pump_status_t::capacity_limited;
+    case voice_schedule_status_t::stale_generation:
+        return preview_bridge_pump_status_t::stale_generation;
+    default:
+        return preview_bridge_pump_status_t::transport_rejected_voice;
+    }
+}
+
 auto valid_source(const audio_source_identity_t& source) -> bool {
     return !source.asset_identity.empty() && !source.source_identity.empty();
 }
@@ -169,31 +249,8 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
     const auto clicks = std::span<const preview_metronome_event_t>{schedule_->metronome};
 
     while (true) {
-        std::optional<event_candidate_t> candidate;
-        const auto consider = [&candidate](event_candidate_t next) {
-            if (!candidate.has_value() || next.sample_frame < candidate->sample_frame) {
-                candidate = next;
-            }
-        };
-        if (playable_head_.index < playable.size()) {
-            const auto& event = playable[playable_head_.index];
-            consider({.sample_frame = event.sample_frame,
-                      .queue = queue_kind_t::playable,
-                      .object = event.object});
-        }
-        if (bgm_head_.index < bgm.size()) {
-            const auto& event = bgm[bgm_head_.index];
-            consider({.sample_frame = event.sample_frame,
-                      .queue = queue_kind_t::bgm,
-                      .object = event.object});
-        }
-        if (metronome_head_.index < clicks.size()) {
-            const auto& event = clicks[metronome_head_.index];
-            consider({.sample_frame = event.sample_frame,
-                      .queue = queue_kind_t::metronome,
-                      .object = {},
-                      .accent = event.accent});
-        }
+        const auto candidate = next_candidate(
+            {playable, bgm, clicks, playable_head_.index, bgm_head_.index, metronome_head_.index});
         if (!candidate.has_value() || candidate->sample_frame >= exclusive_end_frame) {
             break;
         }
@@ -212,24 +269,9 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
             }
         };
 
-        std::span<const preview_voice_source_t> sources;
-        auto voice_kind = voice_kind_t::playable_note;
-        if (candidate->queue == queue_kind_t::metronome) {
-            voice_kind = voice_kind_t::click_preview;
-            const auto binding = std::ranges::lower_bound(
-                metronome_, candidate->accent, {}, &preview_metronome_source_binding_t::accent);
-            if (binding != metronome_.end() && binding->accent == candidate->accent) {
-                sources = std::span<const preview_voice_source_t>{&binding->voice, 1};
-            }
-        } else {
-            voice_kind = candidate->queue == queue_kind_t::bgm ? voice_kind_t::bgm
-                                                               : voice_kind_t::playable_note;
-            const auto binding = std::ranges::lower_bound(objects_, candidate->object, {},
-                                                          &preview_object_source_binding_t::object);
-            if (binding != objects_.end() && binding->object == candidate->object) {
-                sources = binding->voices;
-            }
-        }
+        const auto selected_sources = sources_for_candidate(*candidate, objects_, metronome_);
+        const auto sources = selected_sources.sources;
+        const auto voice_kind = selected_sources.kind;
         if (sources.empty()) {
             ++result.missing_sources;
             advance_candidate();
@@ -254,16 +296,8 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
                               .gain = source.gain});
         }
         const auto status = transport_.schedule_voices(*token_, voices);
-        if (status == voice_schedule_status_t::capacity_exceeded) {
-            result.status = preview_bridge_pump_status_t::capacity_limited;
-            break;
-        }
-        if (status == voice_schedule_status_t::stale_generation) {
-            result.status = preview_bridge_pump_status_t::stale_generation;
-            break;
-        }
-        if (status != voice_schedule_status_t::scheduled) {
-            result.status = preview_bridge_pump_status_t::transport_rejected_voice;
+        if (const auto error = pump_error_for_schedule(status)) {
+            result.status = *error;
             break;
         }
 

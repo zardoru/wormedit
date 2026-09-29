@@ -9,7 +9,6 @@
 #include <set>
 #include <string>
 #include <tuple>
-#include <type_traits>
 #include <utility>
 #include <variant>
 
@@ -371,100 +370,80 @@ void reject_drag(sv_recipe_range_drag_t& drag, diagnostic_code_t code, std::stri
     }
 }
 
-} // namespace
-
-auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe)
-    -> diagnostic_list_t {
-    diagnostic_list_t diagnostics;
-    if (!recipe.id) {
-        reject(diagnostics, diagnostic_code_t::invalid_id,
-               "SV recipe must have a non-zero stable ID");
-    }
-    if (recipe.name.empty() || recipe.name.size() > 256 ||
-        recipe.name.find('\0') != std::string::npos) {
-        reject(diagnostics, diagnostic_code_t::invalid_id,
-               "SV recipe name must contain 1 to 256 non-NUL bytes");
-    }
-    if (static_cast<unsigned int>(recipe.output) >
-            static_cast<unsigned int>(sv_recipe_output_t::speeds) ||
-        static_cast<unsigned int>(recipe.curve) >
-            static_cast<unsigned int>(sv_recipe_curve_t::bump) ||
-        static_cast<unsigned int>(recipe.sampling.mode) >
-            static_cast<unsigned int>(sv_recipe_sampling_mode_t::adaptive)) {
+auto valid_recipe_enum_domains(const sv_recipe_t& recipe, diagnostic_list_t& diagnostics) -> bool {
+    const auto valid =
+        static_cast<unsigned int>(recipe.output) <=
+            static_cast<unsigned int>(sv_recipe_output_t::speeds) &&
+        static_cast<unsigned int>(recipe.curve) <=
+            static_cast<unsigned int>(sv_recipe_curve_t::bump) &&
+        static_cast<unsigned int>(recipe.sampling.mode) <=
+            static_cast<unsigned int>(sv_recipe_sampling_mode_t::adaptive);
+    if (!valid) {
         reject(diagnostics, diagnostic_code_t::invalid_id,
                "SV recipe contains an unknown output, curve, or sampling mode");
-        return diagnostics;
     }
+    return valid;
+}
 
-    const auto index_result = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(index_result)) {
-        diagnostics = std::get<diagnostic_list_t>(index_result);
-        return diagnostics;
+auto valid_recipe_parameters(const sv_recipe_parameters_t& params) -> bool {
+    return valid_bounded_rational(params.value_from, maximum_parameter_magnitude) &&
+           valid_bounded_rational(params.value_to, maximum_parameter_magnitude) &&
+           valid_bounded_rational(params.shape, maximum_parameter_magnitude) &&
+           valid_bounded_rational(params.bump_start, maximum_parameter_magnitude) &&
+           valid_bounded_rational(params.bump_length, maximum_parameter_magnitude) &&
+           valid_bounded_rational(params.bump_x, maximum_parameter_magnitude) &&
+           valid_bounded_rational(params.bump_y, maximum_parameter_magnitude);
+}
+
+void validate_bump_region(const sv_recipe_t& recipe, std::uint64_t span,
+                          diagnostic_list_t& diagnostics) {
+    if (recipe.curve != sv_recipe_curve_t::bump) {
+        return;
     }
-    const auto& index = std::get<measure_index_t>(index_result);
-    const auto range = recipe_range(chart, recipe, index);
-    if (!range) {
-        reject(diagnostics, diagnostic_code_t::invalid_hold,
-               "SV recipe range must be an increasing interval inside the chart grid");
-        return diagnostics;
-    }
-    const auto span = range->second - range->first;
-    const auto& params = recipe.parameters;
-    const auto valid_value = [&](signed_rational_t value) {
-        return valid_bounded_rational(value, maximum_parameter_magnitude);
-    };
-    if (!valid_value(params.value_from) || !valid_value(params.value_to) ||
-        !valid_value(params.shape) || !valid_value(params.bump_start) ||
-        !valid_value(params.bump_length) || !valid_value(params.bump_x) ||
-        !valid_value(params.bump_y)) {
+    const auto begin = rational_number(recipe.parameters.bump_start);
+    const auto length = rational_number(recipe.parameters.bump_length);
+    if (begin < 0.0L || length <= 0.0L || begin + length > 1.0L) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
-               "SV recipe parameters require bounded finite rational values");
-        return diagnostics;
+               "bump region must be a positive subrange of normalized [0, 1]");
+        return;
     }
-    if (recipe.curve == sv_recipe_curve_t::exponential &&
-        std::abs(rational_number(params.shape)) > 32.0L) {
+    const auto begin_offset = offset_for_fraction(span, recipe.parameters.bump_start);
+    if (!begin_offset || recipe.parameters.bump_start.numerator < 0 ||
+        recipe.parameters.bump_length.numerator < 0) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
-               "exponential SV recipe shape must be between -32 and 32");
+               "bump boundaries cannot be represented exactly on the chart grid");
+        return;
     }
-    if (recipe.curve == sv_recipe_curve_t::bump) {
-        const auto begin = rational_number(params.bump_start);
-        const auto length = rational_number(params.bump_length);
-        if (begin < 0.0L || length <= 0.0L || begin + length > 1.0L) {
+    if (!offset_for_fraction_sum(span, recipe.parameters.bump_start,
+                                 recipe.parameters.bump_length)) {
+        reject(diagnostics, diagnostic_code_t::invalid_rational,
+               "bump boundaries cannot be represented exactly on the chart grid");
+    }
+}
+
+void validate_transition(const sv_recipe_t& recipe, diagnostic_list_t& diagnostics) {
+    const auto& duration = recipe.transition_duration;
+    if (recipe.output == sv_recipe_output_t::speeds) {
+        if (!duration.has_value() || !recipe.transition_is_seconds.has_value() ||
+            duration->denominator == 0 ||
+            duration->numerator > maximum_parameter_denominator ||
+            duration->denominator > maximum_parameter_denominator ||
+            static_cast<long double>(duration->numerator) /
+                    static_cast<long double>(duration->denominator) >
+                maximum_parameter_magnitude) {
             reject(diagnostics, diagnostic_code_t::invalid_rational,
-                   "bump region must be a positive subrange of normalized [0, 1]");
-        } else {
-            const auto begin_offset = offset_for_fraction(span, params.bump_start);
-            if (!begin_offset || params.bump_start.numerator < 0 ||
-                params.bump_length.numerator < 0) {
-                reject(diagnostics, diagnostic_code_t::invalid_rational,
-                       "bump boundaries cannot be represented exactly on the chart grid");
-            } else {
-                const auto end_offset =
-                    offset_for_fraction_sum(span, params.bump_start, params.bump_length);
-                if (!end_offset) {
-                    reject(diagnostics, diagnostic_code_t::invalid_rational,
-                           "bump boundaries cannot be represented exactly on the chart grid");
-                }
-            }
+                   "SPEEDS recipe requires a bounded transition duration and beat/time mode");
         }
+        return;
     }
-    if (recipe.output == sv_recipe_output_t::speeds &&
-        (!recipe.transition_duration.has_value() || !recipe.transition_is_seconds.has_value() ||
-         recipe.transition_duration->denominator == 0 ||
-         recipe.transition_duration->numerator > maximum_parameter_denominator ||
-         recipe.transition_duration->denominator > maximum_parameter_denominator ||
-         static_cast<long double>(recipe.transition_duration->numerator) /
-                 static_cast<long double>(recipe.transition_duration->denominator) >
-             maximum_parameter_magnitude)) {
-        reject(diagnostics, diagnostic_code_t::invalid_rational,
-               "SPEEDS recipe requires a bounded transition duration and beat/time mode");
-    } else if (recipe.output != sv_recipe_output_t::speeds &&
-               (recipe.transition_duration.has_value() ||
-                recipe.transition_is_seconds.has_value())) {
+    if (duration.has_value() || recipe.transition_is_seconds.has_value()) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
                "transition settings are only valid for SPEEDS recipes");
     }
+}
 
+void validate_sampling(const sv_recipe_t& recipe, std::uint64_t span,
+                       diagnostic_list_t& diagnostics) {
     const auto& sampling = recipe.sampling;
     if (sampling.mode == sv_recipe_sampling_mode_t::fixed) {
         if (sampling.fixed_point_count.has_value() == sampling.fixed_step_rows.has_value()) {
@@ -473,7 +452,7 @@ auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe
         } else if (sampling.fixed_point_count.has_value()) {
             const auto count = *sampling.fixed_point_count;
             if (count < 2 || count > maximum_sv_recipe_sample_points ||
-                (span % static_cast<std::uint64_t>(count - 1)) != 0) {
+                span % static_cast<std::uint64_t>(count - 1) != 0) {
                 reject(diagnostics, diagnostic_code_t::invalid_resolution,
                        "fixed SV point count must be 2..4096 and divide the exact interval");
             }
@@ -485,19 +464,22 @@ auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe
             reject(diagnostics, diagnostic_code_t::invalid_resolution,
                    "fixed SV row step must be positive and bounded");
         }
-    } else {
-        if (sampling.fixed_point_count.has_value() || sampling.fixed_step_rows.has_value() ||
-            sampling.max_points < 2 || sampling.max_points > maximum_sv_recipe_sample_points ||
-            !valid_bounded_rational(sampling.tolerance, 1'000.0L) ||
-            rational_number(sampling.tolerance) <= 0.0L) {
-            reject(diagnostics, diagnostic_code_t::invalid_resolution,
-                   "adaptive SV sampling requires tolerance > 0 and a point cap in 2..4096");
-        }
+    } else if (sampling.fixed_point_count.has_value() || sampling.fixed_step_rows.has_value() ||
+               sampling.max_points < 2 ||
+               sampling.max_points > maximum_sv_recipe_sample_points ||
+               !valid_bounded_rational(sampling.tolerance, 1'000.0L) ||
+               rational_number(sampling.tolerance) <= 0.0L) {
+        reject(diagnostics, diagnostic_code_t::invalid_resolution,
+               "adaptive SV sampling requires tolerance > 0 and a point cap in 2..4096");
     }
     if (sampling.max_points < 2 || sampling.max_points > maximum_sv_recipe_sample_points) {
         reject(diagnostics, diagnostic_code_t::invalid_resolution,
                "SV recipe point cap must be in 2..4096");
     }
+}
+
+void validate_curve_outputs(const sv_recipe_t& recipe, diagnostic_list_t& diagnostics) {
+    const auto& params = recipe.parameters;
     if (recipe.curve == sv_recipe_curve_t::constant &&
         !valid_curve_result(rational_number(params.value_from), recipe.output)) {
         reject(diagnostics, diagnostic_code_t::invalid_rational,
@@ -516,8 +498,213 @@ auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe
         reject(diagnostics, diagnostic_code_t::invalid_rational,
                "bump values are invalid for its output family");
     }
+}
+
+} // namespace
+
+auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe)
+    -> diagnostic_list_t {
+    diagnostic_list_t diagnostics;
+    if (!recipe.id) {
+        reject(diagnostics, diagnostic_code_t::invalid_id,
+               "SV recipe must have a non-zero stable ID");
+    }
+    if (recipe.name.empty() || recipe.name.size() > 256 ||
+        recipe.name.find('\\0') != std::string::npos) {
+        reject(diagnostics, diagnostic_code_t::invalid_id,
+               "SV recipe name must contain 1 to 256 non-NUL bytes");
+    }
+    if (!valid_recipe_enum_domains(recipe, diagnostics)) {
+        return diagnostics;
+    }
+
+    const auto index_result = build_measure_index(chart);
+    if (!std::holds_alternative<measure_index_t>(index_result)) {
+        return std::get<diagnostic_list_t>(index_result);
+    }
+    const auto& index = std::get<measure_index_t>(index_result);
+    const auto range = recipe_range(chart, recipe, index);
+    if (!range) {
+        reject(diagnostics, diagnostic_code_t::invalid_hold,
+               "SV recipe range must be an increasing interval inside the chart grid");
+        return diagnostics;
+    }
+    const auto span = range->second - range->first;
+    if (!valid_recipe_parameters(recipe.parameters)) {
+        reject(diagnostics, diagnostic_code_t::invalid_rational,
+               "SV recipe parameters require bounded finite rational values");
+        return diagnostics;
+    }
+    if (recipe.curve == sv_recipe_curve_t::exponential &&
+        std::abs(rational_number(recipe.parameters.shape)) > 32.0L) {
+        reject(diagnostics, diagnostic_code_t::invalid_rational,
+               "exponential SV recipe shape must be between -32 and 32");
+    }
+    validate_bump_region(recipe, span, diagnostics);
+    validate_transition(recipe, diagnostics);
+    validate_sampling(recipe, span, diagnostics);
+    validate_curve_outputs(recipe, diagnostics);
     return diagnostics;
 }
+
+namespace {
+
+auto add_bump_sample_points(std::map<std::uint64_t, long double>& points,
+                           const sv_recipe_t& recipe,
+                           const std::pair<std::uint64_t, std::uint64_t>& range,
+                           diagnostic_list_t& diagnostics) -> bool {
+    if (recipe.curve != sv_recipe_curve_t::bump) {
+        return true;
+    }
+    const auto span = range.second - range.first;
+    const auto begin = offset_for_fraction(span, recipe.parameters.bump_start);
+    const auto end = offset_for_fraction_sum(span, recipe.parameters.bump_start,
+                                             recipe.parameters.bump_length);
+    return begin.has_value() && end.has_value() &&
+           ensure_sample_point(points, range.first + *begin, recipe, range, diagnostics) &&
+           ensure_sample_point(points, range.first + *end, recipe, range, diagnostics);
+}
+
+auto add_fixed_sample_points(std::map<std::uint64_t, long double>& points,
+                             const sv_recipe_t& recipe,
+                             const std::pair<std::uint64_t, std::uint64_t>& range,
+                             diagnostic_list_t& diagnostics) -> bool {
+    const auto span = range.second - range.first;
+    if (recipe.sampling.fixed_point_count.has_value()) {
+        const auto count = static_cast<std::uint64_t>(*recipe.sampling.fixed_point_count);
+        const auto step = span / (count - 1);
+        for (std::uint64_t i = 0; i < count; ++i) {
+            if (!ensure_sample_point(points, range.first + i * step, recipe, range, diagnostics)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    const auto step = *recipe.sampling.fixed_step_rows;
+    for (auto row = range.first; row < range.second;) {
+        if (!ensure_sample_point(points, row, recipe, range, diagnostics)) {
+            return false;
+        }
+        if (range.second - row <= step) {
+            break;
+        }
+        row += step;
+    }
+    return ensure_sample_point(points, range.second, recipe, range, diagnostics);
+}
+
+struct adaptive_sampling_context_t {
+    const sv_recipe_t& recipe;
+    const std::pair<std::uint64_t, std::uint64_t>& range;
+    std::size_t maximum_points{};
+    long double tolerance{};
+    std::map<std::uint64_t, long double>& sampled;
+    diagnostic_list_t& diagnostics;
+    bool& tolerance_met;
+};
+
+auto refine_adaptive_interval(adaptive_sampling_context_t& context, std::uint64_t left,
+                              std::uint64_t right, std::size_t depth) -> void {
+    if (right - left <= 1 || depth > 64 || !context.diagnostics.empty()) {
+        return;
+    }
+    const auto middle = left + (right - left) / 2;
+    const auto actual = curve_value(
+        context.recipe, recipe_position_for_row(context.range, middle));
+    const auto left_value = context.sampled.at(left);
+    const auto right_value = context.sampled.at(right);
+    const auto ratio = static_cast<long double>(middle - left) /
+                       static_cast<long double>(right - left);
+    const auto expected = left_value + (right_value - left_value) * ratio;
+    if (!valid_curve_result(actual, context.recipe.output)) {
+        reject(context.diagnostics, diagnostic_code_t::invalid_rational,
+               "adaptive SV recipe evaluates to an invalid value");
+        return;
+    }
+    if (std::abs(actual - expected) <= context.tolerance) {
+        return;
+    }
+    if (context.sampled.size() >= context.maximum_points) {
+        context.tolerance_met = false;
+        return;
+    }
+    context.sampled.emplace(middle, actual);
+    refine_adaptive_interval(context, left, middle, depth + 1);
+    refine_adaptive_interval(context, middle, right, depth + 1);
+}
+
+auto add_adaptive_sample_points(std::map<std::uint64_t, long double>& sampled,
+                                const sv_recipe_t& recipe,
+                                const std::pair<std::uint64_t, std::uint64_t>& range,
+                                sv_recipe_sample_result_t& result) -> bool {
+    if (!ensure_sample_point(sampled, range.first, recipe, range, result.diagnostics) ||
+        !ensure_sample_point(sampled, range.second, recipe, range, result.diagnostics)) {
+        return false;
+    }
+    const auto maximum = static_cast<std::size_t>(recipe.sampling.max_points);
+    if (sampled.size() > maximum) {
+        reject(result.diagnostics, diagnostic_code_t::invalid_resolution,
+               "adaptive SV point cap is smaller than the required structural points");
+        return false;
+    }
+    adaptive_sampling_context_t context{.recipe = recipe,
+                                        .range = range,
+                                        .maximum_points = maximum,
+                                        .tolerance = rational_number(recipe.sampling.tolerance),
+                                        .sampled = sampled,
+                                        .diagnostics = result.diagnostics,
+                                        .tolerance_met = result.tolerance_met};
+    std::vector<std::uint64_t> mandatory;
+    mandatory.reserve(sampled.size());
+    for (const auto& [row, value] : sampled) {
+        (void)value;
+        mandatory.push_back(row);
+    }
+    for (std::size_t index = 1; index < mandatory.size(); ++index) {
+        refine_adaptive_interval(context, mandatory[index - 1], mandatory[index], 0);
+    }
+    return result.diagnostics.empty();
+}
+
+auto materialize_sample_points(const chart_document_t& chart, const sv_recipe_t& recipe,
+                               const measure_index_t& index,
+                               const std::pair<std::uint64_t, std::uint64_t>& range,
+                               std::map<std::uint64_t, long double>& sampled,
+                               sv_recipe_sample_result_t& result) -> bool {
+    if (sampled.size() > maximum_sv_recipe_sample_points) {
+        reject(result.diagnostics, diagnostic_code_t::invalid_resolution,
+               "SV recipe structural and sampled points exceed the point cap");
+        return false;
+    }
+    if (range.second == index.total_rows) {
+        sampled.erase(index.total_rows);
+        if (index.total_rows == 0 ||
+            !ensure_sample_point(sampled, index.total_rows - 1, recipe, range,
+                                 result.diagnostics)) {
+            return false;
+        }
+    }
+    result.points.reserve(sampled.size());
+    for (const auto& [row, value] : sampled) {
+        const auto position = position_at_row(index, row);
+        if (!position) {
+            reject(result.diagnostics, diagnostic_code_t::row_out_of_range,
+                   "sampled SV recipe point is outside chart geometry");
+            result.points.clear();
+            return false;
+        }
+        result.points.push_back({.absolute_row = row,
+                                 .position = *position,
+                                 .value = static_cast<double>(value),
+                                 .transition_duration =
+                                     recipe.transition_duration.value_or(rational_t{}),
+                                 .transition_is_seconds =
+                                     recipe.transition_is_seconds.value_or(false)});
+    }
+    return true;
+}
+
+} // namespace
 
 auto sample_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe)
     -> sv_recipe_sample_result_t {
@@ -529,138 +716,151 @@ auto sample_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe)
     const auto index_result = build_measure_index(chart);
     const auto& index = std::get<measure_index_t>(index_result);
     const auto range = *recipe_range(chart, recipe, index);
-    const auto span = range.second - range.first;
     std::map<std::uint64_t, long double> sampled;
-    if (recipe.curve == sv_recipe_curve_t::bump) {
-        const auto begin = offset_for_fraction(span, recipe.parameters.bump_start);
-        const auto end = offset_for_fraction_sum(span, recipe.parameters.bump_start,
-                                                 recipe.parameters.bump_length);
-        if (!begin || !end ||
-            !ensure_sample_point(sampled, range.first + *begin, recipe, range,
-                                 result.diagnostics) ||
-            !ensure_sample_point(sampled, range.first + *end, recipe, range, result.diagnostics)) {
-            return result;
-        }
-    }
-
-    if (recipe.sampling.mode == sv_recipe_sampling_mode_t::fixed) {
-        if (recipe.sampling.fixed_point_count.has_value()) {
-            const auto count = static_cast<std::uint64_t>(*recipe.sampling.fixed_point_count);
-            const auto step = span / (count - 1);
-            for (std::uint64_t i = 0; i < count; ++i) {
-                const auto row = range.first + i * step;
-                if (!ensure_sample_point(sampled, row, recipe, range, result.diagnostics)) {
-                    return result;
-                }
-            }
-        } else {
-            const auto step = *recipe.sampling.fixed_step_rows;
-            for (auto row = range.first; row < range.second;) {
-                if (!ensure_sample_point(sampled, row, recipe, range, result.diagnostics)) {
-                    return result;
-                }
-                if (range.second - row <= step) {
-                    break;
-                }
-                row += step;
-            }
-            if (!ensure_sample_point(sampled, range.second, recipe, range, result.diagnostics)) {
-                return result;
-            }
-        }
-    } else {
-        (void)ensure_sample_point(sampled, range.first, recipe, range, result.diagnostics);
-        (void)ensure_sample_point(sampled, range.second, recipe, range, result.diagnostics);
-        if (!result.diagnostics.empty()) {
-            return result;
-        }
-        const auto tolerance = rational_number(recipe.sampling.tolerance);
-        const auto max_points = static_cast<std::size_t>(recipe.sampling.max_points);
-        const auto refine = [&](auto&& self, std::uint64_t left, std::uint64_t right,
-                                std::size_t depth) -> void {
-            if (right - left <= 1 || depth > 64 || !result.diagnostics.empty()) {
-                return;
-            }
-            const auto middle = left + (right - left) / 2;
-            const auto actual = curve_value(recipe, recipe_position_for_row(range, middle));
-            const auto left_value = sampled.at(left);
-            const auto right_value = sampled.at(right);
-            const auto ratio =
-                static_cast<long double>(middle - left) / static_cast<long double>(right - left);
-            const auto expected = left_value + (right_value - left_value) * ratio;
-            const auto error_value = std::abs(actual - expected);
-            if (!valid_curve_result(actual, recipe.output)) {
-                reject(result.diagnostics, diagnostic_code_t::invalid_rational,
-                       "adaptive SV recipe evaluates to an invalid value");
-                return;
-            }
-            if (error_value <= tolerance) {
-                return;
-            }
-            if (sampled.size() >= max_points) {
-                result.tolerance_met = false;
-                return;
-            }
-            sampled.emplace(middle, actual);
-            self(self, left, middle, depth + 1);
-            self(self, middle, right, depth + 1);
-        };
-        std::vector<std::uint64_t> mandatory;
-        mandatory.reserve(sampled.size());
-        for (const auto& [row, value] : sampled) {
-            (void)value;
-            mandatory.push_back(row);
-        }
-        if (mandatory.size() > max_points) {
-            reject(result.diagnostics, diagnostic_code_t::invalid_resolution,
-                   "adaptive SV point cap is smaller than the required structural points");
-            return result;
-        }
-        for (std::size_t i = 1; i < mandatory.size(); ++i) {
-            refine(refine, mandatory[i - 1], mandatory[i], 0);
-        }
-        if (!result.diagnostics.empty()) {
-            return result;
-        }
-    }
-    if (sampled.size() > maximum_sv_recipe_sample_points) {
-        reject(result.diagnostics, diagnostic_code_t::invalid_resolution,
-               "SV recipe structural and sampled points exceed the point cap");
+    if (!add_bump_sample_points(sampled, recipe, range, result.diagnostics)) {
         return result;
     }
-
-    // The chart boundary is a valid exclusive recipe endpoint even though it
-    // is not an event position. Keep the sampler's mathematical endpoint for
-    // refinement, then emit the final in-chart row instead of inventing an
-    // out-of-chart scroll event.
-    if (range.second == index.total_rows) {
-        sampled.erase(index.total_rows);
-        if (index.total_rows == 0 || !ensure_sample_point(sampled, index.total_rows - 1, recipe,
-                                                          range, result.diagnostics)) {
+    if (recipe.sampling.mode == sv_recipe_sampling_mode_t::fixed) {
+        if (!add_fixed_sample_points(sampled, recipe, range, result.diagnostics)) {
             return result;
         }
+    } else if (!add_adaptive_sample_points(sampled, recipe, range, result)) {
+        return result;
     }
-
-    result.points.reserve(sampled.size());
-    for (const auto& [row, value] : sampled) {
-        const auto position = position_at_row(index, row);
-        if (!position) {
-            reject(result.diagnostics, diagnostic_code_t::row_out_of_range,
-                   "sampled SV recipe point is outside chart geometry");
-            result.points.clear();
-            return result;
-        }
-        result.points.push_back(
-            {.absolute_row = row,
-             .position = *position,
-             .value = static_cast<double>(value),
-             .transition_duration = recipe.transition_duration.value_or(rational_t{}),
-             .transition_is_seconds = recipe.transition_is_seconds.value_or(false)});
-    }
+    (void)materialize_sample_points(chart, recipe, index, range, sampled, result);
     return result;
 }
 
 namespace {
+
+struct recipe_sample_set_t {
+    std::vector<const sv_recipe_t*> recipes;
+    std::set<std::uint64_t> rows;
+};
+
+auto append_recipe_sample(const chart_document_t& chart, const sv_recipe_t& recipe,
+                          recipe_sample_set_t& samples,
+                          diagnostic_list_t& diagnostics) -> bool {
+    const auto sample = sample_sv_recipe(chart, recipe);
+    if (!sample) {
+        diagnostics.insert(diagnostics.end(), sample.diagnostics.begin(), sample.diagnostics.end());
+        return false;
+    }
+    samples.recipes.push_back(&recipe);
+    for (const auto& point : sample.points) {
+        samples.rows.insert(point.absolute_row);
+    }
+    return true;
+}
+
+auto collect_recipe_samples(const chart_document_t& chart, sv_recipe_output_t output,
+                           const sv_recipe_t* candidate,
+                           std::optional<recipe_id_t> replacing_recipe,
+                           diagnostic_list_t& diagnostics) -> recipe_sample_set_t {
+    recipe_sample_set_t samples;
+    for (const auto& stored : chart.sv_recipes) {
+        const auto* recipe = replacing_recipe && stored.id == *replacing_recipe
+                                 ? candidate
+                                 : &stored;
+        if (recipe == nullptr || !recipe->enabled || recipe->output != output) {
+            continue;
+        }
+        (void)append_recipe_sample(chart, *recipe, samples, diagnostics);
+    }
+    if (candidate != nullptr && !replacing_recipe && candidate->enabled &&
+        candidate->output == output) {
+        (void)append_recipe_sample(chart, *candidate, samples, diagnostics);
+    }
+    return samples;
+}
+
+auto has_overlapping_speed_transition(const chart_document_t& chart,
+                                     const measure_index_t& index,
+                                     const recipe_sample_set_t& samples) -> bool {
+    std::uint64_t last_recipe_end{};
+    for (const auto* recipe : samples.recipes) {
+        if (const auto range = recipe_range(chart, *recipe, index)) {
+            last_recipe_end = std::max(last_recipe_end, range->second);
+        }
+    }
+    return std::ranges::any_of(chart.speeds, [&](const auto& event) {
+        const auto row = absolute_row(index, event.position);
+        return event.transition_beats.numerator != 0 && row && *row < last_recipe_end;
+    });
+}
+
+void add_authored_event_rows(const chart_document_t& chart, const measure_index_t& index,
+                             const std::vector<std::pair<std::uint64_t, long double>>& events,
+                             const std::vector<const sv_recipe_t*>& recipes,
+                             std::set<std::uint64_t>& rows) {
+    for (const auto& [row, value] : events) {
+        (void)value;
+        if (std::ranges::any_of(recipes, [&](const auto* recipe) {
+                const auto range = recipe_range(chart, *recipe, index);
+                return range && row >= range->first && row < range->second;
+            })) {
+            rows.insert(row);
+        }
+    }
+}
+
+struct recipe_composition_context_t {
+    const chart_document_t& chart;
+    sv_recipe_output_t output{};
+    const measure_index_t& index;
+    const std::vector<const sv_recipe_t*>& recipes;
+    const std::vector<std::pair<std::uint64_t, long double>>& base_events;
+};
+
+auto compose_recipe_point(const recipe_composition_context_t& context, std::uint64_t row,
+                         diagnostic_list_t& diagnostics)
+    -> std::optional<sv_recipe_point_t> {
+    long double value = base_value_at(context.base_events, row);
+    const sv_recipe_t* transition_source{};
+    for (const auto* recipe : context.recipes) {
+        const auto range = recipe_range(context.chart, *recipe, context.index);
+        if (!range || row < range->first || row >= range->second) {
+            continue;
+        }
+        value *= curve_value(*recipe, recipe_position_for_row(*range, row));
+        if (context.output == sv_recipe_output_t::speeds) {
+            transition_source = recipe;
+        }
+    }
+    if (!valid_curve_result(value, context.output)) {
+        reject(diagnostics, diagnostic_code_t::invalid_rational,
+               "composed SV recipe value is non-finite, oversized, or target-invalid");
+        return std::nullopt;
+    }
+    const auto position = position_at_row(context.index, row);
+    if (!position) {
+        reject(diagnostics, diagnostic_code_t::row_out_of_range,
+               "compiled SV point is outside chart geometry");
+        return std::nullopt;
+    }
+    auto point = sv_recipe_point_t{
+        .absolute_row = row, .position = *position, .value = static_cast<double>(value)};
+    if (transition_source != nullptr) {
+        point.transition_duration = *transition_source->transition_duration;
+        point.transition_is_seconds = *transition_source->transition_is_seconds;
+    }
+    return point;
+}
+
+auto compose_recipe_points(const recipe_composition_context_t& context,
+                           const std::set<std::uint64_t>& rows,
+                           sv_recipe_compilation_t& result) -> bool {
+    result.points.reserve(rows.size());
+    for (const auto row : rows) {
+        auto point = compose_recipe_point(context, row, result.diagnostics);
+        if (!point.has_value()) {
+            result.points.clear();
+            return false;
+        }
+        result.points.push_back(std::move(*point));
+    }
+    return true;
+}
 
 auto compile_sv_recipes_impl(const chart_document_t& chart, sv_recipe_output_t output,
                              const sv_recipe_t* candidate,
@@ -689,111 +889,28 @@ auto compile_sv_recipes_impl(const chart_document_t& chart, sv_recipe_output_t o
         return result;
     }
     const auto& index = std::get<measure_index_t>(index_result);
-    std::vector<const sv_recipe_t*> recipes;
-    std::set<std::uint64_t> rows;
-    for (const auto& stored_recipe : chart.sv_recipes) {
-        const auto* recipe = &stored_recipe;
-        if (replacing_recipe && stored_recipe.id == *replacing_recipe) {
-            recipe = candidate;
-        }
-        if (!recipe->enabled || recipe->output != output) {
-            continue;
-        }
-        const auto sample = sample_sv_recipe(chart, *recipe);
-        if (!sample) {
-            result.diagnostics.insert(result.diagnostics.end(), sample.diagnostics.begin(),
-                                      sample.diagnostics.end());
-            continue;
-        }
-        recipes.push_back(recipe);
-        for (const auto& point : sample.points) {
-            rows.insert(point.absolute_row);
-        }
-    }
-    if (candidate != nullptr && !replacing_recipe && candidate->enabled &&
-        candidate->output == output) {
-        const auto sample = sample_sv_recipe(chart, *candidate);
-        if (!sample) {
-            result.diagnostics.insert(result.diagnostics.end(), sample.diagnostics.begin(),
-                                      sample.diagnostics.end());
-        } else {
-            recipes.push_back(candidate);
-            for (const auto& point : sample.points) {
-                rows.insert(point.absolute_row);
-            }
-        }
-    }
-    if (!result.diagnostics.empty() || recipes.empty()) {
+    auto samples = collect_recipe_samples(chart, output, candidate, replacing_recipe,
+                                          result.diagnostics);
+    if (!result.diagnostics.empty() || samples.recipes.empty()) {
         return result;
     }
-    if (output == sv_recipe_output_t::speeds) {
-        std::uint64_t last_recipe_end{};
-        for (const auto* recipe : recipes) {
-            if (const auto range = recipe_range(chart, *recipe, index)) {
-                last_recipe_end = std::max(last_recipe_end, range->second);
-            }
-        }
-        const auto potentially_overlapping_transition =
-            std::ranges::any_of(chart.speeds, [&](const auto& event) {
-                const auto row = absolute_row(index, event.position);
-                return event.transition_beats.numerator != 0 && row && *row < last_recipe_end;
-            });
-        if (potentially_overlapping_transition) {
-            reject(result.diagnostics, diagnostic_code_t::invalid_rational,
-                   "SV recipe composition over a potentially overlapping authored SPEEDS "
-                   "transition is not yet supported");
-            return result;
-        }
+    if (output == sv_recipe_output_t::speeds &&
+        has_overlapping_speed_transition(chart, index, samples)) {
+        reject(result.diagnostics, diagnostic_code_t::invalid_rational,
+               "SV recipe composition over a potentially overlapping authored SPEEDS "
+               "transition is not yet supported");
+        return result;
     }
-
     const auto base_events = base_events_for(chart, output, index);
-    for (const auto& [row, value] : base_events) {
-        (void)value;
-        const auto affects_row = std::ranges::any_of(recipes, [&](const auto* recipe) {
-            const auto range = recipe_range(chart, *recipe, index);
-            return range && row >= range->first && row < range->second;
-        });
-        if (affects_row) {
-            rows.insert(row);
-        }
-    }
-
-    result.points.reserve(rows.size());
-    for (const auto row : rows) {
-        long double value = base_value_at(base_events, row);
-        const sv_recipe_t* transition_source{};
-        for (const auto* recipe : recipes) {
-            const auto range = recipe_range(chart, *recipe, index);
-            if (!range || row < range->first || row >= range->second) {
-                continue;
-            }
-            const auto multiplier = curve_value(*recipe, recipe_position_for_row(*range, row));
-            value *= multiplier;
-            if (output == sv_recipe_output_t::speeds) {
-                transition_source = recipe;
-            }
-        }
-        if (!valid_curve_result(value, output)) {
-            reject(result.diagnostics, diagnostic_code_t::invalid_rational,
-                   "composed SV recipe value is non-finite, oversized, or target-invalid");
-            result.points.clear();
-            return result;
-        }
-        const auto position = position_at_row(index, row);
-        if (!position) {
-            reject(result.diagnostics, diagnostic_code_t::row_out_of_range,
-                   "compiled SV point is outside chart geometry");
-            result.points.clear();
-            return result;
-        }
-        auto point = sv_recipe_point_t{
-            .absolute_row = row, .position = *position, .value = static_cast<double>(value)};
-        if (transition_source != nullptr) {
-            point.transition_duration = *transition_source->transition_duration;
-            point.transition_is_seconds = *transition_source->transition_is_seconds;
-        }
-        result.points.push_back(std::move(point));
-    }
+    add_authored_event_rows(chart, index, base_events, samples.recipes, samples.rows);
+    const recipe_composition_context_t context{
+        .chart = chart,
+        .output = output,
+        .index = index,
+        .recipes = samples.recipes,
+        .base_events = base_events,
+    };
+    (void)compose_recipe_points(context, samples.rows, result);
     return result;
 }
 
@@ -1040,6 +1157,121 @@ void cancel_sv_recipe_draft(sv_recipe_draft_t& draft) noexcept {
     }
 }
 
+namespace {
+
+auto active_recipe_ranges(const chart_document_t& chart, sv_recipe_output_t output,
+                          const measure_index_t& index)
+    -> std::vector<std::pair<std::uint64_t, std::uint64_t>> {
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> ranges;
+    for (const auto& recipe : chart.sv_recipes) {
+        if (recipe.enabled && recipe.output == output) {
+            if (const auto range = recipe_range(chart, recipe, index)) {
+                ranges.push_back(*range);
+            }
+        }
+    }
+    return ranges;
+}
+
+auto row_in_ranges(std::uint64_t row,
+                   const std::vector<std::pair<std::uint64_t, std::uint64_t>>& ranges) -> bool {
+    return std::ranges::any_of(
+        ranges, [row](const auto& range) { return row >= range.first && row <= range.second; });
+}
+
+auto allocate_transient_id(std::uint64_t& next_id) -> std::optional<object_id_t> {
+    if (next_id == 0) {
+        return std::nullopt;
+    }
+    const auto allocated = object_id_t{next_id};
+    next_id = next_id == std::numeric_limits<std::uint64_t>::max() ? 0 : next_id + 1;
+    return allocated;
+}
+
+auto compiled_points_for_export(chart_document_t& chart, sv_recipe_output_t output,
+                                diagnostic_list_t& diagnostics)
+    -> std::optional<std::vector<sv_recipe_point_t>> {
+    const auto compiled = compile_sv_recipes(chart, output);
+    if (!compiled) {
+        diagnostics.insert(diagnostics.end(), compiled.diagnostics.begin(),
+                           compiled.diagnostics.end());
+        return std::nullopt;
+    }
+    return compiled.points;
+}
+
+auto bake_scroll_events(chart_document_t& chart, const measure_index_t& index,
+                        const std::vector<std::pair<std::uint64_t, std::uint64_t>>& ranges,
+                        std::uint64_t& next_id, diagnostic_list_t& diagnostics) -> bool {
+    if (ranges.empty()) {
+        return true;
+    }
+    const auto points = compiled_points_for_export(chart, sv_recipe_output_t::scrolls, diagnostics);
+    if (!points.has_value()) {
+        return false;
+    }
+    std::erase_if(chart.scrolls, [&](const auto& event) {
+        const auto row = absolute_row(index, event.position);
+        return row && row_in_ranges(*row, ranges);
+    });
+    for (std::size_t order = 0; order < points->size(); ++order) {
+        const auto& point = (*points)[order];
+        const auto value = export_rational(point.value);
+        const auto id = allocate_transient_id(next_id);
+        if (!value || !id) {
+            reject(diagnostics, diagnostic_code_t::invalid_rational,
+                   "SV export bake cannot represent a sampled scroll value");
+            return false;
+        }
+        chart.scrolls.push_back({.id = *id,
+                                 .position = point.position,
+                                 .multiplier = *value,
+                                 .provenance = {.family = format_family_t::native_project,
+                                                .profile = "sv-recipe-export",
+                                                .source_field = "SCROLLS",
+                                                .source_order = order}});
+    }
+    return true;
+}
+
+auto bake_speed_events(chart_document_t& chart, const measure_index_t& index,
+                       const std::vector<std::pair<std::uint64_t, std::uint64_t>>& ranges,
+                       std::uint64_t& next_id, diagnostic_list_t& diagnostics) -> bool {
+    if (ranges.empty()) {
+        return true;
+    }
+    const auto points = compiled_points_for_export(chart, sv_recipe_output_t::speeds, diagnostics);
+    if (!points.has_value()) {
+        return false;
+    }
+    std::erase_if(chart.speeds, [&](const auto& event) {
+        const auto row = absolute_row(index, event.position);
+        return row && row_in_ranges(*row, ranges);
+    });
+    for (std::size_t order = 0; order < points->size(); ++order) {
+        const auto& point = (*points)[order];
+        const auto value = export_rational(point.value);
+        const auto id = allocate_transient_id(next_id);
+        if (!value || !id) {
+            reject(diagnostics, diagnostic_code_t::invalid_rational,
+                   "SV export bake cannot represent a sampled speed value");
+            return false;
+        }
+        chart.speeds.push_back({.id = *id,
+                                .position = point.position,
+                                .multiplier = *value,
+                                .transition_beats = point.transition_duration,
+                                .transition_is_seconds = point.transition_is_seconds,
+                                .provenance = {.family = format_family_t::native_project,
+                                               .profile = "sv-recipe-export",
+                                               .source_field = "SPEEDS",
+                                               .source_order = order}});
+    }
+    return true;
+}
+
+} // namespace
+
 auto bake_sv_recipes_for_export(const chart_document_t& chart) -> sv_recipe_export_bake_result_t {
     sv_recipe_export_bake_result_t result;
     auto baked = chart;
@@ -1054,13 +1286,9 @@ auto bake_sv_recipes_for_export(const chart_document_t& chart) -> sv_recipe_expo
         }
     }
     for (const auto& recipe : baked.sv_recipes) {
-        if (!recipe.enabled) {
-            continue;
-        }
-        const auto validation = validate_sv_recipe(baked, recipe);
-        if (!validation.empty()) {
-            result.diagnostics.insert(result.diagnostics.end(), validation.begin(),
-                                      validation.end());
+        if (recipe.enabled) {
+            const auto diagnostics = validate_sv_recipe(baked, recipe);
+            result.diagnostics.insert(result.diagnostics.end(), diagnostics.begin(), diagnostics.end());
         }
     }
     if (!result.diagnostics.empty()) {
@@ -1078,96 +1306,12 @@ auto bake_sv_recipes_for_export(const chart_document_t& chart) -> sv_recipe_expo
                "SV export bake cannot allocate transient event IDs");
         return result;
     }
-    std::uint64_t next_id = first_id->value;
-    const auto allocate_id = [&]() -> std::optional<object_id_t> {
-        if (next_id == 0) {
-            return std::nullopt;
-        }
-        const auto allocated = object_id_t{next_id};
-        next_id = next_id == std::numeric_limits<std::uint64_t>::max() ? 0 : next_id + 1;
-        return allocated;
-    };
-    const auto active_ranges = [&](sv_recipe_output_t output) {
-        std::vector<std::pair<std::uint64_t, std::uint64_t>> ranges;
-        for (const auto& recipe : baked.sv_recipes) {
-            if (recipe.enabled && recipe.output == output) {
-                if (const auto range = recipe_range(baked, recipe, index)) {
-                    ranges.push_back(*range);
-                }
-            }
-        }
-        return ranges;
-    };
-    const auto affected = [](std::uint64_t row, const auto& ranges) {
-        return std::ranges::any_of(
-            ranges, [row](const auto& range) { return row >= range.first && row <= range.second; });
-    };
-
-    const auto scroll_ranges = active_ranges(sv_recipe_output_t::scrolls);
-    if (!scroll_ranges.empty()) {
-        const auto compiled = compile_sv_recipes(baked, sv_recipe_output_t::scrolls);
-        if (!compiled) {
-            result.diagnostics.insert(result.diagnostics.end(), compiled.diagnostics.begin(),
-                                      compiled.diagnostics.end());
-            return result;
-        }
-        std::erase_if(baked.scrolls, [&](const auto& event) {
-            const auto row = absolute_row(index, event.position);
-            return row && affected(*row, scroll_ranges);
-        });
-        for (std::size_t point_index = 0; point_index < compiled.points.size(); ++point_index) {
-            const auto value = export_rational(compiled.points[point_index].value);
-            const auto event_id = allocate_id();
-            if (!value || !event_id) {
-                reject(result.diagnostics, diagnostic_code_t::invalid_rational,
-                       "SV export bake cannot represent a sampled scroll value");
-                return result;
-            }
-            baked.scrolls.push_back({
-                .id = *event_id,
-                .position = compiled.points[point_index].position,
-                .multiplier = *value,
-                .provenance = {.family = format_family_t::native_project,
-                               .profile = "sv-recipe-export",
-                               .source_field = "SCROLLS",
-                               .source_order = point_index},
-            });
-        }
-    }
-
-    const auto speed_ranges = active_ranges(sv_recipe_output_t::speeds);
-    if (!speed_ranges.empty()) {
-        const auto compiled = compile_sv_recipes(baked, sv_recipe_output_t::speeds);
-        if (!compiled) {
-            result.diagnostics.insert(result.diagnostics.end(), compiled.diagnostics.begin(),
-                                      compiled.diagnostics.end());
-            return result;
-        }
-        std::erase_if(baked.speeds, [&](const auto& event) {
-            const auto row = absolute_row(index, event.position);
-            return row && affected(*row, speed_ranges);
-        });
-        for (std::size_t point_index = 0; point_index < compiled.points.size(); ++point_index) {
-            const auto& point = compiled.points[point_index];
-            const auto value = export_rational(point.value);
-            const auto event_id = allocate_id();
-            if (!value || !event_id) {
-                reject(result.diagnostics, diagnostic_code_t::invalid_rational,
-                       "SV export bake cannot represent a sampled speed value");
-                return result;
-            }
-            baked.speeds.push_back({
-                .id = *event_id,
-                .position = point.position,
-                .multiplier = *value,
-                .transition_beats = point.transition_duration,
-                .transition_is_seconds = point.transition_is_seconds,
-                .provenance = {.family = format_family_t::native_project,
-                               .profile = "sv-recipe-export",
-                               .source_field = "SPEEDS",
-                               .source_order = point_index},
-            });
-        }
+    auto next_id = first_id->value;
+    const auto scroll_ranges = active_recipe_ranges(baked, sv_recipe_output_t::scrolls, index);
+    const auto speed_ranges = active_recipe_ranges(baked, sv_recipe_output_t::speeds, index);
+    if (!bake_scroll_events(baked, index, scroll_ranges, next_id, result.diagnostics) ||
+        !bake_speed_events(baked, index, speed_ranges, next_id, result.diagnostics)) {
+        return result;
     }
     baked.sv_recipes.clear();
     result.chart = std::move(baked);
@@ -1346,6 +1490,179 @@ void cancel_sv_recipe_range_drag(sv_recipe_range_drag_t& drag) noexcept {
     }
 }
 
+namespace {
+
+struct sv_recipe_edit_context_t {
+    song_document_t& proposed;
+    document_command_result_t& result;
+    std::string label;
+    bool changed{};
+};
+
+auto editable_recipe_chart(sv_recipe_edit_context_t& context, chart_id_t id)
+    -> chart_document_t* {
+    const auto chart = std::ranges::find(context.proposed.charts, id, &chart_document_t::id);
+    if (!id || chart == context.proposed.charts.end()) {
+        reject(context.result.diagnostics, diagnostic_code_t::invalid_id,
+               "SV recipe edit refers to an unknown chart");
+        return nullptr;
+    }
+    if (chart->sv_recipes.size() > maximum_sv_recipes_per_chart) {
+        reject(context.result.diagnostics, diagnostic_code_t::invalid_resolution,
+               "selected chart exceeds the SV recipe cap");
+        return nullptr;
+    }
+    return &*chart;
+}
+
+auto editable_recipe(sv_recipe_edit_context_t& context, chart_document_t& chart,
+                     recipe_id_t id) -> sv_recipe_t* {
+    if (!id) {
+        reject(context.result.diagnostics, diagnostic_code_t::invalid_id,
+               "SV recipe edit uses the reserved zero ID");
+        return nullptr;
+    }
+    auto* recipe = recipe_by_id(chart, id);
+    if (recipe == nullptr ||
+        std::ranges::count(chart.sv_recipes, id, &sv_recipe_t::id) != 1) {
+        reject(context.result.diagnostics, diagnostic_code_t::invalid_id,
+               "SV recipe edit refers to a missing or ambiguous recipe");
+        return nullptr;
+    }
+    return recipe;
+}
+
+auto append_recipe_validation(sv_recipe_edit_context_t& context,
+                              const chart_document_t& chart,
+                              const sv_recipe_t& recipe) -> bool {
+    auto validation = validate_sv_recipe(chart, recipe);
+    if (validation.empty())
+        return true;
+    context.result.diagnostics.insert(context.result.diagnostics.end(), validation.begin(),
+                                      validation.end());
+    return false;
+}
+
+void apply_recipe_operation(sv_recipe_edit_context_t& context,
+                            chart_document_t& chart,
+                            const insert_sv_recipe_action_t& edit) {
+    if (chart.sv_recipes.size() >= maximum_sv_recipes_per_chart) {
+        reject(context.result.diagnostics, diagnostic_code_t::invalid_resolution,
+               "SV recipe insertion would exceed the per-chart cap");
+        return;
+    }
+    auto recipe = edit.recipe;
+    if (!recipe.id) {
+        const auto id = next_recipe_id(context.proposed);
+        if (!id) {
+            reject(context.result.diagnostics, diagnostic_code_t::invalid_id,
+                   "SV recipe ID sequence is exhausted");
+            return;
+        }
+        recipe.id = *id;
+    } else if (globally_used_recipe_id(context.proposed, recipe.id)) {
+        reject(context.result.diagnostics, diagnostic_code_t::duplicate_id,
+               "SV recipe ID is already used by a generator recipe");
+        return;
+    }
+    if (!append_recipe_validation(context, chart, recipe))
+        return;
+    chart.sv_recipes.push_back(std::move(recipe));
+    context.label = "Insert SV recipe";
+    context.changed = true;
+}
+
+void apply_recipe_operation(sv_recipe_edit_context_t& context,
+                            chart_document_t& chart,
+                            const update_sv_recipe_action_t& edit) {
+    auto* recipe = editable_recipe(context, chart, edit.recipe);
+    if (!recipe)
+        return;
+    auto replacement = edit.replacement;
+    replacement.id = edit.recipe;
+    if (!append_recipe_validation(context, chart, replacement))
+        return;
+    context.changed = *recipe != replacement;
+    if (context.changed) {
+        *recipe = std::move(replacement);
+        context.label = "Update SV recipe";
+    }
+}
+
+void apply_recipe_operation(sv_recipe_edit_context_t& context,
+                            chart_document_t& chart,
+                            const delete_sv_recipe_action_t& edit) {
+    if (!editable_recipe(context, chart, edit.recipe))
+        return;
+    std::erase_if(chart.sv_recipes,
+                  [&](const auto& item) { return item.id == edit.recipe; });
+    context.label = "Delete SV recipe";
+    context.changed = true;
+}
+
+void apply_recipe_operation(sv_recipe_edit_context_t& context,
+                            chart_document_t& chart,
+                            const reorder_sv_recipe_action_t& edit) {
+    auto* recipe = editable_recipe(context, chart, edit.recipe);
+    if (!recipe)
+        return;
+    if (edit.new_index >= chart.sv_recipes.size()) {
+        reject(context.result.diagnostics, diagnostic_code_t::invalid_resolution,
+               "SV recipe reorder index is outside the recipe list");
+        return;
+    }
+    const auto old_index = static_cast<std::size_t>(recipe - chart.sv_recipes.data());
+    if (old_index == edit.new_index)
+        return;
+    auto moved = std::move(chart.sv_recipes[old_index]);
+    chart.sv_recipes.erase(chart.sv_recipes.begin() + static_cast<std::ptrdiff_t>(old_index));
+    chart.sv_recipes.insert(chart.sv_recipes.begin() +
+                                static_cast<std::ptrdiff_t>(edit.new_index),
+                            std::move(moved));
+    context.label = "Reorder SV recipes";
+    context.changed = true;
+}
+
+void apply_recipe_operation(sv_recipe_edit_context_t& context,
+                            chart_document_t& chart,
+                            const set_sv_recipe_enabled_action_t& edit) {
+    auto* recipe = editable_recipe(context, chart, edit.recipe);
+    if (!recipe)
+        return;
+    context.changed = recipe->enabled != edit.enabled;
+    if (context.changed) {
+        recipe->enabled = edit.enabled;
+        context.label = edit.enabled ? "Enable SV recipe" : "Disable SV recipe";
+    }
+}
+
+void apply_recipe_operation(sv_recipe_edit_context_t& context,
+                            chart_document_t& chart,
+                            const move_sv_recipe_range_action_t& edit) {
+    auto* recipe = editable_recipe(context, chart, edit.recipe);
+    if (!recipe)
+        return;
+    auto replacement = *recipe;
+    replacement.range = edit.range;
+    if (!append_recipe_validation(context, chart, replacement))
+        return;
+    context.changed = replacement.range.begin != recipe->range.begin ||
+                      replacement.range.end != recipe->range.end;
+    if (context.changed) {
+        recipe->range = edit.range;
+        context.label = "Move SV recipe range";
+    }
+}
+
+template <typename Edit>
+void apply_recipe_operation(sv_recipe_edit_context_t& context, const Edit& edit) {
+    auto* chart = editable_recipe_chart(context, edit.chart);
+    if (chart)
+        apply_recipe_operation(context, *chart, edit);
+}
+
+} // namespace
+
 auto apply_sv_recipe_edit(document_history_t& history, std::uint64_t expected_revision,
                           const sv_recipe_edit_action_t& action) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
@@ -1356,134 +1673,15 @@ auto apply_sv_recipe_edit(document_history_t& history, std::uint64_t expected_re
     }
 
     auto proposed = history.document;
-    std::string label;
-    bool changed{};
-    std::visit(
-        [&](const auto& edit) {
-            using edit_t = std::remove_cvref_t<decltype(edit)>;
-            const auto chart =
-                std::ranges::find(proposed.charts, edit.chart, &chart_document_t::id);
-            if (!edit.chart || chart == proposed.charts.end()) {
-                reject(result.diagnostics, diagnostic_code_t::invalid_id,
-                       "SV recipe edit refers to an unknown chart");
-                return;
-            }
-            if (chart->sv_recipes.size() > maximum_sv_recipes_per_chart) {
-                reject(result.diagnostics, diagnostic_code_t::invalid_resolution,
-                       "selected chart exceeds the SV recipe cap");
-                return;
-            }
-
-            if constexpr (std::is_same_v<edit_t, insert_sv_recipe_action_t>) {
-                if (chart->sv_recipes.size() >= maximum_sv_recipes_per_chart) {
-                    reject(result.diagnostics, diagnostic_code_t::invalid_resolution,
-                           "SV recipe insertion would exceed the per-chart cap");
-                    return;
-                }
-                auto recipe = edit.recipe;
-                if (!recipe.id) {
-                    const auto id = next_recipe_id(proposed);
-                    if (!id) {
-                        reject(result.diagnostics, diagnostic_code_t::invalid_id,
-                               "SV recipe ID sequence is exhausted");
-                        return;
-                    }
-                    recipe.id = *id;
-                } else if (globally_used_recipe_id(proposed, recipe.id)) {
-                    reject(result.diagnostics, diagnostic_code_t::duplicate_id,
-                           "SV recipe ID is already used by a generator recipe");
-                    return;
-                }
-                const auto validation = validate_sv_recipe(*chart, recipe);
-                if (!validation.empty()) {
-                    result.diagnostics.insert(result.diagnostics.end(), validation.begin(),
-                                              validation.end());
-                    return;
-                }
-                chart->sv_recipes.push_back(std::move(recipe));
-                label = "Insert SV recipe";
-                changed = true;
-            } else {
-                if (!edit.recipe) {
-                    reject(result.diagnostics, diagnostic_code_t::invalid_id,
-                           "SV recipe edit uses the reserved zero ID");
-                    return;
-                }
-                auto* recipe = recipe_by_id(*chart, edit.recipe);
-                if (recipe == nullptr ||
-                    std::ranges::count(chart->sv_recipes, edit.recipe, &sv_recipe_t::id) != 1) {
-                    reject(result.diagnostics, diagnostic_code_t::invalid_id,
-                           "SV recipe edit refers to a missing or ambiguous recipe");
-                    return;
-                }
-                if constexpr (std::is_same_v<edit_t, update_sv_recipe_action_t>) {
-                    auto replacement = edit.replacement;
-                    replacement.id = edit.recipe;
-                    const auto validation = validate_sv_recipe(*chart, replacement);
-                    if (!validation.empty()) {
-                        result.diagnostics.insert(result.diagnostics.end(), validation.begin(),
-                                                  validation.end());
-                        return;
-                    }
-                    changed = *recipe != replacement;
-                    if (changed) {
-                        *recipe = std::move(replacement);
-                        label = "Update SV recipe";
-                    }
-                } else if constexpr (std::is_same_v<edit_t, delete_sv_recipe_action_t>) {
-                    std::erase_if(chart->sv_recipes,
-                                  [&](const auto& item) { return item.id == edit.recipe; });
-                    label = "Delete SV recipe";
-                    changed = true;
-                } else if constexpr (std::is_same_v<edit_t, reorder_sv_recipe_action_t>) {
-                    if (edit.new_index >= chart->sv_recipes.size()) {
-                        reject(result.diagnostics, diagnostic_code_t::invalid_resolution,
-                               "SV recipe reorder index is outside the recipe list");
-                        return;
-                    }
-                    const auto old_index =
-                        static_cast<std::size_t>(recipe - chart->sv_recipes.data());
-                    if (old_index == edit.new_index) {
-                        return;
-                    }
-                    auto moved = std::move(chart->sv_recipes[old_index]);
-                    chart->sv_recipes.erase(chart->sv_recipes.begin() +
-                                            static_cast<std::ptrdiff_t>(old_index));
-                    chart->sv_recipes.insert(chart->sv_recipes.begin() +
-                                                 static_cast<std::ptrdiff_t>(edit.new_index),
-                                             std::move(moved));
-                    label = "Reorder SV recipes";
-                    changed = true;
-                } else if constexpr (std::is_same_v<edit_t, set_sv_recipe_enabled_action_t>) {
-                    changed = recipe->enabled != edit.enabled;
-                    if (changed) {
-                        recipe->enabled = edit.enabled;
-                        label = edit.enabled ? "Enable SV recipe" : "Disable SV recipe";
-                    }
-                } else {
-                    auto replacement = *recipe;
-                    replacement.range = edit.range;
-                    const auto validation = validate_sv_recipe(*chart, replacement);
-                    if (!validation.empty()) {
-                        result.diagnostics.insert(result.diagnostics.end(), validation.begin(),
-                                                  validation.end());
-                        return;
-                    }
-                    changed = replacement.range.begin != recipe->range.begin ||
-                              replacement.range.end != recipe->range.end;
-                    if (changed) {
-                        recipe->range = edit.range;
-                        label = "Move SV recipe range";
-                    }
-                }
-            }
-        },
-        action);
-
-    if (!result.diagnostics.empty() || !changed) {
+    sv_recipe_edit_context_t context{.proposed = proposed,
+                                     .result = result,
+                                     .label = {},
+                                     .changed = false};
+    std::visit([&](const auto& edit) { apply_recipe_operation(context, edit); }, action);
+    if (!result.diagnostics.empty() || !context.changed) {
         return result;
     }
-    return commit_document_command(history, std::move(proposed), std::move(label));
+    return commit_document_command(history, std::move(proposed), std::move(context.label));
 }
 
 } // namespace wormedit

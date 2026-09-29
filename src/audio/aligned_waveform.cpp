@@ -24,6 +24,45 @@ auto frame_at(signed_rational_t seconds, std::uint32_t sample_rate, std::uint64_
     return std::min(*frame.frame, total_frames);
 }
 
+struct aligned_row_context_t {
+    const waveform_t& waveform;
+    const timing_index_t& timing;
+    const aligned_waveform_request_t& request;
+    long double rows_per_pixel;
+    std::size_t height;
+};
+
+auto pixel_for_column(const aligned_row_context_t& context, const waveform_column_t& column)
+    -> std::optional<std::size_t> {
+    const auto midpoint = column.begin_frame + (column.end_frame - column.begin_frame) / 2U;
+    if (midpoint > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        return std::nullopt;
+    }
+    const auto musical = musical_position_at(
+        context.timing, {static_cast<std::int64_t>(midpoint), context.waveform.sample_rate});
+    if (!musical || !musical.absolute_row || musical.absolute_row->denominator == 0) {
+        return std::nullopt;
+    }
+    const auto row = static_cast<long double>(musical.absolute_row->numerator) /
+                     musical.absolute_row->denominator;
+    const auto y = row / context.rows_per_pixel - context.request.viewport_scroll_pixels;
+    if (!std::isfinite(y) || y < 0.0L || y >= context.request.viewport_height_pixels) {
+        return std::nullopt;
+    }
+    const auto pixel = static_cast<std::size_t>(y);
+    return pixel < context.height ? std::optional{pixel} : std::nullopt;
+}
+
+auto accumulate_column(aligned_waveform_row_t& row, const waveform_column_t& column,
+                       std::size_t pixel) -> void {
+    row.y_pixels = static_cast<double>(pixel) + 0.5;
+    for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
+        row.absolute_peak[channel] =
+            std::max(row.absolute_peak[channel], column.absolute_peak[channel]);
+        row.rms[channel] = std::max(row.rms[channel], column.rms[channel]);
+    }
+}
+
 } // namespace
 
 auto project_aligned_waveform(const waveform_t& waveform, const timing_index_t& timing,
@@ -99,33 +138,14 @@ auto project_aligned_waveform(const waveform_t& waveform, const timing_index_t& 
     }
     std::vector<aligned_waveform_row_t> pixels(height);
     std::vector<bool> occupied(height);
+    const aligned_row_context_t row_context{waveform, timing, request, rows_per_pixel, height};
     for (const auto& column : projection.columns) {
-        const auto midpoint = column.begin_frame + (column.end_frame - column.begin_frame) / 2U;
-        if (midpoint > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        const auto pixel = pixel_for_column(row_context, column);
+        if (!pixel.has_value()) {
             continue;
         }
-        const auto musical = musical_position_at(
-            timing, {static_cast<std::int64_t>(midpoint), waveform.sample_rate});
-        if (!musical || !musical.absolute_row || musical.absolute_row->denominator == 0) {
-            continue;
-        }
-        const auto row = static_cast<long double>(musical.absolute_row->numerator) /
-                         musical.absolute_row->denominator;
-        const auto y = row / rows_per_pixel - request.viewport_scroll_pixels;
-        if (!std::isfinite(y) || y < 0.0L || y >= request.viewport_height_pixels) {
-            continue;
-        }
-        const auto pixel = static_cast<std::size_t>(y);
-        if (pixel >= height) {
-            continue;
-        }
-        occupied[pixel] = true;
-        pixels[pixel].y_pixels = static_cast<double>(pixel) + 0.5;
-        for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
-            pixels[pixel].absolute_peak[channel] =
-                std::max(pixels[pixel].absolute_peak[channel], column.absolute_peak[channel]);
-            pixels[pixel].rms[channel] = std::max(pixels[pixel].rms[channel], column.rms[channel]);
-        }
+        occupied[*pixel] = true;
+        accumulate_column(pixels[*pixel], column, *pixel);
     }
     result.rows.reserve(height);
     for (std::size_t pixel = 0; pixel < height; ++pixel) {

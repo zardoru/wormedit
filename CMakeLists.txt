@@ -55,6 +55,9 @@ add_library(wormedit_core
     src/core/bga_preview.cpp
     src/core/grid.cpp
     src/core/interaction.cpp
+    src/core/interaction_cursor.cpp
+    src/core/interaction_hit_test.cpp
+    src/core/interaction_selection.cpp
     src/core/lane_profiles.cpp
     src/core/marker_editor.cpp
     src/core/marker_navigation.cpp

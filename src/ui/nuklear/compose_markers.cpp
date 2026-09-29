@@ -308,6 +308,27 @@ void render_audio_sections(struct nk_context* context, const WormUiComposeView& 
     }
 }
 
+void apply_bookmark_buttons(WormUiWorkspaceAction& action,
+                            const WormUiComposeBookmarkView* selected, bool apply_clicked,
+                            bool move_clicked, bool delete_clicked) {
+    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
+        return;
+    }
+    if (apply_clicked) {
+        action.compose_bookmark_id = state.bookmark_id;
+        std::memcpy(action.compose_marker_label, state.bookmark_label.data(),
+                    sizeof(action.compose_marker_label));
+        action.compose_action = selected ? WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK
+                                         : WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK;
+    } else if (move_clicked && selected) {
+        action.compose_bookmark_id = selected->bookmark_id;
+        action.compose_action = WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION;
+    } else if (delete_clicked && selected) {
+        action.compose_bookmark_id = selected->bookmark_id;
+        action.compose_action = WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK;
+    }
+}
+
 void render_bookmarks(struct nk_context* context, const WormUiComposeView& view,
                       WormUiWorkspaceAction& action) {
     const auto* selected = selected_bookmark(view);
@@ -362,74 +383,67 @@ void render_bookmarks(struct nk_context* context, const WormUiComposeView& view,
         nk_widget_disable_end(context);
     }
 
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
-        return;
-    }
-    if (apply_clicked) {
-        action.compose_bookmark_id = state.bookmark_id;
-        std::memcpy(action.compose_marker_label, state.bookmark_label.data(),
-                    sizeof(action.compose_marker_label));
-        action.compose_action = selected ? WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK
-                                         : WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK;
-    } else if (move_clicked && selected) {
-        action.compose_bookmark_id = selected->bookmark_id;
-        action.compose_action = WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION;
-    } else if (delete_clicked && selected) {
-        action.compose_bookmark_id = selected->bookmark_id;
-        action.compose_action = WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK;
-    }
+    apply_bookmark_buttons(action, selected, apply_clicked, move_clicked, delete_clicked);
 }
 
-void render_sections(struct nk_context* context, const WormUiComposeView& view,
-                     WormUiWorkspaceAction& action) {
-    const auto* selected = selected_section(view);
-    char header[384]{};
+void format_section_header(char (&header)[384], const WormUiComposeView& view,
+                           const WormUiComposeSectionView* selected) {
     if (selected) {
         std::snprintf(header, sizeof(header), "Section M%llu:%llu-M%llu:%llu  %.220s",
                       static_cast<unsigned long long>(selected->begin_measure_number),
                       static_cast<unsigned long long>(selected->begin_row),
                       static_cast<unsigned long long>(selected->end_measure_number),
                       static_cast<unsigned long long>(selected->end_row), selected->label);
+    } else if (view.beat_section_selection_span_available) {
+        std::snprintf(
+            header, sizeof(header), "New section M%llu:%llu-M%llu:%llu%s",
+            static_cast<unsigned long long>(view.beat_section_selection_begin_measure_number),
+            static_cast<unsigned long long>(view.beat_section_selection_begin_row),
+            static_cast<unsigned long long>(view.beat_section_selection_end_measure_number),
+            static_cast<unsigned long long>(view.beat_section_selection_end_row),
+            view.beat_sections_truncated ? " (first 64 shown)" : "");
     } else {
-        if (view.beat_section_selection_span_available) {
-            std::snprintf(
-                header, sizeof(header), "New section M%llu:%llu-M%llu:%llu%s",
-                static_cast<unsigned long long>(view.beat_section_selection_begin_measure_number),
-                static_cast<unsigned long long>(view.beat_section_selection_begin_row),
-                static_cast<unsigned long long>(view.beat_section_selection_end_measure_number),
-                static_cast<unsigned long long>(view.beat_section_selection_end_row),
-                view.beat_sections_truncated ? " (first 64 shown)" : "");
-        } else {
-            std::snprintf(header, sizeof(header), "New one-snap section at cursor%s",
-                          view.beat_sections_truncated ? " (first 64 shown)" : "");
-        }
+        std::snprintf(header, sizeof(header), "New one-snap section at cursor%s",
+                      view.beat_sections_truncated ? " (first 64 shown)" : "");
     }
+}
 
+void render_section_picker(struct nk_context* context, const WormUiComposeView& view,
+                           const char* header) {
     nk_layout_row_dynamic(context, 25, 1);
-    if (nk_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
-        nk_layout_row_dynamic(context, 22, 1);
-        const auto* new_section_label = view.beat_section_selection_span_available
-                                            ? "New section from selected span"
-                                            : "New one-snap section at cursor";
-        if (nk_combo_item_label(context, new_section_label, NK_TEXT_LEFT)) {
-            state.section_id = 0;
-            state.section_label.fill('\0');
-        }
-        for (std::size_t index = 0; index < view.beat_section_count; ++index) {
-            const auto& section = view.beat_sections[index];
-            char item[384]{};
-            std::snprintf(item, sizeof(item), "M%llu:%llu-M%llu:%llu  %.240s",
-                          static_cast<unsigned long long>(section.begin_measure_number),
-                          static_cast<unsigned long long>(section.begin_row),
-                          static_cast<unsigned long long>(section.end_measure_number),
-                          static_cast<unsigned long long>(section.end_row), section.label);
-            if (nk_combo_item_label(context, item, NK_TEXT_LEFT)) {
-                state.section_id = section.section_id;
-                copy_label(state.section_label, section.label);
-            }
-        }
-        nk_combo_end(context);
+    if (!nk_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
+        return;
     }
+    nk_layout_row_dynamic(context, 22, 1);
+    const auto* new_section_label = view.beat_section_selection_span_available
+                                        ? "New section from selected span"
+                                        : "New one-snap section at cursor";
+    if (nk_combo_item_label(context, new_section_label, NK_TEXT_LEFT)) {
+        state.section_id = 0;
+        state.section_label.fill('\0');
+    }
+    for (std::size_t index = 0; index < view.beat_section_count; ++index) {
+        const auto& section = view.beat_sections[index];
+        char item[384]{};
+        std::snprintf(item, sizeof(item), "M%llu:%llu-M%llu:%llu  %.240s",
+                      static_cast<unsigned long long>(section.begin_measure_number),
+                      static_cast<unsigned long long>(section.begin_row),
+                      static_cast<unsigned long long>(section.end_measure_number),
+                      static_cast<unsigned long long>(section.end_row), section.label);
+        if (nk_combo_item_label(context, item, NK_TEXT_LEFT)) {
+            state.section_id = section.section_id;
+            copy_label(state.section_label, section.label);
+        }
+    }
+    nk_combo_end(context);
+}
+
+void render_sections(struct nk_context* context, const WormUiComposeView& view,
+                     WormUiWorkspaceAction& action) {
+    const auto* selected = selected_section(view);
+    char header[384]{};
+    format_section_header(header, view, selected);
+    render_section_picker(context, view, header);
     if (!view.scene_available) {
         nk_widget_disable_begin(context);
     }

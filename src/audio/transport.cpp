@@ -28,6 +28,84 @@ auto valid_voice(const transport_voice_t& voice) -> bool {
            checked_end(voice.source_start_frame, voice.frame_count).has_value();
 }
 
+struct transport_mix_context_t {
+    decoded_block_cache_t& block_cache;
+    std::uint64_t first_timeline_frame;
+    std::uint64_t callback_end;
+    std::span<float> interleaved_stereo;
+    transport_mix_result_t& result;
+};
+
+struct transport_block_window_t {
+    std::size_t offset_in_block;
+    std::size_t output_offset;
+    std::size_t requested;
+    float gain;
+};
+
+auto mix_block_samples(std::span<float> output, const decoded_audio_block_t& block,
+                       const transport_block_window_t& window) -> std::size_t {
+    if (window.offset_in_block >= block.frame_count) {
+        return 0;
+    }
+    const auto available = std::min(window.requested, block.frame_count - window.offset_in_block);
+    for (std::size_t frame = 0; frame < available; ++frame) {
+        for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
+            const auto input_index =
+                (window.offset_in_block + frame) * output_channel_count + channel;
+            const auto output_index =
+                (window.output_offset + frame) * output_channel_count + channel;
+            output[output_index] += block.interleaved_stereo[input_index] * window.gain;
+        }
+    }
+    return available;
+}
+
+auto mix_voice(transport_mix_context_t& context, const transport_voice_t& voice) -> void {
+    const auto voice_end = voice.timeline_start_frame + voice.frame_count;
+    const auto overlap_start = std::max(context.first_timeline_frame, voice.timeline_start_frame);
+    const auto overlap_end = std::min(context.callback_end, voice_end);
+    if (overlap_start >= overlap_end) {
+        return;
+    }
+    ++context.result.voices_mixed;
+    auto timeline_frame = overlap_start;
+    while (timeline_frame < overlap_end) {
+        const auto source_frame =
+            voice.source_start_frame + (timeline_frame - voice.timeline_start_frame);
+        const auto block_index = source_frame / maximum_read_frames;
+        const auto offset_in_block = static_cast<std::size_t>(source_frame % maximum_read_frames);
+        const transport_block_window_t window{
+            .offset_in_block = offset_in_block,
+            .output_offset =
+                static_cast<std::size_t>(timeline_frame - context.first_timeline_frame),
+            .requested = static_cast<std::size_t>(std::min<std::uint64_t>(
+                overlap_end - timeline_frame, maximum_read_frames - offset_in_block)),
+            .gain = voice.gain,
+        };
+        std::size_t available{};
+        const auto found = context.block_cache.with_block(
+            {.source = voice.source, .block_index = block_index},
+            [&](const decoded_audio_block_t& block) {
+                available = mix_block_samples(context.interleaved_stereo, block, window);
+            });
+        if (!found || available != window.requested) {
+            ++context.result.missing_blocks;
+        }
+        timeline_frame += window.requested;
+    }
+}
+
+auto clip_mix_samples(transport_mix_context_t& context) -> void {
+    for (auto& sample : context.interleaved_stereo) {
+        const auto clipped = std::clamp(sample, -1.0F, 1.0F);
+        if (clipped != sample) {
+            ++context.result.clipped_samples;
+            sample = clipped;
+        }
+    }
+}
+
 } // namespace
 
 transport_t::transport_t(decoded_block_cache_t& block_cache, std::size_t maximum_scheduled_voices)
@@ -147,63 +225,14 @@ auto transport_t::mix(session_token_t token, std::uint64_t first_timeline_frame,
             return;
         }
         result.status = transport_mix_status_t::mixed;
+        transport_mix_context_t context{block_cache_, first_timeline_frame, callback_end,
+                                        interleaved_stereo, result};
         for (const auto& entry : scheduled_voices_) {
-            if (!entry.active) {
-                continue;
-            }
-            const auto& voice = entry.voice;
-            const auto voice_end = voice.timeline_start_frame + voice.frame_count;
-            const auto overlap_start = std::max(first_timeline_frame, voice.timeline_start_frame);
-            const auto overlap_end = std::min(callback_end, voice_end);
-            if (overlap_start >= overlap_end) {
-                continue;
-            }
-            ++result.voices_mixed;
-            auto timeline_frame = overlap_start;
-            while (timeline_frame < overlap_end) {
-                const auto source_frame =
-                    voice.source_start_frame + (timeline_frame - voice.timeline_start_frame);
-                const auto block_index = source_frame / maximum_read_frames;
-                const auto offset_in_block =
-                    static_cast<std::size_t>(source_frame % maximum_read_frames);
-                const auto requested = static_cast<std::size_t>(std::min<std::uint64_t>(
-                    overlap_end - timeline_frame, maximum_read_frames - offset_in_block));
-                auto available = std::size_t{};
-                const auto found = block_cache_.with_block(
-                    {.source = voice.source, .block_index = block_index},
-                    [&](const decoded_audio_block_t& block) {
-                        if (offset_in_block >= block.frame_count) {
-                            return;
-                        }
-                        available = std::min(requested, block.frame_count - offset_in_block);
-                        const auto output_offset =
-                            static_cast<std::size_t>(timeline_frame - first_timeline_frame);
-                        for (std::size_t frame = 0; frame < available; ++frame) {
-                            for (std::size_t channel = 0; channel < output_channel_count;
-                                 ++channel) {
-                                const auto input_index =
-                                    (offset_in_block + frame) * output_channel_count + channel;
-                                const auto output_index =
-                                    (output_offset + frame) * output_channel_count + channel;
-                                interleaved_stereo[output_index] =
-                                    interleaved_stereo[output_index] +
-                                    block.interleaved_stereo[input_index] * voice.gain;
-                            }
-                        }
-                    });
-                if (!found || available != requested) {
-                    ++result.missing_blocks;
-                }
-                timeline_frame += requested;
+            if (entry.active) {
+                mix_voice(context, entry.voice);
             }
         }
-        for (auto& sample : interleaved_stereo) {
-            const auto clipped = std::clamp(sample, -1.0F, 1.0F);
-            if (clipped != sample) {
-                ++result.clipped_samples;
-                sample = clipped;
-            }
-        }
+        clip_mix_samples(context);
         for (auto& entry : scheduled_voices_) {
             if (entry.active &&
                 entry.voice.timeline_start_frame + entry.voice.frame_count <= callback_end) {

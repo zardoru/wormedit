@@ -209,6 +209,438 @@ void append_scene_geometry(const player_preview_scene_t& scene,
     }
 }
 
+template <typename State>
+struct player_preview_projection_context_t {
+    State& state;
+    WormUiPlayerPreviewView& view;
+    const document_history_t& history;
+    const chart_document_t& chart;
+    player_preview_skin_t skin;
+    std::uint64_t sample_frame;
+    std::uint32_t sample_rate;
+    const std::filesystem::path& project_directory;
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    visual::image_job_t& image_job;
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+    visual::video_frame_job_t& video_job;
+#endif
+};
+
+template <typename Context>
+void fail_player_preview(const Context& context, std::string message) {
+    context.state.view_status = std::move(message);
+    context.view.status_text = context.state.view_status.c_str();
+}
+
+template <typename Context>
+auto prepare_player_preview_index(const Context& context) -> bool {
+    auto& state = context.state;
+    const auto& history = context.history;
+    const auto& chart = context.chart;
+    const auto sample_rate = context.sample_rate;
+    if (state.attempted && state.project == history.document.id && state.chart == chart.id &&
+        state.revision == history.document.revision && state.sample_rate == sample_rate)
+        return true;
+    state.project = history.document.id;
+    state.chart = chart.id;
+    state.revision = history.document.revision;
+    state.attempted = true;
+    state.index.reset();
+    state.visual_schedule.reset();
+    state.visual_queue.reset();
+    state.visual_token.reset();
+    state.storyboards.clear();
+    state.sample_rate = sample_rate;
+    state.status.clear();
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    state.requested_visual_resources.clear();
+    state.decoded_visuals.reset();
+    context.image_job.cancel();
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+    state.requested_video_clock.reset();
+    state.failed_video_event.reset();
+    state.video_diagnostic_message.clear();
+    state.decoded_video.reset();
+    state.decoded_video_content_id = 0;
+    context.video_job.cancel();
+#endif
+    auto built = build_player_preview_index(chart, history.document.revision);
+    if (!built) {
+        state.status = built.diagnostics.empty()
+                           ? "The player-preview visual schedule could not be compiled."
+                           : built.diagnostics.front().message;
+        return false;
+    }
+    state.index = std::move(*built.index);
+    auto schedule = build_preview_schedule(
+        chart, state.index->timing, {.sample_rate = sample_rate, .include_metronome = false});
+    if (!schedule) {
+        state.status = schedule.diagnostics.empty()
+                           ? "The visual preview schedule could not be compiled."
+                           : schedule.diagnostics.front().message;
+        return false;
+    }
+    state.visual_schedule = std::move(*schedule.schedule);
+    state.visual_queue.emplace();
+    const auto started = state.visual_queue->start(*state.visual_schedule);
+    if (!started) {
+        state.status = "The visual preview schedule could not be started.";
+        return false;
+    }
+    state.visual_token = started.token;
+    return true;
+}
+
+template <typename Context>
+auto prepare_player_preview_storyboards(const Context& context) -> bool {
+    auto& state = context.state;
+    if (!state.status.empty()) return false;
+    state.storyboards.reserve(context.history.document.storyboards.size());
+    for (const auto& storyboard : context.history.document.storyboards) {
+        if (!storyboard.model) continue;
+        auto built = build_storyboard_preview_index(*storyboard.model);
+        if (!built) {
+            state.status = built.diagnostics.empty()
+                               ? "A storyboard preview index could not be built."
+                               : built.diagnostics.front().message;
+            return false;
+        }
+        state.storyboards.emplace_back(storyboard.id, std::move(*built.index));
+    }
+    return true;
+}
+
+template <typename Context>
+auto advance_player_preview(const Context& context) {
+    auto& state = context.state;
+    using result_t = decltype(state.visual_queue->advance(*state.visual_token,
+                                                          context.sample_frame + 1));
+    if (context.sample_frame == std::numeric_limits<std::uint64_t>::max()) {
+        fail_player_preview(context, "The player-preview frame exceeds the visual cursor range.");
+        return result_t{};
+    }
+    auto visual = state.visual_queue->advance(*state.visual_token, context.sample_frame + 1);
+    if (visual.status == bga_preview_status_t::non_monotonic_window) {
+        const auto sought = state.visual_queue->seek(*state.visual_token, context.sample_frame);
+        if (sought) {
+            state.visual_token = sought.token;
+            visual = state.visual_queue->advance(*state.visual_token, context.sample_frame + 1);
+        }
+    }
+    if (visual.status != bga_preview_status_t::ready) {
+        fail_player_preview(context, "The visual preview cursor could not resolve this frame.");
+        return visual;
+    }
+    return visual;
+}
+
+template <typename Visual>
+struct player_preview_frame_t {
+    Visual visual;
+    std::vector<storyboard_draw_instance_t> storyboard_instances;
+};
+
+template <typename Context>
+auto prepare_player_preview_frame(const Context& context)
+    -> std::optional<player_preview_frame_t<decltype(advance_player_preview(context))>> {
+    auto& state = context.state;
+    if (!prepare_player_preview_index(context)) return std::nullopt;
+    (void)prepare_player_preview_storyboards(context);
+    if (!state.index || !state.visual_schedule || !state.visual_queue || !state.visual_token ||
+        !state.status.empty()) {
+        fail_player_preview(context, state.status);
+        return std::nullopt;
+    }
+    auto visual = advance_player_preview(context);
+    if (visual.status != bga_preview_status_t::ready) return std::nullopt;
+    const auto time_ms = transport_milliseconds(context.sample_frame, context.sample_rate);
+    if (!time_ms) {
+        fail_player_preview(context, "The player-preview frame exceeds the storyboard time range.");
+        return std::nullopt;
+    }
+    player_preview_frame_t<decltype(visual)> frame{std::move(visual), {}};
+    std::string storyboard_error;
+    if (!evaluate_storyboards(context.history.document, state.storyboards, *time_ms,
+                              frame.storyboard_instances, storyboard_error)) {
+        fail_player_preview(context, std::move(storyboard_error));
+        return std::nullopt;
+    }
+    return frame;
+}
+
+template <typename Context>
+void append_player_preview_visual_layer(const Context& context, const auto& event,
+                                       const auto& scene) {
+    if (!event) return;
+    auto& state = context.state;
+    WormUiPlayerPreviewVisualLayerView layer{};
+    layer.object_id = event->object.value;
+    layer.resource_id = event->resource.value;
+    layer.event_sample_frame = event->sample_frame;
+    layer.kind = static_cast<WormUiPlayerPreviewVisualKind>(event->kind);
+    layer.draw_order = event->draw_order;
+    layer.source_order = event->source_order;
+    if (event->kind == visual_event_kind_t::video && scene.video_clock &&
+        scene.video_clock->event == event->object && scene.video_clock->resource == event->resource) {
+        layer.video_clock_ready = true;
+        layer.video_elapsed_sample_frames = scene.video_clock->elapsed_sample_frames;
+        layer.video_time_numerator = scene.video_clock->media_time_numerator;
+        layer.video_time_denominator = scene.video_clock->media_time_denominator;
+    }
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    const auto resolved = visual::resolve_visual_asset(
+        context.history.document, event->resource, context.project_directory);
+    layer.static_image = resolved && resolved.source->kind == asset_kind_t::image;
+    if (layer.static_image && state.decoded_visuals) {
+        const auto decoded = std::ranges::find(state.decoded_visuals->items, event->resource,
+                                               [](const auto& item) { return item.source.resource; });
+        if (decoded != state.decoded_visuals->items.end() && *decoded) {
+            layer.image_ready = true;
+            layer.image_width = decoded->image->width;
+            layer.image_height = decoded->image->height;
+            layer.rgba_pixels = decoded->image->pixels.data();
+            layer.rgba_byte_count = decoded->image->pixels.size();
+        }
+    }
+    layer.image_pending = layer.static_image && !layer.image_ready && context.image_job.busy();
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+    if (layer.video_clock_ready) {
+        layer.video_frame = true;
+        if (state.decoded_video && state.decoded_video->source.resource == event->resource &&
+            state.decoded_video->clock.event == scene.video_clock->event &&
+            visual::video_frame_covers_clock(*state.decoded_video->frame, *scene.video_clock)) {
+            layer.image_ready = true;
+            layer.image_content_id = state.decoded_video_content_id;
+            layer.image_width = state.decoded_video->frame->width;
+            layer.image_height = state.decoded_video->frame->height;
+            layer.rgba_pixels = state.decoded_video->frame->pixels.data();
+            layer.rgba_byte_count = state.decoded_video->frame->pixels.size();
+        }
+        layer.image_pending = !layer.image_ready && context.video_job.busy();
+        if (layer.image_pending) {
+            layer.diagnostic = WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_FRAME_LATE;
+            layer.diagnostic_text =
+                "The video frame missed its presentation deadline and is still decoding.";
+        } else if (!layer.image_ready && state.failed_video_event == event->object) {
+            layer.diagnostic = WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_DECODE_FAILED;
+            layer.diagnostic_text = state.video_diagnostic_message.c_str();
+        }
+    }
+#endif
+    state.visual_layers.push_back(layer);
+}
+
+template <typename Context>
+void append_player_preview_visual_layers(const Context& context, const auto& scene) {
+    append_player_preview_visual_layer(context, scene.visual_layers.background, scene);
+    append_player_preview_visual_layer(context, scene.visual_layers.poor, scene);
+    append_player_preview_visual_layer(context, scene.visual_layers.layer, scene);
+    append_player_preview_visual_layer(context, scene.visual_layers.video, scene);
+    append_player_preview_visual_layer(context, scene.visual_layers.storyboard, scene);
+}
+
+template <typename Context>
+void append_player_preview_storyboard_sprite(const Context& context, const auto& instance) {
+    const auto origin = origin_fraction(instance.origin);
+    WormUiPlayerPreviewStoryboardSpriteView sprite{};
+    sprite.stable_id = instance.stable_id;
+    sprite.resource_id = storyboard_resource(context.history.document, instance.path).value;
+    sprite.source_order = instance.source_order;
+    sprite.layer_order = instance.layer_order;
+    sprite.x = instance.x;
+    sprite.y = instance.y;
+    sprite.origin_x = origin[0];
+    sprite.origin_y = origin[1];
+    sprite.scale_x = instance.scale_x;
+    sprite.scale_y = instance.scale_y;
+    sprite.rotation_radians = instance.rotation_radians;
+    sprite.opacity = instance.opacity;
+    sprite.red = instance.red;
+    sprite.green = instance.green;
+    sprite.blue = instance.blue;
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    auto& state = context.state;
+    if (sprite.resource_id != 0 && state.decoded_visuals) {
+        const auto decoded = std::ranges::find(
+            state.decoded_visuals->items, resource_id_t{sprite.resource_id},
+            [](const auto& item) { return item.source.resource; });
+        if (decoded != state.decoded_visuals->items.end() && *decoded) {
+            sprite.image_ready = true;
+            sprite.image_width = decoded->image->width;
+            sprite.image_height = decoded->image->height;
+            sprite.rgba_pixels = decoded->image->pixels.data();
+            sprite.rgba_byte_count = decoded->image->pixels.size();
+        }
+    }
+    sprite.image_pending = sprite.resource_id != 0 && !sprite.image_ready && context.image_job.busy();
+#endif
+    context.state.storyboard_sprites.push_back(sprite);
+}
+
+template <typename Context>
+void request_player_preview_images(const Context& context) {
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    auto& state = context.state;
+    std::vector<visual::resolved_visual_asset_t> requested_sources;
+    std::vector<resource_id_t> requested_resources;
+    requested_sources.reserve(state.visual_layers.size() + state.storyboard_sprites.size());
+    requested_resources.reserve(state.visual_layers.size() + state.storyboard_sprites.size());
+    const auto append_resource = [&](resource_id_t resource) {
+        if (!resource || std::ranges::find(requested_resources, resource) != requested_resources.end())
+            return;
+        const auto resolved = visual::resolve_visual_asset(
+            context.history.document, resource, context.project_directory);
+        if (resolved && resolved.source->kind == asset_kind_t::image) {
+            requested_resources.push_back(resource);
+            requested_sources.push_back(*resolved.source);
+        }
+    };
+    for (const auto& layer : state.visual_layers) append_resource(resource_id_t{layer.resource_id});
+    for (const auto& sprite : state.storyboard_sprites)
+        append_resource(resource_id_t{sprite.resource_id});
+    if (requested_resources != state.requested_visual_resources) {
+        if (requested_sources.empty()) {
+            context.image_job.cancel();
+            state.requested_visual_resources.clear();
+            state.decoded_visuals.reset();
+        } else if (context.image_job.request(context.history.document.id,
+                                             context.history.document.revision,
+                                             requested_sources)) {
+            state.requested_visual_resources = std::move(requested_resources);
+        }
+    }
+#else
+    static_cast<void>(context);
+#endif
+}
+
+template <typename Context>
+void request_player_preview_video(const Context& context) {
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+    auto& state = context.state;
+    auto& video_job = context.video_job;
+    const auto active_video = std::ranges::find_if(state.visual_layers, [](const auto& layer) {
+        return layer.video_clock_ready && layer.video_frame;
+    });
+    if (active_video == state.visual_layers.end()) {
+        if (video_job.busy()) video_job.cancel();
+        state.requested_video_clock.reset();
+        state.failed_video_event.reset();
+        state.video_diagnostic_message.clear();
+        state.decoded_video.reset();
+        state.decoded_video_content_id = 0;
+        return;
+    }
+    const video_preview_clock_t clock{
+        .event = object_id_t{active_video->object_id},
+        .resource = resource_id_t{active_video->resource_id},
+        .activation_sample_frame = active_video->event_sample_frame,
+        .elapsed_sample_frames = active_video->video_elapsed_sample_frames,
+        .media_time_numerator = active_video->video_time_numerator,
+        .media_time_denominator = active_video->video_time_denominator,
+    };
+    const auto switched_event = state.requested_video_clock &&
+        (state.requested_video_clock->event != clock.event ||
+         state.requested_video_clock->resource != clock.resource);
+    const auto sought_backward = state.requested_video_clock &&
+        state.requested_video_clock->event == clock.event &&
+        clock.elapsed_sample_frames < state.requested_video_clock->elapsed_sample_frames;
+    if ((switched_event || sought_backward) && video_job.busy()) video_job.cancel();
+    if (switched_event) {
+        state.failed_video_event.reset();
+        state.video_diagnostic_message.clear();
+    }
+    const auto decoded_covers_clock = state.decoded_video &&
+        state.decoded_video->source.resource == clock.resource &&
+        state.decoded_video->clock.event == clock.event &&
+        visual::video_frame_covers_clock(*state.decoded_video->frame, clock);
+    if (video_job.busy() || state.failed_video_event == clock.event || decoded_covers_clock ||
+        (state.requested_video_clock && *state.requested_video_clock == clock)) return;
+    const auto resolved = visual::resolve_visual_asset(
+        context.history.document, clock.resource, context.project_directory);
+    if (!resolved || resolved.source->kind != asset_kind_t::video) return;
+    const auto started = video_job.request(context.history.document.id,
+        context.history.document.revision, *resolved.source, clock);
+    if (started) {
+        state.requested_video_clock = clock;
+    } else if (started.status != async_job_start_status_t::capacity_exceeded) {
+        state.failed_video_event = clock.event;
+        state.video_diagnostic_message = started.message.empty()
+                                            ? "The video frame task could not start."
+                                            : started.message;
+    }
+#else
+    static_cast<void>(context);
+#endif
+}
+
+template <typename Context>
+void publish_player_preview_scene(const Context& context, const auto& scene) {
+    auto& view = context.view;
+    auto& state = context.state;
+    view.scene_available = true;
+    view.pre_zero = scene.pre_zero;
+    view.split_stage = scene.split_stage;
+    view.visual_fit = static_cast<WormUiVisualFitPolicy>(scene.visual_fit);
+    view.lanes = state.lanes.data();
+    view.lane_count = state.lanes.size();
+    view.receptors = state.receptors.data();
+    view.receptor_count = state.receptors.size();
+    view.hold_bodies = state.holds.data();
+    view.hold_body_count = state.holds.size();
+    view.note_endpoints = state.notes.data();
+    view.note_endpoint_count = state.notes.size();
+    view.visual_layers = state.visual_layers.data();
+    view.visual_layer_count = state.visual_layers.size();
+    view.storyboard_sprites = state.storyboard_sprites.data();
+    view.storyboard_sprite_count = state.storyboard_sprites.size();
+}
+
+template <typename Context, typename Frame>
+auto present_player_preview_frame(const Context& context, const Frame& frame) -> bool {
+    auto& state = context.state;
+    auto& view = context.view;
+    const auto scene = make_player_preview_scene(
+        *state.index, {.sample_frame = context.sample_frame,
+                       .sample_rate = context.sample_rate,
+                       .viewport_width_pixels = view.viewport_width_pixels,
+                       .viewport_height_pixels = view.viewport_height_pixels,
+                       .receptor_y_pixels = 52.0,
+                       .pixels_per_beat = 82.0,
+                       .skin = context.skin,
+                       .visual_fit = visual_fit_policy_t::contain,
+                       .visual_layers = frame.visual.layers,
+                       .storyboard_instances = frame.storyboard_instances,
+                       .maximum_visible_notes = WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY,
+                       .maximum_storyboard_instances = WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY});
+    if (!scene) {
+        fail_player_preview(context,
+            scene.diagnostics.empty() ? "No player-preview frame is available at this time."
+                                      : scene.diagnostics.front().message);
+        return false;
+    }
+    if (scene.scene->lanes.size() > WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY ||
+        scene.scene->receptors.size() > WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY ||
+        scene.scene->hold_bodies.size() > WORM_UI_PLAYER_PREVIEW_HOLD_CAPACITY ||
+        scene.scene->note_endpoints.size() > WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY ||
+        scene.scene->storyboard_instances.size() > WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY) {
+        view.truncated = true;
+        fail_player_preview(context, "The player-preview frame exceeds the frontend geometry cap.");
+        return false;
+    }
+    append_scene_geometry(*scene.scene, state.lanes, state.receptors, state.holds, state.notes);
+    append_player_preview_visual_layers(context, *scene.scene);
+    for (const auto& instance : scene.scene->storyboard_instances)
+        append_player_preview_storyboard_sprite(context, instance);
+    request_player_preview_images(context);
+    request_player_preview_video(context);
+    publish_player_preview_scene(context, *scene.scene);
+    return true;
+}
+
 } // namespace
 
 player_preview_presenter_t::player_preview_presenter_t() : impl_(std::make_unique<impl_t>()) {}
@@ -305,347 +737,18 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
     view.chart_id = chart->id.value;
     view.document_revision = history.document.revision;
     view.sample_frame = sample_frame;
-    if (!state.attempted || state.project != history.document.id || state.chart != chart->id ||
-        state.revision != history.document.revision || state.sample_rate != sample_rate) {
-        state.project = history.document.id;
-        state.chart = chart->id;
-        state.revision = history.document.revision;
-        state.attempted = true;
-        state.index.reset();
-        state.visual_schedule.reset();
-        state.visual_queue.reset();
-        state.visual_token.reset();
-        state.storyboards.clear();
-        state.sample_rate = sample_rate;
-        state.status.clear();
+    player_preview_projection_context_t preview_context{
+        state, view, history, *chart, skin, sample_frame, sample_rate, project_directory
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
-        state.requested_visual_resources.clear();
-        state.decoded_visuals.reset();
-        image_job.cancel();
+        , image_job
 #endif
 #if defined(WORMEDIT_HAS_VIDEO_DECODER)
-        state.requested_video_clock.reset();
-        state.failed_video_event.reset();
-        state.video_diagnostic_message.clear();
-        state.decoded_video.reset();
-        state.decoded_video_content_id = 0;
-        video_job.cancel();
+        , video_job
 #endif
-        auto built = build_player_preview_index(*chart, history.document.revision);
-        if (!built) {
-            state.status = built.diagnostics.empty()
-                               ? "The player-preview visual schedule could not be compiled."
-                               : built.diagnostics.front().message;
-        } else {
-            state.index = std::move(*built.index);
-            auto schedule =
-                build_preview_schedule(*chart, state.index->timing,
-                                       {.sample_rate = sample_rate, .include_metronome = false});
-            if (!schedule) {
-                state.status = schedule.diagnostics.empty()
-                                   ? "The visual preview schedule could not be compiled."
-                                   : schedule.diagnostics.front().message;
-            } else {
-                state.visual_schedule = std::move(*schedule.schedule);
-                state.visual_queue.emplace();
-                const auto started = state.visual_queue->start(*state.visual_schedule);
-                if (started) {
-                    state.visual_token = started.token;
-                } else {
-                    state.status = "The visual preview schedule could not be started.";
-                }
-            }
-        }
-        if (state.status.empty()) {
-            state.storyboards.reserve(history.document.storyboards.size());
-            for (const auto& storyboard : history.document.storyboards) {
-                if (!storyboard.model) {
-                    continue;
-                }
-                auto built_storyboard = build_storyboard_preview_index(*storyboard.model);
-                if (!built_storyboard) {
-                    state.status = built_storyboard.diagnostics.empty()
-                                       ? "A storyboard preview index could not be built."
-                                       : built_storyboard.diagnostics.front().message;
-                    break;
-                }
-                state.storyboards.emplace_back(storyboard.id, std::move(*built_storyboard.index));
-            }
-        }
-    }
-    if (!state.index || !state.visual_schedule || !state.visual_queue || !state.visual_token ||
-        !state.status.empty()) {
-        fail(state.status);
-        return;
-    }
-    if (sample_frame == std::numeric_limits<std::uint64_t>::max()) {
-        fail("The player-preview frame exceeds the visual cursor range.");
-        return;
-    }
-    auto visual = state.visual_queue->advance(*state.visual_token, sample_frame + 1);
-    if (visual.status == bga_preview_status_t::non_monotonic_window) {
-        const auto sought = state.visual_queue->seek(*state.visual_token, sample_frame);
-        if (sought) {
-            state.visual_token = sought.token;
-            visual = state.visual_queue->advance(*state.visual_token, sample_frame + 1);
-        }
-    }
-    if (visual.status != bga_preview_status_t::ready) {
-        fail("The visual preview cursor could not resolve this frame.");
-        return;
-    }
-    const auto time_ms = transport_milliseconds(sample_frame, sample_rate);
-    if (!time_ms) {
-        fail("The player-preview frame exceeds the storyboard time range.");
-        return;
-    }
-    std::vector<storyboard_draw_instance_t> storyboard_instances;
-    std::string storyboard_error;
-    if (!evaluate_storyboards(history.document, state.storyboards, *time_ms, storyboard_instances,
-                              storyboard_error)) {
-        fail(std::move(storyboard_error));
-        return;
-    }
-    const auto scene = make_player_preview_scene(
-        *state.index, {.sample_frame = sample_frame,
-                       .sample_rate = sample_rate,
-                       .viewport_width_pixels = view.viewport_width_pixels,
-                       .viewport_height_pixels = view.viewport_height_pixels,
-                       .receptor_y_pixels = 52.0,
-                       .pixels_per_beat = 82.0,
-                       .skin = skin,
-                       .visual_fit = visual_fit_policy_t::contain,
-                       .visual_layers = visual.layers,
-                       .storyboard_instances = storyboard_instances,
-                       .maximum_visible_notes = WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY,
-                       .maximum_storyboard_instances = WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY});
-    if (!scene) {
-        fail(scene.diagnostics.empty() ? "No player-preview frame is available at this time."
-                                       : scene.diagnostics.front().message);
-        return;
-    }
-    if (scene.scene->lanes.size() > WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY ||
-        scene.scene->receptors.size() > WORM_UI_PLAYER_PREVIEW_LANE_CAPACITY ||
-        scene.scene->hold_bodies.size() > WORM_UI_PLAYER_PREVIEW_HOLD_CAPACITY ||
-        scene.scene->note_endpoints.size() > WORM_UI_PLAYER_PREVIEW_NOTE_CAPACITY ||
-        scene.scene->storyboard_instances.size() > WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY) {
-        view.truncated = true;
-        fail("The player-preview frame exceeds the frontend geometry cap.");
-        return;
-    }
-    append_scene_geometry(*scene.scene, state.lanes, state.receptors, state.holds, state.notes);
-    const auto append_visual = [&](const auto& event) {
-        if (!event) {
-            return;
-        }
-        WormUiPlayerPreviewVisualLayerView layer{};
-        layer.object_id = event->object.value;
-        layer.resource_id = event->resource.value;
-        layer.event_sample_frame = event->sample_frame;
-        layer.kind = static_cast<WormUiPlayerPreviewVisualKind>(event->kind);
-        layer.draw_order = event->draw_order;
-        layer.source_order = event->source_order;
-        if (event->kind == visual_event_kind_t::video && scene.scene->video_clock &&
-            scene.scene->video_clock->event == event->object &&
-            scene.scene->video_clock->resource == event->resource) {
-            layer.video_clock_ready = true;
-            layer.video_elapsed_sample_frames = scene.scene->video_clock->elapsed_sample_frames;
-            layer.video_time_numerator = scene.scene->video_clock->media_time_numerator;
-            layer.video_time_denominator = scene.scene->video_clock->media_time_denominator;
-        }
-#if defined(WORMEDIT_HAS_IMAGE_DECODER)
-        const auto resolved =
-            visual::resolve_visual_asset(history.document, event->resource, project_directory);
-        layer.static_image = resolved && resolved.source->kind == asset_kind_t::image;
-        if (layer.static_image && state.decoded_visuals) {
-            const auto decoded =
-                std::ranges::find(state.decoded_visuals->items, event->resource,
-                                  [](const auto& item) { return item.source.resource; });
-            if (decoded != state.decoded_visuals->items.end() && *decoded) {
-                layer.image_ready = true;
-                layer.image_width = decoded->image->width;
-                layer.image_height = decoded->image->height;
-                layer.rgba_pixels = decoded->image->pixels.data();
-                layer.rgba_byte_count = decoded->image->pixels.size();
-            }
-        }
-        layer.image_pending = layer.static_image && !layer.image_ready && image_job.busy();
-#endif
-#if defined(WORMEDIT_HAS_VIDEO_DECODER)
-        if (layer.video_clock_ready) {
-            layer.video_frame = true;
-            if (state.decoded_video && state.decoded_video->source.resource == event->resource &&
-                state.decoded_video->clock.event == scene.scene->video_clock->event &&
-                visual::video_frame_covers_clock(*state.decoded_video->frame,
-                                                 *scene.scene->video_clock)) {
-                layer.image_ready = true;
-                layer.image_content_id = state.decoded_video_content_id;
-                layer.image_width = state.decoded_video->frame->width;
-                layer.image_height = state.decoded_video->frame->height;
-                layer.rgba_pixels = state.decoded_video->frame->pixels.data();
-                layer.rgba_byte_count = state.decoded_video->frame->pixels.size();
-            }
-            layer.image_pending = !layer.image_ready && video_job.busy();
-            if (layer.image_pending) {
-                layer.diagnostic = WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_FRAME_LATE;
-                layer.diagnostic_text =
-                    "The video frame missed its presentation deadline and is still decoding.";
-            } else if (!layer.image_ready && state.failed_video_event == event->object) {
-                layer.diagnostic = WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_DECODE_FAILED;
-                layer.diagnostic_text = state.video_diagnostic_message.c_str();
-            }
-        }
-#endif
-        state.visual_layers.push_back(layer);
     };
-    append_visual(scene.scene->visual_layers.background);
-    append_visual(scene.scene->visual_layers.poor);
-    append_visual(scene.scene->visual_layers.layer);
-    append_visual(scene.scene->visual_layers.video);
-    append_visual(scene.scene->visual_layers.storyboard);
-    for (const auto& instance : scene.scene->storyboard_instances) {
-        const auto origin = origin_fraction(instance.origin);
-        WormUiPlayerPreviewStoryboardSpriteView sprite{};
-        sprite.stable_id = instance.stable_id;
-        sprite.resource_id = storyboard_resource(history.document, instance.path).value;
-        sprite.source_order = instance.source_order;
-        sprite.layer_order = instance.layer_order;
-        sprite.x = instance.x;
-        sprite.y = instance.y;
-        sprite.origin_x = origin[0];
-        sprite.origin_y = origin[1];
-        sprite.scale_x = instance.scale_x;
-        sprite.scale_y = instance.scale_y;
-        sprite.rotation_radians = instance.rotation_radians;
-        sprite.opacity = instance.opacity;
-        sprite.red = instance.red;
-        sprite.green = instance.green;
-        sprite.blue = instance.blue;
-#if defined(WORMEDIT_HAS_IMAGE_DECODER)
-        if (sprite.resource_id != 0 && state.decoded_visuals) {
-            const auto decoded =
-                std::ranges::find(state.decoded_visuals->items, resource_id_t{sprite.resource_id},
-                                  [](const auto& item) { return item.source.resource; });
-            if (decoded != state.decoded_visuals->items.end() && *decoded) {
-                sprite.image_ready = true;
-                sprite.image_width = decoded->image->width;
-                sprite.image_height = decoded->image->height;
-                sprite.rgba_pixels = decoded->image->pixels.data();
-                sprite.rgba_byte_count = decoded->image->pixels.size();
-            }
-        }
-        sprite.image_pending = sprite.resource_id != 0 && !sprite.image_ready && image_job.busy();
-#endif
-        state.storyboard_sprites.push_back(sprite);
-    }
-#if defined(WORMEDIT_HAS_IMAGE_DECODER)
-    std::vector<visual::resolved_visual_asset_t> requested_sources;
-    std::vector<resource_id_t> requested_resources;
-    requested_sources.reserve(state.visual_layers.size() + state.storyboard_sprites.size());
-    requested_resources.reserve(state.visual_layers.size() + state.storyboard_sprites.size());
-    const auto append_resource = [&](resource_id_t resource) {
-        if (!resource ||
-            std::ranges::find(requested_resources, resource) != requested_resources.end()) {
-            return;
-        }
-        const auto resolved =
-            visual::resolve_visual_asset(history.document, resource, project_directory);
-        if (resolved && resolved.source->kind == asset_kind_t::image) {
-            requested_resources.push_back(resource);
-            requested_sources.push_back(*resolved.source);
-        }
-    };
-    for (const auto& layer : state.visual_layers) {
-        append_resource(resource_id_t{layer.resource_id});
-    }
-    for (const auto& sprite : state.storyboard_sprites) {
-        append_resource(resource_id_t{sprite.resource_id});
-    }
-    if (requested_resources != state.requested_visual_resources) {
-        if (requested_sources.empty()) {
-            image_job.cancel();
-            state.requested_visual_resources.clear();
-            state.decoded_visuals.reset();
-        } else if (image_job.request(history.document.id, history.document.revision,
-                                     requested_sources)) {
-            state.requested_visual_resources = std::move(requested_resources);
-        }
-    }
-#endif
-#if defined(WORMEDIT_HAS_VIDEO_DECODER)
-    const auto active_video = std::ranges::find_if(state.visual_layers, [](const auto& layer) {
-        return layer.video_clock_ready && layer.video_frame;
-    });
-    if (active_video == state.visual_layers.end()) {
-        if (video_job.busy()) {
-            video_job.cancel();
-        }
-        state.requested_video_clock.reset();
-        state.failed_video_event.reset();
-        state.video_diagnostic_message.clear();
-        state.decoded_video.reset();
-        state.decoded_video_content_id = 0;
-    } else {
-        const video_preview_clock_t clock{
-            .event = object_id_t{active_video->object_id},
-            .resource = resource_id_t{active_video->resource_id},
-            .activation_sample_frame = active_video->event_sample_frame,
-            .elapsed_sample_frames = active_video->video_elapsed_sample_frames,
-            .media_time_numerator = active_video->video_time_numerator,
-            .media_time_denominator = active_video->video_time_denominator,
-        };
-        const auto switched_event = state.requested_video_clock &&
-                                    (state.requested_video_clock->event != clock.event ||
-                                     state.requested_video_clock->resource != clock.resource);
-        const auto sought_backward =
-            state.requested_video_clock && state.requested_video_clock->event == clock.event &&
-            clock.elapsed_sample_frames < state.requested_video_clock->elapsed_sample_frames;
-        if ((switched_event || sought_backward) && video_job.busy()) {
-            video_job.cancel();
-        }
-        if (switched_event) {
-            state.failed_video_event.reset();
-            state.video_diagnostic_message.clear();
-        }
-        const auto decoded_covers_clock =
-            state.decoded_video && state.decoded_video->source.resource == clock.resource &&
-            state.decoded_video->clock.event == clock.event &&
-            visual::video_frame_covers_clock(*state.decoded_video->frame, clock);
-        if (!video_job.busy() && state.failed_video_event != clock.event && !decoded_covers_clock &&
-            (!state.requested_video_clock || *state.requested_video_clock != clock)) {
-            const auto resolved =
-                visual::resolve_visual_asset(history.document, clock.resource, project_directory);
-            if (resolved && resolved.source->kind == asset_kind_t::video) {
-                const auto started = video_job.request(
-                    history.document.id, history.document.revision, *resolved.source, clock);
-                if (started) {
-                    state.requested_video_clock = clock;
-                } else if (started.status != async_job_start_status_t::capacity_exceeded) {
-                    state.failed_video_event = clock.event;
-                    state.video_diagnostic_message = started.message.empty()
-                                                         ? "The video frame task could not start."
-                                                         : started.message;
-                }
-            }
-        }
-    }
-#endif
-    view.scene_available = true;
-    view.pre_zero = scene.scene->pre_zero;
-    view.split_stage = scene.scene->split_stage;
-    view.visual_fit = static_cast<WormUiVisualFitPolicy>(scene.scene->visual_fit);
-    view.lanes = state.lanes.data();
-    view.lane_count = state.lanes.size();
-    view.receptors = state.receptors.data();
-    view.receptor_count = state.receptors.size();
-    view.hold_bodies = state.holds.data();
-    view.hold_body_count = state.holds.size();
-    view.note_endpoints = state.notes.data();
-    view.note_endpoint_count = state.notes.size();
-    view.visual_layers = state.visual_layers.data();
-    view.visual_layer_count = state.visual_layers.size();
-    view.storyboard_sprites = state.storyboard_sprites.data();
-    view.storyboard_sprite_count = state.storyboard_sprites.size();
+    auto frame = prepare_player_preview_frame(preview_context);
+    if (!frame) return;
+    (void)present_player_preview_frame(preview_context, *frame);
 }
 
 } // namespace wormedit::sys

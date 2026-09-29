@@ -71,6 +71,70 @@ struct indexed_event_t {
     const sound_channel_event_t* event{};
 };
 
+struct sound_slice_build_context_t {
+    const sound_channel_t& channel;
+    const std::vector<indexed_event_t>& events;
+    const timing_index_t& timing;
+    signed_rational_t first_time;
+    std::uint32_t sample_rate;
+    std::optional<std::uint64_t> source_end;
+    sound_slice_options_t options;
+};
+
+auto append_sound_slice_group(const sound_slice_build_context_t& context, std::size_t begin,
+                              std::size_t end, sound_slice_result_t& result) -> bool {
+    const auto& event = context.events[begin];
+    const auto event_time = timing_at(context.timing, event.row);
+    const auto elapsed = event_time ? subtract_exact(*event_time.seconds, context.first_time)
+                                    : std::nullopt;
+    const auto relative_frame = elapsed
+                                    ? sample_frame_at(*elapsed, context.sample_rate,
+                                                      context.options.rounding)
+                                    : sample_frame_result_t{};
+    if (!relative_frame) {
+        result.diagnostics.push_back(diagnostic(
+            sound_slice_error_code_t::arithmetic_overflow,
+            "sound-channel slice boundary cannot be represented in source frames", event.event->id));
+        return false;
+    }
+    if (*relative_frame.frame >
+        std::numeric_limits<std::uint64_t>::max() - context.channel.source_clip.begin_frame) {
+        result.diagnostics.push_back(diagnostic(
+            sound_slice_error_code_t::arithmetic_overflow,
+            "sound-channel slice boundary overflows the source frame range", event.event->id));
+        return false;
+    }
+    const auto source_begin = context.channel.source_clip.begin_frame + *relative_frame.frame;
+    if (context.source_end.has_value() && source_begin >= *context.source_end) {
+        result.diagnostics.push_back(diagnostic(
+            sound_slice_error_code_t::invalid_source_range,
+            "sound-channel slice begins at or beyond the decoded source end", event.event->id));
+        return false;
+    }
+    if (!result.slices.empty() && source_begin <= result.slices.back().source_begin_frame) {
+        result.diagnostics.push_back(diagnostic(
+            sound_slice_error_code_t::invalid_source_range,
+            "distinct sound-channel markers must derive a positive source-frame range",
+            event.event->id));
+        return false;
+    }
+    derived_sound_slice_t slice{.absolute_row = event.row,
+                                .source_begin_frame = source_begin,
+                                .source_end_frame = std::nullopt,
+                                .restart = false,
+                                .events = {}};
+    slice.events.reserve(end - begin);
+    for (auto index = begin; index < end; ++index) {
+        slice.restart = slice.restart || !context.events[index].event->continuation;
+        slice.events.push_back(context.events[index].event->id);
+    }
+    if (!result.slices.empty()) {
+        result.slices.back().source_end_frame = source_begin;
+    }
+    result.slices.push_back(std::move(slice));
+    return true;
+}
+
 } // namespace
 
 auto derive_sound_channel_slices(const chart_document_t& chart,
@@ -147,66 +211,18 @@ auto derive_sound_channel_slices(const chart_document_t& chart,
         return result;
     }
 
+    const sound_slice_build_context_t context{channel, events, *timing.index,
+                                              *first_time.seconds, sample_rate, source_end,
+                                              options};
     for (std::size_t begin = 0; begin < events.size();) {
         auto end = begin + 1;
-        while (end < events.size() && events[end].row == events[begin].row) ++end;
-
-        const auto event_time = timing_at(*timing.index, events[begin].row);
-        const auto elapsed = event_time ? subtract_exact(*event_time.seconds, *first_time.seconds)
-                                        : std::nullopt;
-        const auto relative_frame =
-            elapsed ? sample_frame_at(*elapsed, sample_rate, options.rounding)
-                    : sample_frame_result_t{};
-        if (!relative_frame) {
-            result.diagnostics.push_back(diagnostic(
-                sound_slice_error_code_t::arithmetic_overflow,
-                "sound-channel slice boundary cannot be represented in source frames",
-                events[begin].event->id));
+        while (end < events.size() && events[end].row == events[begin].row) {
+            ++end;
+        }
+        if (!append_sound_slice_group(context, begin, end, result)) {
             result.slices.clear();
             return result;
         }
-        if (*relative_frame.frame >
-            std::numeric_limits<std::uint64_t>::max() - channel.source_clip.begin_frame) {
-            result.diagnostics.push_back(diagnostic(
-                sound_slice_error_code_t::arithmetic_overflow,
-                "sound-channel slice boundary overflows the source frame range",
-                events[begin].event->id));
-            result.slices.clear();
-            return result;
-        }
-        const auto source_begin = channel.source_clip.begin_frame + *relative_frame.frame;
-        if (source_end.has_value() && source_begin >= *source_end) {
-            result.diagnostics.push_back(diagnostic(
-                sound_slice_error_code_t::invalid_source_range,
-                "sound-channel slice begins at or beyond the decoded source end",
-                events[begin].event->id));
-            result.slices.clear();
-            return result;
-        }
-        if (!result.slices.empty() &&
-            source_begin <= result.slices.back().source_begin_frame) {
-            result.diagnostics.push_back(diagnostic(
-                sound_slice_error_code_t::invalid_source_range,
-                "distinct sound-channel markers must derive a positive source-frame range",
-                events[begin].event->id));
-            result.slices.clear();
-            return result;
-        }
-
-        derived_sound_slice_t slice{.absolute_row = events[begin].row,
-                                    .source_begin_frame = source_begin,
-                                    .source_end_frame = std::nullopt,
-                                    .restart = false,
-                                    .events = {}};
-        slice.events.reserve(end - begin);
-        for (auto index = begin; index < end; ++index) {
-            slice.restart = slice.restart || !events[index].event->continuation;
-            slice.events.push_back(events[index].event->id);
-        }
-        if (!result.slices.empty()) {
-            result.slices.back().source_end_frame = source_begin;
-        }
-        result.slices.push_back(std::move(slice));
         begin = end;
     }
     result.slices.back().source_end_frame = source_end;

@@ -123,6 +123,70 @@ void video_frame_job_t::discard_terminal_jobs() {
                   [](const auto& worker) { return worker.graph.result(worker.task).has_value(); });
 }
 
+auto video_frame_job_t::decode_uncached_frame(const decode_request_t& request,
+                                               std::stop_token stop)
+    -> video_frame_decode_result_t {
+    std::unique_lock session_lock(session_mutex_);
+    if (!session_ || session_project_ != request.project ||
+        session_document_revision_ != request.document_revision ||
+        !same_source(session_->source(), request.source)) {
+        session_.reset();
+        session_project_ = {};
+        session_document_revision_ = 0;
+        auto opened = open_video_decoder_session(request.source, stop);
+        if (!opened) {
+            return {.status = opened.status, .frame = std::nullopt,
+                    .message = std::move(opened.message)};
+        }
+        session_ = std::move(opened.session);
+        session_project_ = request.project;
+        session_document_revision_ = request.document_revision;
+    }
+    auto decoded = session_->decode(request.clock, request.limits, stop);
+    if (!decoded) {
+        // Interrupted demux/codec calls can leave a session unusable.
+        session_.reset();
+        session_project_ = {};
+        session_document_revision_ = 0;
+    }
+    return decoded;
+}
+
+auto video_frame_job_t::run_decode(const decode_request_t& request, std::stop_token stop)
+    -> task_result_t {
+    video_job_result_t result{.project = request.project,
+                              .document_revision = request.document_revision,
+                              .source = request.source,
+                              .clock = request.clock,
+                              .status = video_frame_status_t::decode_failed,
+                              .frame = {},
+                              .message = {}};
+    if (stop.stop_requested()) {
+        return task_result_t::failure(task_error_code_t::cancelled,
+                                      "video frame request was superseded");
+    }
+    if (auto cached = cache_.find(request.project, request.document_revision, request.source,
+                                  request.clock)) {
+        result.status = video_frame_status_t::ready;
+        result.frame = std::move(cached);
+    } else {
+        auto decoded = decode_uncached_frame(request, stop);
+        result.status = decoded.status;
+        result.message = std::move(decoded.message);
+        if (decoded) {
+            auto frame = std::make_shared<const rgba_video_frame_t>(std::move(*decoded.frame));
+            result.frame = cache_.insert(request.project, request.document_revision,
+                                         request.source, request.clock, std::move(frame));
+        }
+    }
+    if (stop.stop_requested()) {
+        return task_result_t::failure(task_error_code_t::cancelled,
+                                      "video frame request was superseded");
+    }
+    return task_result_t::success(
+        make_task_value(std::make_shared<const video_job_result_t>(std::move(result))));
+}
+
 auto video_frame_job_t::request(song_id_t project, std::uint64_t document_revision,
                                 resolved_visual_asset_t source, video_preview_clock_t clock,
                                 video_frame_decode_limits_t limits) -> video_job_start_result_t {
@@ -143,69 +207,11 @@ auto video_frame_job_t::request(song_id_t project, std::uint64_t document_revisi
         generation = 1;
     }
     task_graph_t graph{1};
-    const auto task =
-        graph.add_task({}, [this, project, document_revision, source = std::move(source), clock,
-                            limits](std::span<const task_result_t>, std::stop_token stop) {
-            video_job_result_t result{.project = project,
-                                      .document_revision = document_revision,
-                                      .source = source,
-                                      .clock = clock,
-                                      .status = video_frame_status_t::decode_failed,
-                                      .frame = {},
-                                      .message = {}};
-            if (stop.stop_requested()) {
-                return task_result_t::failure(task_error_code_t::cancelled,
-                                              "video frame request was superseded");
-            }
-            if (auto cached = cache_.find(project, document_revision, source, clock)) {
-                result.status = video_frame_status_t::ready;
-                result.frame = std::move(cached);
-            } else {
-                std::unique_lock session_lock(session_mutex_);
-                if (!session_ || session_project_ != project ||
-                    session_document_revision_ != document_revision ||
-                    !same_source(session_->source(), source)) {
-                    session_.reset();
-                    session_project_ = {};
-                    session_document_revision_ = 0;
-                    auto opened = open_video_decoder_session(source, stop);
-                    if (!opened) {
-                        result.status = opened.status;
-                        result.message = std::move(opened.message);
-                    } else {
-                        session_ = std::move(opened.session);
-                        session_project_ = project;
-                        session_document_revision_ = document_revision;
-                    }
-                }
-                auto decoded =
-                    session_ ? session_->decode(clock, limits, stop)
-                             : video_frame_decode_result_t{.status = result.status,
-                                                           .frame = std::nullopt,
-                                                           .message = std::move(result.message)};
-                if (!decoded && session_) {
-                    // Interrupted demux/codec calls are not guaranteed to leave a reusable
-                    // FFmpeg context. Reopen on the next generation instead of publishing from
-                    // potentially poisoned state.
-                    session_.reset();
-                    session_project_ = {};
-                    session_document_revision_ = 0;
-                }
-                result.status = decoded.status;
-                result.message = std::move(decoded.message);
-                if (decoded) {
-                    auto frame =
-                        std::make_shared<const rgba_video_frame_t>(std::move(*decoded.frame));
-                    result.frame =
-                        cache_.insert(project, document_revision, source, clock, std::move(frame));
-                }
-            }
-            if (stop.stop_requested()) {
-                return task_result_t::failure(task_error_code_t::cancelled,
-                                              "video frame request was superseded");
-            }
-            return task_result_t::success(
-                make_task_value(std::make_shared<const video_job_result_t>(std::move(result))));
+    const auto task = graph.add_task(
+        {}, [this, decode_request = decode_request_t{project, document_revision, std::move(source),
+                                                      clock, limits}](std::span<const task_result_t>,
+                                                                      std::stop_token stop) {
+            return run_decode(decode_request, stop);
         });
     if (!task) {
         return {.status = video_job_start_status_t::scheduler_rejected,

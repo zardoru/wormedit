@@ -166,6 +166,160 @@ auto precedes(const candidate_t<coordinate_t>& left, const candidate_t<coordinat
 }
 
 template <typename coordinate_t>
+struct marker_search_t {
+    coordinate_t cursor{};
+    marker_navigation_direction_t direction{};
+    marker_anchor_t anchor{};
+    marker_navigation_filter_t filter;
+    const measure_lookup_t* measures{};
+    diagnostic_list_t& diagnostics;
+    std::optional<candidate_t<coordinate_t>> best;
+
+    void consider(coordinate_t coordinate, marker_navigation_item_t item) {
+        if ((direction == marker_navigation_direction_t::next && coordinate <= cursor) ||
+            (direction == marker_navigation_direction_t::previous && coordinate >= cursor)) return;
+        candidate_t<coordinate_t> candidate{.coordinate = coordinate, .item = std::move(item)};
+        if (!best || (direction == marker_navigation_direction_t::next
+                          ? precedes(candidate, *best) : precedes(*best, candidate)))
+            best = std::move(candidate);
+    }
+};
+
+template <typename coordinate_t>
+void consider_bookmark(marker_search_t<coordinate_t>& search,
+                       const bookmark_t& bookmark) {
+    if (!valid_anchor(bookmark.anchor)) {
+        reject(search.diagnostics, diagnostic_code_t::invalid_id,
+               "bookmark has an unknown anchor kind", bookmark.id);
+        return;
+    }
+    if (bookmark.anchor != search.anchor) return;
+    if (!bookmark.id) {
+        reject(search.diagnostics, diagnostic_code_t::invalid_id,
+               "bookmark uses the reserved zero object ID");
+        return;
+    }
+    if (search.anchor == marker_anchor_t::beat) {
+        if (!bookmark.position || bookmark.audio_milliseconds) {
+            reject(search.diagnostics, diagnostic_code_t::invalid_id,
+                   "beat-anchored bookmark has inconsistent position fields", bookmark.id);
+            return;
+        }
+        const auto row = validate_position(*search.measures, *bookmark.position,
+                                           bookmark.id, search.diagnostics);
+        if (row) search.consider(*row, {.object = bookmark.id,
+            .kind = marker_navigation_kind_t::bookmark, .source_order = bookmark.id.value,
+            .beat_position = bookmark.position});
+        return;
+    }
+    if (bookmark.position || !bookmark.audio_milliseconds) {
+        reject(search.diagnostics, diagnostic_code_t::invalid_id,
+               "audio-time bookmark has inconsistent position fields", bookmark.id);
+        return;
+    }
+    search.consider(*bookmark.audio_milliseconds, {.object = bookmark.id,
+        .kind = marker_navigation_kind_t::bookmark, .source_order = bookmark.id.value,
+        .audio_milliseconds = bookmark.audio_milliseconds});
+}
+
+template <typename coordinate_t>
+void collect_bookmarks(marker_search_t<coordinate_t>& search, const chart_document_t& chart) {
+    if (!search.filter.include_bookmarks) return;
+    for (const auto& bookmark : chart.bookmarks) consider_bookmark(search, bookmark);
+}
+
+template <typename coordinate_t>
+void consider_beat_section(marker_search_t<coordinate_t>& search, const section_t& section) {
+    if (!section.beat_span || section.audio_millisecond_span) {
+        reject(search.diagnostics, diagnostic_code_t::invalid_id,
+               "beat-anchored section has inconsistent span fields", section.id);
+        return;
+    }
+    const auto begin = validate_position(*search.measures, section.beat_span->begin,
+                                         section.id, search.diagnostics);
+    const auto end = validate_position(*search.measures, section.beat_span->end,
+                                       section.id, search.diagnostics);
+    if (!begin || !end) return;
+    if (*end <= *begin) {
+        reject(search.diagnostics, diagnostic_code_t::invalid_hold,
+               "beat-anchored section end must be after its start", section.id);
+        return;
+    }
+    if (search.filter.include_section_begins)
+        search.consider(*begin, {.object = section.id,
+            .kind = marker_navigation_kind_t::section_begin, .source_order = section.id.value,
+            .beat_position = section.beat_span->begin});
+    if (search.filter.include_section_ends)
+        search.consider(*end, {.object = section.id,
+            .kind = marker_navigation_kind_t::section_end, .source_order = section.id.value,
+            .beat_position = section.beat_span->end});
+}
+
+template <typename coordinate_t>
+void consider_audio_section(marker_search_t<coordinate_t>& search, const section_t& section) {
+    if (section.beat_span || !section.audio_millisecond_span) {
+        reject(search.diagnostics, diagnostic_code_t::invalid_id,
+               "audio-time section has inconsistent span fields", section.id);
+        return;
+    }
+    const auto [begin, end] = *section.audio_millisecond_span;
+    if (end <= begin) {
+        reject(search.diagnostics, diagnostic_code_t::invalid_hold,
+               "audio-time section end must be after its start", section.id);
+        return;
+    }
+    if (search.filter.include_section_begins)
+        search.consider(end > begin ? static_cast<coordinate_t>(begin) : coordinate_t{},
+            {.object = section.id, .kind = marker_navigation_kind_t::section_begin,
+             .source_order = section.id.value, .audio_milliseconds = begin});
+    if (search.filter.include_section_ends)
+        search.consider(static_cast<coordinate_t>(end), {.object = section.id,
+            .kind = marker_navigation_kind_t::section_end, .source_order = section.id.value,
+            .audio_milliseconds = end});
+}
+
+template <typename coordinate_t>
+void consider_section(marker_search_t<coordinate_t>& search, const section_t& section) {
+    if (!valid_anchor(section.anchor)) {
+        reject(search.diagnostics, diagnostic_code_t::invalid_id,
+               "section has an unknown anchor kind", section.id);
+        return;
+    }
+    if (section.anchor != search.anchor) return;
+    if (!section.id) {
+        reject(search.diagnostics, diagnostic_code_t::invalid_id,
+               "section uses the reserved zero object ID");
+        return;
+    }
+    if (search.anchor == marker_anchor_t::beat)
+        consider_beat_section(search, section);
+    else
+        consider_audio_section(search, section);
+}
+
+template <typename coordinate_t>
+void collect_sections(marker_search_t<coordinate_t>& search, const chart_document_t& chart) {
+    if (!search.filter.include_section_begins && !search.filter.include_section_ends) return;
+    for (const auto& section : chart.sections) consider_section(search, section);
+}
+
+auto validate_selected_marker(const chart_document_t& chart, const marker_navigation_item_t& item,
+                              marker_navigation_result_t& result) -> bool {
+    const auto count = chart_object_id_count(chart, item.object);
+    if (count == 0) {
+        reject(result.diagnostics, diagnostic_code_t::invalid_id,
+               "selected marker ID is not present in the chart object index", item.object);
+        return false;
+    }
+    if (count != 1) {
+        reject(result.diagnostics, diagnostic_code_t::duplicate_id,
+               "selected marker ID is ambiguous across chart objects", item.object);
+        return false;
+    }
+    return true;
+}
+
+template <typename coordinate_t>
 auto navigate_impl(const song_document_t& song, std::uint64_t expected_revision,
                    chart_id_t chart_id, coordinate_t cursor,
                    marker_navigation_direction_t direction, marker_navigation_filter_t filter,
@@ -184,167 +338,27 @@ auto navigate_impl(const song_document_t& song, std::uint64_t expected_revision,
                "marker navigation direction is unknown");
         return result;
     }
-    if (anchor == marker_anchor_t::beat && measures == nullptr) {
+    if (anchor == marker_anchor_t::beat && !measures) {
         result.status = marker_navigation_status_t::invalid_request;
         reject(result.diagnostics, diagnostic_code_t::invalid_measure,
                "beat navigation requires a measure index");
         return result;
     }
-
-    std::optional<candidate_t<coordinate_t>> best;
-    const auto consider = [&](coordinate_t coordinate, marker_navigation_item_t item) {
-        if ((direction == marker_navigation_direction_t::next && coordinate <= cursor) ||
-            (direction == marker_navigation_direction_t::previous && coordinate >= cursor)) {
-            return;
-        }
-        candidate_t<coordinate_t> candidate{.coordinate = coordinate, .item = std::move(item)};
-        if (!best.has_value() ||
-            (direction == marker_navigation_direction_t::next ? precedes(candidate, *best)
-                                                              : precedes(*best, candidate))) {
-            best = std::move(candidate);
-        }
-    };
-
-    if (filter.include_bookmarks) {
-        for (const auto& bookmark : query.chart->bookmarks) {
-            if (!valid_anchor(bookmark.anchor)) {
-                reject(result.diagnostics, diagnostic_code_t::invalid_id,
-                       "bookmark has an unknown anchor kind", bookmark.id);
-                continue;
-            }
-            if (bookmark.anchor != anchor) {
-                continue;
-            }
-            if (!bookmark.id) {
-                reject(result.diagnostics, diagnostic_code_t::invalid_id,
-                       "bookmark uses the reserved zero object ID");
-                continue;
-            }
-            if (anchor == marker_anchor_t::beat) {
-                if (!bookmark.position.has_value() || bookmark.audio_milliseconds.has_value()) {
-                    reject(result.diagnostics, diagnostic_code_t::invalid_id,
-                           "beat-anchored bookmark has inconsistent position fields", bookmark.id);
-                    continue;
-                }
-                const auto row = validate_position(*measures, *bookmark.position, bookmark.id,
-                                                   result.diagnostics);
-                if (row.has_value()) {
-                    consider(*row, {.object = bookmark.id,
-                                    .kind = marker_navigation_kind_t::bookmark,
-                                    .source_order = bookmark.id.value,
-                                    .beat_position = bookmark.position});
-                }
-            } else {
-                if (bookmark.position.has_value() || !bookmark.audio_milliseconds.has_value()) {
-                    reject(result.diagnostics, diagnostic_code_t::invalid_id,
-                           "audio-time bookmark has inconsistent position fields", bookmark.id);
-                    continue;
-                }
-                consider(*bookmark.audio_milliseconds,
-                         {.object = bookmark.id,
-                          .kind = marker_navigation_kind_t::bookmark,
-                          .source_order = bookmark.id.value,
-                          .audio_milliseconds = bookmark.audio_milliseconds});
-            }
-        }
-    }
-
-    if (filter.include_section_begins || filter.include_section_ends) {
-        for (const auto& section : query.chart->sections) {
-            if (!valid_anchor(section.anchor)) {
-                reject(result.diagnostics, diagnostic_code_t::invalid_id,
-                       "section has an unknown anchor kind", section.id);
-                continue;
-            }
-            if (section.anchor != anchor) {
-                continue;
-            }
-            if (!section.id) {
-                reject(result.diagnostics, diagnostic_code_t::invalid_id,
-                       "section uses the reserved zero object ID");
-                continue;
-            }
-            if (anchor == marker_anchor_t::beat) {
-                if (!section.beat_span.has_value() || section.audio_millisecond_span.has_value()) {
-                    reject(result.diagnostics, diagnostic_code_t::invalid_id,
-                           "beat-anchored section has inconsistent span fields", section.id);
-                    continue;
-                }
-                const auto begin = validate_position(*measures, section.beat_span->begin,
-                                                     section.id, result.diagnostics);
-                const auto end = validate_position(*measures, section.beat_span->end, section.id,
-                                                   result.diagnostics);
-                if (!begin.has_value() || !end.has_value()) {
-                    continue;
-                }
-                if (*end <= *begin) {
-                    reject(result.diagnostics, diagnostic_code_t::invalid_hold,
-                           "beat-anchored section end must be after its start", section.id);
-                    continue;
-                }
-                if (filter.include_section_begins) {
-                    consider(*begin, {.object = section.id,
-                                      .kind = marker_navigation_kind_t::section_begin,
-                                      .source_order = section.id.value,
-                                      .beat_position = section.beat_span->begin});
-                }
-                if (filter.include_section_ends) {
-                    consider(*end, {.object = section.id,
-                                    .kind = marker_navigation_kind_t::section_end,
-                                    .source_order = section.id.value,
-                                    .beat_position = section.beat_span->end});
-                }
-            } else {
-                if (section.beat_span.has_value() || !section.audio_millisecond_span.has_value()) {
-                    reject(result.diagnostics, diagnostic_code_t::invalid_id,
-                           "audio-time section has inconsistent span fields", section.id);
-                    continue;
-                }
-                const auto [begin, end] = *section.audio_millisecond_span;
-                if (end <= begin) {
-                    reject(result.diagnostics, diagnostic_code_t::invalid_hold,
-                           "audio-time section end must be after its start", section.id);
-                    continue;
-                }
-                if (filter.include_section_begins) {
-                    consider(begin, {.object = section.id,
-                                     .kind = marker_navigation_kind_t::section_begin,
-                                     .source_order = section.id.value,
-                                     .audio_milliseconds = begin});
-                }
-                if (filter.include_section_ends) {
-                    consider(end, {.object = section.id,
-                                   .kind = marker_navigation_kind_t::section_end,
-                                   .source_order = section.id.value,
-                                   .audio_milliseconds = end});
-                }
-            }
-        }
-    }
-
+    marker_search_t<coordinate_t> search{cursor, direction, anchor, filter, measures,
+                                         result.diagnostics, std::nullopt};
+    collect_bookmarks(search, *query.chart);
+    collect_sections(search, *query.chart);
     if (!result.diagnostics.empty()) {
         result.status = marker_navigation_status_t::invalid_request;
-        result.item.reset();
         return result;
     }
-    if (best.has_value()) {
-        const auto id_count = chart_object_id_count(*query.chart, best->item.object);
-        if (id_count == 0) {
-            result.status = marker_navigation_status_t::invalid_request;
-            reject(result.diagnostics, diagnostic_code_t::invalid_id,
-                   "selected marker ID is not present in the chart object index",
-                   best->item.object);
-            return result;
-        }
-        if (id_count != 1) {
-            result.status = marker_navigation_status_t::invalid_request;
-            reject(result.diagnostics, diagnostic_code_t::duplicate_id,
-                   "selected marker ID is ambiguous across chart objects", best->item.object);
-            return result;
-        }
-        result.status = marker_navigation_status_t::found;
-        result.item = std::move(best->item);
+    if (!search.best) return result;
+    if (!validate_selected_marker(*query.chart, search.best->item, result)) {
+        result.status = marker_navigation_status_t::invalid_request;
+        return result;
     }
+    result.status = marker_navigation_status_t::found;
+    result.item = std::move(search.best->item);
     return result;
 }
 

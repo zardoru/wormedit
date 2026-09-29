@@ -116,6 +116,87 @@ auto output_frame(std::uint64_t native_frame, std::uint32_t native_rate, const w
                      : std::nullopt;
 }
 
+struct channel_row_context_t {
+    const waveform_t& waveform;
+    const timing_index_t& timing;
+    const aligned_waveform_request_t& request;
+    signed_rational_t origin;
+    std::uint64_t source_begin;
+    long double rows_per_pixel;
+    std::size_t height;
+};
+
+auto channel_pixel_for_column(const channel_row_context_t& context,
+                              const waveform_column_t& column)
+    -> std::optional<std::size_t> {
+    const auto midpoint = column.begin_frame + (column.end_frame - column.begin_frame) / 2U;
+    const auto elapsed_frame = midpoint - context.source_begin;
+    if (elapsed_frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        return std::nullopt;
+    }
+    const auto time = add_exact(
+        context.origin,
+        {static_cast<std::int64_t>(elapsed_frame), context.waveform.sample_rate});
+    if (!time) {
+        return std::nullopt;
+    }
+    const auto musical = musical_position_at(context.timing, *time);
+    if (!musical || !musical.absolute_row || musical.absolute_row->denominator == 0) {
+        return std::nullopt;
+    }
+    const auto row = static_cast<long double>(musical.absolute_row->numerator) /
+                     musical.absolute_row->denominator;
+    const auto y = row / context.rows_per_pixel - context.request.viewport_scroll_pixels;
+    if (!std::isfinite(y) || y < 0.0L || y >= context.request.viewport_height_pixels) {
+        return std::nullopt;
+    }
+    const auto pixel = static_cast<std::size_t>(y);
+    return pixel < context.height ? std::optional{pixel} : std::nullopt;
+}
+
+auto rasterize_channel_columns(const channel_row_context_t& context,
+                               const std::vector<waveform_column_t>& columns,
+                               std::vector<aligned_waveform_row_t>& pixels,
+                               std::vector<bool>& occupied) -> void {
+    for (const auto& column : columns) {
+        const auto pixel = channel_pixel_for_column(context, column);
+        if (!pixel.has_value()) {
+            continue;
+        }
+        occupied[*pixel] = true;
+        auto& row = pixels[*pixel];
+        row.y_pixels = static_cast<double>(*pixel) + 0.5;
+        for (std::size_t channel_index = 0; channel_index < output_channel_count; ++channel_index) {
+            row.absolute_peak[channel_index] =
+                std::max(row.absolute_peak[channel_index], column.absolute_peak[channel_index]);
+            row.rms[channel_index] = std::max(row.rms[channel_index], column.rms[channel_index]);
+        }
+    }
+}
+
+auto valid_channel_waveform_request(const aligned_waveform_request_t& request) -> bool {
+    return std::isfinite(request.viewport_scroll_pixels) &&
+           std::isfinite(request.viewport_height_pixels) &&
+           std::isfinite(request.pixels_per_standard_measure) &&
+           request.viewport_height_pixels > 0.0 &&
+           request.pixels_per_standard_measure > 0.0 && request.maximum_rows != 0;
+}
+
+auto valid_channel_source(const waveform_t& waveform, const sound_channel_t& channel,
+                          channel_waveform_source_geometry_t source) -> bool {
+    return source.sample_rate != 0 && waveform.sample_rate != 0 &&
+           waveform.total_frames != 0 &&
+           waveform.total_frames <=
+               static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) &&
+           (!source.total_frames || channel.source_clip.begin_frame < *source.total_frames);
+}
+
+auto channel_window_within_capacity(const aligned_waveform_request_t& request) -> bool {
+    return request.viewport_height_pixels <= static_cast<double>(request.maximum_rows) &&
+           request.viewport_height_pixels <=
+               static_cast<double>(maximum_aligned_waveform_rows);
+}
+
 } // namespace
 
 auto project_channel_waveform(const waveform_t& waveform, const chart_document_t& chart,
@@ -134,26 +215,18 @@ auto project_channel_waveform(const waveform_t& waveform, const sound_channel_t&
                               channel_waveform_source_geometry_t source)
     -> aligned_waveform_result_t {
     aligned_waveform_result_t result;
-    if (!std::isfinite(request.viewport_scroll_pixels) ||
-        !std::isfinite(request.viewport_height_pixels) ||
-        !std::isfinite(request.pixels_per_standard_measure) ||
-        request.viewport_height_pixels <= 0.0 ||
-        request.pixels_per_standard_measure <= 0.0 || request.maximum_rows == 0)
+    if (!valid_channel_waveform_request(request))
         return result;
     if (timing.divisions_per_standard_measure == 0 || timing.total_rows == 0 ||
         timing.rows.empty()) {
         result.status = aligned_waveform_status_t::invalid_timing;
         return result;
     }
-    if (source.sample_rate == 0 || waveform.sample_rate == 0 || waveform.total_frames == 0 ||
-        waveform.total_frames >
-            static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) ||
-        (source.total_frames && channel.source_clip.begin_frame >= *source.total_frames)) {
+    if (!valid_channel_source(waveform, channel, source)) {
         result.status = aligned_waveform_status_t::invalid_waveform;
         return result;
     }
-    if (request.viewport_height_pixels > static_cast<double>(request.maximum_rows) ||
-        request.viewport_height_pixels > static_cast<double>(maximum_aligned_waveform_rows)) {
+    if (!channel_window_within_capacity(request)) {
         result.status = aligned_waveform_status_t::capacity_exceeded;
         return result;
     }
@@ -228,35 +301,9 @@ auto project_channel_waveform(const waveform_t& waveform, const sound_channel_t&
     }
     std::vector<aligned_waveform_row_t> pixels(height);
     std::vector<bool> occupied(height);
-    for (const auto& column : projection.columns) {
-        const auto midpoint = column.begin_frame + (column.end_frame - column.begin_frame) / 2U;
-        const auto elapsed_frame = midpoint - *source_begin;
-        if (elapsed_frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
-            continue;
-        const auto time = add_exact(
-            *origin.seconds, {static_cast<std::int64_t>(elapsed_frame), waveform.sample_rate});
-        if (!time)
-            continue;
-        const auto musical = musical_position_at(timing, *time);
-        if (!musical || !musical.absolute_row || musical.absolute_row->denominator == 0)
-            continue;
-        const auto row = static_cast<long double>(musical.absolute_row->numerator) /
-                         musical.absolute_row->denominator;
-        const auto y = row / rows_per_pixel - request.viewport_scroll_pixels;
-        if (!std::isfinite(y) || y < 0.0L || y >= request.viewport_height_pixels)
-            continue;
-        const auto pixel = static_cast<std::size_t>(y);
-        if (pixel >= height)
-            continue;
-        occupied[pixel] = true;
-        pixels[pixel].y_pixels = static_cast<double>(pixel) + 0.5;
-        for (std::size_t channel_index = 0; channel_index < output_channel_count; ++channel_index) {
-            pixels[pixel].absolute_peak[channel_index] = std::max(
-                pixels[pixel].absolute_peak[channel_index], column.absolute_peak[channel_index]);
-            pixels[pixel].rms[channel_index] =
-                std::max(pixels[pixel].rms[channel_index], column.rms[channel_index]);
-        }
-    }
+    const channel_row_context_t row_context{waveform, timing, request, *origin.seconds,
+                                            *source_begin, rows_per_pixel, height};
+    rasterize_channel_columns(row_context, projection.columns, pixels, occupied);
     result.rows.reserve(height);
     for (std::size_t pixel = 0; pixel < height; ++pixel) {
         if (occupied[pixel])

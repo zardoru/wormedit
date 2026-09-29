@@ -7,7 +7,6 @@
 #include <ranges>
 #include <string_view>
 #include <system_error>
-#include <type_traits>
 #include <utility>
 
 namespace wormedit {
@@ -184,6 +183,173 @@ auto validate_field(std::string_view name, std::string_view value,
     return true;
 }
 
+struct metadata_edit_context_t {
+    song_document_t& proposed;
+    document_command_result_t& result;
+    const metadata_edit_limits_t& limits;
+    bool changed{};
+};
+
+auto apply_metadata_action(metadata_edit_context_t& context,
+                           const set_song_metadata_action_t& edit) -> void {
+    const auto invalid_tag = std::ranges::any_of(edit.ordered_search_tags, [&](const auto& tag) {
+        return !valid_text(tag, context.limits.maximum_search_tag_bytes);
+    });
+    if (!valid_text(edit.title, context.limits.maximum_title_bytes) ||
+        !valid_text(edit.artist, context.limits.maximum_artist_bytes) ||
+        edit.ordered_search_tags.size() > context.limits.maximum_search_tags || invalid_tag) {
+        context.result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
+            "song metadata is invalid UTF-8, NUL-bearing, or over its cap"));
+        return;
+    }
+    auto& metadata = context.proposed.metadata;
+    context.changed = metadata.title != edit.title || metadata.artist != edit.artist ||
+                      metadata.ordered_search_tags != edit.ordered_search_tags;
+    metadata.title = edit.title;
+    metadata.artist = edit.artist;
+    metadata.ordered_search_tags = edit.ordered_search_tags;
+}
+
+auto apply_metadata_action(metadata_edit_context_t& context,
+                           const set_chart_metadata_action_t& edit) -> void {
+    const auto chart = std::ranges::find(context.proposed.charts, edit.chart,
+                                         &chart_document_t::id);
+    if (chart == context.proposed.charts.end()) {
+        context.result.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
+            "chart metadata edit refers to an unknown difficulty"));
+        return;
+    }
+    if (!valid_text(edit.name, context.limits.maximum_chart_text_bytes) ||
+        !valid_text(edit.author, context.limits.maximum_chart_text_bytes) ||
+        (edit.rating && edit.rating->denominator == 0)) {
+        context.result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
+            "chart metadata is invalid UTF-8, NUL-bearing, over its cap, or has an invalid rating"));
+        return;
+    }
+    auto& metadata = chart->metadata;
+    context.changed = metadata.name != edit.name || metadata.author != edit.author ||
+                      metadata.rating != edit.rating;
+    metadata.name = edit.name;
+    metadata.author = edit.author;
+    metadata.rating = edit.rating;
+}
+
+auto apply_metadata_action(metadata_edit_context_t& context,
+                           const set_output_group_path_action_t& edit) -> void {
+    if (edit.group_index >= context.proposed.output_groups.size()) {
+        context.result.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
+            "output path edit refers to an unknown output group"));
+        return;
+    }
+    if (edit.relative_output_path.empty() ||
+        !valid_text(edit.relative_output_path, context.limits.maximum_output_path_bytes) ||
+        edit.relative_output_path.find('\\') != std::string::npos ||
+        edit.relative_output_path.find(':') != std::string::npos) {
+        context.result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
+            "output path must be bounded UTF-8 without platform-specific separators"));
+        return;
+    }
+    const auto path = std::filesystem::path{edit.relative_output_path};
+    if (!export_asset_directory(path)) {
+        context.result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
+            "output path must name a safe project-relative file or directory"));
+        return;
+    }
+    auto& group = context.proposed.output_groups[edit.group_index];
+    context.changed = group.relative_output_path != path;
+    group.relative_output_path = path;
+}
+
+auto apply_metadata_field(metadata_edit_context_t& context, format_metadata_t& group,
+                          const insert_format_metadata_field_action_t& edit) -> void {
+    if (!validate_field(edit.name, edit.value, context.limits, context.result.diagnostics)) return;
+    if (group.ordered_fields.size() >= context.limits.maximum_fields_per_group) {
+        context.result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
+            "format metadata group exceeds the configured field cap"));
+        return;
+    }
+    if (edit.index > group.ordered_fields.size() ||
+        edit.index < group.ordered_field_source_orders.size()) {
+        context.result.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
+            "new format fields must be inserted within the authored suffix"));
+        return;
+    }
+    group.ordered_fields.insert(group.ordered_fields.begin() +
+        static_cast<std::ptrdiff_t>(edit.index), {edit.name, edit.value});
+    context.changed = true;
+}
+
+auto apply_metadata_field(metadata_edit_context_t& context, format_metadata_t& group,
+                          const replace_format_metadata_field_action_t& edit) -> void {
+    if (!validate_field(edit.name, edit.value, context.limits, context.result.diagnostics)) return;
+    if (edit.index >= group.ordered_fields.size()) {
+        context.result.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
+            "format metadata replacement index is out of range"));
+        return;
+    }
+    const auto mirrored = mirrored_source_fields(context.proposed, edit.target, group,
+                                                  edit.index, context.result.diagnostics);
+    if (!context.result.diagnostics.empty()) return;
+    const auto replacement = std::pair{edit.name, edit.value};
+    context.changed = group.ordered_fields[edit.index] != replacement;
+    group.ordered_fields[edit.index] = replacement;
+    for (const auto& field : mirrored)
+        field.group->ordered_fields[field.index] = replacement;
+}
+
+auto apply_metadata_field(metadata_edit_context_t& context, format_metadata_t& group,
+                          const erase_format_metadata_field_action_t& edit) -> void {
+    if (edit.index >= group.ordered_fields.size()) {
+        context.result.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
+            "format metadata erase index is out of range"));
+        return;
+    }
+    const auto mirrored = mirrored_source_fields(context.proposed, edit.target, group,
+                                                  edit.index, context.result.diagnostics);
+    if (!context.result.diagnostics.empty()) return;
+    group.ordered_fields.erase(group.ordered_fields.begin() +
+                               static_cast<std::ptrdiff_t>(edit.index));
+    if (edit.index < group.ordered_field_source_orders.size())
+        group.ordered_field_source_orders.erase(group.ordered_field_source_orders.begin() +
+                                                 static_cast<std::ptrdiff_t>(edit.index));
+    for (const auto& field : mirrored) {
+        field.group->ordered_fields.erase(field.group->ordered_fields.begin() +
+                                          static_cast<std::ptrdiff_t>(field.index));
+        field.group->ordered_field_source_orders.erase(
+            field.group->ordered_field_source_orders.begin() +
+            static_cast<std::ptrdiff_t>(field.index));
+    }
+    context.changed = true;
+}
+
+template <typename Edit>
+auto apply_format_metadata_action(metadata_edit_context_t& context, const Edit& edit) -> void {
+    auto* groups = format_groups(context.proposed, edit.target, context.result.diagnostics);
+    if (!groups) return;
+    auto& group = find_or_append_group(*groups, edit.target.family);
+    apply_metadata_field(context, group, edit);
+}
+
+auto apply_metadata_operation(metadata_edit_context_t& context,
+                              const insert_format_metadata_field_action_t& edit) -> void {
+    apply_format_metadata_action(context, edit);
+}
+
+auto apply_metadata_operation(metadata_edit_context_t& context,
+                              const replace_format_metadata_field_action_t& edit) -> void {
+    apply_format_metadata_action(context, edit);
+}
+
+auto apply_metadata_operation(metadata_edit_context_t& context,
+                              const erase_format_metadata_field_action_t& edit) -> void {
+    apply_format_metadata_action(context, edit);
+}
+
+template <typename Edit>
+auto apply_metadata_operation(metadata_edit_context_t& context, const Edit& edit) -> void {
+    apply_metadata_action(context, edit);
+}
+
 } // namespace
 
 auto output_path_from_drop(const std::filesystem::path& project_directory,
@@ -288,153 +454,11 @@ auto apply_metadata_edit(document_history_t& history, std::uint64_t expected_rev
     }
 
     auto proposed = history.document;
-    bool changed{};
-    std::visit(
-        [&](const auto& edit) {
-            using edit_t = std::decay_t<decltype(edit)>;
-            if constexpr (std::is_same_v<edit_t, set_song_metadata_action_t>) {
-                if (!valid_text(edit.title, limits.maximum_title_bytes) ||
-                    !valid_text(edit.artist, limits.maximum_artist_bytes) ||
-                    edit.ordered_search_tags.size() > limits.maximum_search_tags ||
-                    std::ranges::any_of(edit.ordered_search_tags, [&](const auto& tag) {
-                        return !valid_text(tag, limits.maximum_search_tag_bytes);
-                    })) {
-                    result.diagnostics.push_back(
-                        error(diagnostic_code_t::unsupported_feature,
-                              "song metadata is invalid UTF-8, NUL-bearing, or over its cap"));
-                    return;
-                }
-                changed = proposed.metadata.title != edit.title ||
-                          proposed.metadata.artist != edit.artist ||
-                          proposed.metadata.ordered_search_tags != edit.ordered_search_tags;
-                proposed.metadata.title = edit.title;
-                proposed.metadata.artist = edit.artist;
-                proposed.metadata.ordered_search_tags = edit.ordered_search_tags;
-            } else if constexpr (std::is_same_v<edit_t, set_chart_metadata_action_t>) {
-                const auto chart =
-                    std::ranges::find(proposed.charts, edit.chart, &chart_document_t::id);
-                if (chart == proposed.charts.end()) {
-                    result.diagnostics.push_back(
-                        error(diagnostic_code_t::invalid_id,
-                              "chart metadata edit refers to an unknown difficulty"));
-                    return;
-                }
-                if (!valid_text(edit.name, limits.maximum_chart_text_bytes) ||
-                    !valid_text(edit.author, limits.maximum_chart_text_bytes) ||
-                    (edit.rating && edit.rating->denominator == 0)) {
-                    result.diagnostics.push_back(
-                        error(diagnostic_code_t::unsupported_feature,
-                              "chart metadata is invalid UTF-8, NUL-bearing, over its cap, or has "
-                              "an invalid rating"));
-                    return;
-                }
-                changed = chart->metadata.name != edit.name ||
-                          chart->metadata.author != edit.author ||
-                          chart->metadata.rating != edit.rating;
-                chart->metadata.name = edit.name;
-                chart->metadata.author = edit.author;
-                chart->metadata.rating = edit.rating;
-            } else if constexpr (std::is_same_v<edit_t, set_output_group_path_action_t>) {
-                if (edit.group_index >= proposed.output_groups.size()) {
-                    result.diagnostics.push_back(error(
-                        diagnostic_code_t::invalid_id,
-                        "output path edit refers to an unknown output group"));
-                    return;
-                }
-                if (edit.relative_output_path.empty() ||
-                    !valid_text(edit.relative_output_path, limits.maximum_output_path_bytes) ||
-                    edit.relative_output_path.find('\\') != std::string::npos ||
-                    edit.relative_output_path.find(':') != std::string::npos) {
-                    result.diagnostics.push_back(error(
-                        diagnostic_code_t::unsupported_feature,
-                        "output path must be bounded UTF-8 without platform-specific separators"));
-                    return;
-                }
-                const auto path = std::filesystem::path{edit.relative_output_path};
-                if (!export_asset_directory(path)) {
-                    result.diagnostics.push_back(error(
-                        diagnostic_code_t::unsupported_feature,
-                        "output path must name a safe project-relative file or directory"));
-                    return;
-                }
-                auto& group = proposed.output_groups[edit.group_index];
-                changed = group.relative_output_path != path;
-                group.relative_output_path = path;
-            } else {
-                auto* groups = format_groups(proposed, edit.target, result.diagnostics);
-                if (!groups)
-                    return;
-                auto& group = find_or_append_group(*groups, edit.target.family);
-                if constexpr (std::is_same_v<edit_t, insert_format_metadata_field_action_t>) {
-                    if (!validate_field(edit.name, edit.value, limits, result.diagnostics))
-                        return;
-                    if (group.ordered_fields.size() >= limits.maximum_fields_per_group) {
-                        result.diagnostics.push_back(
-                            error(diagnostic_code_t::unsupported_feature,
-                                  "format metadata group exceeds the configured field cap"));
-                        return;
-                    }
-                    if (edit.index > group.ordered_fields.size() ||
-                        edit.index < group.ordered_field_source_orders.size()) {
-                        result.diagnostics.push_back(
-                            error(diagnostic_code_t::invalid_id,
-                                  "new format fields must be inserted within the authored suffix"));
-                        return;
-                    }
-                    group.ordered_fields.insert(group.ordered_fields.begin() +
-                                                    static_cast<std::ptrdiff_t>(edit.index),
-                                                {edit.name, edit.value});
-                    changed = true;
-                } else if constexpr (std::is_same_v<edit_t,
-                                                    replace_format_metadata_field_action_t>) {
-                    if (!validate_field(edit.name, edit.value, limits, result.diagnostics))
-                        return;
-                    if (edit.index >= group.ordered_fields.size()) {
-                        result.diagnostics.push_back(
-                            error(diagnostic_code_t::invalid_id,
-                                  "format metadata replacement index is out of range"));
-                        return;
-                    }
-                    const auto mirrored = mirrored_source_fields(proposed, edit.target, group,
-                                                                 edit.index, result.diagnostics);
-                    if (!result.diagnostics.empty())
-                        return;
-                    const auto replacement = std::pair{edit.name, edit.value};
-                    changed = group.ordered_fields[edit.index] != replacement;
-                    group.ordered_fields[edit.index] = replacement;
-                    for (const auto& field : mirrored)
-                        field.group->ordered_fields[field.index] = replacement;
-                } else if constexpr (std::is_same_v<edit_t, erase_format_metadata_field_action_t>) {
-                    if (edit.index >= group.ordered_fields.size()) {
-                        result.diagnostics.push_back(
-                            error(diagnostic_code_t::invalid_id,
-                                  "format metadata erase index is out of range"));
-                        return;
-                    }
-                    const auto mirrored = mirrored_source_fields(proposed, edit.target, group,
-                                                                 edit.index, result.diagnostics);
-                    if (!result.diagnostics.empty())
-                        return;
-                    group.ordered_fields.erase(group.ordered_fields.begin() +
-                                               static_cast<std::ptrdiff_t>(edit.index));
-                    if (edit.index < group.ordered_field_source_orders.size())
-                        group.ordered_field_source_orders.erase(
-                            group.ordered_field_source_orders.begin() +
-                            static_cast<std::ptrdiff_t>(edit.index));
-                    for (const auto& field : mirrored) {
-                        field.group->ordered_fields.erase(field.group->ordered_fields.begin() +
-                                                          static_cast<std::ptrdiff_t>(field.index));
-                        field.group->ordered_field_source_orders.erase(
-                            field.group->ordered_field_source_orders.begin() +
-                            static_cast<std::ptrdiff_t>(field.index));
-                    }
-                    changed = true;
-                }
-            }
-        },
-        action);
+    metadata_edit_context_t context{.proposed = proposed, .result = result,
+                                    .limits = limits, .changed = false};
+    std::visit([&](const auto& edit) { apply_metadata_operation(context, edit); }, action);
 
-    if (!result.diagnostics.empty() || !changed)
+    if (!result.diagnostics.empty() || !context.changed)
         return result;
     if (!metadata_fits(proposed, limits)) {
         result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,

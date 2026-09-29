@@ -216,6 +216,189 @@ auto analysis_failure(std::uint64_t block_index, block_decode_status_t status)
     };
 }
 
+struct waveform_analysis_work_t {
+    decoder_t& decoder;
+    decoded_block_cache_t& block_cache;
+    const stream_info_t& stream_info;
+    waveform_analysis_options_t options;
+    std::stop_token stop;
+    std::uint32_t frames_per_bin{};
+    waveform_t waveform;
+    std::vector<std::array<double, output_channel_count>> square_sums;
+};
+
+auto initialize_waveform_bins(waveform_t& waveform) -> void {
+    for (auto& bin : waveform.bins) {
+        bin.minimum.fill(std::numeric_limits<float>::infinity());
+        bin.maximum.fill(-std::numeric_limits<float>::infinity());
+    }
+}
+
+auto read_analysis_block(waveform_analysis_work_t& work, std::uint64_t block_index,
+                         waveform_analysis_result_t& failure)
+    -> std::optional<decoded_audio_block_t> {
+    const audio_block_key_t key{.source = work.waveform.key.source, .block_index = block_index};
+    if (auto cached = work.block_cache.find(key); cached.has_value()) {
+        return cached;
+    }
+    const auto start_frame = block_index * maximum_read_frames;
+    const auto requested_frames = static_cast<std::size_t>(std::min<std::uint64_t>(
+        work.stream_info.output_frame_count - start_frame, maximum_read_frames));
+    std::vector<float> samples(maximum_read_frames * output_channel_count);
+    const auto read = work.decoder.read_at(start_frame, samples, requested_frames);
+    if (read.status == read_status_t::seek_error) {
+        failure = analysis_failure(block_index, block_decode_status_t::seek_failed);
+        return std::nullopt;
+    }
+    if ((read.status != read_status_t::success && read.status != read_status_t::end_of_stream) ||
+        read.frames_read == 0) {
+        failure = analysis_failure(block_index, block_decode_status_t::decode_failed);
+        return std::nullopt;
+    }
+    samples.resize(read.frames_read * output_channel_count);
+    decoded_audio_block_t block{.key = key,
+                                .frame_count = read.frames_read,
+                                .interleaved_stereo = std::move(samples)};
+    if (work.block_cache.store(key, block.frame_count, block.interleaved_stereo) !=
+        block_store_status_t::stored) {
+        failure = analysis_failure(block_index,
+                                   block_decode_status_t::cache_capacity_exceeded);
+        return std::nullopt;
+    }
+    return block;
+}
+
+auto accumulate_analysis_block(const decoded_audio_block_t& block, std::uint64_t& visited_frames,
+                               waveform_analysis_work_t& work) -> void {
+    for (std::size_t frame = 0; frame < block.frame_count; ++frame) {
+        const auto global_frame = visited_frames + frame;
+        const auto bin_index = static_cast<std::size_t>(global_frame / work.frames_per_bin);
+        auto& bin = work.waveform.bins[bin_index];
+        ++bin.frame_count;
+        for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
+            const auto sample = block.interleaved_stereo[frame * output_channel_count + channel];
+            bin.minimum[channel] = std::min(bin.minimum[channel], sample);
+            bin.maximum[channel] = std::max(bin.maximum[channel], sample);
+            bin.absolute_peak[channel] = std::max(bin.absolute_peak[channel], std::abs(sample));
+            work.square_sums[bin_index][channel] +=
+                static_cast<double>(sample) * static_cast<double>(sample);
+        }
+    }
+    visited_frames += block.frame_count;
+}
+
+auto decode_analysis_blocks(waveform_analysis_work_t& work) -> waveform_analysis_result_t {
+    const auto block_count =
+        1U + (work.stream_info.output_frame_count - 1U) / maximum_read_frames;
+    std::uint64_t visited_frames{};
+    for (std::uint64_t index = 0; index < block_count; ++index) {
+        if (work.stop.stop_requested()) {
+            return {.status = waveform_analysis_status_t::cancelled};
+        }
+        waveform_analysis_result_t failure;
+        auto block = read_analysis_block(work, index, failure);
+        if (!block.has_value()) {
+            return failure;
+        }
+        accumulate_analysis_block(*block, visited_frames, work);
+    }
+    if (visited_frames != work.stream_info.output_frame_count) {
+        return {.status = waveform_analysis_status_t::decode_failed};
+    }
+    return {.status = waveform_analysis_status_t::generated};
+}
+
+auto calculate_base_rms(waveform_analysis_work_t& work) -> bool {
+    const auto workers = waveform_worker_count(work.waveform.bins.size(), work.options);
+    for_each_partition(work.waveform.bins, workers,
+                       work.options.parallel_partition_alignment_bytes,
+                       [&work](std::size_t begin, std::size_t end) {
+                           for (auto index = begin; index < end; ++index) {
+                               if (work.stop.stop_requested()) {
+                                   return;
+                               }
+                               auto& bin = work.waveform.bins[index];
+                               for (std::size_t channel = 0; channel < output_channel_count;
+                                    ++channel) {
+                                   bin.rms[channel] = static_cast<float>(std::sqrt(
+                                       work.square_sums[index][channel] /
+                                       static_cast<double>(bin.frame_count)));
+                               }
+                           }
+                       });
+    return !work.stop.stop_requested();
+}
+
+auto append_pyramid_level(waveform_analysis_work_t& work,
+                          const std::vector<waveform_bin_t>& prior_bins,
+                          std::uint64_t prior_frames_per_bin) -> bool {
+    waveform_level_t level{
+        .frames_per_bin = prior_frames_per_bin * 2U,
+        .bins = std::vector<waveform_bin_t>((prior_bins.size() + 1U) / 2U),
+    };
+    const auto workers = waveform_worker_count(level.bins.size(), work.options);
+    for_each_partition(level.bins, workers, work.options.parallel_partition_alignment_bytes,
+                       [&level, &prior_bins, token = work.stop](std::size_t begin,
+                                                                std::size_t end) {
+                           for (auto out = begin; out < end; ++out) {
+                               if (token.stop_requested()) {
+                                   return;
+                               }
+                               auto& output = level.bins[out];
+                               const auto first_index = out * 2U;
+                               const auto& first = prior_bins[first_index];
+                               output = first;
+                               if (first_index + 1U == prior_bins.size()) {
+                                   continue;
+                               }
+                               const auto& second = prior_bins[first_index + 1U];
+                               output.frame_count += second.frame_count;
+                               for (std::size_t channel = 0; channel < output_channel_count;
+                                    ++channel) {
+                                   output.minimum[channel] =
+                                       std::min(first.minimum[channel], second.minimum[channel]);
+                                   output.maximum[channel] =
+                                       std::max(first.maximum[channel], second.maximum[channel]);
+                                   output.absolute_peak[channel] = std::max(
+                                       first.absolute_peak[channel], second.absolute_peak[channel]);
+                                   const auto weighted_squares =
+                                       static_cast<double>(first.rms[channel]) * first.rms[channel] *
+                                           static_cast<double>(first.frame_count) +
+                                       static_cast<double>(second.rms[channel]) * second.rms[channel] *
+                                           static_cast<double>(second.frame_count);
+                                   output.rms[channel] = static_cast<float>(std::sqrt(
+                                       weighted_squares / static_cast<double>(output.frame_count)));
+                               }
+                           }
+                       });
+    if (work.stop.stop_requested()) {
+        return false;
+    }
+    work.waveform.coarser_levels.push_back(std::move(level));
+    return true;
+}
+
+auto build_waveform_pyramid(waveform_analysis_work_t& work)
+    -> waveform_analysis_status_t {
+    const std::vector<waveform_bin_t>* prior_bins = &work.waveform.bins;
+    auto prior_frames_per_bin = static_cast<std::uint64_t>(work.frames_per_bin);
+    while (prior_bins->size() > 1U) {
+        if (work.stop.stop_requested()) {
+            return waveform_analysis_status_t::cancelled;
+        }
+        if (prior_frames_per_bin > std::numeric_limits<std::uint64_t>::max() / 2U) {
+            return waveform_analysis_status_t::source_too_large;
+        }
+        if (!append_pyramid_level(work, *prior_bins, prior_frames_per_bin)) {
+            return waveform_analysis_status_t::cancelled;
+        }
+        const auto& level = work.waveform.coarser_levels.back();
+        prior_bins = &level.bins;
+        prior_frames_per_bin = level.frames_per_bin;
+    }
+    return waveform_analysis_status_t::generated;
+}
+
 } // namespace
 
 waveform_cache_t::waveform_cache_t(waveform_cache_limits_t limits) : limits_(limits) {}
@@ -312,200 +495,68 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
                       waveform_cache_t& waveform_cache, audio_source_identity_t source,
                       std::uint32_t frames_per_bin, waveform_analysis_options_t options,
                       std::stop_token stop) -> waveform_analysis_result_t {
-    const waveform_key_t waveform_key{
-        .source = std::move(source),
-        .frames_per_bin = frames_per_bin,
-    };
-    if (!valid_source(waveform_key.source) || frames_per_bin == 0) {
+    const waveform_key_t key{.source = std::move(source), .frames_per_bin = frames_per_bin};
+    if (!valid_source(key.source) || frames_per_bin == 0) {
         return {.status = waveform_analysis_status_t::invalid_request};
     }
     if (stop.stop_requested()) {
         return {.status = waveform_analysis_status_t::cancelled};
     }
-    if (auto cached = waveform_cache.find(waveform_key); cached.has_value()) {
-        return {
-            .status = waveform_analysis_status_t::cache_hit,
-            .waveform = std::move(cached),
-        };
+    if (auto cached = waveform_cache.find(key); cached.has_value()) {
+        return {.status = waveform_analysis_status_t::cache_hit, .waveform = std::move(cached)};
     }
 
-    const auto stream_info = decoder.info();
-    if (!stream_info.has_value()) {
+    const auto info = decoder.info();
+    if (!info.has_value()) {
         return {.status = waveform_analysis_status_t::decoder_unavailable};
     }
-    const auto bin_count = expected_bin_count(stream_info->output_frame_count, frames_per_bin);
-    const auto base_bytes =
-        bin_count.has_value() && *bin_count <= std::numeric_limits<std::size_t>::max()
-            ? bins_bytes(static_cast<std::size_t>(*bin_count))
-            : std::nullopt;
-    // A pairwise pyramid adds fewer bins than the base level. Reserve a strict
-    // 2x bound before allocating either the retained peaks or RMS accumulators.
+    const auto count = expected_bin_count(info->output_frame_count, frames_per_bin);
+    const auto bytes = count.has_value() && *count <= std::numeric_limits<std::size_t>::max()
+                           ? bins_bytes(static_cast<std::size_t>(*count))
+                           : std::nullopt;
     const auto pyramid_fits =
-        base_bytes.has_value() && *base_bytes <= waveform_cache.limits().maximum_bytes / 2U;
-    if (!bin_count.has_value() || *bin_count > waveform_cache.limits().maximum_bins_per_entry ||
-        *bin_count > std::numeric_limits<std::size_t>::max() || !pyramid_fits) {
+        bytes.has_value() && *bytes <= waveform_cache.limits().maximum_bytes / 2U;
+    if (!count.has_value() || *count > waveform_cache.limits().maximum_bins_per_entry ||
+        *count > std::numeric_limits<std::size_t>::max() || !pyramid_fits) {
         return {.status = waveform_analysis_status_t::source_too_large};
     }
 
-    waveform_t waveform{
-        .key = waveform_key,
-        .sample_rate = stream_info->output_sample_rate,
-        .total_frames = stream_info->output_frame_count,
-        .bins = std::vector<waveform_bin_t>(static_cast<std::size_t>(*bin_count)),
+    waveform_analysis_work_t work{
+        .decoder = decoder,
+        .block_cache = block_cache,
+        .stream_info = *info,
+        .options = options,
+        .stop = stop,
+        .frames_per_bin = frames_per_bin,
+        .waveform = {.key = key,
+                     .sample_rate = info->output_sample_rate,
+                     .total_frames = info->output_frame_count,
+                     .bins = std::vector<waveform_bin_t>(static_cast<std::size_t>(*count))},
+        .square_sums = std::vector<std::array<double, output_channel_count>>(
+            static_cast<std::size_t>(*count)),
     };
-    for (auto& bin : waveform.bins) {
-        bin.minimum.fill(std::numeric_limits<float>::infinity());
-        bin.maximum.fill(-std::numeric_limits<float>::infinity());
+    initialize_waveform_bins(work.waveform);
+    const auto decoded = decode_analysis_blocks(work);
+    if (decoded.status != waveform_analysis_status_t::generated) {
+        return decoded;
     }
-    std::vector<std::array<double, output_channel_count>> square_sums(waveform.bins.size());
-
-    const auto block_count = 1U + (stream_info->output_frame_count - 1U) / maximum_read_frames;
-    std::uint64_t visited_frames{};
-    for (std::uint64_t block_index = 0; block_index < block_count; ++block_index) {
-        if (stop.stop_requested()) {
-            return {.status = waveform_analysis_status_t::cancelled};
-        }
-        const audio_block_key_t block_key{
-            .source = waveform_key.source,
-            .block_index = block_index,
-        };
-        auto block = block_cache.find(block_key);
-        if (!block.has_value()) {
-            const auto start_frame = block_index * maximum_read_frames;
-            const auto requested_frames = static_cast<std::size_t>(std::min<std::uint64_t>(
-                stream_info->output_frame_count - start_frame, maximum_read_frames));
-            std::vector<float> samples(maximum_read_frames * output_channel_count);
-            const auto read = decoder.read_at(start_frame, samples, requested_frames);
-            if (read.status == read_status_t::seek_error) {
-                return analysis_failure(block_index, block_decode_status_t::seek_failed);
-            }
-            if ((read.status != read_status_t::success &&
-                 read.status != read_status_t::end_of_stream) ||
-                read.frames_read == 0) {
-                return analysis_failure(block_index, block_decode_status_t::decode_failed);
-            }
-            const auto sample_count = read.frames_read * output_channel_count;
-            samples.resize(sample_count);
-            block = decoded_audio_block_t{
-                .key = block_key,
-                .frame_count = read.frames_read,
-                .interleaved_stereo = std::move(samples),
-            };
-            if (block_cache.store(block_key, block->frame_count, block->interleaved_stereo) !=
-                block_store_status_t::stored) {
-                return analysis_failure(block_index,
-                                        block_decode_status_t::cache_capacity_exceeded);
-            }
-        }
-        for (std::size_t frame = 0; frame < block->frame_count; ++frame) {
-            const auto global_frame = visited_frames + frame;
-            const auto bin_index = static_cast<std::size_t>(global_frame / frames_per_bin);
-            auto& bin = waveform.bins[bin_index];
-            ++bin.frame_count;
-            for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
-                const auto sample =
-                    block->interleaved_stereo[frame * output_channel_count + channel];
-                bin.minimum[channel] = std::min(bin.minimum[channel], sample);
-                bin.maximum[channel] = std::max(bin.maximum[channel], sample);
-                bin.absolute_peak[channel] = std::max(bin.absolute_peak[channel], std::abs(sample));
-                square_sums[bin_index][channel] +=
-                    static_cast<double>(sample) * static_cast<double>(sample);
-            }
-        }
-        visited_frames += block->frame_count;
+    // Decode and LRU access stay on this call's thread; workers touch only local arrays.
+    if (!calculate_base_rms(work)) {
+        return {.status = waveform_analysis_status_t::cancelled};
     }
-    if (visited_frames != stream_info->output_frame_count) {
-        return {.status = waveform_analysis_status_t::decode_failed};
+    const auto pyramid_status = build_waveform_pyramid(work);
+    if (pyramid_status != waveform_analysis_status_t::generated) {
+        return {.status = pyramid_status};
     }
-    // Decode and LRU access stay on this call's thread. Workers below touch only
-    // the completed local bin arrays and are joined before cache publication.
-    const auto worker_count = waveform_worker_count(waveform.bins.size(), options);
-    for_each_partition(
-        waveform.bins, worker_count, options.parallel_partition_alignment_bytes,
-        [&waveform, &square_sums, stop](std::size_t begin, std::size_t end) {
-            for (auto bin_index = begin; bin_index < end; ++bin_index) {
-                if (stop.stop_requested()) {
-                    return;
-                }
-                auto& bin = waveform.bins[bin_index];
-                for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
-                    bin.rms[channel] = static_cast<float>(std::sqrt(
-                        square_sums[bin_index][channel] / static_cast<double>(bin.frame_count)));
-                }
-            }
-        });
     if (stop.stop_requested()) {
         return {.status = waveform_analysis_status_t::cancelled};
     }
-
-    const auto* prior_bins = &waveform.bins;
-    auto prior_frames_per_bin = static_cast<std::uint64_t>(frames_per_bin);
-    while (prior_bins->size() > 1) {
-        if (stop.stop_requested()) {
-            return {.status = waveform_analysis_status_t::cancelled};
-        }
-        if (prior_frames_per_bin > std::numeric_limits<std::uint64_t>::max() / 2U) {
-            return {.status = waveform_analysis_status_t::source_too_large};
-        }
-        waveform_level_t level{
-            .frames_per_bin = prior_frames_per_bin * 2U,
-            .bins = std::vector<waveform_bin_t>((prior_bins->size() + 1U) / 2U),
-        };
-        const auto level_worker_count = waveform_worker_count(level.bins.size(), options);
-        for_each_partition(
-            level.bins, level_worker_count, options.parallel_partition_alignment_bytes,
-            [&level, prior_bins, stop](std::size_t begin, std::size_t end) {
-                for (auto output_index = begin; output_index < end; ++output_index) {
-                    if (stop.stop_requested()) {
-                        return;
-                    }
-                    auto& output = level.bins[output_index];
-                    const auto first_index = output_index * 2U;
-                    const auto& first = (*prior_bins)[first_index];
-                    output = first;
-                    if (first_index + 1U == prior_bins->size()) {
-                        continue;
-                    }
-                    const auto& second = (*prior_bins)[first_index + 1U];
-                    output.frame_count += second.frame_count;
-                    for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
-                        output.minimum[channel] =
-                            std::min(first.minimum[channel], second.minimum[channel]);
-                        output.maximum[channel] =
-                            std::max(first.maximum[channel], second.maximum[channel]);
-                        output.absolute_peak[channel] =
-                            std::max(first.absolute_peak[channel], second.absolute_peak[channel]);
-                        const auto weighted_squares =
-                            static_cast<double>(first.rms[channel]) * first.rms[channel] *
-                                static_cast<double>(first.frame_count) +
-                            static_cast<double>(second.rms[channel]) * second.rms[channel] *
-                                static_cast<double>(second.frame_count);
-                        output.rms[channel] = static_cast<float>(
-                            std::sqrt(weighted_squares / static_cast<double>(output.frame_count)));
-                    }
-                }
-            });
-        if (stop.stop_requested()) {
-            return {.status = waveform_analysis_status_t::cancelled};
-        }
-        waveform.coarser_levels.push_back(std::move(level));
-        prior_bins = &waveform.coarser_levels.back().bins;
-        prior_frames_per_bin = waveform.coarser_levels.back().frames_per_bin;
+    if (waveform_cache.store(work.waveform) != waveform_store_status_t::stored) {
+        return {.status = waveform_analysis_status_t::analysis_cache_capacity_exceeded,
+                .waveform = std::move(work.waveform)};
     }
-
-    if (stop.stop_requested()) {
-        return {.status = waveform_analysis_status_t::cancelled};
-    }
-    if (waveform_cache.store(waveform) != waveform_store_status_t::stored) {
-        return {
-            .status = waveform_analysis_status_t::analysis_cache_capacity_exceeded,
-            .waveform = std::move(waveform),
-        };
-    }
-    return {
-        .status = waveform_analysis_status_t::generated,
-        .waveform = std::move(waveform),
-    };
+    return {.status = waveform_analysis_status_t::generated,
+            .waveform = std::move(work.waveform)};
 }
 
 auto waveform_level_for_zoom(const waveform_t& waveform, double source_frames_per_pixel)

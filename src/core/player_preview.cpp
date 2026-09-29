@@ -122,6 +122,182 @@ auto query_notes(const player_preview_index_t& index, double low, double high,
     return visit(visit, 1, 0, index.note_tree_leaf_base);
 }
 
+auto preview_y(double displacement, double current_displacement,
+               const player_preview_scene_request_t& request) -> double {
+    const auto distance = (displacement - current_displacement) * request.pixels_per_beat;
+    return request.direction == player_preview_scroll_direction_t::toward_top
+               ? request.receptor_y_pixels + distance
+               : request.receptor_y_pixels - distance;
+}
+
+auto append_preview_endpoint(player_preview_scene_t& scene,
+                             const player_preview_scene_request_t& request,
+                             const player_preview_note_source_t& note,
+                             const player_preview_lane_geometry_t& lane_geometry, double y,
+                             bool tail)
+    -> void {
+    if (y + request.note_head_height_pixels / 2.0 < 0.0 ||
+        y - request.note_head_height_pixels / 2.0 > request.viewport_height_pixels) {
+        return;
+    }
+    const auto lane_center = (lane_geometry.bounds.left + lane_geometry.bounds.right) / 2.0;
+    const auto head_width =
+        std::max(1.0, lane_geometry.bounds.right - lane_geometry.bounds.left - 4.0);
+    scene.note_endpoints.push_back(
+        {.note = note.note,
+         .lane = note.lane,
+         .kind = note.kind,
+         .glyph = lane_geometry.glyph,
+         .tail = tail,
+         .semantic_color = note.semantic_color,
+         .bounds = {lane_center - head_width / 2.0, y - request.note_head_height_pixels / 2.0,
+                    lane_center + head_width / 2.0, y + request.note_head_height_pixels / 2.0}});
+}
+
+struct note_render_context_t {
+    player_preview_scene_t& scene;
+    const player_preview_scene_request_t& request;
+    const std::unordered_map<std::uint64_t, std::size_t>& lane_indices;
+    double current_displacement;
+    std::size_t visible_notes{};
+    bool visible_note_cap_exceeded{};
+};
+
+auto append_preview_note(note_render_context_t& context,
+                         const player_preview_note_source_t& note) -> void {
+    const auto lane = context.lane_indices.find(note.lane.value);
+    if (lane == context.lane_indices.end()) {
+        return;
+    }
+    if (context.visible_notes >= context.request.maximum_visible_notes) {
+        context.visible_note_cap_exceeded = true;
+        return;
+    }
+    ++context.visible_notes;
+    const auto& geometry = context.scene.lanes[lane->second];
+    const auto begin_y = preview_y(note.begin_displacement_beats, context.current_displacement,
+                                   context.request);
+    const auto end_y = preview_y(note.end_displacement_beats, context.current_displacement,
+                                 context.request);
+    append_preview_endpoint(context.scene, context.request, note, geometry, begin_y, false);
+    if (note.kind != note_kind_t::hold && note.kind != note_kind_t::roll) {
+        return;
+    }
+    const auto lane_center = (geometry.bounds.left + geometry.bounds.right) / 2.0;
+    const auto head_width = std::max(1.0, geometry.bounds.right - geometry.bounds.left - 4.0);
+    const auto body_half_width = head_width * context.request.hold_body_width_ratio / 2.0;
+    const auto top = std::max(0.0, std::min(begin_y, end_y));
+    const auto bottom = std::min(context.request.viewport_height_pixels, std::max(begin_y, end_y));
+    if (bottom >= top) {
+        context.scene.hold_bodies.push_back(
+            {.note = note.note,
+             .lane = note.lane,
+             .semantic_color = note.semantic_color,
+             .bounds = {lane_center - body_half_width, top, lane_center + body_half_width,
+                        bottom}});
+    }
+    append_preview_endpoint(context.scene, context.request, note, geometry, end_y, true);
+}
+
+auto append_index_note(player_preview_index_t& index,
+                       const editor_field_scene_note_source_t& source,
+                       diagnostic_list_t& diagnostics) -> void {
+    if (source.begin_row >
+            static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) ||
+        source.end_row > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
+        diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+                                    "player-preview note row exceeds exact evaluator bounds",
+                                    source.note));
+        return;
+    }
+    const auto begin = scroll_speed_at(index.scroll_speed, index.timing,
+                                       {static_cast<std::int64_t>(source.begin_row), 1});
+    const auto end = scroll_speed_at(index.scroll_speed, index.timing,
+                                     {static_cast<std::int64_t>(source.end_row), 1});
+    if (!begin || !end) {
+        const auto* failure = !begin ? &begin.error : &end.error;
+        diagnostics.push_back(
+            failure->has_value()
+                ? timing_error(**failure)
+                : error(diagnostic_code_t::invalid_rational,
+                        "player-preview note displacement could not be evaluated", source.note));
+        return;
+    }
+    const auto begin_displacement = begin.state->render_displacement_beats;
+    const auto end_displacement = end.state->render_displacement_beats;
+    if (!std::isfinite(begin_displacement) || !std::isfinite(end_displacement)) {
+        diagnostics.push_back(error(diagnostic_code_t::invalid_rational,
+                                    "player-preview note displacement is not finite", source.note));
+        return;
+    }
+    index.notes.push_back(
+        {.note = source.note,
+         .lane = source.lane,
+         .kind = source.kind,
+         .begin_displacement_beats = begin_displacement,
+         .end_displacement_beats = end_displacement,
+         .minimum_displacement_beats = std::min(begin_displacement, end_displacement),
+         .maximum_displacement_beats = std::max(begin_displacement, end_displacement),
+         .semantic_color = source.semantic_color});
+}
+
+auto valid_scene_request(const player_preview_index_t& index,
+                         const player_preview_scene_request_t& request) -> bool {
+    return index.chart && index.document_revision != 0 && request.sample_rate != 0 &&
+           finite_positive(request.viewport_width_pixels) &&
+           finite_positive(request.viewport_height_pixels) &&
+           finite_positive(request.pixels_per_beat) &&
+           finite_positive(request.note_head_height_pixels) &&
+           finite_positive(request.receptor_height_pixels) &&
+           std::isfinite(request.receptor_y_pixels) && request.receptor_y_pixels >= 0.0 &&
+           request.receptor_y_pixels <= request.viewport_height_pixels &&
+           std::isfinite(request.split_stage_gutter_pixels) &&
+           request.split_stage_gutter_pixels >= 0.0 &&
+           std::isfinite(request.hold_body_width_ratio) && request.hold_body_width_ratio > 0.0 &&
+           request.hold_body_width_ratio <= 1.0 && request.maximum_visible_notes != 0 &&
+           request.maximum_composition_operations != 0 &&
+           request.maximum_storyboard_instances != 0 &&
+           request.storyboard_instances.size() <= request.maximum_storyboard_instances &&
+           std::ranges::all_of(request.storyboard_instances, valid_storyboard_instance) &&
+           valid_skin(request.skin) && valid_direction(request.direction) &&
+           valid_visual_fit_policy(request.visual_fit) && !index.layouts.empty() &&
+           valid_visual_layers(request.visual_layers, request.sample_frame) &&
+           !index.timing.rows.empty() && index.note_tree_leaf_base != 0 &&
+           index.note_tree_max_end.size() == index.note_tree_leaf_base * 2;
+}
+
+auto active_preview_layout(const player_preview_index_t& index, long double current_row,
+                           bool pre_zero) -> const editor_field_scene_layout_source_t* {
+    const auto layout = std::ranges::upper_bound(
+        index.layouts, current_row, {}, [](const editor_field_scene_layout_source_t& source) {
+            return static_cast<long double>(source.begin_row);
+        });
+    const auto active = pre_zero ? index.layouts.begin()
+                                 : (layout == index.layouts.begin() ? index.layouts.begin()
+                                                                    : std::prev(layout));
+    if (active == index.layouts.end() ||
+        (pre_zero ? active->begin_row != 0
+                  : current_row < active->begin_row || current_row > active->end_row)) {
+        return nullptr;
+    }
+    return &*active;
+}
+
+auto visible_sorted_lanes(const editor_field_scene_layout_source_t& layout)
+    -> std::vector<const lane_definition_t*> {
+    std::vector<const lane_definition_t*> lanes;
+    for (const auto& lane : layout.layout.lanes) {
+        if (visible_lane(lane)) {
+            lanes.push_back(&lane);
+        }
+    }
+    std::ranges::sort(lanes, [](const auto* left, const auto* right) {
+        return std::tie(left->display_order, left->id.value) <
+               std::tie(right->display_order, right->id.value);
+    });
+    return lanes;
+}
+
 } // namespace
 
 auto build_player_preview_index(const chart_document_t& chart, std::uint64_t document_revision,
@@ -172,45 +348,7 @@ auto build_player_preview_index(const chart_document_t& chart, std::uint64_t doc
     };
     index.notes.reserve(field_index.notes.size());
     for (const auto& source : field_index.notes) {
-        if (source.begin_row >
-                static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()) ||
-            source.end_row > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-            result.diagnostics.push_back(
-                error(diagnostic_code_t::invalid_resolution,
-                      "player-preview note row exceeds exact evaluator bounds", source.note));
-            continue;
-        }
-        const auto begin = scroll_speed_at(index.scroll_speed, index.timing,
-                                           {static_cast<std::int64_t>(source.begin_row), 1});
-        const auto end = scroll_speed_at(index.scroll_speed, index.timing,
-                                         {static_cast<std::int64_t>(source.end_row), 1});
-        if (!begin || !end) {
-            const auto* failure = !begin ? &begin.error : &end.error;
-            result.diagnostics.push_back(
-                failure->has_value()
-                    ? timing_error(**failure)
-                    : error(diagnostic_code_t::invalid_rational,
-                            "player-preview note displacement could not be evaluated",
-                            source.note));
-            continue;
-        }
-        const auto begin_displacement = begin.state->render_displacement_beats;
-        const auto end_displacement = end.state->render_displacement_beats;
-        if (!std::isfinite(begin_displacement) || !std::isfinite(end_displacement)) {
-            result.diagnostics.push_back(error(diagnostic_code_t::invalid_rational,
-                                               "player-preview note displacement is not finite",
-                                               source.note));
-            continue;
-        }
-        index.notes.push_back(
-            {.note = source.note,
-             .lane = source.lane,
-             .kind = source.kind,
-             .begin_displacement_beats = begin_displacement,
-             .end_displacement_beats = end_displacement,
-             .minimum_displacement_beats = std::min(begin_displacement, end_displacement),
-             .maximum_displacement_beats = std::max(begin_displacement, end_displacement),
-             .semantic_color = source.semantic_color});
+        append_index_note(index, source, result.diagnostics);
     }
     if (!result.diagnostics.empty()) {
         return result;
@@ -238,26 +376,7 @@ auto make_player_preview_scene(const player_preview_index_t& index,
                                const player_preview_scene_request_t& request)
     -> player_preview_scene_result_t {
     player_preview_scene_result_t result;
-    if (!index.chart || index.document_revision == 0 || request.sample_rate == 0 ||
-        !finite_positive(request.viewport_width_pixels) ||
-        !finite_positive(request.viewport_height_pixels) ||
-        !finite_positive(request.pixels_per_beat) ||
-        !finite_positive(request.note_head_height_pixels) ||
-        !finite_positive(request.receptor_height_pixels) ||
-        !std::isfinite(request.receptor_y_pixels) || request.receptor_y_pixels < 0.0 ||
-        request.receptor_y_pixels > request.viewport_height_pixels ||
-        !std::isfinite(request.split_stage_gutter_pixels) ||
-        request.split_stage_gutter_pixels < 0.0 || !std::isfinite(request.hold_body_width_ratio) ||
-        request.hold_body_width_ratio <= 0.0 || request.hold_body_width_ratio > 1.0 ||
-        request.maximum_visible_notes == 0 || request.maximum_composition_operations == 0 ||
-        request.maximum_storyboard_instances == 0 ||
-        request.storyboard_instances.size() > request.maximum_storyboard_instances ||
-        !std::ranges::all_of(request.storyboard_instances, valid_storyboard_instance) ||
-        !valid_skin(request.skin) || !valid_direction(request.direction) ||
-        !valid_visual_fit_policy(request.visual_fit) || index.layouts.empty() ||
-        !valid_visual_layers(request.visual_layers, request.sample_frame) ||
-        index.timing.rows.empty() || index.note_tree_leaf_base == 0 ||
-        index.note_tree_max_end.size() != index.note_tree_leaf_base * 2) {
+    if (!valid_scene_request(index, request)) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                            "player-preview scene request or index is invalid"));
         return result;
@@ -298,32 +417,14 @@ auto make_player_preview_scene(const player_preview_index_t& index,
     }
     const auto current_row = static_cast<long double>(position.absolute_row->numerator) /
                              static_cast<long double>(position.absolute_row->denominator);
-    const auto layout = std::ranges::upper_bound(
-        index.layouts, current_row, {}, [](const editor_field_scene_layout_source_t& source) {
-            return static_cast<long double>(source.begin_row);
-        });
     const auto pre_zero = position.absolute_row->numerator < 0;
-    const auto active_layout =
-        pre_zero ? index.layouts.begin()
-                 : (layout == index.layouts.begin() ? index.layouts.begin() : std::prev(layout));
-    if (active_layout == index.layouts.end() ||
-        (pre_zero
-             ? active_layout->begin_row != 0
-             : current_row < active_layout->begin_row || current_row > active_layout->end_row)) {
+    const auto* active_layout = active_preview_layout(index, current_row, pre_zero);
+    if (active_layout == nullptr) {
         result.diagnostics.push_back(error(diagnostic_code_t::unknown_lane,
                                            "player-preview clock has no active lane layout"));
         return result;
     }
-    std::vector<const lane_definition_t*> lanes;
-    for (const auto& lane : active_layout->layout.lanes) {
-        if (visible_lane(lane)) {
-            lanes.push_back(&lane);
-        }
-    }
-    std::ranges::sort(lanes, [](const auto* left, const auto* right) {
-        return std::tie(left->display_order, left->id.value) <
-               std::tie(right->display_order, right->id.value);
-    });
+    auto lanes = visible_sorted_lanes(*active_layout);
     if (lanes.empty()) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::unknown_lane, "player-preview layout has no visible lanes"));
@@ -383,13 +484,6 @@ auto make_player_preview_scene(const player_preview_index_t& index,
         lane_indices.emplace(lanes[lane_index]->id.value, lane_index);
     }
 
-    const auto y_for_displacement = [&](double displacement) {
-        const auto distance =
-            (displacement - current.state->render_displacement_beats) * request.pixels_per_beat;
-        return request.direction == player_preview_scroll_direction_t::toward_top
-                   ? request.receptor_y_pixels + distance
-                   : request.receptor_y_pixels - distance;
-    };
     const auto padding = request.note_head_height_pixels;
     const auto delta_a =
         request.direction == player_preview_scroll_direction_t::toward_top
@@ -404,73 +498,24 @@ auto make_player_preview_scene(const player_preview_index_t& index,
     const auto visible_low = current.state->render_displacement_beats + std::min(delta_a, delta_b);
     const auto visible_high = current.state->render_displacement_beats + std::max(delta_a, delta_b);
     std::size_t operations{};
-    std::size_t visible_notes{};
-    bool visible_note_cap_exceeded{};
+    note_render_context_t render_context{scene, request, lane_indices,
+                                         current.state->render_displacement_beats};
     const auto query_ok = query_notes(
         index, visible_low, visible_high, operations, request.maximum_composition_operations,
-        [&](const player_preview_note_source_t& note) {
-            const auto lane = lane_indices.find(note.lane.value);
-            if (lane == lane_indices.end()) {
-                return;
-            }
-            if (visible_notes >= request.maximum_visible_notes) {
-                visible_note_cap_exceeded = true;
-                return;
-            }
-            ++visible_notes;
-            const auto& lane_geometry = scene.lanes[lane->second];
-            const auto lane_center = (lane_geometry.bounds.left + lane_geometry.bounds.right) / 2.0;
-            const auto head_width =
-                std::max(1.0, lane_geometry.bounds.right - lane_geometry.bounds.left - 4.0);
-            const auto begin_y = y_for_displacement(note.begin_displacement_beats);
-            const auto end_y = y_for_displacement(note.end_displacement_beats);
-            const auto append_endpoint = [&](double y, bool tail) {
-                if (y + request.note_head_height_pixels / 2.0 < 0.0 ||
-                    y - request.note_head_height_pixels / 2.0 > request.viewport_height_pixels) {
-                    return;
-                }
-                scene.note_endpoints.push_back(
-                    {.note = note.note,
-                     .lane = note.lane,
-                     .kind = note.kind,
-                     .glyph = lane_geometry.glyph,
-                     .tail = tail,
-                     .semantic_color = note.semantic_color,
-                     .bounds = {lane_center - head_width / 2.0,
-                                y - request.note_head_height_pixels / 2.0,
-                                lane_center + head_width / 2.0,
-                                y + request.note_head_height_pixels / 2.0}});
-            };
-            append_endpoint(begin_y, false);
-            if (note.kind == note_kind_t::hold || note.kind == note_kind_t::roll) {
-                const auto body_half_width = head_width * request.hold_body_width_ratio / 2.0;
-                const auto top = std::max(0.0, std::min(begin_y, end_y));
-                const auto bottom =
-                    std::min(request.viewport_height_pixels, std::max(begin_y, end_y));
-                if (bottom >= top) {
-                    scene.hold_bodies.push_back(
-                        {.note = note.note,
-                         .lane = note.lane,
-                         .semantic_color = note.semantic_color,
-                         .bounds = {lane_center - body_half_width, top,
-                                    lane_center + body_half_width, bottom}});
-                }
-                append_endpoint(end_y, true);
-            }
-        });
+        [&](const player_preview_note_source_t& note) { append_preview_note(render_context, note); });
     if (!query_ok) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_resolution,
                   "player-preview scene exceeded its composition-operation cap"));
         return result;
     }
-    if (visible_note_cap_exceeded) {
+    if (render_context.visible_note_cap_exceeded) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                                            "player-preview visible-note cap was reached"));
         return result;
     }
     scene.composition_operations = operations;
-    scene.visible_note_count = visible_notes;
+    scene.visible_note_count = render_context.visible_notes;
     result.scene = std::move(scene);
     return result;
 }

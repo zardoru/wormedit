@@ -177,6 +177,80 @@ void process_metadata_copy_preview(metadata_copy_preview_t& runtime) {
     }
 }
 
+auto resolve_export_copy_path(const WormUiWorkspaceAction& action,
+                              const wormedit::document_history_t& history,
+                              const wormedit::workspace_controller_t& workspace,
+                              std::filesystem::path& output_path) -> std::optional<std::string> {
+    if (action.compose_output_group_index >= history.document.output_groups.size()) {
+        return "The selected output group is no longer available.";
+    }
+    const auto& group = history.document.output_groups[action.compose_output_group_index];
+    if (std::ranges::find(group.charts, *workspace.selected_chart) == group.charts.end()) {
+        return "The selected output group no longer includes this difficulty.";
+    }
+    output_path = group.relative_output_path;
+    return std::nullopt;
+}
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+auto copy_and_decode_metadata_audio(const wormedit::project_asset_copy_request_t& copy_request,
+                                    const std::filesystem::path& output_path, bool export_copy,
+                                    std::stop_token stop) -> wormedit::task_result_t {
+    using namespace wormedit;
+    auto completed = std::make_shared<metadata_asset_import_task_result_t>();
+    const auto validate = [&](const std::filesystem::path& temporary) {
+        audio::decoder_t decoder;
+        if (!decoder.open(temporary, &completed->decode_error))
+            return false;
+        const auto info = decoder.info();
+        return info && info->source_sample_rate != 0 && info->source_channel_count != 0 &&
+               info->source_channel_count <= 32;
+    };
+    if (export_copy) {
+        completed->copy =
+            copy_resource_file_into_export({.project_directory = copy_request.project_directory,
+                                            .source_path = copy_request.source_path,
+                                            .relative_output_path = output_path,
+                                            .asset = copy_request.asset,
+                                            .maximum_bytes = copy_request.maximum_bytes,
+                                            .validate_temporary = validate},
+                                           stop);
+    } else {
+        auto request = copy_request;
+        request.validate_temporary = validate;
+        completed->copy = copy_resource_file_into_project(request, stop);
+    }
+    if (completed->copy && !stop.stop_requested()) {
+        audio::decoder_t decoder;
+        if (decoder.open(completed->copy.absolute_path, &completed->decode_error)) {
+            if (const auto info = decoder.info(); info && info->source_sample_rate != 0 &&
+                                                  info->source_channel_count != 0 &&
+                                                  info->source_channel_count <= 32) {
+                completed->stream = audio_stream_info_t{.sample_rate = info->source_sample_rate,
+                                                        .channels = info->source_channel_count,
+                                                        .frame_count = info->source_frame_count,
+                                                        .seekable = info->seekable};
+            }
+        }
+        if (!completed->stream && completed->decode_error.empty())
+            completed->decode_error = "Published audio has invalid stream geometry.";
+    }
+    if (stop.stop_requested() && completed->copy.status == project_asset_copy_status_t::copied) {
+        if (export_copy)
+            (void)discard_unlinked_export_asset_copy(
+                {.project_directory = copy_request.project_directory,
+                 .source_path = copy_request.source_path,
+                 .relative_output_path = output_path,
+                 .asset = copy_request.asset},
+                completed->copy);
+        else
+            (void)discard_unlinked_project_asset_copy(copy_request, completed->copy);
+    }
+    return task_result_t::success(make_task_value(
+        std::shared_ptr<const metadata_asset_import_task_result_t>{std::move(completed)}));
+}
+#endif
+
 } // namespace
 
 struct metadata_asset_t::impl_t {
@@ -223,12 +297,9 @@ auto metadata_asset_t::start_copy_preview(
     }
     std::filesystem::path output_path;
     if (action.metadata_inspect_export) {
-        if (action.compose_output_group_index >= history.document.output_groups.size())
-            return "The selected output group is no longer available.";
-        const auto& group = history.document.output_groups[action.compose_output_group_index];
-        if (std::ranges::find(group.charts, *workspace.selected_chart) == group.charts.end())
-            return "The selected output group no longer includes this difficulty.";
-        output_path = group.relative_output_path;
+        if (auto error = resolve_export_copy_path(action, history, workspace, output_path)) {
+            return *error;
+        }
     }
     const project_asset_copy_request_t request{
         .project_directory = asset_base, .source_path = source_path, .asset = asset};
@@ -312,12 +383,9 @@ auto metadata_asset_t::start_import_copy(
         return "The selected difficulty is no longer available.";
     std::filesystem::path output_path;
     if (export_copy) {
-        if (action.compose_output_group_index >= history.document.output_groups.size())
-            return "The selected output group is no longer available.";
-        const auto& group = history.document.output_groups[action.compose_output_group_index];
-        if (std::ranges::find(group.charts, *workspace.selected_chart) == group.charts.end())
-            return "The selected output group no longer includes this difficulty.";
-        output_path = group.relative_output_path;
+        if (auto error = resolve_export_copy_path(action, history, workspace, output_path)) {
+            return *error;
+        }
     }
     task_graph_t graph{1};
     const project_asset_copy_request_t copy_request{
@@ -325,58 +393,7 @@ auto metadata_asset_t::start_import_copy(
     const auto added = graph.add_task({}, [copy_request, output_path,
                                            export_copy](std::span<const task_result_t>,
                                                         std::stop_token stop) {
-        auto completed = std::make_shared<metadata_asset_import_task_result_t>();
-        const auto validate = [&](const std::filesystem::path& temporary) {
-            audio::decoder_t decoder;
-            if (!decoder.open(temporary, &completed->decode_error))
-                return false;
-            const auto info = decoder.info();
-            return info && info->source_sample_rate != 0 && info->source_channel_count != 0 &&
-                   info->source_channel_count <= 32;
-        };
-        if (export_copy) {
-            completed->copy =
-                copy_resource_file_into_export({.project_directory = copy_request.project_directory,
-                                                .source_path = copy_request.source_path,
-                                                .relative_output_path = output_path,
-                                                .asset = copy_request.asset,
-                                                .maximum_bytes = copy_request.maximum_bytes,
-                                                .validate_temporary = validate},
-                                               stop);
-        } else {
-            auto request = copy_request;
-            request.validate_temporary = validate;
-            completed->copy = copy_resource_file_into_project(request, stop);
-        }
-        if (completed->copy && !stop.stop_requested()) {
-            audio::decoder_t decoder;
-            if (decoder.open(completed->copy.absolute_path, &completed->decode_error)) {
-                if (const auto info = decoder.info(); info && info->source_sample_rate != 0 &&
-                                                      info->source_channel_count != 0 &&
-                                                      info->source_channel_count <= 32) {
-                    completed->stream = audio_stream_info_t{.sample_rate = info->source_sample_rate,
-                                                            .channels = info->source_channel_count,
-                                                            .frame_count = info->source_frame_count,
-                                                            .seekable = info->seekable};
-                }
-            }
-            if (!completed->stream && completed->decode_error.empty())
-                completed->decode_error = "Published audio has invalid stream geometry.";
-        }
-        if (stop.stop_requested() &&
-            completed->copy.status == project_asset_copy_status_t::copied) {
-            if (export_copy)
-                (void)discard_unlinked_export_asset_copy(
-                    {.project_directory = copy_request.project_directory,
-                     .source_path = copy_request.source_path,
-                     .relative_output_path = output_path,
-                     .asset = copy_request.asset},
-                    completed->copy);
-            else
-                (void)discard_unlinked_project_asset_copy(copy_request, completed->copy);
-        }
-        return task_result_t::success(make_task_value(
-            std::shared_ptr<const metadata_asset_import_task_result_t>{std::move(completed)}));
+        return copy_and_decode_metadata_audio(copy_request, output_path, export_copy, stop);
     });
     if (!added)
         return added.error ? added.error->message : "Import-copy could not start.";

@@ -559,6 +559,223 @@ static void prepare_workspace_content_scroll(nk_context* context, bool compose_v
     if (compose_visible) nk_group_set_scroll(context, "workspace-content", 0, 0);
 }
 
+struct WorkspaceRenderContext {
+    const WormUiWorkspaceView& view;
+    WormUiWorkspaceAction& action;
+    int width;
+    int height;
+};
+
+static auto recovery_panel_height(const WormUiWorkspaceView& view) -> float {
+    float height = 40.0f +
+                   (view.recovery_notice && view.recovery_notice[0] ? 22.0f : 0.0f) +
+                   static_cast<float>(view.recovery_candidate_count) * 48.0f +
+                   static_cast<float>(view.recovery_diagnostic_count) * 18.0f;
+    for (size_t row = 0; row < view.recovery_candidate_count; ++row) {
+        const auto* candidate = &view.recovery_candidates[row];
+        if (recovery_action_offered(candidate, WORM_UI_RECOVERY_ACTION_SAVE_AS)) {
+            height += 25.0f;
+            if (g_recovery_save_as_destination[0] == '\0') height += 18.0f;
+        }
+        if (candidate->disabled_reason && candidate->disabled_reason[0]) height += 20.0f;
+    }
+    return height;
+}
+
+static void render_recovery_buttons(const WormUiRecoveryCandidateView* candidate,
+                                   WormUiWorkspaceAction& action) {
+    const struct {
+        size_t bit;
+        const char* label;
+        WormUiWorkspaceActionKind kind;
+    } buttons[] = {
+        {WORM_UI_RECOVERY_ACTION_INSPECT, "Inspect", WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT},
+        {WORM_UI_RECOVERY_ACTION_RECOVER, "Recover", WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER},
+        {WORM_UI_RECOVERY_ACTION_SAVE_AS, "Save as", WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS},
+        {WORM_UI_RECOVERY_ACTION_DISCARD, "Discard", WORM_UI_WORKSPACE_ACTION_RECOVERY_DISCARD},
+        {WORM_UI_RECOVERY_ACTION_QUARANTINE, "Quarantine",
+         WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE},
+    };
+    nk_layout_row_dynamic(g_context, 25, 5);
+    for (size_t button = 0; button < sizeof(buttons) / sizeof(buttons[0]); ++button) {
+        const int offered = recovery_action_offered(candidate, buttons[button].bit);
+        if (!offered) nk_widget_disable_begin(g_context);
+        const int clicked = nk_button_label(g_context, buttons[button].label);
+        if (!offered) nk_widget_disable_end(g_context);
+        const int save_as_ready = buttons[button].kind != WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS ||
+                                  g_recovery_save_as_destination[0] != '\0';
+        if (offered && save_as_ready && clicked &&
+            action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
+            set_recovery_action(&action, candidate, buttons[button].kind);
+    }
+}
+
+static void render_recovery_candidate(const WormUiRecoveryCandidateView* candidate,
+                                      WormUiWorkspaceAction& action) {
+    nk_layout_row_dynamic(g_context, 20, 1);
+    nk_labelf(g_context, NK_TEXT_LEFT, "%s  %s",
+              candidate->path_label ? candidate->path_label : "(unknown recovery path)",
+              candidate->summary ? candidate->summary : "");
+    render_recovery_buttons(candidate, action);
+    if (recovery_action_offered(candidate, WORM_UI_RECOVERY_ACTION_SAVE_AS)) {
+        nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 2);
+        nk_layout_row_push(g_context, 0.18f);
+        nk_label(g_context, "New project path", NK_TEXT_LEFT);
+        nk_layout_row_push(g_context, 0.82f);
+        (void)nk_edit_string_zero_terminated(
+            g_context, NK_EDIT_FIELD, g_recovery_save_as_destination,
+            sizeof(g_recovery_save_as_destination), nk_filter_default);
+        nk_layout_row_end(g_context);
+        if (g_recovery_save_as_destination[0] == '\0') {
+            nk_layout_row_dynamic(g_context, 18, 1);
+            nk_label(g_context, "Save as is disabled until a new destination is entered.",
+                     NK_TEXT_LEFT);
+        }
+    }
+    if (candidate->disabled_reason && candidate->disabled_reason[0]) {
+        nk_layout_row_dynamic(g_context, 20, 1);
+        nk_label(g_context, candidate->disabled_reason, NK_TEXT_LEFT);
+    }
+}
+
+static auto render_recovery_panel(const WormUiWorkspaceView& view,
+                                  WormUiWorkspaceAction& action) -> float {
+    if (!view.recovery_panel_visible) return 0.0f;
+    const auto height = recovery_panel_height(view);
+    nk_layout_row_dynamic(g_context, 24, 1);
+    nk_label(g_context, view.recovery_heading ? view.recovery_heading : "Recovery", NK_TEXT_LEFT);
+    if (view.recovery_notice && view.recovery_notice[0]) {
+        nk_layout_row_dynamic(g_context, 22, 1);
+        nk_label(g_context, view.recovery_notice, NK_TEXT_LEFT);
+    }
+    for (size_t row = 0; row < view.recovery_candidate_count; ++row)
+        render_recovery_candidate(&view.recovery_candidates[row], action);
+    if (view.recovery_rows_truncated) {
+        nk_layout_row_dynamic(g_context, 18, 1);
+        nk_label(g_context, "Additional recovery candidates are not shown.", NK_TEXT_LEFT);
+    }
+    for (size_t diagnostic = 0; diagnostic < view.recovery_diagnostic_count; ++diagnostic) {
+        if (view.recovery_diagnostics[diagnostic]) {
+            nk_layout_row_dynamic(g_context, 18, 1);
+            nk_label(g_context, view.recovery_diagnostics[diagnostic], NK_TEXT_LEFT);
+        }
+    }
+    return height;
+}
+
+static void render_workspace_content(const WormUiWorkspaceView& view,
+                                     WormUiWorkspaceAction& action) {
+    prepare_workspace_content_scroll(g_context, view.compose.visible);
+    if (!nk_group_begin(g_context, "workspace-content",
+                        workspace_content_flags(view.compose.visible)))
+        return;
+    if (view.setup.visible) {
+        worm_ui_nuklear_render_setup_panel(g_context, &view.setup, &action);
+    } else if (view.metadata.visible) {
+        worm_ui_nuklear_render_metadata_panel(g_context, &view.metadata, &action,
+                                              g_window_focused);
+    } else if (view.timing.visible) {
+        worm_ui_nuklear_render_timing_panel(g_context, &view.timing, &action,
+                                            g_window_focused, g_double_clicks.data(),
+                                            g_double_click_count);
+    } else if (view.compose.visible) {
+        worm_ui_nuklear_render_compose_panel(
+            g_context, &view.compose, &view.timing, &action, g_window_focused,
+            g_ime_composition_active, g_double_clicks.data(), g_double_click_count,
+            g_shortcut_event_count);
+    } else if (view.audio_slices.visible) {
+        worm_ui_nuklear_render_audio_slices(g_context, &view.audio_slices, &action, true,
+                                            g_window_focused);
+    } else {
+        nk_layout_row_dynamic(g_context, 24, 1);
+        if (view.summary_line_count == 0) nk_label(g_context, "No items in this view.", NK_TEXT_LEFT);
+        for (size_t line = 0; line < view.summary_line_count; ++line) {
+            if (view.summary_lines[line]) nk_label(g_context, view.summary_lines[line], NK_TEXT_LEFT);
+        }
+    }
+    nk_group_end(g_context);
+}
+
+static auto workspace_base_view_valid(const WormUiWorkspaceView& view) -> bool {
+    return view.project_title && view.artist && view.selected_difficulty && view.status_text &&
+           view.git_hash && view.tab_heading &&
+           view.summary_line_count <= WORM_UI_WORKSPACE_SUMMARY_CAPACITY &&
+           view.recovery_candidate_count <= WORM_UI_RECOVERY_ROW_CAPACITY &&
+           view.recovery_diagnostic_count <= WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY &&
+           view.active_tab >= WORM_UI_WORKSPACE_TAB_SETUP &&
+           view.active_tab <= WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE;
+}
+
+static auto metadata_workspace_view_valid(const WormUiMetadataView& metadata) -> bool {
+    return !metadata.visible ||
+           (metadata.format_field_count <= WORM_UI_METADATA_FORMAT_FIELD_CAPACITY &&
+            metadata.format_target_count <= WORM_UI_METADATA_FORMAT_TARGET_CAPACITY &&
+            metadata.audio_waveform_column_count <= WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY &&
+            (metadata.audio_waveform_column_count == 0 || metadata.audio_waveform_columns) &&
+            !(metadata.audio_waveform_analysis_pending && metadata.audio_waveform_available) &&
+            (metadata.audio_waveform_available || metadata.audio_waveform_column_count == 0) &&
+            (!metadata.audio_waveform_available ||
+             (metadata.audio_waveform_column_count != 0 &&
+              metadata.audio_waveform_total_frames != 0 &&
+              metadata.audio_waveform_sample_rate != 0 &&
+              metadata.audio_waveform_has_selected_asset)));
+}
+
+static auto workspace_validation_error(const WormUiWorkspaceView& view) -> const char* {
+    if (!workspace_base_view_valid(view)) return "Workspace view data is invalid.";
+    if (!worm_ui_nuklear_setup_view_valid(&view.setup)) return "Setup view data is invalid.";
+    if (!metadata_workspace_view_valid(view.metadata)) return "Metadata view data is invalid.";
+    if ((view.timing.visible || view.compose.visible) &&
+        !worm_ui_nuklear_timing_view_valid(&view.timing))
+        return "Timing view data is invalid.";
+    if (view.audio_slices.visible &&
+        !worm_ui_nuklear_audio_slices_view_valid(&view.audio_slices))
+        return "Audio slices view data is invalid.";
+    if (!worm_ui_nuklear_player_preview_view_valid(&view.player_preview))
+        return "Player preview view data is invalid.";
+    if (view.compose.visible && !worm_ui_nuklear_compose_view_valid(&view.compose))
+        return "Compose view data is invalid.";
+    return nullptr;
+}
+
+static void render_transport_seek_control(const WormUiWorkspaceView& view,
+                                         WormUiWorkspaceAction& action) {
+    if (!view.transport_available || view.transport_end_frame == 0) return;
+    constexpr nk_size seek_steps = 10'000;
+    const auto bounded_frame = std::min(view.transport_frame, view.transport_end_frame);
+    nk_size seek_position = static_cast<nk_size>(
+        static_cast<long double>(bounded_frame) /
+        static_cast<long double>(view.transport_end_frame) * seek_steps);
+    nk_layout_row_dynamic(g_context, 16, 1);
+    if (nk_progress(g_context, &seek_position, seek_steps, NK_MODIFIABLE)) {
+        action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK;
+        action.transport_seek_frame =
+            (view.transport_end_frame / seek_steps) * seek_position +
+            ((view.transport_end_frame % seek_steps) * seek_position) / seek_steps;
+    }
+}
+
+static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
+    const auto& view = frame.view;
+    auto& action = frame.action;
+    if (nk_begin(g_context, "wormedit-workspace",
+                 nk_rect(0, 0, static_cast<float>(frame.width), static_cast<float>(frame.height)),
+                 NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
+        render_title_bar(&view, &action);
+        render_transport_seek_control(view, action);
+        render_workspace_tabs(&view, &action);
+        const float recovery_height = render_recovery_panel(view, action);
+        float content_height = frame.height > 300
+                                  ? static_cast<float>(frame.height) - 132.0f - recovery_height
+                                  : 80.0f;
+        if (content_height < 80.0f) content_height = 80.0f;
+        nk_layout_row_dynamic(g_context, content_height, 1);
+        render_workspace_content(view, action);
+        render_status_bar(&view, &action);
+    }
+    nk_end(g_context);
+}
+
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
     worm_ui_nuklear_begin_image_quad_frame();
     wormedit::ui::chrome::begin_frame();
@@ -577,46 +794,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         return action;
     }
 
-    const char* validation_error = nullptr;
-    if (!view->project_title || !view->artist || !view->selected_difficulty ||
-        !view->status_text || !view->git_hash || !view->tab_heading ||
-        view->summary_line_count > WORM_UI_WORKSPACE_SUMMARY_CAPACITY ||
-        view->recovery_candidate_count > WORM_UI_RECOVERY_ROW_CAPACITY ||
-        view->recovery_diagnostic_count > WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY ||
-        view->active_tab < WORM_UI_WORKSPACE_TAB_SETUP ||
-        view->active_tab > WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE) {
-        validation_error = "Workspace view data is invalid.";
-    } else if (!worm_ui_nuklear_setup_view_valid(&view->setup)) {
-        validation_error = "Setup view data is invalid.";
-    } else if (view->metadata.visible &&
-               (view->metadata.format_field_count > WORM_UI_METADATA_FORMAT_FIELD_CAPACITY ||
-                view->metadata.format_target_count > WORM_UI_METADATA_FORMAT_TARGET_CAPACITY ||
-                view->metadata.audio_waveform_column_count >
-                    WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY ||
-                (view->metadata.audio_waveform_column_count != 0 &&
-                 !view->metadata.audio_waveform_columns) ||
-                (view->metadata.audio_waveform_analysis_pending &&
-                 view->metadata.audio_waveform_available) ||
-                (!view->metadata.audio_waveform_available &&
-                 view->metadata.audio_waveform_column_count != 0) ||
-                (view->metadata.audio_waveform_available &&
-                 (view->metadata.audio_waveform_column_count == 0 ||
-                  view->metadata.audio_waveform_total_frames == 0 ||
-                  view->metadata.audio_waveform_sample_rate == 0 ||
-                  !view->metadata.audio_waveform_has_selected_asset)))) {
-        validation_error = "Metadata view data is invalid.";
-    } else if ((view->timing.visible || view->compose.visible) &&
-               !worm_ui_nuklear_timing_view_valid(&view->timing)) {
-        validation_error = "Timing view data is invalid.";
-    } else if (view->audio_slices.visible &&
-               !worm_ui_nuklear_audio_slices_view_valid(&view->audio_slices)) {
-        validation_error = "Audio slices view data is invalid.";
-    } else if (!worm_ui_nuklear_player_preview_view_valid(&view->player_preview)) {
-        validation_error = "Player preview view data is invalid.";
-    } else if (view->compose.visible &&
-               !worm_ui_nuklear_compose_view_valid(&view->compose)) {
-        validation_error = "Compose view data is invalid.";
-    }
+    const auto* validation_error = workspace_validation_error(*view);
 
     int width = 0;
     int height = 0;
@@ -643,170 +821,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     worm_ui_nuklear_prepare_compose_panel(&view->compose, compose_tab_active, g_window_focused,
                                           &action);
 
-    if (nk_begin(g_context, "wormedit-workspace", nk_rect(0, 0, (float)width, (float)height),
-                 NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
-        render_title_bar(view, &action);
-
-        if (view->transport_available && view->transport_end_frame != 0) {
-            constexpr nk_size seek_steps = 10'000;
-            const auto bounded_frame = std::min(view->transport_frame, view->transport_end_frame);
-            nk_size seek_position = static_cast<nk_size>(
-                static_cast<long double>(bounded_frame) /
-                static_cast<long double>(view->transport_end_frame) * seek_steps);
-            nk_layout_row_dynamic(g_context, 16, 1);
-            if (nk_progress(g_context, &seek_position, seek_steps, NK_MODIFIABLE)) {
-                action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK;
-                action.transport_seek_frame =
-                    (view->transport_end_frame / seek_steps) * seek_position +
-                    ((view->transport_end_frame % seek_steps) * seek_position) / seek_steps;
-            }
-        }
-
-        render_workspace_tabs(view, &action);
-
-        float recovery_height = 0.0f;
-        if (view->recovery_panel_visible) {
-            recovery_height = 40.0f +
-                              (view->recovery_notice && view->recovery_notice[0] ? 22.0f : 0.0f) +
-                              (float)view->recovery_candidate_count * 48.0f +
-                              (float)view->recovery_diagnostic_count * 18.0f;
-            for (size_t row = 0; row < view->recovery_candidate_count; ++row) {
-                const WormUiRecoveryCandidateView* candidate = &view->recovery_candidates[row];
-                if (recovery_action_offered(candidate, WORM_UI_RECOVERY_ACTION_SAVE_AS)) {
-                    recovery_height += 25.0f;
-                    if (g_recovery_save_as_destination[0] == '\0') {
-                        recovery_height += 18.0f;
-                    }
-                }
-                if (candidate->disabled_reason && candidate->disabled_reason[0]) {
-                    recovery_height += 20.0f;
-                }
-            }
-            nk_layout_row_dynamic(g_context, 24, 1);
-            nk_label(g_context, view->recovery_heading ? view->recovery_heading : "Recovery",
-                     NK_TEXT_LEFT);
-            if (view->recovery_notice && view->recovery_notice[0]) {
-                nk_layout_row_dynamic(g_context, 22, 1);
-                nk_label(g_context, view->recovery_notice, NK_TEXT_LEFT);
-            }
-            for (size_t row = 0; row < view->recovery_candidate_count; ++row) {
-                const WormUiRecoveryCandidateView* candidate = &view->recovery_candidates[row];
-                nk_layout_row_dynamic(g_context, 20, 1);
-                nk_labelf(g_context, NK_TEXT_LEFT, "%s  %s",
-                          candidate->path_label ? candidate->path_label : "(unknown recovery path)",
-                          candidate->summary ? candidate->summary : "");
-
-                nk_layout_row_dynamic(g_context, 25, 5);
-                const struct {
-                    size_t bit;
-                    const char* label;
-                    WormUiWorkspaceActionKind kind;
-                } buttons[] = {
-                    {WORM_UI_RECOVERY_ACTION_INSPECT, "Inspect",
-                     WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT},
-                    {WORM_UI_RECOVERY_ACTION_RECOVER, "Recover",
-                     WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER},
-                    {WORM_UI_RECOVERY_ACTION_SAVE_AS, "Save as",
-                     WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS},
-                    {WORM_UI_RECOVERY_ACTION_DISCARD, "Discard",
-                     WORM_UI_WORKSPACE_ACTION_RECOVERY_DISCARD},
-                    {WORM_UI_RECOVERY_ACTION_QUARANTINE, "Quarantine",
-                     WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE},
-                };
-                for (size_t button = 0; button < sizeof(buttons) / sizeof(buttons[0]); ++button) {
-                    const int offered = recovery_action_offered(candidate, buttons[button].bit);
-                    if (!offered) {
-                        nk_widget_disable_begin(g_context);
-                    }
-                    const int clicked = nk_button_label(g_context, buttons[button].label);
-                    if (!offered) {
-                        nk_widget_disable_end(g_context);
-                    }
-                    int save_as_ready = 1;
-                    if (buttons[button].kind == WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS) {
-                        save_as_ready = g_recovery_save_as_destination[0] != '\0';
-                    }
-                    if (offered && save_as_ready && clicked &&
-                        action.kind == WORM_UI_WORKSPACE_ACTION_NONE) {
-                        set_recovery_action(&action, candidate, buttons[button].kind);
-                    }
-                }
-                if (recovery_action_offered(candidate, WORM_UI_RECOVERY_ACTION_SAVE_AS)) {
-                    nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 2);
-                    nk_layout_row_push(g_context, 0.18f);
-                    nk_label(g_context, "New project path", NK_TEXT_LEFT);
-                    nk_layout_row_push(g_context, 0.82f);
-                    (void)nk_edit_string_zero_terminated(
-                        g_context, NK_EDIT_FIELD, g_recovery_save_as_destination,
-                        sizeof(g_recovery_save_as_destination), nk_filter_default);
-                    nk_layout_row_end(g_context);
-                    if (g_recovery_save_as_destination[0] == '\0') {
-                        nk_layout_row_dynamic(g_context, 18, 1);
-                        nk_label(g_context,
-                                 "Save as is disabled until a new destination is entered.",
-                                 NK_TEXT_LEFT);
-                    }
-                }
-                if (candidate->disabled_reason && candidate->disabled_reason[0]) {
-                    nk_layout_row_dynamic(g_context, 20, 1);
-                    nk_label(g_context, candidate->disabled_reason, NK_TEXT_LEFT);
-                }
-            }
-            if (view->recovery_rows_truncated) {
-                nk_layout_row_dynamic(g_context, 18, 1);
-                nk_label(g_context, "Additional recovery candidates are not shown.", NK_TEXT_LEFT);
-            }
-            for (size_t diagnostic = 0; diagnostic < view->recovery_diagnostic_count;
-                 ++diagnostic) {
-                if (view->recovery_diagnostics[diagnostic]) {
-                    nk_layout_row_dynamic(g_context, 18, 1);
-                    nk_label(g_context, view->recovery_diagnostics[diagnostic], NK_TEXT_LEFT);
-                }
-            }
-        }
-
-        float content_height = height > 300 ? (float)height - 132.0f - recovery_height : 80.0f;
-        if (content_height < 80.0f) {
-            content_height = 80.0f;
-        }
-        nk_layout_row_dynamic(g_context, content_height, 1);
-        prepare_workspace_content_scroll(g_context, view->compose.visible);
-        if (nk_group_begin(g_context, "workspace-content",
-                           workspace_content_flags(view->compose.visible))) {
-            if (view->setup.visible) {
-                worm_ui_nuklear_render_setup_panel(g_context, &view->setup, &action);
-            } else if (view->metadata.visible) {
-                worm_ui_nuklear_render_metadata_panel(g_context, &view->metadata, &action,
-                                                      g_window_focused);
-            } else if (view->timing.visible) {
-                worm_ui_nuklear_render_timing_panel(g_context, &view->timing, &action,
-                                                    g_window_focused, g_double_clicks.data(),
-                                                    g_double_click_count);
-            } else if (view->compose.visible) {
-                worm_ui_nuklear_render_compose_panel(
-                    g_context, &view->compose, &view->timing, &action, g_window_focused,
-                    g_ime_composition_active, g_double_clicks.data(), g_double_click_count,
-                    g_shortcut_event_count);
-            } else if (view->audio_slices.visible) {
-                worm_ui_nuklear_render_audio_slices(g_context, &view->audio_slices, &action, true,
-                                                    g_window_focused);
-            } else {
-                nk_layout_row_dynamic(g_context, 24, 1);
-                if (view->summary_line_count == 0) {
-                    nk_label(g_context, "No items in this view.", NK_TEXT_LEFT);
-                }
-                for (size_t line = 0; line < view->summary_line_count; ++line) {
-                    if (view->summary_lines[line]) {
-                        nk_label(g_context, view->summary_lines[line], NK_TEXT_LEFT);
-                    }
-                }
-            }
-            nk_group_end(g_context);
-        }
-
-        render_status_bar(view, &action);
-    }
-    nk_end(g_context);
+    render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
     worm_ui_nuklear_render_player_preview(g_context, g_renderer, &view->player_preview, &action,
                                           width, height);
     const bool compose_lane_focused =

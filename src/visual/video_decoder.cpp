@@ -191,6 +191,108 @@ auto render_frame(video_decoder_session_t::impl_t& session, video_frame_decode_l
     return {.status = video_frame_status_t::ready, .frame = std::move(output), .message = {}};
 }
 
+auto seek_to_target(video_decoder_session_t::impl_t& session, std::int64_t target,
+                    std::stop_token stop) -> std::optional<video_frame_decode_result_t> {
+    const auto current_timestamp = timestamp_of(session.current.get());
+    const bool seek_required = !session.positioned ||
+                               (session.last_target && target < *session.last_target) ||
+                               (current_timestamp != AV_NOPTS_VALUE && target < current_timestamp);
+    if (!seek_required) {
+        return std::nullopt;
+    }
+    const auto result = avformat_seek_file(session.format.get(), session.stream_index,
+                                           std::numeric_limits<std::int64_t>::min(), target,
+                                           target, AVSEEK_FLAG_BACKWARD);
+    if (result < 0) {
+        if (stop.stop_requested()) {
+            return failure(video_frame_status_t::cancelled, "video seek was cancelled");
+        }
+        return failure(video_frame_status_t::seek_failed,
+                       "video stream could not seek to the requested time: " +
+                           ffmpeg_message(result));
+    }
+    avcodec_flush_buffers(session.decoder.get());
+    av_frame_unref(session.scratch.get());
+    av_frame_unref(session.current.get());
+    av_frame_unref(session.lookahead.get());
+    av_packet_unref(session.packet.get());
+    session.positioned = true;
+    session.input_eof = false;
+    session.flush_sent = false;
+    session.decoder_eof = false;
+    return std::nullopt;
+}
+
+auto retain_decoded_frame(video_decoder_session_t::impl_t& session, std::int64_t target,
+                          video_frame_decode_limits_t limits)
+    -> std::optional<video_frame_decode_result_t> {
+    const auto timestamp = timestamp_of(session.scratch.get());
+    if (timestamp == AV_NOPTS_VALUE) {
+        av_frame_unref(session.scratch.get());
+        return failure(video_frame_status_t::timestamp_missing,
+                       "video decoder produced a frame without a timestamp");
+    }
+    auto* destination = timestamp <= target ? session.current.get() : session.lookahead.get();
+    const auto copied = copy_frame(destination, session.scratch.get());
+    av_frame_unref(session.scratch.get());
+    if (copied < 0) {
+        return failure(video_frame_status_t::decode_failed,
+                       "decoded video frame could not be retained: " + ffmpeg_message(copied));
+    }
+    if (timestamp > target) {
+        return render_frame(session, limits);
+    }
+    return std::nullopt;
+}
+
+auto feed_video_decoder(video_decoder_session_t::impl_t& session,
+                        video_frame_decode_limits_t limits, std::stop_token stop,
+                        std::size_t& packet_count)
+    -> std::optional<video_frame_decode_result_t> {
+    if (session.input_eof) {
+        if (!session.flush_sent) {
+            const auto result = avcodec_send_packet(session.decoder.get(), nullptr);
+            if (result < 0 && result != AVERROR_EOF) {
+                return failure(video_frame_status_t::decode_failed,
+                               "video decoder flush failed: " + ffmpeg_message(result));
+            }
+            session.flush_sent = true;
+            if (result == AVERROR_EOF) {
+                session.decoder_eof = true;
+                return render_frame(session, limits);
+            }
+            return std::nullopt;
+        }
+        session.decoder_eof = true;
+        return render_frame(session, limits);
+    }
+
+    auto result = av_read_frame(session.format.get(), session.packet.get());
+    if (result == AVERROR_EOF) {
+        session.input_eof = true;
+        return std::nullopt;
+    }
+    if (result < 0) {
+        if (stop.stop_requested()) {
+            return failure(video_frame_status_t::cancelled, "video packet read was cancelled");
+        }
+        return failure(video_frame_status_t::decode_failed,
+                       "video packet read failed: " + ffmpeg_message(result));
+    }
+    ++packet_count;
+    if (session.packet->stream_index == session.stream_index) {
+        result = avcodec_send_packet(session.decoder.get(), session.packet.get());
+    } else {
+        result = 0;
+    }
+    av_packet_unref(session.packet.get());
+    if (result < 0) {
+        return failure(video_frame_status_t::decode_failed,
+                       "video packet submission failed: " + ffmpeg_message(result));
+    }
+    return std::nullopt;
+}
+
 } // namespace
 
 video_decoder_session_t::video_decoder_session_t(std::unique_ptr<impl_t> impl)
@@ -303,31 +405,8 @@ auto video_decoder_session_t::decode(const video_preview_clock_t& clock,
     }
     const auto target = *requested;
 
-    const auto current_timestamp = timestamp_of(session.current.get());
-    const bool seek_required = !session.positioned ||
-                               (session.last_target && target < *session.last_target) ||
-                               (current_timestamp != AV_NOPTS_VALUE && target < current_timestamp);
-    if (seek_required) {
-        const auto result = avformat_seek_file(session.format.get(), session.stream_index,
-                                               std::numeric_limits<std::int64_t>::min(), target,
-                                               target, AVSEEK_FLAG_BACKWARD);
-        if (result < 0) {
-            if (stop.stop_requested()) {
-                return failure(video_frame_status_t::cancelled, "video seek was cancelled");
-            }
-            return failure(video_frame_status_t::seek_failed,
-                           "video stream could not seek to the requested time: " +
-                               ffmpeg_message(result));
-        }
-        avcodec_flush_buffers(session.decoder.get());
-        av_frame_unref(session.scratch.get());
-        av_frame_unref(session.current.get());
-        av_frame_unref(session.lookahead.get());
-        av_packet_unref(session.packet.get());
-        session.positioned = true;
-        session.input_eof = false;
-        session.flush_sent = false;
-        session.decoder_eof = false;
+    if (auto seek_error = seek_to_target(session, target, stop)) {
+        return *seek_error;
     }
     session.last_target = target;
 
@@ -350,23 +429,8 @@ auto video_decoder_session_t::decode(const video_preview_clock_t& clock,
         }
         auto result = avcodec_receive_frame(session.decoder.get(), session.scratch.get());
         if (result >= 0) {
-            const auto timestamp = timestamp_of(session.scratch.get());
-            if (timestamp == AV_NOPTS_VALUE) {
-                av_frame_unref(session.scratch.get());
-                return failure(video_frame_status_t::timestamp_missing,
-                               "video decoder produced a frame without a timestamp");
-            }
-            auto* destination =
-                timestamp <= target ? session.current.get() : session.lookahead.get();
-            result = copy_frame(destination, session.scratch.get());
-            av_frame_unref(session.scratch.get());
-            if (result < 0) {
-                return failure(video_frame_status_t::decode_failed,
-                               "decoded video frame could not be retained: " +
-                                   ffmpeg_message(result));
-            }
-            if (timestamp > target) {
-                return render_frame(session, limits);
+            if (auto frame = retain_decoded_frame(session, target, limits)) {
+                return *frame;
             }
             continue;
         }
@@ -379,46 +443,8 @@ auto video_decoder_session_t::decode(const video_preview_clock_t& clock,
                            "video frame decode failed: " + ffmpeg_message(result));
         }
 
-        if (session.input_eof) {
-            if (!session.flush_sent) {
-                result = avcodec_send_packet(session.decoder.get(), nullptr);
-                if (result < 0 && result != AVERROR_EOF) {
-                    return failure(video_frame_status_t::decode_failed,
-                                   "video decoder flush failed: " + ffmpeg_message(result));
-                }
-                session.flush_sent = true;
-                if (result == AVERROR_EOF) {
-                    session.decoder_eof = true;
-                    return render_frame(session, limits);
-                }
-                continue;
-            }
-            session.decoder_eof = true;
-            return render_frame(session, limits);
-        }
-
-        result = av_read_frame(session.format.get(), session.packet.get());
-        if (result == AVERROR_EOF) {
-            session.input_eof = true;
-            continue;
-        }
-        if (result < 0) {
-            if (stop.stop_requested()) {
-                return failure(video_frame_status_t::cancelled, "video packet read was cancelled");
-            }
-            return failure(video_frame_status_t::decode_failed,
-                           "video packet read failed: " + ffmpeg_message(result));
-        }
-        ++packet_count;
-        if (session.packet->stream_index == session.stream_index) {
-            result = avcodec_send_packet(session.decoder.get(), session.packet.get());
-        } else {
-            result = 0;
-        }
-        av_packet_unref(session.packet.get());
-        if (result < 0) {
-            return failure(video_frame_status_t::decode_failed,
-                           "video packet submission failed: " + ffmpeg_message(result));
+        if (auto fed = feed_video_decoder(session, limits, stop, packet_count)) {
+            return *fed;
         }
     }
     return failure(video_frame_status_t::decode_failed,

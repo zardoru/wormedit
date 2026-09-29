@@ -64,17 +64,13 @@ struct requested_note_index_t {
     bool over_limit{};
 };
 
-auto index_requested_notes(chart_document_t& chart,
-                           const std::unordered_set<std::uint64_t>& requested,
-                           std::size_t maximum_chart_objects) -> requested_note_index_t {
+struct requested_note_scan_t {
+    const std::unordered_set<std::uint64_t>& requested;
+    std::size_t maximum_chart_objects;
     requested_note_index_t index;
-    index.occurrences.reserve(requested.size());
-    index.notes.reserve(requested.size());
-    for (const auto id : requested) {
-        index.occurrences.emplace(id, 0);
-    }
-    auto object_count = std::size_t{};
-    const auto record = [&](object_id_t id) {
+    std::size_t object_count{};
+
+    auto record(object_id_t id) -> bool {
         if (object_count >= maximum_chart_objects) {
             index.over_limit = true;
             return false;
@@ -84,49 +80,74 @@ auto index_requested_notes(chart_document_t& chart,
             ++found->second;
         }
         return true;
-    };
-    const auto scan = [&](const auto& values) {
+    }
+
+    auto scan_values(const auto& values) -> bool {
         for (const auto& value : values) {
             if (!record(value.id)) {
                 return false;
             }
         }
         return true;
-    };
-    auto within_limit =
-        scan(chart.bgm_source_lanes) && scan(chart.lane_layouts) && scan(chart.bpms) &&
-        scan(chart.pauses) && scan(chart.warps) && scan(chart.scrolls) && scan(chart.speeds) &&
-        scan(chart.kiai) && scan(chart.timing_anchors) && scan(chart.bookmarks) &&
-        scan(chart.sections) && scan(chart.bga_events) && scan(chart.sound_channels);
-    if (within_limit) {
+    }
+
+    auto scan_measures(chart_document_t& chart) -> bool {
         for (auto& measure : chart.measures) {
             for (auto& note : measure.notes) {
                 if (!record(note.id)) {
-                    within_limit = false;
-                    break;
+                    return false;
                 }
                 if (requested.contains(note.id.value)) {
                     index.notes.try_emplace(note.id.value, &note);
                 }
             }
-            if (!within_limit || !scan(measure.bgm_events)) {
-                within_limit = false;
-                break;
+            if (!scan_values(measure.bgm_events)) {
+                return false;
             }
         }
+        return true;
+    }
+
+    auto scan_channels(const chart_document_t& chart) -> bool {
+        for (const auto& channel : chart.sound_channels) {
+            if (!scan_values(channel.events)) {
+                return false;
+            }
+        }
+        return true;
+    }
+};
+
+auto index_requested_notes(chart_document_t& chart,
+                           const std::unordered_set<std::uint64_t>& requested,
+                           std::size_t maximum_chart_objects) -> requested_note_index_t {
+    requested_note_scan_t scan{.requested = requested,
+                               .maximum_chart_objects = maximum_chart_objects,
+                               .index = {},
+                               .object_count = 0};
+    scan.index.occurrences.reserve(requested.size());
+    scan.index.notes.reserve(requested.size());
+    for (const auto id : requested) {
+        scan.index.occurrences.emplace(id, 0);
+    }
+    auto within_limit =
+        scan.scan_values(chart.bgm_source_lanes) && scan.scan_values(chart.lane_layouts) &&
+        scan.scan_values(chart.bpms) && scan.scan_values(chart.pauses) &&
+        scan.scan_values(chart.warps) && scan.scan_values(chart.scrolls) &&
+        scan.scan_values(chart.speeds) && scan.scan_values(chart.kiai) &&
+        scan.scan_values(chart.timing_anchors) && scan.scan_values(chart.bookmarks) &&
+        scan.scan_values(chart.sections) && scan.scan_values(chart.bga_events) &&
+        scan.scan_values(chart.sound_channels);
+    if (within_limit) {
+        within_limit = scan.scan_measures(chart);
     }
     if (within_limit) {
-        for (const auto& channel : chart.sound_channels) {
-            if (!scan(channel.events)) {
-                within_limit = false;
-                break;
-            }
-        }
+        within_limit = scan.scan_channels(chart);
     }
     if (!within_limit) {
-        index.over_limit = true;
+        scan.index.over_limit = true;
     }
-    return index;
+    return std::move(scan.index);
 }
 
 auto total_label_bytes(const chart_document_t& chart, std::size_t maximum)
@@ -146,6 +167,31 @@ auto total_label_bytes(const chart_document_t& chart, std::size_t maximum)
     return total;
 }
 
+auto validate_note_label_request(const set_note_label_action_t& action,
+                                 note_label_edit_limits_t limits,
+                                 document_command_result_t& result) -> bool {
+    if (limits.maximum_selected_notes == 0 || limits.maximum_label_bytes == 0 ||
+        limits.maximum_total_label_bytes == 0 || limits.maximum_chart_objects == 0) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               "note-label editor limits must be positive");
+        return false;
+    }
+    if (action.notes.empty() || action.notes.size() > limits.maximum_selected_notes) {
+        reject(result, diagnostic_code_t::invalid_resolution,
+               action.notes.empty() ? "note-label edit requires at least one note"
+                                    : "note-label selection exceeds its configured cap");
+        return false;
+    }
+    if (action.label.has_value() &&
+        (action.label->size() > limits.maximum_label_bytes ||
+         action.label->find('\0') != std::string::npos || !valid_utf8(*action.label))) {
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "note label must be bounded UTF-8 without embedded NUL bytes");
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 auto apply_note_label_edit(document_history_t& history, std::uint64_t expected_revision,
@@ -157,23 +203,7 @@ auto apply_note_label_edit(document_history_t& history, std::uint64_t expected_r
                "note-label editor document revision is stale");
         return result;
     }
-    if (limits.maximum_selected_notes == 0 || limits.maximum_label_bytes == 0 ||
-        limits.maximum_total_label_bytes == 0 || limits.maximum_chart_objects == 0) {
-        reject(result, diagnostic_code_t::invalid_resolution,
-               "note-label editor limits must be positive");
-        return result;
-    }
-    if (action.notes.empty() || action.notes.size() > limits.maximum_selected_notes) {
-        reject(result, diagnostic_code_t::invalid_resolution,
-               action.notes.empty() ? "note-label edit requires at least one note"
-                                    : "note-label selection exceeds its configured cap");
-        return result;
-    }
-    if (action.label.has_value() &&
-        (action.label->size() > limits.maximum_label_bytes ||
-         action.label->find('\0') != std::string::npos || !valid_utf8(*action.label))) {
-        reject(result, diagnostic_code_t::unsupported_feature,
-               "note label must be bounded UTF-8 without embedded NUL bytes");
+    if (!validate_note_label_request(action, limits, result)) {
         return result;
     }
 

@@ -40,6 +40,46 @@ auto append_within_result_limit(image_job_result_t& result, const resolved_visua
                             .message = {}});
 }
 
+auto decode_images(image_cache_t& cache, song_id_t project, std::uint64_t document_revision,
+                   std::span<const resolved_visual_asset_t> sources, image_job_options_t options,
+                   std::stop_token stop) -> task_result_t {
+    image_job_result_t result{
+        .project = project, .document_revision = document_revision, .items = {}};
+    result.items.reserve(sources.size());
+    std::size_t result_bytes{};
+    for (const auto& source : sources) {
+        if (stop.stop_requested()) {
+            return task_result_t::failure(task_error_code_t::cancelled,
+                                          "image decode request was superseded");
+        }
+        if (auto cached = cache.find(project, document_revision, source)) {
+            append_within_result_limit(result, source, std::move(cached), result_bytes,
+                                       options.maximum_result_rgba_bytes);
+            continue;
+        }
+        auto decoded = load_image_rgba(source, options.decode_limits);
+        if (!decoded) {
+            result.items.push_back({.source = source,
+                                    .status = decoded.status,
+                                    .image = {},
+                                    .message = std::move(decoded.message)});
+            continue;
+        }
+        if (stop.stop_requested()) {
+            return task_result_t::failure(task_error_code_t::cancelled,
+                                          "image decode request was superseded");
+        }
+        auto image = std::make_shared<const rgba_image_t>(std::move(*decoded.image));
+        append_within_result_limit(result, source, image, result_bytes,
+                                   options.maximum_result_rgba_bytes);
+        if (result.items.back()) {
+            static_cast<void>(cache.insert(project, document_revision, source, std::move(image)));
+        }
+    }
+    auto payload = std::make_shared<const image_job_result_t>(std::move(result));
+    return task_result_t::success(make_task_value(std::move(payload)));
+}
+
 } // namespace
 
 image_cache_t::image_cache_t(std::size_t maximum_rgba_bytes, std::size_t maximum_entries)
@@ -159,42 +199,7 @@ auto image_job_t::request(song_id_t project, std::uint64_t document_revision,
     const auto task =
         graph.add_task({}, [this, project, document_revision, sources = std::move(copied_sources),
                             options](std::span<const task_result_t>, std::stop_token stop) {
-            image_job_result_t result{
-                .project = project, .document_revision = document_revision, .items = {}};
-            result.items.reserve(sources.size());
-            std::size_t result_bytes{};
-            for (const auto& source : sources) {
-                if (stop.stop_requested()) {
-                    return task_result_t::failure(task_error_code_t::cancelled,
-                                                  "image decode request was superseded");
-                }
-                if (auto cached = cache_.find(project, document_revision, source)) {
-                    append_within_result_limit(result, source, std::move(cached), result_bytes,
-                                               options.maximum_result_rgba_bytes);
-                    continue;
-                }
-                auto decoded = load_image_rgba(source, options.decode_limits);
-                if (!decoded) {
-                    result.items.push_back({.source = source,
-                                            .status = decoded.status,
-                                            .image = {},
-                                            .message = std::move(decoded.message)});
-                    continue;
-                }
-                if (stop.stop_requested()) {
-                    return task_result_t::failure(task_error_code_t::cancelled,
-                                                  "image decode request was superseded");
-                }
-                auto image = std::make_shared<const rgba_image_t>(std::move(*decoded.image));
-                append_within_result_limit(result, source, image, result_bytes,
-                                           options.maximum_result_rgba_bytes);
-                if (result.items.back()) {
-                    static_cast<void>(
-                        cache_.insert(project, document_revision, source, std::move(image)));
-                }
-            }
-            auto payload = std::make_shared<const image_job_result_t>(std::move(result));
-            return task_result_t::success(make_task_value(std::move(payload)));
+            return decode_images(cache_, project, document_revision, sources, options, stop);
         });
     if (!task) {
         return {.status = image_job_start_status_t::scheduler_rejected,

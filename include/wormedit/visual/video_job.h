@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -99,6 +100,14 @@ class video_frame_job_t {
     [[nodiscard]] auto busy() const noexcept -> bool;
 
   private:
+    struct decode_request_t {
+        song_id_t project;
+        std::uint64_t document_revision{};
+        resolved_visual_asset_t source;
+        video_preview_clock_t clock;
+        video_frame_decode_limits_t limits;
+    };
+
     struct worker_t {
         std::uint64_t generation{};
         song_id_t project;
@@ -108,6 +117,10 @@ class video_frame_job_t {
     };
 
     void discard_terminal_jobs();
+    [[nodiscard]] auto decode_uncached_frame(const decode_request_t& request,
+                                             std::stop_token stop) -> video_frame_decode_result_t;
+    [[nodiscard]] auto run_decode(const decode_request_t& request, std::stop_token stop)
+        -> task_result_t;
 
     video_frame_cache_t& cache_;
     task_scheduler_t& scheduler_;

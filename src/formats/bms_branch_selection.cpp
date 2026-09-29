@@ -155,6 +155,197 @@ void retain_runtime_asset_metadata(const song_document_t& original,
     }
 }
 
+auto make_parse_options(const bms_branch_selection_request_t& request,
+                        const std::optional<std::string>& profile_id,
+                        std::vector<bms_parse_options_t::branch_choice_t> choices = {})
+    -> bms_parse_options_t {
+    return {.encoding_override = std::nullopt,
+            .file_extension = {},
+            .max_source_bytes = request.max_source_bytes,
+            .max_line_bytes = request.max_line_bytes,
+            .max_nesting_depth = request.max_nesting_depth,
+            .max_lines = request.max_lines,
+            .max_chart_resolution = request.max_chart_resolution,
+            .lane_profile_id = profile_id,
+            .branch_choices = std::move(choices)};
+}
+
+auto serialize_branch_source(const song_document_t& song, const chart_document_t& chart,
+                             const bms_branch_selection_request_t& request,
+                             const std::optional<std::string>& profile_id,
+                             bms_branch_selection_result_t& result) -> std::optional<std::string> {
+    auto written = write_bms(song, {.chart = chart.id,
+                                    .lane_profile_id = profile_id,
+                                    .preserve_unchanged_source = false,
+                                    .branch_policy = bms_branch_policy_t::preserve_tree,
+                                    .output_encoding = std::nullopt,
+                                    .max_slots_per_line = request.max_slots_per_line});
+    result.write_diagnostics = std::move(written.diagnostics);
+    if (!written.bytes.has_value() || has_error(result.write_diagnostics)) {
+        add_error(result, bms_branch_selection_diagnostic_code_t::write_failed,
+                  "the current BMS document could not be serialized without changing policy", "$");
+        return std::nullopt;
+    }
+    if (written.bytes->size() > request.max_source_bytes) {
+        add_error(result, bms_branch_selection_diagnostic_code_t::resource_limit,
+                  "serialized BMS source exceeds the configured rematerialization byte limit", "$");
+        return std::nullopt;
+    }
+    return std::move(written.bytes);
+}
+
+auto baseline_controls_for(std::span<const std::byte> bytes,
+                           const bms_branch_selection_request_t& request,
+                           const std::optional<std::string>& profile_id,
+                           const control_inventory_t& original,
+                           bms_branch_selection_result_t& result)
+    -> std::optional<control_inventory_t> {
+    auto baseline = parse_bms_bytes(bytes, make_parse_options(request, profile_id));
+    if (!baseline.song.has_value() || baseline.has_errors()) {
+        result.parse_diagnostics = std::move(baseline.diagnostics);
+        add_error(result, bms_branch_selection_diagnostic_code_t::parse_failed,
+                  "serialized BMS source could not be reparsed for control-tree verification", "$");
+        return std::nullopt;
+    }
+    const auto& chart = baseline.song->charts.front();
+    if (!chart.bms_control_tree.has_value()) {
+        add_error(result, bms_branch_selection_diagnostic_code_t::control_tree_changed,
+                  "serialized BMS source no longer contains its retained control tree",
+                  "$.charts[0].bms_control_tree");
+        return std::nullopt;
+    }
+    auto controls = control_inventory(*chart.bms_control_tree);
+    if (controls.signatures != original.signatures ||
+        controls.choices.size() != original.choices.size()) {
+        add_error(result, bms_branch_selection_diagnostic_code_t::control_tree_changed,
+                  "BMS serialization changed the branch-control structure",
+                  "$.charts[0].bms_control_tree");
+        return std::nullopt;
+    }
+    return controls;
+}
+
+auto map_proposed_choices(const bms_branch_selection_request_t& request,
+                          const control_inventory_t& original,
+                          const control_inventory_t& baseline,
+                          bms_branch_selection_result_t& result)
+    -> std::optional<std::vector<bms_parse_options_t::branch_choice_t>> {
+    std::vector<bms_parse_options_t::branch_choice_t> choices;
+    choices.reserve(request.proposed.size());
+    for (const auto& selection : request.proposed) {
+        const auto index = original.choice_indices_by_id.find(selection.branch.value);
+        if (index == original.choice_indices_by_id.end() ||
+            index->second >= baseline.choices.size()) {
+            add_error(result, bms_branch_selection_diagnostic_code_t::selection_mismatch,
+                      "proposed branch selection cannot be mapped to the serialized control tree",
+                      "$.charts[0].active_branch_selection");
+            return std::nullopt;
+        }
+        choices.push_back(
+            {baseline.choices[index->second]->source_order, selection.selected_value});
+    }
+    return choices;
+}
+
+auto same_proposed_selection(const chart_document_t& chart,
+                             const bms_branch_selection_request_t& request,
+                             const control_inventory_t& original,
+                             const control_inventory_t& rematerialized) -> bool {
+    std::unordered_map<std::uint64_t, std::int64_t> actual;
+    for (const auto& selection : chart.active_branch_selection) {
+        actual.emplace(selection.branch.value, selection.selected_value);
+    }
+    if (actual.size() != request.proposed.size()) {
+        return false;
+    }
+    for (const auto& selection : request.proposed) {
+        const auto original_index = original.choice_indices_by_id.find(selection.branch.value);
+        if (original_index == original.choice_indices_by_id.end() ||
+            original_index->second >= rematerialized.choices.size()) {
+            return false;
+        }
+        const auto* control = rematerialized.choices[original_index->second];
+        const auto found = actual.find(control->id.value);
+        if (found == actual.end() || found->second != selection.selected_value) {
+            return false;
+        }
+    }
+    return true;
+}
+
+auto parse_proposed_branch_source(std::span<const std::byte> bytes,
+                                 const bms_branch_selection_request_t& request,
+                                 const std::optional<std::string>& profile_id,
+                                 std::vector<bms_parse_options_t::branch_choice_t> choices,
+                                 const control_inventory_t& original,
+                                 const chart_document_t& source_chart,
+                                 bms_branch_selection_result_t& result)
+    -> std::optional<song_document_t> {
+    auto parsed = parse_bms_bytes(bytes,
+                                  make_parse_options(request, profile_id, std::move(choices)));
+    result.parse_diagnostics = std::move(parsed.diagnostics);
+    if (!parsed.song.has_value() || has_error(result.parse_diagnostics)) {
+        add_error(result, bms_branch_selection_diagnostic_code_t::parse_failed,
+                  "serialized BMS source could not materialize the proposed branch selection", "$");
+        return std::nullopt;
+    }
+    auto& chart = parsed.song->charts.front();
+    if (!chart.bms_control_tree.has_value()) {
+        add_error(result, bms_branch_selection_diagnostic_code_t::control_tree_changed,
+                  "rematerialized BMS source no longer contains its retained control tree",
+                  "$.charts[0].bms_control_tree");
+        return std::nullopt;
+    }
+    const auto controls = control_inventory(*chart.bms_control_tree);
+    if (controls.signatures != original.signatures ||
+        controls.choices.size() != original.choices.size()) {
+        add_error(result, bms_branch_selection_diagnostic_code_t::control_tree_changed,
+                  "rematerialization changed the branch-control structure",
+                  "$.charts[0].bms_control_tree");
+        return std::nullopt;
+    }
+    if (!same_proposed_selection(chart, request, original, controls)) {
+        add_error(result, bms_branch_selection_diagnostic_code_t::selection_mismatch,
+                  "rematerialized BMS choices differ from the proposed selection",
+                  "$.charts[0].active_branch_selection");
+        return std::nullopt;
+    }
+    if (chart.lane_layouts.size() != source_chart.lane_layouts.size()) {
+        add_error(result, bms_branch_selection_diagnostic_code_t::selection_mismatch,
+                  "rematerialized BMS lane-profile state differs from the source chart",
+                  "$.charts[0].lane_layouts");
+        return std::nullopt;
+    }
+    return std::move(*parsed.song);
+}
+
+auto preserve_editor_state(const song_document_t& song, const chart_document_t& chart,
+                           song_document_t& rematerialized) -> void {
+    retain_runtime_asset_metadata(song, rematerialized);
+    rematerialized.schema_version = song.schema_version;
+    rematerialized.id = song.id;
+    rematerialized.revision = song.revision;
+    rematerialized.metadata.ordered_search_tags = song.metadata.ordered_search_tags;
+    rematerialized.midi_assets = song.midi_assets;
+    rematerialized.storyboards = song.storyboards;
+    rematerialized.output_groups = song.output_groups;
+    auto& target = rematerialized.charts.front();
+    target.id = chart.id;
+    target.metadata.name = chart.metadata.name;
+    target.metadata.author = chart.metadata.author;
+    target.metadata.rating = chart.metadata.rating;
+    target.beat_zero_audio_offset_seconds = chart.beat_zero_audio_offset_seconds;
+    target.input_profile = chart.input_profile;
+    for (std::size_t index = 0; index < chart.measures.size() &&
+                                index < target.measures.size(); ++index) {
+        target.measures[index].definition.meter = chart.measures[index].definition.meter;
+    }
+    for (std::size_t index = 0; index < chart.lane_layouts.size(); ++index) {
+        target.lane_layouts[index].id = chart.lane_layouts[index].id;
+        target.lane_layouts[index].layout = chart.lane_layouts[index].layout;
+    }
+}
+
 } // namespace
 
 auto bms_branch_selection_result_t::has_errors() const -> bool {
@@ -211,159 +402,27 @@ auto rematerialize_bms_branch_selection(const song_document_t& song,
     }
 
     const auto profile_id = selected_profile_id(*chart);
-    auto written = write_bms(song, {
-                                       .chart = chart->id,
-                                       .lane_profile_id = profile_id,
-                                       .preserve_unchanged_source = false,
-                                       .branch_policy = bms_branch_policy_t::preserve_tree,
-                                       .output_encoding = std::nullopt,
-                                       .max_slots_per_line = request.max_slots_per_line,
-                                   });
-    result.write_diagnostics = std::move(written.diagnostics);
-    if (!written.bytes.has_value() || has_error(result.write_diagnostics)) {
-        add_error(result, bms_branch_selection_diagnostic_code_t::write_failed,
-                  "the current BMS document could not be serialized without changing policy", "$");
+    auto source = serialize_branch_source(song, *chart, request, profile_id, result);
+    if (!source.has_value()) {
         return result;
     }
-    if (written.bytes->size() > request.max_source_bytes) {
-        add_error(result, bms_branch_selection_diagnostic_code_t::resource_limit,
-                  "serialized BMS source exceeds the configured rematerialization byte limit", "$");
-        return result;
-    }
-
-    const auto parse_options = [&](std::vector<bms_parse_options_t::branch_choice_t> choices) {
-        return bms_parse_options_t{
-            .encoding_override = std::nullopt,
-            .file_extension = {},
-            .max_source_bytes = request.max_source_bytes,
-            .max_line_bytes = request.max_line_bytes,
-            .max_nesting_depth = request.max_nesting_depth,
-            .max_lines = request.max_lines,
-            .max_chart_resolution = request.max_chart_resolution,
-            .lane_profile_id = profile_id,
-            .branch_choices = std::move(choices),
-        };
-    };
-    const auto bytes = std::as_bytes(std::span{written.bytes->data(), written.bytes->size()});
-    auto baseline = parse_bms_bytes(bytes, parse_options({}));
-    if (!baseline.song.has_value() || baseline.has_errors()) {
-        result.parse_diagnostics = std::move(baseline.diagnostics);
-        add_error(result, bms_branch_selection_diagnostic_code_t::parse_failed,
-                  "serialized BMS source could not be reparsed for control-tree verification", "$");
-        return result;
-    }
-    const auto& baseline_chart = baseline.song->charts.front();
-    if (!baseline_chart.bms_control_tree.has_value()) {
-        add_error(result, bms_branch_selection_diagnostic_code_t::control_tree_changed,
-                  "serialized BMS source no longer contains its retained control tree",
-                  "$.charts[0].bms_control_tree");
-        return result;
-    }
-
+    const auto bytes = std::as_bytes(std::span{source->data(), source->size()});
     const auto original_controls = control_inventory(*chart->bms_control_tree);
-    const auto baseline_controls = control_inventory(*baseline_chart.bms_control_tree);
-    if (original_controls.signatures != baseline_controls.signatures ||
-        original_controls.choices.size() != baseline_controls.choices.size()) {
-        add_error(result, bms_branch_selection_diagnostic_code_t::control_tree_changed,
-                  "BMS serialization changed the branch-control structure",
-                  "$.charts[0].bms_control_tree");
+    const auto baseline_controls =
+        baseline_controls_for(bytes, request, profile_id, original_controls, result);
+    if (!baseline_controls.has_value()) {
         return result;
     }
-
-    std::vector<bms_parse_options_t::branch_choice_t> choices;
-    choices.reserve(request.proposed.size());
-    for (const auto& selection : request.proposed) {
-        const auto index = original_controls.choice_indices_by_id.find(selection.branch.value);
-        if (index == original_controls.choice_indices_by_id.end() ||
-            index->second >= baseline_controls.choices.size()) {
-            add_error(result, bms_branch_selection_diagnostic_code_t::selection_mismatch,
-                      "proposed branch selection cannot be mapped to the serialized control tree",
-                      "$.charts[0].active_branch_selection");
-            return result;
-        }
-        choices.push_back(
-            {baseline_controls.choices[index->second]->source_order, selection.selected_value});
-    }
-
-    auto reparsed = parse_bms_bytes(bytes, parse_options(std::move(choices)));
-    result.parse_diagnostics = std::move(reparsed.diagnostics);
-    if (!reparsed.song.has_value() || has_error(result.parse_diagnostics)) {
-        add_error(result, bms_branch_selection_diagnostic_code_t::parse_failed,
-                  "serialized BMS source could not materialize the proposed branch selection", "$");
+    auto choices = map_proposed_choices(request, original_controls, *baseline_controls, result);
+    if (!choices.has_value()) {
         return result;
     }
-    auto& reparsed_chart = reparsed.song->charts.front();
-    if (!reparsed_chart.bms_control_tree.has_value()) {
-        add_error(result, bms_branch_selection_diagnostic_code_t::control_tree_changed,
-                  "rematerialized BMS source no longer contains its retained control tree",
-                  "$.charts[0].bms_control_tree");
+    auto rematerialized = parse_proposed_branch_source(
+        bytes, request, profile_id, std::move(*choices), original_controls, *chart, result);
+    if (!rematerialized.has_value()) {
         return result;
     }
-    const auto reparsed_controls = control_inventory(*reparsed_chart.bms_control_tree);
-    if (reparsed_controls.signatures != original_controls.signatures ||
-        reparsed_controls.choices.size() != original_controls.choices.size()) {
-        add_error(result, bms_branch_selection_diagnostic_code_t::control_tree_changed,
-                  "rematerialization changed the branch-control structure",
-                  "$.charts[0].bms_control_tree");
-        return result;
-    }
-
-    std::unordered_map<std::uint64_t, std::int64_t> actual_choices;
-    for (const auto& selection : reparsed_chart.active_branch_selection) {
-        actual_choices.emplace(selection.branch.value, selection.selected_value);
-    }
-    if (actual_choices.size() != request.proposed.size()) {
-        add_error(result, bms_branch_selection_diagnostic_code_t::selection_mismatch,
-                  "rematerialized BMS choices differ from the complete proposed selection",
-                  "$.charts[0].active_branch_selection");
-        return result;
-    }
-    for (const auto& selection : request.proposed) {
-        const auto original_index =
-            original_controls.choice_indices_by_id.find(selection.branch.value)->second;
-        const auto* rematerialized_control = reparsed_controls.choices[original_index];
-        const auto actual = actual_choices.find(rematerialized_control->id.value);
-        if (actual == actual_choices.end() || actual->second != selection.selected_value) {
-            add_error(result, bms_branch_selection_diagnostic_code_t::selection_mismatch,
-                      "rematerialized BMS choices differ from the proposed selection",
-                      "$.charts[0].active_branch_selection");
-            return result;
-        }
-    }
-    if (reparsed_chart.lane_layouts.size() != chart->lane_layouts.size()) {
-        add_error(result, bms_branch_selection_diagnostic_code_t::selection_mismatch,
-                  "rematerialized BMS lane-profile state differs from the source chart",
-                  "$.charts[0].lane_layouts");
-        return result;
-    }
-
-    auto rematerialized = std::move(*reparsed.song);
-    retain_runtime_asset_metadata(song, rematerialized);
-    rematerialized.schema_version = song.schema_version;
-    rematerialized.id = song.id;
-    rematerialized.revision = song.revision;
-    rematerialized.metadata.ordered_search_tags = song.metadata.ordered_search_tags;
-    rematerialized.midi_assets = song.midi_assets;
-    rematerialized.storyboards = song.storyboards;
-    rematerialized.output_groups = song.output_groups;
-    rematerialized.charts.front().id = chart->id;
-    rematerialized.charts.front().metadata.name = chart->metadata.name;
-    rematerialized.charts.front().metadata.author = chart->metadata.author;
-    rematerialized.charts.front().metadata.rating = chart->metadata.rating;
-    rematerialized.charts.front().beat_zero_audio_offset_seconds =
-        chart->beat_zero_audio_offset_seconds;
-    rematerialized.charts.front().input_profile = chart->input_profile;
-    for (std::size_t index = 0;
-         index < chart->measures.size() && index < rematerialized.charts.front().measures.size();
-         ++index) {
-        rematerialized.charts.front().measures[index].definition.meter =
-            chart->measures[index].definition.meter;
-    }
-    for (std::size_t index = 0; index < chart->lane_layouts.size(); ++index) {
-        rematerialized.charts.front().lane_layouts[index].id = chart->lane_layouts[index].id;
-        rematerialized.charts.front().lane_layouts[index].layout =
-            chart->lane_layouts[index].layout;
-    }
+    preserve_editor_state(song, *chart, *rematerialized);
     result.song = std::move(rematerialized);
     return result;
 }

@@ -178,37 +178,36 @@ auto clamp_confidence(double value) -> double {
     return std::clamp(value, 0.0, 1.0);
 }
 
-auto profile_evidence(const bms_lane_profile_descriptor_t& spec, std::string_view extension,
-                      std::optional<unsigned int> player_header, bool octave_fp_header,
-                      std::size_t compatible_count, std::size_t playable_channel_count,
-                      bool complete_family_match)
-    -> std::pair<double, std::vector<bms_profile_evidence_t>> {
-    auto score = 0.55;
-    auto evidence = std::vector<bms_profile_evidence_t>{};
-
-    if (extension_is_known(extension)) {
-        auto weight = 0.0;
-        if (extension == ".PMS") {
-            weight = spec.family == bms_lane_profile_family_t::popn ? 0.18 : -0.18;
-        } else if (extension == ".BMS") {
-            if (spec.family == bms_lane_profile_family_t::bms_five_or_ten_key) {
-                weight = 0.12;
-            } else if (spec.family == bms_lane_profile_family_t::bme_seven_or_fourteen_key) {
-                weight = 0.04;
-            }
-        } else if (extension == ".BME") {
-            if (spec.family == bms_lane_profile_family_t::bme_seven_or_fourteen_key) {
-                weight = 0.14;
-            } else if (spec.family == bms_lane_profile_family_t::bms_five_or_ten_key) {
-                weight = 0.02;
-            }
-        } else if (extension == ".BML") {
-            if (spec.family == bms_lane_profile_family_t::bme_seven_or_fourteen_key) {
-                weight = 0.08;
-            } else if (spec.family == bms_lane_profile_family_t::bms_five_or_ten_key) {
-                weight = 0.05;
-            }
+auto extension_weight(const bms_lane_profile_descriptor_t& spec, std::string_view extension)
+    -> double {
+    if (extension == ".PMS") {
+        return spec.family == bms_lane_profile_family_t::popn ? 0.18 : -0.18;
+    }
+    if (extension == ".BMS") {
+        if (spec.family == bms_lane_profile_family_t::bms_five_or_ten_key) {
+            return 0.12;
         }
+        return spec.family == bms_lane_profile_family_t::bme_seven_or_fourteen_key ? 0.04 : 0.0;
+    }
+    if (extension == ".BME") {
+        if (spec.family == bms_lane_profile_family_t::bme_seven_or_fourteen_key) {
+            return 0.14;
+        }
+        return spec.family == bms_lane_profile_family_t::bms_five_or_ten_key ? 0.02 : 0.0;
+    }
+    if (extension == ".BML") {
+        if (spec.family == bms_lane_profile_family_t::bme_seven_or_fourteen_key) {
+            return 0.08;
+        }
+        return spec.family == bms_lane_profile_family_t::bms_five_or_ten_key ? 0.05 : 0.0;
+    }
+    return 0.0;
+}
+
+void add_extension_evidence(const bms_lane_profile_descriptor_t& spec, std::string_view extension,
+                            double& score, std::vector<bms_profile_evidence_t>& evidence) {
+    if (extension_is_known(extension)) {
+        const auto weight = extension_weight(spec, extension);
         score += weight;
         evidence.push_back({
             .source = bms_detection_evidence_source_t::file_extension,
@@ -225,7 +224,11 @@ auto profile_evidence(const bms_lane_profile_descriptor_t& spec, std::string_vie
             .weight = 0.0,
         });
     }
+}
 
+void add_player_evidence(const bms_lane_profile_descriptor_t& spec, std::string_view extension,
+                         std::optional<unsigned int> player_header, bool octave_fp_header,
+                         double& score, std::vector<bms_profile_evidence_t>& evidence) {
     if (player_header && *player_header >= 1 && *player_header <= 4) {
         const auto compatibility =
             profile_header_compatibility(spec, extension, player_header, octave_fp_header);
@@ -246,19 +249,28 @@ auto profile_evidence(const bms_lane_profile_descriptor_t& spec, std::string_vie
             .weight = 0.0,
         });
     }
+}
 
-    if (octave_fp_header) {
-        const auto weight = spec.octave_fp_header ? 0.30 : -0.25;
-        score += weight;
-        evidence.push_back({
-            .source = bms_detection_evidence_source_t::octave_fp_header,
-            .message = spec.octave_fp_header
-                           ? "#OCT/FP explicitly identifies the octave/foot-pedal profile."
-                           : "#OCT/FP conflicts with this candidate profile.",
-            .weight = weight,
-        });
+void add_octave_evidence(const bms_lane_profile_descriptor_t& spec, bool octave_fp_header,
+                         double& score, std::vector<bms_profile_evidence_t>& evidence) {
+    if (!octave_fp_header) {
+        return;
     }
+    const auto weight = spec.octave_fp_header ? 0.30 : -0.25;
+    score += weight;
+    evidence.push_back({
+        .source = bms_detection_evidence_source_t::octave_fp_header,
+        .message = spec.octave_fp_header
+                       ? "#OCT/FP explicitly identifies the octave/foot-pedal profile."
+                       : "#OCT/FP conflicts with this candidate profile.",
+        .weight = weight,
+    });
+}
 
+void add_channel_evidence(const bms_lane_profile_descriptor_t& spec,
+                          std::size_t compatible_count, std::size_t playable_channel_count,
+                          bool complete_family_match, double& score,
+                          std::vector<bms_profile_evidence_t>& evidence) {
     if (playable_channel_count != 0) {
         evidence.push_back({
             .source = bms_detection_evidence_source_t::used_channel,
@@ -271,19 +283,17 @@ auto profile_evidence(const bms_lane_profile_descriptor_t& spec, std::string_vie
         score += 0.14;
         evidence.push_back({
             .source = bms_detection_evidence_source_t::used_channel,
-            .message =
-                "This is the only built-in candidate that maps every recognized playable channel.",
+            .message = "This is the only built-in candidate that maps every recognized playable channel.",
             .weight = 0.14,
         });
     } else if (compatible_count > 1) {
-        const auto ambiguity_weight =
-            -std::min(0.16, 0.025 * static_cast<double>(compatible_count - 1));
-        score += ambiguity_weight;
+        const auto weight = -std::min(0.16, 0.025 * static_cast<double>(compatible_count - 1));
+        score += weight;
         evidence.push_back({
             .source = bms_detection_evidence_source_t::used_channel,
             .message = std::to_string(compatible_count) +
                        " built-in candidates map all recognized playable channels.",
-            .weight = ambiguity_weight,
+            .weight = weight,
         });
     }
     if (complete_family_match) {
@@ -299,7 +309,184 @@ auto profile_evidence(const bms_lane_profile_descriptor_t& spec, std::string_vie
             .weight = weight,
         });
     }
+}
+
+auto profile_evidence(const bms_lane_profile_descriptor_t& spec, std::string_view extension,
+                      std::optional<unsigned int> player_header, bool octave_fp_header,
+                      std::size_t compatible_count, std::size_t playable_channel_count,
+                      bool complete_family_match)
+    -> std::pair<double, std::vector<bms_profile_evidence_t>> {
+    auto score = 0.55;
+    auto evidence = std::vector<bms_profile_evidence_t>{};
+    add_extension_evidence(spec, extension, score, evidence);
+    add_player_evidence(spec, extension, player_header, octave_fp_header, score, evidence);
+    add_octave_evidence(spec, octave_fp_header, score, evidence);
+    add_channel_evidence(spec, compatible_count, playable_channel_count, complete_family_match,
+                         score, evidence);
     return {clamp_confidence(score), std::move(evidence)};
+}
+
+auto playable_channels(const bms_profile_detection_result_t& result)
+    -> std::vector<const bms_raw_channel_t*> {
+    auto channels = std::vector<const bms_raw_channel_t*>{};
+    for (const auto& channel : result.custom_fallback.channels) {
+        if (is_playable_family(channel.kind)) {
+            channels.push_back(&channel);
+        }
+    }
+    return channels;
+}
+
+auto make_candidates(std::span<const bms_lane_profile_descriptor_t> specs,
+                     const std::vector<const bms_raw_channel_t*>& channels)
+    -> std::vector<bms_profile_candidate_t> {
+    const auto families = observed_channel_families(channels);
+    auto candidates = std::vector<bms_profile_candidate_t>{};
+    candidates.reserve(specs.size());
+    for (const auto& spec : specs) {
+        auto candidate = bms_profile_candidate_t{};
+        candidate.profile = spec.profile;
+        for (const auto* channel : channels) {
+            const auto canonical = channel->canonical_spelling.value_or(channel->raw_spelling);
+            if (!profile_maps_channel(candidate.profile.layout, canonical)) {
+                candidate.unmapped_playable_channels.push_back(channel->raw_spelling);
+            }
+        }
+        candidate.maps_all_playable_channels = candidate.unmapped_playable_channels.empty();
+        candidate.complete_channel_family_match =
+            complete_channel_family_match(candidate.profile.layout, families);
+        candidate.automatic_selection_eligible = spec.family != bms_lane_profile_family_t::special;
+        candidates.push_back(std::move(candidate));
+    }
+    return candidates;
+}
+
+void score_candidates(std::span<const bms_lane_profile_descriptor_t> specs,
+                      const std::vector<const bms_raw_channel_t*>& channels,
+                      std::string_view extension, const bms_profile_detection_request_t& request,
+                      std::vector<bms_profile_candidate_t>& candidates,
+                      bms_profile_detection_result_t& result) {
+    const auto compatible_count = static_cast<std::size_t>(std::ranges::count_if(
+        candidates, [](const auto& item) { return item.maps_all_playable_channels; }));
+    for (std::size_t index = 0; index < candidates.size(); ++index) {
+        auto& candidate = candidates[index];
+        if (!candidate.maps_all_playable_channels) {
+            continue;
+        }
+        auto [confidence, evidence] = profile_evidence(
+            specs[index], extension, request.player_header, request.octave_fp_header,
+            compatible_count, channels.size(), candidate.complete_channel_family_match);
+        candidate.confidence = confidence;
+        candidate.evidence = std::move(evidence);
+        result.candidates.push_back(std::move(candidate));
+    }
+}
+
+auto find_candidate(std::vector<bms_profile_candidate_t>& candidates, std::string_view profile_id)
+    -> bms_profile_candidate_t* {
+    const auto found = std::ranges::find_if(candidates, [profile_id](const auto& item) {
+        return item.profile.layout.profile_id == profile_id;
+    });
+    return found == candidates.end() ? nullptr : &*found;
+}
+
+void select_candidate(bms_profile_detection_result_t& result,
+                      const bms_profile_candidate_t& chosen, double confidence) {
+    result.status = bms_profile_detection_status_t::selected;
+    result.confidence = confidence;
+    result.selected_profile = chosen.profile;
+    result.evidence = chosen.evidence;
+}
+
+auto select_explicit_profile(const bms_profile_detection_request_t& request,
+                             bms_profile_detection_result_t& result) -> bool {
+    if (!request.explicit_profile_id) {
+        return false;
+    }
+    if (auto* chosen = find_candidate(result.candidates, *request.explicit_profile_id)) {
+        chosen->confidence = 1.0;
+        chosen->evidence.push_back({
+            .source = bms_detection_evidence_source_t::explicit_profile,
+            .message = "An explicit project/user profile choice matches all recognized playable channels.",
+            .weight = 1.0,
+        });
+        select_candidate(result, *chosen, 1.0);
+        return true;
+    }
+    result.evidence.push_back({
+        .source = bms_detection_evidence_source_t::explicit_profile,
+        .message = "The explicit profile is unknown or does not map every recognized playable "
+                   "channel; raw channels remain in the custom fallback.",
+        .weight = 0.0,
+    });
+    result.status = bms_profile_detection_status_t::custom_required;
+    result.confidence = 0.0;
+    return true;
+}
+
+auto select_octave_profile(const bms_profile_detection_request_t& request,
+                           bms_profile_detection_result_t& result) -> bool {
+    if (!request.octave_fp_header) {
+        return false;
+    }
+    if (const auto* chosen = find_candidate(result.candidates, "bms-octave-foot-pedal")) {
+        select_candidate(result, *chosen, std::max(chosen->confidence, 0.95));
+        return true;
+    }
+    result.evidence.push_back({
+        .source = bms_detection_evidence_source_t::octave_fp_header,
+        .message = "#OCT/FP was present, but its named profile does not map every recognized "
+                   "playable channel.",
+        .weight = 0.0,
+    });
+    return false;
+}
+
+void append_custom_required_evidence(bms_profile_detection_result_t& result,
+                                     bool no_playable_channels) {
+    result.status = bms_profile_detection_status_t::custom_required;
+    result.evidence.push_back({
+        .source = bms_detection_evidence_source_t::used_channel,
+        .message = no_playable_channels
+                       ? "No recognized playable-family channels identify a built-in lane profile."
+                       : "No built-in profile maps every recognized playable-family channel; the raw "
+                         "custom map is retained.",
+        .weight = 0.0,
+    });
+}
+
+void decide_automatic_profile(bms_profile_detection_result_t& result) {
+    std::ranges::sort(result.candidates, [](const auto& left, const auto& right) {
+        if (left.confidence != right.confidence) {
+            return left.confidence > right.confidence;
+        }
+        return left.profile.layout.profile_id < right.profile.layout.profile_id;
+    });
+    if (result.candidates.empty()) {
+        append_custom_required_evidence(result, false);
+        return;
+    }
+    const auto& best = result.candidates.front();
+    const auto second = result.candidates.size() > 1 ? result.candidates[1].confidence : 0.0;
+    const auto margin = best.confidence - second;
+    const auto enough = result.candidates.size() == 1 ? best.confidence >= 0.72
+                                                      : best.confidence >= 0.80 && margin >= 0.18;
+    result.confidence = best.confidence;
+    result.evidence = best.evidence;
+    if (enough && best.automatic_selection_eligible) {
+        select_candidate(result, best, best.confidence);
+        return;
+    }
+    result.status = bms_profile_detection_status_t::ambiguous;
+    result.evidence.push_back({
+        .source = bms_detection_evidence_source_t::used_channel,
+        .message = !best.automatic_selection_eligible
+                       ? "The best channel match is a special dialect without named or explicit "
+                         "evidence; the custom raw-channel map is retained for review."
+                       : "Several profile interpretations remain plausible; the custom raw "
+                         "channel map is retained for review.",
+        .weight = 0.0,
+    });
 }
 
 } // namespace
@@ -312,163 +499,28 @@ auto detect_bms_lane_profile(const bms_profile_detection_request_t& request)
         result.custom_fallback.channels.push_back(
             observe_channel(index, request.used_channels[index]));
     }
-
     const auto extension = normalize_extension(request.file_extension);
-    const auto raw_playable_channels = [&] {
-        std::vector<const bms_raw_channel_t*> channels;
-        for (const auto& channel : result.custom_fallback.channels) {
-            if (is_playable_family(channel.kind)) {
-                channels.push_back(&channel);
-            }
-        }
-        return channels;
-    }();
-
-    if (raw_playable_channels.empty() && !request.explicit_profile_id) {
-        result.status = bms_profile_detection_status_t::custom_required;
+    const auto channels = playable_channels(result);
+    if (channels.empty() && !request.explicit_profile_id) {
         result.evidence.push_back({
             .source = bms_detection_evidence_source_t::used_channel,
             .message = "No recognized playable-family channels identify a lane layout; extension "
                        "and header hints alone do not select one.",
             .weight = 0.0,
         });
+        result.status = bms_profile_detection_status_t::custom_required;
         return result;
     }
-
     const auto specs = built_in_bms_lane_profiles();
-    const auto observed_families = observed_channel_families(raw_playable_channels);
-    auto all_candidates = std::vector<bms_profile_candidate_t>{};
-    all_candidates.reserve(specs.size());
-    for (const auto& spec : specs) {
-        auto candidate = bms_profile_candidate_t{};
-        candidate.profile = spec.profile;
-        for (const auto* channel : raw_playable_channels) {
-            const auto canonical = channel->canonical_spelling.value_or(channel->raw_spelling);
-            if (!profile_maps_channel(candidate.profile.layout, canonical)) {
-                candidate.unmapped_playable_channels.push_back(channel->raw_spelling);
-            }
-        }
-        candidate.maps_all_playable_channels = candidate.unmapped_playable_channels.empty();
-        candidate.complete_channel_family_match =
-            complete_channel_family_match(candidate.profile.layout, observed_families);
-        candidate.automatic_selection_eligible = spec.family != bms_lane_profile_family_t::special;
-        all_candidates.push_back(std::move(candidate));
-    }
-
-    const auto compatible_count =
-        static_cast<std::size_t>(std::ranges::count_if(all_candidates, [](const auto& candidate) {
-            return candidate.maps_all_playable_channels;
-        }));
-    for (std::size_t index = 0; index < all_candidates.size(); ++index) {
-        auto& candidate = all_candidates[index];
-        if (!candidate.maps_all_playable_channels) {
-            continue;
-        }
-        auto& spec = specs[index];
-        auto [confidence, evidence] = profile_evidence(
-            spec, extension, request.player_header, request.octave_fp_header, compatible_count,
-            raw_playable_channels.size(), candidate.complete_channel_family_match);
-        candidate.confidence = confidence;
-        candidate.evidence = std::move(evidence);
-        result.candidates.push_back(std::move(candidate));
-    }
-
-    const auto choose_candidate =
-        [&result](std::string_view profile_id) -> bms_profile_candidate_t* {
-        const auto iterator =
-            std::ranges::find_if(result.candidates, [profile_id](const auto& item) {
-                return item.profile.layout.profile_id == profile_id;
-            });
-        return iterator == result.candidates.end() ? nullptr : &*iterator;
-    };
-
-    if (request.explicit_profile_id) {
-        if (auto* chosen = choose_candidate(*request.explicit_profile_id)) {
-            chosen->confidence = 1.0;
-            chosen->evidence.push_back({
-                .source = bms_detection_evidence_source_t::explicit_profile,
-                .message = "An explicit project/user profile choice matches all recognized "
-                           "playable channels.",
-                .weight = 1.0,
-            });
-            result.status = bms_profile_detection_status_t::selected;
-            result.confidence = 1.0;
-            result.selected_profile = chosen->profile;
-            result.evidence = chosen->evidence;
-            return result;
-        }
-        result.evidence.push_back({
-            .source = bms_detection_evidence_source_t::explicit_profile,
-            .message = "The explicit profile is unknown or does not map every recognized playable "
-                       "channel; raw channels remain in the custom fallback.",
-            .weight = 0.0,
-        });
-        result.status = bms_profile_detection_status_t::custom_required;
-        result.confidence = 0.0;
+    auto candidates = make_candidates(specs, channels);
+    score_candidates(specs, channels, extension, request, candidates, result);
+    if (select_explicit_profile(request, result)) {
         return result;
     }
-
-    if (request.octave_fp_header) {
-        if (auto* chosen = choose_candidate("bms-octave-foot-pedal")) {
-            result.status = bms_profile_detection_status_t::selected;
-            result.confidence = std::max(chosen->confidence, 0.95);
-            result.selected_profile = chosen->profile;
-            result.evidence = chosen->evidence;
-            return result;
-        }
-        result.evidence.push_back({
-            .source = bms_detection_evidence_source_t::octave_fp_header,
-            .message = "#OCT/FP was present, but its named profile does not map every recognized "
-                       "playable channel.",
-            .weight = 0.0,
-        });
+    if (select_octave_profile(request, result)) {
+        return result;
     }
-
-    std::ranges::sort(result.candidates, [](const auto& left, const auto& right) {
-        if (left.confidence != right.confidence) {
-            return left.confidence > right.confidence;
-        }
-        return left.profile.layout.profile_id < right.profile.layout.profile_id;
-    });
-
-    if (!result.candidates.empty()) {
-        const auto& best = result.candidates.front();
-        const auto second_confidence =
-            result.candidates.size() > 1 ? result.candidates[1].confidence : 0.0;
-        const auto margin = best.confidence - second_confidence;
-        const auto enough_evidence = result.candidates.size() == 1
-                                         ? best.confidence >= 0.72
-                                         : best.confidence >= 0.80 && margin >= 0.18;
-        result.confidence = best.confidence;
-        result.evidence = best.evidence;
-        if (enough_evidence && best.automatic_selection_eligible) {
-            result.status = bms_profile_detection_status_t::selected;
-            result.selected_profile = best.profile;
-        } else {
-            result.status = bms_profile_detection_status_t::ambiguous;
-            result.evidence.push_back({
-                .source = bms_detection_evidence_source_t::used_channel,
-                .message = !best.automatic_selection_eligible
-                               ? "The best channel match is a special dialect without named or "
-                                 "explicit evidence; the custom raw-channel map is retained for "
-                                 "review."
-                               : "Several profile interpretations remain plausible; the custom "
-                                 "raw-channel map is retained for review.",
-                .weight = 0.0,
-            });
-        }
-    } else {
-        result.status = bms_profile_detection_status_t::custom_required;
-        result.evidence.push_back({
-            .source = bms_detection_evidence_source_t::used_channel,
-            .message =
-                raw_playable_channels.empty()
-                    ? "No recognized playable-family channels identify a built-in lane profile."
-                    : "No built-in profile maps every recognized playable-family channel; the raw "
-                      "custom map is retained.",
-            .weight = 0.0,
-        });
-    }
+    decide_automatic_profile(result);
     return result;
 }
 

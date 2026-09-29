@@ -626,144 +626,147 @@ auto valid_control_node(const bms_control_node_t& root, std::size_t maximum_dept
     return true;
 }
 
-auto valid_enum_domains(const song_document_t& song, std::size_t maximum_depth) -> bool {
-    for (const auto& group : song.metadata.format_groups) {
-        if (!valid_metadata(group)) {
-            return false;
-        }
-    }
+auto valid_resource_enum_domains(const song_document_t& song) -> bool {
     for (const auto& resource : song.resources) {
         if (!valid_provenance(resource.provenance) ||
-            !std::ranges::all_of(
-                resource.roles,
-                [](const auto role) { return enum_at_most(role, resource_role_t::preview); }) ||
+            !std::ranges::all_of(resource.roles,
+                                 [](auto role) { return enum_at_most(role, resource_role_t::preview); }) ||
             !std::ranges::all_of(resource.target_identities, [](const auto& identity) {
                 return enum_at_most(identity.family, format_family_t::quaver);
             })) {
             return false;
         }
     }
-    for (const auto& asset : song.visual_assets) {
-        if (!enum_at_most(asset.kind, asset_kind_t::midi)) {
-            return false;
+    return true;
+}
+
+auto valid_chart_layout_domains(const chart_document_t& chart) -> bool {
+    if (!enum_at_most(chart.source_family, format_family_t::quaver) ||
+        !std::ranges::all_of(chart.metadata.format_groups, valid_metadata)) {
+        return false;
+    }
+    for (const auto& segment : chart.lane_layouts) {
+        for (const auto& lane : segment.layout.lanes) {
+            if (!enum_at_most(lane.role, lane_role_t::foot_pedal) ||
+                !enum_at_most(lane.stage, stage_group_t::right) ||
+                !enum_at_most(lane.glyph, lane_glyph_t::arrow_right)) {
+                return false;
+            }
         }
     }
-    for (const auto& output : song.output_groups) {
-        if (!enum_at_most(output.family, format_family_t::quaver)) {
-            return false;
-        }
-    }
-    for (const auto& chart : song.charts) {
-        if (!enum_at_most(chart.source_family, format_family_t::quaver)) {
-            return false;
-        }
-        for (const auto& group : chart.metadata.format_groups) {
-            if (!valid_metadata(group)) {
+    return std::ranges::all_of(chart.input_profile.bindings, [](const auto& binding) {
+        return enum_at_most(binding.key, physical_key_t::key_m);
+    });
+}
+
+auto valid_chart_measure_domains(const chart_document_t& chart) -> bool {
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            if (!enum_at_most(note.kind, note_kind_t::fake) ||
+                !valid_provenance(note.provenance)) {
                 return false;
             }
         }
-        for (const auto& segment : chart.lane_layouts) {
-            for (const auto& lane : segment.layout.lanes) {
-                if (!enum_at_most(lane.role, lane_role_t::foot_pedal) ||
-                    !enum_at_most(lane.stage, stage_group_t::right) ||
-                    !enum_at_most(lane.glyph, lane_glyph_t::arrow_right)) {
-                    return false;
-                }
-            }
-        }
-        for (const auto& binding : chart.input_profile.bindings) {
-            if (!enum_at_most(binding.key, physical_key_t::key_m)) {
-                return false;
-            }
-        }
-        for (const auto& measure : chart.measures) {
-            for (const auto& note : measure.notes) {
-                if (!enum_at_most(note.kind, note_kind_t::fake) ||
-                    !valid_provenance(note.provenance)) {
-                    return false;
-                }
-            }
-            for (const auto& bgm : measure.bgm_events) {
-                if (!valid_provenance(bgm.provenance)) {
-                    return false;
-                }
-            }
-        }
-        for (const auto& bpm : chart.bpms) {
-            if (!valid_provenance(bpm.provenance)) {
-                return false;
-            }
-        }
-        for (const auto& pause : chart.pauses) {
-            if (!enum_at_most(pause.kind, pause_kind_t::delay) ||
-                !enum_at_most(pause.source_unit, pause_unit_t::beats) ||
-                !valid_provenance(pause.provenance)) {
-                return false;
-            }
-        }
-        for (const auto& projection : chart.bms_pause_projections) {
-            if (!enum_at_most(projection.imported_kind, pause_kind_t::delay) ||
-                !enum_at_most(projection.imported_source_unit, pause_unit_t::beats)) {
-                return false;
-            }
-        }
-        for (const auto& warp : chart.warps) {
-            if (!enum_at_most(warp.source_encoding, warp_provenance_t::negative_stop) ||
-                !valid_provenance(warp.provenance)) {
-                return false;
-            }
-        }
-        for (const auto& scroll : chart.scrolls) {
-            if (!valid_provenance(scroll.provenance)) {
-                return false;
-            }
-        }
-        for (const auto& speed : chart.speeds) {
-            if (!valid_provenance(speed.provenance)) {
-                return false;
-            }
-        }
-        for (const auto& recipe : chart.sv_recipes) {
-            if (!enum_at_most(recipe.output, sv_recipe_output_t::speeds) ||
-                !enum_at_most(recipe.curve, sv_recipe_curve_t::bump) ||
-                !enum_at_most(recipe.sampling.mode, sv_recipe_sampling_mode_t::adaptive)) {
-                return false;
-            }
-        }
-        for (const auto& kiai : chart.kiai) {
-            if (!valid_provenance(kiai.provenance)) {
-                return false;
-            }
-        }
-        for (const auto& bookmark : chart.bookmarks) {
-            if (!enum_at_most(bookmark.anchor, marker_anchor_t::audio_time)) {
-                return false;
-            }
-        }
-        for (const auto& section : chart.sections) {
-            if (!enum_at_most(section.anchor, marker_anchor_t::audio_time)) {
-                return false;
-            }
-        }
-        for (const auto& event : chart.bga_events) {
-            if (!enum_at_most(event.kind, visual_event_kind_t::storyboard) ||
-                !valid_provenance(event.provenance)) {
-                return false;
-            }
-        }
-        for (const auto& channel : chart.sound_channels) {
-            for (const auto& event : channel.events) {
-                if (!valid_provenance(event.provenance)) {
-                    return false;
-                }
-            }
-        }
-        if (chart.bms_control_tree.has_value() &&
-            !valid_control_node(*chart.bms_control_tree, maximum_depth)) {
+        if (!std::ranges::all_of(measure.bgm_events, [](const auto& bgm) {
+                return valid_provenance(bgm.provenance);
+            })) {
             return false;
         }
     }
     return true;
+}
+
+auto valid_chart_timing_domains(const chart_document_t& chart) -> bool {
+    if (!std::ranges::all_of(chart.bpms, [](const auto& event) {
+            return valid_provenance(event.provenance);
+        })) {
+        return false;
+    }
+    if (!std::ranges::all_of(chart.pauses, [](const auto& pause) {
+            return enum_at_most(pause.kind, pause_kind_t::delay) &&
+                   enum_at_most(pause.source_unit, pause_unit_t::beats) &&
+                   valid_provenance(pause.provenance);
+        })) {
+        return false;
+    }
+    if (!std::ranges::all_of(chart.bms_pause_projections, [](const auto& projection) {
+            return enum_at_most(projection.imported_kind, pause_kind_t::delay) &&
+                   enum_at_most(projection.imported_source_unit, pause_unit_t::beats);
+        })) {
+        return false;
+    }
+    return std::ranges::all_of(chart.warps, [](const auto& warp) {
+        return enum_at_most(warp.source_encoding, warp_provenance_t::negative_stop) &&
+               valid_provenance(warp.provenance);
+    });
+}
+
+auto valid_chart_effect_domains(const chart_document_t& chart) -> bool {
+    if (!std::ranges::all_of(chart.scrolls, [](const auto& item) {
+            return valid_provenance(item.provenance);
+        }) ||
+        !std::ranges::all_of(chart.speeds, [](const auto& item) {
+            return valid_provenance(item.provenance);
+        })) {
+        return false;
+    }
+    if (!std::ranges::all_of(chart.sv_recipes, [](const auto& recipe) {
+            return enum_at_most(recipe.output, sv_recipe_output_t::speeds) &&
+                   enum_at_most(recipe.curve, sv_recipe_curve_t::bump) &&
+                   enum_at_most(recipe.sampling.mode, sv_recipe_sampling_mode_t::adaptive);
+        })) {
+        return false;
+    }
+    return std::ranges::all_of(chart.kiai, [](const auto& item) {
+        return valid_provenance(item.provenance);
+    });
+}
+
+auto valid_chart_visual_domains(const chart_document_t& chart) -> bool {
+    const auto valid_anchor = [](const auto& item) {
+        return enum_at_most(item.anchor, marker_anchor_t::audio_time);
+    };
+    if (!std::ranges::all_of(chart.bookmarks, valid_anchor) ||
+        !std::ranges::all_of(chart.sections, valid_anchor)) {
+        return false;
+    }
+    if (!std::ranges::all_of(chart.bga_events, [](const auto& event) {
+            return enum_at_most(event.kind, visual_event_kind_t::storyboard) &&
+                   valid_provenance(event.provenance);
+        })) {
+        return false;
+    }
+    return std::ranges::all_of(chart.sound_channels, [](const auto& channel) {
+        return std::ranges::all_of(channel.events, [](const auto& event) {
+            return valid_provenance(event.provenance);
+        });
+    });
+}
+
+auto valid_chart_enum_domains(const chart_document_t& chart, std::size_t maximum_depth) -> bool {
+    return valid_chart_layout_domains(chart) && valid_chart_measure_domains(chart) &&
+           valid_chart_timing_domains(chart) && valid_chart_effect_domains(chart) &&
+           valid_chart_visual_domains(chart) &&
+           (!chart.bms_control_tree.has_value() ||
+            valid_control_node(*chart.bms_control_tree, maximum_depth));
+}
+
+auto valid_enum_domains(const song_document_t& song, std::size_t maximum_depth) -> bool {
+    if (!std::ranges::all_of(song.metadata.format_groups, valid_metadata) ||
+        !valid_resource_enum_domains(song)) {
+        return false;
+    }
+    if (!std::ranges::all_of(song.visual_assets, [](const auto& asset) {
+            return enum_at_most(asset.kind, asset_kind_t::midi);
+        }) ||
+        !std::ranges::all_of(song.output_groups, [](const auto& group) {
+            return enum_at_most(group.family, format_family_t::quaver);
+        })) {
+        return false;
+    }
+    return std::ranges::all_of(song.charts, [&](const auto& chart) {
+        return valid_chart_enum_domains(chart, maximum_depth);
+    });
 }
 
 auto lexical_nesting_within(std::string_view source, std::size_t maximum_depth) -> bool {
@@ -884,6 +887,30 @@ class json_limit_sax_t final : public nlohmann::json_sax<json> {
     bool malformed_{};
 };
 
+auto is_signed_numeric_field(std::string_view key, bool signed_array) -> bool {
+    return key == "numerator" || key == "selected_value" || key == "value" ||
+           key == "audio_milliseconds" || key == "start_time_ms" || key == "end_time_ms" ||
+           key == "loop_start_time_ms" || signed_array;
+}
+
+auto unsigned_fits_schema_field(std::string_view key, json::number_unsigned_t number) -> bool {
+    const auto at_most = [number](std::uint64_t maximum) { return number <= maximum; };
+    if ((key == "red" || key == "green" || key == "blue" || key == "alpha" ||
+         key == "value_count" || key == "channel" || key == "note") &&
+        !at_most(std::numeric_limits<std::uint8_t>::max())) {
+        return false;
+    }
+    if (key == "ticks_per_quarter" && !at_most(std::numeric_limits<std::uint16_t>::max())) {
+        return false;
+    }
+    return !((key == "sample_rate" || key == "channels" || key == "width" ||
+              key == "height" || key == "display_order" || key == "split_after_column" ||
+              key == "focused_stage" || key == "stage_count" ||
+              key == "retained_effect_bits" || key == "schema_version" ||
+              key == "fixed_point_count" || key == "max_points") &&
+             !at_most(std::numeric_limits<std::uint32_t>::max()));
+}
+
 auto strict_numeric_shape(const json& value, std::string_view key = {}, bool signed_array = false)
     -> bool {
     if (key == "x" || key == "y") {
@@ -899,40 +926,16 @@ auto strict_numeric_shape(const json& value, std::string_view key = {}, bool sig
         return false;
     }
     if (value.is_number_integer() && !value.is_number_unsigned()) {
-        const auto signed_field = key == "numerator" || key == "selected_value" || key == "value" ||
-                                  key == "audio_milliseconds" || key == "start_time_ms" ||
-                                  key == "end_time_ms" || key == "loop_start_time_ms" ||
-                                  signed_array;
-        if (!signed_field) {
-            return false;
-        }
+        return is_signed_numeric_field(key, signed_array);
     }
     if (value.is_number_unsigned()) {
         const auto number = value.get<json::number_unsigned_t>();
-        const auto signed_field = key == "selected_value" || key == "value" ||
-                                  key == "audio_milliseconds" || key == "start_time_ms" ||
-                                  key == "end_time_ms" || key == "loop_start_time_ms" ||
-                                  signed_array;
+        const auto signed_field = is_signed_numeric_field(key, signed_array) && key != "numerator";
         if (signed_field && number > static_cast<json::number_unsigned_t>(
                                          std::numeric_limits<std::int64_t>::max())) {
             return false;
         }
-        const auto at_most = [&](std::uint64_t maximum) { return number <= maximum; };
-        if ((key == "red" || key == "green" || key == "blue" || key == "alpha" ||
-             key == "value_count" || key == "channel" || key == "note") &&
-            !at_most(std::numeric_limits<std::uint8_t>::max())) {
-            return false;
-        }
-        if (key == "ticks_per_quarter" && !at_most(std::numeric_limits<std::uint16_t>::max())) {
-            return false;
-        }
-        if ((key == "sample_rate" || key == "channels" || key == "width" || key == "height" ||
-             key == "display_order" || key == "split_after_column" || key == "focused_stage" ||
-             key == "stage_count" || key == "retained_effect_bits" || key == "schema_version" ||
-             key == "fixed_point_count" || key == "max_points") &&
-            !at_most(std::numeric_limits<std::uint32_t>::max())) {
-            return false;
-        }
+        return unsigned_fits_schema_field(key, number);
     }
     if (value.is_array()) {
         const auto elements_are_signed = key == "audio_millisecond_span";
@@ -957,48 +960,84 @@ enum class schema_shape_context_t {
 };
 
 auto same_schema_shape(const json& input, const json& canonical,
+                       schema_shape_context_t context) -> bool;
+
+auto allows_legacy_object_shape(const json& input, const json& canonical,
+                                schema_shape_context_t context) -> bool {
+    if (input.size() + 1 != canonical.size()) {
+        return false;
+    }
+    if (context == schema_shape_context_t::storyboard_entry) {
+        return !input.contains("model") && canonical.contains("model") &&
+               canonical.at("model").is_null();
+    }
+    if (context == schema_shape_context_t::chart_entry) {
+        return !input.contains("sv_recipes") && canonical.contains("sv_recipes") &&
+               canonical.at("sv_recipes").empty();
+    }
+    return false;
+}
+
+auto object_child_context(std::string_view key) -> schema_shape_context_t {
+    if (key == "storyboards") {
+        return schema_shape_context_t::storyboards;
+    }
+    if (key == "charts") {
+        return schema_shape_context_t::charts;
+    }
+    return schema_shape_context_t::ordinary;
+}
+
+auto array_child_context(schema_shape_context_t context) -> schema_shape_context_t {
+    if (context == schema_shape_context_t::storyboards) {
+        return schema_shape_context_t::storyboard_entry;
+    }
+    if (context == schema_shape_context_t::charts) {
+        return schema_shape_context_t::chart_entry;
+    }
+    return schema_shape_context_t::ordinary;
+}
+
+auto same_object_schema_shape(const json& input, const json& canonical,
+                              schema_shape_context_t context) -> bool {
+    if (!input.is_object() || !canonical.is_object()) {
+        return false;
+    }
+    const auto legacy_shape = allows_legacy_object_shape(input, canonical, context);
+    if (input.size() != canonical.size() && !legacy_shape) {
+        return false;
+    }
+    for (const auto& [key, value] : input.items()) {
+        const auto expected = canonical.find(key);
+        if (expected == canonical.end() ||
+            !same_schema_shape(value, *expected, object_child_context(key))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+auto same_array_schema_shape(const json& input, const json& canonical,
+                             schema_shape_context_t context) -> bool {
+    if (!input.is_array() || !canonical.is_array() || input.size() != canonical.size()) {
+        return false;
+    }
+    const auto child_context = array_child_context(context);
+    for (std::size_t index = 0; index < input.size(); ++index) {
+        if (!same_schema_shape(input[index], canonical[index], child_context)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+auto same_schema_shape(const json& input, const json& canonical,
                        schema_shape_context_t context = schema_shape_context_t::ordinary) -> bool {
     if (input.is_object() || canonical.is_object()) {
-        if (!input.is_object() || !canonical.is_object()) {
-            return false;
-        }
-        const auto legacy_model_missing = context == schema_shape_context_t::storyboard_entry &&
-                                          input.size() + 1 == canonical.size() &&
-                                          !input.contains("model") && canonical.contains("model") &&
-                                          canonical.at("model").is_null();
-        const auto legacy_recipes_missing =
-            context == schema_shape_context_t::chart_entry &&
-            input.size() + 1 == canonical.size() && !input.contains("sv_recipes") &&
-            canonical.contains("sv_recipes") && canonical.at("sv_recipes").empty();
-        if (input.size() != canonical.size() && !legacy_model_missing && !legacy_recipes_missing) {
-            return false;
-        }
-        for (const auto& [key, value] : input.items()) {
-            const auto expected = canonical.find(key);
-            const auto child_context = key == "storyboards" ? schema_shape_context_t::storyboards
-                                       : key == "charts"    ? schema_shape_context_t::charts
-                                                            : schema_shape_context_t::ordinary;
-            if (expected == canonical.end() ||
-                !same_schema_shape(value, *expected, child_context)) {
-                return false;
-            }
-        }
-        return true;
+        return same_object_schema_shape(input, canonical, context);
     }
     if (input.is_array() || canonical.is_array()) {
-        if (!input.is_array() || !canonical.is_array() || input.size() != canonical.size()) {
-            return false;
-        }
-        const auto child_context = context == schema_shape_context_t::storyboards
-                                       ? schema_shape_context_t::storyboard_entry
-                                   : context == schema_shape_context_t::charts
-                                       ? schema_shape_context_t::chart_entry
-                                       : schema_shape_context_t::ordinary;
-        for (std::size_t index = 0; index < input.size(); ++index) {
-            if (!same_schema_shape(input[index], canonical[index], child_context)) {
-                return false;
-            }
-        }
+        return same_array_schema_shape(input, canonical, context);
     }
     return true;
 }

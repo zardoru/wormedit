@@ -962,6 +962,52 @@ auto move_no_replace(const std::filesystem::path& source, const std::filesystem:
     return true;
 }
 
+auto reserve_temporary_file(const std::filesystem::path& destination,
+                            const native_project_storage_options_t& options,
+                            temporary_file_t& temporary,
+                            std::vector<native_project_storage_diagnostic_t>& diagnostics) -> bool {
+    static std::atomic<std::uint64_t> temporary_sequence{1};
+    for (int attempt = 0; attempt < 32; ++attempt) {
+        const auto sequence = temporary_sequence.fetch_add(1, std::memory_order_relaxed);
+        temporary.path = make_temporary_path(destination, sequence);
+        if (!stage_allowed(options, native_project_storage_stage_t::create_temporary,
+                           temporary.path)) {
+            add_diagnostic(diagnostics,
+                           native_project_storage_diagnostic_code_t::temporary_file_failure,
+                           stage_failure(native_project_storage_stage_t::create_temporary),
+                           destination);
+            return false;
+        }
+        int error{};
+        if (create_exclusive_file(temporary.path, temporary.handle, error)) {
+            return true;
+        }
+#ifdef _WIN32
+        const auto collision = error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS;
+#else
+        const auto collision = error == EEXIST;
+#endif
+        if (!collision) {
+            add_diagnostic(diagnostics,
+                           native_project_storage_diagnostic_code_t::temporary_file_failure,
+                           "could not create same-directory temporary file: " +
+                               std::error_code(error,
+#ifdef _WIN32
+                                               std::system_category()
+#else
+                                               std::generic_category()
+#endif
+                                                   )
+                                   .message(),
+                           destination);
+            return false;
+        }
+    }
+    add_diagnostic(diagnostics, native_project_storage_diagnostic_code_t::temporary_file_failure,
+                   "could not reserve a unique same-directory temporary file", destination);
+    return false;
+}
+
 template <typename validator_t>
 auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::string_view bytes,
                                 const native_project_storage_options_t& options,
@@ -975,50 +1021,8 @@ auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::s
         return result;
     }
 
-    static std::atomic<std::uint64_t> temporary_sequence{1};
     temporary_file_t temporary;
-    bool created{};
-    for (int attempt = 0; attempt < 32; ++attempt) {
-        const auto sequence = temporary_sequence.fetch_add(1, std::memory_order_relaxed);
-        temporary.path = make_temporary_path(destination, sequence);
-        if (!stage_allowed(options, native_project_storage_stage_t::create_temporary,
-                           temporary.path)) {
-            add_diagnostic(result.diagnostics,
-                           native_project_storage_diagnostic_code_t::temporary_file_failure,
-                           stage_failure(native_project_storage_stage_t::create_temporary),
-                           destination);
-            return result;
-        }
-        int error{};
-        if (create_exclusive_file(temporary.path, temporary.handle, error)) {
-            created = true;
-            break;
-        }
-#ifdef _WIN32
-        const auto collision = error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS;
-#else
-        const auto collision = error == EEXIST;
-#endif
-        if (!collision) {
-            add_diagnostic(result.diagnostics,
-                           native_project_storage_diagnostic_code_t::temporary_file_failure,
-                           "could not create same-directory temporary file: " +
-                               std::error_code(error,
-#ifdef _WIN32
-                                               std::system_category()
-#else
-                                               std::generic_category()
-#endif
-                                                   )
-                                   .message(),
-                           destination);
-            return result;
-        }
-    }
-    if (!created) {
-        add_diagnostic(result.diagnostics,
-                       native_project_storage_diagnostic_code_t::temporary_file_failure,
-                       "could not reserve a unique same-directory temporary file", destination);
+    if (!reserve_temporary_file(destination, options, temporary, result.diagnostics)) {
         return result;
     }
 
@@ -1193,6 +1197,486 @@ auto parse_native_project_recovery_snapshot(std::string_view bytes, native_proje
     return result;
 }
 
+namespace {
+
+struct recovery_candidate_spec_t {
+    std::filesystem::path path;
+    native_project_recovery_candidate_kind_t kind;
+};
+
+struct discovered_recovery_entry_t {
+    std::filesystem::path path;
+    native_project_recovery_candidate_kind_t kind{
+        native_project_recovery_candidate_kind_t::caller_supplied_entry};
+};
+
+struct recovery_collection_state_t {
+    std::vector<native_project_storage_diagnostic_t>& diagnostics;
+    std::size_t maximum_candidates{};
+    std::size_t maximum_diagnostics{};
+    std::size_t maximum_directory_entries{};
+    std::vector<recovery_candidate_spec_t> specs{};
+    std::vector<std::filesystem::path> completed_recovery_entries{};
+    bool candidate_limit_reported{false};
+    bool inputs_within_limit{true};
+};
+
+auto add_recovery_spec(recovery_collection_state_t& state, const std::filesystem::path& path,
+                       native_project_recovery_candidate_kind_t kind) -> bool {
+    if (path.empty()) return true;
+    const auto normalized = path.lexically_normal();
+    if (std::ranges::any_of(state.specs, [&](const auto& spec) {
+            return spec.path.lexically_normal() == normalized;
+        }))
+        return true;
+    if (state.specs.size() >= state.maximum_candidates) {
+        if (!state.candidate_limit_reported) {
+            add_scan_diagnostic(state.diagnostics, state.maximum_diagnostics,
+                                native_project_storage_diagnostic_code_t::resource_limit,
+                                "recovery scan stopped at its candidate limit", path);
+            state.candidate_limit_reported = true;
+        }
+        return false;
+    }
+    state.specs.push_back({.path = path, .kind = kind});
+    return true;
+}
+
+auto inspect_caller_recovery_directory(const std::filesystem::path& directory,
+                                       recovery_collection_state_t& state)
+    -> std::vector<discovered_recovery_entry_t> {
+    std::error_code error;
+    std::filesystem::directory_iterator iterator{directory, error};
+    if (error) {
+        add_scan_diagnostic(state.diagnostics, state.maximum_diagnostics,
+                            native_project_storage_diagnostic_code_t::read_failure,
+                            "could not inspect caller recovery directory: " + error.message(),
+                            directory);
+        return {};
+    }
+    std::vector<discovered_recovery_entry_t> discovered;
+    discovered.reserve(std::min(state.maximum_candidates, std::size_t{16}));
+    std::size_t examined{};
+    for (const std::filesystem::directory_iterator end; iterator != end;
+         iterator.increment(error)) {
+        if (error) {
+            add_scan_diagnostic(state.diagnostics, state.maximum_diagnostics,
+                                native_project_storage_diagnostic_code_t::read_failure,
+                                "could not continue caller recovery directory scan: " +
+                                    error.message(),
+                                directory);
+            break;
+        }
+        if (++examined > state.maximum_directory_entries) {
+            state.inputs_within_limit = false;
+            discovered.clear();
+            add_scan_diagnostic(state.diagnostics, state.maximum_diagnostics,
+                                native_project_storage_diagnostic_code_t::resource_limit,
+                                "caller recovery directory exceeds its entry limit; no partial "
+                                "candidate set was retained",
+                                directory);
+            break;
+        }
+        std::error_code type_error;
+        const auto status = iterator->symlink_status(type_error);
+        if (type_error || status.type() != std::filesystem::file_type::regular) continue;
+        const auto filename = path_to_utf8(iterator->path().filename());
+        if (filename.find(".wormedit-quarantine-") != std::string::npos) continue;
+        const auto kind = filename.find(".wormedit-tmp-") != std::string::npos
+                              ? native_project_recovery_candidate_kind_t::stale_recovery_temporary
+                              : native_project_recovery_candidate_kind_t::caller_supplied_entry;
+        discovered.push_back({.path = iterator->path(), .kind = kind});
+    }
+    std::ranges::sort(discovered, {}, [](const auto& entry) {
+        return path_to_utf8(entry.path.lexically_normal());
+    });
+    return discovered;
+}
+
+void collect_recovery_primary_paths(const native_project_recovery_scan_request_t& request,
+                                    recovery_collection_state_t& state) {
+    if (request.primary_path.empty()) return;
+    (void)add_recovery_spec(state, request.primary_path,
+                            native_project_recovery_candidate_kind_t::primary);
+    (void)add_recovery_spec(state, native_project_adjacent_backup_path(request.primary_path),
+                            native_project_recovery_candidate_kind_t::adjacent_backup);
+}
+
+void collect_caller_recovery_entries(const native_project_recovery_scan_request_t& request,
+                                     recovery_collection_state_t& state) {
+    const auto count = std::min(request.caller_supplied_entries.size(), state.maximum_candidates);
+    if (request.caller_supplied_entries.size() > count) {
+        state.inputs_within_limit = false;
+        add_scan_diagnostic(state.diagnostics, state.maximum_diagnostics,
+                            native_project_storage_diagnostic_code_t::resource_limit,
+                            "recovery scan stopped at its caller-entry limit");
+    }
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& path = request.caller_supplied_entries[index];
+        if (!add_recovery_spec(state, path,
+                               native_project_recovery_candidate_kind_t::caller_supplied_entry)) {
+            state.inputs_within_limit = false;
+            break;
+        }
+        state.completed_recovery_entries.push_back(path);
+    }
+}
+
+void collect_caller_recovery_directories(const native_project_recovery_scan_request_t& request,
+                                         recovery_collection_state_t& state) {
+    const auto count =
+        std::min(request.caller_supplied_directories.size(), state.maximum_candidates);
+    if (request.caller_supplied_directories.size() > count) {
+        state.inputs_within_limit = false;
+        add_scan_diagnostic(state.diagnostics, state.maximum_diagnostics,
+                            native_project_storage_diagnostic_code_t::resource_limit,
+                            "recovery scan stopped at its caller-directory limit");
+    }
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& directory = request.caller_supplied_directories[index];
+        if (directory.empty()) continue;
+        const auto discovered = inspect_caller_recovery_directory(directory, state);
+        for (const auto& entry : discovered) {
+            if (!add_recovery_spec(state, entry.path, entry.kind)) {
+                state.inputs_within_limit = false;
+                break;
+            }
+            if (entry.kind == native_project_recovery_candidate_kind_t::caller_supplied_entry)
+                state.completed_recovery_entries.push_back(entry.path);
+        }
+        if (!state.inputs_within_limit || state.specs.size() >= state.maximum_candidates) break;
+    }
+}
+
+void discover_recovery_temporaries(const std::filesystem::path& destination,
+                                   native_project_recovery_candidate_kind_t kind,
+                                   recovery_collection_state_t& state) {
+    if (destination.empty() || state.specs.size() >= state.maximum_candidates) return;
+    const auto directory = destination.has_parent_path() ? destination.parent_path()
+                                                          : std::filesystem::path{"."};
+    std::error_code error;
+    std::filesystem::directory_iterator iterator{directory, error};
+    if (error) {
+        add_scan_diagnostic(state.diagnostics, state.maximum_diagnostics,
+                            native_project_storage_diagnostic_code_t::read_failure,
+                            "could not inspect recovery directory: " + error.message(), directory);
+        return;
+    }
+    const auto prefix = temporary_prefix(destination);
+    std::size_t examined{};
+    for (const std::filesystem::directory_iterator end; iterator != end;
+         iterator.increment(error)) {
+        if (error) {
+            add_scan_diagnostic(state.diagnostics, state.maximum_diagnostics,
+                                native_project_storage_diagnostic_code_t::read_failure,
+                                "could not continue recovery directory scan: " + error.message(),
+                                directory);
+            break;
+        }
+        if (++examined > state.maximum_directory_entries) {
+            add_scan_diagnostic(state.diagnostics, state.maximum_diagnostics,
+                                native_project_storage_diagnostic_code_t::resource_limit,
+                                "recovery directory scan reached its entry limit", directory);
+            break;
+        }
+        if (!path_to_utf8(iterator->path().filename()).starts_with(prefix)) continue;
+        std::error_code type_error;
+        if (!iterator->is_regular_file(type_error) || type_error) continue;
+        if (!add_recovery_spec(state, iterator->path(), kind)) break;
+    }
+}
+
+void collect_stale_recovery_temporaries(const native_project_recovery_scan_request_t& request,
+                                        recovery_collection_state_t& state) {
+    if (!request.discover_stale_temporaries || !state.inputs_within_limit ||
+        request.primary_path.empty())
+        return;
+    discover_recovery_temporaries(
+        request.primary_path, native_project_recovery_candidate_kind_t::stale_primary_temporary,
+        state);
+    const auto backup_path = native_project_adjacent_backup_path(request.primary_path);
+    if (state.specs.size() >= state.maximum_candidates) {
+        add_scan_diagnostic(state.diagnostics, state.maximum_diagnostics,
+                            native_project_storage_diagnostic_code_t::resource_limit,
+                            "recovery scan skipped temporary discovery at its candidate limit",
+                            backup_path);
+    } else {
+        discover_recovery_temporaries(
+            backup_path, native_project_recovery_candidate_kind_t::stale_recovery_temporary,
+            state);
+    }
+    for (const auto& path : state.completed_recovery_entries) {
+        if (state.specs.size() >= state.maximum_candidates) break;
+        discover_recovery_temporaries(
+            path, native_project_recovery_candidate_kind_t::stale_recovery_temporary, state);
+    }
+}
+
+auto collect_recovery_candidates(const native_project_recovery_scan_request_t& request,
+                                 recovery_collection_state_t& state) -> bool {
+    collect_recovery_primary_paths(request, state);
+    collect_caller_recovery_entries(request, state);
+    collect_caller_recovery_directories(request, state);
+    collect_stale_recovery_temporaries(request, state);
+    return state.inputs_within_limit;
+}
+
+auto read_recovery_candidate(const recovery_candidate_spec_t& spec,
+                             std::size_t maximum_file_bytes,
+                             std::size_t maximum_total_bytes, std::size_t& total_bytes_read,
+                             native_project_recovery_candidate_t& candidate,
+                             std::vector<native_project_storage_diagnostic_t>& diagnostics,
+                             std::size_t maximum_diagnostics) -> std::optional<std::string> {
+    std::error_code error;
+    const auto exists = std::filesystem::exists(spec.path, error);
+    if (error) {
+        candidate.status = native_project_recovery_candidate_status_t::unreadable;
+        add_scan_diagnostic(diagnostics, maximum_diagnostics,
+                            native_project_storage_diagnostic_code_t::read_failure,
+                            "could not inspect recovery candidate: " + error.message(), spec.path,
+                            diagnostic_severity_t::error);
+        return std::nullopt;
+    }
+    if (!exists) {
+        candidate.status = native_project_recovery_candidate_status_t::missing;
+        return std::nullopt;
+    }
+    const auto file_size = std::filesystem::file_size(spec.path, error);
+    if (error) {
+        candidate.status = native_project_recovery_candidate_status_t::unreadable;
+        add_scan_diagnostic(diagnostics, maximum_diagnostics,
+                            native_project_storage_diagnostic_code_t::read_failure,
+                            "could not determine recovery candidate size: " + error.message(),
+                            spec.path, diagnostic_severity_t::error);
+        return std::nullopt;
+    }
+    if (file_size > maximum_file_bytes || file_size > maximum_total_bytes - total_bytes_read) {
+        candidate.status = native_project_recovery_candidate_status_t::resource_limited;
+        add_scan_diagnostic(diagnostics, maximum_diagnostics,
+                            native_project_storage_diagnostic_code_t::resource_limit,
+                            "recovery candidate exceeds the scan byte budget", spec.path,
+                            diagnostic_severity_t::error);
+        return std::nullopt;
+    }
+    const auto byte_count = static_cast<std::size_t>(file_size);
+    std::ifstream stream(spec.path, std::ios::binary);
+    if (!stream) {
+        candidate.status = native_project_recovery_candidate_status_t::unreadable;
+        add_scan_diagnostic(diagnostics, maximum_diagnostics,
+                            native_project_storage_diagnostic_code_t::read_failure,
+                            "could not open recovery candidate", spec.path,
+                            diagnostic_severity_t::error);
+        return std::nullopt;
+    }
+    std::string bytes(byte_count, '\0');
+    if (byte_count != 0) stream.read(bytes.data(), static_cast<std::streamsize>(byte_count));
+    if (!stream || static_cast<std::size_t>(stream.gcount()) != byte_count) {
+        candidate.status = native_project_recovery_candidate_status_t::unreadable;
+        add_scan_diagnostic(diagnostics, maximum_diagnostics,
+                            native_project_storage_diagnostic_code_t::read_failure,
+                            "could not read the complete recovery candidate", spec.path,
+                            diagnostic_severity_t::error);
+        return std::nullopt;
+    }
+    total_bytes_read += byte_count;
+    candidate.scanned_size_bytes = file_size;
+    candidate.scanned_sha256 = sha256(bytes);
+    return bytes;
+}
+
+void parse_recovery_candidate(native_project_recovery_candidate_t& candidate,
+                              const recovery_candidate_spec_t& spec, std::string_view bytes,
+                              native_project_limits_t limits,
+                              std::vector<native_project_storage_diagnostic_t>& diagnostics,
+                              std::size_t maximum_diagnostics) {
+    std::vector<native_project_storage_diagnostic_t> parse_diagnostics;
+    const bool primary_file =
+        spec.kind == native_project_recovery_candidate_kind_t::primary ||
+        spec.kind == native_project_recovery_candidate_kind_t::stale_primary_temporary;
+    if (primary_file) {
+        const auto parsed = parse_native_project(bytes, limits);
+        if (parsed.song && !parsed.has_errors()) {
+            candidate.document = *parsed.song;
+            candidate.version = native_project_document_version_t{
+                .project_id = parsed.song->id, .revision = parsed.song->revision};
+            candidate.status = native_project_recovery_candidate_status_t::valid;
+        } else {
+            const auto limited = std::ranges::any_of(parsed.diagnostics, [](const auto& item) {
+                return item.code == native_project_diagnostic_code_t::resource_limit;
+            });
+            candidate.status = limited ? native_project_recovery_candidate_status_t::resource_limited
+                                       : native_project_recovery_candidate_status_t::invalid;
+            for (const auto& item : parsed.diagnostics) {
+                if (parse_diagnostics.size() >= maximum_diagnostics) break;
+                auto converted = as_error(item);
+                converted.path = spec.path;
+                parse_diagnostics.push_back(std::move(converted));
+            }
+        }
+    } else {
+        const auto parsed = parse_recovery_impl(bytes, limits, parse_diagnostics, spec.path);
+        if (parsed) {
+            candidate.status = native_project_recovery_candidate_status_t::valid;
+            candidate.document = parsed->snapshot.song;
+            candidate.version = native_project_document_version_t{
+                .project_id = parsed->snapshot.song.id,
+                .revision = parsed->snapshot.song.revision};
+            candidate.recovery_metadata = parsed->snapshot.metadata;
+        } else {
+            const auto limited = std::ranges::any_of(parse_diagnostics, [](const auto& item) {
+                return item.code == native_project_storage_diagnostic_code_t::resource_limit;
+            });
+            candidate.status = limited ? native_project_recovery_candidate_status_t::resource_limited
+                                       : native_project_recovery_candidate_status_t::invalid;
+        }
+    }
+    for (auto& item : parse_diagnostics)
+        add_scan_diagnostic(diagnostics, maximum_diagnostics, item.code,
+                            std::move(item.message), spec.path, item.severity);
+}
+
+void scan_recovery_candidate(const recovery_candidate_spec_t& spec,
+                             native_project_recovery_scan_options_t options,
+                             std::size_t maximum_file_bytes, std::size_t maximum_total_bytes,
+                             std::size_t& total_bytes_read,
+                             std::vector<native_project_storage_diagnostic_t>& diagnostics,
+                             std::size_t maximum_diagnostics,
+                             std::vector<native_project_recovery_candidate_t>& candidates) {
+    native_project_recovery_candidate_t candidate{};
+    candidate.path = spec.path;
+    candidate.kind = spec.kind;
+    const auto bytes = read_recovery_candidate(spec, maximum_file_bytes, maximum_total_bytes,
+                                               total_bytes_read, candidate, diagnostics,
+                                               maximum_diagnostics);
+    if (bytes) {
+        parse_recovery_candidate(candidate, spec, *bytes, options.codec_limits, diagnostics,
+                                 maximum_diagnostics);
+        if (recovery_kind(candidate.kind) &&
+            candidate.status == native_project_recovery_candidate_status_t::invalid)
+            candidate.quarantine =
+                native_project_recovery_quarantine_t::recommend_quarantine_corrupt;
+    }
+    candidates.push_back(std::move(candidate));
+}
+
+auto valid_primary_version(const std::vector<native_project_recovery_candidate_t>& candidates)
+    -> std::optional<native_project_document_version_t> {
+    for (const auto& candidate : candidates) {
+        if (candidate.kind == native_project_recovery_candidate_kind_t::primary &&
+            candidate.status == native_project_recovery_candidate_status_t::valid)
+            return candidate.version;
+    }
+    return std::nullopt;
+}
+
+void recommend_recovery_actions(
+    std::vector<native_project_recovery_candidate_t>& candidates,
+    const std::optional<native_project_document_version_t>& primary_version) {
+    for (auto& candidate : candidates) {
+        if (candidate.kind == native_project_recovery_candidate_kind_t::primary ||
+            candidate.status != native_project_recovery_candidate_status_t::valid)
+            continue;
+        candidate.available_actions = {native_project_recovery_action_t::inspect_read_only,
+                                       native_project_recovery_action_t::recover_into_session,
+                                       native_project_recovery_action_t::save_as_new_project,
+                                       native_project_recovery_action_t::discard};
+        if (!primary_version) {
+            candidate.comparison = native_project_recovery_comparison_t::no_valid_primary;
+            candidate.recommended_action = native_project_recovery_action_t::recover_into_session;
+            continue;
+        }
+        candidate.comparison = compare_versions(*candidate.version, *primary_version);
+        switch (candidate.comparison) {
+        case native_project_recovery_comparison_t::newer_revision:
+        case native_project_recovery_comparison_t::different_project:
+            candidate.recommended_action = native_project_recovery_action_t::inspect_read_only;
+            break;
+        case native_project_recovery_comparison_t::older_revision:
+        case native_project_recovery_comparison_t::equal_revision:
+            candidate.recommended_action = native_project_recovery_action_t::discard;
+            break;
+        case native_project_recovery_comparison_t::not_comparable:
+        case native_project_recovery_comparison_t::no_valid_primary:
+            break;
+        }
+    }
+}
+
+void mark_superseded_temporaries(
+    std::vector<native_project_recovery_candidate_t>& candidates) {
+    for (auto& temporary : candidates) {
+        if ((temporary.kind != native_project_recovery_candidate_kind_t::stale_primary_temporary &&
+             temporary.kind != native_project_recovery_candidate_kind_t::stale_recovery_temporary) ||
+            temporary.status != native_project_recovery_candidate_status_t::valid ||
+            !temporary.version)
+            continue;
+        const auto superseded = std::ranges::any_of(candidates, [&](const auto& completed) {
+            const bool completed_file =
+                completed.kind == native_project_recovery_candidate_kind_t::primary ||
+                completed.kind == native_project_recovery_candidate_kind_t::adjacent_backup ||
+                completed.kind == native_project_recovery_candidate_kind_t::caller_supplied_entry;
+            return completed_file &&
+                   completed.status == native_project_recovery_candidate_status_t::valid &&
+                   completed.version &&
+                   completed.version->project_id == temporary.version->project_id &&
+                   completed.version->revision >= temporary.version->revision;
+        });
+        if (superseded)
+            temporary.quarantine =
+                native_project_recovery_quarantine_t::recommend_quarantine_superseded_temporary;
+    }
+}
+
+void add_quarantine_actions(std::vector<native_project_recovery_candidate_t>& candidates) {
+    for (auto& candidate : candidates) {
+        if (candidate.quarantine == native_project_recovery_quarantine_t::retain ||
+            std::ranges::find(candidate.available_actions,
+                              native_project_recovery_action_t::quarantine) !=
+                candidate.available_actions.end())
+            continue;
+        candidate.available_actions.push_back(native_project_recovery_action_t::quarantine);
+    }
+}
+
+auto choose_preferred_recovery(
+    const std::vector<native_project_recovery_candidate_t>& candidates,
+    const std::optional<native_project_document_version_t>& primary_version)
+    -> std::optional<std::size_t> {
+    std::vector<std::size_t> eligible;
+    for (std::size_t index = 0; index < candidates.size(); ++index) {
+        const auto& candidate = candidates[index];
+        if (candidate.kind == native_project_recovery_candidate_kind_t::primary ||
+            candidate.status != native_project_recovery_candidate_status_t::valid ||
+            !candidate.version)
+            continue;
+        if (!primary_version ||
+            candidate.comparison == native_project_recovery_comparison_t::newer_revision)
+            eligible.push_back(index);
+    }
+    if (eligible.empty()) return std::nullopt;
+    const auto project_id = candidates[eligible.front()].version->project_id;
+    if (!std::ranges::all_of(eligible, [&](const auto index) {
+            return candidates[index].version->project_id == project_id;
+        }))
+        return std::nullopt;
+    auto best = eligible.front();
+    for (const auto index : eligible) {
+        if (recovery_candidate_precedes(candidates[index], candidates[best])) best = index;
+    }
+    return best;
+}
+
+void finalize_recovery_candidates(native_project_recovery_scan_result_t& result) {
+    const auto primary_version = valid_primary_version(result.candidates);
+    recommend_recovery_actions(result.candidates, primary_version);
+    mark_superseded_temporaries(result.candidates);
+    add_quarantine_actions(result.candidates);
+    result.preferred_recovery_candidate =
+        choose_preferred_recovery(result.candidates, primary_version);
+}
+
+} // namespace
+
 auto scan_native_project_recovery_candidates(const native_project_recovery_scan_request_t& request,
                                              native_project_recovery_scan_options_t options)
     -> native_project_recovery_scan_result_t {
@@ -1206,460 +1690,26 @@ auto scan_native_project_recovery_candidates(const native_project_recovery_scan_
     const auto maximum_diagnostics =
         std::min(options.maximum_diagnostics, absolute_maximum_scan_diagnostics);
 
-    struct candidate_spec_t {
-        std::filesystem::path path;
-        native_project_recovery_candidate_kind_t kind;
-    };
-    std::vector<candidate_spec_t> specs;
-    specs.reserve(std::min(maximum_candidates, std::size_t{16}));
-    bool candidate_limit_reported{};
-    auto add_spec = [&](const std::filesystem::path& path,
-                        native_project_recovery_candidate_kind_t kind) -> bool {
-        if (path.empty()) {
-            return true;
-        }
-        const auto normalized = path.lexically_normal();
-        if (std::ranges::any_of(specs, [&](const auto& spec) {
-                return spec.path.lexically_normal() == normalized;
-            })) {
-            return true;
-        }
-        if (specs.size() >= maximum_candidates) {
-            if (!candidate_limit_reported) {
-                add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
-                                    native_project_storage_diagnostic_code_t::resource_limit,
-                                    "recovery scan stopped at its candidate limit", path);
-                candidate_limit_reported = true;
-            }
-            return false;
-        }
-        specs.push_back({.path = path, .kind = kind});
-        return true;
-    };
-
-    if (!request.primary_path.empty()) {
-        (void)add_spec(request.primary_path, native_project_recovery_candidate_kind_t::primary);
-        (void)add_spec(native_project_adjacent_backup_path(request.primary_path),
-                       native_project_recovery_candidate_kind_t::adjacent_backup);
-    }
-    bool inputs_within_limit = true;
-    std::vector<std::filesystem::path> completed_recovery_entries;
-    completed_recovery_entries.reserve(std::min(maximum_candidates, std::size_t{16}));
-    const auto maximum_caller_entries =
-        std::min(request.caller_supplied_entries.size(), maximum_candidates);
-    if (request.caller_supplied_entries.size() > maximum_caller_entries) {
-        inputs_within_limit = false;
-        add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
-                            native_project_storage_diagnostic_code_t::resource_limit,
-                            "recovery scan stopped at its caller-entry limit");
-    }
-    for (std::size_t index = 0; index < maximum_caller_entries; ++index) {
-        const auto& path = request.caller_supplied_entries[index];
-        if (!add_spec(path, native_project_recovery_candidate_kind_t::caller_supplied_entry)) {
-            inputs_within_limit = false;
-            break;
-        }
-        completed_recovery_entries.push_back(path);
-    }
-
-    struct discovered_entry_t {
-        std::filesystem::path path;
-        native_project_recovery_candidate_kind_t kind{
-            native_project_recovery_candidate_kind_t::caller_supplied_entry};
-    };
     const auto maximum_directory_entries =
         std::min(std::max<std::size_t>(maximum_candidates * 16, 64),
                  absolute_maximum_scan_directory_entries);
-    const auto maximum_caller_directories =
-        std::min(request.caller_supplied_directories.size(), maximum_candidates);
-    if (request.caller_supplied_directories.size() > maximum_caller_directories) {
-        inputs_within_limit = false;
-        add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
-                            native_project_storage_diagnostic_code_t::resource_limit,
-                            "recovery scan stopped at its caller-directory limit");
-    }
-    for (std::size_t directory_index = 0; directory_index < maximum_caller_directories;
-         ++directory_index) {
-        const auto& directory = request.caller_supplied_directories[directory_index];
-        if (directory.empty()) {
-            continue;
-        }
-        std::error_code error;
-        std::filesystem::directory_iterator iterator{directory, error};
-        if (error) {
-            add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
-                                native_project_storage_diagnostic_code_t::read_failure,
-                                "could not inspect caller recovery directory: " + error.message(),
-                                directory);
-            continue;
-        }
-        std::vector<discovered_entry_t> discovered;
-        discovered.reserve(std::min(maximum_candidates, std::size_t{16}));
-        std::size_t directory_entries_examined{};
-        bool directory_within_limit = true;
-        for (const std::filesystem::directory_iterator end; iterator != end;
-             iterator.increment(error)) {
-            if (error) {
-                add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
-                                    native_project_storage_diagnostic_code_t::read_failure,
-                                    "could not continue caller recovery directory scan: " +
-                                        error.message(),
-                                    directory);
-                break;
-            }
-            if (++directory_entries_examined > maximum_directory_entries) {
-                inputs_within_limit = false;
-                directory_within_limit = false;
-                discovered.clear();
-                add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
-                                    native_project_storage_diagnostic_code_t::resource_limit,
-                                    "caller recovery directory exceeds its entry limit; no partial "
-                                    "candidate set was retained",
-                                    directory);
-                break;
-            }
-            std::error_code type_error;
-            const auto status = iterator->symlink_status(type_error);
-            if (type_error || status.type() != std::filesystem::file_type::regular) {
-                continue;
-            }
-            const auto filename = path_to_utf8(iterator->path().filename());
-            if (filename.find(".wormedit-quarantine-") != std::string::npos) {
-                continue;
-            }
-            const auto kind =
-                filename.find(".wormedit-tmp-") != std::string::npos
-                    ? native_project_recovery_candidate_kind_t::stale_recovery_temporary
-                    : native_project_recovery_candidate_kind_t::caller_supplied_entry;
-            discovered.push_back({.path = iterator->path(), .kind = kind});
-        }
-        if (directory_within_limit) {
-            std::ranges::sort(discovered, {}, [](const auto& entry) {
-                return path_to_utf8(entry.path.lexically_normal());
-            });
-            for (const auto& entry : discovered) {
-                if (!add_spec(entry.path, entry.kind)) {
-                    inputs_within_limit = false;
-                    break;
-                }
-                if (entry.kind == native_project_recovery_candidate_kind_t::caller_supplied_entry) {
-                    completed_recovery_entries.push_back(entry.path);
-                }
-            }
-        }
-        if (!inputs_within_limit || specs.size() >= maximum_candidates) {
-            break;
-        }
-    }
-
-    auto discover_temporaries = [&](const std::filesystem::path& destination,
-                                    native_project_recovery_candidate_kind_t kind) {
-        if (destination.empty() || specs.size() >= maximum_candidates) {
-            return;
-        }
-        const auto directory =
-            destination.has_parent_path() ? destination.parent_path() : std::filesystem::path{"."};
-        std::error_code error;
-        std::filesystem::directory_iterator iterator{directory, error};
-        if (error) {
-            add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
-                                native_project_storage_diagnostic_code_t::read_failure,
-                                "could not inspect recovery directory: " + error.message(),
-                                directory);
-            return;
-        }
-        const auto prefix = temporary_prefix(destination);
-        std::size_t directory_entries_examined{};
-        for (const std::filesystem::directory_iterator end; iterator != end;
-             iterator.increment(error)) {
-            if (error) {
-                add_scan_diagnostic(
-                    result.diagnostics, maximum_diagnostics,
-                    native_project_storage_diagnostic_code_t::read_failure,
-                    "could not continue recovery directory scan: " + error.message(), directory);
-                break;
-            }
-            if (++directory_entries_examined > maximum_directory_entries) {
-                add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
-                                    native_project_storage_diagnostic_code_t::resource_limit,
-                                    "recovery directory scan reached its entry limit", directory);
-                break;
-            }
-            const auto filename = path_to_utf8(iterator->path().filename());
-            if (!filename.starts_with(prefix)) {
-                continue;
-            }
-            std::error_code type_error;
-            if (!iterator->is_regular_file(type_error) || type_error) {
-                continue;
-            }
-            if (!add_spec(iterator->path(), kind)) {
-                break;
-            }
-        }
-    };
-
-    if (request.discover_stale_temporaries && inputs_within_limit) {
-        if (!request.primary_path.empty()) {
-            discover_temporaries(request.primary_path,
-                                 native_project_recovery_candidate_kind_t::stale_primary_temporary);
-            const auto backup_path = native_project_adjacent_backup_path(request.primary_path);
-            if (specs.size() >= maximum_candidates) {
-                add_scan_diagnostic(
-                    result.diagnostics, maximum_diagnostics,
-                    native_project_storage_diagnostic_code_t::resource_limit,
-                    "recovery scan skipped temporary discovery at its candidate limit",
-                    backup_path);
-            } else {
-                discover_temporaries(
-                    backup_path,
-                    native_project_recovery_candidate_kind_t::stale_recovery_temporary);
-            }
-        }
-        for (const auto& path : completed_recovery_entries) {
-            if (specs.size() >= maximum_candidates) {
-                break;
-            }
-            discover_temporaries(
-                path, native_project_recovery_candidate_kind_t::stale_recovery_temporary);
-        }
-    }
+    recovery_collection_state_t collection{result.diagnostics,
+                                           maximum_candidates,
+                                           maximum_diagnostics,
+                                           maximum_directory_entries};
+    collection.specs.reserve(std::min(maximum_candidates, std::size_t{16}));
+    collection.completed_recovery_entries.reserve(std::min(maximum_candidates, std::size_t{16}));
+    (void)collect_recovery_candidates(request, collection);
 
     std::size_t total_bytes_read{};
-    result.candidates.reserve(specs.size());
-    for (const auto& spec : specs) {
-        native_project_recovery_candidate_t candidate{.path = spec.path, .kind = spec.kind};
-        std::error_code error;
-        const auto exists = std::filesystem::exists(spec.path, error);
-        if (error) {
-            candidate.status = native_project_recovery_candidate_status_t::unreadable;
-            add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
-                                native_project_storage_diagnostic_code_t::read_failure,
-                                "could not inspect recovery candidate: " + error.message(),
-                                spec.path, diagnostic_severity_t::error);
-            result.candidates.push_back(std::move(candidate));
-            continue;
-        }
-        if (!exists) {
-            candidate.status = native_project_recovery_candidate_status_t::missing;
-            result.candidates.push_back(std::move(candidate));
-            continue;
-        }
-
-        const auto file_size = std::filesystem::file_size(spec.path, error);
-        if (error) {
-            candidate.status = native_project_recovery_candidate_status_t::unreadable;
-            add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
-                                native_project_storage_diagnostic_code_t::read_failure,
-                                "could not determine recovery candidate size: " + error.message(),
-                                spec.path, diagnostic_severity_t::error);
-            result.candidates.push_back(std::move(candidate));
-            continue;
-        }
-        if (file_size > maximum_file_bytes || file_size > maximum_total_bytes - total_bytes_read) {
-            candidate.status = native_project_recovery_candidate_status_t::resource_limited;
-            add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
-                                native_project_storage_diagnostic_code_t::resource_limit,
-                                "recovery candidate exceeds the scan byte budget", spec.path,
-                                diagnostic_severity_t::error);
-            result.candidates.push_back(std::move(candidate));
-            continue;
-        }
-
-        const auto byte_count = static_cast<std::size_t>(file_size);
-        std::ifstream stream(spec.path, std::ios::binary);
-        if (!stream) {
-            candidate.status = native_project_recovery_candidate_status_t::unreadable;
-            add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
-                                native_project_storage_diagnostic_code_t::read_failure,
-                                "could not open recovery candidate", spec.path,
-                                diagnostic_severity_t::error);
-            result.candidates.push_back(std::move(candidate));
-            continue;
-        }
-        std::string bytes(byte_count, '\0');
-        if (byte_count != 0) {
-            stream.read(bytes.data(), static_cast<std::streamsize>(byte_count));
-        }
-        if (!stream || static_cast<std::size_t>(stream.gcount()) != byte_count) {
-            candidate.status = native_project_recovery_candidate_status_t::unreadable;
-            add_scan_diagnostic(result.diagnostics, maximum_diagnostics,
-                                native_project_storage_diagnostic_code_t::read_failure,
-                                "could not read the complete recovery candidate", spec.path,
-                                diagnostic_severity_t::error);
-            result.candidates.push_back(std::move(candidate));
-            continue;
-        }
-        total_bytes_read += byte_count;
-        candidate.scanned_size_bytes = file_size;
-        candidate.scanned_sha256 = sha256(bytes);
-
-        std::vector<native_project_storage_diagnostic_t> parse_diagnostics;
-        if (spec.kind == native_project_recovery_candidate_kind_t::primary ||
-            spec.kind == native_project_recovery_candidate_kind_t::stale_primary_temporary) {
-            const auto parsed = parse_native_project(bytes, options.codec_limits);
-            if (parsed.song.has_value() && !parsed.has_errors()) {
-                candidate.document = *parsed.song;
-                candidate.version = native_project_document_version_t{
-                    .project_id = parsed.song->id, .revision = parsed.song->revision};
-                candidate.status = native_project_recovery_candidate_status_t::valid;
-            } else {
-                candidate.status =
-                    std::ranges::any_of(parsed.diagnostics,
-                                        [](const auto& item) {
-                                            return item.code ==
-                                                   native_project_diagnostic_code_t::resource_limit;
-                                        })
-                        ? native_project_recovery_candidate_status_t::resource_limited
-                        : native_project_recovery_candidate_status_t::invalid;
-                for (const auto& item : parsed.diagnostics) {
-                    if (parse_diagnostics.size() >= maximum_diagnostics) {
-                        break;
-                    }
-                    auto converted = as_error(item);
-                    converted.path = spec.path;
-                    parse_diagnostics.push_back(std::move(converted));
-                }
-            }
-        } else {
-            const auto parsed =
-                parse_recovery_impl(bytes, options.codec_limits, parse_diagnostics, spec.path);
-            if (parsed.has_value()) {
-                candidate.status = native_project_recovery_candidate_status_t::valid;
-                candidate.document = parsed->snapshot.song;
-                candidate.version =
-                    native_project_document_version_t{.project_id = parsed->snapshot.song.id,
-                                                      .revision = parsed->snapshot.song.revision};
-                candidate.recovery_metadata = parsed->snapshot.metadata;
-            } else {
-                candidate.status =
-                    std::ranges::any_of(
-                        parse_diagnostics,
-                        [](const auto& item) {
-                            return item.code ==
-                                   native_project_storage_diagnostic_code_t::resource_limit;
-                        })
-                        ? native_project_recovery_candidate_status_t::resource_limited
-                        : native_project_recovery_candidate_status_t::invalid;
-            }
-        }
-        for (auto& item : parse_diagnostics) {
-            add_scan_diagnostic(result.diagnostics, maximum_diagnostics, item.code,
-                                std::move(item.message), spec.path, item.severity);
-        }
-        if (recovery_kind(candidate.kind) &&
-            candidate.status == native_project_recovery_candidate_status_t::invalid) {
-            candidate.quarantine =
-                native_project_recovery_quarantine_t::recommend_quarantine_corrupt;
-        }
-        result.candidates.push_back(std::move(candidate));
+    result.candidates.reserve(collection.specs.size());
+    for (const auto& spec : collection.specs) {
+        scan_recovery_candidate(spec, options, maximum_file_bytes, maximum_total_bytes,
+                                total_bytes_read, result.diagnostics, maximum_diagnostics,
+                                result.candidates);
     }
 
-    std::optional<native_project_document_version_t> primary_version;
-    for (const auto& candidate : result.candidates) {
-        if (candidate.kind == native_project_recovery_candidate_kind_t::primary &&
-            candidate.status == native_project_recovery_candidate_status_t::valid) {
-            primary_version = candidate.version;
-            break;
-        }
-    }
-    for (auto& candidate : result.candidates) {
-        if (candidate.kind == native_project_recovery_candidate_kind_t::primary ||
-            candidate.status != native_project_recovery_candidate_status_t::valid) {
-            continue;
-        }
-        candidate.available_actions = {native_project_recovery_action_t::inspect_read_only,
-                                       native_project_recovery_action_t::recover_into_session,
-                                       native_project_recovery_action_t::save_as_new_project,
-                                       native_project_recovery_action_t::discard};
-        if (!primary_version.has_value()) {
-            candidate.comparison = native_project_recovery_comparison_t::no_valid_primary;
-            candidate.recommended_action = native_project_recovery_action_t::recover_into_session;
-        } else {
-            candidate.comparison = compare_versions(*candidate.version, *primary_version);
-            switch (candidate.comparison) {
-            case native_project_recovery_comparison_t::newer_revision:
-                candidate.recommended_action = native_project_recovery_action_t::inspect_read_only;
-                break;
-            case native_project_recovery_comparison_t::older_revision:
-            case native_project_recovery_comparison_t::equal_revision:
-                candidate.recommended_action = native_project_recovery_action_t::discard;
-                break;
-            case native_project_recovery_comparison_t::different_project:
-                candidate.recommended_action = native_project_recovery_action_t::inspect_read_only;
-                break;
-            case native_project_recovery_comparison_t::not_comparable:
-            case native_project_recovery_comparison_t::no_valid_primary:
-                break;
-            }
-        }
-    }
-
-    for (auto& temporary : result.candidates) {
-        if ((temporary.kind != native_project_recovery_candidate_kind_t::stale_primary_temporary &&
-             temporary.kind !=
-                 native_project_recovery_candidate_kind_t::stale_recovery_temporary) ||
-            temporary.status != native_project_recovery_candidate_status_t::valid ||
-            !temporary.version.has_value()) {
-            continue;
-        }
-        const auto superseded = std::ranges::any_of(result.candidates, [&](const auto& completed) {
-            return (completed.kind == native_project_recovery_candidate_kind_t::primary ||
-                    completed.kind == native_project_recovery_candidate_kind_t::adjacent_backup ||
-                    completed.kind ==
-                        native_project_recovery_candidate_kind_t::caller_supplied_entry) &&
-                   completed.status == native_project_recovery_candidate_status_t::valid &&
-                   completed.version.has_value() &&
-                   completed.version->project_id == temporary.version->project_id &&
-                   completed.version->revision >= temporary.version->revision;
-        });
-        if (superseded) {
-            temporary.quarantine =
-                native_project_recovery_quarantine_t::recommend_quarantine_superseded_temporary;
-        }
-    }
-
-    for (auto& candidate : result.candidates) {
-        if (candidate.quarantine != native_project_recovery_quarantine_t::retain &&
-            std::ranges::find(candidate.available_actions,
-                              native_project_recovery_action_t::quarantine) ==
-                candidate.available_actions.end()) {
-            candidate.available_actions.push_back(native_project_recovery_action_t::quarantine);
-        }
-    }
-
-    std::vector<std::size_t> eligible_recoveries;
-    for (std::size_t index = 0; index < result.candidates.size(); ++index) {
-        const auto& candidate = result.candidates[index];
-        if (candidate.kind == native_project_recovery_candidate_kind_t::primary ||
-            candidate.status != native_project_recovery_candidate_status_t::valid ||
-            !candidate.version.has_value()) {
-            continue;
-        }
-        if (primary_version.has_value()) {
-            if (candidate.comparison == native_project_recovery_comparison_t::newer_revision) {
-                eligible_recoveries.push_back(index);
-            }
-        } else {
-            eligible_recoveries.push_back(index);
-        }
-    }
-    if (!eligible_recoveries.empty()) {
-        const auto project_id = result.candidates[eligible_recoveries.front()].version->project_id;
-        const auto one_project = std::ranges::all_of(eligible_recoveries, [&](const auto index) {
-            return result.candidates[index].version->project_id == project_id;
-        });
-        if (one_project) {
-            auto best = eligible_recoveries.front();
-            for (const auto index : eligible_recoveries) {
-                if (recovery_candidate_precedes(result.candidates[index],
-                                                result.candidates[best])) {
-                    best = index;
-                }
-            }
-            result.preferred_recovery_candidate = best;
-        }
-    }
+    finalize_recovery_candidates(result);
     return result;
 }
 
@@ -1839,6 +1889,248 @@ auto new_quarantine_path(const std::filesystem::path& source) -> std::filesystem
     return parent / name;
 }
 
+auto validated_scanned_document(const native_project_recovery_candidate_t& candidate,
+                                std::string_view bytes, native_project_limits_t limits,
+                                native_project_recovery_action_result_t& result)
+    -> std::optional<song_document_t> {
+    if (candidate.status != native_project_recovery_candidate_status_t::valid) {
+        return std::nullopt;
+    }
+    auto document = parse_scanned_artifact(candidate, bytes, limits, result);
+    if (!document) {
+        return std::nullopt;
+    }
+    const native_project_document_version_t version{.project_id = document->id,
+                                                    .revision = document->revision};
+    if (!candidate.version || *candidate.version != version) {
+        add_action_error(result, native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
+                         "candidate project identity or revision differs from its scan result",
+                         candidate.path);
+        return std::nullopt;
+    }
+    return document;
+}
+
+auto scanned_primary(const native_project_recovery_scan_result_t& scan)
+    -> const native_project_recovery_candidate_t* {
+    const auto primary = std::ranges::find_if(scan.candidates, [](const auto& entry) {
+        return entry.kind == native_project_recovery_candidate_kind_t::primary;
+    });
+    return primary == scan.candidates.end() ? nullptr : &*primary;
+}
+
+auto verify_primary_baseline(const native_project_recovery_candidate_t& primary,
+                             const native_project_recovery_action_options_t& options,
+                             native_project_recovery_action_result_t& result) -> bool {
+    if (primary.status == native_project_recovery_candidate_status_t::missing) {
+        std::error_code error;
+        const auto status = std::filesystem::symlink_status(primary.path, error);
+        if ((!error || error == std::errc::no_such_file_or_directory) &&
+            !std::filesystem::exists(status)) {
+            return true;
+        }
+        add_action_error(result, native_project_storage_diagnostic_code_t::recovery_candidate_changed,
+                         "primary appeared after the recovery scan", primary.path);
+        return false;
+    }
+    const auto primary_bytes =
+        read_scanned_artifact(primary, options.maximum_candidate_file_bytes, result);
+    if (!primary_bytes) {
+        return false;
+    }
+    if (primary.status != native_project_recovery_candidate_status_t::valid) {
+        return true;
+    }
+    auto primary_document =
+        parse_scanned_artifact(primary, *primary_bytes, options.codec_limits, result);
+    if (!primary_document || !primary.version ||
+        *primary.version != native_project_document_version_t{
+                                .project_id = primary_document->id,
+                                .revision = primary_document->revision}) {
+        if (!result.has_errors()) {
+            add_action_error(result,
+                             native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
+                             "primary identity or revision differs from its scan result",
+                             primary.path);
+        }
+        return false;
+    }
+    return true;
+}
+
+void save_recovery_as_new_project(const native_project_recovery_scan_result_t& scan,
+                                  const native_project_recovery_candidate_t& candidate,
+                                  const native_project_recovery_action_options_t& options,
+                                  native_project_recovery_action_result_t& result) {
+    const auto& destination = options.save_as_destination;
+    if (destination.empty() || destination.filename().empty()) {
+        add_action_error(result, native_project_storage_diagnostic_code_t::invalid_destination,
+                         "save-as destination must name a file", destination);
+        return;
+    }
+    for (const auto& entry : scan.candidates) {
+        if (entry.kind == native_project_recovery_candidate_kind_t::primary &&
+            same_path_for_action(destination, entry.path)) {
+            add_action_error(result, native_project_storage_diagnostic_code_t::invalid_destination,
+                             "save-as cannot target the primary project", destination);
+            return;
+        }
+    }
+    if (same_path_for_action(destination, candidate.path)) {
+        add_action_error(result, native_project_storage_diagnostic_code_t::invalid_destination,
+                         "save-as cannot target the scanned recovery artifact", destination);
+        return;
+    }
+    std::error_code error;
+    const auto destination_status = std::filesystem::symlink_status(destination, error);
+    if (error && error != std::errc::no_such_file_or_directory) {
+        add_action_error(result, native_project_storage_diagnostic_code_t::invalid_destination,
+                         "could not inspect save-as destination: " + error.message(), destination);
+        return;
+    }
+    if (!error && std::filesystem::exists(destination_status)) {
+        add_action_error(result, native_project_storage_diagnostic_code_t::recovery_target_exists,
+                         "save-as destination already exists", destination);
+        return;
+    }
+    if (!recovery_action_stage_allowed(options,
+                                       native_project_recovery_action_stage_t::before_save_as_publish,
+                                       destination)) {
+        add_action_error(result, native_project_storage_diagnostic_code_t::write_failure,
+                         "injected save-as publication failure", destination);
+        return;
+    }
+    const auto candidate_bytes =
+        read_scanned_artifact(candidate, options.maximum_candidate_file_bytes, result);
+    if (!candidate_bytes) {
+        return;
+    }
+    auto document = validated_scanned_document(candidate, *candidate_bytes, options.codec_limits,
+                                               result);
+    if (!document) {
+        return;
+    }
+    const auto publication =
+        publish_native_project_create_only(destination, *document, options.codec_limits);
+    result.diagnostics = publication.diagnostics;
+    if (!publication.published || publication.has_errors()) {
+        for (auto& diagnostic : result.diagnostics) {
+            if (diagnostic.code == native_project_storage_diagnostic_code_t::replacement_failure) {
+                diagnostic.code = native_project_storage_diagnostic_code_t::recovery_target_exists;
+                diagnostic.message =
+                    "save-as could not claim a destination that appeared concurrently";
+            }
+        }
+        return;
+    }
+    result.document = std::move(document);
+    result.version = candidate.version;
+    result.applied = true;
+}
+
+void quarantine_scanned_recovery(const native_project_recovery_scan_result_t& scan,
+                                 const native_project_recovery_candidate_t& candidate,
+                                 const native_project_recovery_action_options_t& options,
+                                 native_project_recovery_action_result_t& result) {
+    if (!recovery_action_stage_allowed(options,
+                                       native_project_recovery_action_stage_t::before_mutation,
+                                       candidate.path)) {
+        add_action_error(result,
+                         native_project_storage_diagnostic_code_t::recovery_quarantine_failure,
+                         "injected recovery quarantine failure", candidate.path);
+        return;
+    }
+    const auto candidate_bytes =
+        read_scanned_artifact(candidate, options.maximum_candidate_file_bytes, result);
+    if (!candidate_bytes) {
+        return;
+    }
+    if (const auto* primary = scanned_primary(scan);
+        primary != nullptr && !verify_primary_baseline(*primary, options, result)) {
+        return;
+    }
+    const auto destination = new_quarantine_path(candidate.path);
+    std::string move_failure;
+    if (!move_no_replace(candidate.path, destination, move_failure)) {
+        add_action_error(result,
+                         native_project_storage_diagnostic_code_t::recovery_quarantine_failure,
+                         std::move(move_failure), candidate.path);
+        return;
+    }
+    result.quarantined_path = destination;
+    if (!recovery_action_stage_allowed(
+            options, native_project_recovery_action_stage_t::after_quarantine_move, destination)) {
+        add_action_error(result,
+                         native_project_storage_diagnostic_code_t::recovery_quarantine_failure,
+                         "injected post-move quarantine verification failure", destination);
+    } else {
+        auto moved_candidate = candidate;
+        moved_candidate.path = destination;
+        const auto moved_bytes =
+            read_scanned_artifact(moved_candidate, options.maximum_candidate_file_bytes, result);
+        if (moved_bytes) {
+            result.applied = true;
+        }
+    }
+    if (!result.applied) {
+        std::string restore_failure;
+        if (move_no_replace(destination, candidate.path, restore_failure)) {
+            result.quarantined_path.reset();
+        } else {
+            add_action_error(result,
+                             native_project_storage_diagnostic_code_t::recovery_quarantine_failure,
+                             "could not restore the changed artifact after quarantine verification: " +
+                                 restore_failure,
+                             destination);
+        }
+        return;
+    }
+    std::string directory_failure;
+    if (!sync_directory(destination, directory_failure)) {
+        add_action_error(result, native_project_storage_diagnostic_code_t::write_failure,
+                         "recovery artifact was moved, but " + directory_failure, destination,
+                         diagnostic_severity_t::warning);
+    }
+}
+
+void recover_scanned_document(const native_project_recovery_scan_result_t& scan,
+                              const native_project_recovery_candidate_t& candidate,
+                              const native_project_recovery_action_options_t& options,
+                              std::optional<song_document_t> document,
+                              native_project_recovery_action_result_t& result) {
+    const auto* primary = scanned_primary(scan);
+    if (primary == nullptr && options.expected_session.version) {
+        add_action_error(result, native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
+                         "a nonempty session cannot recover from a scan with no primary baseline",
+                         candidate.path);
+        return;
+    }
+    if (primary != nullptr && !verify_primary_baseline(*primary, options, result)) {
+        return;
+    }
+    const auto primary_version =
+        primary != nullptr && primary->status == native_project_recovery_candidate_status_t::valid
+            ? primary->version
+            : std::optional<native_project_document_version_t>{};
+    if (options.expected_session.version != primary_version) {
+        add_action_error(result, native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
+                         "current session no longer matches the scanned primary revision",
+                         primary != nullptr ? primary->path : candidate.path);
+        return;
+    }
+    if (options.expected_session.version &&
+        (candidate.version->project_id != options.expected_session.version->project_id ||
+         candidate.version->revision < options.expected_session.version->revision)) {
+        add_action_error(result, native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
+                         "recovery candidate belongs to another project or is older than the session",
+                         candidate.path);
+        return;
+    }
+    result.document = std::move(document);
+    result.version = candidate.version;
+    result.applied = true;
+}
+
 } // namespace
 
 auto publish_native_project_atomic(const std::filesystem::path& destination,
@@ -1990,69 +2282,8 @@ auto apply_native_project_recovery_action(const native_project_recovery_scan_res
         return result;
     }
 
-    auto current_document = [&]() -> std::optional<song_document_t> {
-        if (candidate.status != native_project_recovery_candidate_status_t::valid) {
-            return std::nullopt;
-        }
-        auto document =
-            parse_scanned_artifact(candidate, *candidate_bytes, options.codec_limits, result);
-        if (!document.has_value()) {
-            return std::nullopt;
-        }
-        const native_project_document_version_t version{.project_id = document->id,
-                                                        .revision = document->revision};
-        if (!candidate.version.has_value() || *candidate.version != version) {
-            add_action_error(result,
-                             native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
-                             "candidate project identity or revision differs from its scan result",
-                             candidate.path);
-            return std::nullopt;
-        }
-        return document;
-    };
-    auto find_primary = [&]() -> const native_project_recovery_candidate_t* {
-        const auto primary = std::ranges::find_if(scan.candidates, [](const auto& entry) {
-            return entry.kind == native_project_recovery_candidate_kind_t::primary;
-        });
-        return primary == scan.candidates.end() ? nullptr : &*primary;
-    };
-    auto verify_primary_baseline = [&](const native_project_recovery_candidate_t& primary) -> bool {
-        if (primary.status == native_project_recovery_candidate_status_t::missing) {
-            std::error_code error;
-            const auto status = std::filesystem::symlink_status(primary.path, error);
-            if ((!error || error == std::errc::no_such_file_or_directory) &&
-                !std::filesystem::exists(status)) {
-                return true;
-            }
-            add_action_error(result,
-                             native_project_storage_diagnostic_code_t::recovery_candidate_changed,
-                             "primary appeared after the recovery scan", primary.path);
-            return false;
-        }
-        const auto primary_bytes =
-            read_scanned_artifact(primary, options.maximum_candidate_file_bytes, result);
-        if (!primary_bytes.has_value()) {
-            return false;
-        }
-        if (primary.status != native_project_recovery_candidate_status_t::valid) {
-            return true;
-        }
-        auto primary_document =
-            parse_scanned_artifact(primary, *primary_bytes, options.codec_limits, result);
-        if (!primary_document.has_value() || !primary.version.has_value() ||
-            *primary.version !=
-                native_project_document_version_t{.project_id = primary_document->id,
-                                                  .revision = primary_document->revision}) {
-            if (!result.has_errors()) {
-                add_action_error(
-                    result, native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
-                    "primary identity or revision differs from its scan result", primary.path);
-            }
-            return false;
-        }
-        return true;
-    };
-    auto document = current_document();
+    auto document = validated_scanned_document(candidate, *candidate_bytes, options.codec_limits,
+                                               result);
     if (candidate.status == native_project_recovery_candidate_status_t::valid &&
         !document.has_value()) {
         return result;
@@ -2066,179 +2297,18 @@ auto apply_native_project_recovery_action(const native_project_recovery_scan_res
     }
 
     if (action == native_project_recovery_action_t::recover_into_session) {
-        const auto* primary = find_primary();
-        if (primary == nullptr && options.expected_session.version.has_value()) {
-            add_action_error(result,
-                             native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
-                             "a nonempty session cannot recover from a scan with no primary "
-                             "baseline",
-                             candidate.path);
-            return result;
-        }
-        if (primary != nullptr && !verify_primary_baseline(*primary)) {
-            return result;
-        }
-
-        const auto primary_version =
-            primary != nullptr &&
-                    primary->status == native_project_recovery_candidate_status_t::valid
-                ? primary->version
-                : std::optional<native_project_document_version_t>{};
-        if (options.expected_session.version != primary_version) {
-            add_action_error(result,
-                             native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
-                             "current session no longer matches the scanned primary revision",
-                             primary != nullptr ? primary->path : candidate.path);
-            return result;
-        }
-        if (options.expected_session.version.has_value() &&
-            (candidate.version->project_id != options.expected_session.version->project_id ||
-             candidate.version->revision < options.expected_session.version->revision)) {
-            add_action_error(
-                result, native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
-                "recovery candidate belongs to another project or is older than the session",
-                candidate.path);
-            return result;
-        }
-        result.document = std::move(document);
-        result.version = candidate.version;
-        result.applied = true;
+        recover_scanned_document(scan, candidate, options, std::move(document), result);
         return result;
     }
 
     if (action == native_project_recovery_action_t::save_as_new_project) {
-        const auto destination = options.save_as_destination;
-        if (destination.empty() || destination.filename().empty()) {
-            add_action_error(result, native_project_storage_diagnostic_code_t::invalid_destination,
-                             "save-as destination must name a file", destination);
-            return result;
-        }
-        for (const auto& entry : scan.candidates) {
-            if (entry.kind == native_project_recovery_candidate_kind_t::primary &&
-                same_path_for_action(destination, entry.path)) {
-                add_action_error(result,
-                                 native_project_storage_diagnostic_code_t::invalid_destination,
-                                 "save-as cannot target the primary project", destination);
-                return result;
-            }
-        }
-        if (same_path_for_action(destination, candidate.path)) {
-            add_action_error(result, native_project_storage_diagnostic_code_t::invalid_destination,
-                             "save-as cannot target the scanned recovery artifact", destination);
-            return result;
-        }
-        std::error_code error;
-        const auto destination_status = std::filesystem::symlink_status(destination, error);
-        if (error && error != std::errc::no_such_file_or_directory) {
-            add_action_error(result, native_project_storage_diagnostic_code_t::invalid_destination,
-                             "could not inspect save-as destination: " + error.message(),
-                             destination);
-            return result;
-        }
-        if (!error && std::filesystem::exists(destination_status)) {
-            add_action_error(result,
-                             native_project_storage_diagnostic_code_t::recovery_target_exists,
-                             "save-as destination already exists", destination);
-            return result;
-        }
-        if (!recovery_action_stage_allowed(
-                options, native_project_recovery_action_stage_t::before_save_as_publish,
-                destination)) {
-            add_action_error(result, native_project_storage_diagnostic_code_t::write_failure,
-                             "injected save-as publication failure", destination);
-            return result;
-        }
-        candidate_bytes =
-            read_scanned_artifact(candidate, options.maximum_candidate_file_bytes, result);
-        if (!candidate_bytes.has_value()) {
-            return result;
-        }
-        document = current_document();
-        if (!document.has_value()) {
-            return result;
-        }
-        const auto publication =
-            publish_native_project_create_only(destination, *document, options.codec_limits);
-        result.diagnostics = publication.diagnostics;
-        if (!publication.published || publication.has_errors()) {
-            for (auto& diagnostic : result.diagnostics) {
-                if (diagnostic.code ==
-                    native_project_storage_diagnostic_code_t::replacement_failure) {
-                    diagnostic.code =
-                        native_project_storage_diagnostic_code_t::recovery_target_exists;
-                    diagnostic.message =
-                        "save-as could not claim a destination that appeared concurrently";
-                }
-            }
-            return result;
-        }
-        result.document = std::move(document);
-        result.version = candidate.version;
-        result.applied = true;
+        save_recovery_as_new_project(scan, candidate, options, result);
         return result;
     }
 
     if (action == native_project_recovery_action_t::discard ||
         action == native_project_recovery_action_t::quarantine) {
-        if (!recovery_action_stage_allowed(
-                options, native_project_recovery_action_stage_t::before_mutation, candidate.path)) {
-            add_action_error(result,
-                             native_project_storage_diagnostic_code_t::recovery_quarantine_failure,
-                             "injected recovery quarantine failure", candidate.path);
-            return result;
-        }
-        candidate_bytes =
-            read_scanned_artifact(candidate, options.maximum_candidate_file_bytes, result);
-        if (!candidate_bytes.has_value()) {
-            return result;
-        }
-        if (const auto* primary = find_primary();
-            primary != nullptr && !verify_primary_baseline(*primary)) {
-            return result;
-        }
-        const auto destination = new_quarantine_path(candidate.path);
-        std::string move_failure;
-        if (!move_no_replace(candidate.path, destination, move_failure)) {
-            add_action_error(result,
-                             native_project_storage_diagnostic_code_t::recovery_quarantine_failure,
-                             std::move(move_failure), candidate.path);
-            return result;
-        }
-        result.quarantined_path = destination;
-        if (!recovery_action_stage_allowed(
-                options, native_project_recovery_action_stage_t::after_quarantine_move,
-                destination)) {
-            add_action_error(result,
-                             native_project_storage_diagnostic_code_t::recovery_quarantine_failure,
-                             "injected post-move quarantine verification failure", destination);
-        } else {
-            auto moved_candidate = candidate;
-            moved_candidate.path = destination;
-            const auto moved_bytes = read_scanned_artifact(
-                moved_candidate, options.maximum_candidate_file_bytes, result);
-            if (moved_bytes.has_value()) {
-                result.applied = true;
-            }
-        }
-        if (!result.applied) {
-            std::string restore_failure;
-            if (move_no_replace(destination, candidate.path, restore_failure)) {
-                result.quarantined_path.reset();
-            } else {
-                add_action_error(
-                    result, native_project_storage_diagnostic_code_t::recovery_quarantine_failure,
-                    "could not restore the changed artifact after quarantine verification: " +
-                        restore_failure,
-                    destination);
-            }
-            return result;
-        }
-        std::string directory_failure;
-        if (!sync_directory(destination, directory_failure)) {
-            add_action_error(result, native_project_storage_diagnostic_code_t::write_failure,
-                             "recovery artifact was moved, but " + directory_failure, destination,
-                             diagnostic_severity_t::warning);
-        }
+        quarantine_scanned_recovery(scan, candidate, options, result);
         return result;
     }
 

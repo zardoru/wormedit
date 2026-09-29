@@ -5,6 +5,7 @@
 #include <cmath>
 #include <limits>
 #include <numeric>
+#include <utility>
 
 namespace wormedit {
 namespace {
@@ -115,6 +116,105 @@ auto make_approximation(double input, rational_t candidate, std::uint32_t iterat
     };
 }
 
+struct convergent_search_t {
+    double input{};
+    std::uint64_t maximum_denominator{};
+    rational_t best{};
+    std::uint64_t numerator_before_previous{};
+    std::uint64_t denominator_before_previous{1};
+    std::uint64_t numerator_previous{1};
+    std::uint64_t denominator_previous{};
+    long double remainder{};
+    std::uint32_t iterations{};
+};
+
+auto consider_candidate(convergent_search_t& search, rational_t candidate) -> void {
+    if (better_candidate(search.input, candidate, search.best)) {
+        search.best = candidate;
+    }
+}
+
+auto consider_semiconvergent(convergent_search_t& search) -> void {
+    auto factor_limit = maximum_u64;
+    bool factor_limit_set{};
+    if (search.numerator_previous != 0) {
+        factor_limit = std::min(factor_limit, (maximum_u64 - search.numerator_before_previous) /
+                                                  search.numerator_previous);
+        factor_limit_set = true;
+    }
+    if (search.denominator_previous != 0) {
+        factor_limit = std::min(factor_limit,
+                                (search.maximum_denominator - search.denominator_before_previous) /
+                                    search.denominator_previous);
+        factor_limit_set = true;
+    }
+    if (!factor_limit_set || factor_limit == 0) {
+        return;
+    }
+    std::uint64_t numerator{};
+    std::uint64_t denominator{};
+    if (checked_multiply_add(factor_limit, search.numerator_previous,
+                             search.numerator_before_previous, maximum_u64, numerator) &&
+        checked_multiply_add(factor_limit, search.denominator_previous,
+                             search.denominator_before_previous, search.maximum_denominator,
+                             denominator) &&
+        numerator != 0 && denominator != 0) {
+        consider_candidate(search, normalize(numerator, denominator));
+    }
+}
+
+auto advance_convergent(convergent_search_t& search, long double integral) -> bool {
+    const auto coefficient = static_cast<std::uint64_t>(integral);
+    std::uint64_t numerator_next{};
+    std::uint64_t denominator_next{};
+    const auto numerator_fits =
+        checked_multiply_add(coefficient, search.numerator_previous,
+                             search.numerator_before_previous, maximum_u64, numerator_next);
+    const auto denominator_fits = checked_multiply_add(
+        coefficient, search.denominator_previous, search.denominator_before_previous,
+        search.maximum_denominator, denominator_next);
+    if (!numerator_fits || !denominator_fits) {
+        consider_semiconvergent(search);
+        return false;
+    }
+    if (numerator_next != 0) {
+        consider_candidate(search, normalize(numerator_next, denominator_next));
+    }
+    const auto fractional = search.remainder - integral;
+    search.numerator_before_previous = search.numerator_previous;
+    search.denominator_before_previous = search.denominator_previous;
+    search.numerator_previous = numerator_next;
+    search.denominator_previous = denominator_next;
+    if (!(fractional > 0.0L)) {
+        return false;
+    }
+    search.remainder = 1.0L / fractional;
+    return std::isfinite(search.remainder);
+}
+
+auto best_bounded_approximation(double input, std::uint64_t maximum_denominator,
+                                std::uint32_t iteration_limit)
+    -> std::pair<rational_t, std::uint32_t> {
+    convergent_search_t search{
+        .input = input,
+        .maximum_denominator = maximum_denominator,
+        .best = {1, maximum_denominator},
+        .remainder = static_cast<long double>(input),
+    };
+    consider_candidate(search, {1, 1});
+    for (; search.iterations < iteration_limit; ++search.iterations) {
+        const auto integral = std::floor(search.remainder);
+        if (!(integral >= 0.0L) || integral >= two_to_64) {
+            consider_candidate(search, {maximum_u64, 1});
+            break;
+        }
+        if (!advance_convergent(search, integral)) {
+            break;
+        }
+    }
+    return {search.best, std::min(search.iterations + 1, iteration_limit)};
+}
+
 } // namespace
 
 auto rationalize_positive_double(double value, const rationalization_options_t& options)
@@ -152,100 +252,9 @@ auto rationalize_positive_double(double value, const rationalization_options_t& 
         return make_approximation(value, maximum_positive_candidate, 0, options);
     }
 
-    std::optional<rational_t> best{maximum_positive_candidate};
-    constexpr auto one = rational_t{1, 1};
-    if (better_candidate(value, one, *best)) {
-        best = one;
-    }
-    // Consecutive convergent state: p[-2]/q[-2], p[-1]/q[-1].
-    std::uint64_t numerator_before_previous{};
-    std::uint64_t denominator_before_previous{1};
-    std::uint64_t numerator_previous{1};
-    std::uint64_t denominator_previous{};
-    auto remainder = input_value;
-    std::uint32_t iterations{};
-
-    for (; iterations < iteration_limit; ++iterations) {
-        const auto integral = std::floor(remainder);
-        if (!(integral >= 0.0L) || integral >= two_to_64) {
-            const auto largest_integer = rational_t{maximum_u64, 1};
-            if (!best.has_value() || better_candidate(value, largest_integer, *best)) {
-                best = largest_integer;
-            }
-            break;
-        }
-        const auto coefficient = static_cast<std::uint64_t>(integral);
-
-        std::uint64_t numerator_next{};
-        std::uint64_t denominator_next{};
-        const auto numerator_fits =
-            checked_multiply_add(coefficient, numerator_previous, numerator_before_previous,
-                                 maximum_u64, numerator_next);
-        const auto denominator_fits =
-            checked_multiply_add(coefficient, denominator_previous, denominator_before_previous,
-                                 maximum_denominator, denominator_next);
-        if (!numerator_fits || !denominator_fits) {
-            auto factor_limit = maximum_u64;
-            auto factor_limit_set = false;
-            if (numerator_previous != 0) {
-                factor_limit = std::min(factor_limit, (maximum_u64 - numerator_before_previous) /
-                                                          numerator_previous);
-                factor_limit_set = true;
-            }
-            if (denominator_previous != 0) {
-                factor_limit =
-                    std::min(factor_limit, (maximum_denominator - denominator_before_previous) /
-                                               denominator_previous);
-                factor_limit_set = true;
-            }
-
-            if (factor_limit_set) {
-                std::uint64_t semi_numerator{};
-                std::uint64_t semi_denominator{};
-                if (factor_limit > 0 &&
-                    checked_multiply_add(factor_limit, numerator_previous,
-                                         numerator_before_previous, maximum_u64, semi_numerator) &&
-                    checked_multiply_add(factor_limit, denominator_previous,
-                                         denominator_before_previous, maximum_denominator,
-                                         semi_denominator) &&
-                    semi_numerator != 0 && semi_denominator != 0) {
-                    const auto semi = normalize(semi_numerator, semi_denominator);
-                    if (!best.has_value() || better_candidate(value, semi, *best)) {
-                        best = semi;
-                    }
-                }
-            }
-            break;
-        }
-
-        if (numerator_next != 0) {
-            const auto convergent = normalize(numerator_next, denominator_next);
-            if (!best.has_value() || better_candidate(value, convergent, *best)) {
-                best = convergent;
-            }
-        }
-
-        const auto fractional = remainder - integral;
-        numerator_before_previous = numerator_previous;
-        denominator_before_previous = denominator_previous;
-        numerator_previous = numerator_next;
-        denominator_previous = denominator_next;
-        if (!(fractional > 0.0L)) {
-            break;
-        }
-        remainder = 1.0L / fractional;
-        if (!std::isfinite(remainder)) {
-            break;
-        }
-    }
-
-    if (!best.has_value()) {
-        // Zero is not a valid measure length. The closest positive rational
-        // under the denominator bound is the smallest positive grid value.
-        best = maximum_positive_candidate;
-    }
-    const auto completed_iterations = std::min(iterations + 1, iteration_limit);
-    return make_approximation(value, *best, completed_iterations, options);
+    const auto [best, completed_iterations] =
+        best_bounded_approximation(value, maximum_denominator, iteration_limit);
+    return make_approximation(value, best, completed_iterations, options);
 }
 
 auto filter_snap_denominators(std::uint64_t divisions_per_standard_measure,

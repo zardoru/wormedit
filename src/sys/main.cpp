@@ -27,6 +27,7 @@
 #include "sys/waveform_view_projection.h"
 #include "sys/bmson_waveform_projection.h"
 #include "sys/compose_audition_requests.h"
+#include "sys/crash_backtrace.h"
 #include "sys/inline_preview_cursor.h"
 #include "sys/audio_source_registration.h"
 #include "sys/compose_waveform_overlays.h"
@@ -2189,6 +2190,7 @@ auto dispatch_registered_application_command(
 } // namespace
 
 int main(int argc, char** argv) {
+    wormedit::sys::install_crash_backtrace_handlers();
     wormedit::sys::application_startup_arguments_t arguments;
     wormedit::sys::application_runtime_t runtime;
     if (const int startup_error = wormedit::sys::initialize_application_startup(

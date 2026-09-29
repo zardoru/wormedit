@@ -282,6 +282,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_input.cpp
         src/sys/compose_actions.cpp
         src/sys/compose_audition_requests.cpp
+        src/sys/crash_backtrace.cpp
         src/sys/audio_source_registration.cpp
         src/sys/application_edit_helpers.cpp
         src/sys/application_frame_projection.cpp
@@ -355,6 +356,10 @@ if(WORMEDIT_BUILD_APP)
             otoworm::otoworm
             nlohmann_json::nlohmann_json
     )
+
+    if(UNIX)
+        set_target_properties(wormedit PROPERTIES ENABLE_EXPORTS ON)
+    endif()
 
     if(WORMEDIT_ENABLE_IMAGE_DECODER)
         target_link_libraries(wormedit PRIVATE wormedit::visual_decoder)

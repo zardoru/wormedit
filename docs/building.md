@@ -28,6 +28,20 @@ unknown value always fails configuration. The executable links the selected
 adapter through the private `wormedit::ui_frontend` target; `wormedit_core`
 remains UI-library-free.
 
+## Crash backtraces on Linux and macOS
+
+The application installs fatal-signal and C++ termination handlers before SDL
+initialization. Run a Debug build from a terminal to retain file and line
+information in the executable and see the backtrace on standard error after
+`SIGABRT`, `SIGSEGV`, `SIGILL`, `SIGFPE`, or `SIGBUS`. An unhandled C++ exception
+also prints its message. The handler restores the signal's default termination
+behavior, so the operating system's core-dump policy still applies. Stack
+unwinding after severe memory corruption is best effort.
+
+On Linux, an executable `+0x...` offset in the output can be resolved with
+`addr2line -C -f -e build/wormedit 0x...`. On macOS, keep the matching
+executable and dSYM to symbolize a crash with `atos` or `lldb`.
+
 ## Cross-compiling the headless core for Linux
 
 The generic toolchain does not assume GCC versus Clang or a particular SDK. Set at least the two compiler paths:

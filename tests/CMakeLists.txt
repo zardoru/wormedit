@@ -1,5 +1,16 @@
 include(Catch)
 
+if(UNIX)
+    add_executable(wormedit_crash_backtrace_tests
+        sys/crash_backtrace_tests.cpp
+        ../src/sys/crash_backtrace.cpp
+    )
+    target_include_directories(wormedit_crash_backtrace_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    set_target_properties(wormedit_crash_backtrace_tests PROPERTIES ENABLE_EXPORTS ON)
+    add_test(NAME crash-backtrace COMMAND wormedit_crash_backtrace_tests)
+    set_tests_properties(crash-backtrace PROPERTIES LABELS "integration;sys" TIMEOUT 15)
+endif()
+
 add_executable(wormedit_core_tests
     ../src/sys/compose_resource_presenter.cpp
     ../src/sys/application_commands.cpp

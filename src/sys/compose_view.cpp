@@ -1,4 +1,5 @@
 #include "sys/compose_view.h"
+#include "sys/compose_resource_presenter.h"
 
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/rational.h>
@@ -13,7 +14,6 @@
 #include <bit>
 #include <cmath>
 #include <cstdint>
-#include <filesystem>
 #include <iterator>
 #include <limits>
 #include <optional>
@@ -287,32 +287,28 @@ struct compose_scene_projection_context_t {
     bool lane_key_bindings_truncated;
 };
 
-void populate_compose_bgm_sound_labels(const compose_scene_projection_context_t& projection,
-                                       std::size_t bgm_event_count) {
+void populate_compose_sound_labels(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.flattened;
     const auto& history = projection.history;
     const auto& bgm_events = projection.scene.bgm_events;
     std::unordered_set<std::uint64_t> visible_sound_ids;
-    visible_sound_ids.reserve(bgm_event_count);
+    visible_sound_ids.reserve(projection.scene.note_endpoints.size() + bgm_events.size());
+    const auto note_count = std::min(projection.scene.note_endpoints.size(),
+                                     static_cast<std::size_t>(WORM_UI_COMPOSE_NOTE_CAPACITY));
+    for (std::size_t index = 0; index < note_count; ++index) {
+        if (const auto sound = projection.scene.note_endpoints[index].sound)
+            visible_sound_ids.insert(sound->value);
+    }
+    const auto bgm_event_count = std::min(bgm_events.size(),
+                                          static_cast<std::size_t>(WORM_UI_COMPOSE_BGM_EVENT_CAPACITY));
     for (std::size_t index = 0; index < bgm_event_count; ++index) {
         if (bgm_events[index].sound) visible_sound_ids.insert(bgm_events[index].sound->value);
     }
-    flattened.compose.bgm.sound_labels.reserve(visible_sound_ids.size());
+    flattened.compose.sound_labels.reserve(visible_sound_ids.size());
     for (const auto& resource : history.document.resources) {
         if (!visible_sound_ids.contains(resource.id.value)) continue;
-        const auto bms_identity = std::ranges::find_if(
-            resource.target_identities, [](const auto& identity) {
-                return identity.family == wormedit::format_family_t::bms;
-            });
-        const auto name = resource.name.empty()
-                              ? "Resource " + std::to_string(resource.id.value)
-                              : resource.name;
-        const auto label = bms_identity != resource.target_identities.end()
-                               ? bms_identity->identifier
-                               : std::filesystem::path{name}.stem().string();
-        flattened.compose.bgm.sound_labels.emplace(
-            resource.id.value,
-            std::pair{label.empty() ? std::to_string(resource.id.value) : label, name});
+        flattened.compose.sound_labels.emplace(
+            resource.id.value, compose_resource_sound_label(resource));
     }
 }
 
@@ -410,10 +406,14 @@ void project_compose_scene_objects(const compose_scene_projection_context_t& pro
     flattened.compose.note.reserve(endpoint_count);
     for (std::size_t index = 0; index < endpoint_count; ++index) {
         const auto& endpoint = endpoints[index];
+        const auto sound = compose_note_sound_text(endpoint.sound,
+                                                   flattened.compose.sound_labels);
         flattened.compose.note.push_back(
             {.bounds = convert_rect(endpoint.bounds),
              .note_id = endpoint.note.value,
              .lane_id = endpoint.lane.value,
+             .sound_label = sound.label,
+             .sound_detail = sound.detail,
              .glyph = static_cast<std::uint8_t>(endpoint.glyph),
              .kind = static_cast<std::uint8_t>(endpoint.kind),
              .tail = endpoint.tail,
@@ -499,13 +499,12 @@ void project_compose_bgm(const compose_scene_projection_context_t& projection) {
     const auto& bgm_events = scene.bgm_events;
     const auto bgm_event_count =
         std::min(bgm_events.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BGM_EVENT_CAPACITY));
-    populate_compose_bgm_sound_labels(projection, bgm_event_count);
     flattened.compose.bgm.event.reserve(bgm_event_count);
     for (std::size_t index = 0; index < bgm_event_count; ++index) {
         const auto& event = bgm_events[index];
         const auto sound = event.sound
-                               ? flattened.compose.bgm.sound_labels.find(event.sound->value)
-                               : flattened.compose.bgm.sound_labels.end();
+                               ? flattened.compose.sound_labels.find(event.sound->value)
+                               : flattened.compose.sound_labels.end();
         flattened.compose.bgm.event.push_back(
             {.bounds = convert_rect(event.bounds),
              .event_id = event.event.value,
@@ -515,10 +514,10 @@ void project_compose_bgm(const compose_scene_projection_context_t& projection) {
              .bmson_slice = event.bmson_restart.has_value(),
              .bmson_restart = event.bmson_restart.value_or(false),
              .selected = event.selected,
-             .sound_label = sound == flattened.compose.bgm.sound_labels.end()
+             .sound_label = sound == flattened.compose.sound_labels.end()
                                 ? (event.sound ? "?" : "")
                                 : sound->second.first.c_str(),
-             .sound_detail = sound == flattened.compose.bgm.sound_labels.end()
+             .sound_detail = sound == flattened.compose.sound_labels.end()
                                  ? (event.sound ? "Unknown sound resource" : "Unbound BGM slot")
                                  : sound->second.second.c_str()});
     }
@@ -1920,6 +1919,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
         flattened, chart, *cache.index, scene, history, application_state, interaction_view, view,
         field_left_pixels, playable_field_width, pixels_per_row, downscroll,
         lane_key_bindings_truncated};
+    populate_compose_sound_labels(projection);
     project_compose_layout_and_notes(projection);
     project_compose_bgm(projection);
     project_compose_marker_previews(projection);

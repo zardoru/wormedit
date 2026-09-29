@@ -968,6 +968,22 @@ static void draw_compose_note_glyph(const ComposePaintContext& paint,
     nk_stroke_line(paint.canvas, tip_x, tip_y, last_x, last_y, 2.0f, arrow_color);
 }
 
+static void draw_compose_note_sound_label(const ComposePaintContext& paint,
+                                          const WormUiComposeNoteView& note,
+                                          struct nk_rect tile) {
+    if (note.glyph > 1 || note.tail || !note.sound_label || !note.sound_label[0]) return;
+    const auto* font = paint.context->style.font;
+    const auto length = static_cast<int>(strlen(note.sound_label));
+    const auto text_width = font->width(font->userdata, font->height, note.sound_label, length);
+    if (tile.h < font->height || tile.w < text_width + 4.0f) return;
+
+    const auto text_bounds = nk_rect(tile.x + (tile.w - text_width) * 0.5f,
+                                     tile.y + (tile.h - font->height) * 0.5f,
+                                     text_width, font->height);
+    nk_draw_text(paint.canvas, text_bounds, note.sound_label, length, font,
+                 nk_rgba(13, 21, 31, 220), nk_rgb(248, 251, 255));
+}
+
 static void draw_compose_note(const ComposePaintContext& paint,
                               const WormUiComposeNoteView& note) {
     const auto style = compose_note_style(*paint.view, note);
@@ -983,6 +999,7 @@ static void draw_compose_note(const ComposePaintContext& paint,
                    tile.x + tile.w - 1.0f, tile.y + 1.0f, 1.0f,
                    nk_rgba(255, 255, 255, 105));
     draw_compose_note_glyph(paint, note, tile);
+    draw_compose_note_sound_label(paint, note, tile);
 }
 
 static void draw_compose_notes(const ComposePaintContext& paint) {
@@ -1214,6 +1231,19 @@ static void draw_compose_note_tooltip(const ComposePaintContext& paint) {
     nk_stroke_rect(paint.canvas, bounds, 3.0f, 1.0f, nk_rgb(255, 235, 148));
     nk_draw_text(paint.canvas, bounds, view.hover_tooltip, static_cast<int>(strlen(view.hover_tooltip)),
                  paint.context->style.font, nk_rgb(12, 16, 24), nk_rgb(255, 244, 192));
+
+    for (size_t index = 0; index < view.note_endpoint_count; ++index) {
+        const auto& note = view.note_endpoints[index];
+        if (note.note_id != view.hover_note_id || !note.sound_detail || !note.sound_detail[0])
+            continue;
+        const auto resource_bounds = nk_rect(bounds.x, bounds.y + bounds.h + 2.0f,
+                                             bounds.w, bounds.h);
+        nk_fill_rect(paint.canvas, resource_bounds, 3.0f, nk_rgba(12, 16, 24, 235));
+        nk_draw_text(paint.canvas, resource_bounds, note.sound_detail,
+                     static_cast<int>(strlen(note.sound_detail)), paint.context->style.font,
+                     nk_rgb(12, 16, 24), nk_rgb(245, 227, 255));
+        break;
+    }
 }
 
 static void draw_compose_bgm_tooltip(const ComposePaintContext& paint,

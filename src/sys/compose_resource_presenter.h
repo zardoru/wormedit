@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace wormedit::sys {
@@ -32,6 +34,21 @@ struct compose_resource_catalog_t {
     std::size_t total_count{};
     bool truncated{};
 };
+
+using compose_sound_labels_t =
+    std::unordered_map<std::uint64_t, std::pair<std::string, std::string>>;
+
+struct compose_sound_text_t {
+    const char* label;
+    const char* detail;
+};
+
+[[nodiscard]] auto compose_resource_sound_label(const resource_entry_t& resource)
+    -> std::pair<std::string, std::string>;
+
+[[nodiscard]] auto compose_note_sound_text(std::optional<resource_id_t> sound,
+                                           const compose_sound_labels_t& labels)
+    -> compose_sound_text_t;
 
 [[nodiscard]] auto make_compose_resource_catalog(const song_document_t& document,
                                                  std::optional<asset_id_t> selected_audio_asset,

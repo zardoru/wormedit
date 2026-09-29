@@ -69,6 +69,39 @@ TEST_CASE("Compose resource catalog falls back to stable IDs and diagnoses absen
     CHECK(catalog.entries[0].missing);
 }
 
+TEST_CASE("Compose note sound projection keeps BMS identity and full resource name",
+          "[unit][frontend][compose][resources]") {
+    const resource_entry_t sample{
+        .id = resource_id_t{10},
+        .name = "assets/percussion/kick.wav",
+        .target_identities = {{format_family_t::bmson, "kick", "sound"},
+                              {format_family_t::bms, "01", "WAV"}}};
+    sys::compose_sound_labels_t labels;
+    labels.emplace(sample.id.value, sys::compose_resource_sound_label(sample));
+
+    const auto assigned = sys::compose_note_sound_text(sample.id, labels);
+    CHECK(std::string{assigned.label} == "01");
+    CHECK(std::string{assigned.detail} == "assets/percussion/kick.wav");
+
+    const resource_entry_t fallback{.id = resource_id_t{11}, .name = "sounds/snare.wav"};
+    const auto fallback_identity = sys::compose_resource_sound_label(fallback);
+    CHECK(fallback_identity.first == "snare");
+    CHECK(fallback_identity.second == "sounds/snare.wav");
+}
+
+TEST_CASE("Compose note sound projection handles unassigned and missing Samples",
+          "[unit][frontend][compose][resources]") {
+    const sys::compose_sound_labels_t labels;
+
+    const auto unassigned = sys::compose_note_sound_text(std::nullopt, labels);
+    CHECK(std::string{unassigned.label}.empty());
+    CHECK(std::string{unassigned.detail}.empty());
+
+    const auto missing = sys::compose_note_sound_text(resource_id_t{99}, labels);
+    CHECK(std::string{missing.label} == "?");
+    CHECK(std::string{missing.detail} == "Unknown sound resource");
+}
+
 TEST_CASE("Compose resource uses retain typed chart object identities",
           "[unit][frontend][compose][resources]") {
     chart_document_t chart;

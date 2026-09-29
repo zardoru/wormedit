@@ -31,6 +31,7 @@ struct editor_field_scene_bgm_source_t {
 struct editor_field_scene_note_source_t {
     object_id_t note;
     lane_id_t lane;
+    std::optional<resource_id_t> sound;
     note_kind_t kind{note_kind_t::tap};
     std::uint64_t begin_row{};
     std::uint64_t end_row{};
@@ -110,6 +111,7 @@ struct editor_field_comparison_difference_geometry_t {
 struct editor_field_note_endpoint_geometry_t {
     object_id_t note;
     lane_id_t lane;
+    std::optional<resource_id_t> sound;
     lane_glyph_t glyph{lane_glyph_t::bar};
     note_kind_t kind{note_kind_t::tap};
     bool tail{};

@@ -35,7 +35,8 @@ auto scene_chart() -> wormedit::chart_document_t {
                     .position = {wormedit::measure_id_t{1}, 720},
                     .lane = wormedit::lane_id_t{2},
                     .kind = wormedit::note_kind_t::hold,
-                    .end = wormedit::local_position_t{wormedit::measure_id_t{2}, 240}}},
+                    .end = wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
+                    .sound = wormedit::resource_id_t{40}}},
          .bgm_events = {{.id = wormedit::object_id_t{12},
                          .position = {wormedit::measure_id_t{1}, 480},
                          .source_lane = wormedit::object_id_t{30},
@@ -95,6 +96,9 @@ TEST_CASE("field scene composes split layout bands, exact grid, holds, selection
     const auto built = wormedit::build_editor_field_scene_index(chart, 7);
     REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
     const auto& indexed = std::get<wormedit::editor_field_scene_index_t>(built);
+    REQUIRE(indexed.notes.size() == 2);
+    CHECK_FALSE(indexed.notes[0].sound);
+    CHECK(indexed.notes[1].sound == wormedit::resource_id_t{40});
     REQUIRE(indexed.bgm_events.size() == 1);
     CHECK(indexed.bgm_events.front().event == wormedit::object_id_t{12});
     CHECK(indexed.bgm_events.front().source_lane == wormedit::object_id_t{30});
@@ -139,6 +143,9 @@ TEST_CASE("field scene composes split layout bands, exact grid, holds, selection
     CHECK(scene.hold_bodies[1].bounds.top == Catch::Approx(96.0));
     CHECK(scene.hold_bodies[1].bounds.bottom == Catch::Approx(144.0));
     REQUIRE(scene.note_endpoints.size() == 2);
+    CHECK(std::ranges::all_of(scene.note_endpoints, [](const auto& endpoint) {
+        return endpoint.sound == wormedit::resource_id_t{40};
+    }));
     CHECK(std::ranges::all_of(scene.note_endpoints,
                               [](const auto& endpoint) { return endpoint.selected; }));
     CHECK(std::ranges::all_of(scene.note_endpoints, [](const auto& endpoint) {

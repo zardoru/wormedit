@@ -1,9 +1,33 @@
 #include "sys/compose_resource_presenter.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <ranges>
 
 namespace wormedit::sys {
+
+auto compose_resource_sound_label(const resource_entry_t& resource)
+    -> std::pair<std::string, std::string> {
+    const auto bms_identity = std::ranges::find_if(
+        resource.target_identities, [](const auto& identity) {
+            return identity.family == format_family_t::bms;
+        });
+    const auto name = resource.name.empty()
+                          ? "Resource " + std::to_string(resource.id.value)
+                          : resource.name;
+    const auto label = bms_identity != resource.target_identities.end()
+                           ? bms_identity->identifier
+                           : std::filesystem::path{name}.stem().string();
+    return {label.empty() ? std::to_string(resource.id.value) : label, name};
+}
+
+auto compose_note_sound_text(std::optional<resource_id_t> sound,
+                             const compose_sound_labels_t& labels) -> compose_sound_text_t {
+    if (!sound) return {"", ""};
+    const auto found = labels.find(sound->value);
+    if (found == labels.end()) return {"?", "Unknown sound resource"};
+    return {found->second.first.c_str(), found->second.second.c_str()};
+}
 
 auto make_compose_resource_catalog(const song_document_t& document,
                                    std::optional<asset_id_t> selected_audio_asset,

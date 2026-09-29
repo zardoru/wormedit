@@ -92,10 +92,10 @@ struct flattened_workspace_t {
         std::vector<WormUiComposeDifferenceView> difference;
         std::vector<WormUiComposeHoldView> hold;
         std::vector<WormUiComposeNoteView> note;
+        std::unordered_map<std::uint64_t, std::pair<std::string, std::string>> sound_labels;
         struct {
             std::vector<WormUiComposeBgmLaneView> lane;
             std::vector<WormUiComposeBgmEventView> event;
-            std::unordered_map<std::uint64_t, std::pair<std::string, std::string>> sound_labels;
             std::vector<WormUiComposeBgmDraftView> draft;
             std::optional<WormUiComposeBgmMovePreviewView> move;
         } bgm;

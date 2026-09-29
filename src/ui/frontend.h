@@ -353,6 +353,8 @@ typedef struct WormUiComposeNoteView {
     WormUiComposeRect bounds;
     uint64_t note_id;
     uint64_t lane_id;
+    const char* sound_label;
+    const char* sound_detail;
     uint8_t glyph;
     uint8_t kind;
     bool tail;

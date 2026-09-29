@@ -204,6 +204,7 @@ auto append_scene_note(const measure_chunk_t& measure, const note_t& note,
     }
     context.index.notes.push_back({.note = note.id,
                                    .lane = note.lane,
+                                   .sound = note.sound,
                                    .kind = note.kind,
                                    .begin_row = *begin,
                                    .end_row = *end,
@@ -527,6 +528,7 @@ struct note_render_context_t {
 struct proposal_geometry_t {
     object_id_t note;
     lane_id_t lane;
+    std::optional<resource_id_t> sound;
     note_kind_t kind{note_kind_t::tap};
     std::uint64_t begin_row{};
     std::optional<std::uint64_t> end_row;
@@ -1015,6 +1017,7 @@ auto append_proposal_endpoint(proposal_render_context_t& render,
     }
     render.geometry.scene.note_endpoints.push_back({.note = proposal.note,
                                                     .lane = proposal.lane,
+                                                    .sound = proposal.sound,
                                                     .glyph = bounds->glyph,
                                                     .kind = proposal.kind,
                                                     .tail = tail,
@@ -1057,6 +1060,7 @@ auto compose_note_proposals(scene_proposal_composition_t& composition, Operate&&
         const proposal_geometry_t geometry{
             proposal.source->note,
             proposal.source->lane,
+            proposal.source->sound,
             proposal.preview->kind,
             proposal.source->begin_row,
             proposal.end_row,
@@ -1073,6 +1077,7 @@ auto compose_note_proposals(scene_proposal_composition_t& composition, Operate&&
         const proposal_geometry_t geometry{
             proposal.source->note,
             proposal.preview->lane,
+            proposal.source->sound,
             proposal.source->kind,
             proposal.begin_row,
             proposal.end_row,
@@ -1090,7 +1095,7 @@ auto compose_note_proposals(scene_proposal_composition_t& composition, Operate&&
             continue;
         }
         const auto kind = hold.tail_row ? note_kind_t::hold : note_kind_t::tap;
-        const proposal_geometry_t geometry{{},    hold.lane, kind, hold.head_row, hold.tail_row,
+        const proposal_geometry_t geometry{{}, hold.lane, {}, kind, hold.head_row, hold.tail_row,
                                            false, {}};
         if (!append_proposal_geometry(composition.render, geometry, operate, consume, y_for_row,
                                       band_for_row)) {
@@ -1228,6 +1233,7 @@ auto append_indexed_note_endpoint(scene_note_composition_t& composition,
     }
     composition.geometry.scene.note_endpoints.push_back({.note = note.note,
                                                          .lane = note.lane,
+                                                         .sound = note.sound,
                                                          .glyph = bounds->glyph,
                                                          .kind = note.kind,
                                                          .tail = tail,

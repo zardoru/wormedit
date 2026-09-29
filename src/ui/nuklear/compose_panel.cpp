@@ -4610,8 +4610,8 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         render_semantic_layer_selected_panel(inspector, visible_layer_count);
         render_semantic_layer_membership_buttons(inspector, semantic_target_active);
         render_semantic_layer_target_buttons(inspector, semantic_target_active);
+        nk_tree_pop(context);
     }
-    nk_tree_pop(context);
 
     worm_ui_nuklear_render_bms_branch_panel(context, view, action);
     nk_group_end(context);

@@ -94,6 +94,7 @@ if [[ -z $window_id ]]; then
     echo "Wormedit did not show a window." >&2
     exit 1
 fi
+xdotool windowfocus --sync "$window_id"
 
 geometry=$(xdotool getwindowgeometry --shell "$window_id")
 if [[ ! $geometry =~ WIDTH=([0-9]+) ]]; then
@@ -108,10 +109,10 @@ click_at() {
     sleep 0.2
 }
 # Compose is the middle of seven equal-width tabs.
-click_at "$((window_width / 2))" 85
+click_at "$((window_width / 2))" 55
 if [[ $mode == timing || $mode == recipe || $mode == recipe_apply ]]; then
     # Timing is the third tab in the same seven-column row.
-    click_at "$((window_width * 5 / 14))" 85
+    click_at "$((window_width * 5 / 14))" 55
 fi
 if [[ $mode == recipe || $mode == recipe_apply ]]; then
     # Empty test data keeps the recipe button at this fixed toolbar row.
@@ -126,6 +127,11 @@ if [[ $mode == recipe || $mode == recipe_apply ]]; then
     if [[ $mode == recipe_apply ]]; then
         click_at "$((window_width / 4))" 665
     fi
+fi
+if ! kill -0 "$app_pid" 2>/dev/null; then
+    cat "$temp_dir/wormedit.log" >&2
+    echo "Wormedit exited while rendering the selected tab." >&2
+    exit 1
 fi
 import -window "$window_id" "$output"
 if [[ $mode == recipe_apply ]] &&

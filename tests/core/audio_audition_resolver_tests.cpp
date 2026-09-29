@@ -368,6 +368,71 @@ TEST_CASE("preview binding resolver indexes exact BMSON slices for one schedule 
     CHECK(stale.diagnostics.front().code == wormedit::audio::audition_resolve_code_t::invalid_link);
 }
 
+TEST_CASE("preview binding resolver can leave unavailable audio silent without losing the chart",
+          "[unit][audio][audition-resolver][preview]") {
+    auto parsed = published_fixture();
+    REQUIRE(parsed.song.has_value());
+    auto song = *parsed.song;
+    const auto& chart = song.charts.front();
+    const auto& note = chart.measures.front().notes.front();
+    REQUIRE(note.sound.has_value());
+
+    wormedit::preview_schedule_t schedule{.sample_rate = wormedit::audio::output_sample_rate};
+    schedule.playable = {{.sample_frame = 24'000,
+                          .object = note.id,
+                          .resource = *note.sound}};
+    const auto strict = wormedit::audio::resolve_preview_bindings(song, chart.id, schedule, {});
+    REQUIRE(strict.diagnostics.size() == 1);
+
+    const auto permissive = wormedit::audio::resolve_preview_bindings(
+        song, chart.id, schedule, {}, {.skip_unavailable_preview_sources = true});
+    const std::array checks{
+        !static_cast<bool>(strict),
+        strict.diagnostics.front().code ==
+            wormedit::audio::audition_resolve_code_t::missing_source_binding,
+        static_cast<bool>(permissive), permissive.bindings.empty(),
+        permissive.skipped_unavailable_objects == 1, permissive.diagnostics.empty(),
+        schedule.playable.front().sample_frame == 24'000,
+    };
+    CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
+}
+
+TEST_CASE("preview binding resolver keeps available audio alongside silent chart objects",
+          "[unit][audio][audition-resolver][preview]") {
+    auto parsed = bmson_fixture("slicing-and-mixed-sounds.bmson");
+    REQUIRE(parsed.song.has_value());
+    auto song = *parsed.song;
+    auto& chart = song.charts.front();
+    REQUIRE(song.audio_assets.size() >= 2);
+    for (auto& asset : song.audio_assets) {
+        asset.stream.sample_rate = 48'000;
+        asset.stream.frame_count.reset();
+    }
+    const auto available_asset = chart.sound_channels.front().source_clip.source;
+    const std::array bindings{runtime_binding(available_asset)};
+    wormedit::preview_schedule_t schedule{.sample_rate = wormedit::audio::output_sample_rate};
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            if (note.sound && schedule.playable.size() < 8) {
+                schedule.playable.push_back({.sample_frame = 24'000,
+                                             .object = note.id,
+                                             .resource = *note.sound});
+            }
+        }
+    }
+    REQUIRE(schedule.playable.size() >= 2);
+
+    const auto resolved = wormedit::audio::resolve_preview_bindings(
+        song, chart.id, schedule, bindings, {.skip_unavailable_preview_sources = true});
+    const std::array checks{
+        static_cast<bool>(resolved), resolved.skipped_unavailable_objects > 0,
+        !resolved.bindings.empty(),
+        resolved.bindings.size() + resolved.skipped_unavailable_objects ==
+            schedule.playable.size(),
+    };
+    CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
+}
+
 TEST_CASE("preview binding resolver expands one canonical fused object atomically",
           "[unit][audio][audition-resolver][preview][polyphony]") {
     auto parsed = bmson_fixture("slicing-and-mixed-sounds.bmson");

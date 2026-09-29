@@ -46,6 +46,26 @@ auto preview_end_frame(
     return end_frame;
 }
 
+auto chart_visual_end_frame(const timing_index_t& timing,
+                            const preview_schedule_t& schedule)
+    -> std::optional<std::uint64_t> {
+    std::uint64_t end_frame = audio::output_sample_rate;
+    const auto chart_end = timing_at(timing, timing.total_rows);
+    if (!chart_end)
+        return std::nullopt;
+    if (chart_end.seconds->numerator >= 0) {
+        const auto frame = sample_frame_at(*chart_end.seconds, audio::output_sample_rate);
+        if (!frame)
+            return std::nullopt;
+        end_frame = std::max(end_frame, *frame.frame);
+    }
+    for (const auto& event : schedule.bga)
+        end_frame = std::max(end_frame, event.sample_frame);
+    for (const auto& event : schedule.metronome)
+        end_frame = std::max(end_frame, event.sample_frame);
+    return end_frame;
+}
+
 } // namespace
 
 bool chart_preview_t::reusable(chart_id_t chart_id,
@@ -79,13 +99,19 @@ auto chart_preview_t::compile_if_needed(
         return built_schedule.diagnostics.empty() ? "Chart preview could not be compiled."
                                                   : built_schedule.diagnostics.front().message;
     auto resolved = audio::resolve_preview_bindings(
-        document, selected_chart.id, *built_schedule.schedule, sources.bindings());
+        document, selected_chart.id, *built_schedule.schedule, sources.bindings(),
+        {.skip_unavailable_preview_sources = true});
     if (!resolved)
         return resolved.diagnostics.empty() ? "Chart audio could not be resolved."
                                             : resolved.diagnostics.front().message;
 
-    const auto compiled_end_frame =
-        preview_end_frame(*built_schedule.schedule, resolved.bindings, metronome_bindings);
+    const auto visual_end_frame =
+        chart_visual_end_frame(*built_timing.index, *built_schedule.schedule);
+    if (!visual_end_frame)
+        return "Chart visual endpoint exceeds the preview clock.";
+    const auto compiled_end_frame = std::max(
+        preview_end_frame(*built_schedule.schedule, resolved.bindings, metronome_bindings),
+        *visual_end_frame);
 
     schedule = std::move(*built_schedule.schedule);
     timing = std::move(*built_timing.index);
@@ -94,6 +120,7 @@ auto chart_preview_t::compile_if_needed(
     revision = document.revision;
     resume_frame = 0;
     end_frame = compiled_end_frame;
+    skipped_unavailable_audio_objects = resolved.skipped_unavailable_objects;
     return std::nullopt;
 }
 
@@ -170,14 +197,21 @@ auto chart_preview_t::play_pause(
     }
 
     static_cast<void>(audition_output.stop());
-    const auto started = preview_output.start(*schedule, bindings, metronome_bindings, resume_frame);
+    const auto started = preview_output.start(*schedule, bindings, metronome_bindings,
+                                              resume_frame, end_frame);
     if (!started)
         return started.message.empty() ? "Chart preview could not start." : started.message;
     paused = false;
-    return from_beginning ? "Chart preview started from the beginning."
+    std::string status = from_beginning ? "Chart preview started from the beginning."
            : was_paused ? "Chart preview resumed."
            : start_cursor ? "Chart preview started at the cursor."
                           : "Chart preview started.";
+    if (skipped_unavailable_audio_objects != 0) {
+        status += " Audio unavailable for " +
+                  std::to_string(skipped_unavailable_audio_objects) +
+                  " chart object(s); preview continues silently for them.";
+    }
+    return status;
 }
 
 auto chart_preview_t::seek(std::uint64_t frame, const song_document_t& document,
@@ -254,6 +288,7 @@ void chart_preview_t::invalidate() {
     revision = 0;
     resume_frame = 0;
     end_frame = 0;
+    skipped_unavailable_audio_objects = 0;
     paused = false;
 }
 

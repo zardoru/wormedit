@@ -730,9 +730,7 @@ static void render_status_bar(const WormUiWorkspaceView* view,
         action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
         action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
     nk_label(g_context, !g_project_dialog_error.empty()
-                            ? g_project_dialog_error.c_str()
-                            : wormedit::ui::chrome::status_hint
-                                  ? wormedit::ui::chrome::status_hint : view->status_text,
+                            ? g_project_dialog_error.c_str() : view->status_text,
              NK_TEXT_LEFT);
     const auto sample_rate = view->transport_sample_rate == 0 ? 1U : view->transport_sample_rate;
     const auto seconds = view->transport_frame / sample_rate;
@@ -1168,7 +1166,6 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
 
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
     worm_ui_nuklear_begin_image_quad_frame();
-    wormedit::ui::chrome::begin_frame();
     WormUiWorkspaceAction action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_NONE;
     action.tab = WORM_UI_WORKSPACE_TAB_SETUP;

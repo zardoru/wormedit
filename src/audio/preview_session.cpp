@@ -23,7 +23,8 @@ auto materialize_succeeded(preview_bridge_pump_status_t status) -> bool {
 auto preview_session_t::start(const preview_schedule_t& schedule,
                               std::span<const preview_object_source_binding_t> objects,
                               std::span<const preview_metronome_source_binding_t> metronome,
-                              std::uint64_t seek_frame, preview_pump_options_t options)
+                              std::uint64_t seek_frame, preview_pump_options_t options,
+                              std::uint64_t minimum_end_frame)
     -> preview_session_start_result_t {
     const std::scoped_lock lock(mutex_);
     auto started = bridge_.start(schedule, objects, metronome, seek_frame);
@@ -33,6 +34,7 @@ auto preview_session_t::start(const preview_schedule_t& schedule,
         result.bridge = started;
         return result;
     }
+    minimum_end_frame_ = minimum_end_frame;
     return prime_started(started, seek_frame, options);
 }
 
@@ -152,7 +154,8 @@ auto preview_session_t::render(std::span<float> interleaved_stereo)
                 .mix = mixed};
     }
     timeline_frame_ += mixed.frames;
-    if (bridge_.exhausted() && transport_.scheduled_voice_count() == 0) {
+    if (bridge_.exhausted() && transport_.scheduled_voice_count() == 0 &&
+        timeline_frame_ >= minimum_end_frame_) {
         static_cast<void>(bridge_.stop());
         clear_state();
         return {.status = preview_session_render_status_t::complete,
@@ -185,6 +188,7 @@ auto preview_session_t::timeline_frame() const -> std::uint64_t {
 void preview_session_t::clear_state() noexcept {
     token_.reset();
     timeline_frame_ = 0;
+    minimum_end_frame_ = 0;
 }
 
 } // namespace wormedit::audio

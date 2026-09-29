@@ -63,7 +63,8 @@ class sdl_preview_output_t {
     start(const preview_schedule_t& schedule,
           std::span<const audio::preview_object_source_binding_t> objects,
           std::span<const audio::preview_metronome_source_binding_t> metronome = {},
-          std::uint64_t seek_frame = 0) -> sdl_preview_start_result_t;
+          std::uint64_t seek_frame = 0,
+          std::uint64_t minimum_end_frame = 0) -> sdl_preview_start_result_t;
     [[nodiscard]] auto seek(std::uint64_t sample_frame) -> sdl_preview_start_result_t;
     [[nodiscard]] auto service() -> std::optional<sdl_preview_service_result_t>;
     [[nodiscard]] auto stop() noexcept -> audio::transport_stop_result_t;

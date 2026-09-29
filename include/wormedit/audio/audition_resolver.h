@@ -19,6 +19,7 @@ struct audition_resolve_options_t {
     std::size_t maximum_objects{200'000};
     std::size_t maximum_total_clips{200'000};
     sample_rounding_t rounding{sample_rounding_t::nearest_ties_to_even};
+    bool skip_unavailable_preview_sources{};
 };
 
 enum class audition_resolve_code_t {
@@ -46,6 +47,7 @@ struct preview_bindings_resolve_result_t {
     chart_id_t chart;
     std::vector<preview_object_source_binding_t> bindings;
     std::vector<audition_resolve_diagnostic_t> diagnostics;
+    std::size_t skipped_unavailable_objects{};
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return diagnostics.empty();

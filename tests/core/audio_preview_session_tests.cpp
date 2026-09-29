@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <filesystem>
 #include <ranges>
 #include <string>
@@ -150,4 +151,36 @@ TEST_CASE("preview session mixes generated metronome sources on the chart timeli
                               [](float sample) { return sample == 0.0F; }));
     CHECK(std::ranges::all_of(output.begin() + 32 * output_channel_count, output.end(),
                               [](float sample) { return sample == 0.25F; }));
+}
+
+TEST_CASE("preview session keeps the visual timeline moving through unavailable audio",
+          "[unit][audio][preview-session][missing-source]") {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.playable = {
+        {.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
+    const auto started = session.start(schedule, {}, {}, 0, {}, 64);
+    REQUIRE(started);
+    REQUIRE(started.materialize.has_value());
+
+    std::vector<float> output(32 * output_channel_count, 1.0F);
+    const auto first = session.render(output);
+    const bool first_active = session.active();
+    const auto first_frame = session.timeline_frame();
+    const bool silent = std::ranges::all_of(output, [](float sample) { return sample == 0.0F; });
+
+    const auto final = session.render(output);
+    const std::array checks{
+        started.materialize->missing_sources == 1,
+        first.status == preview_session_render_status_t::mixed,
+        first_active, first_frame == 32, silent,
+        final.status == preview_session_render_status_t::complete, !session.active(),
+    };
+    CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
 }

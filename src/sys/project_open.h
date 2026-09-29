@@ -8,6 +8,10 @@
 
 namespace wormedit::sys {
 
+// Match the extensions accepted by open_project_file, case-insensitively.
+[[nodiscard]] auto is_supported_project_file_extension(
+    const std::filesystem::path& path) -> bool;
+
 struct project_open_result_t {
     std::optional<song_document_t> document;
     std::filesystem::path source_path;

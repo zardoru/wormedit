@@ -20,6 +20,36 @@ auto error(audition_resolve_code_t code, std::string message,
             .object = object};
 }
 
+auto unavailable_preview_source(const audition_resolve_result_t& resolved,
+                                audition_resolve_options_t options) -> bool {
+    return options.skip_unavailable_preview_sources &&
+           resolved.diagnostics.size() == 1 &&
+           resolved.diagnostics.front().code == audition_resolve_code_t::missing_source_binding;
+}
+
+template <typename Events>
+auto collect_preview_events(const Events& events,
+                            std::map<object_id_t, resource_id_t>& scheduled,
+                            preview_bindings_resolve_result_t& result,
+                            std::size_t maximum_objects) -> bool {
+    for (const auto& event : events) {
+        const auto [position, inserted] = scheduled.emplace(event.object, event.resource);
+        if (!inserted && position->second != event.resource) {
+            result.diagnostics.push_back(error(
+                audition_resolve_code_t::invalid_link,
+                "preview schedule contains conflicting resources for one object", event.object));
+            return false;
+        }
+        if (scheduled.size() > maximum_objects) {
+            result.diagnostics.push_back(error(
+                audition_resolve_code_t::capacity_exceeded,
+                "preview schedule exceeds the configured audition object limit"));
+            return false;
+        }
+    }
+    return true;
+}
+
 struct semantic_sound_t {
     object_id_t id;
     std::optional<resource_id_t> resource;
@@ -431,26 +461,8 @@ auto resolve_preview_bindings(const song_document_t& song, chart_id_t chart_id,
     }
 
     std::map<object_id_t, resource_id_t> scheduled;
-    const auto collect = [&](const auto& events) -> bool {
-        for (const auto& event : events) {
-            const auto [position, inserted] = scheduled.emplace(event.object, event.resource);
-            if (!inserted && position->second != event.resource) {
-                result.diagnostics.push_back(
-                    error(audition_resolve_code_t::invalid_link,
-                          "preview schedule contains conflicting resources for one object",
-                          event.object));
-                return false;
-            }
-            if (scheduled.size() > options.maximum_objects) {
-                result.diagnostics.push_back(
-                    error(audition_resolve_code_t::capacity_exceeded,
-                          "preview schedule exceeds the configured audition object limit"));
-                return false;
-            }
-        }
-        return true;
-    };
-    if (!collect(schedule.playable) || !collect(schedule.bgm))
+    if (!collect_preview_events(schedule.playable, scheduled, result, options.maximum_objects) ||
+        !collect_preview_events(schedule.bgm, scheduled, result, options.maximum_objects))
         return result;
 
     result.bindings.reserve(scheduled.size());
@@ -466,6 +478,10 @@ auto resolve_preview_bindings(const song_document_t& song, chart_id_t chart_id,
         }
         auto resolved = index.resolve(object);
         if (!resolved) {
+            if (unavailable_preview_source(resolved, options)) {
+                ++result.skipped_unavailable_objects;
+                continue;
+            }
             result.diagnostics.insert(result.diagnostics.end(),
                                       std::make_move_iterator(resolved.diagnostics.begin()),
                                       std::make_move_iterator(resolved.diagnostics.end()));

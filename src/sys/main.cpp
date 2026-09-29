@@ -2333,6 +2333,20 @@ auto dispatch_project_session_action(Context& context,
 }
 
 template <typename Context>
+void dispatch_dropped_chart_project(Context& context, std::string& pending_path) {
+    if (pending_path.empty()) return;
+    const auto path = std::exchange(pending_path, {});
+    if (path.size() >= WORM_UI_PROJECT_PATH_CAPACITY) {
+        context.status_ref = "The dropped chart or project path is too long.";
+        return;
+    }
+    WormUiWorkspaceAction action{};
+    action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
+    std::memcpy(action.project_path, path.c_str(), path.size() + 1);
+    (void)dispatch_project_session_action(context, action);
+}
+
+template <typename Context>
 auto dispatch_recovery_workspace_action(Context& context,
                                         const WormUiWorkspaceAction& action) -> bool {
     if (action.kind < WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT ||
@@ -2559,6 +2573,7 @@ int main(int argc, char** argv) {
     bool native_project_loaded = startup.loaded_primary;
     bool fresh_blank_project = false;
     std::string pending_audio_project_path;
+    std::string pending_chart_project_path;
     std::string pending_bms_encoding_path;
     std::filesystem::path active_project_path =
         startup.loaded_primary ? requested_primary_path : std::filesystem::path{};
@@ -2787,8 +2802,10 @@ int main(int argc, char** argv) {
         if (!wormedit::sys::poll_frontend_events(
                 window, metadata_drop, workspace, history, asset_base,
                 can_offer_audio_project_drop(session_loaded, fresh_blank_project, history),
-                pending_audio_project_path, status))
+                pending_audio_project_path, pending_chart_project_path, status))
             running = false;
+        dispatch_dropped_chart_project(workspace_frame_action_context,
+                                       pending_chart_project_path);
         wormedit::sys::poll_application_jobs(metadata_asset_runtime, resource_copy_runtime,
                                              export_runtime, history, workspace, asset_base,
                                              status);

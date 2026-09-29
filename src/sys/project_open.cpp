@@ -137,6 +137,10 @@ void parse_selected_file(std::string_view extension, const std::string& source,
 
 } // namespace
 
+auto is_supported_project_file_extension(const std::filesystem::path& path) -> bool {
+    return supported_source_limit(lowercase_extension(path)) != 0;
+}
+
 auto open_project_file(const std::filesystem::path& selected_path,
                        std::optional<text_encoding_t> encoding_override)
     -> project_open_result_t {

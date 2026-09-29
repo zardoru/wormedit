@@ -75,7 +75,8 @@ class preview_session_t {
     [[nodiscard]] auto start(const preview_schedule_t& schedule,
                              std::span<const preview_object_source_binding_t> objects,
                              std::span<const preview_metronome_source_binding_t> metronome = {},
-                             std::uint64_t seek_frame = 0, preview_pump_options_t options = {})
+                             std::uint64_t seek_frame = 0, preview_pump_options_t options = {},
+                             std::uint64_t minimum_end_frame = 0)
         -> preview_session_start_result_t;
     [[nodiscard]] auto seek(std::uint64_t sample_frame, preview_pump_options_t options = {})
         -> preview_session_start_result_t;
@@ -99,6 +100,7 @@ class preview_session_t {
     mutable std::mutex mutex_;
     std::optional<session_token_t> token_;
     std::uint64_t timeline_frame_{};
+    std::uint64_t minimum_end_frame_{};
 };
 
 } // namespace wormedit::audio

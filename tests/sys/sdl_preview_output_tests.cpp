@@ -22,6 +22,43 @@ auto fixture_path(std::string_view name) -> std::filesystem::path {
     return std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "audio" / std::string(name);
 }
 
+auto wait_for_silent_preview_frame(wormedit::audio::preview_session_t& session,
+                                   wormedit::sys::sdl_preview_output_t& output) -> bool {
+    const auto deadline = SDL_GetTicks() + 2'000;
+    while (session.timeline_frame() == 0 && session.active() && SDL_GetTicks() < deadline) {
+        const auto service = output.service();
+        if (service && !*service)
+            return false;
+        SDL_Delay(2);
+    }
+    return session.active() && session.timeline_frame() > 0;
+}
+
+auto silent_preview_advances() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    wormedit::sys::sdl_preview_output_t output{session};
+    if (!output.open())
+        return false;
+
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.playable = {
+        {.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
+    const auto started = output.start(schedule, {}, {}, 0, output_sample_rate * 60U);
+    if (!started || !started.session || !started.session->materialize)
+        return false;
+    const bool advanced = started.session->materialize->missing_sources == 1 &&
+                          wait_for_silent_preview_frame(session, output);
+    static_cast<void>(output.stop());
+    output.close();
+    return advanced;
+}
+
 } // namespace
 
 TEST_CASE("SDL dummy output drives seeks and hard-stops a chart preview session",
@@ -80,4 +117,12 @@ TEST_CASE("SDL dummy output drives seeks and hard-stops a chart preview session"
     CHECK(stopped.scheduled_voices <= 1);
     CHECK_FALSE(session.active());
     output.close();
+}
+
+TEST_CASE("SDL dummy output advances chart preview when its audio source is unavailable",
+          "[integration][audio][sdl][preview][missing-source]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    CHECK(silent_preview_advances());
 }

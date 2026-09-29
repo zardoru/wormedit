@@ -8,6 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -32,6 +33,22 @@ struct temporary_project_file_t {
     void write(std::string_view source) const {
         std::ofstream output(path, std::ios::binary);
         output.write(source.data(), static_cast<std::streamsize>(source.size()));
+    }
+};
+
+struct temporary_project_directory_t {
+    std::filesystem::path path;
+
+    temporary_project_directory_t() {
+        const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+        path = std::filesystem::temp_directory_path() /
+               ("wormedit-chart-assets-" + std::to_string(nonce));
+        std::filesystem::create_directories(path / "audio");
+    }
+
+    ~temporary_project_directory_t() {
+        std::error_code ignored;
+        std::filesystem::remove_all(path, ignored);
     }
 };
 
@@ -79,6 +96,36 @@ TEST_CASE("opening chart files keeps their source directory and leaves them unsa
             check_imported_chart(fixture(item.family, item.name));
         }
     }
+}
+
+TEST_CASE("dropped project extension filter matches every supported opener",
+          "[unit][sys][project-open]") {
+    constexpr std::array accepted{".wormedit", ".bms", ".bme", ".bml", ".pms",
+                                  ".bmson", ".sm", ".ssc", ".osu"};
+    for (const auto* extension : accepted)
+        CHECK(wormedit::sys::is_supported_project_file_extension(
+            std::filesystem::path{"chart" + std::string{extension}}));
+    CHECK(wormedit::sys::is_supported_project_file_extension("UPPER.SSC"));
+    CHECK_FALSE(wormedit::sys::is_supported_project_file_extension("song.mp3"));
+    CHECK_FALSE(wormedit::sys::is_supported_project_file_extension("chart.qua"));
+}
+
+TEST_CASE("opened chart resolves audio beside its source before a native project exists",
+          "[integration][sys][project-open]") {
+    temporary_project_directory_t temporary;
+    const auto chart = temporary.path / "song.bms";
+    std::ofstream(chart) << "#PLAYER 1\n#TITLE Asset source\n#BPM 120\n"
+                           "#WAV01 audio/keysound-c4.ogg\n#00111:01\n";
+    const auto source = fixture("audio", "keysound-c4.ogg");
+    REQUIRE(std::filesystem::copy_file(source, temporary.path / "audio/keysound-c4.ogg"));
+
+    const auto opened = wormedit::sys::open_project_file(chart);
+    INFO(opened.error);
+    REQUIRE(opened.document);
+    REQUIRE_FALSE(opened.document->audio_assets.empty());
+    CHECK(opened.asset_base == temporary.path);
+    CHECK(std::filesystem::exists(opened.asset_base /
+                                  opened.document->audio_assets.front().source_path));
 }
 
 TEST_CASE("opening a native project preserves its saved document identity",

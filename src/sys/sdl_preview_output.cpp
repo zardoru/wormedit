@@ -55,7 +55,8 @@ auto sdl_preview_output_t::activate_device() -> bool {
 auto sdl_preview_output_t::start(
     const preview_schedule_t& schedule,
     std::span<const audio::preview_object_source_binding_t> objects,
-    std::span<const audio::preview_metronome_source_binding_t> metronome, std::uint64_t seek_frame)
+    std::span<const audio::preview_metronome_source_binding_t> metronome, std::uint64_t seek_frame,
+    std::uint64_t minimum_end_frame)
     -> sdl_preview_start_result_t {
     if (stream_ == nullptr) {
         return {.status = sdl_preview_start_status_t::unavailable,
@@ -67,7 +68,7 @@ auto sdl_preview_output_t::start(
                 .session = std::nullopt,
                 .message = sdl_error("could not lock the chart-preview audio stream")};
     }
-    auto started = session_.start(schedule, objects, metronome, seek_frame);
+    auto started = session_.start(schedule, objects, metronome, seek_frame, {}, minimum_end_frame);
     auto result = sdl_preview_start_result_t{};
     result.session = started;
     if (!started) {

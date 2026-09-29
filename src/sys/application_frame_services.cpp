@@ -1,5 +1,7 @@
 #include "sys/application_frame_services.h"
 
+#include "sys/project_open.h"
+
 #include "ui/frontend.h"
 #include "wormedit/window.h"
 
@@ -52,6 +54,22 @@ auto offer_dropped_audio_project(const SDL_Event& event, SDL_Window* window,
     return true;
 }
 
+auto offer_dropped_chart_project(const SDL_Event& event, SDL_Window* window,
+                                 std::string& pending_chart_project_path,
+                                 std::string& status) -> bool {
+    if (event.type != SDL_EVENT_DROP_FILE || !event.drop.data ||
+        (event.drop.windowID != 0 && event.drop.windowID != SDL_GetWindowID(window))) return false;
+    const std::filesystem::path dropped{event.drop.data};
+    if (!is_supported_project_file_extension(dropped)) return false;
+    if (!dropped.is_absolute() ||
+        std::string_view{event.drop.data}.size() >= WORM_UI_PROJECT_PATH_CAPACITY) {
+        status = "Drop an absolute local chart or project file within the path limit.";
+        return true;
+    }
+    pending_chart_project_path = dropped.string();
+    return true;
+}
+
 } // namespace
 
 auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_drop,
@@ -60,6 +78,7 @@ auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_dr
                           const std::filesystem::path& asset_base,
                           bool offer_audio_project_drop,
                           std::string& pending_audio_project_path,
+                          std::string& pending_chart_project_path,
                           std::string& status) -> bool {
     bool running = true;
     SDL_Event event;
@@ -67,9 +86,11 @@ auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_dr
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             running = false;
-        const bool project_audio_drop = offer_dropped_audio_project(
+        const bool project_chart_drop = offer_dropped_chart_project(
+            event, window.handle, pending_chart_project_path, status);
+        const bool project_audio_drop = !project_chart_drop && offer_dropped_audio_project(
             event, window.handle, offer_audio_project_drop, pending_audio_project_path, status);
-        if (!project_audio_drop)
+        if (!project_chart_drop && !project_audio_drop)
             metadata_drop.handle_file_drop(event, window.handle, workspace, history,
                                            asset_base, status);
         worm_ui_frontend_handle_event(&event);

@@ -9,10 +9,6 @@ namespace wormedit::ui::chrome {
 using theme::UiColor;
 inline auto color(UiColor role) -> nk_color { return theme::ui(role); }
 
-inline const char* status_hint{};
-
-inline void begin_frame() { status_hint = nullptr; }
-
 inline auto button_style(nk_context* context, bool selected) -> nk_style_button {
     auto style = context->style.button;
     style.normal = nk_style_item_color(selected ? color(UiColor::selected)
@@ -30,9 +26,9 @@ inline auto button_style(nk_context* context, bool selected) -> nk_style_button 
 inline void button_feedback(nk_context* context, struct nk_rect bounds, bool selected,
                             const char* tooltip) {
     if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0) {
-        status_hint = tooltip;
         nk_stroke_rect(nk_window_get_canvas(context), bounds, 4.0f, 1.0f,
                        color(UiColor::border_hover));
+        if (tooltip && tooltip[0] != '\0') nk_tooltip(context, tooltip);
     } else if (selected) {
         nk_stroke_rect(nk_window_get_canvas(context), bounds, 4.0f, 1.0f,
                        color(UiColor::selected));

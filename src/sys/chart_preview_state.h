@@ -25,6 +25,7 @@ struct chart_preview_t {
     std::uint64_t revision{};
     std::uint64_t resume_frame{};
     std::uint64_t end_frame{};
+    std::size_t skipped_unavailable_audio_objects{};
     bool paused{};
 
     [[nodiscard]] bool reusable(chart_id_t chart_id, std::uint64_t document_revision) const;

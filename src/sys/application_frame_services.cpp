@@ -6,6 +6,11 @@
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_timer.h>
 
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
+#include <string>
+#include <string_view>
 #include <utility>
 
 namespace wormedit::sys {
@@ -26,12 +31,35 @@ auto autosave_status_text(const native_project_autosave_result_t& result) -> std
     return message;
 }
 
+auto offer_dropped_audio_project(const SDL_Event& event, SDL_Window* window,
+                                 bool offer_audio_project_drop,
+                                 std::string& pending_audio_project_path,
+                                 std::string& status) -> bool {
+    if (!offer_audio_project_drop || event.type != SDL_EVENT_DROP_FILE || !event.drop.data ||
+        (event.drop.windowID != 0 && event.drop.windowID != SDL_GetWindowID(window))) return false;
+    const std::string_view dropped{event.drop.data};
+    if (dropped.size() >= WORM_UI_PROJECT_PATH_CAPACITY ||
+        !std::filesystem::path{dropped}.is_absolute()) {
+        status = "Drop an absolute local MP3 or Ogg file within the path limit.";
+        return true;
+    }
+    auto extension = std::filesystem::path{dropped}.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                   [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
+    if (extension != ".mp3" && extension != ".ogg") return false;
+    pending_audio_project_path.assign(dropped);
+    status = "Choose the chart layout to import this audio as a new project.";
+    return true;
+}
+
 } // namespace
 
 auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_drop,
                           const workspace_controller_t& workspace,
                           const document_history_t& history,
                           const std::filesystem::path& asset_base,
+                          bool offer_audio_project_drop,
+                          std::string& pending_audio_project_path,
                           std::string& status) -> bool {
     bool running = true;
     SDL_Event event;
@@ -39,8 +67,11 @@ auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_dr
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             running = false;
-        metadata_drop.handle_file_drop(event, window.handle, workspace, history,
-                                       asset_base, status);
+        const bool project_audio_drop = offer_dropped_audio_project(
+            event, window.handle, offer_audio_project_drop, pending_audio_project_path, status);
+        if (!project_audio_drop)
+            metadata_drop.handle_file_drop(event, window.handle, workspace, history,
+                                           asset_base, status);
         worm_ui_frontend_handle_event(&event);
     }
     worm_ui_frontend_end_input();

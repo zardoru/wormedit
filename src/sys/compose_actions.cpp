@@ -152,6 +152,32 @@ std::optional<std::string> dispatch_compose_view_action_group(compose_action_con
     return compose_result_status(result, status);
 }
 
+auto stage_output_music(const wormedit::song_document_t& snapshot,
+                        const wormedit::output_group_t& group,
+                        const std::filesystem::path& asset_base, std::stop_token stop)
+    -> std::optional<std::string> {
+    using namespace wormedit;
+    if (group.family != format_family_t::osu_mania &&
+        group.family != format_family_t::stepmania) return std::nullopt;
+    const resource_entry_t* music{};
+    for (const auto& resource : snapshot.resources) {
+        if (std::ranges::find(resource.roles, resource_role_t::music) == resource.roles.end())
+            continue;
+        if (music) return "The output has more than one music resource.";
+        music = &resource;
+    }
+    if (!music) return std::nullopt;
+    const auto asset = std::ranges::find(snapshot.audio_assets, music->asset, &audio_asset_t::id);
+    if (asset == snapshot.audio_assets.end()) return "The music resource has no audio asset.";
+    const auto copied = copy_resource_file_into_export(
+        {.project_directory = asset_base,
+         .source_path = asset->source_path,
+         .relative_output_path = group.relative_output_path,
+         .asset = asset->id}, stop);
+    if (!copied) return "Could not stage music for export: " + copied.message;
+    return std::nullopt;
+}
+
 task_result_t run_output_group_export_task(const wormedit::song_document_t& snapshot,
                                            const wormedit::output_group_t& group,
                                            wormedit::conversion_request_t& request,
@@ -161,6 +187,8 @@ task_result_t run_output_group_export_task(const wormedit::song_document_t& snap
     auto completed = std::make_shared<output_group_export_task_result_t>();
     if (stop.stop_requested()) {
         completed->message = "Export cancelled before conversion.";
+    } else if (auto staging_error = stage_output_music(snapshot, group, asset_base, stop)) {
+        completed->message = *staging_error;
     } else {
         const auto discovered = discover_staged_export_assets(snapshot, group, asset_base, stop);
         if (!discovered) {
@@ -410,7 +438,8 @@ auto prepare_output_export(compose_action_context_t& context)
     request.loss_policy = loss_policy_t::reject;
     if (group.family == format_family_t::stepmania) {
         request.stepmania = stepmania_export_policy_t{
-            .file_profile = group.relative_output_path.extension() == ".sm"
+            .file_profile = group.relative_output_path.extension() == ".sm" ||
+                                    group.relative_output_path == "sm"
                 ? stepmania_profile_t::sm : stepmania_profile_t::ssc};
     } else if (group.family == format_family_t::bms) {
         const auto extension = group.relative_output_path.extension().string();

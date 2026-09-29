@@ -1,5 +1,6 @@
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/formats/conversion_publication.h>
+#include "sys/application_defaults.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -108,6 +109,75 @@ TEST_CASE("export asset discovery recovers verified resource copies after sessio
     const auto stale = wormedit::discover_staged_export_assets(song, group, temporary.path);
     CHECK_FALSE(stale);
     CHECK(stale.mappings.empty());
+}
+
+TEST_CASE("StepMania output discovery maps a staged music file beside the chart",
+          "[unit][format][publication]") {
+    temporary_directory_t temporary;
+    std::ofstream(temporary.path / "music.ogg") << "audio";
+    wormedit::song_document_t song;
+    song.audio_assets.push_back({.id = wormedit::asset_id_t{5}, .source_path = "music.ogg"});
+    song.resources.push_back({.id = wormedit::resource_id_t{6},
+                              .name = "music.ogg",
+                              .asset = wormedit::asset_id_t{5},
+                              .roles = {wormedit::resource_role_t::music}});
+    song.charts.push_back({.id = wormedit::chart_id_t{1}});
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::stepmania,
+                                         .charts = {wormedit::chart_id_t{1}},
+                                         .relative_output_path = "ssc"};
+    REQUIRE(wormedit::copy_resource_file_into_export(
+        {.project_directory = temporary.path,
+         .source_path = "music.ogg",
+         .relative_output_path = group.relative_output_path,
+         .asset = wormedit::asset_id_t{5}}));
+    const auto discovered = wormedit::discover_staged_export_assets(song, group, temporary.path);
+    REQUIRE(discovered);
+    REQUIRE(discovered.mappings.size() == 1);
+    CHECK(discovered.mappings.front().relative_path == "assets/5-music.ogg");
+}
+
+TEST_CASE("new audio project publishes osu, SM, and SSC with the staged music file",
+          "[unit][format][publication]") {
+    temporary_directory_t temporary;
+    const auto music = temporary.path / "music.ogg";
+    std::ofstream(music) << "audio";
+    const auto document = wormedit::sys::audio_project_document(
+        wormedit::song_id_t{112}, music, "Title", "Artist", 7);
+    REQUIRE(document);
+    for (const auto& group : document->output_groups) {
+        const auto copied = wormedit::copy_resource_file_into_export(
+            {.project_directory = temporary.path,
+             .source_path = music,
+             .relative_output_path = group.relative_output_path,
+             .asset = document->audio_assets.front().id});
+        REQUIRE(copied);
+        const auto staged =
+            wormedit::discover_staged_export_assets(*document, group, temporary.path);
+        REQUIRE(staged);
+        REQUIRE(staged.mappings.size() == 1);
+        wormedit::conversion_request_t request;
+        request.target = group.family;
+        request.charts = group.charts;
+        request.staged_assets = staged.mappings;
+        if (group.family == wormedit::format_family_t::stepmania) {
+            request.stepmania = wormedit::stepmania_export_policy_t{
+                .file_profile = group.relative_output_path == "sm"
+                                    ? wormedit::stepmania_profile_t::sm
+                                    : wormedit::stepmania_profile_t::ssc};
+        }
+        const auto converted = wormedit::convert_document(*document, request);
+        std::string diagnostics;
+        for (const auto& diagnostic : converted.diagnostics)
+            diagnostics += diagnostic.message + "\n";
+        INFO(group.name << ": " << diagnostics);
+        REQUIRE(converted);
+        const auto published = wormedit::publish_conversion_group_atomic(
+            temporary.path, group, request, converted);
+        REQUIRE(published.published);
+        CHECK(std::filesystem::exists(
+            temporary.path / group.relative_output_path / converted.outputs.front().suggested_filename));
+        CHECK(std::filesystem::exists(temporary.path / copied.relative_path));
+    }
 }
 
 TEST_CASE("conversion publication rejects collisions and unsafe destinations",

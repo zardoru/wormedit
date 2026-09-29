@@ -14,6 +14,7 @@ endif()
 add_executable(wormedit_core_tests
     ../src/sys/compose_resource_presenter.cpp
     ../src/sys/application_commands.cpp
+    ../src/sys/application_defaults.cpp
     ../src/sys/project_open.cpp
     ../src/sys/project_save_paths.cpp
     core/audio_offset_editor_tests.cpp
@@ -28,6 +29,7 @@ add_executable(wormedit_core_tests
     core/compose_resource_presenter_tests.cpp
     core/command_registry_tests.cpp
     sys/application_commands_tests.cpp
+    sys/application_defaults_tests.cpp
     sys/project_open_tests.cpp
     sys/project_save_paths_tests.cpp
     core/document_tests.cpp
@@ -102,6 +104,8 @@ catch_discover_tests(wormedit_core_tests
 
 if(WORMEDIT_ENABLE_AUDIO_DECODER)
     add_executable(wormedit_audio_tests
+        ../src/sys/application_defaults.cpp
+        ../src/sys/audio_project_import.cpp
         core/audio_audition_bridge_tests.cpp
         core/audio_audition_pump_tests.cpp
         core/audio_audition_resolver_tests.cpp
@@ -109,6 +113,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         core/audio_object_audition_tests.cpp
         core/audio_block_cache_tests.cpp
         core/audio_decoder_tests.cpp
+        sys/audio_project_import_tests.cpp
         core/audio_preview_bridge_tests.cpp
         core/audio_preview_pump_tests.cpp
         core/audio_preview_session_tests.cpp
@@ -120,7 +125,9 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
     )
     target_compile_definitions(wormedit_audio_tests
         PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+                WORMEDIT_HAS_AUDIO_DECODER=1
     )
+    target_include_directories(wormedit_audio_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
     target_link_libraries(wormedit_audio_tests
         PRIVATE
             wormedit::audio_decoder

@@ -7,6 +7,7 @@
 #include "sys/application_frame_projection.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/application_defaults.h"
+#include "sys/audio_project_import.h"
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose_view.h"
 #include "sys/compose_input.h"
@@ -2032,6 +2033,19 @@ void tick_loaded_project_autosave(
         recovery_path, status);
 }
 
+auto can_offer_audio_project_drop(bool session_loaded, bool fresh_blank_project,
+                                  const wormedit::document_history_t& history) -> bool {
+    if (!session_loaded) return true;
+    return fresh_blank_project && history.undo.empty() && history.redo.empty() &&
+           !wormedit::is_document_dirty(history);
+}
+
+auto requested_project_lane_count(std::uint8_t index) -> std::optional<std::uint32_t> {
+    constexpr std::array<std::uint32_t, 8> choices{4, 5, 6, 7, 8, 9, 10, 14};
+    if (index >= choices.size()) return std::nullopt;
+    return choices[index];
+}
+
 void install_startup_recovery_scan(
     wormedit::native_project_recovery_controller_t& controller,
     wormedit::native_project_startup_result_t& startup) {
@@ -2103,6 +2117,9 @@ auto replace_project_session(Context& context, wormedit::song_document_t documen
     context.workspace_ref = std::move(*replacement_binding.workspace);
     context.session_loaded_ref = loaded;
     context.native_project_loaded_ref = native_project;
+    context.fresh_blank_project_ref = false;
+    context.pending_audio_project_path_ref.clear();
+    context.pending_bms_encoding_path_ref.clear();
     context.active_project_path_ref = std::move(native_path);
     context.asset_base_ref = std::move(asset_base);
     context.scanned_primary_version_ref = saved_version;
@@ -2195,9 +2212,24 @@ void save_project_session(Context& context, const WormUiWorkspaceAction& action)
 
 template <typename Context>
 void open_project_session(Context& context, const WormUiWorkspaceAction& action) {
-    auto opened = wormedit::sys::open_project_file(action.project_path);
+    constexpr std::array<wormedit::text_encoding_t, 5> encodings{
+        wormedit::text_encoding_t::utf8, wormedit::text_encoding_t::cp932,
+        wormedit::text_encoding_t::euc_kr, wormedit::text_encoding_t::cp949,
+        wormedit::text_encoding_t::windows_1252};
+    if (action.bms_encoding_index > encodings.size()) {
+        context.status_ref = "Choose a supported BMS text encoding.";
+        return;
+    }
+    const auto encoding = action.bms_encoding_index == 0
+        ? std::optional<wormedit::text_encoding_t>{}
+        : std::optional{encodings[action.bms_encoding_index - 1]};
+    auto opened = wormedit::sys::open_project_file(action.project_path, encoding);
     if (!opened) {
         context.status_ref = opened.error;
+        if (opened.needs_encoding_choice)
+            context.pending_bms_encoding_path_ref = action.project_path;
+        else if (encoding)
+            context.pending_bms_encoding_path_ref.clear();
         return;
     }
     auto document = std::move(*opened.document);
@@ -2213,8 +2245,71 @@ void open_project_session(Context& context, const WormUiWorkspaceAction& action)
 }
 
 template <typename Context>
+void create_audio_project_session(Context& context, const char* path,
+                                  std::uint32_t lane_count) {
+    const auto audio = wormedit::sys::inspect_audio_for_project(path);
+    if (!audio) {
+        context.status_ref = audio.error;
+        context.pending_audio_project_path_ref.clear();
+        return;
+    }
+    auto document = wormedit::sys::audio_project_document(
+        wormedit::sys::new_session_project_id(), audio.source_path,
+        audio.title, audio.artist, lane_count);
+    if (!document) {
+        context.status_ref = "Could not create the selected audio chart layout.";
+        return;
+    }
+    document->audio_assets.front().stream = audio.stream;
+    if (!replace_project_session(context, std::move(*document), true, true, false,
+                                 {}, audio.source_path.parent_path())) return;
+    const auto selected = wormedit::apply_workspace_action(
+        context.workspace_ref, context.history_ref.document,
+        context.history_ref.document.revision,
+        wormedit::workspace_select_audio_asset_action_t{
+            context.history_ref.document.audio_assets.front().id});
+    context.status_ref = selected
+        ? "Audio imported as a new " + std::to_string(lane_count) + "K project."
+        : "Audio project created; select the music asset to preview it.";
+}
+
+template <typename Context>
+void create_new_project_session(Context& context, const WormUiWorkspaceAction& action) {
+    const auto lane_count = requested_project_lane_count(action.new_project_layout_index);
+    if (!lane_count) {
+        context.status_ref = "Choose a supported chart layout.";
+        return;
+    }
+    if (action.project_path[0] != '\0') {
+        create_audio_project_session(context, action.project_path, *lane_count);
+        return;
+    }
+    auto document = wormedit::sys::initial_document(
+        wormedit::sys::new_session_project_id(), *lane_count);
+    if (!document) {
+        context.status_ref = "Could not create the selected chart layout.";
+        return;
+    }
+    if (replace_project_session(context, std::move(*document), true, true, false, {}, {})) {
+        context.fresh_blank_project_ref = true;
+        context.status_ref = "New " + std::to_string(*lane_count) +
+                             "K project created. Save it to keep your work.";
+    }
+}
+
+template <typename Context>
 auto dispatch_project_session_action(Context& context,
                                      const WormUiWorkspaceAction& action) -> bool {
+    if (action.kind == WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING) {
+        context.pending_bms_encoding_path_ref.clear();
+        context.status_ref = "BMS import canceled.";
+        return true;
+    }
+    if (action.kind == WORM_UI_WORKSPACE_ACTION_CANCEL_AUDIO_PROJECT) {
+        context.pending_audio_project_path_ref.clear();
+        context.status_ref = "Audio import canceled.";
+        return true;
+    }
     if (action.kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT) {
         save_project_session(context, action);
         return true;
@@ -2230,9 +2325,7 @@ auto dispatch_project_session_action(Context& context,
         return true;
     }
     if (action.kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT) {
-        if (replace_project_session(context, wormedit::sys::initial_document(
-                wormedit::sys::new_session_project_id()), true, true, false, {}, {}))
-            context.status_ref = "New project created. Save it to keep your work.";
+        create_new_project_session(context, action);
         return true;
     }
     open_project_session(context, action);
@@ -2255,6 +2348,9 @@ auto dispatch_recovery_workspace_action(Context& context,
     if (recovered) {
         context.session_loaded_ref = true;
         context.native_project_loaded_ref = false;
+        context.fresh_blank_project_ref = false;
+        context.pending_audio_project_path_ref.clear();
+        context.pending_bms_encoding_path_ref.clear();
         context.active_project_path_ref.clear();
         context.asset_base_ref.clear();
         context.scanned_primary_version_ref.reset();
@@ -2461,6 +2557,9 @@ int main(int argc, char** argv) {
         startup.loaded_primary, requested_primary_path, platform_recovery);
     bool session_loaded = startup.loaded_primary;
     bool native_project_loaded = startup.loaded_primary;
+    bool fresh_blank_project = false;
+    std::string pending_audio_project_path;
+    std::string pending_bms_encoding_path;
     std::filesystem::path active_project_path =
         startup.loaded_primary ? requested_primary_path : std::filesystem::path{};
     std::optional<wormedit::audio_offset_drag_t> audio_offset_drag;
@@ -2619,6 +2718,9 @@ int main(int argc, char** argv) {
         decltype(workspace)& workspace_ref;
         decltype(session_loaded)& session_loaded_ref;
         decltype(native_project_loaded)& native_project_loaded_ref;
+        decltype(fresh_blank_project)& fresh_blank_project_ref;
+        decltype(pending_audio_project_path)& pending_audio_project_path_ref;
+        decltype(pending_bms_encoding_path)& pending_bms_encoding_path_ref;
         decltype(active_project_path)& active_project_path_ref;
         decltype(application_command_state)& application_command_state_ref;
         decltype(stepmania_export_policy)& stepmania_export_policy_ref;
@@ -2652,6 +2754,9 @@ int main(int argc, char** argv) {
         workspace,
         session_loaded,
         native_project_loaded,
+        fresh_blank_project,
+        pending_audio_project_path,
+        pending_bms_encoding_path,
         active_project_path,
         application_command_state,
         stepmania_export_policy,
@@ -2680,7 +2785,9 @@ int main(int argc, char** argv) {
     };
     while (running) {
         if (!wormedit::sys::poll_frontend_events(
-                window, metadata_drop, workspace, history, asset_base, status))
+                window, metadata_drop, workspace, history, asset_base,
+                can_offer_audio_project_drop(session_loaded, fresh_blank_project, history),
+                pending_audio_project_path, status))
             running = false;
         wormedit::sys::poll_application_jobs(metadata_asset_runtime, resource_copy_runtime,
                                              export_runtime, history, workspace, asset_base,
@@ -2757,6 +2864,8 @@ int main(int argc, char** argv) {
                 });
             flattened.view.project_loaded = session_loaded;
             flattened.view.project_has_native_path = native_project_loaded;
+            flattened.view.pending_new_project_audio_path = pending_audio_project_path.c_str();
+            flattened.view.pending_bms_encoding_path = pending_bms_encoding_path.c_str();
             // Projection returns by value; refresh view pointers after any move.
             flattened.rebind_view_pointers();
             const auto action = worm_ui_frontend_compose(&flattened.view);

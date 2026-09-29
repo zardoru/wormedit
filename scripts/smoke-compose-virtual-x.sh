@@ -8,8 +8,8 @@ root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 app="$root_dir/build/wormedit"
 output=${1:-/tmp/wormedit-compose-smoke.png}
 mode=${2:-compose}
-if [[ $mode != landing && $mode != compose && $mode != timing && $mode != recipe && $mode != recipe_apply ]]; then
-    echo "Usage: $0 [capture.png] [landing|compose|timing|recipe|recipe_apply]" >&2
+if [[ $mode != landing && $mode != wizard && $mode != compose && $mode != timing && $mode != recipe && $mode != recipe_apply ]]; then
+    echo "Usage: $0 [capture.png] [landing|wizard|compose|timing|recipe|recipe_apply]" >&2
     exit 1
 fi
 temp_dir=$(mktemp -d /tmp/wormedit-compose-smoke.XXXXXX)
@@ -111,6 +111,10 @@ click_at() {
 if [[ $mode != landing ]]; then
     # The initial window has no chart. Create the standard template first.
     click_at "$((window_width / 2))" 150
+fi
+if [[ $mode != landing && $mode != wizard ]]; then
+    # Confirm the default 7K layout in the new-project dialog.
+    click_at "$((window_width / 2 + 160))" 375
     # Compose is the middle of seven equal-width tabs.
     click_at "$((window_width / 2))" 55
     if [[ $mode == timing || $mode == recipe || $mode == recipe_apply ]]; then

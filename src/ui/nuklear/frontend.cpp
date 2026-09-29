@@ -19,6 +19,8 @@
 
 #include "wormedit/nuklear_config.h"
 
+#include <wormedit/formats/bms.h>
+
 #include <SDL3/SDL.h>
 #include <demo/sdl3_renderer/nuklear_sdl3_renderer.h>
 
@@ -67,6 +69,41 @@ struct ProjectDialogState {
 
 static ProjectDialogState g_project_dialog;
 static std::string g_project_dialog_error;
+
+struct NewProjectWizardState {
+    bool open{};
+    bool audio{};
+    std::uint8_t layout_index{3};
+    std::string audio_path;
+    std::string last_pending_audio_path;
+};
+
+static NewProjectWizardState g_new_project_wizard;
+static std::string g_bms_encoding_path_seen;
+static int g_bms_encoding_choice{};
+
+static void request_manual_new_project() {
+    g_new_project_wizard.open = true;
+    g_new_project_wizard.audio = false;
+    g_new_project_wizard.layout_index = 3;
+    g_new_project_wizard.audio_path.clear();
+}
+
+static void sync_pending_audio_project(const WormUiWorkspaceView& view) {
+    const std::string pending = view.pending_new_project_audio_path
+                                    ? view.pending_new_project_audio_path : "";
+    if (pending.empty()) {
+        g_new_project_wizard.last_pending_audio_path.clear();
+        if (g_new_project_wizard.audio) g_new_project_wizard.open = false;
+        return;
+    }
+    if (pending == g_new_project_wizard.last_pending_audio_path) return;
+    g_new_project_wizard.last_pending_audio_path = pending;
+    g_new_project_wizard.audio_path = pending;
+    g_new_project_wizard.audio = true;
+    g_new_project_wizard.layout_index = 0;
+    g_new_project_wizard.open = true;
+}
 
 static void reset_project_dialog() {
     std::lock_guard lock{g_project_dialog.mutex};
@@ -369,11 +406,13 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer) {
     g_last_window_width = 0;
     g_last_window_height = 0;
     reset_project_dialog();
+    g_new_project_wizard = {};
     return true;
 }
 
 void worm_ui_frontend_shutdown(void) {
     reset_project_dialog();
+    g_new_project_wizard = {};
     if (!g_context) {
         worm_ui_nuklear_reset_metadata_state();
         worm_ui_nuklear_reset_timing_state();
@@ -553,7 +592,7 @@ static void render_project_menu_files(const WormUiWorkspaceView* view,
     if (dialog_busy) nk_widget_disable_begin(g_context);
     if (nk_menu_item_label(g_context, "New project", NK_TEXT_LEFT) &&
         !dialog_busy && action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
-        action->kind = WORM_UI_WORKSPACE_ACTION_NEW_PROJECT;
+        request_manual_new_project();
     if (dialog_busy) nk_widget_disable_end(g_context);
     if (dialog_busy) nk_widget_disable_begin(g_context);
     if (nk_menu_item_label(g_context, "Open chart or project...", NK_TEXT_LEFT) && !dialog_busy &&
@@ -926,7 +965,7 @@ static void render_empty_project_content(const WormUiWorkspaceView& view,
     if (dialog_busy) nk_widget_disable_begin(g_context);
     if (nk_button_label(g_context, "New project") &&
         !dialog_busy && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
-        action.kind = WORM_UI_WORKSPACE_ACTION_NEW_PROJECT;
+        request_manual_new_project();
     if (dialog_busy) nk_widget_disable_end(g_context);
     if (dialog_busy) nk_widget_disable_begin(g_context);
     if (nk_button_label(g_context, dialog_busy ? "Choosing file..." : "Open chart or project...") &&
@@ -942,6 +981,145 @@ static void render_empty_project_content(const WormUiWorkspaceView& view,
     nk_group_end(g_context);
 }
 
+static void cancel_new_project_wizard(WormUiWorkspaceAction& action) {
+    if (g_new_project_wizard.audio && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
+        action.kind = WORM_UI_WORKSPACE_ACTION_CANCEL_AUDIO_PROJECT;
+    g_new_project_wizard.open = false;
+}
+
+static void confirm_new_project_wizard(WormUiWorkspaceAction& action) {
+    if (action.kind != WORM_UI_WORKSPACE_ACTION_NONE) return;
+    const auto& audio_path = g_new_project_wizard.audio_path;
+    if (g_new_project_wizard.audio && audio_path.size() >= sizeof(action.project_path)) return;
+    action.kind = WORM_UI_WORKSPACE_ACTION_NEW_PROJECT;
+    action.new_project_layout_index = g_new_project_wizard.layout_index;
+    if (g_new_project_wizard.audio)
+        std::memcpy(action.project_path, audio_path.c_str(), audio_path.size() + 1);
+    g_new_project_wizard.open = false;
+}
+
+static void render_new_project_wizard(WormUiWorkspaceAction& action, int width, int height) {
+    if (!g_new_project_wizard.open) return;
+    constexpr std::array<const char*, 8> layout_labels{
+        "4K", "5K", "6K", "7K", "8K", "9K", "10K", "14K"};
+    const float popup_width = std::min(500.0f, std::max(280.0f, width - 24.0f));
+    const float popup_height = g_new_project_wizard.audio ? 266.0f : 204.0f;
+    const auto region = nk_window_get_content_region(g_context);
+    const auto bounds = nk_rect((width - popup_width) * 0.5f - region.x,
+                                (height - popup_height) * 0.5f - region.y,
+                                popup_width, popup_height);
+    if (!nk_popup_begin(g_context, NK_POPUP_STATIC, "Create project",
+                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) {
+        cancel_new_project_wizard(action);
+        return;
+    }
+    nk_layout_row_dynamic(g_context, 28, 1);
+    nk_label(g_context, g_new_project_wizard.audio ? "Import audio as a new project?"
+                                                  : "Create a new project", NK_TEXT_LEFT);
+    if (g_new_project_wizard.audio) {
+        nk_layout_row_dynamic(g_context, 52, 1);
+        nk_label_wrap(g_context, g_new_project_wizard.audio_path.c_str());
+    }
+    nk_layout_row_dynamic(g_context, 24, 1);
+    nk_label(g_context, "Choose the initial chart layout", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(g_context, 30, 1);
+    const auto selected = nk_combo(g_context, layout_labels.data(),
+                                   static_cast<int>(layout_labels.size()),
+                                   g_new_project_wizard.layout_index, 25,
+                                   nk_vec2(180.0f, 225.0f));
+    if (selected >= 0 && selected < static_cast<int>(layout_labels.size()))
+        g_new_project_wizard.layout_index = static_cast<std::uint8_t>(selected);
+    const bool audio_path_too_long = g_new_project_wizard.audio &&
+                                     g_new_project_wizard.audio_path.size() >=
+                                         sizeof(action.project_path);
+    if (audio_path_too_long) {
+        nk_layout_row_dynamic(g_context, 20, 1);
+        nk_label(g_context, "Audio path is too long to import.", NK_TEXT_LEFT);
+    }
+    nk_layout_row_dynamic(g_context, 34, 2);
+    if (nk_button_label(g_context, "Cancel")) {
+        cancel_new_project_wizard(action);
+        nk_popup_close(g_context);
+    }
+    if (audio_path_too_long) nk_widget_disable_begin(g_context);
+    if (nk_button_label(g_context, "Create project") && !audio_path_too_long) {
+        confirm_new_project_wizard(action);
+        nk_popup_close(g_context);
+    }
+    if (audio_path_too_long) nk_widget_disable_end(g_context);
+    nk_popup_end(g_context);
+}
+
+static void cancel_bms_encoding_dialog(WormUiWorkspaceAction& action) {
+    if (action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
+        action.kind = WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING;
+}
+
+static void render_bms_encoding_dialog(const WormUiWorkspaceView& view,
+                                       WormUiWorkspaceAction& action, int width, int height) {
+    const std::string path = view.pending_bms_encoding_path ? view.pending_bms_encoding_path : "";
+    if (path.empty()) {
+        g_bms_encoding_path_seen.clear();
+        return;
+    }
+    g_new_project_wizard.open = false;
+    if (path != g_bms_encoding_path_seen) {
+        g_bms_encoding_path_seen = path;
+        g_bms_encoding_choice = 0;
+    }
+    constexpr std::array<const char*, 5> all_labels{
+        "UTF-8", "CP932 (Japanese)", "EUC-KR (Korean)", "CP949 (Korean)",
+        "Windows-1252 (Western)"};
+    constexpr std::array<wormedit::text_encoding_t, 5> all_encodings{
+        wormedit::text_encoding_t::utf8, wormedit::text_encoding_t::cp932,
+        wormedit::text_encoding_t::euc_kr, wormedit::text_encoding_t::cp949,
+        wormedit::text_encoding_t::windows_1252};
+    std::array<const char*, 5> labels{};
+    std::array<std::uint8_t, 5> indexes{};
+    int count = 0;
+    for (std::size_t i = 0; i < all_encodings.size(); ++i) {
+        if (!wormedit::is_bms_text_encoding_supported(all_encodings[i])) continue;
+        labels[static_cast<std::size_t>(count)] = all_labels[i];
+        indexes[static_cast<std::size_t>(count)] = static_cast<std::uint8_t>(i + 1);
+        ++count;
+    }
+    if (g_bms_encoding_choice >= count) g_bms_encoding_choice = 0;
+    const float popup_width = std::min(520.0f, std::max(280.0f, width - 24.0f));
+    const float popup_height = 252.0f;
+    const auto region = nk_window_get_content_region(g_context);
+    const auto bounds = nk_rect((width - popup_width) * 0.5f - region.x,
+                                (height - popup_height) * 0.5f - region.y,
+                                popup_width, popup_height);
+    if (!nk_popup_begin(g_context, NK_POPUP_STATIC, "BMS text encoding",
+                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) {
+        cancel_bms_encoding_dialog(action);
+        return;
+    }
+    nk_layout_row_dynamic(g_context, 30, 1);
+    nk_label(g_context, "Choose the BMS text encoding", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(g_context, 46, 1);
+    nk_label_wrap(g_context, path.c_str());
+    nk_layout_row_dynamic(g_context, 42, 1);
+    nk_label_wrap(g_context, "This chart contains non-ASCII text without a UTF-8 BOM.");
+    nk_layout_row_dynamic(g_context, 30, 1);
+    g_bms_encoding_choice = nk_combo(g_context, labels.data(), count,
+                                      g_bms_encoding_choice, 25, nk_vec2(250.0f, 180.0f));
+    nk_layout_row_dynamic(g_context, 34, 2);
+    if (nk_button_label(g_context, "Cancel")) {
+        cancel_bms_encoding_dialog(action);
+        nk_popup_close(g_context);
+    }
+    if (nk_button_label(g_context, "Open chart") &&
+        action.kind == WORM_UI_WORKSPACE_ACTION_NONE &&
+        path.size() < sizeof(action.project_path)) {
+        action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
+        action.bms_encoding_index = indexes[static_cast<std::size_t>(g_bms_encoding_choice)];
+        std::memcpy(action.project_path, path.c_str(), path.size() + 1);
+        nk_popup_close(g_context);
+    }
+    nk_popup_end(g_context);
+}
+
 static void render_empty_project_window(const WorkspaceRenderContext& frame) {
     if (nk_begin(g_context, "wormedit-workspace",
                  nk_rect(0, 0, static_cast<float>(frame.width), static_cast<float>(frame.height)),
@@ -952,6 +1130,10 @@ static void render_empty_project_window(const WorkspaceRenderContext& frame) {
                                                 static_cast<float>(frame.height) - 64.0f -
                                                     recovery_height);
         render_empty_project_content(frame.view, frame.action, available_height);
+        if (!frame.view.pending_bms_encoding_path ||
+            !frame.view.pending_bms_encoding_path[0])
+            render_new_project_wizard(frame.action, frame.width, frame.height);
+        render_bms_encoding_dialog(frame.view, frame.action, frame.width, frame.height);
     }
     nk_end(g_context);
 }
@@ -977,6 +1159,9 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
         nk_layout_row_dynamic(g_context, content_height, 1);
         render_workspace_content(view, action);
         render_status_bar(&view, &action);
+        if (!view.pending_bms_encoding_path || !view.pending_bms_encoding_path[0])
+            render_new_project_wizard(action, frame.width, frame.height);
+        render_bms_encoding_dialog(view, action, frame.width, frame.height);
     }
     nk_end(g_context);
 }
@@ -1000,6 +1185,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         expose_shortcut_input(&action);
         return action;
     }
+    sync_pending_audio_project(*view);
 
     const auto* validation_error = workspace_validation_error(*view);
 

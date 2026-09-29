@@ -96,6 +96,7 @@ void take_parsed_document(ParseResult parsed, std::string_view format,
 }
 
 void parse_selected_file(std::string_view extension, const std::string& source,
+                         std::optional<text_encoding_t> encoding_override,
                          project_open_result_t& result) {
     if (extension == ".wormedit") {
         take_parsed_document(parse_native_project(source), "Native project", result);
@@ -107,7 +108,15 @@ void parse_selected_file(std::string_view extension, const std::string& source,
         extension == ".pms") {
         auto options = bms_parse_options_t{};
         options.file_extension = std::string(extension);
-        take_parsed_document(parse_bms_bytes(bytes, std::move(options)), "BMS chart", result);
+        options.encoding_override = encoding_override;
+        auto parsed = parse_bms_bytes(bytes, std::move(options));
+        result.needs_encoding_choice = !encoding_override && std::any_of(
+            parsed.diagnostics.begin(), parsed.diagnostics.end(), [](const auto& diagnostic) {
+                return diagnostic.code == bms_parse_diagnostic_code_t::invalid_encoding &&
+                       diagnostic.message.find("without a UTF-8 BOM is ambiguous") !=
+                           std::string::npos;
+            });
+        take_parsed_document(std::move(parsed), "BMS chart", result);
     } else if (extension == ".bmson") {
         auto options = bmson_parse_options_t{};
         options.asset_base_directory = result.asset_base;
@@ -128,7 +137,9 @@ void parse_selected_file(std::string_view extension, const std::string& source,
 
 } // namespace
 
-auto open_project_file(const std::filesystem::path& selected_path) -> project_open_result_t {
+auto open_project_file(const std::filesystem::path& selected_path,
+                       std::optional<text_encoding_t> encoding_override)
+    -> project_open_result_t {
     project_open_result_t result;
     if (selected_path.empty()) {
         result.error = "Choose a project or chart file.";
@@ -148,7 +159,7 @@ auto open_project_file(const std::filesystem::path& selected_path) -> project_op
     }
     result.asset_base = result.source_path.parent_path();
     auto source = read_bounded_file(result.source_path, limit, result.error);
-    if (source) parse_selected_file(extension, *source, result);
+    if (source) parse_selected_file(extension, *source, encoding_override, result);
     return result;
 }
 

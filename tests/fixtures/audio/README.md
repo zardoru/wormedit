@@ -8,6 +8,7 @@ These tiny stereo audio files are synthesized specifically for Wormedit's Stage 
 | `polyphonic-chord.ogg`, `polyphonic-chord.mp3` | One short source containing simultaneous C4/E4/G4 tones, for polyphonic sample handling. |
 | `sliced-seek-source.ogg`, `sliced-seek-source.mp3` | Twelve-second seek/stream source with a short tone in each two-second region and silence between regions. Regions rise through 220, 277, 330, 392, 440, and 523 Hz. This offers repeatable slice/seek locations without requiring a decoder-level test oracle. |
 | `silence.ogg`, `silence.mp3` | One second of generated digital silence for empty/quiet resource cases. |
+| `tagged-project.ogg`, `tagged-project.mp3` | Short audio with Unicode title and artist tags for the new-project import flow. |
 
 The short individual notes model a simultaneous three-key BMS/BMSON resource set. The long source is a BMSON-style sliced-resource stand-in; its approximate source windows begin at 0, 2, 4, 6, 8, and 10 seconds. Tests intentionally do not assert codec timing, silence thresholds, audible quality, or sample-accurate seeking.
 

@@ -13,6 +13,9 @@ struct project_open_result_t {
     std::filesystem::path source_path;
     std::filesystem::path asset_base;
     bool native_project{};
+    // A BMS-family source contains non-ASCII bytes without a UTF-8 BOM and
+    // needs the caller to choose an encoding before retrying this same path.
+    bool needs_encoding_choice{};
     std::string error;
 
     [[nodiscard]] explicit operator bool() const noexcept { return document.has_value(); }
@@ -21,7 +24,9 @@ struct project_open_result_t {
 // Reads and parses a selected project or chart without changing the active
 // workspace. Only an opened .wormedit is an existing saved native project;
 // imported charts are new unsaved sessions rooted at their source directory.
-[[nodiscard]] auto open_project_file(const std::filesystem::path& selected_path)
+[[nodiscard]] auto open_project_file(
+    const std::filesystem::path& selected_path,
+    std::optional<text_encoding_t> encoding_override = {})
     -> project_open_result_t;
 
 } // namespace wormedit::sys

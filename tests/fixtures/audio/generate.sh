@@ -27,3 +27,14 @@ encode_pair polyphonic-chord \
 encode_pair sliced-seek-source \
     'aevalsrc=0.25*sin(2*PI*if(lt(t\,2)\,220\,if(lt(t\,4)\,277\,if(lt(t\,6)\,330\,if(lt(t\,8)\,392\,if(lt(t\,10)\,440\,523)))))*t)*lt(mod(t\,2)\,0.4):s=44100:d=12'
 encode_pair silence 'anullsrc=r=44100:cl=mono:d=1.0'
+
+# Short Unicode metadata examples for the new-project audio import flow.
+ffmpeg -hide_banner -loglevel error -y \
+    -f lavfi -i 'sine=frequency=261.63:sample_rate=44100:duration=0.22' \
+    -ar 44100 -ac 2 -c:a vorbis -strict -2 -q:a 2 \
+    -metadata title='Título 雪' -metadata artist='Björk' \
+    "$fixture_dir/tagged-project.ogg"
+ffmpeg -hide_banner -loglevel error -y \
+    -i "$fixture_dir/keysound-c4.mp3" -c:a copy -id3v2_version 4 \
+    -metadata title='Título 雪' -metadata artist='Björk' \
+    "$fixture_dir/tagged-project.mp3"

@@ -261,3 +261,38 @@ TEST_CASE("conversion rewrites an osu!mania music path from a staged asset",
           std::string::npos);
     CHECK(music->source_path == "fixture.mp3");
 }
+
+TEST_CASE("StepMania conversion writes a staged music path for SM and SSC",
+          "[unit][format][conversion]") {
+    auto song = stepmania_song();
+    song.charts.front().scrolls.clear();
+    song.charts.front().speeds.clear();
+    song.charts.front().warps.clear();
+    const auto source = std::filesystem::path{"/external/music.ogg"};
+    song.audio_assets.push_back({.id = wormedit::asset_id_t{900001}, .source_path = source});
+    song.resources.push_back({.id = wormedit::resource_id_t{900002},
+                              .name = "music.ogg",
+                              .asset = wormedit::asset_id_t{900001},
+                              .roles = {wormedit::resource_role_t::music}});
+    CHECK_FALSE(wormedit::write_stepmania(song, {.profile = wormedit::stepmania_profile_t::ssc}).text);
+    for (const auto profile : {wormedit::stepmania_profile_t::sm,
+                               wormedit::stepmania_profile_t::ssc}) {
+        const wormedit::conversion_request_t request{
+            .target = wormedit::format_family_t::stepmania,
+            .stepmania = wormedit::stepmania_export_policy_t{.file_profile = profile},
+            .loss_policy = wormedit::loss_policy_t::warn,
+            .staged_assets = {{.asset = wormedit::asset_id_t{900001},
+                               .relative_path = "assets/900001-music.ogg"}}};
+        const auto converted = wormedit::convert_document(song, request);
+        INFO((profile == wormedit::stepmania_profile_t::sm ? "SM" : "SSC"));
+        std::string messages;
+        for (const auto& diagnostic : converted.diagnostics)
+            messages += diagnostic.message + "\n";
+        INFO(messages);
+        REQUIRE(converted);
+        REQUIRE(converted.outputs.size() == 1);
+        CHECK(converted.outputs.front().bytes.find("#MUSIC:assets/900001-music.ogg;") !=
+              std::string::npos);
+        CHECK(song.audio_assets.back().source_path == source);
+    }
+}

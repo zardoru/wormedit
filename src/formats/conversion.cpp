@@ -384,7 +384,8 @@ auto validate_request_policies(const song_document_t& song,
                       "is not applicable");
     }
     if (!request.staged_assets.empty() && request.target != format_family_t::bms &&
-        request.target != format_family_t::bmson && request.target != format_family_t::osu_mania) {
+        request.target != format_family_t::bmson && request.target != format_family_t::osu_mania &&
+        request.target != format_family_t::stepmania) {
         return reject(conversion_diagnostic_code_t::invalid_request,
                       "This target does not yet serialize staged resource paths");
     }

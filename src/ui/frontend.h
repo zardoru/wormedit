@@ -93,6 +93,7 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_NONE = 0,
     WORM_UI_WORKSPACE_ACTION_NEW_PROJECT,
     WORM_UI_WORKSPACE_ACTION_OPEN_FILE,
+    WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING,
     WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT,
     WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT,
     WORM_UI_WORKSPACE_ACTION_SWITCH_TAB,
@@ -112,6 +113,7 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_RECOVERY_DISCARD,
     WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE,
     WORM_UI_WORKSPACE_ACTION_SET_STEPMANIA_EXPORT_POLICY,
+    WORM_UI_WORKSPACE_ACTION_CANCEL_AUDIO_PROJECT,
 } WormUiWorkspaceActionKind;
 
 typedef enum WormUiWorkspaceTab {
@@ -1138,6 +1140,10 @@ typedef struct WormUiPlayerPreviewView {
 typedef struct WormUiWorkspaceView {
     bool project_loaded;
     bool project_has_native_path;
+    // A dropped MP3/OGG awaiting confirmation as a new project's audio.
+    const char* pending_new_project_audio_path;
+    // A BMS-family source whose text encoding must be selected before opening.
+    const char* pending_bms_encoding_path;
     const char* project_title;
     const char* artist;
     const char* selected_difficulty;
@@ -1354,6 +1360,11 @@ typedef enum WormUiMetadataEditKind {
 typedef struct WormUiWorkspaceAction {
     WormUiWorkspaceActionKind kind;
     char project_path[WORM_UI_PROJECT_PATH_CAPACITY];
+    // OPEN_FILE: 0 automatic, 1 UTF-8, 2 CP932, 3 EUC-KR, 4 CP949,
+    // 5 Windows-1252.
+    uint8_t bms_encoding_index;
+    // Initial layout index: 4K, 5K, 6K, 7K, 8K, 9K, 10K, 14K.
+    uint8_t new_project_layout_index;
     WormUiWorkspaceTab tab;
     uint64_t recovery_scan_generation;
     uint64_t transport_seek_frame;

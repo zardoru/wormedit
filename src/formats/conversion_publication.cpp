@@ -203,7 +203,8 @@ auto discover_staged_export_assets(const song_document_t& song, const output_gro
                                    std::stop_token stop) -> staged_asset_discovery_t {
     staged_asset_discovery_t result;
     if (group.family != format_family_t::bms && group.family != format_family_t::bmson &&
-        group.family != format_family_t::osu_mania) {
+        group.family != format_family_t::osu_mania &&
+        group.family != format_family_t::stepmania) {
         return result;
     }
     if (!project_directory.is_absolute() || !export_asset_directory(group.relative_output_path)) {

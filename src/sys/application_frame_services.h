@@ -20,6 +20,8 @@ auto poll_frontend_events(WormWindow& window, metadata_drop_state_t& metadata_dr
                           const workspace_controller_t& workspace,
                           const document_history_t& history,
                           const std::filesystem::path& asset_base,
+                          bool offer_audio_project_drop,
+                          std::string& pending_audio_project_path,
                           std::string& status) -> bool;
 
 void poll_application_jobs(runtime::metadata_asset_t& metadata_assets,

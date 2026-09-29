@@ -1,6 +1,7 @@
 #include "sys/project_open.h"
 #include "sys/project_save_paths.h"
 
+#include <wormedit/formats/bms.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/native_project_storage.h>
 
@@ -154,4 +155,50 @@ TEST_CASE("project opening rejects malformed native files", "[unit][sys][project
     CHECK_FALSE(malformed_result.document);
     CHECK_FALSE(malformed_result.native_project);
     CHECK(malformed_result.error.find("Native project could not be opened") != std::string::npos);
+}
+
+TEST_CASE("ambiguous non-ASCII BMS can be retried with an explicit encoding",
+          "[unit][sys][project-open][encoding]") {
+    temporary_project_file_t file{".bms"};
+    file.write("#PLAYER 1\n#TITLE Caf\xE9\n#BPM 120\n#WAV01 key.wav\n#00111:01\n");
+
+    const auto automatic = wormedit::sys::open_project_file(file.path);
+    REQUIRE_FALSE(automatic.document);
+    CHECK(automatic.needs_encoding_choice);
+    CHECK(automatic.source_path == file.path);
+
+    if (!wormedit::is_bms_text_encoding_supported(wormedit::text_encoding_t::windows_1252))
+        return;
+    const auto explicit_encoding = wormedit::sys::open_project_file(
+        file.path, wormedit::text_encoding_t::windows_1252);
+    INFO(explicit_encoding.error);
+    REQUIRE(explicit_encoding.document);
+    CHECK_FALSE(explicit_encoding.needs_encoding_choice);
+    CHECK(explicit_encoding.document->metadata.title == "Caf\xC3\xA9");
+}
+
+TEST_CASE("UTF-8 BMS without a BOM opens after the user chooses UTF-8",
+          "[unit][sys][project-open][encoding]") {
+    temporary_project_file_t file{".bms"};
+    file.write("#PLAYER 1\n#TITLE Caf\xC3\xA9\n#BPM 120\n#WAV01 key.wav\n#00111:01\n");
+
+    CHECK(wormedit::sys::open_project_file(file.path).needs_encoding_choice);
+    const auto opened = wormedit::sys::open_project_file(file.path,
+                                                         wormedit::text_encoding_t::utf8);
+    INFO(opened.error);
+    REQUIRE(opened.document);
+    CHECK_FALSE(opened.needs_encoding_choice);
+    CHECK(opened.document->metadata.title == "Caf\xC3\xA9");
+}
+
+TEST_CASE("a malformed explicit BMS encoding does not repeatedly request a choice",
+          "[unit][sys][project-open][encoding]") {
+    temporary_project_file_t file{".bms"};
+    file.write("#PLAYER 1\n#TITLE Caf\xE9\n#BPM 120\n#WAV01 key.wav\n#00111:01\n");
+
+    const auto malformed = wormedit::sys::open_project_file(file.path,
+                                                             wormedit::text_encoding_t::utf8);
+    CHECK_FALSE(malformed.document);
+    CHECK_FALSE(malformed.needs_encoding_choice);
+    CHECK(malformed.error.find("malformed UTF-8") != std::string::npos);
 }

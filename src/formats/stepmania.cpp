@@ -2025,6 +2025,35 @@ struct stepmania_writer_t {
     void emit(std::string_view key, std::string_view value) {
         emit_field(output, key, value, result.diagnostics, options.max_output_bytes);
     }
+    auto music_path() -> std::optional<std::string> {
+        const resource_entry_t* music{};
+        for (const auto& resource : song.resources) {
+            if (std::ranges::find(resource.roles, resource_role_t::music) == resource.roles.end())
+                continue;
+            if (music) {
+                report(stepmania_write_diagnostic_code_t::unsupported_feature,
+                       "StepMania MUSIC can represent only one music resource", "MUSIC");
+                return std::nullopt;
+            }
+            music = &resource;
+        }
+        if (!music) return std::nullopt;
+        const auto asset = std::ranges::find(song.audio_assets, music->asset, &audio_asset_t::id);
+        if (asset == song.audio_assets.end() || asset->source_path.empty()) {
+            report(stepmania_write_diagnostic_code_t::invalid_metadata,
+                   "Music resource has no audio asset path", "MUSIC");
+            return std::nullopt;
+        }
+        const auto& path = asset->source_path;
+        if (path.empty() || path.is_absolute() || path.has_root_name() ||
+            path.filename().empty() || path.lexically_normal() != path ||
+            std::ranges::any_of(path, [](const auto& part) { return part == ".."; })) {
+            report(stepmania_write_diagnostic_code_t::invalid_metadata,
+                   "Music resource has an unsafe audio asset path", "MUSIC");
+            return std::nullopt;
+        }
+        return path.generic_string();
+    }
     void emit_song_metadata() {
     if (options.profile == stepmania_profile_t::ssc)
         emit("VERSION", "0.83");
@@ -2033,10 +2062,13 @@ struct stepmania_writer_t {
     if (!song.metadata.artist.empty())
         emit("ARTIST", song.metadata.artist);
     song_group = family_group(song.metadata.format_groups);
+    const auto modeled_music = music_path();
+    if (modeled_music) emit("MUSIC", *modeled_music);
     std::set<std::string> modeled_song{
         "TITLE",     "ARTIST",     "OFFSET",     "BPMS",     "STOPS",       "DELAYS",
         "WARPS",     "SCROLLS",    "SPEEDS",     "NOTEDATA", "STEPSTYPE",   "DESCRIPTION",
         "CHARTNAME", "CHARTSTYLE", "DIFFICULTY", "METER",    "RADARVALUES", "NOTES"};
+    if (modeled_music) modeled_song.insert("MUSIC");
     if (options.profile == stepmania_profile_t::sm) {
         modeled_song.insert("CREDIT");
         const auto& author = charts.front()->metadata.author;

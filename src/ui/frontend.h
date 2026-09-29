@@ -13,6 +13,7 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_RECOVERY_ROW_CAPACITY 4
 #define WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY 4
 #define WORM_UI_RECOVERY_DESTINATION_CAPACITY 512
+#define WORM_UI_PROJECT_PATH_CAPACITY 4097
 #define WORM_UI_METADATA_SEARCH_TAG_CAPACITY 4096
 #define WORM_UI_METADATA_SEARCH_TAG_BYTES 4096
 #define WORM_UI_METADATA_TITLE_BYTES 16384
@@ -90,6 +91,10 @@ typedef struct WormUiRecoveryCandidateView {
 
 typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_NONE = 0,
+    WORM_UI_WORKSPACE_ACTION_NEW_PROJECT,
+    WORM_UI_WORKSPACE_ACTION_OPEN_FILE,
+    WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT,
+    WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT,
     WORM_UI_WORKSPACE_ACTION_SWITCH_TAB,
     WORM_UI_WORKSPACE_ACTION_QUIT,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE,
@@ -1131,6 +1136,8 @@ typedef struct WormUiPlayerPreviewView {
 // Private scalar view consumed by the selected frontend adapter. The owning
 // application keeps every pointed-to string alive for the duration of compose.
 typedef struct WormUiWorkspaceView {
+    bool project_loaded;
+    bool project_has_native_path;
     const char* project_title;
     const char* artist;
     const char* selected_difficulty;
@@ -1346,6 +1353,7 @@ typedef enum WormUiMetadataEditKind {
 
 typedef struct WormUiWorkspaceAction {
     WormUiWorkspaceActionKind kind;
+    char project_path[WORM_UI_PROJECT_PATH_CAPACITY];
     WormUiWorkspaceTab tab;
     uint64_t recovery_scan_generation;
     uint64_t transport_seek_frame;

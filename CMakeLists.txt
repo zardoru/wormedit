@@ -288,6 +288,8 @@ if(WORMEDIT_BUILD_APP)
         src/sys/application_frame_projection.cpp
         src/sys/application_frame_services.cpp
         src/sys/application_startup.cpp
+        src/sys/project_open.cpp
+        src/sys/project_save_paths.cpp
         src/sys/main.cpp
         src/sys/timing_view.cpp
         src/sys/timing_edit_runtime.cpp

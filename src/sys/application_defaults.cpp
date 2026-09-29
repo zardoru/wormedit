@@ -28,6 +28,10 @@ auto new_session_project_id() -> song_id_t {
     return song_id_t{value == 0 ? 1 : value};
 }
 
+auto empty_session_document(song_id_t session_id) -> song_document_t {
+    return {.id = session_id, .revision = 1, .metadata = {.title = "No project loaded"}};
+}
+
 auto initial_document(song_id_t project_id) -> song_document_t {
     auto profile = make_bms_7k_profile();
     std::vector<bgm_source_lane_t> bgm_lanes;

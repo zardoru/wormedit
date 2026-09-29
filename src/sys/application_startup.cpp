@@ -34,9 +34,9 @@ auto select_initial_application_status(
     } else if (!requested_primary_path.empty()) {
         status = "Primary project was not loaded; review the completed recovery scan.";
     } else if (platform_recovery) {
-        status = "New unsaved workspace ready; platform recovery scan complete.";
+        status = "No project loaded; recovery scan complete.";
     } else {
-        status = "New unsaved workspace ready; recovery discovery unavailable.";
+        status = "No project loaded; recovery discovery unavailable.";
     }
     if (!platform_recovery && !platform_recovery.error.empty()) {
         status += " " + platform_recovery.error;

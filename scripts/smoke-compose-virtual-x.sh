@@ -8,8 +8,8 @@ root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 app="$root_dir/build/wormedit"
 output=${1:-/tmp/wormedit-compose-smoke.png}
 mode=${2:-compose}
-if [[ $mode != compose && $mode != timing && $mode != recipe && $mode != recipe_apply ]]; then
-    echo "Usage: $0 [capture.png] [compose|timing|recipe|recipe_apply]" >&2
+if [[ $mode != landing && $mode != compose && $mode != timing && $mode != recipe && $mode != recipe_apply ]]; then
+    echo "Usage: $0 [capture.png] [landing|compose|timing|recipe|recipe_apply]" >&2
     exit 1
 fi
 temp_dir=$(mktemp -d /tmp/wormedit-compose-smoke.XXXXXX)
@@ -108,11 +108,15 @@ click_at() {
     xdotool mouseup 1
     sleep 0.2
 }
-# Compose is the middle of seven equal-width tabs.
-click_at "$((window_width / 2))" 55
-if [[ $mode == timing || $mode == recipe || $mode == recipe_apply ]]; then
-    # Timing is the third tab in the same seven-column row.
-    click_at "$((window_width * 5 / 14))" 55
+if [[ $mode != landing ]]; then
+    # The initial window has no chart. Create the standard template first.
+    click_at "$((window_width / 2))" 150
+    # Compose is the middle of seven equal-width tabs.
+    click_at "$((window_width / 2))" 55
+    if [[ $mode == timing || $mode == recipe || $mode == recipe_apply ]]; then
+        # Timing is the third tab in the same seven-column row.
+        click_at "$((window_width * 5 / 14))" 55
+    fi
 fi
 if [[ $mode == recipe || $mode == recipe_apply ]]; then
     # Empty test data keeps the recipe button at this fixed toolbar row.

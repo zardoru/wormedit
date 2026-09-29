@@ -30,8 +30,12 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <memory>
+#include <mutex>
+#include <new>
 #include <stddef.h>
 #include <string>
+#include <utility>
 
 using wormedit::ui::lucide::Glyph;
 
@@ -50,6 +54,107 @@ static bool g_shortcut_events_overflowed{};
 static bool g_ime_composition_active{};
 static int g_last_window_width{};
 static int g_last_window_height{};
+
+struct ProjectDialogState {
+    std::mutex mutex;
+    std::uint64_t generation{};
+    WormUiWorkspaceActionKind kind{WORM_UI_WORKSPACE_ACTION_NONE};
+    bool active{};
+    bool ready{};
+    std::string path;
+    std::string error;
+};
+
+static ProjectDialogState g_project_dialog;
+static std::string g_project_dialog_error;
+
+static void reset_project_dialog() {
+    std::lock_guard lock{g_project_dialog.mutex};
+    ++g_project_dialog.generation;
+    g_project_dialog.kind = WORM_UI_WORKSPACE_ACTION_NONE;
+    g_project_dialog.active = false;
+    g_project_dialog.ready = false;
+    g_project_dialog.path.clear();
+    g_project_dialog.error.clear();
+    g_project_dialog_error.clear();
+}
+
+static bool project_dialog_active() {
+    std::lock_guard lock{g_project_dialog.mutex};
+    return g_project_dialog.active;
+}
+
+static void SDLCALL project_file_dialog_callback(void* userdata,
+                                                 const char* const* files, int) {
+    std::unique_ptr<std::uint64_t> generation{static_cast<std::uint64_t*>(userdata)};
+    if (!generation) return;
+    std::string path;
+    std::string error;
+    if (!files) {
+        const auto* sdl_error = SDL_GetError();
+        error = sdl_error && sdl_error[0] ? sdl_error : "File picker failed.";
+    } else if (files[0]) {
+        std::size_t length{};
+        while (length < WORM_UI_PROJECT_PATH_CAPACITY && files[0][length]) ++length;
+        if (length == WORM_UI_PROJECT_PATH_CAPACITY)
+            error = "Selected project path is too long.";
+        else
+            path.assign(files[0], length);
+    }
+    std::lock_guard lock{g_project_dialog.mutex};
+    if (!g_project_dialog.active || g_project_dialog.generation != *generation) return;
+    g_project_dialog.path = std::move(path);
+    g_project_dialog.error = std::move(error);
+    g_project_dialog.ready = true;
+}
+
+static void start_project_file_dialog(WormUiWorkspaceActionKind kind) {
+    std::uint64_t generation{};
+    {
+        std::lock_guard lock{g_project_dialog.mutex};
+        if (g_project_dialog.active) return;
+        generation = ++g_project_dialog.generation;
+        g_project_dialog.active = true;
+        g_project_dialog.ready = false;
+        g_project_dialog.kind = kind;
+    }
+    auto token = std::unique_ptr<std::uint64_t>{new (std::nothrow) std::uint64_t{generation}};
+    if (!token) {
+        reset_project_dialog();
+        g_project_dialog_error = "File picker could not allocate callback state.";
+        return;
+    }
+    g_project_dialog_error.clear();
+    static constexpr SDL_DialogFileFilter open_filters[] = {
+        {"Chart or project", "wormedit;bms;bme;bml;pms;bmson;sm;ssc;osu"},
+    };
+    static constexpr SDL_DialogFileFilter save_filters[] = {
+        {"wormedit project", "wormedit"},
+    };
+    if (kind == WORM_UI_WORKSPACE_ACTION_OPEN_FILE)
+        SDL_ShowOpenFileDialog(project_file_dialog_callback, token.release(), g_window,
+                               open_filters, SDL_arraysize(open_filters), nullptr, false);
+    else
+        SDL_ShowSaveFileDialog(project_file_dialog_callback, token.release(), g_window,
+                               save_filters, SDL_arraysize(save_filters), "Untitled.wormedit");
+}
+
+static void consume_project_file_dialog(WormUiWorkspaceAction& action) {
+    std::lock_guard lock{g_project_dialog.mutex};
+    if (!g_project_dialog.active || !g_project_dialog.ready) return;
+    g_project_dialog.active = false;
+    g_project_dialog.ready = false;
+    g_project_dialog_error = std::move(g_project_dialog.error);
+    if (g_project_dialog_error.empty() && !g_project_dialog.path.empty() &&
+        action.kind == WORM_UI_WORKSPACE_ACTION_NONE) {
+        action.kind = g_project_dialog.kind;
+        std::memcpy(action.project_path, g_project_dialog.path.data(),
+                    g_project_dialog.path.size());
+        action.project_path[g_project_dialog.path.size()] = '\0';
+    }
+    g_project_dialog.path.clear();
+    g_project_dialog.kind = WORM_UI_WORKSPACE_ACTION_NONE;
+}
 
 static bool frontend_window_size(int* width, int* height) {
     int current_width = 0;
@@ -263,10 +368,12 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer) {
     g_double_click_count = 0;
     g_last_window_width = 0;
     g_last_window_height = 0;
+    reset_project_dialog();
     return true;
 }
 
 void worm_ui_frontend_shutdown(void) {
+    reset_project_dialog();
     if (!g_context) {
         worm_ui_nuklear_reset_metadata_state();
         worm_ui_nuklear_reset_timing_state();
@@ -420,10 +527,45 @@ WormUiWorkspaceAction worm_ui_frontend_workspace_error(const char* diagnostic) {
     return action;
 }
 
-static void render_project_menu(const WormUiWorkspaceView* view,
-                                WormUiWorkspaceAction* action) {
-    if (!nk_menu_begin_label(g_context, "Project", NK_TEXT_LEFT, nk_vec2(230, 300))) return;
+static void render_loaded_project_menu_files(const WormUiWorkspaceView* view,
+                                             WormUiWorkspaceAction* action, bool dialog_busy) {
+    if (dialog_busy) nk_widget_disable_begin(g_context);
+    if (nk_menu_item_label(g_context, "Save project", NK_TEXT_LEFT) &&
+        !dialog_busy && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
+        if (view->project_has_native_path)
+            action->kind = WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT;
+        else
+            start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
+    }
+    if (nk_menu_item_label(g_context, "Save project as...", NK_TEXT_LEFT) && !dialog_busy &&
+        action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
+        start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
+    if (nk_menu_item_label(g_context, "Close project", NK_TEXT_LEFT) && !dialog_busy &&
+        action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
+        action->kind = WORM_UI_WORKSPACE_ACTION_CLOSE_PROJECT;
+    if (dialog_busy) nk_widget_disable_end(g_context);
+}
+
+static void render_project_menu_files(const WormUiWorkspaceView* view,
+                                      WormUiWorkspaceAction* action) {
     nk_layout_row_dynamic(g_context, 25, 1);
+    const auto dialog_busy = project_dialog_active();
+    if (dialog_busy) nk_widget_disable_begin(g_context);
+    if (nk_menu_item_label(g_context, "New project", NK_TEXT_LEFT) &&
+        !dialog_busy && action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
+        action->kind = WORM_UI_WORKSPACE_ACTION_NEW_PROJECT;
+    if (dialog_busy) nk_widget_disable_end(g_context);
+    if (dialog_busy) nk_widget_disable_begin(g_context);
+    if (nk_menu_item_label(g_context, "Open chart or project...", NK_TEXT_LEFT) && !dialog_busy &&
+        action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
+        start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_OPEN_FILE);
+    if (dialog_busy) nk_widget_disable_end(g_context);
+    if (view->project_loaded) render_loaded_project_menu_files(view, action, dialog_busy);
+}
+
+static void render_project_menu_navigation(const WormUiWorkspaceView* view,
+                                           WormUiWorkspaceAction* action) {
+    if (!view->project_loaded) return;
     for (int tab = 0; tab < WORM_UI_WORKSPACE_TAB_COUNT; ++tab) {
         if (tab == WORM_UI_WORKSPACE_TAB_TIMING || tab == WORM_UI_WORKSPACE_TAB_COMPOSE)
             continue;
@@ -437,6 +579,13 @@ static void render_project_menu(const WormUiWorkspaceView* view,
             action->tab = static_cast<WormUiWorkspaceTab>(tab);
         }
     }
+}
+
+static void render_project_menu(const WormUiWorkspaceView* view,
+                                WormUiWorkspaceAction* action) {
+    if (!nk_menu_begin_label(g_context, "Project", NK_TEXT_LEFT, nk_vec2(230, 420))) return;
+    render_project_menu_files(view, action);
+    render_project_menu_navigation(view, action);
     nk_layout_row_dynamic(g_context, 25, 1);
     if (nk_menu_item_label(g_context, "Quit", NK_TEXT_LEFT))
         action->kind = WORM_UI_WORKSPACE_ACTION_QUIT;
@@ -473,7 +622,8 @@ static void render_title_bar(const WormUiWorkspaceView* view,
     nk_labelf(g_context, NK_TEXT_LEFT, "  %s%s", view->project_title,
               view->dirty ? " *" : "");
     render_project_menu(view, action);
-    render_view_menu(view, action);
+    if (view->project_loaded) render_view_menu(view, action);
+    else nk_label(g_context, "", NK_TEXT_LEFT);
     if (custom_controls) {
         if (wormedit::ui::chrome::IconButton{Glyph::minus, "Minimize window"}.render(g_context))
             SDL_MinimizeWindow(g_window);
@@ -540,8 +690,11 @@ static void render_status_bar(const WormUiWorkspaceView* view,
                                          view->player_preview.visible}.render(g_context) &&
         action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
         action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
-    nk_label(g_context, wormedit::ui::chrome::status_hint
-                            ? wormedit::ui::chrome::status_hint : view->status_text, NK_TEXT_LEFT);
+    nk_label(g_context, !g_project_dialog_error.empty()
+                            ? g_project_dialog_error.c_str()
+                            : wormedit::ui::chrome::status_hint
+                                  ? wormedit::ui::chrome::status_hint : view->status_text,
+             NK_TEXT_LEFT);
     const auto sample_rate = view->transport_sample_rate == 0 ? 1U : view->transport_sample_rate;
     const auto seconds = view->transport_frame / sample_rate;
     nk_labelf(g_context, NK_TEXT_RIGHT, "%llu:%02llu",
@@ -722,6 +875,11 @@ static auto metadata_workspace_view_valid(const WormUiMetadataView& metadata) ->
 }
 
 static auto workspace_validation_error(const WormUiWorkspaceView& view) -> const char* {
+    if (!view.project_loaded)
+        return view.project_title && view.status_text &&
+                       view.recovery_candidate_count <= WORM_UI_RECOVERY_ROW_CAPACITY &&
+                       view.recovery_diagnostic_count <= WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY
+                   ? nullptr : "Empty workspace view data is invalid.";
     if (!workspace_base_view_valid(view)) return "Workspace view data is invalid.";
     if (!worm_ui_nuklear_setup_view_valid(&view.setup)) return "Setup view data is invalid.";
     if (!metadata_workspace_view_valid(view.metadata)) return "Metadata view data is invalid.";
@@ -755,9 +913,56 @@ static void render_transport_seek_control(const WormUiWorkspaceView& view,
     }
 }
 
+static void render_empty_project_content(const WormUiWorkspaceView& view,
+                                         WormUiWorkspaceAction& action, float height) {
+    nk_layout_row_dynamic(g_context, height, 1);
+    if (!nk_group_begin(g_context, "empty-project-content", NK_WINDOW_BORDER)) return;
+    nk_layout_row_dynamic(g_context, 48, 1);
+    nk_label(g_context, "No project loaded", NK_TEXT_CENTERED);
+    nk_layout_row_dynamic(g_context, 28, 1);
+    nk_label(g_context, "Create a project or open an existing chart to begin.", NK_TEXT_CENTERED);
+    nk_layout_row_dynamic(g_context, 42, 1);
+    const bool dialog_busy = project_dialog_active();
+    if (dialog_busy) nk_widget_disable_begin(g_context);
+    if (nk_button_label(g_context, "New project") &&
+        !dialog_busy && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
+        action.kind = WORM_UI_WORKSPACE_ACTION_NEW_PROJECT;
+    if (dialog_busy) nk_widget_disable_end(g_context);
+    if (dialog_busy) nk_widget_disable_begin(g_context);
+    if (nk_button_label(g_context, dialog_busy ? "Choosing file..." : "Open chart or project...") &&
+        !dialog_busy && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
+        start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_OPEN_FILE);
+    if (dialog_busy) nk_widget_disable_end(g_context);
+    if (!g_project_dialog_error.empty()) {
+        nk_layout_row_dynamic(g_context, 38, 1);
+        nk_label_wrap(g_context, g_project_dialog_error.c_str());
+    }
+    nk_layout_row_dynamic(g_context, 38, 1);
+    nk_label_wrap(g_context, view.status_text);
+    nk_group_end(g_context);
+}
+
+static void render_empty_project_window(const WorkspaceRenderContext& frame) {
+    if (nk_begin(g_context, "wormedit-workspace",
+                 nk_rect(0, 0, static_cast<float>(frame.width), static_cast<float>(frame.height)),
+                 NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
+        render_title_bar(&frame.view, &frame.action);
+        const float recovery_height = render_recovery_panel(frame.view, frame.action);
+        const float available_height = std::max(100.0f,
+                                                static_cast<float>(frame.height) - 64.0f -
+                                                    recovery_height);
+        render_empty_project_content(frame.view, frame.action, available_height);
+    }
+    nk_end(g_context);
+}
+
 static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
     const auto& view = frame.view;
     auto& action = frame.action;
+    if (!view.project_loaded) {
+        render_empty_project_window(frame);
+        return;
+    }
     if (nk_begin(g_context, "wormedit-workspace",
                  nk_rect(0, 0, static_cast<float>(frame.width), static_cast<float>(frame.height)),
                  NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
@@ -784,7 +989,9 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     action.tab = WORM_UI_WORKSPACE_TAB_SETUP;
     action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_NONE;
     action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
-    const bool timing_tab_active = view && view->active_tab == WORM_UI_WORKSPACE_TAB_TIMING;
+    consume_project_file_dialog(action);
+    const bool timing_tab_active = view && view->project_loaded &&
+                                   view->active_tab == WORM_UI_WORKSPACE_TAB_TIMING;
     worm_ui_nuklear_reconcile_timing_gestures(view ? &view->timing : nullptr, timing_tab_active,
                                               g_window_focused);
     if (!g_context || !g_window || !view) {
@@ -814,6 +1021,15 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
                                      (view->dirty ? " *" : "") + " — wormedit";
     if (window_title != SDL_GetWindowTitle(g_window))
         SDL_SetWindowTitle(g_window, window_title.c_str());
+
+    if (!view->project_loaded) {
+        worm_ui_nuklear_compose_discard_frame_input();
+        worm_ui_nuklear_reconcile_timing_gestures(nullptr, false, false);
+        render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
+        expose_shortcut_input(&action);
+        g_audio.offset_escape_pending = false;
+        return action;
+    }
 
     worm_ui_nuklear_emit_timing_cancellations(&view->timing, timing_tab_active, &action);
 

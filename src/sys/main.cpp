@@ -1987,11 +1987,14 @@ auto process_compose_frame_action(Context& context, const WormUiWorkspaceAction&
          (context.workspace_ref.active_tab == wormedit::workspace_tab_t::compose &&
           action.compose_input_chart_id != 0)) &&
         context.compose_interaction_state_ref) {
-        context.status_ref = dispatch_compose_input_action(
+        const auto compose_status = dispatch_compose_input_action(
             action, context.history_ref, context.workspace_ref, *context.compose_interaction_state_ref,
             context.compose_viewport_input_ref, context.compose_navigation_input_ref,
             context.application_command_state_ref, context.compose_scene_cache_ref,
             viewport_delta_seconds);
+        if (!compose_status.empty()) {
+            context.status_ref = compose_status;
+        }
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         wormedit::sys::process_compose_audition_requests(
             context.compose_scene_cache_ref, context.history_ref, context.audition_sources_ref,

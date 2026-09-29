@@ -2937,6 +2937,24 @@ TEST_CASE("preview starts at the cursor time and Compose cursor follows the play
     CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
 }
 
+TEST_CASE("Compose playback scrolls continuously between snapped edit cursor rows",
+          "[unit][core][interaction][transport]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.viewport_height_pixels = 400.0;
+    state.pixels_per_standard_measure = 400.0;
+    state.viewport_scroll_pixels = 180.0;
+
+    REQUIRE(sys::follow_compose_playhead(history, state, 1'200.0));
+    const auto snapped_cursor = state.cursor;
+    const auto first_scroll = state.viewport_scroll_pixels;
+    REQUIRE(sys::follow_compose_playhead(history, state, 1'319.0));
+
+    CHECK(state.cursor == snapped_cursor);
+    CHECK(first_scroll == Catch::Approx(180.0));
+    CHECK(state.viewport_scroll_pixels == Catch::Approx(180.0 + 119.0 * 400.0 / 960.0));
+}
+
 TEST_CASE("held BMS lane keys extend into unmaterialized measures and commit independently",
           "[unit][core][interaction][gesture][hold][virtual-canvas]") {
     auto song = make_song();

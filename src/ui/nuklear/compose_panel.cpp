@@ -1151,7 +1151,11 @@ static void draw_compose_cursor(const ComposePaintContext& paint) {
     if (rect.w <= 0.0f || rect.h <= 0.0f) {
         return;
     }
-    const auto head_y = rect.y + rect.h * 0.5f;
+    // During preview the edit position remains snapped for note placement, but
+    // its full-width guide follows the continuous transport position.
+    const auto head_y = paint.view->playhead_visible
+        ? compose_projected_y(paint, paint.view->playhead_y_pixels)
+        : rect.y + rect.h * 0.5f;
     nk_stroke_line(paint.canvas, paint.viewport.x, head_y, paint.viewport.x + paint.viewport.w,
                    head_y, 1.4f, nk_rgb(255, 223, 108));
     nk_fill_rect(paint.canvas, rect, 0.0f, nk_rgb(248, 226, 115));
@@ -1330,29 +1334,57 @@ static void draw_compose_autoscroll_preview(const ComposePaintContext& paint) {
                  paint.context->style.font, nk_rgb(12, 16, 24), nk_rgb(255, 231, 157));
 }
 
+static auto compose_pointer_tooltip_bounds(const ComposePaintContext& paint,
+                                           float text_width, float height) -> struct nk_rect {
+    const auto max_width = std::max(1.0f, paint.viewport.w - 16.0f);
+    const auto width = std::clamp(text_width + 16.0f,
+                                  std::min(120.0f, max_width), max_width);
+    const auto mouse = paint.context->input.mouse.pos;
+    const auto left = paint.viewport.x + 8.0f;
+    const auto top = paint.viewport.y + 8.0f;
+    const auto x = std::clamp(mouse.x + 12.0f, left,
+                              std::max(left, paint.viewport.x + paint.viewport.w - width - 8.0f));
+    const auto preferred_y = mouse.y - height - 8.0f < top
+                                 ? mouse.y + 18.0f : mouse.y - height - 8.0f;
+    const auto y = std::clamp(preferred_y, top,
+                              std::max(top, paint.viewport.y + paint.viewport.h - height - 8.0f));
+    return nk_rect(x, y, width, height);
+}
+
 static void draw_compose_note_tooltip(const ComposePaintContext& paint) {
     const auto& view = *paint.view;
     if (!view.hover_note_visible || !view.hover_tooltip || view.hover_tooltip[0] == '\0') {
         return;
     }
-    const auto width = std::min(420.0f, std::max(120.0f, paint.viewport.w - 16.0f));
-    const auto bounds = nk_rect(paint.viewport.x + 8.0f, paint.viewport.y + 8.0f, width, 24.0f);
-    nk_fill_rect(paint.canvas, bounds, 3.0f, nk_rgba(12, 16, 24, 235));
-    nk_stroke_rect(paint.canvas, bounds, 3.0f, 1.0f, nk_rgb(255, 235, 148));
-    nk_draw_text(paint.canvas, bounds, view.hover_tooltip, static_cast<int>(strlen(view.hover_tooltip)),
-                 paint.context->style.font, nk_rgb(12, 16, 24), nk_rgb(255, 244, 192));
-
+    const char* resource_detail = nullptr;
     for (size_t index = 0; index < view.note_endpoint_count; ++index) {
         const auto& note = view.note_endpoints[index];
-        if (note.note_id != view.hover_note_id || !note.sound_detail || !note.sound_detail[0])
-            continue;
-        const auto resource_bounds = nk_rect(bounds.x, bounds.y + bounds.h + 2.0f,
-                                             bounds.w, bounds.h);
-        nk_fill_rect(paint.canvas, resource_bounds, 3.0f, nk_rgba(12, 16, 24, 235));
-        nk_draw_text(paint.canvas, resource_bounds, note.sound_detail,
-                     static_cast<int>(strlen(note.sound_detail)), paint.context->style.font,
+        if (note.note_id == view.hover_note_id && note.sound_detail && note.sound_detail[0]) {
+            resource_detail = note.sound_detail;
+            break;
+        }
+    }
+    const auto* font = paint.context->style.font;
+    const auto title_length = static_cast<int>(strlen(view.hover_tooltip));
+    auto text_width = font->width(font->userdata, font->height,
+                                  view.hover_tooltip, title_length);
+    if (resource_detail) {
+        const auto detail_length = static_cast<int>(strlen(resource_detail));
+        text_width = std::max(text_width, font->width(font->userdata, font->height,
+                                                      resource_detail, detail_length));
+    }
+    const auto bounds = compose_pointer_tooltip_bounds(
+        paint, text_width, resource_detail ? 50.0f : 24.0f);
+    nk_fill_rect(paint.canvas, bounds, 3.0f, nk_rgba(12, 16, 24, 235));
+    nk_stroke_rect(paint.canvas, bounds, 3.0f, 1.0f, nk_rgb(255, 235, 148));
+    nk_draw_text(paint.canvas, nk_rect(bounds.x + 8.0f, bounds.y, bounds.w - 16.0f, 24.0f),
+                 view.hover_tooltip, title_length, font,
+                 nk_rgb(12, 16, 24), nk_rgb(255, 244, 192));
+    if (resource_detail) {
+        nk_draw_text(paint.canvas, nk_rect(bounds.x + 8.0f, bounds.y + 26.0f,
+                                           bounds.w - 16.0f, 24.0f),
+                     resource_detail, static_cast<int>(strlen(resource_detail)), font,
                      nk_rgb(12, 16, 24), nk_rgb(245, 227, 255));
-        break;
     }
 }
 
@@ -1380,26 +1412,26 @@ static void draw_compose_timing_tooltip(const ComposePaintContext& paint) {
 
 static void draw_compose_bgm_tooltip(const ComposePaintContext& paint,
                                      const ComposeHoveredBgm& hovered) {
-    if (!hovered.detail) {
-        return;
-    }
-    const auto bounds = nk_rect(paint.viewport.x + 8.0f, paint.viewport.y + 34.0f,
-                                std::min(420.0f, std::max(120.0f, paint.viewport.w - 16.0f)),
-                                24.0f);
+    if (!hovered.detail || !hovered.detail[0]) return;
+    const auto* font = paint.context->style.font;
+    const auto length = static_cast<int>(strlen(hovered.detail));
+    const auto detail_width = font->width(font->userdata, font->height,
+                                          hovered.detail, length);
+    const auto mode_width = hovered.slice ? 76.0f : 0.0f;
+    const auto bounds = compose_pointer_tooltip_bounds(
+        paint, detail_width + mode_width, 24.0f);
     nk_fill_rect(paint.canvas, bounds, 3.0f, nk_rgba(12, 16, 24, 235));
     nk_stroke_rect(paint.canvas, bounds, 3.0f, 1.0f, nk_rgb(232, 190, 247));
-    auto name_bounds = bounds;
+    auto name_bounds = nk_rect(bounds.x + 8.0f, bounds.y, bounds.w - 16.0f, bounds.h);
     if (hovered.slice) {
-        constexpr float mode_width = 76.0f;
         const auto* mode = hovered.restart ? "Restart" : "Continue";
-        nk_draw_text(paint.canvas, nk_rect(bounds.x, bounds.y, mode_width, bounds.h), mode,
-                     static_cast<int>(strlen(mode)), paint.context->style.font, nk_rgb(12, 16, 24),
+        nk_draw_text(paint.canvas, nk_rect(name_bounds.x, bounds.y, mode_width, bounds.h), mode,
+                     static_cast<int>(strlen(mode)), font, nk_rgb(12, 16, 24),
                      hovered.restart ? nk_rgb(255, 205, 138) : nk_rgb(155, 243, 237));
         name_bounds.x += mode_width;
         name_bounds.w = std::max(1.0f, name_bounds.w - mode_width);
     }
-    nk_draw_text(paint.canvas, name_bounds, hovered.detail,
-                 static_cast<int>(strlen(hovered.detail)), paint.context->style.font,
+    nk_draw_text(paint.canvas, name_bounds, hovered.detail, length, font,
                  nk_rgb(12, 16, 24), nk_rgb(245, 227, 255));
 }
 

@@ -1566,6 +1566,22 @@ auto begin_compose_beat_fit(const WormUiComposeInputAction& input,
     return "Dragging beat against the fixed waveform; release to apply.";
 }
 
+auto update_beat_fit_proposal(const WormUiComposeInputAction& input,
+                             const wormedit::document_history_t& history,
+                             const wormedit::beat_interval_drag_t& drag,
+                             std::uint64_t target_frame,
+                             bool timing_locked) -> wormedit::beat_interval_drag_result_t {
+    using namespace wormedit;
+    const auto frame_update = update_beat_interval_drag(history.document, drag,
+                                                        target_frame, timing_locked);
+    if (!frame_update || !input.beat_fit_ctrl_held) return frame_update;
+    const auto snapped_bpm = quantize_bpm(frame_update.drag->proposed_bpm,
+        {input.beat_fit_snap_step_numerator, input.beat_fit_snap_step_denominator});
+    if (!snapped_bpm) return {};
+    return update_beat_interval_drag_to_bpm(history.document, *frame_update.drag,
+                                            *snapped_bpm, timing_locked);
+}
+
 auto update_compose_beat_fit(const WormUiComposeInputAction& input,
                              wormedit::document_history_t& history,
                              wormedit::workspace_controller_t& workspace,
@@ -1590,8 +1606,16 @@ auto update_compose_beat_fit(const WormUiComposeInputAction& input,
         }
         return "Beat target is outside the source audio range.";
     }
-    const auto updated = update_beat_interval_drag(history.document, *scene_cache.beat_fit_drag,
-                                                   *frame, application_state.timing_locked);
+    const auto updated = update_beat_fit_proposal(
+        input, history, *scene_cache.beat_fit_drag, *frame, application_state.timing_locked);
+    if (updated && updated.drag->proposed_sample_frame >=
+                       scene_cache.waveform_overview_total_frames) {
+        if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE) {
+            scene_cache.beat_fit_drag.reset();
+            scene_cache.beat_fit_asset.reset();
+        }
+        return "Snapped beat target is outside the source audio range.";
+    }
     if (!updated) {
         if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE) {
             scene_cache.beat_fit_drag.reset();
@@ -1601,6 +1625,11 @@ auto update_compose_beat_fit(const WormUiComposeInputAction& input,
                                            : updated.diagnostics.front().message;
     }
     scene_cache.beat_fit_drag = updated.drag;
+    scene_cache.beat_fit_drag->snap_active = input.beat_fit_ctrl_held;
+    if (input.beat_fit_ctrl_held) {
+        scene_cache.beat_fit_drag->snap_step = {input.beat_fit_snap_step_numerator,
+                                                input.beat_fit_snap_step_denominator};
+    }
     if (input.kind == WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE) {
         return "Previewing exact sample-frame beat fit.";
     }

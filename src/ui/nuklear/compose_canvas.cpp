@@ -474,6 +474,14 @@ static void draw_compose_proposed_grid(const ComposePaintContext& paint) {
     }
 }
 
+static void format_beat_fit_bpm(double bpm, char* text, std::size_t capacity) {
+    const auto length = snprintf(text, capacity, "%.3f", bpm);
+    if (length <= 0) return;
+    auto end = static_cast<std::size_t>(std::min<int>(length, static_cast<int>(capacity - 1)));
+    while (end > 0 && text[end - 1] == '0') text[--end] = '\0';
+    if (end > 0 && text[end - 1] == '.') text[--end] = '\0';
+}
+
 static void draw_compose_beat_fit_overlay(const ComposePaintContext& paint) {
     const auto& view = *paint.view;
     if (!view.beat_fit_drag_active) {
@@ -485,13 +493,23 @@ static void draw_compose_beat_fit_overlay(const ComposePaintContext& paint) {
                        1.3f, nk_rgba(110, 222, 236, 215));
     }
     char label[140]{};
-    const auto length =
-        snprintf(label, sizeof(label), "Fit %lld/%llu -> %lld/%llu BPM · frame %llu",
-                 static_cast<long long>(view.beat_fit_original_bpm_numerator),
-                 static_cast<unsigned long long>(view.beat_fit_original_bpm_denominator),
-                 static_cast<long long>(view.beat_fit_proposed_bpm_numerator),
-                 static_cast<unsigned long long>(view.beat_fit_proposed_bpm_denominator),
-                 static_cast<unsigned long long>(view.beat_fit_target_sample_frame));
+    const auto original = static_cast<double>(view.beat_fit_original_bpm_numerator) /
+                          static_cast<double>(view.beat_fit_original_bpm_denominator);
+    const auto proposed = static_cast<double>(view.beat_fit_proposed_bpm_numerator) /
+                          static_cast<double>(view.beat_fit_proposed_bpm_denominator);
+    char original_text[32]{};
+    char proposed_text[32]{};
+    format_beat_fit_bpm(original, original_text, sizeof(original_text));
+    format_beat_fit_bpm(proposed, proposed_text, sizeof(proposed_text));
+    auto length = snprintf(label, sizeof(label), "Fit %s -> %s BPM", original_text, proposed_text);
+    if (view.beat_fit_snap_active && view.beat_fit_snap_step_denominator != 0) {
+        const auto step = static_cast<double>(view.beat_fit_snap_step_numerator) /
+                          static_cast<double>(view.beat_fit_snap_step_denominator);
+        char step_text[24]{};
+        format_beat_fit_bpm(step, step_text, sizeof(step_text));
+        length += snprintf(label + length, sizeof(label) - static_cast<std::size_t>(length),
+                           " · snap %s", step_text);
+    }
     if (length > 0) {
         const auto bounds = nk_rect(paint.viewport.x + paint.rail.w + 4.0f,
                                     paint.viewport.y + 18.0f,
@@ -1113,7 +1131,7 @@ auto compose_editor_status_hint(const WormUiComposeView* view,
     if (state.timing_stage_drag_active)
         return "Move timing event · release to keep staged position · Apply to commit";
     if (state.beat_fit_drag_active)
-        return "Fit beat to waveform · release to commit one BPM change · Esc cancels";
+        return "Fit beat to waveform · Ctrl snaps BPM · release to commit · Esc cancels";
     if (state.waveform_beat_zero_drag_active)
         return "Move beat zero on waveform overview · release to commit · Esc cancels";
     if (state.bmson_marker_move_active)

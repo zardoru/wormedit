@@ -74,6 +74,8 @@ struct beat_interval_drag_t {
     std::uint64_t proposed_sample_frame{};
     signed_rational_t original_bpm;
     signed_rational_t proposed_bpm;
+    bool snap_active{};
+    signed_rational_t snap_step{1, 1};
 };
 
 struct beat_interval_drag_result_t {
@@ -93,6 +95,11 @@ struct beat_interval_drag_result_t {
 update_beat_interval_drag(const song_document_t& document, const beat_interval_drag_t& drag,
                           std::uint64_t target_sample_frame, bool timing_locked = false)
     -> beat_interval_drag_result_t;
+[[nodiscard]] auto update_beat_interval_drag_to_bpm(
+    const song_document_t& document, const beat_interval_drag_t& drag,
+    signed_rational_t target_bpm, bool timing_locked = false) -> beat_interval_drag_result_t;
+[[nodiscard]] auto quantize_bpm(signed_rational_t bpm, signed_rational_t step)
+    -> std::optional<signed_rational_t>;
 [[nodiscard]] auto commit_beat_interval_drag(document_history_t& history,
                                              const beat_interval_drag_t& drag,
                                              bool timing_locked = false)

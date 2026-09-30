@@ -97,6 +97,9 @@ static void append_compose_input(
             .x_pixels = 0.0,
             .y_pixels = 0.0,
             .audio_fraction = 0.0,
+            .beat_fit_ctrl_held = false,
+            .beat_fit_snap_step_numerator = 1,
+            .beat_fit_snap_step_denominator = 1,
         };
         action->compose_input_count = WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY;
         state.cancel_pending = false;
@@ -138,7 +141,27 @@ static void append_compose_input(
         .x_pixels = x_pixels,
         .y_pixels = y_pixels,
         .audio_fraction = 0.0,
+        .beat_fit_ctrl_held = false,
+        .beat_fit_snap_step_numerator = 1,
+        .beat_fit_snap_step_denominator = 1,
     };
+}
+
+static constexpr std::array<wormedit::signed_rational_t, 6> beat_fit_snap_steps{{
+    {1, 1}, {3, 4}, {1, 2}, {1, 3}, {1, 4}, {1, 10},
+}};
+
+static void append_beat_fit_input(WormUiWorkspaceAction* action,
+                                  WormUiComposeInputKind kind, double y,
+                                  bool ctrl_held) {
+    append_compose_input(action, kind, 0.0, y);
+    if (!action || action->compose_input_count == 0) return;
+    auto& event = action->compose_inputs[action->compose_input_count - 1];
+    event.beat_fit_ctrl_held = ctrl_held;
+    const auto index = std::min<std::size_t>(state.beat_fit_snap_step_index,
+                                             beat_fit_snap_steps.size() - 1);
+    event.beat_fit_snap_step_numerator = beat_fit_snap_steps[index].numerator;
+    event.beat_fit_snap_step_denominator = beat_fit_snap_steps[index].denominator;
 }
 
 static void append_bgm_horizontal_scroll(WormUiWorkspaceAction* action,
@@ -428,18 +451,113 @@ static void render_compose_bgm_scroll_controls(const ComposeToolbarContext& tool
               view->pixels_per_standard_measure, view->lane_count);
 }
 
+static void request_toolbar_offset_nudge(WormUiWorkspaceAction* action,
+                                         const WormUiComposeView* view, std::int64_t frames) {
+    if (action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) return;
+    action->audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_NUDGE;
+    action->audio_offset_drag_chart_id = view->chart_id;
+    action->audio_offset_drag_document_revision = view->document_revision;
+    action->audio_offset_drag_sample_rate = view->waveform_overview_sample_rate;
+    action->audio_offset_drag_delta_frames = frames;
+}
+
+static void render_compose_audio_offset(const ComposeToolbarContext& toolbar, bool show_offset) {
+    auto* context = toolbar.context;
+    const auto& view = *toolbar.view;
+    const bool disabled = view.waveform_timing_locked || view.waveform_offset_drag_active;
+    const auto ten_ms = static_cast<std::int64_t>(
+        std::max(1U, view.waveform_overview_sample_rate / 100U));
+    if (disabled) nk_widget_disable_begin(context);
+    if (wormedit::ui::chrome::IconButton{Glyph::chevrons_left,
+            "Nudge audio offset -10 ms"}.render(context))
+        request_toolbar_offset_nudge(toolbar.action, &view, -ten_ms);
+    if (wormedit::ui::chrome::IconButton{Glyph::chevron_left,
+            "Nudge audio offset -1 frame"}.render(context))
+        request_toolbar_offset_nudge(toolbar.action, &view, -1);
+    if (show_offset)
+        nk_labelf(context, NK_TEXT_CENTERED, "%+.3f s%s",
+            static_cast<double>(view.waveform_offset_drag_active
+                ? view.waveform_proposed_audio_offset_numerator
+                : view.waveform_audio_offset_numerator) /
+                static_cast<double>(view.waveform_offset_drag_active
+                    ? view.waveform_proposed_audio_offset_denominator
+                    : view.waveform_audio_offset_denominator),
+            view.waveform_timing_locked ? " · locked"
+            : view.waveform_offset_drag_active ? " · preview" : "");
+    if (wormedit::ui::chrome::IconButton{Glyph::chevron_right,
+            "Nudge audio offset +1 frame"}.render(context))
+        request_toolbar_offset_nudge(toolbar.action, &view, 1);
+    if (wormedit::ui::chrome::IconButton{Glyph::chevrons_right,
+            "Nudge audio offset +10 ms"}.render(context))
+        request_toolbar_offset_nudge(toolbar.action, &view, ten_ms);
+    if (disabled) nk_widget_disable_end(context);
+}
+
+static void render_compose_snap_controls(nk_context* context) {
+    static const char* steps[] = {"1", "0.75", "0.5", "0.33", "0.25", "0.1"};
+    static const char* tooltips[] = {
+        "BPM snap step 1 (Ctrl+drag beat fit; Ctrl+wheel while dragging)",
+        "BPM snap step 0.75 (Ctrl+drag beat fit; Ctrl+wheel while dragging)",
+        "BPM snap step 0.5 (Ctrl+drag beat fit; Ctrl+wheel while dragging)",
+        "BPM snap step 0.33 (Ctrl+drag beat fit; Ctrl+wheel while dragging)",
+        "BPM snap step 0.25 (Ctrl+drag beat fit; Ctrl+wheel while dragging)",
+        "BPM snap step 0.1 (Ctrl+drag beat fit; Ctrl+wheel while dragging)",
+    };
+    const auto step_index = std::min<std::size_t>(state.beat_fit_snap_step_index,
+                                                  std::size(steps) - 1);
+    if (wormedit::ui::chrome::IconButton{Glyph::magnet, tooltips[step_index]}.render(context))
+        state.beat_fit_snap_step_index = static_cast<std::uint8_t>((step_index + 1) % std::size(steps));
+    state.beat_fit_snap_step_index = static_cast<std::uint8_t>(std::min<int>(
+        nk_combo(context, steps, static_cast<int>(std::size(steps)),
+                 state.beat_fit_snap_step_index, 20, nk_vec2(70, 140)),
+        static_cast<int>(std::size(steps) - 1)));
+}
+
+static void render_compose_offset_toolbar(const ComposeToolbarContext& toolbar) {
+    const auto* view = toolbar.view;
+    const bool show_offset = nk_window_get_bounds(toolbar.context).w >= 900.0f;
+    nk_label(toolbar.context, "", NK_TEXT_LEFT);
+    if (view->waveform_overview_row_count == 0) {
+        nk_widget_disable_begin(toolbar.context);
+        for (int slot = 0; slot < 2; ++slot)
+            (void)wormedit::ui::chrome::IconButton{Glyph::chevron_left, ""}.render(toolbar.context);
+        if (show_offset) nk_label(toolbar.context, "", NK_TEXT_LEFT);
+        for (int slot = 0; slot < 2; ++slot)
+            (void)wormedit::ui::chrome::IconButton{Glyph::chevron_right, ""}.render(toolbar.context);
+        nk_widget_disable_end(toolbar.context);
+    } else {
+        render_compose_audio_offset(toolbar, show_offset);
+    }
+    nk_label(toolbar.context, "", NK_TEXT_LEFT);
+    render_compose_snap_controls(toolbar.context);
+    nk_label(toolbar.context, "", NK_TEXT_LEFT);
+}
+
 static void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     update_compose_note_label_cache(toolbar.view);
     auto* context = toolbar.context;
     nk_layout_row_template_begin(context, 27);
     wormedit::ui::chrome::IconButton::layout_columns(context, 3);
     nk_layout_row_template_push_static(context, 12);
-    wormedit::ui::chrome::IconButton::layout_columns(context, 3);
+    wormedit::ui::chrome::IconButton::layout_columns(context, 2);
+    // Audio offset nudges, optional readout, then the BPM snap magnet and step combo.
+    nk_layout_row_template_push_static(context, 12);
+    wormedit::ui::chrome::IconButton::layout_columns(context, 2);
+    if (nk_window_get_bounds(context).w >= 900.0f)
+        nk_layout_row_template_push_static(context, 150);
+    wormedit::ui::chrome::IconButton::layout_columns(context, 2);
+    nk_layout_row_template_push_static(context, 12);
+    wormedit::ui::chrome::IconButton::layout_columns(context);
+    nk_layout_row_template_push_static(context, 70);
+    nk_layout_row_template_push_static(context, 12);
+    // BGM column scroll: left, progress, right, then the zoom readout.
+    wormedit::ui::chrome::IconButton::layout_columns(context);
     nk_layout_row_template_push_dynamic(context);
     wormedit::ui::chrome::IconButton::layout_columns(context);
     nk_layout_row_template_push_static(context, 215);
     nk_layout_row_template_end(context);
     render_compose_view_controls(toolbar);
+    render_compose_offset_toolbar(toolbar);
     render_compose_bgm_scroll_controls(toolbar);
 }
 
@@ -1999,6 +2117,23 @@ static ComposeViewportCursor update_compose_viewport_pointer(
             input.pointer_inside && x >= note_left && x < note_right};
 }
 
+static bool append_beat_fit_snap_wheel(const ComposeViewportInputContext& input,
+                                       const worm_ui_nuklear_compose_wheel_event_t& wheel) {
+    if (!state.beat_fit_drag_active || (wheel.modifiers & SDL_KMOD_CTRL) == 0) return false;
+    // Compose wheel deltas are positive toward the song end: wheel down picks a finer step.
+    const auto step = wheel.delta_y > 0.0 ? 1 : wheel.delta_y < 0.0 ? -1 : 0;
+    const auto next = static_cast<int>(state.beat_fit_snap_step_index) + step;
+    const auto updated = static_cast<std::uint8_t>(
+        std::clamp(next, 0, static_cast<int>(beat_fit_snap_steps.size() - 1)));
+    if (updated != state.beat_fit_snap_step_index) {
+        state.beat_fit_snap_step_index = updated;
+        const auto y = (wheel.mouse_y - input.viewport.y) * input.view->viewport_height_pixels /
+                       input.viewport.h;
+        append_beat_fit_input(input.action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, y, true);
+    }
+    return true;
+}
+
 static void append_compose_wheel_inputs(const ComposeViewportInputContext& input) {
     const auto& view = *input.view;
     if (!state.action_overflowed && view.scene_available && input.window_focused) {
@@ -2008,6 +2143,7 @@ static void append_compose_wheel_inputs(const ComposeViewportInputContext& input
                 wheel.mouse_y < input.viewport.y || wheel.mouse_y > input.viewport.y + input.viewport.h) {
                 continue;
             }
+            if (append_beat_fit_snap_wheel(input, wheel)) continue;
             const auto zoom_modifier = (wheel.modifiers & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0;
             input.action->compose_viewport_inputs[input.action->compose_viewport_input_count++] = {
                 .kind = wheel.coarse_steps ? WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL
@@ -2087,6 +2223,7 @@ static bool start_compose_beat_fit_drag(const ComposeBeatFitInput& input) {
     }
     const auto& view = *input.view;
     state.beat_fit_drag_active = true;
+    state.beat_fit_ctrl_held = false;
     state.beat_fit_chart_row = nearest_row;
     state.beat_fit_chart_id = view.chart_id;
     state.beat_fit_revision = view.document_revision;
@@ -2121,14 +2258,20 @@ static void update_active_beat_fit_drag(const ComposeBeatFitInput& input) {
         if (std::abs(input.context->input.mouse.pos.y - state.beat_fit_anchor_screen_y) < 4.0f) {
             cancel_beat_fit_drag(input.action);
         } else {
-            append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE, 0.0,
-                                 std::clamp(input.pointer_y, 0.0,
-                                            view.viewport_height_pixels));
+            append_beat_fit_input(input.action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE,
+                                  std::clamp(input.pointer_y, 0.0,
+                                             view.viewport_height_pixels),
+                                  (input.pointer_modifiers & SDL_KMOD_CTRL) != 0);
             state.beat_fit_drag_active = false;
         }
-    } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input)) {
-        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE, 0.0,
-                             std::clamp(input.pointer_y, 0.0, view.viewport_height_pixels));
+    } else if (const bool ctrl_held = (input.pointer_modifiers & SDL_KMOD_CTRL) != 0;
+               input.left_down && (nk_input_is_mouse_moved(&input.context->input) ||
+                                   ctrl_held != state.beat_fit_ctrl_held)) {
+        // Pressing or releasing Ctrl re-previews in place so the snap toggles without motion.
+        state.beat_fit_ctrl_held = ctrl_held;
+        append_beat_fit_input(input.action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE,
+                              std::clamp(input.pointer_y, 0.0, view.viewport_height_pixels),
+                              ctrl_held);
     }
 }
 
@@ -2142,54 +2285,6 @@ static bool process_compose_beat_fit_pointer(const ComposeBeatFitInput& input) {
         return false;
     }
     return start_compose_beat_fit_drag(input);
-}
-
-static void request_audio_offset_nudge(const ComposeOverviewContext& overview,
-                                       int64_t frames) {
-    if (overview.action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
-        return;
-    }
-    overview.action->audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_NUDGE;
-    overview.action->audio_offset_drag_chart_id = overview.view->chart_id;
-    overview.action->audio_offset_drag_document_revision = overview.view->document_revision;
-    overview.action->audio_offset_drag_sample_rate = overview.view->waveform_overview_sample_rate;
-    overview.action->audio_offset_drag_delta_frames = frames;
-}
-
-static void render_compose_offset_controls(const ComposeOverviewContext& overview) {
-    const auto& view = *overview.view;
-    if (view.waveform_overview_row_count == 0) {
-        return;
-    }
-    const auto numerator = view.waveform_offset_drag_active
-                               ? view.waveform_proposed_audio_offset_numerator
-                               : view.waveform_audio_offset_numerator;
-    const auto denominator = view.waveform_offset_drag_active
-                                 ? view.waveform_proposed_audio_offset_denominator
-                                 : view.waveform_audio_offset_denominator;
-    const auto offset_seconds = static_cast<double>(numerator) / static_cast<double>(denominator);
-    const auto disabled = view.waveform_timing_locked || view.waveform_offset_drag_active;
-    const auto ten_ms = static_cast<int64_t>(std::max(1U, view.waveform_overview_sample_rate / 100U));
-    auto* context = overview.context;
-    nk_layout_row_begin(context, NK_DYNAMIC, 22, 5);
-    if (disabled) nk_widget_disable_begin(context);
-    nk_layout_row_push(context, 0.13f);
-    if (nk_button_label(context, "-10ms")) request_audio_offset_nudge(overview, -ten_ms);
-    nk_layout_row_push(context, 0.10f);
-    if (nk_button_label(context, "-1f")) request_audio_offset_nudge(overview, -1);
-    if (disabled) nk_widget_disable_end(context);
-    nk_layout_row_push(context, 0.54f);
-    nk_labelf(context, NK_TEXT_CENTERED, "Offset %+.6f s%s", offset_seconds,
-              view.waveform_timing_locked        ? " · locked"
-              : view.waveform_offset_drag_active ? " · preview"
-                                                  : "");
-    if (disabled) nk_widget_disable_begin(context);
-    nk_layout_row_push(context, 0.10f);
-    if (nk_button_label(context, "+1f")) request_audio_offset_nudge(overview, 1);
-    nk_layout_row_push(context, 0.13f);
-    if (nk_button_label(context, "+10ms")) request_audio_offset_nudge(overview, ten_ms);
-    if (disabled) nk_widget_disable_end(context);
-    nk_layout_row_end(context);
 }
 
 static void render_compose_waveform_overview(const ComposeOverviewContext& overview) {
@@ -3292,9 +3387,8 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
 
     const bool overview_available = view->waveform_overview_row_count != 0;
     const auto group_bounds = nk_window_get_content_region(context);
-    render_compose_offset_controls({context, view, action, nullptr, {}});
     const auto surface_height =
-        std::max(32.0f, group_bounds.h - (overview_available ? 52.0f : 24.0f));
+        std::max(32.0f, group_bounds.h - 24.0f);
     const auto overview_fraction =
         overview_available ? std::min(0.08f, 26.0f / std::max(group_bounds.w, 1.0f)) : 0.0f;
     nk_layout_space_begin(context, NK_DYNAMIC, surface_height, overview_available ? 2 : 1);

@@ -10,3 +10,6 @@ Lucide's ISC notice and the MIT notice for Feather-derived icons.
 alpha masks in `src/ui/nuklear/lucide_icon_pixels.h`. Regenerate after changing
 the subset; the app does not need an SVG renderer at runtime. This script needs
 `rsvg-convert` and Pillow on the development machine.
+
+`chevrons-left`, `chevrons-right`, and `magnet` are used by Compose audio-offset
+nudges and beat-fit BPM snapping.

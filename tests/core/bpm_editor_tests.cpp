@@ -38,6 +38,50 @@ auto has_error(const document_command_result_t& result) -> bool {
     });
 }
 
+auto commit_snapped_fit(signed_rational_t step) -> std::optional<signed_rational_t> {
+    auto history = make_document_history(bpm_song());
+    const auto begun = begin_beat_interval_drag(history.document, chart_id_t{2},
+                                                object_id_t{10},
+                                                local_position_t{measure_id_t{3}, 480}, 48'000);
+    if (!begun) return std::nullopt;
+    const auto frame = update_beat_interval_drag(history.document, *begun.drag, 49'000);
+    if (!frame) return std::nullopt;
+    const auto snapped = quantize_bpm(frame.drag->proposed_bpm, step);
+    if (!snapped) return std::nullopt;
+    const auto update = update_beat_interval_drag_to_bpm(history.document, *frame.drag, *snapped);
+    if (!update) return std::nullopt;
+    auto snapped_drag = *update.drag;
+    snapped_drag.snap_active = true;
+    snapped_drag.snap_step = step;
+    if (!commit_beat_interval_drag(history, snapped_drag)) return std::nullopt;
+    return history.document.charts.front().bpms.front().beats_per_minute;
+}
+
+auto rejects_locked_anchor_snap() -> bool {
+    auto song = bpm_song();
+    song.charts.front().timing_anchors.push_back({.id = object_id_t{11},
+        .position = {measure_id_t{3}, 720}, .source_sample_frame = 72'000, .locked = true});
+    if (!validate_document(song).empty()) return false;
+    auto history = make_document_history(std::move(song));
+    const auto begun = begin_beat_interval_drag(history.document, chart_id_t{2}, object_id_t{10},
+        {measure_id_t{3}, 240}, 48'000);
+    if (!begun) return false;
+    const auto frame_fit = update_beat_interval_drag(history.document, *begun.drag, 24'000);
+    if (!frame_fit) return false;
+    if (update_beat_interval_drag_to_bpm(history.document, *frame_fit.drag, {100, 1}))
+        return false;
+    auto unsafe = *frame_fit.drag;
+    unsafe.proposed_bpm = {100, 1};
+    unsafe.proposed_sample_frame = 28'800;
+    unsafe.snap_active = true;
+    unsafe.snap_step = {50, 1};
+    const auto revision = history.document.revision;
+    const auto original_bpm = history.document.charts.front().bpms.front().beats_per_minute;
+    const auto committed = commit_beat_interval_drag(history, unsafe);
+    return !committed && history.document.revision == revision &&
+           history.document.charts.front().bpms.front().beats_per_minute == original_bpm;
+}
+
 } // namespace
 
 TEST_CASE("BPM text parsing is decimal-first and retains a lossless fraction",
@@ -104,6 +148,29 @@ TEST_CASE("interval beat drag previews by source frame and commits one undoable 
     const auto stale = commit_beat_interval_drag(history, *proposed.drag);
     CHECK_FALSE(stale);
     CHECK(has_code(stale, diagnostic_code_t::invalid_id));
+}
+
+TEST_CASE("beat fit snap retains the exact selected rational step",
+          "[unit][core][bpm-editor][beat-fit]") {
+    CHECK(quantize_bpm({493, 2}, {1, 4}) == signed_rational_t{493, 2});
+    CHECK(quantize_bpm({493, 3}, {1, 3}) == signed_rational_t{493, 3});
+    CHECK(quantize_bpm({493, 5}, {1, 4}) == signed_rational_t{197, 2});
+    CHECK(quantize_bpm({493, 5}, {1, 3}) == signed_rational_t{296, 3});
+    CHECK_FALSE(quantize_bpm({std::numeric_limits<std::int64_t>::max(), 1},
+                             {std::numeric_limits<std::int64_t>::max(),
+                              std::numeric_limits<std::uint64_t>::max()}));
+}
+
+TEST_CASE("snapped beat-fit commit writes the exact fractional BPM to history",
+          "[unit][core][bpm-editor][beat-fit]") {
+    const auto committed = commit_snapped_fit({1, 3});
+    REQUIRE(committed);
+    CHECK(quantize_bpm(*committed, {1, 3}) == committed);
+}
+
+TEST_CASE("snapped beat-fit revalidates locked timing anchors at commit",
+          "[unit][core][bpm-editor][beat-fit][timing-anchor]") {
+    CHECK(rejects_locked_anchor_snap());
 }
 
 TEST_CASE("BPM insert update and delete are undoable and retain exact identity and source order",

@@ -116,6 +116,8 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t beat_fit_asset_id{};
     std::uint32_t beat_fit_sample_rate{};
     float beat_fit_anchor_screen_y{};
+    std::uint8_t beat_fit_snap_step_index{};
+    bool beat_fit_ctrl_held{};
     float waveform_beat_zero_drag_anchor_y{};
     float waveform_beat_zero_drag_height{};
     std::uint64_t waveform_beat_zero_drag_total_frames{};

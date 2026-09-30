@@ -1,4 +1,6 @@
+#include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/formats/native_project.h>
 #include <wormedit/formats/stepmania.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -158,6 +160,41 @@ auto unsafe_stepmania_music_is_retained_unbound() -> bool {
     return first != std::string::npos && written.text->find(retained, first + 1) == std::string::npos;
 }
 
+auto sm_source_orders_allow_history_and_native_roundtrip(std::string_view source) -> bool {
+    wormedit::stepmania_parse_options_t options;
+    options.profile = wormedit::stepmania_profile_t::sm;
+    const auto parsed = wormedit::parse_stepmania_bytes(
+        std::as_bytes(std::span{source.data(), source.size()}), options);
+    if (!parsed.song || parsed.song->charts.size() != 1 ||
+        !wormedit::validate_document(*parsed.song).empty()) return false;
+    auto bpm_history = wormedit::make_document_history(*parsed.song);
+    const auto bpm_revision = bpm_history.document.revision;
+    const auto& bpm = bpm_history.document.charts.front().bpms.front();
+    const auto bpm_edit = wormedit::apply_bpm_edit(bpm_history, bpm_revision,
+        wormedit::update_bpm_event_action_t{bpm_history.document.charts.front().id,
+                                            bpm.id, bpm.position, {110, 1}});
+    if (!bpm_edit || bpm_history.document.revision != bpm_revision + 1 ||
+        !wormedit::undo_document_command(bpm_history)) return false;
+
+    auto drag_history = wormedit::make_document_history(*parsed.song);
+    const auto drag_revision = drag_history.document.revision;
+    const auto& chart = drag_history.document.charts.front();
+    const auto begun = wormedit::begin_beat_interval_drag(drag_history.document, chart.id,
+        chart.bpms.front().id, {chart.measures.front().id, 240}, 48'000);
+    if (!begun) return false;
+    const auto proposal = wormedit::update_beat_interval_drag(
+        drag_history.document, *begun.drag, 48'000);
+    if (!proposal) return false;
+    const auto committed = wormedit::commit_beat_interval_drag(drag_history, *proposal.drag);
+    if (!committed || drag_history.document.revision != drag_revision + 1 ||
+        !wormedit::undo_document_command(drag_history) ||
+        drag_history.document.charts.front().bpms.front().beats_per_minute !=
+            wormedit::signed_rational_t{120, 1}) return false;
+    const auto native_bytes = wormedit::write_native_project(*parsed.song);
+    return native_bytes.bytes &&
+           wormedit::parse_native_project(*native_bytes.bytes).song.has_value();
+}
+
 } // namespace
 
 TEST_CASE("StepMania matched timing and chart notes parse transactionally",
@@ -206,6 +243,15 @@ TEST_CASE("StepMania matched timing and chart notes parse transactionally",
         CHECK(chart.warps.size() == 1);
         CHECK(chart.speeds.size() == 2);
     }
+}
+
+TEST_CASE("single-chart SM source orders validate and support undoable timing edits",
+          "[unit][format][stepmania][metadata][beat-fit]") {
+    constexpr std::string_view source =
+        "#MUSIC:song.ogg;#BPMS:0=120;#NOTES:\n"
+        "dance-single:\nTest:\nHard:\n5:\n0,0,0,0,0:\n"
+        "1000\n0000\n0000\n0000\n;";
+    CHECK(sm_source_orders_allow_history_and_native_roundtrip(source));
 }
 
 TEST_CASE("StepMania dance layouts fold step type case and map solo arrows",

@@ -752,6 +752,9 @@ typedef struct WormUiComposeView {
     uint64_t beat_fit_original_bpm_denominator;
     int64_t beat_fit_proposed_bpm_numerator;
     uint64_t beat_fit_proposed_bpm_denominator;
+    bool beat_fit_snap_active;
+    int64_t beat_fit_snap_step_numerator;
+    uint64_t beat_fit_snap_step_denominator;
     bool waveform_proposed_beat_zero_visible;
     double waveform_proposed_beat_zero_fraction;
     int64_t waveform_proposed_audio_offset_numerator;
@@ -1330,6 +1333,9 @@ typedef struct WormUiComposeInputAction {
     double x_pixels;
     double y_pixels;
     double audio_fraction;
+    bool beat_fit_ctrl_held;
+    int64_t beat_fit_snap_step_numerator;
+    uint64_t beat_fit_snap_step_denominator;
 } WormUiComposeInputAction;
 
 typedef enum WormUiComposeViewportInputKind {

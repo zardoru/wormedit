@@ -504,6 +504,9 @@ void populate_beat_fit_fields(WormUiComposeView& compose, const beat_interval_dr
     compose.beat_fit_original_bpm_denominator = drag.original_bpm.denominator;
     compose.beat_fit_proposed_bpm_numerator = drag.proposed_bpm.numerator;
     compose.beat_fit_proposed_bpm_denominator = drag.proposed_bpm.denominator;
+    compose.beat_fit_snap_active = drag.snap_active;
+    compose.beat_fit_snap_step_numerator = drag.snap_step.numerator;
+    compose.beat_fit_snap_step_denominator = drag.snap_step.denominator;
 }
 
 void rebuild_beat_fit_timing_index(compose_scene_cache_t& cache,

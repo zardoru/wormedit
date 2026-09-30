@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <charconv>
 #include <limits>
+#include <numeric>
 #include <ranges>
 #include <string>
 #include <type_traits>
@@ -445,17 +446,99 @@ auto update_beat_interval_drag(const song_document_t& document, const beat_inter
     return result;
 }
 
+auto update_beat_interval_drag_to_bpm(const song_document_t& document,
+                                      const beat_interval_drag_t& drag,
+                                      signed_rational_t target_bpm, bool timing_locked)
+    -> beat_interval_drag_result_t {
+    if (target_bpm.numerator <= 0 || target_bpm.denominator == 0) {
+        return {.diagnostics = {error(diagnostic_code_t::invalid_rational,
+                                      "BPM snap must produce a positive exact value")}};
+    }
+    const auto validated = update_beat_interval_drag(document, drag, drag.proposed_sample_frame,
+                                                     timing_locked);
+    if (!validated) return validated;
+    auto updated = *validated.drag;
+    auto chart = std::ranges::find(document.charts, drag.chart, &chart_document_t::id);
+    if (chart == document.charts.end()) return validated;
+    auto candidate = *chart;
+    auto bpm = std::ranges::find(candidate.bpms, drag.bpm_event, &bpm_event_t::id);
+    if (bpm == candidate.bpms.end()) return validated;
+    bpm->beats_per_minute = target_bpm;
+    const auto measures = build_measure_index(candidate);
+    if (!std::holds_alternative<measure_index_t>(measures))
+        return {.diagnostics = std::get<diagnostic_list_t>(measures)};
+    const auto beat_row = absolute_row(std::get<measure_index_t>(measures), drag.beat);
+    const auto timing = build_timing_index(candidate);
+    if (!beat_row || !timing) {
+        beat_interval_drag_result_t rejected;
+        rejected.diagnostics.push_back(error(
+            diagnostic_code_t::invalid_rational,
+            timing.diagnostics.empty() ? "Snapped beat timing is invalid"
+                                       : timing.diagnostics.front().message));
+        return rejected;
+    }
+    const auto at = timing_at(*timing.index, *beat_row);
+    const auto frame = at ? sample_frame_at(*at.seconds, drag.sample_rate,
+        sample_rounding_t::nearest_ties_to_even) : sample_frame_result_t{};
+    if (!frame) return {.diagnostics = {error(diagnostic_code_t::invalid_rational,
+        "Snapped beat target is outside the source frame range")}};
+    const auto anchor_row = absolute_row(std::get<measure_index_t>(measures), bpm->position);
+    for (const auto& anchor : chart->timing_anchors) {
+        if (!anchor.locked) continue;
+        const auto row = absolute_row(std::get<measure_index_t>(measures), anchor.position);
+        if (!row || !anchor_row || *row < *anchor_row) continue;
+        const auto anchor_timing = timing_at(*timing.index, *row);
+        const auto anchor_frame = anchor_timing
+            ? sample_frame_at(*anchor_timing.seconds, drag.sample_rate,
+                              sample_rounding_t::nearest_ties_to_even)
+            : sample_frame_result_t{};
+        if (!anchor_frame || *anchor_frame.frame != anchor.source_sample_frame) {
+            return {.diagnostics = {error(diagnostic_code_t::invalid_rational,
+                "Snapped beat fit would move a locked timing anchor")}};
+        }
+    }
+    updated.proposed_sample_frame = *frame.frame;
+    updated.proposed_bpm = target_bpm;
+    return {.drag = updated};
+}
+
+auto quantize_bpm(signed_rational_t bpm, signed_rational_t step)
+    -> std::optional<signed_rational_t> {
+    if (bpm.numerator <= 0 || bpm.denominator == 0 || step.numerator <= 0 ||
+        step.denominator == 0) return std::nullopt;
+    using wide_t = __int128_t;
+    const auto numerator = static_cast<wide_t>(bpm.numerator) * step.denominator;
+    const auto denominator = static_cast<wide_t>(bpm.denominator) * step.numerator;
+    auto multiples = numerator / denominator;
+    const auto remainder = numerator % denominator;
+    if (remainder >= denominator - remainder) ++multiples;
+    constexpr auto wide_max = static_cast<wide_t>((~static_cast<__uint128_t>(0)) >> 1);
+    if (multiples > wide_max / step.numerator) return std::nullopt;
+    const auto result_numerator = multiples * step.numerator;
+    if (result_numerator <= 0 || result_numerator > std::numeric_limits<std::int64_t>::max())
+        return std::nullopt;
+    const auto value = static_cast<std::int64_t>(result_numerator);
+    const auto divisor = std::gcd(static_cast<std::uint64_t>(value), step.denominator);
+    return signed_rational_t{value / static_cast<std::int64_t>(divisor),
+                             step.denominator / divisor};
+}
+
 auto commit_beat_interval_drag(document_history_t& history, const beat_interval_drag_t& drag,
                                bool timing_locked) -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    const auto updated = update_beat_interval_drag(history.document, drag,
-                                                   drag.proposed_sample_frame, timing_locked);
-    if (!updated || updated.drag->proposed_bpm != drag.proposed_bpm) {
+    const auto updated = drag.snap_active
+        ? update_beat_interval_drag_to_bpm(history.document, drag, drag.proposed_bpm,
+                                           timing_locked)
+        : update_beat_interval_drag(history.document, drag, drag.proposed_sample_frame,
+                                    timing_locked);
+    if (!updated) {
         result.diagnostics = updated.diagnostics;
-        if (result.diagnostics.empty()) {
-            result.diagnostics.push_back(
-                error(diagnostic_code_t::invalid_id, "beat fit proposal changed before commit"));
-        }
+        return result;
+    }
+    if (updated.drag->proposed_bpm != drag.proposed_bpm ||
+        updated.drag->proposed_sample_frame != drag.proposed_sample_frame) {
+        result.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
+                                          "beat fit proposal changed before commit"));
         return result;
     }
     return apply_bpm_edit(history, drag.document_revision,

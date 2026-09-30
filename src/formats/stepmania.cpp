@@ -22,6 +22,8 @@
 namespace wormedit {
 namespace {
 
+constexpr std::size_t sm_source_order_stride = 6;
+
 struct field_t {
     std::string key;
     std::string value;
@@ -551,9 +553,10 @@ auto as_metadata_group(const std::vector<field_t>& fields, stepmania_profile_t p
     group.ordered_field_source_orders.reserve(fields.size());
     for (const auto& field : fields) {
         group.ordered_fields.emplace_back(field.key, field.value);
-        group.ordered_field_source_orders.push_back(field.order);
+        group.ordered_field_source_orders.push_back(
+            profile == stepmania_profile_t::sm
+                ? field.order * sm_source_order_stride : field.order);
     }
-    (void)profile;
     return group;
 }
 
@@ -1044,14 +1047,16 @@ auto parse_one_chart(const chart_source_t& source, const std::vector<field_t>& s
     if (credit) chart.metadata.author = std::string(trim(credit->value));
     chart.metadata.format_groups.push_back(as_metadata_group(source.fields, profile, source_bytes));
     if (profile == stepmania_profile_t::sm) {
-        const auto order = note_field ? note_field->order : chart_index;
+        const auto order = (note_field ? note_field->order : chart_index) *
+                           sm_source_order_stride;
         auto& group = chart.metadata.format_groups.back();
         group.ordered_fields.emplace_back("STEPSTYPE", step_type);
         group.ordered_fields.emplace_back("DESCRIPTION", description);
         group.ordered_fields.emplace_back("DIFFICULTY", difficulty);
         group.ordered_fields.emplace_back("METER", meter_text);
         group.ordered_fields.emplace_back("RADARVALUES", radar);
-        group.ordered_field_source_orders.insert(group.ordered_field_source_orders.end(), 5, order);
+        for (std::size_t subfield = 1; subfield <= 5; ++subfield)
+            group.ordered_field_source_orders.push_back(order + subfield);
     }
     if (const auto rating = decimal_rational(meter_text); rating && rating->numerator >= 0)
         chart.metadata.rating = *rating;

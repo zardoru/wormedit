@@ -9,6 +9,8 @@
 #define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
 #define NK_INCLUDE_FONT_BAKING
 #define NK_INCLUDE_DEFAULT_FONT
+// The Compose toolbar lays out view, offset, snap, and BGM controls in one template row.
+#define NK_MAX_LAYOUT_ROW_TEMPLATE_COLUMNS 24
 
 #include <nuklear.h>
 

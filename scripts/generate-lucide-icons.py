@@ -15,7 +15,8 @@ NAMES = (
     "zoom-in", "zoom-out", "panel-right-open", "panel-right-close",
     "rotate-ccw", "paintbrush", "chevron-left", "chevron-right",
     "play", "pause", "square", "eye", "minus", "maximize",
-    "minimize-2", "x", "audio-lines", "layers",
+    "minimize-2", "x", "audio-lines", "layers", "chevrons-left",
+    "chevrons-right", "magnet",
 )
 
 

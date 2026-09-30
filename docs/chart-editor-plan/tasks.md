@@ -27,9 +27,10 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Global notifications: warnings and errors](tasks/notifications.md)
 - [Design system, left menu bar, and dockable list panels](tasks/panels-menus.md)
 - [GPU workload: Compose field renderer outside Nuklear](tasks/rendering.md)
+- [Options window and project chart management](tasks/options-charts.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-252.
+every number above T-263.
 
 ## Rules for whoever executes a card
 

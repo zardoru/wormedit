@@ -362,7 +362,7 @@ conditional optimization remains unproven.
 - **Evidence (T-211, 2026-09-30):** phases are exclusive (`frame_timing_t::enter` stops the previous phase). Average ms: workspace 18.773, render/present 27.641, scene 4.385, Nuklear 0.701, audio 0.233, events 0.064. CPU without render ≈ 24.2 ms, so 144 Hz is impossible regardless of GPU until workspace projection shrinks.
 - **Known waste (code reading):** `project_application_frame` (`src/sys/application_frame_projection.cpp`) forces `flattened.view.timing.visible = true` whenever Compose is visible and calls `populate_timing_view`, which builds the **whole-chart** Timing-tab projection every frame: `populate_speed_cache`, `populate_timing_grid_and_speeds` (grid lines and speed spans for the entire chart), an uncached `build_measure_index(chart)`, `populate_timing_markers` for every timing event, and the recipe/stage views; then it sets `visible = false`. The Compose frontend reads only `chart_id`, `document_revision`, `initial_bpm_*`, `stage_*`, and `sv_recipe` from that view (grep `timing_view` in `src/ui/nuklear/compose_*.cpp`).
 - **Read first:** `src/sys/application_frame_projection.cpp`, `src/sys/timing_view.cpp` (`populate_timing_view`), `src/sys/frame_timing.h/.cpp`, `src/sys/workspace_frame_view.cpp`, `src/sys/workspace_projection.cpp` (`flatten_workspace`).
-- **Files owned:** `src/sys/application_frame_projection.cpp/.h`, `src/sys/timing_view.cpp/.h`, `src/sys/frame_timing.h/.cpp`, `src/ui/nuklear/frontend.cpp` (overlay rows only), `tests/sys/frame_timing_tests.cpp`, `tests/ui/nuklear_timing_state_tests.cpp`.
+- **Files owned:** `src/sys/application_frame_projection.cpp/.h`, `src/sys/timing_view.cpp/.h`, `src/sys/frame_timing.h/.cpp`, `src/ui/nuklear/frontend.cpp` (overlay rows only), `src/ui/frontend.h` (timing-overlay contract), `src/sys/main.cpp` (audio phase timer only), `src/sys/sdl_audition_output.cpp` and `src/sys/sdl_preview_output.cpp` (pump timer scopes only; user-approved extensions, 2026-09-30), `src/sys/waveform_view_projection.cpp` and `src/sys/compose_view.h` (overview-cache storage and projection), `tests/CMakeLists.txt` (projection-test linkage; user-approved extensions, 2026-09-30), `tests/sys/frame_timing_tests.cpp`, `tests/ui/nuklear_timing_state_tests.cpp`.
 - **Steps:**
   1. Split the workspace phase into sub-phases shown indented in the overlay and the `WORMEDIT_FRAME_TIMING_REPORT` file: flatten, frame view (player preview presenter), metadata, audio waveform views, timing view, compose waveform detail + projection, waveform overlays, source playhead, BMSON projection. Also split "Audio service/pump" into service and pump (feeds T-212). Rerun the T-211 fixture and put the before table in the report.
   2. Add `populate_timing_view_for_compose` that fills only the fields Compose reads (chart id, revision, initial BPM, stage, recipe draft/preview) and skips speed cache, grid, speed spans, markers, and the measure index. Call it instead of the full function when the Timing tab is not active. Keep the full path for the Timing tab.
@@ -376,7 +376,7 @@ conditional optimization remains unproven.
 
 ## T-244 Use 32-bit Nuklear draw indices
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** dense frames (the 50,000-note fixture at 256 notes per measure that T-211 found tripping the 16-bit vertex-index assertion) render without assertions or missing geometry.
 - **Cause:** `include/wormedit/nuklear_config.h` does not define `NK_UINT_DRAW_INDEX`, so `nk_draw_index` is 16-bit and a single draw list overflows past 65,535 vertices; `src/ui/nuklear/frontend.cpp` also builds custom quads with `nk_draw_index`.
 - **Read first:** `include/wormedit/nuklear_config.h`, `src/ui/nuklear/frontend.cpp` (the custom quad code near `static_cast<nk_draw_index>` and the geometry submission), `src/sys/window.cpp` (renderer).
@@ -384,7 +384,7 @@ conditional optimization remains unproven.
 - **Steps:** 1. Define `NK_UINT_DRAW_INDEX` before including Nuklear everywhere (the config header is the single include point; grep for other `#include <nuklear.h>`). 2. Make the geometry submission pass 4-byte indices to SDL (`SDL_RenderGeometryRaw` with `size_indices = 4`). 3. A test that converts a synthetic command buffer with more than 70,000 vertices and checks index values.
 - **Invariants:** identical output for ordinary frames.
 - **Reject/failure behavior:** none.
-- **Verify:** standard build/test; the 256-notes-per-measure fixture no longer asserts; smoke PNG.
+- **Verify:** integrated application build passed; the synthetic conversion test passed with more than 70,000 vertices, in-range indices, and values above 65,535. The original 50,000-note, 256-notes-per-measure native fixture and ordinary Compose frame rendered successfully in isolated Xvfb with SDL dummy audio; both PNGs were inspected. Clang-tidy found no new complexity violations. The single config enables 32-bit indices; a frontend-local adapter forwards their actual width to SDL without changing the bundled backend.
 - **Out of scope:** reducing vertex count (T-245).
 
 ## T-245 Measure render/present on a real 144 Hz display

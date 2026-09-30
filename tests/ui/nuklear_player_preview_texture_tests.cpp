@@ -9,6 +9,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <cstddef>
 #include <array>
 #include <cstdint>
 #include <cstdlib>
@@ -197,4 +199,51 @@ TEST_CASE("player preview validates event-linked video diagnostic invariants",
     layer.video_time_numerator = 0;
     layer.video_time_denominator = 0;
     CHECK_FALSE(worm_ui_nuklear_player_preview_view_valid(&view));
+}
+
+namespace {
+auto validate_draw_indices(const nk_draw_index* values, std::size_t count,
+                            std::size_t vertex_count) -> nk_draw_index {
+    REQUIRE(count > 0);
+    REQUIRE(std::all_of(values, values + count, [vertex_count](nk_draw_index value) {
+        return value < vertex_count;
+    }));
+    return *std::max_element(values, values + count);
+}
+} // namespace
+
+TEST_CASE("Nuklear converts dense geometry with indices above 65535", "[unit][frontend][draw-index]") {
+    static_assert(sizeof(nk_draw_index) == 4);
+    struct vertex_t { float position[2]; float uv[2]; nk_byte color[4]; };
+    static const nk_draw_vertex_layout_element layout[]{
+        {NK_VERTEX_POSITION, NK_FORMAT_FLOAT, offsetof(vertex_t, position)},
+        {NK_VERTEX_TEXCOORD, NK_FORMAT_FLOAT, offsetof(vertex_t, uv)},
+        {NK_VERTEX_COLOR, NK_FORMAT_R8G8B8A8, offsetof(vertex_t, color)},
+        {NK_VERTEX_LAYOUT_END}};
+    nk_user_font font{};
+    font.height = 13;
+    font.width = [](nk_handle, float, const char*, int length) { return length * 8.0f; };
+    nk_context context{};
+    REQUIRE(nk_init_default(&context, &font));
+    REQUIRE(nk_begin(&context, "dense", nk_rect(0, 0, 1000, 1000), NK_WINDOW_NO_SCROLLBAR));
+    auto* canvas = nk_window_get_canvas(&context);
+    for (int index = 0; index < 18000; ++index)
+        nk_fill_rect(canvas, nk_rect(10 + index % 250 * 3, 10 + index / 250 * 3, 2, 2),
+                     0, nk_rgb(255, 255, 255));
+    nk_end(&context);
+    nuklear_buffer_t commands, vertices, indices;
+    nk_convert_config config{};
+    config.vertex_layout = layout;
+    config.vertex_size = sizeof(vertex_t);
+    config.vertex_alignment = alignof(vertex_t);
+    config.global_alpha = 1.0f;
+    config.shape_AA = NK_ANTI_ALIASING_OFF;
+    config.line_AA = NK_ANTI_ALIASING_OFF;
+    REQUIRE(nk_convert(&context, &commands.value, &vertices.value, &indices.value, &config) == NK_CONVERT_SUCCESS);
+    const auto vertex_count = vertices.value.allocated / sizeof(vertex_t);
+    REQUIRE(vertex_count > 70000);
+    const auto index_count = indices.value.allocated / sizeof(nk_draw_index);
+    const auto* values = static_cast<const nk_draw_index*>(nk_buffer_memory_const(&indices.value));
+    CHECK(validate_draw_indices(values, index_count, vertex_count) > 70000);
+    nk_free(&context);
 }

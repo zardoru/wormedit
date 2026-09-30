@@ -24,7 +24,19 @@
 #include <wormedit/formats/bms.h>
 
 #include <SDL3/SDL.h>
+// The bundled SDL adapter hardcodes 16-bit indices. Keep its conversion/render
+// implementation, but submit the configured Nuklear index width to SDL.
+static_assert(sizeof(nk_draw_index) == 4);
+static bool render_nuklear_geometry_raw(SDL_Renderer* renderer, SDL_Texture* texture,
+    const float* xy, int xy_stride, const SDL_FColor* colors, int color_stride,
+    const float* uv, int uv_stride, int vertex_count, const void* indices,
+    int index_count, int) {
+    return SDL_RenderGeometryRaw(renderer, texture, xy, xy_stride, colors, color_stride,
+        uv, uv_stride, vertex_count, indices, index_count, sizeof(nk_draw_index));
+}
+#define SDL_RenderGeometryRaw render_nuklear_geometry_raw
 #include <demo/sdl3_renderer/nuklear_sdl3_renderer.h>
+#undef SDL_RenderGeometryRaw
 
 #include <SDL3/SDL_keyboard.h>
 

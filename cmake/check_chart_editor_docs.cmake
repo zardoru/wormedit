@@ -38,6 +38,7 @@ set(plan_slices
     docs/chart-editor-plan/tasks/notifications.md
     docs/chart-editor-plan/tasks/panels-menus.md
     docs/chart-editor-plan/tasks/rendering.md
+    docs/chart-editor-plan/tasks/options-charts.md
     docs/chart-editor-plan/decisions.md
     docs/chart-editor-plan/decisions/open-questions.md
     docs/references/osu-mania-version-profiles.md
@@ -244,6 +245,7 @@ set(task_card_files
     docs/chart-editor-plan/tasks/notifications.md
     docs/chart-editor-plan/tasks/panels-menus.md
     docs/chart-editor-plan/tasks/rendering.md
+    docs/chart-editor-plan/tasks/options-charts.md
 )
 set(task_card_fields Status Outcome "Read first" "Files owned" Steps Invariants
     "Reject/failure behavior" Verify "Out of scope")

@@ -47,7 +47,9 @@ void service_chart_preview(sdl_preview_output_t& output,
         return;
     if (serviced->silenced_voices > 0) {
         status = "Silenced " + std::to_string(serviced->silenced_voices) +
-                 " keysound(s) that were not decoded in time.";
+                 (serviced->silenced_music_voices > 0
+                      ? " preview voice(s), including music, that were not decoded in time."
+                      : " preview voice(s) that were not decoded in time.");
     }
     if (*serviced)
         return;

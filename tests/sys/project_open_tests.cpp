@@ -3,8 +3,10 @@
 
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bms_writer.h>
+#include <wormedit/formats/stepmania.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/native_project_storage.h>
+#include <wormedit/core/workspace.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -88,6 +90,43 @@ void check_single_audio_asset(const wormedit::sys::project_open_result_t& opened
     CHECK(opened.document->resources.front().name == authored_name);
 }
 
+auto opened_stepmania_music_is_selected() -> bool {
+    const auto opened = wormedit::sys::open_project_file(
+        fixture("stepmania", "matched-timing.sm"));
+    if (!opened.document || opened.document->audio_assets.size() != 1 ||
+        opened.document->resources.size() != 1)
+        return false;
+    const auto& resource = opened.document->resources.front();
+    if (opened.document->audio_assets.front().source_path != "fixture.ogg" ||
+        resource.roles.size() != 1 || resource.roles.front() != wormedit::resource_role_t::music)
+        return false;
+    const auto binding = wormedit::make_workspace_controller(*opened.document);
+    return binding.workspace &&
+           binding.workspace->transport.audio_asset == opened.document->audio_assets.front().id;
+}
+
+auto stepmania_music_case_fallback_exports_resolved_path() -> bool {
+    temporary_project_directory_t temporary;
+    const auto chart_path = temporary.path / "case.sm";
+    {
+        std::ofstream music(temporary.path / "song.ogg", std::ios::binary);
+        music.put('\0');
+        std::ofstream chart(chart_path, std::ios::binary);
+        chart << "#MUSIC:Song.OGG;#BPMS:0=120;#NOTES:\n"
+                 "dance-single:\nTest:\nHard:\n5:\n0,0,0,0,0:\n1000\n0000\n0000\n0000\n;";
+    }
+    const auto opened = wormedit::sys::open_project_file(chart_path);
+    if (!opened.document || opened.document->audio_assets.size() != 1 ||
+        opened.document->resources.size() != 1 ||
+        opened.document->audio_assets.front().source_path != "song.ogg" ||
+        opened.document->resources.front().missing ||
+        opened.document->resources.front().target_identities.empty() ||
+        opened.document->resources.front().target_identities.front().identifier != "Song.OGG")
+        return false;
+    const auto written = wormedit::write_stepmania(*opened.document);
+    return written.text && written.text->find("#MUSIC:song.ogg;") != std::string::npos;
+}
+
 } // namespace
 
 TEST_CASE("opening chart files keeps their source directory and leaves them unsaved",
@@ -138,6 +177,16 @@ TEST_CASE("opened chart resolves audio beside its source before a native project
     CHECK(opened.asset_base == temporary.path);
     CHECK(std::filesystem::exists(opened.asset_base /
                                   opened.document->audio_assets.front().source_path));
+}
+
+TEST_CASE("opened StepMania music becomes the selected transport asset",
+          "[integration][sys][project-open][stepmania-audio]") {
+    CHECK(opened_stepmania_music_is_selected());
+}
+
+TEST_CASE("StepMania music path fallback clears missing and exports resolved spelling",
+          "[integration][sys][project-open][stepmania-audio]") {
+    CHECK(stepmania_music_case_fallback_exports_resolved_path());
 }
 
 TEST_CASE("BMS audio fallback finds a differently cased Ogg beside its chart",

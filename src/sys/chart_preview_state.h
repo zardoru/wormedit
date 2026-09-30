@@ -23,12 +23,14 @@ struct chart_preview_t {
     std::vector<audio::preview_object_source_binding_t> bindings;
     std::optional<chart_id_t> chart;
     std::uint64_t revision{};
+    std::optional<asset_id_t> music_asset;
     std::uint64_t resume_frame{};
     std::uint64_t end_frame{};
     std::size_t skipped_unavailable_audio_objects{};
     bool paused{};
 
-    [[nodiscard]] bool reusable(chart_id_t chart_id, std::uint64_t document_revision) const;
+    [[nodiscard]] bool reusable(chart_id_t chart_id, std::uint64_t document_revision,
+                                std::optional<asset_id_t> selected_music_asset) const;
     [[nodiscard]] bool matches_selection(const song_document_t& document,
                                          const workspace_controller_t& workspace) const;
     [[nodiscard]] auto compile_if_needed(

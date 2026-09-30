@@ -787,6 +787,11 @@ auto make_workspace_controller(const song_document_t& document, workspace_limits
     if (!document.charts.empty()) {
         workspace.selected_chart = document.charts.front().id;
     }
+    const auto music = std::ranges::find_if(document.resources, [](const auto& resource) {
+        return std::ranges::find(resource.roles, resource_role_t::music) != resource.roles.end();
+    });
+    if (music != document.resources.end() && find_audio_asset(document, music->asset))
+        workspace.transport.audio_asset = music->asset;
     workspace.comparison_charts =
         default_comparison_charts(document, limits.maximum_comparison_charts);
     result.workspace = std::move(workspace);

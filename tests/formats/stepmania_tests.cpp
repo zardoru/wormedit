@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -68,6 +69,95 @@ auto roundtrip(const wormedit::song_document_t& song, wormedit::stepmania_profil
         std::as_bytes(std::span{output.text->data(), output.text->size()}), options);
 }
 
+auto has_dance_single_arrows(const wormedit::chart_document_t& chart) -> bool {
+    if (chart.lane_layouts.empty()) return false;
+    const auto& lanes = chart.lane_layouts.front().layout.lanes;
+    return lanes.size() == 4 && lanes[0].glyph == wormedit::lane_glyph_t::arrow_left &&
+           lanes[1].glyph == wormedit::lane_glyph_t::arrow_down &&
+           lanes[2].glyph == wormedit::lane_glyph_t::arrow_up &&
+           lanes[3].glyph == wormedit::lane_glyph_t::arrow_right;
+}
+
+auto sm_music_round_trips_once() -> bool {
+    constexpr std::string_view source =
+        "#MUSIC:music\\song.ogg;#OFFSET:0.125;#BPMS:0=120;#NOTES:\n"
+        "dance-single:\nTest:\nHard:\n5:\n0,0,0,0,0:\n1000\n0000\n0000\n0000\n;";
+    auto options = wormedit::stepmania_parse_options_t{};
+    options.profile = wormedit::stepmania_profile_t::sm;
+    const auto parsed = wormedit::parse_stepmania_bytes(
+        std::as_bytes(std::span{source.data(), source.size()}), options);
+    if (!parsed.song || parsed.song->resources.size() != 1 ||
+        parsed.song->audio_assets.size() != 1)
+        return false;
+    const auto& resource = parsed.song->resources.front();
+    if (resource.name != "music\\song.ogg" || resource.roles.size() != 1 ||
+        resource.roles.front() != wormedit::resource_role_t::music ||
+        parsed.song->audio_assets.front().source_path != "music/song.ogg" ||
+        parsed.song->charts.empty() ||
+        parsed.song->charts.front().beat_zero_audio_offset_seconds !=
+            wormedit::signed_rational_t{-1, 8})
+        return false;
+    const auto written = wormedit::write_stepmania(
+        *parsed.song, {.profile = wormedit::stepmania_profile_t::sm});
+    if (!written.text || written.text->find("#MUSIC:music\\song.ogg;") == std::string::npos)
+        return false;
+    const auto first_music = written.text->find("#MUSIC:");
+    if (written.text->find("#MUSIC:", first_music + 1) != std::string::npos)
+        return false;
+    const auto round_tripped = wormedit::parse_stepmania_bytes(
+        std::as_bytes(std::span{written.text->data(), written.text->size()}), options);
+    return round_tripped.song && round_tripped.song->resources.size() == 1 &&
+           round_tripped.song->audio_assets.size() == 1 &&
+           round_tripped.song->audio_assets.front().source_path == "music/song.ogg";
+}
+
+auto dance_layout_case_folding_and_solo_glyphs() -> bool {
+    constexpr std::string_view single =
+        "#BPMS:0=120;#NOTES:\nDANCE-SINGLE:\nTest:\nHard:\n5:\n0,0,0,0,0:\n"
+        "1000\n0000\n0000\n0000\n;";
+    const auto parsed_single = wormedit::parse_stepmania_bytes(
+        std::as_bytes(std::span{single.data(), single.size()}));
+    if (!parsed_single.song || !has_dance_single_arrows(parsed_single.song->charts.front()))
+        return false;
+    constexpr std::string_view solo =
+        "#BPMS:0=120;#NOTES:\ndance-solo:\nTest:\nHard:\n5:\n0,0,0,0,0,0:\n"
+        "100000\n000000\n000000\n000000\n;";
+    const auto parsed_solo = wormedit::parse_stepmania_bytes(
+        std::as_bytes(std::span{solo.data(), solo.size()}));
+    if (!parsed_solo.song) return false;
+    const auto& lanes = parsed_solo.song->charts.front().lane_layouts.front().layout.lanes;
+    constexpr std::array expected{wormedit::lane_glyph_t::arrow_left,
+                                  wormedit::lane_glyph_t::bar,
+                                  wormedit::lane_glyph_t::arrow_down,
+                                  wormedit::lane_glyph_t::arrow_up,
+                                  wormedit::lane_glyph_t::bar,
+                                  wormedit::lane_glyph_t::arrow_right};
+    return lanes.size() == expected.size() &&
+           std::ranges::equal(lanes, expected, {}, &wormedit::lane_definition_t::glyph);
+}
+
+auto unsafe_stepmania_music_is_retained_unbound() -> bool {
+    constexpr std::string_view source =
+        "#MUSIC:../outside.ogg;#BPMS:0=120;#NOTES:\n"
+        "dance-single:\nTest:\nHard:\n5:\n0,0,0,0,0:\n1000\n0000\n0000\n0000\n;";
+    const auto parsed = wormedit::parse_stepmania_bytes(
+        std::as_bytes(std::span{source.data(), source.size()}));
+    if (!parsed.song || !parsed.song->resources.empty() || !parsed.song->audio_assets.empty())
+        return false;
+    const auto group = std::ranges::find(parsed.song->metadata.format_groups,
+                                         wormedit::format_family_t::stepmania,
+                                         &wormedit::format_metadata_t::family);
+    if (group == parsed.song->metadata.format_groups.end()) return false;
+    const auto music = std::ranges::find(group->ordered_fields, std::string{"MUSIC"},
+                                         &std::pair<std::string, std::string>::first);
+    if (music == group->ordered_fields.end() || music->second != "../outside.ogg") return false;
+    const auto written = wormedit::write_stepmania(*parsed.song);
+    if (!written.text) return false;
+    constexpr std::string_view retained = "#MUSIC:../outside.ogg;";
+    const auto first = written.text->find(retained);
+    return first != std::string::npos && written.text->find(retained, first + 1) == std::string::npos;
+}
+
 } // namespace
 
 TEST_CASE("StepMania matched timing and chart notes parse transactionally",
@@ -101,6 +191,7 @@ TEST_CASE("StepMania matched timing and chart notes parse transactionally",
         CHECK(chart.measures.size() == 3);
         CHECK(chart.measures[0].notes.size() == 3);
         CHECK(chart.measures[1].notes.size() == 1);
+        CHECK(has_dance_single_arrows(chart));
     }
     SECTION("SSC song fields and chart block remain separately addressable") {
         const auto result = fixture("matched-timing.ssc", wormedit::stepmania_profile_t::ssc);
@@ -115,6 +206,42 @@ TEST_CASE("StepMania matched timing and chart notes parse transactionally",
         CHECK(chart.warps.size() == 1);
         CHECK(chart.speeds.size() == 2);
     }
+}
+
+TEST_CASE("StepMania dance layouts fold step type case and map solo arrows",
+          "[unit][format][stepmania][layout]") {
+    CHECK(dance_layout_case_folding_and_solo_glyphs());
+}
+
+TEST_CASE("SM MUSIC imports once and round-trips as the modeled music resource",
+          "[unit][format][stepmania][resource]") {
+    CHECK(sm_music_round_trips_once());
+}
+
+TEST_CASE("unsafe StepMania MUSIC is retained as metadata without binding a resource",
+          "[unit][format][stepmania][resource]") {
+    CHECK(unsafe_stepmania_music_is_retained_unbound());
+}
+
+TEST_CASE("StepMania writer omits removed MUSIC and emits retained MUSIC once",
+          "[unit][format][stepmania][resource]") {
+    constexpr std::string_view source =
+        "#MUSIC:song.ogg;#BPMS:0=120;#NOTES:\n"
+        "dance-single:\nTest:\nHard:\n5:\n0,0,0,0,0:\n1000\n0000\n0000\n0000\n;";
+    auto parsed = wormedit::parse_stepmania_bytes(
+        std::as_bytes(std::span{source.data(), source.size()}));
+    REQUIRE(parsed.song);
+    auto& song = *parsed.song;
+    const auto unchanged = wormedit::write_stepmania(song);
+    REQUIRE(unchanged.text);
+    CHECK(unchanged.text->find("#MUSIC:song.ogg;") != std::string::npos);
+    const auto music_at = unchanged.text->find("#MUSIC:");
+    CHECK(unchanged.text->find("#MUSIC:", music_at + 1) == std::string::npos);
+    song.resources.clear();
+    song.audio_assets.clear();
+    const auto removed = wormedit::write_stepmania(song);
+    REQUIRE(removed.text);
+    CHECK(removed.text->find("#MUSIC:") == std::string::npos);
 }
 
 TEST_CASE("StepMania fixture preserves 5.1 same-row timing phases",

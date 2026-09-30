@@ -92,6 +92,8 @@ auto mix_voice(transport_mix_context_t& context, const transport_voice_t& voice)
         if (!found || available != window.requested) {
             ++context.result.missing_blocks;
             ++context.result.dropped_voices;
+            if (voice.kind == voice_kind_t::music)
+                ++context.result.dropped_music_voices;
             return true;
         }
         timeline_frame += window.requested;
@@ -254,6 +256,7 @@ auto transport_t::mix(session_token_t token, std::uint64_t first_timeline_frame,
         result.voices_mixed = 0;
         result.missing_blocks = 0;
         result.dropped_voices = 0;
+        result.dropped_music_voices = 0;
         result.clipped_samples = 0;
     }
     return result;

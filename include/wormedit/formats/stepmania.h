@@ -3,6 +3,7 @@
 #include <wormedit/formats/conversion.h>
 
 #include <cstddef>
+#include <filesystem>
 #include <optional>
 #include <span>
 #include <string>
@@ -49,6 +50,7 @@ struct stepmania_parse_options_t {
     std::size_t max_events{500'000};
     std::size_t max_measures{65'536};
     std::uint64_t max_divisions_per_standard_measure{1'000'000};
+    std::optional<std::filesystem::path> asset_base_directory;
 };
 
 struct stepmania_parse_result_t {

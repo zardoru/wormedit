@@ -249,6 +249,30 @@ void resolve_bms_audio_assets(song_document_t& document,
     }
 }
 
+void resolve_stepmania_music(song_document_t& document,
+                             const std::filesystem::path& asset_base,
+                             std::vector<std::string>& warnings) {
+    bms_audio_directory_cache_t cache;
+    for (auto& resource : document.resources) {
+        if (std::ranges::find(resource.roles, resource_role_t::music) == resource.roles.end())
+            continue;
+        const auto asset = std::ranges::find(document.audio_assets, resource.asset,
+                                             &audio_asset_t::id);
+        if (asset == document.audio_assets.end()) continue;
+        std::string warning;
+        const auto actual = existing_bms_audio_path(asset->source_path, asset_base, cache, warning);
+        if (!warning.empty()) {
+            auto label = warning.find("BMS");
+            if (label != std::string::npos) warning.replace(label, 3, "StepMania");
+            warnings.push_back(std::move(warning));
+        }
+        if (actual) {
+            asset->source_path = *actual;
+            resource.missing = false;
+        }
+    }
+}
+
 template <typename ParseResult>
 void take_parsed_document(ParseResult parsed, std::string_view format,
                           project_open_result_t& result) {
@@ -299,8 +323,11 @@ void parse_selected_file(std::string_view extension, const std::string& source,
         auto options = stepmania_parse_options_t{};
         options.profile = extension == ".ssc" ? stepmania_profile_t::ssc
                                                 : stepmania_profile_t::sm;
+        options.asset_base_directory = result.asset_base;
         take_parsed_document(parse_stepmania_bytes(bytes, std::move(options)),
                              "StepMania chart", result);
+        if (result.document)
+            resolve_stepmania_music(*result.document, result.asset_base, result.warnings);
     } else if (extension == ".osu") {
         auto options = osu_mania_parse_options_t{};
         options.asset_base_directory = result.asset_base;

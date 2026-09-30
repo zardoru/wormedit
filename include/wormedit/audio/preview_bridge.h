@@ -114,6 +114,10 @@ class preview_transport_bridge_t {
     preview_queue_head_t playable_head_;
     preview_queue_head_t bgm_head_;
     preview_queue_head_t metronome_head_;
+    bool music_pending_{};
+    std::uint64_t music_timeline_frame_{};
+    std::uint64_t music_source_frame_{};
+    std::uint64_t music_frame_count_{};
     std::optional<session_token_t> token_;
     std::uint64_t next_voice_id_{1};
     std::uint64_t last_materialized_end_{};

@@ -265,6 +265,8 @@ TEST_CASE("conversion rewrites an osu!mania music path from a staged asset",
 TEST_CASE("StepMania conversion writes a staged music path for SM and SSC",
           "[unit][format][conversion]") {
     auto song = stepmania_song();
+    song.resources.clear();
+    song.audio_assets.clear();
     song.charts.front().scrolls.clear();
     song.charts.front().speeds.clear();
     song.charts.front().warps.clear();

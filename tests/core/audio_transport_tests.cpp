@@ -72,6 +72,23 @@ auto transport_drops_missing_voice_without_affecting_other_voices() -> bool {
            transport.scheduled_voice_count() == 0 && later_output[0] == 0.25F;
 }
 
+auto transport_counts_dropped_music_voices_by_kind() -> bool {
+    using namespace wormedit::audio;
+    decoded_block_cache_t blocks;
+    transport_t transport{blocks, 1};
+    const auto token = transport.start();
+    if (!token) return false;
+    const std::array voices{transport_voice_t{.id = 1,
+                                              .kind = voice_kind_t::music,
+                                              .source = source("missing-music.ogg"),
+                                              .frame_count = 64}};
+    if (transport.schedule_voices(*token, voices) != voice_schedule_status_t::scheduled)
+        return false;
+    std::vector<float> output(64U * output_channel_count);
+    const auto mixed = transport.mix(*token, 0, output);
+    return mixed.dropped_voices == 1 && mixed.dropped_music_voices == 1;
+}
+
 } // namespace
 
 TEST_CASE("transport mixes same-frame keysound polyphony from decoded cache blocks",
@@ -225,6 +242,10 @@ TEST_CASE("transport reports missing source blocks without emitting garbage",
 TEST_CASE("transport drops a voice at its first missing block without affecting other voices",
           "[unit][audio][transport][underrun]") {
     CHECK(transport_drops_missing_voice_without_affecting_other_voices());
+}
+
+TEST_CASE("transport identifies dropped music voices by kind", "[unit][audio][transport][underrun]") {
+    CHECK(transport_counts_dropped_music_voices_by_kind());
 }
 
 TEST_CASE("transport publishes layered voice batches atomically",

@@ -4,6 +4,7 @@
 #include <wormedit/core/sv_recipe.h>
 
 #include <algorithm>
+#include <cctype>
 #include <array>
 #include <cctype>
 #include <charconv>
@@ -454,6 +455,20 @@ auto make_layout(std::string step_type, std::uint32_t count, id_source_t& ids) -
     layout.display_name = step_type;
     static constexpr std::array<std::string_view, 10> dance_names{
         "Left", "Down", "Up", "Right", "Left 2", "Down 2", "Up 2", "Right 2", "Center", "Diagonal"};
+    auto folded_step_type = step_type;
+    std::ranges::transform(folded_step_type, folded_step_type.begin(), [](unsigned char value) {
+        return static_cast<char>(std::tolower(value));
+    });
+    const bool cardinal_dance = folded_step_type == "dance-single" ||
+                                folded_step_type == "dance-double" ||
+                                folded_step_type == "dance-couple";
+    const bool dance_solo = folded_step_type == "dance-solo";
+    static constexpr std::array<lane_glyph_t, 4> dance_arrows{
+        lane_glyph_t::arrow_left, lane_glyph_t::arrow_down,
+        lane_glyph_t::arrow_up, lane_glyph_t::arrow_right};
+    static constexpr std::array<lane_glyph_t, 6> solo_arrows{
+        lane_glyph_t::arrow_left, lane_glyph_t::bar, lane_glyph_t::arrow_down,
+        lane_glyph_t::arrow_up, lane_glyph_t::bar, lane_glyph_t::arrow_right};
     for (std::uint32_t i = 0; i < count; ++i) {
         layout.lanes.push_back(
             {.id = ids.take<lane_id_t>(),
@@ -462,12 +477,66 @@ auto make_layout(std::string step_type, std::uint32_t count, id_source_t& ids) -
              .role = lane_role_t::playable,
              .stage = count > 4 && i >= count / 2 ? stage_group_t::right : stage_group_t::left,
              .display_order = i,
-             .glyph = lane_glyph_t::bar});
+             .glyph = cardinal_dance ? dance_arrows[i % dance_arrows.size()]
+                       : dance_solo && count == solo_arrows.size() ? solo_arrows[i]
+                                                                   : lane_glyph_t::bar});
     }
     layout.split_stage = count == 8 || count == 10;
     if (layout.split_stage)
         layout.split_after_column = count / 2;
     return layout;
+}
+
+auto stepmania_relative_path(std::string_view value) -> std::optional<std::filesystem::path> {
+    if (value.empty() || value.find('\0') != std::string_view::npos)
+        return std::nullopt;
+    std::string normalized(value);
+    std::ranges::replace(normalized, '\\', '/');
+    if (normalized.front() == '/' ||
+        (normalized.size() >= 2 &&
+         ((normalized[0] >= 'A' && normalized[0] <= 'Z') ||
+          (normalized[0] >= 'a' && normalized[0] <= 'z')) && normalized[1] == ':'))
+        return std::nullopt;
+    std::u8string utf8;
+    utf8.reserve(normalized.size());
+    for (const auto character : normalized)
+        utf8.push_back(static_cast<char8_t>(character));
+    auto path = std::filesystem::path(std::move(utf8));
+    if (path.is_absolute() || path.has_root_name() || path.has_root_directory() ||
+        path.filename().empty() ||
+        std::ranges::any_of(path, [](const auto& component) { return component == ".."; }))
+        return std::nullopt;
+    return path.lexically_normal();
+}
+
+void add_stepmania_music(const std::vector<field_t>& fields,
+                         const stepmania_parse_options_t& options,
+                         song_document_t& song, id_source_t& ids) {
+    const auto* music = last_field(fields, "MUSIC");
+    if (!music || trim(music->value).empty())
+        return;
+    const auto name = std::string(trim(music->value));
+    const auto path = stepmania_relative_path(name);
+    if (!path)
+        return;
+    std::error_code error;
+    const bool missing = !options.asset_base_directory ||
+                         !std::filesystem::exists(*options.asset_base_directory / *path, error) ||
+                         error;
+    const auto asset = ids.take<asset_id_t>();
+    const auto resource = ids.take<resource_id_t>();
+    song.audio_assets.push_back({.id = asset, .source_path = *path});
+    song.resources.push_back({.id = resource,
+                              .name = name,
+                              .asset = asset,
+                              .roles = {resource_role_t::music},
+                              .target_identities = {{format_family_t::stepmania, name,
+                                                     "audio-path"}},
+                              .missing = missing,
+                              .provenance = {format_family_t::stepmania,
+                                             options.profile == stepmania_profile_t::sm
+                                                 ? "sm" : "ssc",
+                                             "MUSIC", name, music->order}});
 }
 
 auto as_metadata_group(const std::vector<field_t>& fields, stepmania_profile_t profile,
@@ -1141,6 +1210,7 @@ auto parse_stepmania_document(std::span<const std::byte> bytes, std::string_view
     const auto source_bytes = std::make_shared<const std::vector<std::byte>>(bytes.begin(), bytes.end());
     auto song = make_stepmania_song(song_fields, options.profile, source_bytes);
     id_source_t ids;
+    add_stepmania_music(song_fields, options, song, ids);
     std::size_t total_events{};
     for (std::size_t index = 0; index < charts.size(); ++index)
         song.charts.push_back(parse_one_chart(charts[index], song_fields, options.profile,
@@ -2052,6 +2122,19 @@ struct stepmania_writer_t {
                    "Music resource has an unsafe audio asset path", "MUSIC");
             return std::nullopt;
         }
+        const auto authored = std::ranges::find_if(
+            music->target_identities, [](const auto& identity) {
+                return identity.family == format_family_t::stepmania &&
+                       identity.namespace_name == "audio-path";
+            });
+        auto normalized_authored_path = authored == music->target_identities.end()
+                                            ? std::string{}
+                                            : authored->identifier;
+        std::ranges::replace(normalized_authored_path, '\\', '/');
+        if (authored != music->target_identities.end() &&
+            music->name == authored->identifier &&
+            path.generic_string() == normalized_authored_path)
+            return authored->identifier;
         return path.generic_string();
     }
     void emit_song_metadata() {
@@ -2068,7 +2151,8 @@ struct stepmania_writer_t {
         "TITLE",     "ARTIST",     "OFFSET",     "BPMS",     "STOPS",       "DELAYS",
         "WARPS",     "SCROLLS",    "SPEEDS",     "NOTEDATA", "STEPSTYPE",   "DESCRIPTION",
         "CHARTNAME", "CHARTSTYLE", "DIFFICULTY", "METER",    "RADARVALUES", "NOTES"};
-    if (modeled_music) modeled_song.insert("MUSIC");
+    const auto source_music = group_value(song_group, "MUSIC");
+    if (modeled_music || stepmania_relative_path(source_music)) modeled_song.insert("MUSIC");
     if (options.profile == stepmania_profile_t::sm) {
         modeled_song.insert("CREDIT");
         const auto& author = charts.front()->metadata.author;

@@ -428,7 +428,21 @@ struct preview_schedule_t {
     std::vector<preview_visual_event_t> bga;
     std::vector<preview_metronome_event_t> metronome;
     std::vector<preview_discontinuity_event_t> discontinuities;
+    struct music_event_t {
+        resource_id_t resource;
+        std::uint64_t sample_frame{};
+        std::uint64_t source_start_frame{};
+        std::uint64_t frame_count{};
+    };
+    std::optional<music_event_t> music;
 };
+
+[[nodiscard]] auto make_preview_music_event(resource_id_t resource,
+                                            std::uint64_t music_frame_count)
+    -> std::optional<preview_schedule_t::music_event_t>;
+[[nodiscard]] auto preview_music_source_frame_at(
+    const preview_schedule_t::music_event_t& music, std::uint64_t timeline_frame)
+    -> std::optional<std::uint64_t>;
 
 struct preview_schedule_options_t {
     std::uint32_t sample_rate{44'100};

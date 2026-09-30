@@ -1,4 +1,5 @@
 #include "sys/sdl_preview_output.h"
+#include "sys/chart_preview_state.h"
 
 #include <wormedit/audio/source_registry.h>
 
@@ -125,4 +126,44 @@ TEST_CASE("SDL dummy output advances chart preview when its audio source is unav
     REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
     const preview_audio_subsystem_t audio_subsystem;
     CHECK(silent_preview_advances());
+}
+
+auto chart_music_preview_ignores_waveform_selection() -> bool {
+    using namespace wormedit;
+    song_document_t document{
+        .id = song_id_t{8},
+        .revision = 4,
+        .audio_assets = {{.id = asset_id_t{5}, .source_path = "keysound-c4.ogg"},
+                         {.id = asset_id_t{6}, .source_path = "keysound-g4.ogg"}},
+        .resources = {{.id = resource_id_t{7}, .name = "song music", .asset = asset_id_t{5},
+                       .roles = {resource_role_t::music}}},
+        .charts = {{.id = chart_id_t{9},
+                    .divisions_per_standard_measure = 960,
+                    .measures = {{.id = measure_id_t{10},
+                                  .definition = {{1, 1}, meter_t{4, 4}}}},
+                    .bpms = {{.id = object_id_t{11},
+                              .position = {measure_id_t{10}, 0},
+                              .beats_per_minute = {120, 1}}}}}};
+    audio::decoded_source_registry_t sources;
+    const auto registered_music = sources.register_source(
+        {.asset = asset_id_t{5},
+         .path = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio/keysound-c4.ogg",
+         .source = {"fixture:document-music", "music-v1"}});
+    const auto registered_inspection = sources.register_source(
+        {.asset = asset_id_t{6},
+         .path = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio/keysound-g4.ogg",
+         .source = {"fixture:waveform-inspection", "waveform-v1"}});
+    sys::runtime::chart_preview_t preview;
+    const auto error = preview.compile_if_needed(document.charts.front(), document, sources, {});
+    workspace_controller_t workspace;
+    workspace.selected_chart = chart_id_t{9};
+    workspace.transport.audio_asset = asset_id_t{6};
+    return registered_music && registered_inspection && !error && preview.schedule &&
+           preview.schedule->music && preview.schedule->music->resource == resource_id_t{7} &&
+           preview.music_asset == asset_id_t{5} && preview.matches_selection(document, workspace);
+}
+
+TEST_CASE("chart music preview follows the document music resource, not waveform selection",
+          "[integration][sys][chart-preview][music]") {
+    CHECK(chart_music_preview_ignores_waveform_selection());
 }

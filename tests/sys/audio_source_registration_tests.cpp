@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <vector>
 
+
 TEST_CASE("relative audio assets resolve from the opened chart directory",
           "[integration][sys][audio-source-registration]") {
     wormedit::song_document_t document;

@@ -482,6 +482,53 @@ TEST_CASE("metronome count-in extrapolates exact signed times from row zero",
     CHECK(clicks[4].accent == metronome_accent_t::measure);
 }
 
+auto music_source_tracks_frames_for_signed_offsets() -> bool {
+    for (const auto offset : {signed_rational_t{-2, 1}, signed_rational_t{},
+                              signed_rational_t{2, 1}}) {
+        auto chart = base_chart();
+        chart.beat_zero_audio_offset_seconds = offset;
+        const auto timing = build_timing_index(chart);
+        if (!timing) return false;
+        const auto beat_zero = timing_at(*timing.index, 0);
+        if (!beat_zero || *beat_zero.seconds != offset) return false;
+        const auto music = make_preview_music_event(resource_id_t{7}, 200'000);
+        if (!music) return false;
+        for (const auto frame : {0ULL, 1ULL, 88'200ULL, 150'000ULL})
+            if (preview_music_source_frame_at(*music, frame) != frame) return false;
+    }
+    return true;
+}
+
+auto beat_zero_note_frame_matches_music_source_time() -> bool {
+    auto chart = base_chart();
+    chart.beat_zero_audio_offset_seconds = {2, 1};
+    chart.measures[0].notes = {{.id = object_id_t{50},
+                                .position = {measure_id_t{1}, 0},
+                                .lane = lane_id_t{1},
+                                .sound = resource_id_t{5}}};
+    const auto timing = build_timing_index(chart);
+    if (!timing) return false;
+    const auto beat_zero_time = timing_at(*timing.index, 0);
+    if (!beat_zero_time || *beat_zero_time.seconds != signed_rational_t{2, 1}) return false;
+    const auto note_schedule = build_preview_schedule(
+        chart, *timing.index, {.sample_rate = 44'100, .include_metronome = false});
+    if (!note_schedule || note_schedule.schedule->playable.size() != 1) return false;
+    const auto music = make_preview_music_event(resource_id_t{7}, 200'000);
+    if (!music) return false;
+    const auto audio_time = sample_frame_at(*beat_zero_time.seconds, 44'100);
+    return audio_time &&
+           note_schedule.schedule->playable.front().sample_frame == *audio_time.frame &&
+           preview_music_source_frame_at(*music,
+                                         note_schedule.schedule->playable.front().sample_frame) ==
+               *audio_time.frame;
+}
+
+TEST_CASE("preview music source follows timeline across offsets and beat zero aligns by index",
+          "[unit][core][timing][preview][music]") {
+    CHECK((music_source_tracks_frames_for_signed_offsets() &&
+           beat_zero_note_frame_matches_music_source_time()));
+}
+
 TEST_CASE("preview schedule materializes BMSON same-pulse discontinuity order",
           "[unit][core][timing][preview][discontinuity][bmson]") {
     auto chart = base_chart();

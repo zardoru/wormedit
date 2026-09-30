@@ -11,6 +11,19 @@
 namespace wormedit::sys::runtime {
 namespace {
 
+constexpr object_id_t preview_music_object{std::numeric_limits<std::uint64_t>::max()};
+
+auto registered_music_asset(const song_document_t& document,
+                            const audio::decoded_source_registry_t& sources)
+    -> std::optional<std::pair<resource_id_t, asset_id_t>> {
+    const auto music = std::ranges::find_if(document.resources, [&](const auto& resource) {
+        return std::ranges::find(resource.roles, resource_role_t::music) != resource.roles.end() &&
+               sources.binding(resource.asset).has_value();
+    });
+    if (music == document.resources.end()) return std::nullopt;
+    return std::pair{music->id, music->asset};
+}
+
 auto preview_end_frame(
     const preview_schedule_t& schedule,
     const std::vector<audio::preview_object_source_binding_t>& bindings,
@@ -43,6 +56,11 @@ auto preview_end_frame(
             end_frame = std::max(end_frame, event.sample_frame + binding->voice.frame_count);
         }
     }
+    if (schedule.music && schedule.music->frame_count <=
+                              std::numeric_limits<std::uint64_t>::max() -
+                                  schedule.music->sample_frame)
+        end_frame = std::max(end_frame,
+                             schedule.music->sample_frame + schedule.music->frame_count);
     return end_frame;
 }
 
@@ -68,9 +86,10 @@ auto chart_visual_end_frame(const timing_index_t& timing,
 
 } // namespace
 
-bool chart_preview_t::reusable(chart_id_t chart_id,
-                                     std::uint64_t document_revision) const {
-    return schedule && chart == chart_id && revision == document_revision;
+bool chart_preview_t::reusable(chart_id_t chart_id, std::uint64_t document_revision,
+                               std::optional<asset_id_t> selected_music_asset) const {
+    return schedule && chart == chart_id && revision == document_revision &&
+           music_asset == selected_music_asset;
 }
 
 bool chart_preview_t::matches_selection(
@@ -84,7 +103,11 @@ auto chart_preview_t::compile_if_needed(
     const audio::decoded_source_registry_t& sources,
     const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings)
     -> std::optional<std::string> {
-    if (reusable(selected_chart.id, document.revision))
+    const auto selected_music = registered_music_asset(document, sources);
+    const auto selected_music_asset = selected_music
+                                          ? std::optional<asset_id_t>{selected_music->second}
+                                          : std::nullopt;
+    if (reusable(selected_chart.id, document.revision, selected_music_asset))
         return std::nullopt;
 
     auto built_timing = build_timing_index(selected_chart);
@@ -105,6 +128,22 @@ auto chart_preview_t::compile_if_needed(
         return resolved.diagnostics.empty() ? "Chart audio could not be resolved."
                                             : resolved.diagnostics.front().message;
 
+    if (selected_music) {
+        const auto source = sources.binding(selected_music->second);
+        if (source && source->output_frame_count != 0) {
+            built_schedule.schedule->music = make_preview_music_event(
+                selected_music->first, source->output_frame_count);
+            if (built_schedule.schedule->music) {
+                resolved.bindings.push_back({
+                    .object = preview_music_object,
+                    .voices = {{.source = source->source,
+                                .source_start_frame = 0,
+                                .frame_count = source->output_frame_count,
+                                .gain = 1.0F}}});
+            }
+        }
+    }
+
     const auto visual_end_frame =
         chart_visual_end_frame(*built_timing.index, *built_schedule.schedule);
     if (!visual_end_frame)
@@ -118,6 +157,7 @@ auto chart_preview_t::compile_if_needed(
     bindings = std::move(resolved.bindings);
     chart = selected_chart.id;
     revision = document.revision;
+    music_asset = selected_music_asset;
     resume_frame = 0;
     end_frame = compiled_end_frame;
     skipped_unavailable_audio_objects = resolved.skipped_unavailable_objects;
@@ -286,6 +326,7 @@ void chart_preview_t::invalidate() {
     bindings.clear();
     chart.reset();
     revision = 0;
+    music_asset.reset();
     resume_frame = 0;
     end_frame = 0;
     skipped_unavailable_audio_objects = 0;

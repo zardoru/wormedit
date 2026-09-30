@@ -1472,6 +1472,23 @@ auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
     return {.frame = frame};
 }
 
+auto make_preview_music_event(resource_id_t resource, std::uint64_t music_frame_count)
+    -> std::optional<preview_schedule_t::music_event_t> {
+    if (!resource || music_frame_count == 0) return std::nullopt;
+    return preview_schedule_t::music_event_t{resource, 0, 0, music_frame_count};
+}
+
+auto preview_music_source_frame_at(const preview_schedule_t::music_event_t& music,
+                                  std::uint64_t timeline_frame)
+    -> std::optional<std::uint64_t> {
+    if (timeline_frame < music.sample_frame ||
+        timeline_frame - music.sample_frame >= music.frame_count ||
+        timeline_frame - music.sample_frame >
+            std::numeric_limits<std::uint64_t>::max() - music.source_start_frame)
+        return std::nullopt;
+    return music.source_start_frame + timeline_frame - music.sample_frame;
+}
+
 namespace {
 
 enum class scroll_speed_source_kind_t : std::uint8_t { scroll, speed };

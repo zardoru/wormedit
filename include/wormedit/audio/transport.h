@@ -69,6 +69,7 @@ struct transport_mix_result_t {
     std::size_t voices_mixed{};
     std::size_t missing_blocks{};
     std::size_t dropped_voices{};
+    std::size_t dropped_music_voices{};
     std::size_t clipped_samples{};
 };
 

@@ -1395,7 +1395,8 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
         const bool starting = !preview_session.active() && !preview_state.paused;
         const auto result = preview_state.play_pause(
             selected_chart(history, workspace), history.document, audition_sources,
-            preview_metronome_bindings, audition_output, preview_session, preview_output,
+            preview_metronome_bindings, audition_output,
+            preview_session, preview_output,
             compose_cursor ? std::optional{compose_cursor->cursor} : std::nullopt);
         if (starting && preview_session.active()) inline_preview_cursor.capture(compose_cursor);
         return result;
@@ -1409,7 +1410,8 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
                                          : nullptr;
         const auto result = preview_state.play_pause(
             selected_chart(history, workspace), history.document, audition_sources,
-            preview_metronome_bindings, audition_output, preview_session, preview_output,
+            preview_metronome_bindings, audition_output,
+            preview_session, preview_output,
             std::nullopt, true);
         if (starting && preview_session.active()) inline_preview_cursor.capture(compose_cursor);
         return result;

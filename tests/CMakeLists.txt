@@ -147,6 +147,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         add_executable(wormedit_sdl_audio_tests
             sys/sdl_audition_output_tests.cpp
             sys/sdl_preview_output_tests.cpp
+            ../src/sys/chart_preview_state.cpp
             ../src/sys/sdl_audition_output.cpp
             ../src/sys/sdl_preview_output.cpp
         )

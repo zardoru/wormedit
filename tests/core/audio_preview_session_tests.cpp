@@ -4,6 +4,7 @@
 
 #include <array>
 #include <filesystem>
+#include <limits>
 #include <ranges>
 #include <string>
 #include <vector>
@@ -61,6 +62,134 @@ auto preview_session_survives_underrun_and_completes() -> bool {
            completed.first_timeline_frame == 32 && !session.active();
 }
 
+auto contiguous_music_segments(const wormedit::audio::active_voice_snapshot_t& active) -> bool {
+    using namespace wormedit::audio;
+    if (active.voices.size() != 3) return false;
+    for (std::size_t index = 0; index < active.voices.size(); ++index) {
+        const auto& voice = active.voices[index];
+        const auto expected = static_cast<std::uint64_t>(index) * maximum_read_frames;
+        if (voice.kind != voice_kind_t::music || voice.timeline_start_frame != expected ||
+            voice.source_start_frame != expected || voice.frame_count != maximum_read_frames)
+            return false;
+    }
+    return true;
+}
+
+auto seek_music_segment_starts_at_source_frame(wormedit::audio::preview_session_t& session,
+                                               wormedit::audio::transport_t& transport,
+                                               wormedit::audio::preview_transport_bridge_t& bridge)
+    -> bool {
+    using namespace wormedit::audio;
+    const auto seek = session.seek(500, {.lookahead_frames = maximum_read_frames});
+    const auto current_token = bridge.session_token();
+    const auto active = seek && current_token ? transport.snapshot_active_voices(*current_token)
+                                               : active_voice_snapshot_t{};
+    return seek && active && !active.voices.empty() &&
+           active.voices.front().timeline_start_frame == 500 &&
+           active.voices.front().source_start_frame == 500 &&
+           active.voices.front().frame_count == maximum_read_frames - 500;
+}
+
+auto preview_music_seek_geometry_is_correct() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    std::vector<float> pcm(3U * maximum_read_frames * output_channel_count, 0.125F);
+    const auto registered = sources.register_generated_source(
+        {.source = {"generated:preview-music", "preview-music-v1"},
+         .interleaved_stereo = std::move(pcm)});
+    if (!registered) return false;
+    const auto source = *registered.binding;
+    decoded_block_cache_t cache{preview_block_cache_limits()};
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    constexpr object_id_t music_object{std::numeric_limits<std::uint64_t>::max()};
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.music = preview_schedule_t::music_event_t{
+        .resource = resource_id_t{7}, .frame_count = source.output_frame_count};
+    const preview_object_source_binding_t binding{
+        .object = music_object,
+        .voices = {{.source = source.source, .frame_count = source.output_frame_count}},
+    };
+    const auto started = session.start(schedule, std::span{&binding, 1}, {}, 0,
+                                       {.lookahead_frames = maximum_read_frames});
+    if (!started || bridge.materialize_until(3 * maximum_read_frames).status !=
+                        preview_bridge_pump_status_t::ready)
+        return false;
+    const auto active = transport.snapshot_active_voices(*started.token);
+    const bool valid = contiguous_music_segments(active) &&
+                       seek_music_segment_starts_at_source_frame(session, transport, bridge);
+    return session.stop().scheduled_voices >= 1 && valid;
+}
+
+auto dropped_music_segment_is_reported(wormedit::audio::preview_session_t& session,
+                                       wormedit::audio::decoded_block_cache_t& cache,
+                                       const wormedit::audio::audio_source_identity_t& source)
+    -> bool {
+    using namespace wormedit::audio;
+    cache.clear_source(source);
+    std::vector<float> output(32U * output_channel_count);
+    const auto dropped = session.render(output);
+    return dropped.status == preview_session_render_status_t::underrun &&
+           dropped.mix.dropped_voices == 1;
+}
+
+auto next_music_segment_is_still_playing(wormedit::audio::preview_session_t& session,
+                                         wormedit::audio::decoded_source_registry_t& sources,
+                                         wormedit::audio::transport_t& transport,
+                                         wormedit::audio::session_token_t token) -> bool {
+    using namespace wormedit::audio;
+    std::vector<float> block(32U * output_channel_count);
+    while (session.timeline_frame() < maximum_read_frames)
+        static_cast<void>(session.render(block));
+    const auto next = session.render(block);
+    return (next.status == preview_session_render_status_t::mixed ||
+            next.status == preview_session_render_status_t::complete) &&
+           any_nonzero(block) && transport.is_current(token) && sources.size() != 0;
+}
+
+auto dropped_music_segment_does_not_stop_following_segment() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    std::vector<float> pcm(3U * maximum_read_frames * output_channel_count, 0.25F);
+    const auto registered = sources.register_generated_source(
+        {.source = {"generated:preview-music-drop", "preview-music-drop-v1"},
+         .interleaved_stereo = std::move(pcm)});
+    if (!registered) return false;
+    const auto source = *registered.binding;
+    decoded_block_cache_t cache{preview_block_cache_limits()};
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.music = preview_schedule_t::music_event_t{
+        .resource = resource_id_t{7}, .frame_count = source.output_frame_count};
+    constexpr object_id_t music_object{std::numeric_limits<std::uint64_t>::max()};
+    const preview_object_source_binding_t binding{
+        .object = music_object,
+        .voices = {{.source = source.source, .frame_count = source.output_frame_count}},
+    };
+    const auto started = session.start(schedule, std::span{&binding, 1}, {}, 0,
+                                       {.lookahead_frames = maximum_read_frames});
+    if (!started || bridge.materialize_until(2 * maximum_read_frames).status !=
+                        preview_bridge_pump_status_t::ready ||
+        !dropped_music_segment_is_reported(session, cache, source.source))
+        return false;
+    const auto pumped = pump_preview_lookahead(
+        sources, transport, *started.token, session.timeline_frame(),
+        {.lookahead_frames = maximum_read_frames});
+    const auto active = transport.snapshot_active_voices(*started.token);
+    const bool later_segment_scheduled = pumped && active && active.voices.size() == 1 &&
+                                         active.voices.front().timeline_start_frame ==
+                                             maximum_read_frames;
+    const bool later_segment_played = next_music_segment_is_still_playing(
+        session, sources, transport, *started.token);
+    return session.stop().scheduled_voices >= 1 && later_segment_scheduled &&
+           later_segment_played;
+}
+
 } // namespace
 
 TEST_CASE("preview session primes advances refills and completes one chart timeline",
@@ -108,6 +237,16 @@ TEST_CASE("preview session primes advances refills and completes one chart timel
     CHECK(any_nonzero(tail));
     CHECK_FALSE(session.active());
     CHECK(session.timeline_frame() == 0);
+}
+
+TEST_CASE("preview session streams contiguous music segments and seeks within a segment",
+          "[unit][audio][preview-session][music][seek]") {
+    CHECK(preview_music_seek_geometry_is_correct());
+}
+
+TEST_CASE("a dropped music segment does not prevent the next segment from playing",
+          "[unit][audio][preview-session][music][underrun]") {
+    CHECK(dropped_music_segment_does_not_stop_following_segment());
 }
 
 TEST_CASE("preview session seek replaces generations and hard Stop silences later renders",

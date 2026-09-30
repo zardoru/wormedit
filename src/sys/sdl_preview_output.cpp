@@ -122,6 +122,7 @@ auto sdl_preview_output_t::seek(std::uint64_t sample_frame) -> sdl_preview_start
 }
 
 auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result_t> {
+    const auto rate_unavailable = rate_unavailable_.exchange(false, std::memory_order_acq_rel);
     const auto silenced_voices = silenced_voices_.exchange(0, std::memory_order_acq_rel);
     const auto silenced_music_voices =
         silenced_music_voices_.exchange(0, std::memory_order_acq_rel);
@@ -133,12 +134,16 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
                           ? sdl_preview_service_status_t::device_failed
                           : sdl_preview_service_status_t::render_failed,
             .pump = std::nullopt,
+            .rate_unavailable = rate_unavailable,
             .silenced_voices = silenced_voices,
             .silenced_music_voices = silenced_music_voices,
         };
     }
-    if (stream_ == nullptr || !session_.active())
+    session_.set_output_latency_frames(source_latency_frames());
+    if (stream_ == nullptr || !session_.active()) {
+        if (rate_unavailable) return sdl_preview_service_result_t{.rate_unavailable = true};
         return std::nullopt;
+    }
     auto pumped = session_.pump();
     if (pumped.decode.has_value() &&
         pumped.decode->status == audio::preview_pump_status_t::stale_generation) {
@@ -148,6 +153,7 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
         .status = pumped ? sdl_preview_service_status_t::ready
                          : sdl_preview_service_status_t::pump_failed,
         .pump = std::move(pumped),
+        .rate_unavailable = rate_unavailable,
         .silenced_voices = silenced_voices,
         .silenced_music_voices = silenced_music_voices,
     };
@@ -179,11 +185,45 @@ auto sdl_preview_output_t::stop() noexcept -> audio::transport_stop_result_t {
     return stopped;
 }
 
+auto sdl_preview_output_t::set_playback_rate(rational_t rate) noexcept -> bool {
+    const auto index = audio::playback_rate_index(rate);
+    if (!index) return false;
+    requested_rate_index_.store(*index, std::memory_order_release);
+    return true;
+}
+
+auto sdl_preview_output_t::playback_rate() const noexcept -> rational_t {
+    return audio::playback_rates[active_rate_index_.load(std::memory_order_acquire)];
+}
+
+auto sdl_preview_output_t::source_latency_frames() const noexcept -> std::uint64_t {
+    if (stream_ == nullptr) return 0;
+    // SDL_GetAudioStreamQueued counts unconverted INPUT bytes. These are already
+    // source-clock frames; scaling them by the playback ratio would scale twice.
+    const auto queued = SDL_GetAudioStreamQueued(stream_);
+    return queued > 0 ? static_cast<std::uint64_t>(queued) /
+                           (sizeof(float) * audio::output_channel_count) : 0;
+}
+
 void SDLCALL sdl_preview_output_t::stream_callback(void* userdata, SDL_AudioStream* stream,
                                                    int additional_amount, int) {
     auto* output = static_cast<sdl_preview_output_t*>(userdata);
-    if (output != nullptr && stream != nullptr && additional_amount > 0)
-        output->render_requested(stream, additional_amount);
+    if (output == nullptr || stream == nullptr) return;
+    const auto requested = output->requested_rate_index_.load(std::memory_order_acquire);
+    if (requested != output->active_rate_index_.load(std::memory_order_acquire)) {
+        const auto rate = audio::playback_rates[requested];
+        const auto ratio = static_cast<float>(rate.numerator) / static_cast<float>(rate.denominator);
+        if (SDL_SetAudioStreamFrequencyRatio(stream, ratio))
+            output->active_rate_index_.store(requested, std::memory_order_release);
+        else {
+            output->rate_unavailable_.store(true, std::memory_order_release);
+            output->requested_rate_index_.store(8, std::memory_order_release);
+            static_cast<void>(SDL_SetAudioStreamFrequencyRatio(stream, 1.0F));
+            output->active_rate_index_.store(8, std::memory_order_release);
+        }
+    }
+    if (additional_amount > 0) output->render_requested(stream, additional_amount);
+    output->session_.set_output_latency_frames(output->source_latency_frames());
 }
 
 void sdl_preview_output_t::render_requested(SDL_AudioStream* stream,

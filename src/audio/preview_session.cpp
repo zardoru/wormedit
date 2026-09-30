@@ -82,6 +82,8 @@ auto preview_session_t::prime_started(preview_bridge_start_result_t started,
     }
     token_ = started.token;
     timeline_frame_ = timeline_frame;
+    start_frame_ = timeline_frame;
+    output_latency_frames_.store(0, std::memory_order_release);
     result.status = preview_session_start_status_t::started;
     result.token = token_;
     return result;
@@ -183,12 +185,16 @@ auto preview_session_t::active() const -> bool {
 
 auto preview_session_t::timeline_frame() const -> std::uint64_t {
     const std::scoped_lock lock(mutex_);
-    return timeline_frame_;
+    const auto latency = output_latency_frames_.load(std::memory_order_acquire);
+    const auto elapsed = timeline_frame_ - start_frame_;
+    return start_frame_ + (elapsed > latency ? elapsed - latency : 0);
 }
 
 void preview_session_t::clear_state() noexcept {
     token_.reset();
     timeline_frame_ = 0;
+    start_frame_ = 0;
+    output_latency_frames_.store(0, std::memory_order_release);
     minimum_end_frame_ = 0;
 }
 

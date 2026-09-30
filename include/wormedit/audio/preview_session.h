@@ -3,6 +3,7 @@
 #include <wormedit/audio/preview_bridge.h>
 #include <wormedit/audio/preview_pump.h>
 
+#include <atomic>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -86,7 +87,12 @@ class preview_session_t {
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
 
     [[nodiscard]] auto active() const -> bool;
+    // Audible source-frame estimate; scheduling continues on the unadjusted
+    // internal source clock. Headless sessions have zero output latency.
     [[nodiscard]] auto timeline_frame() const -> std::uint64_t;
+    void set_output_latency_frames(std::uint64_t frames) noexcept {
+        output_latency_frames_.store(frames, std::memory_order_release);
+    }
 
   private:
     [[nodiscard]] auto prime_started(preview_bridge_start_result_t started,
@@ -100,7 +106,9 @@ class preview_session_t {
     mutable std::mutex mutex_;
     std::optional<session_token_t> token_;
     std::uint64_t timeline_frame_{};
+    std::uint64_t start_frame_{};
     std::uint64_t minimum_end_frame_{};
+    std::atomic<std::uint64_t> output_latency_frames_{};
 };
 
 } // namespace wormedit::audio

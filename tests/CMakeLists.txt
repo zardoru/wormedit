@@ -122,6 +122,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         core/audio_preview_bridge_tests.cpp
         core/audio_preview_pump_tests.cpp
         core/audio_preview_session_tests.cpp
+        core/audio_playback_rate_tests.cpp
         core/audio_preview_repro_tests.cpp
         core/audio_source_registry_tests.cpp
         core/audio_transport_tests.cpp

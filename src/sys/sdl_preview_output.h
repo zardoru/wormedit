@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/audio/preview_session.h>
+#include <wormedit/audio/playback_rate.h>
 
 #include <SDL3/SDL_audio.h>
 
@@ -40,6 +41,7 @@ enum class sdl_preview_service_status_t {
 struct sdl_preview_service_result_t {
     sdl_preview_service_status_t status{sdl_preview_service_status_t::ready};
     std::optional<audio::preview_session_pump_result_t> pump;
+    bool rate_unavailable{};
     std::uint64_t silenced_voices{};
     std::uint64_t silenced_music_voices{};
 
@@ -71,6 +73,10 @@ class sdl_preview_output_t {
     [[nodiscard]] auto seek(std::uint64_t sample_frame) -> sdl_preview_start_result_t;
     [[nodiscard]] auto service() -> std::optional<sdl_preview_service_result_t>;
     [[nodiscard]] auto stop() noexcept -> audio::transport_stop_result_t;
+    // The requested rate is applied at the next SDL callback, without restarting.
+    [[nodiscard]] auto set_playback_rate(rational_t rate) noexcept -> bool;
+    [[nodiscard]] auto playback_rate() const noexcept -> rational_t;
+    [[nodiscard]] auto source_latency_frames() const noexcept -> std::uint64_t;
     [[nodiscard]] auto available() const noexcept -> bool {
         return stream_ != nullptr;
     }
@@ -93,6 +99,9 @@ class sdl_preview_output_t {
     std::atomic<callback_failure_t> callback_failure_{callback_failure_t::none};
     std::atomic<std::uint64_t> silenced_voices_{};
     std::atomic<std::uint64_t> silenced_music_voices_{};
+    std::atomic<bool> rate_unavailable_{};
+    std::atomic<std::size_t> requested_rate_index_{8};
+    std::atomic<std::size_t> active_rate_index_{8};
     std::array<float, callback_frames * audio::output_channel_count> scratch_{};
 };
 

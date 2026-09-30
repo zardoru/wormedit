@@ -45,6 +45,8 @@ void service_chart_preview(sdl_preview_output_t& output,
     const auto serviced = output.service();
     if (!serviced)
         return;
+    if (serviced->rate_unavailable)
+        status = "Reduced playback rate is unavailable; preview continues at 1×.";
     if (serviced->silenced_voices > 0) {
         status = "Silenced " + std::to_string(serviced->silenced_voices) +
                  (serviced->silenced_music_voices > 0

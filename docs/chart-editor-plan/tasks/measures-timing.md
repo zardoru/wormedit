@@ -186,7 +186,7 @@ stale-plan check (rule 9) first.
 
 ## T-236 Estimate BPM and phase from taps
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** a headless `tap_tempo_estimator_t` turns tap times (in audio source frames of the playing song) into a BPM, a beat-zero phase (the audio frame of a downbeat), and a confidence, using the last 4 measures of taps.
 - **Read first:** `include/wormedit/core/timing.h` (frames/seconds conversions), `include/wormedit/core/rational.h` (exact float→rational helper), `docs/chart-editor-plan/playback-audio.md` (beat-fit modes).
 - **Files owned:** new `include/wormedit/core/tap_tempo.h`, new `src/core/tap_tempo.cpp`, new `tests/core/tap_tempo_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -194,12 +194,12 @@ stale-plan check (rule 9) first.
   1. Window: the last `4 × beats_per_measure` taps (16 in 4/4) held in a fixed-size array; no heap growth.
   2. Estimate with a least-squares line through (beat index, tap frame), not an average of intervals: the slope is frames per beat, the intercept is the phase. Keep running sums (Σi, Σt, Σi², Σit) updated as taps enter and leave the window. Also offer a "whole session" mode that keeps only the sums, with no window.
   3. Beat indices: the first tap is beat 0; each later tap's index advances by the nearest integer number of estimated beats, so a skipped tap does not halve the tempo. The first 4 taps use raw intervals to seed the estimate.
-  4. Outliers: an interval under 0.5× or over 1.75× the current estimate after the seed is ignored; 2 seconds without a tap resets the estimator.
+  4. Outliers: after the seed, infer the nearest positive integer beat advance first, then ignore an interval per advanced beat under 0.5× or over 1.75× the current estimate. Rejected taps retain the last accepted anchor; 2 seconds without an accepted tap resets the estimator (also exposed through an explicit expiration check). This skipped-beat clarification was approved by the user on 2026-09-30.
   5. Outputs: BPM (double and exact rational from the helper), suggestions rounded to 1 and 0.5 BPM, phase frame, residual standard deviation in ms, tap count, and "stable" when at least 8 taps and std-dev under 12 ms.
   6. Tests with synthetic taps: exact 120 BPM → 120.000; ±10 ms jitter → within 0.3 BPM; one skipped tap; one double tap; tempo change resets through the window; the downbeat phase falls within 5 ms of the true value.
-- **Invariants:** deterministic; no allocation after construction.
+- **Invariants:** deterministic; no allocation after construction. Meters of 1–32 configured beats use a fixed 128-entry maximum array; zero rate or an unsupported meter rejects taps. The first tap is assigned beat zero; confidence is coverage up to eight taps multiplied by a linear residual score that reaches zero at 24 ms.
 - **Reject/failure behavior:** fewer than 4 taps → no estimate.
-- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`.
+- **Verify:** integrated build passed; `ctest --test-dir build --output-on-failure -R '^core\.'` passed 726/726, including 10/10 tap-tempo cases; the full suite passed 913/913. Exact 120 BPM, ±10 ms jitter within 0.3 BPM, skipped and double taps, four-measure tempo adaptation, phase within 5 ms, whole-session sums, two-second expiry, invalid input, long source offsets, and no allocation after construction are covered. Private isolated compilation also passed 10 cases / 65 assertions. Clang-tidy is clean for both new sources.
 - **Out of scope:** UI (T-237), audio onset detection (T-80).
 
 ## T-237 Add an osu!-style tap timing assistant

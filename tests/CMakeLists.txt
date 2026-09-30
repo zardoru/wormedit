@@ -66,6 +66,7 @@ add_executable(wormedit_core_tests
     core/sv_recipe_tests.cpp
     core/startup_session_tests.cpp
     core/task_graph_tests.cpp
+    core/tap_tempo_tests.cpp
     core/timing_tests.cpp
     core/timing_discontinuity_tests.cpp
     core/timing_anchor_editor_tests.cpp

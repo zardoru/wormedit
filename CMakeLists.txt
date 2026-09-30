@@ -82,6 +82,7 @@ add_library(wormedit_core
     src/core/sv_recipe.cpp
     src/core/startup_session.cpp
     src/core/task_graph.cpp
+    src/core/tap_tempo.cpp
     src/core/timing.cpp
     src/core/timing_discontinuity.cpp
     src/core/timing_anchor_editor.cpp

@@ -824,6 +824,12 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
                 command_category_t::transport, workspace,
                 {chord(shortcut_key_t::f12, primary())});
 
+    add_builtin(registry, invoker, "timing.tap_assistant", "Tap Timing",
+                command_category_t::timing, workspace, {}, false, std::nullopt, false);
+    add_builtin(registry, invoker, "timing.tap", "Tap Beat",
+                command_category_t::timing, workspace, {chord(shortcut_key_t::t)});
+    (void)update_command_state(registry, {"timing.tap"}, false, std::nullopt);
+
     constexpr std::array workspace_tabs{
         workspace_tab_t::setup,
         workspace_tab_t::metadata,

@@ -550,3 +550,10 @@ TEST_CASE("Keep pitch dispatch accepts backend preferences without changing docu
     expect_keep_pitch(dispatch_transport_player_action(action, state, policy) == "Keep pitch is unavailable.");
     expect_keep_pitch(state.transport_keep_pitch);
 }
+
+TEST_CASE("Tap timing commands parse independently of document editing", "[unit][sys][commands]") {
+    CHECK(parse_application_command("timing.tap_assistant") ==
+          application_command_t{.kind = application_command_kind_t::timing_tap_assistant});
+    CHECK(parse_application_command("timing.tap") ==
+          application_command_t{.kind = application_command_kind_t::timing_tap});
+}

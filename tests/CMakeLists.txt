@@ -15,6 +15,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_resource_presenter.cpp
     ../src/sys/compose_area_actions.cpp
     ../src/sys/application_commands.cpp
+    ../src/sys/tap_timing_runtime.cpp
     ../src/sys/transport_player_actions.cpp
     ../src/sys/compose_minimap_navigation.cpp
     ../src/sys/application_defaults.cpp
@@ -33,6 +34,7 @@ add_executable(wormedit_core_tests
     core/compose_resource_presenter_tests.cpp
     core/command_registry_tests.cpp
     sys/application_commands_tests.cpp
+    sys/tap_timing_runtime_tests.cpp
     sys/application_defaults_tests.cpp
     sys/project_open_tests.cpp
     sys/project_save_paths_tests.cpp

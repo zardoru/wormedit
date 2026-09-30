@@ -41,6 +41,8 @@ constexpr command_name_t command_names[]{
     {"workspace.open_audio_slices", application_command_kind_t::workspace_open_audio_slices},
     {"workspace.open_compare_validate",
      application_command_kind_t::workspace_open_compare_validate},
+    {"timing.tap_assistant", application_command_kind_t::timing_tap_assistant},
+    {"timing.tap", application_command_kind_t::timing_tap},
     {"timing.toggle_lock", application_command_kind_t::timing_toggle_lock},
     {"timing.insert_bpm", application_command_kind_t::timing_insert_bpm},
     {"timing.insert_sv", application_command_kind_t::timing_insert_sv},

@@ -1,4 +1,5 @@
 #include "ui/nuklear/external_player_panel.h"
+#include "ui/nuklear/tap_timing_panel.h"
 
 #include "ui/frontend.h"
 #include "ui/nuklear/audio_panel.h"
@@ -63,6 +64,9 @@ static size_t g_double_click_count{};
 static bool g_window_focused{true};
 static std::array<WormUiShortcutEvent, WORM_UI_SHORTCUT_EVENT_CAPACITY> g_shortcut_events{};
 static size_t g_shortcut_event_count{};
+static bool g_tap_timing_visible{};
+static bool g_tap_key_captured{};
+static bool g_tap_space_captured{};
 static bool g_shortcut_events_overflowed{};
 static bool g_ime_composition_active{};
 static int g_last_window_width{};
@@ -222,14 +226,14 @@ static bool frontend_window_size(int* width, int* height) {
 
 static bool nuklear_text_entry_active(void);
 
-static void queue_shortcut_key_event(const SDL_KeyboardEvent* event) {
+static void queue_shortcut_key_event(const SDL_KeyboardEvent* event, bool tap_capture = false) {
     if (!event || !g_window || !g_window_focused || event->type != SDL_EVENT_KEY_DOWN ||
         !event->down || event->windowID == 0 || event->windowID != SDL_GetWindowID(g_window) ||
         g_shortcut_events_overflowed) {
         return;
     }
 
-    if (compose_area_consumes_shortcut({g_compose_area_shortcuts_active, g_window_focused,
+    if (!tap_capture && compose_area_consumes_shortcut({g_compose_area_shortcuts_active, g_window_focused,
         project_dialog_active() || g_new_project_wizard.open,
         nuklear_text_entry_active(), compose_area_capture_active(),
         compose_area_band_visible() && worm_ui_nuklear_compose_state().keyboard_focus,
@@ -274,6 +278,8 @@ static void queue_shortcut_key_event(const SDL_KeyboardEvent* event) {
         .hid_usage = hid_usage,
         .modifiers = modifiers,
         .repeat = event->repeat,
+        .timestamp_ns = event->timestamp,
+        .tap_timing_space = tap_capture && event->scancode == SDL_SCANCODE_SPACE,
     };
 }
 
@@ -444,6 +450,28 @@ void worm_ui_frontend_begin_input(void) {
     }
 }
 
+static bool capture_tap_timing_key(const SDL_KeyboardEvent& event) {
+    if (event.scancode != SDL_SCANCODE_T && event.scancode != SDL_SCANCODE_SPACE) return false;
+    bool& captured = event.scancode == SDL_SCANCODE_T ? g_tap_key_captured : g_tap_space_captured;
+    if (event.type == SDL_EVENT_KEY_UP) {
+        const bool consumed = captured;
+        captured = false;
+        return consumed;
+    }
+    if (event.repeat) return captured;
+    if (!g_tap_timing_visible || !g_window_focused || !g_window ||
+        event.windowID != SDL_GetWindowID(g_window) || project_dialog_active() ||
+        g_new_project_wizard.open || nuklear_text_entry_active()) return false;
+    const auto modifiers = SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT |
+                           SDL_KMOD_GUI | SDL_KMOD_MODE | SDL_KMOD_LEVEL5;
+    if ((event.mod & modifiers) != 0) return false;
+    if (event.scancode == SDL_SCANCODE_SPACE &&
+        !nk_window_is_active(g_context, "Tap timing")) return false;
+    captured = true;
+    if (!event.repeat) queue_shortcut_key_event(&event, true);
+    return true;
+}
+
 WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_id, float x,
                                                                 float y) {
     if (!g_context || !g_window ||
@@ -453,12 +481,28 @@ WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_i
     return worm_ui_nuklear_metadata_drop_target(x, y);
 }
 
+static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
+        if (capture_tap_timing_key(event)) return true;
+        const bool down = event.type == SDL_EVENT_KEY_DOWN;
+        if (down && !event.repeat && event.key == SDLK_ESCAPE) {
+            g_audio.offset_escape_pending = true;
+        }
+        worm_ui_nuklear_queue_compose_key(static_cast<std::uint32_t>(event.key),
+                                          static_cast<std::uint32_t>(event.scancode),
+                                          static_cast<std::uint16_t>(event.mod), down,
+                                          event.repeat);
+        queue_shortcut_key_event(&event);
+        return false;
+}
+
 bool worm_ui_frontend_handle_event(const SDL_Event* event) {
     if (!g_context || !event) {
         return false;
     }
     if (event->type == SDL_EVENT_WINDOW_FOCUS_LOST) {
         g_window_focused = false;
+        g_tap_key_captured = false;
+        g_tap_space_captured = false;
         g_audio.offset_cancel_pending = true;
         g_shortcut_event_count = 0;
         g_double_click_count = 0;
@@ -468,15 +512,7 @@ bool worm_ui_frontend_handle_event(const SDL_Event* event) {
     } else if (event->type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
         g_window_focused = true;
     } else if (event->type == SDL_EVENT_KEY_DOWN || event->type == SDL_EVENT_KEY_UP) {
-        const bool down = event->type == SDL_EVENT_KEY_DOWN;
-        if (down && !event->key.repeat && event->key.key == SDLK_ESCAPE) {
-            g_audio.offset_escape_pending = true;
-        }
-        worm_ui_nuklear_queue_compose_key(static_cast<std::uint32_t>(event->key.key),
-                                          static_cast<std::uint32_t>(event->key.scancode),
-                                          static_cast<std::uint16_t>(event->key.mod), down,
-                                          event->key.repeat);
-        queue_shortcut_key_event(&event->key);
+        if (handle_frontend_keyboard_event(event->key)) return true;
     } else if (event->type == SDL_EVENT_TEXT_EDITING && g_window && event->edit.windowID != 0 &&
                event->edit.windowID == SDL_GetWindowID(g_window)) {
         g_ime_composition_active = event->edit.text && event->edit.text[0] != '\0';
@@ -642,7 +678,7 @@ static void render_project_menu(const WormUiWorkspaceView* view,
 
 static void render_view_menu(const WormUiWorkspaceView* view,
                              WormUiWorkspaceAction* action) {
-    if (!nk_menu_begin_label(g_context, "View", NK_TEXT_LEFT, nk_vec2(230, 130))) return;
+    if (!nk_menu_begin_label(g_context, "View", NK_TEXT_LEFT, nk_vec2(230, 160))) return;
     nk_layout_row_dynamic(g_context, 25, 1);
     if (nk_menu_item_label(g_context, view->player_preview.visible ? "Hide preview"
                                                                  : "Show preview", NK_TEXT_LEFT) &&
@@ -657,6 +693,9 @@ static void render_view_menu(const WormUiWorkspaceView* view,
     nk_layout_row_dynamic(g_context, 25, 1);
     if (nk_menu_item_label(g_context, g_frame_timing_visible ? "Hide frame timing" : "Frame timing", NK_TEXT_LEFT))
         g_frame_timing_visible = !g_frame_timing_visible;
+    nk_layout_row_dynamic(g_context, 25, 1);
+    if (nk_menu_item_label(g_context, view->tap_timing.visible ? "Hide tap timing" : "Tap timing", NK_TEXT_LEFT))
+        action->tap_timing.toggle = true;
     nk_menu_end(g_context);
 }
 
@@ -1330,6 +1369,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         expose_shortcut_input(&action);
         return action;
     }
+    g_tap_timing_visible = view->tap_timing.visible;
     sync_pending_audio_project(*view);
 
     const auto* validation_error = workspace_validation_error(*view);
@@ -1358,6 +1398,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         worm_ui_nuklear_reconcile_timing_gestures(nullptr, false, false);
         render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
         worm_ui_nuklear_render_external_player_panel(g_context, &view->external_player, &action.external_player);
+        worm_ui_nuklear_render_tap_timing_panel(g_context, view->tap_timing, action.tap_timing);
         expose_shortcut_input(&action);
         g_audio.offset_escape_pending = false;
         return action;
@@ -1373,6 +1414,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
 
     render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
     render_frame_timing_overlay(width, height);
+    worm_ui_nuklear_render_tap_timing_panel(g_context, view->tap_timing, action.tap_timing);
     worm_ui_nuklear_render_external_player_panel(g_context, &view->external_player, &action.external_player);
     worm_ui_nuklear_render_player_preview(g_context, g_renderer, &view->player_preview, &action,
                                           width, height);

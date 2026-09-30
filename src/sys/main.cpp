@@ -27,6 +27,7 @@
 #include "sys/platform_recovery.h"
 #include "sys/platform_shortcut_profile.h"
 #include "sys/external_player.h"
+#include "sys/tap_timing_runtime.h"
 #include <SDL3/SDL_filesystem.h>
 #include <wormedit/core/virtual_canvas.h>
 #include "sys/project_open.h"
@@ -1752,11 +1753,14 @@ auto dispatch_application_shortcuts(
     const WormUiWorkspaceAction& action, wormedit::command_registry_t& registry,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     const std::optional<wormedit::editor_interaction_state_t>& compose_state,
-    application_command_state_t& application_state, std::string& status) -> bool {
+    application_command_state_t& application_state, std::string& status,
+    std::optional<std::uint64_t>& tap_event_ns, bool& tap_only) -> bool {
     using namespace wormedit;
+    tap_only = true;
     if (action.shortcut_overflowed ||
         action.shortcut_event_count > WORM_UI_SHORTCUT_EVENT_CAPACITY) {
         status = "Shortcut input exceeded its per-frame capacity and was discarded.";
+        tap_only = false;
         return true;
     }
     bool handled{};
@@ -1764,12 +1768,17 @@ auto dispatch_application_shortcuts(
         refresh_application_command_states(registry, history, workspace, compose_state,
                                            application_state);
         const auto& input = action.shortcut_events[index];
-        const auto dispatched = dispatch_shortcut(
+        tap_event_ns = input.timestamp_ns;
+        const auto dispatched = input.tap_timing_space
+            ? invoke_command(registry, {"timing.tap"}, application_command_focus(action, workspace))
+            : dispatch_shortcut(
             registry,
             {.chord = {.key = static_cast<shortcut_key_t>(input.hid_usage),
                        .modifiers = input.modifiers},
              .auto_repeat = input.repeat},
             application_command_focus(action, workspace), application_primary_modifier());
+        tap_event_ns.reset();
+        if (!dispatched.command || dispatched.command->value != "timing.tap") tap_only = false;
         if (dispatched.status == command_dispatch_status_t::invoked) {
             handled = true;
         } else if (dispatched.status == command_dispatch_status_t::disabled) {
@@ -2150,18 +2159,20 @@ template <typename Context>
 auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& action,
                                   double viewport_delta_seconds) -> bool {
     if (!context.session_loaded_ref) return false;
+    bool tap_only{};
     const bool shortcut_handled =
         action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
         dispatch_application_shortcuts(action, context.command_registry_ref, context.history_ref,
                                        context.workspace_ref, context.compose_interaction_state_ref,
-                                       context.application_command_state_ref, context.status_ref);
-    if (shortcut_handled && context.compose_interaction_state_ref &&
+                                       context.application_command_state_ref, context.status_ref,
+                                       context.tap_event_ns_ref, tap_only);
+    if (shortcut_handled && !tap_only && context.compose_interaction_state_ref &&
         editor_interaction_has_pending_gesture(*context.compose_interaction_state_ref)) {
         (void)wormedit::dispatch_editor_action(
             context.history_ref, *context.compose_interaction_state_ref,
             wormedit::cancel_editor_gesture_action_t{});
     }
-    if (shortcut_handled) {
+    if (shortcut_handled && !tap_only) {
         context.audio_offset_drag_ref.reset();
         context.audio_offset_drag_tab_ref.reset();
         context.compose_scene_cache_ref.beat_fit_drag.reset();
@@ -2746,17 +2757,155 @@ void prepare_bound_workspace_frame(
     }
 }
 
+void dispatch_tap_panel_action(wormedit::sys::tap_timing_runtime_t& runtime,
+                               const WormUiTapTimingAction& action) {
+    if (action.toggle) runtime.toggle();
+    if (action.close) runtime.set_visible(false);
+    if (action.reset) runtime.reset();
+}
+
+void project_tap_timing(wormedit::sys::tap_timing_runtime_t& runtime,
+                        const std::function<wormedit::sys::tap_timing_clock_t()>& read_clock,
+                        wormedit::command_registry_t& registry, WormUiWorkspaceView& view) {
+    const auto clock = runtime.visible() ? read_clock() : wormedit::sys::tap_timing_clock_t{};
+    if (runtime.visible()) (void)runtime.observe(clock);
+    const auto state = runtime.state();
+    (void)wormedit::update_command_state(registry, {"timing.tap_assistant"}, true, state.visible);
+    (void)wormedit::update_command_state(registry, {"timing.tap"}, state.visible, std::nullopt);
+    auto& target = view.tap_timing;
+    target.visible = state.visible;
+    target.playing = state.playing;
+    target.source_available = state.source_available;
+    target.beats_per_measure = state.beats_per_measure;
+    target.active_segment = state.active_segment;
+    target.downbeat_flash = state.downbeat_flash;
+    target.tap_count = state.tap_count;
+    target.tap_capacity = state.tap_capacity;
+    target.status = state.status;
+    if (!state.estimate) return;
+    target.estimate_available = true;
+    target.stable = state.estimate->stable;
+    target.bpm = state.estimate->bpm;
+    target.ms_per_beat = 60'000 / target.bpm;
+    target.offset_ms = state.estimate->phase_frame * 1000 / clock.sample_rate;
+    target.deviation_ms = state.estimate->residual_standard_deviation_ms;
+    target.confidence = state.estimate->confidence;
+}
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+auto tap_meter_at(const wormedit::song_document_t& document,
+                  const wormedit::sys::runtime::chart_preview_t& preview,
+                  std::uint64_t frame) -> std::uint16_t {
+    if (!preview.chart || !preview.timing ||
+        frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) return 4;
+    const auto chart = std::ranges::find(document.charts, *preview.chart, &wormedit::chart_document_t::id);
+    if (chart == document.charts.end()) return 4;
+    const auto position = wormedit::musical_position_at(*preview.timing,
+        {static_cast<std::int64_t>(frame), 44'100});
+    if (!position.absolute_row) return 4;
+    const auto row = position.absolute_row->numerator / static_cast<std::int64_t>(position.absolute_row->denominator);
+    struct meter_cache_t {
+        std::uint64_t revision{};
+        wormedit::song_id_t project;
+        std::uint64_t fingerprint{};
+        std::optional<wormedit::chart_id_t> chart;
+        std::vector<std::pair<std::uint64_t, std::uint32_t>> entries;
+    };
+    static meter_cache_t cache;
+    if (cache.project != document.id || cache.chart != preview.chart ||
+        cache.revision != document.revision || cache.fingerprint != preview.timing->source_fingerprint) {
+        cache.fingerprint = preview.timing->source_fingerprint;
+        cache.project = document.id;
+        cache.chart = preview.chart;
+        cache.revision = document.revision;
+        cache.entries.clear();
+        std::uint64_t begin{};
+        std::uint32_t beats = 4;
+        for (const auto& measure : chart->measures) {
+            if (measure.definition.meter) beats = measure.definition.meter->numerator;
+            cache.entries.emplace_back(begin, beats);
+            const auto validation = wormedit::validate_measure(chart->divisions_per_standard_measure, measure.definition);
+            if (!validation.row_capacity || *validation.row_capacity > UINT64_MAX - begin) break;
+            begin += *validation.row_capacity;
+        }
+    }
+    const auto found = std::upper_bound(cache.entries.begin(), cache.entries.end(),
+        row < 0 ? 0 : static_cast<std::uint64_t>(row),
+        [](std::uint64_t target, const auto& entry) { return target < entry.first; });
+    const auto beats = found == cache.entries.begin() ? 4 : std::prev(found)->second;
+    return beats >= 1 && beats <= 32 ? static_cast<std::uint16_t>(beats) : 4;
+}
+#endif
+
+struct tap_clock_context_t {
+    std::uint64_t& epoch;
+    std::uint64_t& epoch_begin_ns;
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    const wormedit::song_document_t& document;
+    const wormedit::sys::runtime::chart_preview_t& preview;
+    const wormedit::audio::preview_transport_bridge_t& bridge;
+    const wormedit::sys::sdl_preview_output_t& output;
+#endif
+};
+
+auto read_tap_clock(tap_clock_context_t& context) -> wormedit::sys::tap_timing_clock_t {
+        wormedit::sys::tap_timing_clock_t clock;
+        clock.observed_ns = SDL_GetTicksNS();
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        const auto token = context.bridge.session_token();
+        const auto rate = context.output.playback_rate();
+        const auto keep_pitch = context.output.keep_pitch();
+        const auto playing = context.output.playing();
+        const auto frame = context.output.timeline_frame();
+        clock.observed_ns = SDL_GetTicksNS();
+        if (context.epoch != (token ? token->generation : 0)) {
+            context.epoch = token ? token->generation : 0;
+            context.epoch_begin_ns = clock.observed_ns;
+        }
+        clock.chart = context.preview.chart ? context.preview.chart->value : 0;
+        clock.revision = context.preview.revision;
+        clock.asset = context.preview.music_asset ? context.preview.music_asset->value : 0;
+        clock.epoch = context.epoch;
+        clock.epoch_begin_ns = context.epoch_begin_ns;
+        clock.playback_rate = rate;
+        clock.keep_pitch = keep_pitch;
+        clock.playing = playing && context.output.playing();
+        if (token == context.bridge.session_token() && rate == context.output.playback_rate() &&
+            keep_pitch == context.output.keep_pitch() && context.preview.schedule &&
+            context.preview.schedule->music) {
+            clock.source_frame = wormedit::preview_music_source_frame_at(*context.preview.schedule->music, frame);
+            clock.beats_per_measure = tap_meter_at(context.document, context.preview, frame);
+        }
+#endif
+        return clock;
+}
+
 auto dispatch_registered_application_command(
     const wormedit::command_invocation_context_t& invocation,
     wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace,
     std::optional<wormedit::editor_interaction_state_t>& compose_interaction_state,
     std::optional<wormedit::timing_lane_pseudonote_preview_t>& timing_stage,
-    application_command_state_t& application_command_state, std::string& status) {
+    application_command_state_t& application_command_state, std::string& status,
+    wormedit::sys::tap_timing_runtime_t& tap_runtime,
+    const std::function<wormedit::sys::tap_timing_clock_t()>& tap_clock,
+    const std::optional<std::uint64_t>& tap_event_ns) {
     const auto command = parse_application_command(invocation.command.value);
     if (!command) {
         return wormedit::sys::reject_application_command(
             status, "Command is not implemented by the application.");
+    }
+    if (command->kind == wormedit::sys::application_command_kind_t::timing_tap_assistant) {
+        tap_runtime.toggle();
+        (void)tap_runtime.observe(tap_clock());
+        return wormedit::command_invocation_result_t{.accepted = true};
+    }
+    if (command->kind == wormedit::sys::application_command_kind_t::timing_tap) {
+        const auto clock = tap_clock();
+        (void)tap_runtime.tap(tap_event_ns.value_or(clock.observed_ns), clock);
+        const auto state = tap_runtime.state();
+        if (state.status) status = state.status;
+        return wormedit::command_invocation_result_t{.accepted = true};
     }
     return wormedit::sys::invoke_application_command(
         *command, history, workspace, compose_interaction_state, timing_stage,
@@ -2911,12 +3060,24 @@ int main(int argc, char** argv) {
                                  audition_session, preview_session, preview_state, audition_sources,
                                  preview_metronome_bindings, audition_output, preview_output);
 #endif
+    wormedit::sys::tap_timing_runtime_t tap_runtime;
+    std::optional<std::uint64_t> tap_event_ns;
+    std::uint64_t tap_epoch{};
+    std::uint64_t tap_epoch_begin_ns{};
+    tap_clock_context_t tap_clock_context{tap_epoch, tap_epoch_begin_ns,
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        history.document, preview_state, preview_bridge, preview_output,
+#endif
+    };
+    const std::function<wormedit::sys::tap_timing_clock_t()> tap_clock = [&] {
+        return read_tap_clock(tap_clock_context);
+    };
     timing_grid_state_t timing_grid;
     auto command_registry = wormedit::make_default_editor_command_registry(
         [&](const wormedit::command_invocation_context_t& invocation) {
             return dispatch_registered_application_command(
                 invocation, history, workspace, compose_interaction_state, timing_edit.stage,
-                application_command_state, status);
+                application_command_state, status, tap_runtime, tap_clock, tap_event_ns);
         });
     const auto shortcut_startup = wormedit::load_platform_shortcut_profile(command_registry);
     append_shortcut_startup_diagnostic(status, shortcut_startup);
@@ -2931,6 +3092,7 @@ int main(int argc, char** argv) {
         decltype(compose_interaction_state)& compose_interaction_state_ref;
         decltype(application_command_state)& application_command_state_ref;
         decltype(status)& status_ref;
+        decltype(tap_event_ns)& tap_event_ns_ref;
         decltype(audio_offset_drag)& audio_offset_drag_ref;
         decltype(audio_offset_drag_tab)& audio_offset_drag_tab_ref;
         decltype(compose_scene_cache)& compose_scene_cache_ref;
@@ -2953,6 +3115,7 @@ int main(int argc, char** argv) {
         compose_interaction_state,
         application_command_state,
         status,
+        tap_event_ns,
         audio_offset_drag,
         audio_offset_drag_tab,
         compose_scene_cache,
@@ -3145,6 +3308,7 @@ int main(int argc, char** argv) {
             flattened.view.transport_keep_pitch = application_command_state.transport_keep_pitch;
             flattened.view.transport_keep_pitch_available = application_command_state.transport_keep_pitch_available;
             project_external_player_view(external_player_runtime, flattened.view);
+            project_tap_timing(tap_runtime, tap_clock, command_registry, flattened.view);
             flattened.view.project_loaded = session_loaded;
             flattened.view.project_has_native_path = native_project_loaded;
             flattened.view.pending_new_project_audio_path = pending_audio_project_path.c_str();
@@ -3167,6 +3331,7 @@ int main(int argc, char** argv) {
                         waveform_runtime.waveform_analysis()->waveform->sample_rate;
                 }
 #endif
+                dispatch_tap_panel_action(tap_runtime, action.tap_timing);
                 const bool shortcut_handled = process_compose_frame_action(
                     compose_frame_action_context, action, compose_viewport_delta_seconds);
                 const bool external_handled =

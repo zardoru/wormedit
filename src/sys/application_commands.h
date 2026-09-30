@@ -38,6 +38,8 @@ enum class application_command_kind_t {
     workspace_open_storyboard,
     workspace_open_audio_slices,
     workspace_open_compare_validate,
+    timing_tap_assistant,
+    timing_tap,
     timing_toggle_lock,
     timing_insert_bpm,
     timing_insert_sv,

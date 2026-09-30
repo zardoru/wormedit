@@ -522,6 +522,8 @@ typedef struct WormUiShortcutEvent {
     uint16_t hid_usage;
     uint8_t modifiers;
     bool repeat;
+    uint64_t timestamp_ns;
+    bool tap_timing_space;
 } WormUiShortcutEvent;
 
 typedef enum WormUiShortcutModifier {
@@ -1205,7 +1207,33 @@ struct WormUiExternalPlayerAction {
     char stop_arguments[4097];
 };
 
+typedef struct WormUiTapTimingView {
+    bool visible;
+    bool playing;
+    bool source_available;
+    bool estimate_available;
+    bool stable;
+    bool downbeat_flash;
+    uint16_t beats_per_measure;
+    uint16_t active_segment;
+    uint64_t tap_count;
+    uint64_t tap_capacity;
+    double bpm;
+    double ms_per_beat;
+    double offset_ms;
+    double deviation_ms;
+    double confidence;
+    const char* status;
+} WormUiTapTimingView;
+
+typedef struct WormUiTapTimingAction {
+    bool toggle;
+    bool close;
+    bool reset;
+} WormUiTapTimingAction;
+
 typedef struct WormUiWorkspaceView {
+    WormUiTapTimingView tap_timing;
     bool project_loaded;
     bool project_has_native_path;
     // A dropped MP3/OGG awaiting confirmation as a new project's audio.
@@ -1455,6 +1483,7 @@ typedef enum WormUiMetadataEditKind {
 } WormUiMetadataEditKind;
 
 typedef struct WormUiWorkspaceAction {
+    WormUiTapTimingAction tap_timing;
     WormUiWorkspaceActionKind kind;
     struct WormUiExternalPlayerAction external_player;
     char project_path[WORM_UI_PROJECT_PATH_CAPACITY];

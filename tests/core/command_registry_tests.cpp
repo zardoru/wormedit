@@ -432,3 +432,31 @@ TEST_CASE("Playback rate shortcuts have no registry conflicts", "[unit][commands
     CHECK(slower->default_shortcuts.front().key == shortcut_key_t::f11);
     CHECK(faster->default_shortcuts.front().key == shortcut_key_t::f12);
 }
+
+TEST_CASE("Tap timing registry metadata is nonmutating and initially disabled", "[unit][commands]") {
+    auto registry = make_default_editor_command_registry([](const command_invocation_context_t&) {
+        return command_invocation_result_t{.accepted = true};
+    });
+    const auto* tap = find_command(registry, {"timing.tap"});
+    const auto* assistant = find_command(registry, {"timing.tap_assistant"});
+    REQUIRE(tap);
+    REQUIRE(assistant);
+    CHECK_FALSE((tap->mutation || assistant->mutation || tap->enabled));
+    REQUIRE(tap->default_shortcuts.size() == 1);
+    CHECK(tap->default_shortcuts.front().key == shortcut_key_t::t);
+}
+
+TEST_CASE("Tap timing dispatch accepts workspace taps and rejects text entry", "[unit][commands]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    auto registry = make_default_editor_command_registry(make_invoker(calls));
+    REQUIRE(update_command_state(registry, {"timing.tap"}, true, std::nullopt).applied);
+    auto focus = focus_for_compose();
+    CHECK(dispatch_shortcut(registry, {.chord = {.key = shortcut_key_t::t}}, focus,
+        shortcut_primary_modifier_t::control).status == command_dispatch_status_t::invoked);
+    REQUIRE(calls->size() == 1);
+    CHECK(calls->front().value == "timing.tap");
+    focus.text_entry_active = true;
+    CHECK(dispatch_shortcut(registry, {.chord = {.key = shortcut_key_t::t}}, focus,
+        shortcut_primary_modifier_t::control).status != command_dispatch_status_t::invoked);
+    CHECK(calls->size() == 1);
+}

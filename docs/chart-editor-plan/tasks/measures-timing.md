@@ -204,18 +204,18 @@ stale-plan check (rule 9) first.
 
 ## T-237 Add an osu!-style tap timing assistant
 
-- **Status:** blocked-on T-236
-- **Outcome:** a modeless "Tap timing" panel shows a circle divided into N segments (N = beats per measure of the current meter, default 4) that light in turn on the estimated beat while the song plays, with a bright flash on the downbeat; the tap key (T, or Space while the panel has focus) records taps at the current playhead source frame; the panel shows BPM, ms per beat, offset ms, deviation ms, and taps n/16, with Reset.
+- **Status:** done
+- **Outcome:** a modeless "Tap timing" panel shows a circle divided into N segments (N = beats per measure of the current meter, default 4) that light in turn on the estimated beat while the song plays, with a bright flash on the downbeat; the tap key (T, or Space while the panel has focus) records taps at the event-time estimate of the audible music source frame; the panel shows BPM, ms per beat, offset ms, deviation ms, and taps n/16, with Reset.
 - **Read first:** `include/wormedit/core/tap_tempo.h`, `src/sys/audio_transport_frame.cpp` (current source frame), `src/ui/nuklear/player_preview.cpp` (a modeless overlay to copy the window pattern from), `src/core/command_registry.cpp`.
-- **Files owned:** new `src/ui/nuklear/tap_timing_panel.cpp/.h`, new `src/sys/tap_timing_runtime.cpp/.h`, `src/ui/frontend.h`, `src/sys/main.cpp` (ownership, dispatch, and view only), `src/core/command_registry.cpp`, `CMakeLists.txt`.
+- **Files owned:** new `src/ui/nuklear/tap_timing_panel.cpp/.h`, new `src/sys/tap_timing_runtime.cpp/.h`, `src/ui/frontend.h`, `src/sys/main.cpp` (ownership, dispatch, and view only), `src/core/command_registry.cpp`, `CMakeLists.txt`, `src/ui/nuklear/frontend.cpp`, `src/sys/application_commands.h/.cpp`, new `tests/sys/tap_timing_runtime_tests.cpp`, `tests/CMakeLists.txt`, `tests/sys/application_commands_tests.cpp`, `tests/core/command_registry_tests.cpp` (scope extensions approved by the user).
 - **Steps:**
-  1. The runtime owns the estimator; taps use the transport's exact current source frame at event time (with the SDL key event timestamp converted to frames), not the frame-start time.
+  1. The runtime owns the estimator; SDL event timestamps are mapped onto the audible music source-frame estimate by checked rate-aware interpolation within an unchanged transport epoch. The backend has no historical sample-exact device-position record; seek, Stop, rate changes, and snapshots spanning a transition invalidate queued older events. No frame-start position is used.
   2. The circle is drawn with `nk_fill_arc`, one segment per beat, using the theme roles (accent for the current beat, selected for the downbeat).
   3. Tapping works only while the song is playing; otherwise show "Play the song, then tap on the beat".
   4. Registry commands `timing.tap_assistant` (open/close) and `timing.tap` (tap).
 - **Invariants:** tapping never edits the document.
 - **Reject/failure behavior:** stale transport sessions (seek/stop) reset the estimator.
-- **Verify:** standard build/test; smoke PNG of the panel; manual tapping over a fixture song.
+- **Verify:** integrated application build passed; the full suite passed 936/936 in 33.39 seconds, including the tap runtime, parser, registry, and frontend guards. New production functions and new test cases pass the cognitive-complexity check. Controlled events over generated audio in isolated Xvfb with SDL dummy audio replace manual tapping as approved: T records ten taps; focused Space records five after Reset; 0.5× playback with one-second taps estimates 120.656 BPM with 3.278 ms deviation (stable); seek to 19 seconds, rate changes, pause, and Stop clear the estimate. The complete panel, accent segment, and downbeat flash were inspected. Saving the native fixture preserves all canonical document fields after the existing revision-zero load normalization; a separate held-key/open-panel/release/close-panel control permits two subsequent lane-note edits, proving release routing remains usable. Evidence: `/tmp/wormedit-t237/visual/`, `/tmp/wormedit-t237/final-production-tidy.log`, `/tmp/wormedit-t237-t264-final-ctest.log`.
 - **Out of scope:** clicks (T-238), applying the result (T-239).
 
 ## T-238 Click on the estimated beat while tapping

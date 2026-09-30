@@ -732,7 +732,11 @@ struct editor_hover_index_entry_t {
     local_position_t position;
     std::uint64_t absolute_row{};
     std::uint64_t end_absolute_row{};
-    std::string tooltip;
+    // Location of the source object in the chart (measure index for notes and
+    // BGM events, otherwise zero; index within that container). The tooltip is
+    // formatted from it only for the hovered object instead of for every object.
+    std::size_t source_group{};
+    std::size_t source_index{};
 };
 
 // Build once per document revision and reuse while querying pointer motion.

@@ -2253,8 +2253,10 @@ TEST_CASE("hit-test buckets handle dense measures and 50k notes within a discret
                                          snaps, 100'000, 200.0);
     REQUIRE(setup);
     auto state = std::move(*setup.state);
+    // Scroll so the last viewport row is the chart end, keeping measure 2's
+    // note on screen; the scroll limit itself runs further past the end.
     const auto scrolled =
-        dispatch_editor_action(history, state, scroll_editor_view_action_t{10'000.0});
+        dispatch_editor_action(history, state, scroll_editor_view_action_t{184.0});
     REQUIRE(scrolled);
 
     // This measures one-time index construction plus one pointer query against

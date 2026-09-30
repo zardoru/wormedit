@@ -26,6 +26,9 @@ enum class frame_phase_t : std::size_t {
     workspace_actions,
     workspace_follow,
     workspace_bmson,
+    render_convert,
+    render_submit,
+    render_present,
     count
 };
 inline constexpr std::size_t frame_timing_capacity = 240;
@@ -51,7 +54,10 @@ inline constexpr std::array<const char*, frame_phase_count> frame_phase_names{
     "  Preparation",
     "  Actions",
     "  Follow playhead",
-    "  BMSON projection"};
+    "  BMSON projection",
+    "  Convert",
+    "  Submit",
+    "  Present (VSync wait)"};
 auto frame_phase_parent(frame_phase_t phase) -> frame_phase_t;
 inline constexpr std::array<frame_phase_t, frame_phase_count> frame_phase_display_order{
     frame_phase_t::events,
@@ -74,8 +80,19 @@ inline constexpr std::array<frame_phase_t, frame_phase_count> frame_phase_displa
     frame_phase_t::workspace_bmson,
     frame_phase_t::scene,
     frame_phase_t::nuklear,
-    frame_phase_t::render};
+    frame_phase_t::render,
+    frame_phase_t::render_convert,
+    frame_phase_t::render_submit,
+    frame_phase_t::render_present};
+inline constexpr std::size_t frame_gpu_work_count = 5;
+inline constexpr std::array<const char*, frame_gpu_work_count> frame_gpu_work_names{
+    "Vertices", "Indices", "Draw calls", "Clip-rect changes", "Texture switches"};
+struct frame_gpu_work_t {
+    std::array<std::uint64_t, frame_gpu_work_count> values{};
+    bool measured{};
+};
 struct frame_timing_sample_t {
+    frame_gpu_work_t gpu_work{};
     double frame_ms{};
     std::array<double, frame_phase_count> phase_ms{};
     std::array<bool, frame_phase_count> measured{};
@@ -85,6 +102,11 @@ struct frame_timing_summary_t {
     double average_ms{};
     double p99_ms{};
 };
+struct frame_counter_summary_t {
+    std::size_t count{};
+    double average{};
+    double p99{};
+};
 class frame_timing_t {
   public:
     void begin_frame();
@@ -92,6 +114,8 @@ class frame_timing_t {
     auto enter(frame_phase_t phase) -> frame_phase_t;
     void restore(frame_phase_t phase);
     void record(const frame_timing_sample_t& sample);
+    void record_gpu_work(const frame_gpu_work_t& work);
+    auto gpu_work_summary(std::size_t metric) const -> frame_counter_summary_t;
     auto sample(std::size_t chronological_index) const -> const frame_timing_sample_t&;
     auto size() const -> std::size_t {
         return size_;

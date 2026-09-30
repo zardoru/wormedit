@@ -1,4 +1,5 @@
 #include "wormedit/window.h"
+#include "sys/frame_timing.h"
 
 #include <SDL3/SDL_error.h>
 #include <SDL3/SDL_init.h>
@@ -115,6 +116,7 @@ void worm_window_destroy(WormWindow *window)
 void worm_window_swap(WormWindow *window)
 {
     if (window && window->renderer) {
+        const wormedit::sys::frame_phase_scope_t present_phase{wormedit::sys::frame_phase_t::render_present};
         SDL_RenderPresent(window->renderer);
     }
 }

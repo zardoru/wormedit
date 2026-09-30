@@ -1612,18 +1612,44 @@ void worm_ui_frontend_resource_placed(uint64_t placed_resource_id, uint64_t next
 void worm_ui_frontend_render(int window_width, int window_height);
 
 #define WORM_UI_FRAME_TIMING_CAPACITY 240
-#define WORM_UI_FRAME_TIMING_PHASE_COUNT 21
+#define WORM_UI_FRAME_TIMING_PHASE_COUNT 24
 typedef struct WormUiFrameTimingStats {
     size_t count;
     double average_ms;
     double p99_ms;
 } WormUiFrameTimingStats;
+#define WORM_UI_FRAME_GPU_WORK_COUNT 5
+typedef struct WormUiFrameGpuWorkStats {
+    size_t count;
+    double average;
+    double p99;
+} WormUiFrameGpuWorkStats;
+typedef struct WormUiFrameGpuWork {
+    uint64_t vertices;
+    uint64_t indices;
+    uint64_t draw_calls;
+    uint64_t clip_rect_changes;
+    uint64_t texture_switches;
+} WormUiFrameGpuWork;
 typedef struct WormUiFrameTimingView {
     size_t count;
     double frame_ms[WORM_UI_FRAME_TIMING_CAPACITY];
     WormUiFrameTimingStats frame;
     const char* phase_names[WORM_UI_FRAME_TIMING_PHASE_COUNT];
     WormUiFrameTimingStats phases[WORM_UI_FRAME_TIMING_PHASE_COUNT];
+    uint32_t gpu_work_available;
+    WormUiFrameGpuWork gpu_work_latest;
+    const char* gpu_work_names[WORM_UI_FRAME_GPU_WORK_COUNT];
+    WormUiFrameGpuWorkStats gpu_work[WORM_UI_FRAME_GPU_WORK_COUNT];
 } WormUiFrameTimingView;
 // Called only while the frontend's diagnostic overlay is visible.
 WormUiFrameTimingView worm_ui_frame_timing_view(void);
+void worm_ui_frame_timing_record_gpu_work(WormUiFrameGpuWork work);
+typedef enum WormUiFrameRenderPhase {
+    WORM_UI_FRAME_RENDER_CONVERT,
+    WORM_UI_FRAME_RENDER_SUBMIT,
+    WORM_UI_FRAME_RENDER_PRESENT
+} WormUiFrameRenderPhase;
+// The returned token is opaque to the frontend and restores the prior phase.
+uint32_t worm_ui_frame_render_phase_begin(WormUiFrameRenderPhase phase);
+void worm_ui_frame_render_phase_end(uint32_t previous);

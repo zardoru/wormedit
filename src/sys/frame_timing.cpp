@@ -33,6 +33,15 @@ void report_if_requested(const frame_timing_t& timer) {
                          frame_phase_names[index], summary.average_ms, summary.p99_ms,
                          summary.count);
     }
+    std::fprintf(output, "GPU work per frame:\n");
+    for (std::size_t metric = 0; metric < frame_gpu_work_count; ++metric) {
+        const auto summary = timer.gpu_work_summary(metric);
+        if (summary.count == 0)
+            std::fprintf(output, "%s: N/A\n", frame_gpu_work_names[metric]);
+        else
+            std::fprintf(output, "%s: average %.3f, p99 %.0f (%zu samples)\n",
+                frame_gpu_work_names[metric], summary.average, summary.p99, summary.count);
+    }
     std::fclose(output);
 }
 } // namespace
@@ -41,6 +50,8 @@ auto frame_phase_parent(frame_phase_t phase) -> frame_phase_t {
         return frame_phase_t::audio;
     if (phase >= frame_phase_t::workspace_flatten && phase <= frame_phase_t::workspace_bmson)
         return frame_phase_t::workspace;
+    if (phase == frame_phase_t::render_convert || phase == frame_phase_t::render_submit ||
+        phase == frame_phase_t::render_present) return frame_phase_t::render;
     return frame_phase_t::count;
 }
 auto frame_timing() -> frame_timing_t& {
@@ -95,6 +106,26 @@ void frame_timing_t::record(const frame_timing_sample_t& sample) {
     next_ = (next_ + 1) % frame_timing_capacity;
     size_ = std::min(size_ + 1, frame_timing_capacity);
 }
+void frame_timing_t::record_gpu_work(const frame_gpu_work_t& work) {
+    if (active_) current_.gpu_work = work;
+}
+auto frame_timing_t::gpu_work_summary(std::size_t metric) const -> frame_counter_summary_t {
+    frame_counter_summary_t result;
+    if (metric >= frame_gpu_work_count) return result;
+    std::array<double, frame_timing_capacity> sorted{};
+    for (std::size_t frame = 0; frame < size_; ++frame) {
+        const auto& work = sample(frame).gpu_work;
+        if (!work.measured) continue;
+        const auto value = static_cast<double>(work.values[metric]);
+        sorted[result.count++] = value;
+        result.average += value;
+    }
+    if (result.count == 0) return result;
+    result.average /= static_cast<double>(result.count);
+    std::sort(sorted.begin(), sorted.begin() + result.count);
+    result.p99 = sorted[(result.count * 99 + 99) / 100 - 1];
+    return result;
+}
 auto frame_timing_t::sample(std::size_t index) const -> const frame_timing_sample_t& {
     assert(index < size_);
     return samples_[(next_ + frame_timing_capacity - size_ + index) % frame_timing_capacity];
@@ -143,5 +174,35 @@ WormUiFrameTimingView worm_ui_frame_timing_view() {
         result.phase_names[i] = frame_phase_names[index];
         result.phases[i] = {summary.count, summary.average_ms, summary.p99_ms};
     }
+    static_assert(WORM_UI_FRAME_GPU_WORK_COUNT == frame_gpu_work_count);
+    if (timer.size() != 0) {
+        const auto& work = timer.sample(timer.size() - 1).gpu_work;
+        result.gpu_work_available = work.measured;
+        result.gpu_work_latest = {work.values[0], work.values[1], work.values[2], work.values[3], work.values[4]};
+    }
+    for (std::size_t metric = 0; metric < frame_gpu_work_count; ++metric) {
+        const auto summary = timer.gpu_work_summary(metric);
+        result.gpu_work_names[metric] = frame_gpu_work_names[metric];
+        result.gpu_work[metric] = {summary.count, summary.average, summary.p99};
+    }
     return result;
+}
+
+void worm_ui_frame_timing_record_gpu_work(WormUiFrameGpuWork work) {
+    wormedit::sys::frame_timing().record_gpu_work({
+        {work.vertices, work.indices, work.draw_calls, work.clip_rect_changes, work.texture_switches}, true});
+}
+
+uint32_t worm_ui_frame_render_phase_begin(WormUiFrameRenderPhase phase) {
+    using namespace wormedit::sys;
+    constexpr std::array phases{frame_phase_t::render_convert, frame_phase_t::render_submit,
+                               frame_phase_t::render_present};
+    const auto index = static_cast<std::size_t>(phase);
+    if (index >= phases.size()) return static_cast<uint32_t>(frame_phase_count);
+    return static_cast<uint32_t>(frame_timing().enter(phases[index]));
+}
+void worm_ui_frame_render_phase_end(uint32_t previous) {
+    using namespace wormedit::sys;
+    if (previous <= frame_phase_count)
+        frame_timing().restore(static_cast<frame_phase_t>(previous));
 }

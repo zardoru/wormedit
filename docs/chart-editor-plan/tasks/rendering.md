@@ -47,15 +47,69 @@ rendering). Apply the stale-plan check (rule 9) first.
 
 ## T-246 Count GPU work per frame
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** the frame-timing overlay and `WORMEDIT_FRAME_TIMING_REPORT` also show, per frame, vertices, indices, draw calls, clip-rect changes, and texture switches, and split "Render/present" into convert, submit, and present (VSync wait).
 - **Read first:** `src/sys/frame_timing.h/.cpp`, `src/ui/nuklear/frontend.cpp` (the `nk_sdl_render` call and `SDL_RenderPresent` in `src/sys/window.cpp`), the SDL3 demo backend named above.
-- **Files owned:** `src/sys/frame_timing.h/.cpp`, `src/ui/nuklear/frontend.cpp`, `src/sys/window.cpp` (timer call only), `tests/sys/frame_timing_tests.cpp`.
+- **Files owned:** `src/sys/frame_timing.h/.cpp`, `src/ui/nuklear/frontend.cpp`, `src/sys/window.cpp` (timer call only), `tests/sys/frame_timing_tests.cpp`, `src/ui/frontend.h` (user-approved scalar counter and 24-phase view contract extension).
 - **Steps:** 1. Counters filled where the draw list is converted and submitted. 2. Sub-phase timers. 3. Record the T-211 fixture at normal zoom and at maximum zoom (sample mode) and put both tables in the report.
 - **Invariants:** no allocation when the overlay is hidden.
 - **Reject/failure behavior:** none.
 - **Verify:** standard build/test; the two tables.
 - **Out of scope:** fixes.
+
+Isolated Xvfb, SDL x11, dummy audio, 1280×980 window, idle Compose, hidden overlay. Each table is the last complete steady 240-frame report after the view settles. Vertices/indices are unique converted-buffer counts; draw calls are submissions; clip/texture switches compare consecutive submissions, excluding the initial binding and clip restoration. Duration children exclude each other; Render/present remains inclusive. GPU work describes the Nuklear SDL submission stream.
+
+### Original T-211: normal zoom
+
+BPM 120; 192 px/measure; 500 frames/pixel at 48 kHz.
+
+| Metric | Average | p99 |
+| --- | ---: | ---: |
+| Vertices | 33013.000 | 33013.000 |
+| Indices | 84384.000 | 84384.000 |
+| Draw calls | 44.000 | 44.000 |
+| Clip-rect changes | 10.000 | 10.000 |
+| Texture switches | 34.000 | 34.000 |
+| Convert (ms) | 5.354 | 5.817 |
+| Submit (ms) | 5.256 | 5.571 |
+| Present (ms) | 11.471 | 12.716 |
+| Render/present (ms) | 23.139 | 24.353 |
+
+### Original T-211: maximum zoom
+
+BPM 120; 4096 px/measure; 23.4375 frames/pixel at 48 kHz.
+
+| Metric | Average | p99 |
+| --- | ---: | ---: |
+| Vertices | 31608.000 | 31608.000 |
+| Indices | 70581.000 | 70581.000 |
+| Draw calls | 44.000 | 44.000 |
+| Clip-rect changes | 10.000 | 10.000 |
+| Texture switches | 34.000 | 34.000 |
+| Convert (ms) | 4.762 | 5.084 |
+| Submit (ms) | 4.945 | 5.080 |
+| Present (ms) | 10.234 | 11.673 |
+| Render/present (ms) | 21.000 | 22.499 |
+
+### Temporary derivative: maximum zoom, actual PCM sample mode
+
+BPM 6000; 4096 px/measure; 0.46875 frames/pixel at 48 kHz.
+
+| Metric | Average | p99 |
+| --- | ---: | ---: |
+| Vertices | 13516.000 | 13516.000 |
+| Indices | 31227.000 | 31227.000 |
+| Draw calls | 44.000 | 44.000 |
+| Clip-rect changes | 10.000 | 10.000 |
+| Texture switches | 34.000 | 34.000 |
+| Convert (ms) | 2.024 | 2.109 |
+| Submit (ms) | 2.117 | 2.314 |
+| Present (ms) | 8.921 | 10.001 |
+| Render/present (ms) | 14.121 | 15.191 |
+
+The original compact JSON decodes identically to `/tmp/wormedit-t211/dense.wormedit`. Its 120 BPM/48 kHz audio never reaches PCM sample mode at the 4096 px/measure cap (23.4375 frames/pixel versus the <0.9 entry threshold). The third fixture preserves its notes and tone, changes only BPM to 6000, and resolves the same asset through absolute `/tmp/wormedit-t211/tone.wav`. At the exact cap, the isolated GDB probe entered `draw_compose_waveform_samples`: 341 rows, first sample-point flag true, stereo PCM values 0.0285475. The probe disables itself after one hit; the steady table follows it. PNGs show normal/max zoom and the PCM curve; `maximum-overlay.png` shows real scalar counters.
+
+Verification: parent coordinated integrated build and full suite 913/913; focused independent GPU tests 4/4 (21 assertions); affected production/tests syntax checks pass; clang-tidy reports no new project complexity violation. Logs and captures reside in `/tmp/wormedit-t246/`.
 
 ## T-247 Own the Nuklear SDL3 render backend
 

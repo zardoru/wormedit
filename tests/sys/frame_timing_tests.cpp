@@ -394,6 +394,90 @@ TEST_CASE("Compose controls retain measure geometry until the document revision 
 }
 
 namespace {
+void expect_gpu_work(bool value) { REQUIRE(value); }
+}
+
+TEST_CASE("GPU workload keeps unique frame counters and nearest rank statistics", "[sys][frame-timing][gpu-work]") {
+    frame_timing_t timer;
+    for (std::uint64_t frame = 1; frame <= 300; ++frame) {
+        frame_timing_sample_t sample;
+        sample.gpu_work = {{frame, frame * 3, 4, 3, 2}, true};
+        timer.record(sample);
+    }
+    expect_gpu_work(timer.size() == 240);
+    expect_gpu_work(timer.sample(0).gpu_work.values[0] == 61);
+    expect_gpu_work(timer.gpu_work_summary(0).count == 240);
+    expect_gpu_work(timer.gpu_work_summary(0).average == 180.5);
+    expect_gpu_work(timer.gpu_work_summary(0).p99 == 298);
+    expect_gpu_work(timer.gpu_work_summary(1).p99 == 894);
+    expect_gpu_work(timer.gpu_work_summary(2).average == 4);
+    expect_gpu_work(timer.gpu_work_summary(frame_gpu_work_count).count == 0);
+}
+
+TEST_CASE("GPU workload distinguishes unrendered frames from measured empty frames", "[sys][frame-timing][gpu-work]") {
+    frame_timing_t timer;
+    timer.begin_frame();
+    timer.record_gpu_work({{100, 300, 2, 1, 0}, true});
+    timer.end_frame();
+    timer.begin_frame();
+    timer.end_frame();
+    expect_gpu_work(!timer.sample(1).gpu_work.measured);
+    expect_gpu_work(timer.gpu_work_summary(0).count == 1);
+    expect_gpu_work(timer.gpu_work_summary(0).average == 100);
+    timer.begin_frame();
+    timer.record_gpu_work({{}, true});
+    timer.end_frame();
+    expect_gpu_work(timer.gpu_work_summary(0).count == 2);
+    expect_gpu_work(timer.gpu_work_summary(0).average == 50);
+    timer.record_gpu_work({{999, 999, 999, 999, 999}, true});
+    expect_gpu_work(timer.sample(2).gpu_work.values[0] == 0);
+}
+
+TEST_CASE("Render convert submit and present child phases retain inclusive parent timing", "[sys][frame-timing][gpu-work]") {
+    auto& timer = frame_timing();
+    timer.begin_frame();
+    {
+        frame_phase_scope_t render(frame_phase_t::render);
+        const auto submit = worm_ui_frame_render_phase_begin(WORM_UI_FRAME_RENDER_SUBMIT);
+        const auto convert = worm_ui_frame_render_phase_begin(WORM_UI_FRAME_RENDER_CONVERT);
+        worm_ui_frame_render_phase_end(convert);
+        worm_ui_frame_render_phase_end(submit);
+        frame_phase_scope_t present(frame_phase_t::render_present);
+    }
+    timer.end_frame();
+    const auto& sample = timer.sample(timer.size() - 1);
+    const auto at = [](frame_phase_t phase) { return static_cast<std::size_t>(phase); };
+    expect_gpu_work(sample.measured[at(frame_phase_t::render_convert)]);
+    expect_gpu_work(sample.measured[at(frame_phase_t::render_submit)]);
+    expect_gpu_work(sample.measured[at(frame_phase_t::render_present)]);
+    const auto children = sample.phase_ms[at(frame_phase_t::render_convert)] +
+        sample.phase_ms[at(frame_phase_t::render_submit)] + sample.phase_ms[at(frame_phase_t::render_present)];
+    expect_gpu_work(sample.phase_ms[at(frame_phase_t::render)] + 0.001 >= children);
+    expect_gpu_work(frame_phase_parent(frame_phase_t::render_convert) == frame_phase_t::render);
+}
+
+TEST_CASE("Hidden GPU workload collection and summaries allocate no C++ storage", "[sys][frame-timing][gpu-work]") {
+    frame_timing_t timer;
+    timer.begin_frame();
+    timer.end_frame();
+    allocations = 0;
+    count_allocations = true;
+    for (std::uint64_t frame = 0; frame < frame_timing_capacity; ++frame) {
+        timer.begin_frame();
+        timer.record_gpu_work({{frame, frame * 3, 2, 1, 0}, true});
+        {
+            frame_phase_scope_t submit(frame_phase_t::render_submit, timer);
+            frame_phase_scope_t convert(frame_phase_t::render_convert, timer);
+        }
+        timer.end_frame();
+    }
+    const auto summary = timer.gpu_work_summary(0);
+    count_allocations = false;
+    expect_gpu_work(allocations == 0);
+    expect_gpu_work(summary.count == frame_timing_capacity);
+}
+
+namespace {
 auto playhead_test_state(const document_history_t& history) -> editor_interaction_state_t {
     const std::uint64_t snaps[]{4, 8, 16};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},

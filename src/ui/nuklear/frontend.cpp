@@ -24,6 +24,55 @@
 #include <wormedit/formats/bms.h>
 
 #include <SDL3/SDL.h>
+class RenderSubphaseScope {
+  public:
+    explicit RenderSubphaseScope(WormUiFrameRenderPhase phase)
+        : previous_(worm_ui_frame_render_phase_begin(phase)) {}
+    ~RenderSubphaseScope() { worm_ui_frame_render_phase_end(previous_); }
+    RenderSubphaseScope(const RenderSubphaseScope&) = delete;
+    auto operator=(const RenderSubphaseScope&) -> RenderSubphaseScope& = delete;
+  private:
+    uint32_t previous_;
+};
+
+// Keep counters at the adapter boundary: converted buffers are shared by every
+// draw command, so their vertices and indices are counted once per frame.
+struct GpuSubmissionCounters {
+    WormUiFrameGpuWork work{};
+    SDL_Rect current_clip{};
+    SDL_Rect previous_clip{};
+    SDL_Texture* previous_texture{};
+    bool current_clip_enabled{};
+    bool previous_clip_enabled{};
+    bool submitted{};
+};
+static GpuSubmissionCounters g_gpu_submission;
+
+static nk_flags convert_nuklear_commands(nk_context* context, nk_buffer* commands,
+    nk_buffer* vertices, nk_buffer* indices, const nk_convert_config* config) {
+    const RenderSubphaseScope convert_phase{WORM_UI_FRAME_RENDER_CONVERT};
+    const auto result = nk_convert(context, commands, vertices, indices, config);
+    g_gpu_submission.work.vertices = config->vertex_size == 0 ? 0 : vertices->allocated / config->vertex_size;
+    g_gpu_submission.work.indices = indices->allocated / sizeof(nk_draw_index);
+    return result;
+}
+
+static bool set_nuklear_clip_rect(SDL_Renderer* renderer, const SDL_Rect* rect) {
+    const auto result = SDL_SetRenderClipRect(renderer, rect);
+    if (result) {
+        g_gpu_submission.current_clip_enabled = rect != nullptr;
+        g_gpu_submission.current_clip = rect ? *rect : SDL_Rect{};
+    }
+    return result;
+}
+
+static bool same_nuklear_clip() {
+    const auto& current = g_gpu_submission.current_clip;
+    const auto& previous = g_gpu_submission.previous_clip;
+    return g_gpu_submission.current_clip_enabled == g_gpu_submission.previous_clip_enabled &&
+        current.x == previous.x && current.y == previous.y && current.w == previous.w && current.h == previous.h;
+}
+
 // The bundled SDL adapter hardcodes 16-bit indices. Keep its conversion/render
 // implementation, but submit the configured Nuklear index width to SDL.
 static_assert(sizeof(nk_draw_index) == 4);
@@ -31,12 +80,25 @@ static bool render_nuklear_geometry_raw(SDL_Renderer* renderer, SDL_Texture* tex
     const float* xy, int xy_stride, const SDL_FColor* colors, int color_stride,
     const float* uv, int uv_stride, int vertex_count, const void* indices,
     int index_count, int) {
+    ++g_gpu_submission.work.draw_calls;
+    if (g_gpu_submission.submitted) {
+        g_gpu_submission.work.clip_rect_changes += !same_nuklear_clip();
+        g_gpu_submission.work.texture_switches += texture != g_gpu_submission.previous_texture;
+    }
+    g_gpu_submission.previous_clip = g_gpu_submission.current_clip;
+    g_gpu_submission.previous_clip_enabled = g_gpu_submission.current_clip_enabled;
+    g_gpu_submission.previous_texture = texture;
+    g_gpu_submission.submitted = true;
     return SDL_RenderGeometryRaw(renderer, texture, xy, xy_stride, colors, color_stride,
         uv, uv_stride, vertex_count, indices, index_count, sizeof(nk_draw_index));
 }
+#define nk_convert convert_nuklear_commands
+#define SDL_SetRenderClipRect set_nuklear_clip_rect
 #define SDL_RenderGeometryRaw render_nuklear_geometry_raw
 #include <demo/sdl3_renderer/nuklear_sdl3_renderer.h>
 #undef SDL_RenderGeometryRaw
+#undef SDL_SetRenderClipRect
+#undef nk_convert
 
 #include <SDL3/SDL_keyboard.h>
 
@@ -1268,6 +1330,22 @@ static void render_empty_project_window(const WorkspaceRenderContext& frame) {
     nk_end(g_context);
 }
 
+static void render_gpu_work_summary(const WormUiFrameTimingView& timer) {
+    const uint64_t latest[WORM_UI_FRAME_GPU_WORK_COUNT]{timer.gpu_work_latest.vertices,
+        timer.gpu_work_latest.indices, timer.gpu_work_latest.draw_calls,
+        timer.gpu_work_latest.clip_rect_changes, timer.gpu_work_latest.texture_switches};
+    for (std::size_t metric = 0; metric < WORM_UI_FRAME_GPU_WORK_COUNT; ++metric) {
+        const auto summary = timer.gpu_work[metric];
+        nk_layout_row_dynamic(g_context, 22, 1);
+        if (!timer.gpu_work_available || summary.count == 0)
+            nk_labelf(g_context, NK_TEXT_LEFT, "%s: N/A", timer.gpu_work_names[metric]);
+        else
+            nk_labelf(g_context, NK_TEXT_LEFT, "%s: last %llu, avg %.0f, p99 %.0f",
+                timer.gpu_work_names[metric], static_cast<unsigned long long>(latest[metric]),
+                summary.average, summary.p99);
+    }
+}
+
 static void render_frame_timing_overlay(int width, int height) {
     if (!g_frame_timing_visible) return;
     const auto timer = worm_ui_frame_timing_view();
@@ -1289,6 +1367,7 @@ static void render_frame_timing_overlay(int width, int height) {
                 nk_chart_push(g_context, static_cast<float>(timer.frame_ms[i]));
             nk_chart_end(g_context);
         }
+        render_gpu_work_summary(timer);
         for (std::size_t i = 0; i < WORM_UI_FRAME_TIMING_PHASE_COUNT; ++i) {
             const auto summary = timer.phases[i];
             nk_layout_row_dynamic(g_context, 22, 1);
@@ -1409,6 +1488,7 @@ void worm_ui_frontend_render(int window_width, int window_height) {
         (void)frontend_window_size(&window_width, &window_height);
     }
     if (g_context && g_renderer && window_width > 0 && window_height > 0) {
+        const RenderSubphaseScope submit_phase{WORM_UI_FRAME_RENDER_SUBMIT};
         // Nuklear and SDL input use window-coordinate points, while a high-DPI
         // renderer targets the larger pixel backbuffer. Keep the renderer's
         // logical space synchronized after every resize so geometry, clipping,
@@ -1423,6 +1503,8 @@ void worm_ui_frontend_render(int window_width, int window_height) {
         }
         SDL_SetRenderDrawColor(g_renderer, 18, 20, 26, 255);
         SDL_RenderClear(g_renderer);
+        g_gpu_submission = {};
         nk_sdl_render(g_context, NK_ANTI_ALIASING_ON);
+        worm_ui_frame_timing_record_gpu_work(g_gpu_submission.work);
     }
 }

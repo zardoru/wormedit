@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_canvas.h"
+#include "ui/nuklear/arrow_glyph.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/theme.h"
@@ -743,45 +744,39 @@ static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
     return {fill, border, border_width};
 }
 
-static void draw_compose_note_glyph(const ComposePaintContext& paint,
+static void draw_compose_arrow_outline(const ComposePaintContext& paint,
+                                        const WormUiComposeNoteView& note,
+                                        const float* points) {
+    if (note.semantic_color_visible) {
+        nk_stroke_polygon(paint.canvas, points, 7, 4.0f,
+                          nk_rgba(note.semantic_red, note.semantic_green, note.semantic_blue,
+                                  note.semantic_alpha));
+    }
+    const auto style = compose_note_style(*paint.view, note);
+    if (note.selected || note.proposal_ghost || note.paint_preview ||
+        note.paint_erase_preview || note.paint_invalid_preview ||
+        (paint.view->hover_note_visible && note.note_id == paint.view->hover_note_id)) {
+        const auto border = note.selected ? nk_rgb(220, 247, 255) : style.border;
+        nk_stroke_polygon(paint.canvas, points, 7, 2.0f, border);
+    }
+}
+
+static bool draw_compose_note_glyph(const ComposePaintContext& paint,
                                     const WormUiComposeNoteView& note, struct nk_rect tile) {
-    if (note.glyph < 2 || note.glyph > 5 || tile.w < 10.0f || tile.h < 6.0f) {
-        return;
+    if (note.glyph < 2 || note.glyph > 5 || tile.w < 10.0f) return false;
+    // Artwork alone becomes square; retained scene bounds still govern hit testing.
+    const auto polygon = wormedit::ui::arrow_polygon(
+        note.glyph, tile.x, tile.y + (tile.h - tile.w) * 0.5f, tile.w);
+    std::array<float, 14> points{};
+    for (std::size_t index = 0; index < polygon.size(); ++index) {
+        points[index * 2] = polygon[index].x;
+        points[index * 2 + 1] = polygon[index].y;
     }
-    const auto center_x = tile.x + tile.w * 0.5f;
-    const auto center_y = tile.y + tile.h * 0.5f;
-    const auto extent = std::max(2.0f, std::min(tile.w, tile.h) * 0.3f);
-    auto first_x = center_x + extent;
-    auto first_y = center_y - extent;
-    auto tip_x = center_x - extent;
-    auto tip_y = center_y;
-    auto last_x = center_x + extent;
-    auto last_y = center_y + extent;
-    if (note.glyph == 3) {
-        first_x = center_x - extent;
-        first_y = center_y - extent;
-        tip_x = center_x;
-        tip_y = center_y + extent;
-        last_x = center_x + extent;
-        last_y = center_y - extent;
-    } else if (note.glyph == 4) {
-        first_x = center_x - extent;
-        first_y = center_y + extent;
-        tip_x = center_x;
-        tip_y = center_y - extent;
-        last_x = center_x + extent;
-        last_y = center_y + extent;
-    } else if (note.glyph == 5) {
-        first_x = center_x - extent;
-        first_y = center_y - extent;
-        tip_x = center_x + extent;
-        tip_y = center_y;
-        last_x = center_x - extent;
-        last_y = center_y + extent;
-    }
-    const auto arrow_color = nk_rgb(245, 248, 252);
-    nk_stroke_line(paint.canvas, first_x, first_y, tip_x, tip_y, 2.0f, arrow_color);
-    nk_stroke_line(paint.canvas, tip_x, tip_y, last_x, last_y, 2.0f, arrow_color);
+    const auto color = wormedit::ui::arrow_snap_color(note.snap_class);
+    nk_fill_polygon(paint.canvas, points.data(), 7, nk_rgb(color.red, color.green, color.blue));
+    nk_stroke_polygon(paint.canvas, points.data(), 7, 1.0f, nk_rgb(17, 24, 34));
+    draw_compose_arrow_outline(paint, note, points.data());
+    return true;
 }
 
 static void draw_compose_note_sound_label(const ComposePaintContext& paint,
@@ -809,12 +804,12 @@ static void draw_compose_note(const ComposePaintContext& paint,
     }
     const auto tile = nk_rect(rect.x + 1.0f, rect.y, std::max(1.0f, rect.w - 2.0f),
                               std::max(2.0f, rect.h));
+    if (draw_compose_note_glyph(paint, note, tile)) return;
     nk_fill_rect(paint.canvas, tile, 0.0f, style.fill);
     nk_stroke_rect(paint.canvas, tile, 0.0f, style.border_width, style.border);
     nk_stroke_line(paint.canvas, tile.x + 1.0f, tile.y + 1.0f,
                    tile.x + tile.w - 1.0f, tile.y + 1.0f, 1.0f,
                    nk_rgba(255, 255, 255, 105));
-    draw_compose_note_glyph(paint, note, tile);
     draw_compose_note_sound_label(paint, note, tile);
 }
 

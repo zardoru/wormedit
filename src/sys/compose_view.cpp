@@ -1,5 +1,6 @@
 #include "sys/frame_timing.h"
 #include "sys/compose_view.h"
+#include "ui/nuklear/arrow_glyph.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_resource_presenter.h"
 
@@ -379,6 +380,16 @@ auto compose_note_display_lane_number(const wormedit::editor_field_scene_t& scen
     return 0;
 }
 
+auto compose_endpoint_snap_class(const compose_scene_projection_context_t& projection,
+                                 const wormedit::editor_field_note_endpoint_geometry_t& endpoint)
+    -> std::uint8_t {
+    const auto found = projection.index.note_indices_by_id.find(endpoint.note.value);
+    if (found == projection.index.note_indices_by_id.end()) return 0;
+    const auto& source = projection.index.notes[found->second];
+    return wormedit::ui::note_snap_class(endpoint.tail ? source.end_row : source.begin_row,
+                                        projection.chart.divisions_per_standard_measure);
+}
+
 void project_compose_scene_objects(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.flattened;
     const auto& scene = projection.scene;
@@ -434,6 +445,7 @@ void project_compose_scene_objects(const compose_scene_projection_context_t& pro
              .sound_label = sound.label,
              .sound_detail = sound.detail,
              .glyph = static_cast<std::uint8_t>(endpoint.glyph),
+             .snap_class = compose_endpoint_snap_class(projection, endpoint),
              .kind = static_cast<std::uint8_t>(endpoint.kind),
              .tail = endpoint.tail,
              .selected = endpoint.selected,

@@ -314,6 +314,7 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/audio_panel.cpp
         src/ui/nuklear/audio_state.cpp
         src/ui/nuklear/bms_branch_panel.cpp
+        src/ui/nuklear/arrow_glyph.cpp
         src/ui/nuklear/compose_markers.cpp
         src/ui/nuklear/compose_area_menu.cpp
         src/ui/nuklear/compose_canvas.cpp

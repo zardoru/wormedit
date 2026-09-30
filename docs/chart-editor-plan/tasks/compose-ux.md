@@ -89,7 +89,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-204 Draw real arrow notes for StepMania-style lanes
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** lanes with arrow glyphs (`note.glyph` 2–5 in `draw_compose_note_glyph`) draw a filled, outlined arrow shape (StepMania "note" silhouette) rotated per lane, instead of a chevron stroked over a bar tile; fill color follows the note's snap class; hold heads use the same arrow with the body behind it.
 - **Read first:** `src/ui/nuklear/compose_canvas.cpp` (`draw_compose_note_glyph`, `compose_note_style`), `src/sys/compose_view.cpp` (glyph projection), `docs/chart-editor-plan/editing/layout.md` (snap colors), `docs/chart-editor-plan/decisions/open-questions.md` (question 14).
 - **Files owned:** `src/ui/nuklear/compose_canvas.cpp`, new `src/ui/nuklear/arrow_glyph.cpp/.h`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, new `tests/ui/arrow_glyph_tests.cpp`, `tests/CMakeLists.txt`.
@@ -100,7 +100,7 @@ Apply the stale-plan check (rule 9) first.
   4. Selection, hover, semantic-layer color: draw as an outline ring so the snap fill stays visible.
 - **Invariants:** BMS tile lanes and hit-testing unchanged; the player preview can reuse the polygon function later.
 - **Reject/failure behavior:** tiles smaller than 10 px fall back to the current tile.
-- **Verify:** standard build/test; smoke PNG of `compose` with an SM fixture (compare with the chevron capture).
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure` (848/848 passed in the parent rerun on 2026-09-30); clang-tidy on all affected C++ files (no new complexity violations). Isolated Xvfb SM captures inspected: `/tmp/wormedit-t204/matched.png` (four orientations), `palette.png` (seven confirmed snap colors and hold head/body/tail), `semantic-selected.png` (snap fill preserved inside selection and semantic-layer rings). Logs and incremental patch: `/tmp/wormedit-t204/`.
 - **Out of scope:** textured skins, the player preview.
 
 ## T-205 Add a note-kind palette to Compose

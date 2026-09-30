@@ -1,0 +1,55 @@
+#include "arrow_glyph.h"
+
+#include <numeric>
+
+namespace wormedit::ui {
+namespace {
+
+constexpr std::array<std::uint8_t, 6> snap_classes{4, 8, 12, 16, 24, 32};
+constexpr std::array<arrow_color_t, 7> snap_colors{{
+    {235, 73, 79}, {75, 139, 240}, {170, 98, 223}, {242, 218, 74},
+    {239, 118, 191}, {241, 154, 65}, {155, 163, 175}}};
+
+auto rotate_arrow_point(arrow_point_t point, std::uint8_t direction) -> arrow_point_t {
+    switch (direction) {
+    case 2: return {point.y, -point.x};
+    case 3: return {-point.x, -point.y};
+    case 5: return {-point.y, point.x};
+    default: return point;
+    }
+}
+
+} // namespace
+
+auto arrow_polygon(std::uint8_t direction, float x, float y, float size)
+    -> std::array<arrow_point_t, 7> {
+    // Up arrow: broad triangular head and a narrower, flat-ended stem.
+    std::array<arrow_point_t, 7> points{{
+        {0.0f, -0.44f}, {0.44f, 0.02f}, {0.19f, 0.02f},
+        {0.19f, 0.42f}, {-0.19f, 0.42f}, {-0.19f, 0.02f}, {-0.44f, 0.02f}}};
+    for (auto& point : points) {
+        point = rotate_arrow_point(point, direction);
+        point = {x + size * (0.5f + point.x), y + size * (0.5f + point.y)};
+    }
+    return points;
+}
+
+auto note_snap_class(std::uint64_t row, std::uint64_t divisions_per_standard_measure)
+    -> std::uint8_t {
+    if (divisions_per_standard_measure == 0) return 0;
+    const auto denominator = divisions_per_standard_measure /
+                             std::gcd(row, divisions_per_standard_measure);
+    for (const auto snap : snap_classes) {
+        if (snap % denominator == 0) return snap;
+    }
+    return 0;
+}
+
+auto arrow_snap_color(std::uint8_t snap_class) -> arrow_color_t {
+    for (std::size_t index = 0; index < snap_classes.size(); ++index) {
+        if (snap_class == snap_classes[index]) return snap_colors[index];
+    }
+    return snap_colors.back();
+}
+
+} // namespace wormedit::ui

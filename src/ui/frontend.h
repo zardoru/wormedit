@@ -365,6 +365,7 @@ typedef struct WormUiComposeNoteView {
     const char* sound_label;
     const char* sound_detail;
     uint8_t glyph;
+    uint8_t snap_class; // 4, 8, 12, 16, 24, 32; 0 = other.
     uint8_t kind;
     bool tail;
     bool selected;

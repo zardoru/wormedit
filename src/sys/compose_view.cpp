@@ -1879,8 +1879,8 @@ std::uint64_t prepare_compose_projection_state(const compose_final_projection_co
     const auto content_height = static_cast<long double>(canvas_rows) *
                                 interaction_view.pixels_per_standard_measure /
                                 chart.divisions_per_standard_measure;
-    const auto maximum_scroll =
-        std::max(0.0L, content_height - static_cast<long double>(view.viewport_height_pixels));
+    const auto maximum_scroll = wormedit::editor_maximum_viewport_scroll(
+        content_height, static_cast<long double>(view.viewport_height_pixels));
     retained_state->viewport_scroll_pixels = std::clamp(
         retained_state->viewport_scroll_pixels,
         -view.viewport_height_pixels * wormedit::editor_cursor_edge_margin_fraction,

@@ -2854,7 +2854,8 @@ int main(int argc, char** argv) {
             (preview_session.active() || preview_state.paused)) {
             (void)wormedit::sys::follow_compose_playhead(
                 history, *compose_interaction_state,
-                *application_command_state.preview_playhead_absolute_row);
+                *application_command_state.preview_playhead_absolute_row,
+                preview_session.active());
         }
 #endif
 

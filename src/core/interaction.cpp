@@ -370,7 +370,7 @@ auto maximum_viewport_scroll(const chart_document_t& chart, const measure_index_
         viewport_height <= 0.0) {
         return std::nullopt;
     }
-    return std::max(0.0, content_height - viewport_height);
+    return editor_maximum_viewport_scroll(content_height, viewport_height);
 }
 
 auto minimum_viewport_scroll(double viewport_height) -> double {

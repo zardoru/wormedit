@@ -100,7 +100,7 @@ TEST_CASE("Escape restoration returns the Compose cursor to its preplay position
     sys::inline_preview_cursor_t preview_cursor;
     preview_cursor.capture(&state);
 
-    REQUIRE(sys::follow_compose_playhead(history, state, 1'200.0));
+    REQUIRE(sys::follow_compose_playhead(history, state, 1'200.0, true));
     REQUIRE(state.cursor != original);
     REQUIRE(preview_cursor.restore(history, &state));
     CHECK(state.cursor == original);
@@ -218,7 +218,7 @@ TEST_CASE("BMS view scrolls through #999 without authoring empty measures",
     REQUIRE(scrolled.view);
     CHECK(scrolled.view->viewport_scroll_pixels ==
           960'000.0 * state.pixels_per_standard_measure / 960.0 -
-              state.viewport_height_pixels);
+              state.viewport_height_pixels * editor_cursor_edge_margin_fraction);
     CHECK(history.document.charts.front().measures.size() == 2);
     CHECK(history.undo.empty());
 }
@@ -2476,7 +2476,8 @@ TEST_CASE("pointer zoom anchors chart rows and viewport scrolling clamps to cont
     const auto bottom =
         dispatch_editor_action(history, state, scroll_editor_view_action_t{10'000.0});
     REQUIRE(bottom);
-    CHECK(bottom.view->viewport_scroll_pixels == 368.0);
+    // The last row may scroll up to the 20% edge margin, like the first row.
+    CHECK(bottom.view->viewport_scroll_pixels == Catch::Approx(688.0));
     const auto top = dispatch_editor_action(history, state, scroll_editor_view_action_t{-10'000.0});
     REQUIRE(top);
     CHECK(top.view->viewport_scroll_pixels == Catch::Approx(-80.0));
@@ -2581,7 +2582,7 @@ TEST_CASE("fixed cursor scrolling follows the snap beneath a stationary viewport
         history, up_state, page_edit_cursor_action_t{interaction_direction_t::forward, 1});
     REQUIRE(page);
     CHECK(page.view->cursor == local_position_t{measure_id_t{2}, 720});
-    CHECK(page.view->viewport_scroll_pixels == 192.0);
+    CHECK(page.view->viewport_scroll_pixels == 288.0);
 
     const auto previous = down_state;
     const auto invalid = dispatch_editor_action(
@@ -2922,9 +2923,9 @@ TEST_CASE("preview starts at the cursor time and Compose cursor follows the play
     const auto start = sys::preview_cursor_frame(
         history.document.charts.front(), *timing.index, {measure_id_t{1}, 480});
     auto state = make_state(history);
-    const auto followed = sys::follow_compose_playhead(history, state, 1'200.0);
+    const auto followed = sys::follow_compose_playhead(history, state, 1'200.0, true);
     const auto cursor_after_follow = state.cursor;
-    const auto remained = sys::follow_compose_playhead(history, state, 1'319.0);
+    const auto remained = sys::follow_compose_playhead(history, state, 1'319.0, true);
     const std::array checks{
         std::holds_alternative<std::uint64_t>(start),
         std::holds_alternative<std::uint64_t>(start) &&
@@ -2937,7 +2938,27 @@ TEST_CASE("preview starts at the cursor time and Compose cursor follows the play
     CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
 }
 
-TEST_CASE("Compose playback scrolls continuously between snapped edit cursor rows",
+TEST_CASE("Compose playback keeps the playhead anchored 20 percent from the chart start",
+          "[unit][core][interaction][transport]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.viewport_height_pixels = 400.0;
+    state.pixels_per_standard_measure = 400.0;
+    state.viewport_scroll_pixels = 180.0;
+    constexpr double pixels_per_row = 400.0 / 960.0;
+
+    REQUIRE(sys::follow_compose_playhead(history, state, 1'200.0, true));
+    const auto snapped_cursor = state.cursor;
+    CHECK(state.viewport_scroll_pixels == Catch::Approx(1'200.0 * pixels_per_row - 80.0));
+    REQUIRE(sys::follow_compose_playhead(history, state, 1'319.0, true));
+
+    CHECK(state.cursor == snapped_cursor);
+    CHECK(state.viewport_scroll_pixels == Catch::Approx(1'319.0 * pixels_per_row - 80.0));
+    REQUIRE(sys::follow_compose_playhead(history, state, 0.0, true));
+    CHECK(state.viewport_scroll_pixels == Catch::Approx(-80.0));
+}
+
+TEST_CASE("Paused Compose playback only scrolls once the playhead leaves the comfort band",
           "[unit][core][interaction][transport]") {
     auto history = make_document_history(make_song());
     auto state = make_state(history);
@@ -2945,10 +2966,10 @@ TEST_CASE("Compose playback scrolls continuously between snapped edit cursor row
     state.pixels_per_standard_measure = 400.0;
     state.viewport_scroll_pixels = 180.0;
 
-    REQUIRE(sys::follow_compose_playhead(history, state, 1'200.0));
+    REQUIRE(sys::follow_compose_playhead(history, state, 1'200.0, false));
     const auto snapped_cursor = state.cursor;
     const auto first_scroll = state.viewport_scroll_pixels;
-    REQUIRE(sys::follow_compose_playhead(history, state, 1'319.0));
+    REQUIRE(sys::follow_compose_playhead(history, state, 1'319.0, false));
 
     CHECK(state.cursor == snapped_cursor);
     CHECK(first_scroll == Catch::Approx(180.0));

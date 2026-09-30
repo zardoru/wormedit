@@ -20,6 +20,16 @@ inline constexpr double maximum_pixels_per_standard_measure = 4096.0;
 inline constexpr double default_pixels_per_standard_measure = 192.0;
 inline constexpr double editor_cursor_edge_margin_fraction = 0.2;
 
+// Scrolling may run past either end of the chart by the edge margin, so the playback
+// anchor (edge margin from the chart-start side) reaches both the first and last rows.
+template <typename T>
+[[nodiscard]] constexpr auto editor_maximum_viewport_scroll(T content_height, T viewport_height)
+    -> T {
+    const auto maximum =
+        content_height - viewport_height * static_cast<T>(editor_cursor_edge_margin_fraction);
+    return maximum > T{} ? maximum : T{};
+}
+
 enum class interaction_direction_t {
     backward,
     forward,

@@ -769,6 +769,7 @@ CircleSize:1
 
     auto empty_layout = *imported.song;
     empty_layout.charts.front().lane_layouts.front().layout.lanes.clear();
+    empty_layout.charts.front().input_profile = {};
     empty_layout.charts.front().measures.front().notes.clear();
     const auto empty_result = write_inline(empty_layout);
     CHECK_FALSE(empty_result.text.has_value());
@@ -1566,4 +1567,16 @@ TEST_CASE("osu!mania export bakes parametric SV recipes into inherited timing po
     }));
     CHECK(chart.scrolls.empty());
     CHECK(chart.sv_recipes.size() == 1);
+}
+
+TEST_CASE("osu mania imports bind lanes without changing exported chart bytes", "[osu][default-input]") {
+    auto parsed = fixture("mania-tags-bookmarks-kiai.osu");
+    REQUIRE(parsed.song);
+    const auto& input = parsed.song->charts.front().input_profile;
+    CHECK(input.bindings.size() == parsed.song->charts.front().lane_layouts.front().layout.lanes.size());
+    CHECK(input.bindings.front().key == wormedit::physical_key_t::digit_1);
+    const auto bound = write_inline(*parsed.song);
+    parsed.song->charts.front().input_profile = {};
+    const auto unbound = write_inline(*parsed.song);
+    CHECK(bound.text == unbound.text);
 }

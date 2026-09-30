@@ -1,6 +1,7 @@
 #include "sys/project_open.h"
 
 #include <wormedit/formats/bms.h>
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/osu_mania.h>
@@ -336,6 +337,15 @@ void parse_selected_file(std::string_view extension, const std::string& source,
     }
 }
 
+void normalize_empty_input_profiles(song_document_t& document) {
+    for (auto& chart : document.charts) {
+        if (!chart.input_profile.profile_id.empty() || !chart.input_profile.bindings.empty() ||
+            chart.lane_layouts.empty()) continue;
+        const auto input = default_input_profile_for(chart.lane_layouts.front().layout);
+        if (input) chart.input_profile = *input;
+    }
+}
+
 } // namespace
 
 auto is_supported_project_file_extension(const std::filesystem::path& path) -> bool {
@@ -365,6 +375,7 @@ auto open_project_file(const std::filesystem::path& selected_path,
     result.asset_base = result.source_path.parent_path();
     auto source = read_bounded_file(result.source_path, limit, result.error);
     if (source) parse_selected_file(extension, *source, encoding_override, result);
+    if (result.document) normalize_empty_input_profiles(*result.document);
     return result;
 }
 

@@ -2,6 +2,7 @@
 
 #include <wormedit/core/rational.h>
 #include <wormedit/core/sv_recipe.h>
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/timing.h>
 
 #include <algorithm>
@@ -216,6 +217,7 @@ void append_osu_layout(chart_document_t& chart, std::int64_t keys,
                                 .name = "Key " + std::to_string(column + 1),
                                 .role = lane_role_t::playable,
                                 .display_order = static_cast<std::uint32_t>(column)});
+    if (const auto input = default_input_profile_for(layout)) chart.input_profile = *input;
     chart.lane_layouts.push_back({.id = take_object_id(0),
                                   .position = {chart.measures.front().id, 0},
                                   .layout = std::move(layout)});

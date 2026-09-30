@@ -938,3 +938,15 @@ TEST_CASE("StepMania export bakes parametric SV recipes into SCROLLS",
     CHECK(chart.scrolls.empty());
     CHECK(chart.sv_recipes.size() == 1);
 }
+
+TEST_CASE("StepMania imports bind lanes without changing exported chart bytes", "[stepmania][default-input]") {
+    auto parsed = fixture("matched-timing.sm", wormedit::stepmania_profile_t::sm);
+    REQUIRE(parsed.song);
+    const auto& input = parsed.song->charts.front().input_profile;
+    CHECK(input.bindings.size() == 4);
+    CHECK(input.bindings.front().key == wormedit::physical_key_t::digit_1);
+    const auto bound = wormedit::write_stepmania(*parsed.song);
+    parsed.song->charts.front().input_profile = {};
+    const auto unbound = wormedit::write_stepmania(*parsed.song);
+    CHECK(bound.text == unbound.text);
+}

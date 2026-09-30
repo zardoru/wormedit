@@ -339,7 +339,7 @@ conditional optimization remains unproven.
 
 ## T-242 Bind lane keys on imported StepMania and osu!mania charts
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** pressing 1–4 on a 4K StepMania chart (and the number row on osu!mania/other imported charts up to 10 lanes) places or toggles notes at the edit cursor exactly as on new charts; charts that cannot get a default binding say so in Compose instead of silently ignoring keys.
 - **Cause (verified 2026-09-30):** importing `tests/fixtures/stepmania/matched-timing.sm` with the real parser yields `input_profile.profile_id == ""` and **0 bindings**. `src/formats/stepmania.cpp` and `src/formats/osu_mania.cpp` never set `chart.input_profile`; only new charts (`make_number_row_input_profile` in `src/sys/application_defaults.cpp`), BMS (`src/formats/bms.cpp`), and BMSON set one. Compose emits `WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS` only for keys found in `chart.input_profile.bindings` (`src/sys/compose_view.cpp`), so every lane key is dropped. Native projects saved from such imports persist the empty profile, so the fix must also cover loading. The note-kind palette (T-205) uses Alt+digits and does not conflict.
 - **Read first:** `include/wormedit/core/lane_profiles.h` (`make_number_row_input_profile`), `src/sys/application_defaults.cpp` (`make_playable_profile`), `src/formats/stepmania.cpp`, `src/formats/osu_mania.cpp`, `src/core/document.cpp` (`validate_input_profile`).
@@ -347,7 +347,7 @@ conditional optimization remains unproven.
 - **Steps:**
   1. Core helper `default_input_profile_for(const lane_layout_t&) -> std::optional<input_profile_t>` that returns the number-row profile (the same bindings new charts get) for single-stage layouts of 1–10 playable lanes, and the existing split-stage helper for split layouts. Tests for 4K, 7K, 10K, 11K (none).
   2. StepMania and osu!mania readers assign it to each chart whose layout qualifies; the profile id records its origin (for example `number-row-default`). Re-import/export must stay semantically equal (the profile is editor data, not written to `.sm`/`.ssc`/`.osu`).
-  3. On opening any project or chart (`src/sys/project_open.cpp`), fill an **empty** profile with the default through a revision-free load normalization (not an undoable edit, and not marking the document dirty); never overwrite a non-empty profile.
+  3. On opening any project or chart (`src/sys/project_open.cpp`), fill an **empty** profile (both ID and bindings empty; a named unbound profile is intentional) with the default through a revision-free load normalization (not an undoable edit, and not marking the document dirty); never overwrite a non-empty profile.
   4. When a chart still has no bindings, the lane-key legend / Compose hint shows "No lane keys are bound for this chart" instead of nothing.
   5. Tests: SM and osu! imports have bindings; a native project with an empty profile opens with bindings and is not dirty; a BMS chart keeps its imported profile.
 - **Invariants:** existing non-empty profiles are untouched; exported chart bytes unchanged.

@@ -2,6 +2,7 @@
 
 #include <wormedit/core/measure.h>
 #include <wormedit/core/sv_recipe.h>
+#include <wormedit/core/lane_profiles.h>
 
 #include <algorithm>
 #include <cctype>
@@ -1075,6 +1076,7 @@ auto parse_one_chart(const chart_source_t& source, const std::vector<field_t>& s
                                     chart.divisions_per_standard_measure,
                                     options.max_measures, options.max_events, note_field->order);
     auto layout = make_layout(step_type, *lane_count, ids);
+    if (const auto input = default_input_profile_for(layout)) chart.input_profile = *input;
     chart.lane_layouts.push_back({.id=ids.take<object_id_t>(),
                                   .position={measure_id_t{1}, 0}, .layout=layout});
     auto measures = make_note_measures(rows.size());

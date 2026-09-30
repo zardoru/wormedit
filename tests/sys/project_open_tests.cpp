@@ -7,6 +7,7 @@
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/native_project_storage.h>
 #include <wormedit/core/workspace.h>
+#include <wormedit/core/command.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -408,4 +409,80 @@ TEST_CASE("a malformed explicit BMS encoding does not repeatedly request a choic
     CHECK_FALSE(malformed.document);
     CHECK_FALSE(malformed.needs_encoding_choice);
     CHECK(malformed.error.find("malformed UTF-8") != std::string::npos);
+}
+
+namespace {
+void check_normalized_native_document(const wormedit::song_document_t& document,
+                                      std::uint64_t saved_revision) {
+    CHECK(document.charts.front().input_profile.bindings.size() == 4);
+    CHECK(document.revision == saved_revision);
+    const auto history = wormedit::make_document_history(document);
+    CHECK_FALSE(wormedit::is_document_dirty(history));
+    CHECK(history.undo.empty());
+}
+}
+
+TEST_CASE("native load normalizes empty lane keys without making an edit", "[project-open][default-input]") {
+    auto imported = wormedit::sys::open_project_file(fixture("stepmania", "matched-timing.sm"));
+    REQUIRE(imported.document);
+    imported.document->charts.front().input_profile = {};
+    const auto saved = wormedit::write_native_project(*imported.document);
+    REQUIRE(saved.bytes);
+    temporary_project_file_t file{".wormedit"};
+    file.write(*saved.bytes);
+    const auto opened = wormedit::sys::open_project_file(file.path);
+    REQUIRE(opened.document);
+    check_normalized_native_document(*opened.document, imported.document->revision);
+}
+
+TEST_CASE("native load preserves deliberately unbound custom profiles", "[project-open][default-input]") {
+    auto imported = wormedit::sys::open_project_file(fixture("stepmania", "matched-timing.sm"));
+    REQUIRE(imported.document);
+    imported.document->charts.front().input_profile = {.profile_id = "custom-unbound"};
+    const auto saved = wormedit::write_native_project(*imported.document);
+    REQUIRE(saved.bytes);
+    temporary_project_file_t file{".wormedit"};
+    file.write(*saved.bytes);
+    const auto opened = wormedit::sys::open_project_file(file.path);
+    REQUIRE(opened.document);
+    CHECK(opened.document->charts.front().input_profile.profile_id == "custom-unbound");
+    CHECK(opened.document->charts.front().input_profile.bindings.empty());
+}
+
+namespace {
+void check_preserved_lane_binding(const wormedit::lane_binding_t& expected,
+                                  const wormedit::lane_binding_t& actual) {
+    CHECK(actual.key == expected.key);
+    CHECK(actual.lane == expected.lane);
+    CHECK(actual.focused_stage == expected.focused_stage);
+}
+void check_preserved_input_profile(const wormedit::input_profile_t& expected,
+                                   const wormedit::input_profile_t& actual) {
+    REQUIRE_FALSE(expected.bindings.empty());
+    CHECK(actual.profile_id == expected.profile_id);
+    REQUIRE(actual.bindings.size() == expected.bindings.size());
+    CHECK(actual.stage_count == expected.stage_count);
+    CHECK(actual.requires_focused_stage == expected.requires_focused_stage);
+    for (std::size_t index = 0; index < expected.bindings.size(); ++index)
+        check_preserved_lane_binding(expected.bindings[index], actual.bindings[index]);
+}
+}
+
+TEST_CASE("project opening keeps imported BMS lane profiles", "[project-open][default-input]") {
+    const auto path = fixture("bms", "profiles/bms-5k-free-zone.bms");
+    std::ifstream stream(path, std::ios::binary);
+    const std::string source{std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+    wormedit::bms_parse_options_t options;
+    options.lane_profile_id = "bms-5k-outside-scratch-free-zone";
+    const auto parsed = wormedit::parse_bms_bytes(
+        std::as_bytes(std::span{source.data(), source.size()}), options);
+    REQUIRE(parsed.song);
+    const auto saved = wormedit::write_native_project(*parsed.song);
+    REQUIRE(saved.bytes);
+    temporary_project_file_t file{".wormedit"};
+    file.write(*saved.bytes);
+    const auto opened = wormedit::sys::open_project_file(file.path);
+    REQUIRE(opened.document);
+    check_preserved_input_profile(parsed.song->charts.front().input_profile,
+                                  opened.document->charts.front().input_profile);
 }

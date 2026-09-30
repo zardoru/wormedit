@@ -802,6 +802,7 @@ typedef struct WormUiComposeView {
     double space_range_tail_y_pixels;
     const WormUiComposeLaneKeyBinding* lane_key_bindings;
     size_t lane_key_binding_count;
+    bool lane_keys_unbound;
     bool branch_outline_available;
     bool branch_rows_truncated;
     bool branch_choices_truncated;

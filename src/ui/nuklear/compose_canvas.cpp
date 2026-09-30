@@ -674,12 +674,22 @@ static void draw_compose_timing_stage_marker(const ComposePaintContext& paint,
     nk_stroke_rect(paint.canvas, bounds, 1.0f, 2.0f, color);
 }
 
+static void draw_compose_unbound_lane_keys_hint(const ComposePaintContext& paint) {
+    if (!paint.view->lane_keys_unbound) return;
+    constexpr const char* label = "No lane keys are bound for this chart";
+    const auto bounds = nk_rect(paint.viewport.x + paint.rail.w + 4.0f,
+        paint.viewport.y + 22.0f, std::min(380.0f, paint.viewport.w - paint.rail.w - 8.0f), 17.0f);
+    nk_draw_text(paint.canvas, bounds, label, static_cast<int>(strlen(label)),
+        paint.context->style.font, nk_rgba(18, 21, 29, 255), nk_rgb(255, 221, 108));
+}
+
 static void draw_compose_timing_layer(const ComposePaintContext& paint,
                                       const ComposeTimingLaneLayout& layout) {
     draw_compose_proposed_grid(paint);
     draw_compose_beat_fit_overlay(paint);
     draw_compose_offset_fit_overlay(paint);
     draw_compose_timing_preview_legend(paint);
+    draw_compose_unbound_lane_keys_hint(paint);
     draw_compose_timing_markers(paint, layout);
     draw_compose_timing_preview_markers(paint, layout);
     draw_compose_timing_stage_marker(paint, layout);

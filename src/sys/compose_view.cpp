@@ -2074,6 +2074,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     }
     view.lane_key_bindings = flattened.compose.lane_key.data();
     view.lane_key_binding_count = lane_key_binding_count;
+    view.lane_keys_unbound = chart.input_profile.bindings.empty();
 
     const auto horizontal_layout =
         compose_horizontal_layout(view.viewport_width_pixels, maximum_layout_lane_count(chart),

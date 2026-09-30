@@ -334,3 +334,43 @@ TEST_CASE("input profile validation catches duplicate and inaccessible bindings"
     CHECK(has_code(validate_input_profile(wrong_lane_stage.layout, wrong_lane_stage.input),
                    diagnostic_code_t::invalid_stage));
 }
+
+namespace {
+void check_default_lane_binding(const input_profile_t& profile, std::size_t index) {
+    CHECK(profile.bindings[index].lane == lane_id_t{index + 1});
+    const std::array keys{physical_key_t::digit_1, physical_key_t::digit_2, physical_key_t::digit_3,
+        physical_key_t::digit_4, physical_key_t::digit_5, physical_key_t::digit_6,
+        physical_key_t::digit_7, physical_key_t::digit_8, physical_key_t::digit_9, physical_key_t::digit_0};
+    CHECK(profile.bindings[index].key == keys[index]);
+}
+void check_default_layout_count(std::uint32_t count) {
+    lane_layout_t layout;
+    for (std::uint32_t index = 0; index < count; ++index)
+        layout.lanes.push_back({.id = lane_id_t{index + 1}, .name = "Key",
+            .stage = index < count / 2 ? stage_group_t::left : stage_group_t::right,
+            .display_order = index});
+    const auto input = default_input_profile_for(layout);
+    REQUIRE(input);
+    CHECK(input->bindings.size() == count);
+    CHECK(input->profile_id == "number-row-default");
+    for (std::size_t index = 0; index < count; ++index) check_default_lane_binding(*input, index);
+}
+}
+TEST_CASE("default input binds every single-stage lane despite semantic stage tags", "[lane-profile][default-input]") {
+    for (const auto count : {4U, 7U, 10U}) check_default_layout_count(count);
+}
+TEST_CASE("default input rejects oversized single stages", "[lane-profile][default-input]") {
+    auto layout = make_bms_octave_fp_profile().layout;
+    layout.lanes.resize(11);
+    CHECK_FALSE(default_input_profile_for(layout));
+}
+TEST_CASE("default input reuses split-stage digit and QWERTY rows", "[lane-profile][default-input]") {
+    const auto profile = make_bms_10k_profile();
+    const auto input = default_input_profile_for(profile.layout);
+    REQUIRE(input);
+    CHECK(input->bindings.size() == profile.input.bindings.size());
+    CHECK(input->bindings.front().key == physical_key_t::digit_1);
+    CHECK(input->bindings.back().key == physical_key_t::key_y);
+    CHECK(input->stage_count == 2);
+    CHECK(validate_input_profile(profile.layout, *input).empty());
+}

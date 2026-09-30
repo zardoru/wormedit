@@ -109,6 +109,11 @@ make_bme_14k_foot_pedal_profile(scratch_placement_t left_scratch = scratch_place
                                                  std::string profile_id = "number-row")
     -> std::optional<input_profile_t>;
 
+// Bind all playable/scratch lanes in display order. Single-stage layouts use
+// digits regardless of semantic stage tags; split layouts use digits and QWERTY.
+[[nodiscard]] auto default_input_profile_for(const lane_layout_t& layout)
+    -> std::optional<input_profile_t>;
+
 [[nodiscard]] auto make_bmson_generic_24k_profile() -> lane_input_profile_t;
 [[nodiscard]] auto make_bmson_generic_48k_profile() -> lane_input_profile_t;
 

@@ -650,6 +650,17 @@ auto make_number_row_input_profile(const lane_layout_t& layout, std::uint32_t st
     };
 }
 
+auto default_input_profile_for(const lane_layout_t& layout) -> std::optional<input_profile_t> {
+    if (layout.split_stage) {
+        if (!make_number_row_input_profile(layout, 0) || !make_number_row_input_profile(layout, 1))
+            return std::nullopt;
+        return make_two_stage_row_input(layout.lanes, "split-stage-row-default");
+    }
+    auto single_stage = layout;
+    for (auto& lane : single_stage.lanes) lane.stage = stage_group_t::left;
+    return make_number_row_input_profile(single_stage, 0, "number-row-default");
+}
+
 auto make_bmson_generic_24k_profile() -> lane_input_profile_t {
     lane_input_profile_t result{
         .layout =

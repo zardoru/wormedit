@@ -24,7 +24,7 @@ auto stage_bmson_bgm_marker(const wormedit::document_history_t& history,
                             application_command_state_t& application_state,
                             wormedit::object_id_t reference, wormedit::local_position_t position,
                             bool restart) -> std::string;
-auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
+auto dispatch_compose_input_action(WormUiWorkspaceAction& ui_action,
                                    wormedit::document_history_t& history,
                                    wormedit::workspace_controller_t& workspace,
                                    wormedit::editor_interaction_state_t& state,

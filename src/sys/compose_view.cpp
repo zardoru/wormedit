@@ -703,6 +703,8 @@ bool initialize_compose_view_state(
     view.waveform_audio_offset_denominator = 1;
     view.waveform_offset_drag_active = false;
     view.beat_fit_drag_active = false;
+    view.offset_fit_drag_active = false;
+    view.offset_fit_target_y_pixels = -1.0;
     view.proposed_grid_lines = nullptr;
     view.proposed_grid_line_count = 0;
     view.timing_preview_rects = nullptr;

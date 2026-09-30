@@ -998,7 +998,7 @@ void update_compose_pointer_hover(const WormUiWorkspaceAction& ui_action, bool g
 }
 
 struct compose_input_context_t {
-    const WormUiWorkspaceAction& ui_action;
+    WormUiWorkspaceAction& ui_action;
     wormedit::document_history_t& history;
     wormedit::workspace_controller_t& workspace;
     wormedit::editor_interaction_state_t& state;
@@ -1511,6 +1511,85 @@ auto dispatch_compose_beat_fit_input(
     default:
         return std::nullopt;
     }
+}
+
+auto dispatch_compose_offset_fit_input(
+    const WormUiComposeInputAction& input, compose_input_context_t& context)
+    -> std::optional<std::string> {
+    using namespace wormedit;
+    auto& cache = context.scene_cache;
+    auto& action = context.ui_action;
+    if (input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_CANCEL) {
+        cache.offset_fit_drag.reset();
+        action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
+        return "Offset fit cancelled; timing was unchanged.";
+    }
+    if (input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_BEGIN) {
+        cache.beat_fit_drag.reset();
+        cache.beat_fit_asset.reset();
+        if (context.application_state.timing_locked || cache.offset_fit_drag ||
+            !cache.marker_timing_index || !context.workspace.transport.audio_asset ||
+            input.object_id == 0) {
+            return "Offset fitting requires an unlocked waveform and idle chart gesture.";
+        }
+        const auto status = begin_compose_beat_fit(input, context.history, context.workspace,
+                                                   context.state, context.application_state, cache,
+                                                   context.input_chart);
+        if (!cache.beat_fit_drag) return status;
+        cache.offset_fit_drag = compose_scene_cache_t::offset_fit_drag_t{
+            .beat = *cache.beat_fit_drag,
+            .timing = *cache.marker_timing_index,
+            .asset = *context.workspace.transport.audio_asset,
+            .target_y_pixels = input.y_pixels};
+        cache.beat_fit_drag.reset();
+        action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_BEGIN;
+        action.audio_offset_drag_chart_id = context.state.chart.value;
+        action.audio_offset_drag_document_revision = context.history.document.revision;
+        action.audio_offset_drag_sample_rate = cache.offset_fit_drag->beat.sample_rate;
+        action.audio_offset_drag_delta_frames = 0;
+        return "Dragging beat to shift waveform offset.";
+    }
+    if (input.kind != WORM_UI_COMPOSE_INPUT_OFFSET_FIT_UPDATE &&
+        input.kind != WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE) return std::nullopt;
+    if (!cache.offset_fit_drag ||
+        cache.offset_fit_drag->beat.document_revision != context.history.document.revision ||
+        cache.offset_fit_drag->asset != context.workspace.transport.audio_asset ||
+        context.application_state.timing_locked) {
+        cache.offset_fit_drag.reset();
+        action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
+        return "Offset fit expired after its chart or waveform changed.";
+    }
+    const auto& drag = *cache.offset_fit_drag;
+    cache.offset_fit_drag->target_y_pixels = input.y_pixels;
+    const auto target = sample_frame_at_chart_y(
+        drag.timing, context.state.viewport_scroll_pixels, context.state.pixels_per_standard_measure,
+        input.y_pixels, context.state.viewport_height_pixels, drag.beat.sample_rate);
+    if (!target || *target >= cache.waveform_overview_total_frames) {
+        if (input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE) {
+            cache.offset_fit_drag.reset();
+            action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
+        }
+        return "Offset target is outside the source audio range.";
+    }
+    constexpr auto max_frame = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+    if (*target > max_frame || drag.beat.original_sample_frame > max_frame) {
+        cache.offset_fit_drag.reset();
+        action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
+        return "Offset target exceeds the supported frame range.";
+    }
+    const auto delta = static_cast<std::int64_t>(*target) -
+                       static_cast<std::int64_t>(drag.beat.original_sample_frame);
+    action.audio_offset_drag_action = input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE
+                                          ? WORM_UI_AUDIO_OFFSET_DRAG_COMMIT
+                                          : WORM_UI_AUDIO_OFFSET_DRAG_UPDATE;
+    action.audio_offset_drag_chart_id = drag.beat.chart.value;
+    action.audio_offset_drag_document_revision = drag.beat.document_revision;
+    action.audio_offset_drag_sample_rate = drag.beat.sample_rate;
+    action.audio_offset_drag_delta_frames = delta;
+    if (input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE) cache.offset_fit_drag.reset();
+    return input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE
+               ? "Offset fit committed."
+               : "Previewing exact waveform offset.";
 }
 
 auto begin_compose_beat_fit(const WormUiComposeInputAction& input,
@@ -2194,6 +2273,8 @@ auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
                                       compose_input_context_t& context,
                                       wormedit::editor_interaction_result_t& result,
                                       std::string_view& accepted) -> compose_input_family_result_t {
+    if (const auto status = dispatch_compose_offset_fit_input(input, context))
+        return compose_input_family_result_t{*status};
     if (const auto status = dispatch_compose_beat_fit_input(
             input, context.history, context.workspace, context.state, context.application_state,
             context.scene_cache, context.input_chart))
@@ -2416,7 +2497,7 @@ void reset_compose_autoscroll_if_idle(compose_input_context_t& context) {
 
 } // namespace
 
-auto dispatch_compose_input_action(const WormUiWorkspaceAction& ui_action,
+auto dispatch_compose_input_action(WormUiWorkspaceAction& ui_action,
                                    wormedit::document_history_t& history,
                                    wormedit::workspace_controller_t& workspace,
                                    wormedit::editor_interaction_state_t& state,

@@ -187,6 +187,13 @@ static void cancel_beat_fit_drag(WormUiWorkspaceAction* action) {
     }
 }
 
+static void cancel_offset_fit_drag(WormUiWorkspaceAction* action) {
+    if (!state.offset_fit_drag_active) return;
+    append_compose_input(action, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_CANCEL);
+    state.offset_fit_drag_active = false;
+    state.beat_fit_anchor_screen_y = 0.0f;
+}
+
 static void
 update_compose_pointer_navigation(WormUiWorkspaceAction* action,
                                   std::optional<WormUiComposeNavigationAction> desired_action) {
@@ -1718,6 +1725,7 @@ static bool process_compose_escape_or_space(const auto& key_event,
                                            bool pointer_paint_mode_active) {
     if (key_event.keycode == static_cast<uint32_t>(SDLK_ESCAPE)) {
         cancel_beat_fit_drag(action);
+        cancel_offset_fit_drag(action);
         if (state.waveform_beat_zero_drag_active) {
             set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
                                             state.waveform_beat_zero_drag_delta_frames);
@@ -1843,6 +1851,7 @@ static void process_compose_key_events(struct nk_context* context, const WormUiC
 
 static void cancel_pending_compose_panel_actions(WormUiWorkspaceAction* action) {
     cancel_beat_fit_drag(action);
+    cancel_offset_fit_drag(action);
     if (state.waveform_beat_zero_drag_active) {
         set_waveform_offset_drag_action(action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
                                         state.waveform_beat_zero_drag_delta_frames);
@@ -2192,7 +2201,22 @@ static bool compose_beat_fit_start_allowed(const ComposeBeatFitInput& input) {
            (input.pointer_modifiers & input.blocked_modifiers) == 0 &&
            input.pointer_started_x >= 22.0 && input.pointer_started_x <= 42.0 &&
            view.waveform_row_count != 0 && view.waveform_overview_sample_rate != 0 &&
-           !view.waveform_timing_locked && !view.waveform_offset_drag_active;
+           !view.waveform_timing_locked && !view.waveform_offset_drag_active &&
+           !state.beat_fit_drag_active && !state.waveform_beat_zero_drag_active;
+}
+
+static bool compose_offset_fit_start_allowed(const ComposeBeatFitInput& input) {
+    const auto& view = *input.view;
+    // SDL_KMOD_SHIFT covers both Shift keys; either one alone starts the offset fit.
+    constexpr auto other_modifiers = SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI;
+    return view.scene_available && input.window_focused && input.pointer_started_in_view &&
+           input.left_down && input.shortcut_event_count == 0 &&
+           (input.pointer_modifiers & SDL_KMOD_SHIFT) != 0 &&
+           (input.pointer_modifiers & other_modifiers) == 0 &&
+           input.pointer_started_x >= 22.0 && input.pointer_started_x <= 42.0 &&
+           view.waveform_row_count != 0 && view.waveform_overview_sample_rate != 0 &&
+           !view.waveform_timing_locked && !view.waveform_offset_drag_active &&
+           !state.offset_fit_drag_active && !state.waveform_beat_zero_drag_active;
 }
 
 static std::uint64_t nearest_beat_fit_row(const ComposeBeatFitInput& input) {
@@ -2236,6 +2260,53 @@ static bool start_compose_beat_fit_drag(const ComposeBeatFitInput& input) {
     return true;
 }
 
+static bool start_compose_offset_fit_drag(const ComposeBeatFitInput& input) {
+    if (!compose_offset_fit_start_allowed(input)) return false;
+    const auto nearest_row = nearest_beat_fit_row(input);
+    if (nearest_row == 0) return false;
+    const auto& view = *input.view;
+    state.offset_fit_drag_active = true;
+    state.beat_fit_chart_row = nearest_row;
+    state.beat_fit_chart_id = view.chart_id;
+    state.beat_fit_revision = view.document_revision;
+    state.beat_fit_asset_id = view.selected_audio_asset_id;
+    state.beat_fit_sample_rate = view.waveform_overview_sample_rate;
+    state.beat_fit_anchor_screen_y = input.context->input.mouse.buttons[NK_BUTTON_LEFT].clicked_pos.y;
+    append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_BEGIN, 0.0,
+                         input.pointer_started_y, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+                         WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, nearest_row);
+    return true;
+}
+
+static void cancel_compose_offset_fit_drag(WormUiWorkspaceAction* action) {
+    append_compose_input(action, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_CANCEL);
+    state.offset_fit_drag_active = false;
+}
+
+static void update_active_offset_fit_drag(const ComposeBeatFitInput& input) {
+    const auto& view = *input.view;
+    const bool matches = input.window_focused && view.scene_available &&
+                         view.offset_fit_drag_active && !view.waveform_timing_locked &&
+                         view.chart_id == state.beat_fit_chart_id &&
+                         view.document_revision == state.beat_fit_revision &&
+                         view.selected_audio_asset_id == state.beat_fit_asset_id &&
+                         view.waveform_overview_sample_rate == state.beat_fit_sample_rate;
+    if (!matches || (!input.left_down && !input.left_released)) {
+        cancel_compose_offset_fit_drag(input.action);
+    } else if (input.left_released) {
+        if (std::abs(input.context->input.mouse.pos.y - state.beat_fit_anchor_screen_y) < 4.0f) {
+            cancel_compose_offset_fit_drag(input.action);
+        } else {
+            append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE, 0.0,
+                                 std::clamp(input.pointer_y, 0.0, view.viewport_height_pixels));
+            state.offset_fit_drag_active = false;
+        }
+    } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input)) {
+        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_UPDATE, 0.0,
+                             std::clamp(input.pointer_y, 0.0, view.viewport_height_pixels));
+    }
+}
+
 static void cancel_unmatched_view_beat_fit(const ComposeBeatFitInput& input) {
     const auto cancel_pending = std::ranges::any_of(
         input.action->compose_inputs, input.action->compose_inputs + input.action->compose_input_count,
@@ -2276,6 +2347,10 @@ static void update_active_beat_fit_drag(const ComposeBeatFitInput& input) {
 }
 
 static bool process_compose_beat_fit_pointer(const ComposeBeatFitInput& input) {
+    if (state.offset_fit_drag_active) {
+        update_active_offset_fit_drag(input);
+        return true;
+    }
     if (state.beat_fit_drag_active) {
         update_active_beat_fit_drag(input);
         return true;
@@ -2284,6 +2359,7 @@ static bool process_compose_beat_fit_pointer(const ComposeBeatFitInput& input) {
         cancel_unmatched_view_beat_fit(input);
         return false;
     }
+    if (compose_offset_fit_start_allowed(input)) return start_compose_offset_fit_drag(input);
     return start_compose_beat_fit_drag(input);
 }
 
@@ -2431,7 +2507,9 @@ static void update_waveform_overview_seek(const ComposeOverviewInput& input) {
 }
 
 static void process_compose_overview_input(const ComposeOverviewInput& input) {
+    // An orphaned offset preview is cancelled unless the rail offset fit owns it.
     if (input.view->waveform_offset_drag_active && !state.waveform_beat_zero_drag_active &&
+        !state.offset_fit_drag_active &&
         input.action->audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
         input.action->audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
     }

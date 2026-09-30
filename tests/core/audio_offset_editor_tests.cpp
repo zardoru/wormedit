@@ -16,14 +16,58 @@ auto offset_song() -> song_document_t {
         .revision = 9,
         .charts = {{.id = chart_id_t{2},
                     .beat_zero_audio_offset_seconds = {1, 2},
-                    .measures = {{.id = measure_id_t{3}}}}},
+                    .measures = {{.id = measure_id_t{3}}},
+                    .bpms = {{.id = object_id_t{4}, .position = {measure_id_t{3}, 0},
+                              .beats_per_minute = {120, 1}}}}},
     };
     REQUIRE(validate_document(song).empty());
     return song;
 }
 
+auto offset_fit_commit_is_exact_and_undoable() -> bool {
+    auto history = make_document_history(offset_song());
+    const auto original_bpm = history.document.charts.front().bpms.front().beats_per_minute;
+    const auto begun = begin_audio_offset_drag(history.document, chart_id_t{2}, 48'000);
+    if (!begun) return false;
+    constexpr std::int64_t target_later_frames = 137;
+    const auto preview = update_audio_offset_drag(history.document, *begun.drag,
+                                                 target_later_frames);
+    if (!preview || preview.drag->delta_frames != target_later_frames) return false;
+    const auto committed = commit_audio_offset_drag(history, *preview.drag);
+    if (!committed || history.document.charts.front().beat_zero_audio_offset_seconds !=
+                          signed_rational_t{24'137, 48'000} ||
+        history.document.charts.front().bpms.front().beats_per_minute != original_bpm) return false;
+    if (!undo_document_command(history)) return false;
+    return history.document.charts.front().beat_zero_audio_offset_seconds ==
+               signed_rational_t{1, 2} &&
+           history.document.charts.front().bpms.front().beats_per_minute == original_bpm;
+}
+
+auto offset_fit_cancel_and_lock_leave_timing_unchanged() -> bool {
+    auto history = make_document_history(offset_song());
+    const auto original = history.document.charts.front().beat_zero_audio_offset_seconds;
+    const auto cancel_begin = begin_audio_offset_drag(history.document, chart_id_t{2}, 48'000);
+    if (!cancel_begin) return false;
+    const auto canceled_preview = update_audio_offset_drag(
+        history.document, *cancel_begin.drag, 137);
+    if (!canceled_preview || history.document.charts.front().beat_zero_audio_offset_seconds != original)
+        return false;
+    return !begin_audio_offset_drag(history.document, chart_id_t{2}, 48'000, true) &&
+           history.document.charts.front().beat_zero_audio_offset_seconds == original;
+}
+
 auto has_code(const diagnostic_list_t& diagnostics, diagnostic_code_t code) -> bool {
     return std::ranges::any_of(diagnostics, [code](const auto& item) { return item.code == code; });
+}
+
+TEST_CASE("offset fit applies a later beat target as a positive undoable offset",
+          "[unit][core][audio-offset][drag]") {
+    CHECK(offset_fit_commit_is_exact_and_undoable());
+}
+
+TEST_CASE("offset fit cancel and timing lock leave timing unchanged",
+          "[unit][core][audio-offset][drag]") {
+    CHECK(offset_fit_cancel_and_lock_leave_timing_unchanged());
 }
 
 } // namespace

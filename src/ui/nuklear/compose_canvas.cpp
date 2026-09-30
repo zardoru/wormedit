@@ -519,12 +519,39 @@ static void draw_compose_beat_fit_overlay(const ComposePaintContext& paint) {
     }
 }
 
+static void draw_compose_offset_fit_overlay(const ComposePaintContext& paint) {
+    const auto& view = *paint.view;
+    if (!view.offset_fit_drag_active) return;
+    const auto y = compose_projected_y(paint, view.offset_fit_target_y_pixels);
+    if (y >= paint.viewport.y && y <= paint.viewport.y + paint.viewport.h) {
+        nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
+                       1.3f, nk_rgba(110, 222, 236, 215));
+    }
+    const auto denominator = std::max<std::uint64_t>(1, view.waveform_audio_offset_denominator);
+    const auto proposed_denominator =
+        std::max<std::uint64_t>(1, view.waveform_proposed_audio_offset_denominator);
+    const auto original = static_cast<double>(view.waveform_audio_offset_numerator) /
+                          static_cast<double>(denominator);
+    const auto proposed = static_cast<double>(view.waveform_proposed_audio_offset_numerator) /
+                          static_cast<double>(proposed_denominator);
+    char label[96]{};
+    const auto length = snprintf(label, sizeof(label), "Offset %+.3f -> %+.3f s", original, proposed);
+    if (length > 0) {
+        const auto bounds = nk_rect(paint.viewport.x + paint.rail.w + 4.0f,
+                                    paint.viewport.y + 18.0f,
+                                    std::min(310.0f, paint.viewport.w - paint.rail.w - 8.0f), 18.0f);
+        nk_draw_text(paint.canvas, bounds, label, static_cast<int>(strlen(label)),
+                     paint.context->style.font, nk_rgba(18, 21, 29, 235), nk_rgb(148, 229, 238));
+    }
+}
+
 static void draw_compose_timing_preview_legend(const ComposePaintContext& paint) {
     if (paint.view->timing_preview_rect_count == 0) {
         return;
     }
     constexpr const char* legend = "Outlines: proposed notes/holds in cyan, BGM in purple";
-    const auto top = paint.viewport.y + (paint.view->beat_fit_drag_active ? 38.0f : 18.0f);
+    const bool fit_label = paint.view->beat_fit_drag_active || paint.view->offset_fit_drag_active;
+    const auto top = paint.viewport.y + (fit_label ? 38.0f : 18.0f);
     const auto bounds = nk_rect(paint.viewport.x + paint.rail.w + 4.0f, top,
                                 std::min(380.0f, paint.viewport.w - paint.rail.w - 8.0f), 17.0f);
     nk_draw_text(paint.canvas, bounds, legend, static_cast<int>(strlen(legend)),
@@ -626,6 +653,7 @@ static void draw_compose_timing_layer(const ComposePaintContext& paint,
                                       const ComposeTimingLaneLayout& layout) {
     draw_compose_proposed_grid(paint);
     draw_compose_beat_fit_overlay(paint);
+    draw_compose_offset_fit_overlay(paint);
     draw_compose_timing_preview_legend(paint);
     draw_compose_timing_markers(paint, layout);
     draw_compose_timing_preview_markers(paint, layout);
@@ -1132,6 +1160,8 @@ auto compose_editor_status_hint(const WormUiComposeView* view,
         return "Move timing event · release to keep staged position · Apply to commit";
     if (state.beat_fit_drag_active)
         return "Fit beat to waveform · Ctrl snaps BPM · release to commit · Esc cancels";
+    if (state.offset_fit_drag_active)
+        return "Shift offset to waveform · release to commit · Esc cancels";
     if (state.waveform_beat_zero_drag_active)
         return "Move beat zero on waveform overview · release to commit · Esc cancels";
     if (state.bmson_marker_move_active)
@@ -1151,7 +1181,7 @@ auto compose_editor_status_hint(const WormUiComposeView* view,
     if (view->note_paint_mode_active)
         return "Paint armed · click/drag draws or erases · Esc cancels";
     if (view->waveform_overview_row_count != 0 && !view->waveform_timing_locked)
-        return "Drag beat squares in rail to fit BPM · drag beat zero in song overview";
+        return "Drag beat squares in rail to fit BPM · Shift+drag to shift offset · drag beat zero in song overview";
     return "↑/↓ move · drag selects/moves · Alt-drag hold · drag BMSON BGM to move";
 }
 

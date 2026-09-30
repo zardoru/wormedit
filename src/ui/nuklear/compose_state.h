@@ -110,6 +110,7 @@ struct worm_ui_nuklear_compose_state_t {
     bool waveform_overview_drag_active{};
     bool waveform_beat_zero_drag_active{};
     bool beat_fit_drag_active{};
+    bool offset_fit_drag_active{};
     std::uint64_t beat_fit_chart_row{};
     std::uint64_t beat_fit_chart_id{};
     std::uint64_t beat_fit_revision{};

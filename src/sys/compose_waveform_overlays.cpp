@@ -593,6 +593,13 @@ void populate_compose_waveform_overlays(
     cache.waveform_overview_sample_rate = waveform_analysis->waveform->sample_rate;
     populate_beat_fit_overlay(flattened, history, workspace, cache, interaction,
                               *waveform_analysis);
+    if (cache.offset_fit_drag && workspace.transport.audio_asset &&
+        cache.offset_fit_drag->asset == workspace.transport.audio_asset &&
+        cache.offset_fit_drag->beat.document_revision == history.document.revision) {
+        flattened.view.compose.offset_fit_drag_active = true;
+        flattened.view.compose.offset_fit_target_y_pixels =
+            cache.offset_fit_drag->target_y_pixels;
+    }
 }
 
 } // namespace wormedit::sys

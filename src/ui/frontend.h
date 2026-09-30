@@ -743,6 +743,8 @@ typedef struct WormUiComposeView {
     uint64_t waveform_audio_offset_denominator;
     bool waveform_offset_drag_active;
     bool beat_fit_drag_active;
+    bool offset_fit_drag_active;
+    double offset_fit_target_y_pixels;
     uint64_t beat_fit_chart_row;
     double beat_fit_anchor_y_pixels;
     double beat_fit_beat_y_pixels;
@@ -1306,6 +1308,10 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE,
     WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE,
     WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL,
+    WORM_UI_COMPOSE_INPUT_OFFSET_FIT_BEGIN,
+    WORM_UI_COMPOSE_INPUT_OFFSET_FIT_UPDATE,
+    WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE,
+    WORM_UI_COMPOSE_INPUT_OFFSET_FIT_CANCEL,
     WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT,
     WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE,
 } WormUiComposeInputKind;

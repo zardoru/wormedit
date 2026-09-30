@@ -1963,7 +1963,7 @@ void cancel_stale_compose_interaction(
 }
 
 template <typename Context>
-auto process_compose_frame_action(Context& context, const WormUiWorkspaceAction& action,
+auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& action,
                                   double viewport_delta_seconds) -> bool {
     if (!context.session_loaded_ref) return false;
     const bool shortcut_handled =
@@ -1982,6 +1982,7 @@ auto process_compose_frame_action(Context& context, const WormUiWorkspaceAction&
         context.audio_offset_drag_tab_ref.reset();
         context.compose_scene_cache_ref.beat_fit_drag.reset();
         context.compose_scene_cache_ref.beat_fit_asset.reset();
+        context.compose_scene_cache_ref.offset_fit_drag.reset();
     }
     if (!shortcut_handled && action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
         (action.compose_input_count != 0 || action.compose_viewport_input_count != 0 ||
@@ -2521,6 +2522,16 @@ void prepare_bound_workspace_frame(
         compose_scene_cache.beat_fit_drag.reset();
         compose_scene_cache.beat_fit_asset.reset();
     }
+    if (compose_scene_cache.offset_fit_drag &&
+        (workspace.active_tab != wormedit::workspace_tab_t::compose ||
+         !workspace.selected_chart ||
+         *workspace.selected_chart != compose_scene_cache.offset_fit_drag->beat.chart ||
+         history.document.revision !=
+             compose_scene_cache.offset_fit_drag->beat.document_revision ||
+         workspace.transport.audio_asset != compose_scene_cache.offset_fit_drag->asset ||
+         application_command_state.timing_locked)) {
+        compose_scene_cache.offset_fit_drag.reset();
+    }
 }
 
 auto dispatch_registered_application_command(
@@ -2897,7 +2908,7 @@ int main(int argc, char** argv) {
             flattened.view.pending_bms_encoding_path = pending_bms_encoding_path.c_str();
             // Projection returns by value; refresh view pointers after any move.
             flattened.rebind_view_pointers();
-            const auto action = worm_ui_frontend_compose(&flattened.view);
+            auto action = worm_ui_frontend_compose(&flattened.view);
             std::optional<std::uint32_t> selected_waveform_sample_rate;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
             if (waveform_runtime.waveform_analysis() &&

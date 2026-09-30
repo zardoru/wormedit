@@ -1272,7 +1272,7 @@ static void render_frame_timing_overlay(int width, int height) {
     if (!g_frame_timing_visible) return;
     const auto timer = worm_ui_frame_timing_view();
     const float panel_width = std::min(480.0f, static_cast<float>(width));
-    const float panel_height = std::min(650.0f, static_cast<float>(height) - 42.0f);
+    const float panel_height = std::min(720.0f, static_cast<float>(height) - 42.0f);
     if (nk_begin(g_context, "Frame timing",
                  nk_rect(static_cast<float>(width) - panel_width, 42, panel_width, panel_height),
                  NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_TITLE)) {

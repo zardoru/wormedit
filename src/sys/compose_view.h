@@ -60,6 +60,7 @@ struct compose_scene_cache_t {
     bool attempted{};
     std::optional<wormedit::editor_field_scene_index_t> index;
     wormedit::editor_field_scene_window_t scene_window;
+    std::optional<wormedit::measure_index_t> cached_measure_index;
     std::unordered_map<std::uint64_t, std::uint64_t> bgm_rows_by_id;
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
     std::shared_ptr<const wormedit::editor_area_geometry_snapshot_t> area_object_geometry;

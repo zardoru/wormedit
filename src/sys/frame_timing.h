@@ -22,6 +22,9 @@ enum class frame_phase_t : std::size_t {
     workspace_waveform_overlays,
     workspace_source_playhead,
     workspace_compose_controls,
+    workspace_preparation,
+    workspace_actions,
+    workspace_follow,
     workspace_bmson,
     count
 };
@@ -45,6 +48,9 @@ inline constexpr std::array<const char*, frame_phase_count> frame_phase_names{
     "  Waveform overlays",
     "  Source playhead",
     "  Compose controls",
+    "  Preparation",
+    "  Actions",
+    "  Follow playhead",
     "  BMSON projection"};
 auto frame_phase_parent(frame_phase_t phase) -> frame_phase_t;
 inline constexpr std::array<frame_phase_t, frame_phase_count> frame_phase_display_order{
@@ -53,6 +59,9 @@ inline constexpr std::array<frame_phase_t, frame_phase_count> frame_phase_displa
     frame_phase_t::audio_service,
     frame_phase_t::audio_pump,
     frame_phase_t::workspace,
+    frame_phase_t::workspace_preparation,
+    frame_phase_t::workspace_actions,
+    frame_phase_t::workspace_follow,
     frame_phase_t::workspace_flatten,
     frame_phase_t::workspace_frame_view,
     frame_phase_t::workspace_metadata,

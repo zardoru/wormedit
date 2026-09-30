@@ -2700,6 +2700,8 @@ void prepare_bound_workspace_frame(
     std::optional<wormedit::audio_offset_drag_t>& audio_offset_drag,
     std::optional<wormedit::workspace_tab_t>& audio_offset_drag_tab,
     compose_scene_cache_t& compose_scene_cache) {
+    wormedit::sys::frame_phase_scope_t preparation(
+        wormedit::sys::frame_phase_t::workspace_preparation);
     if (workspace.selected_chart) {
         const auto chart =
             std::ranges::find(history.document.charts, *workspace.selected_chart,
@@ -3065,20 +3067,28 @@ int main(int argc, char** argv) {
 #endif
 
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::workspace);
-        cancel_stale_compose_interaction(compose_interaction_state, history, workspace);
+        wormedit::workspace_view_result_t model;
+        {
+            wormedit::sys::frame_phase_scope_t preparation(
+                wormedit::sys::frame_phase_t::workspace_preparation);
+            cancel_stale_compose_interaction(compose_interaction_state, history, workspace);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        if (workspace.active_tab == wormedit::workspace_tab_t::compose &&
-            compose_interaction_state && application_command_state.preview_playhead_absolute_row &&
-            (preview_output.playing() || preview_state.paused)) {
-            (void)wormedit::sys::follow_compose_playhead(
-                history, *compose_interaction_state,
-                *application_command_state.preview_playhead_absolute_row,
-                preview_output.playing());
-        }
+            if (workspace.active_tab == wormedit::workspace_tab_t::compose &&
+                compose_interaction_state &&
+                application_command_state.preview_playhead_absolute_row &&
+                (preview_output.playing() || preview_state.paused)) {
+                wormedit::sys::frame_phase_scope_t follow(
+                    wormedit::sys::frame_phase_t::workspace_follow);
+                (void)wormedit::sys::follow_compose_playhead(
+                    history, *compose_interaction_state,
+                    *application_command_state.preview_playhead_absolute_row,
+                    preview_output.playing());
+            }
 #endif
 
-        wormedit::sys::rebind_workspace_after_edit(workspace, history, status);
-        const auto model = wormedit::make_workspace_view(workspace, history.document);
+            wormedit::sys::rebind_workspace_after_edit(workspace, history, status);
+            model = wormedit::make_workspace_view(workspace, history.document);
+        }
         timing_edit.cancel_if_stale(history, workspace, application_command_state);
         if (!handle_workspace_view_error(model, status, running, history, workspace)) {
             prepare_bound_workspace_frame(history, workspace, application_command_state,
@@ -3137,23 +3147,28 @@ int main(int argc, char** argv) {
             const auto frame_nuklear_previous = wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::nuklear);
             auto action = worm_ui_frontend_compose(&flattened.view);
             wormedit::sys::frame_timing().restore(frame_nuklear_previous);
-            std::optional<std::uint32_t> selected_waveform_sample_rate;
+            {
+                wormedit::sys::frame_phase_scope_t actions(
+                    wormedit::sys::frame_phase_t::workspace_actions);
+                std::optional<std::uint32_t> selected_waveform_sample_rate;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-            if (waveform_runtime.waveform_analysis() &&
-                waveform_runtime.waveform_analysis()->waveform &&
-                waveform_runtime.waveform_asset() &&
-                workspace.transport.audio_asset == waveform_runtime.waveform_asset()) {
-                selected_waveform_sample_rate =
-                    waveform_runtime.waveform_analysis()->waveform->sample_rate;
-            }
+                if (waveform_runtime.waveform_analysis() &&
+                    waveform_runtime.waveform_analysis()->waveform &&
+                    waveform_runtime.waveform_asset() &&
+                    workspace.transport.audio_asset == waveform_runtime.waveform_asset()) {
+                    selected_waveform_sample_rate =
+                        waveform_runtime.waveform_analysis()->waveform->sample_rate;
+                }
 #endif
-            const bool shortcut_handled = process_compose_frame_action(
-                compose_frame_action_context, action, compose_viewport_delta_seconds);
-            const bool external_handled = dispatch_external_player_action(external_player_runtime, action.external_player,
-                application_command_state, status);
-            dispatch_workspace_frame_action(
-                workspace_frame_action_context, action, shortcut_handled || external_handled, selected_waveform_sample_rate,
-                flattened.view.compose.viewport_height_pixels);
+                const bool shortcut_handled = process_compose_frame_action(
+                    compose_frame_action_context, action, compose_viewport_delta_seconds);
+                const bool external_handled =
+                    dispatch_external_player_action(external_player_runtime, action.external_player,
+                                                    application_command_state, status);
+                dispatch_workspace_frame_action(
+                    workspace_frame_action_context, action, shortcut_handled || external_handled,
+                    selected_waveform_sample_rate, flattened.view.compose.viewport_height_pixels);
+            }
         }
 
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::render);

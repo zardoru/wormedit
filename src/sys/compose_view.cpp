@@ -1621,7 +1621,23 @@ void populate_compose_selected_note(
 }
 
 
-std::optional<wormedit::measure_index_t> prepare_compose_chart_view(
+auto cached_compose_measures(flattened_workspace_t& flattened,
+                             const wormedit::chart_document_t& chart,
+                             compose_scene_cache_t& cache) -> const wormedit::measure_index_t* {
+    if (cache.cached_measure_index) return &*cache.cached_measure_index;
+    auto measure_index = wormedit::build_measure_index(chart);
+    if (!std::holds_alternative<wormedit::measure_index_t>(measure_index)) {
+        const auto& diagnostics = std::get<wormedit::diagnostic_list_t>(measure_index);
+        flattened.compose.status = diagnostics.empty() ? "The chart measure geometry is invalid."
+                                                       : diagnostics.front().message;
+        flattened.view.compose.status_text = flattened.compose.status.c_str();
+        return nullptr;
+    }
+    cache.cached_measure_index = std::move(std::get<wormedit::measure_index_t>(measure_index));
+    return &*cache.cached_measure_index;
+}
+
+const wormedit::measure_index_t* prepare_compose_chart_view(
     flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
     wormedit::document_history_t& history, compose_scene_cache_t& cache,
     application_command_state_t& application_state) {
@@ -1652,12 +1668,13 @@ std::optional<wormedit::measure_index_t> prepare_compose_chart_view(
     view.chart_id = chart.id.value;
     view.document_revision = history.document.revision;
     if (!populate_semantic_layer_palette(flattened, chart, cache, history, application_state)) {
-        return std::nullopt;
+        return nullptr;
     }
     if (!cache.attempted || cache.chart != chart.id ||
         cache.revision != history.document.revision) {
         frame_phase_scope_t frame_scene_index(frame_phase_t::scene);
         cache.index.reset();
+        cache.cached_measure_index.reset();
         cache.bgm_rows_by_id.clear();
         cache.hit_test_index.reset();
         cache.marker_timing_index.reset();
@@ -1703,27 +1720,17 @@ std::optional<wormedit::measure_index_t> prepare_compose_chart_view(
     if (!cache.index) {
         flattened.compose.status = cache.status;
         view.status_text = flattened.compose.status.c_str();
-        return std::nullopt;
+        return nullptr;
     }
     if (chart.measures.empty()) {
         flattened.compose.status = "This difficulty has no measures to display.";
         view.status_text = flattened.compose.status.c_str();
-        return std::nullopt;
+        return nullptr;
     }
 
-    const auto measure_index = wormedit::build_measure_index(chart);
-    if (!std::holds_alternative<wormedit::measure_index_t>(measure_index)) {
-        const auto& diagnostics = std::get<wormedit::diagnostic_list_t>(measure_index);
-        flattened.compose.status = diagnostics.empty()
-                                               ? "The chart measure geometry is invalid."
-                                               : diagnostics.front().message;
-        view.status_text = flattened.compose.status.c_str();
-        return std::nullopt;
-    }
-    const auto& measures = std::get<wormedit::measure_index_t>(measure_index);
-    if (!populate_compose_bookmark_and_section_storage(flattened, chart, measures, view)) {
-        return std::nullopt;
-    }
+    const auto* measures = cached_compose_measures(flattened, chart, cache);
+    if (!measures || !populate_compose_bookmark_and_section_storage(flattened, chart, *measures, view))
+        return nullptr;
     return measures;
 }
 

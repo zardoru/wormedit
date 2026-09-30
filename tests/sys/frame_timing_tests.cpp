@@ -356,3 +356,39 @@ TEST_CASE("Affine waveform clock preserves BPM pause warp boundaries during600 p
         check_clock_projection(waveform, timing, frame * 0.75, true);
 }
 #endif
+
+namespace {
+void populate_measure_cache_frame(document_history_t& history, workspace_controller_t& workspace,
+                                  compose_scene_cache_t& cache,
+                                  std::optional<editor_interaction_state_t>& interaction) {
+    flattened_workspace_t flattened;
+    flattened.view.compose.visible = true;
+    application_command_state_t application;
+    populate_compose_view(flattened, history, workspace, cache, 1280, 980, interaction,
+                          application, nullptr);
+    INFO(flattened.compose.status);
+    REQUIRE(flattened.view.compose.scene_available);
+}
+}
+TEST_CASE("Compose controls retain measure geometry until the document revision changes", "[sys][timing-projection]") {
+    auto history = make_document_history(dense_song());
+    auto binding = make_workspace_controller(history);
+    REQUIRE(binding.workspace);
+    auto& workspace = *binding.workspace;
+    workspace.active_tab = workspace_tab_t::compose;
+    workspace.selected_chart = chart_id_t{1};
+    compose_scene_cache_t cache;
+    std::optional<editor_interaction_state_t> interaction;
+    populate_measure_cache_frame(history, workspace, cache, interaction);
+    REQUIRE(cache.cached_measure_index);
+    const auto* entries = cache.cached_measure_index->entries.data();
+    populate_measure_cache_frame(history, workspace, cache, interaction);
+    CHECK(cache.cached_measure_index->entries.data() == entries);
+    history.document.charts.front().measures.back().definition = {{2, 1}, meter_t{8, 4}};
+    ++history.document.revision;
+    static_cast<void>(rebind_workspace(workspace, history));
+    interaction.reset(); // Match the application stale-interaction boundary after an edit.
+    populate_measure_cache_frame(history, workspace, cache, interaction);
+    CHECK(cache.cached_measure_index->total_rows == 960960);
+    CHECK(cache.revision == history.document.revision);
+}

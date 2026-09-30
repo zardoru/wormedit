@@ -42,8 +42,8 @@
    - **Provisional default (unconfirmed):** Notes, tempo, meter, markers, and controller data only.
    - **Blocks:** extra MIDI fields in the Lua API. Do not start it until the user answers.
 14. What is the complete note-snap color table for straight and tuplet divisions beyond the initial red/blue/yellow classes?
-   - **Provisional default (unconfirmed):** Keep the initial red/blue/yellow classes; do not add tuplet colors.
-   - **Blocks:** snap-color table extension. Do not start it until the user answers.
+   - **Decision (user, 2026-09-30):** 4th red, 8th blue, 12th purple, 16th yellow, 24th pink, 32nd orange; other divisions grey. Use one palette table so it can be changed consistently.
+   - **Blocks:** none; T-204 may implement this confirmed palette.
 15. Which BMS encodings and aliases belong in the automatic detector's initial candidate set, and what confidence threshold should force manual confirmation?
    - **Provisional default (unconfirmed):** Candidates UTF-8, CP932/Shift-JIS, EUC-KR/CP949, Windows-1252; below the current detector confidence, require manual confirmation.
    - **Blocks:** detector candidate-set changes. Do not start it until the user answers.

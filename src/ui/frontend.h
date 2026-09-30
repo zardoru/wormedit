@@ -643,6 +643,15 @@ typedef struct WormUiComposeView {
     const WormUiComposeSectionView* beat_sections;
     size_t beat_section_count;
     bool beat_sections_truncated;
+    bool area_range_available;
+    bool area_range_virtual;
+    bool area_delete_supported;
+    uint64_t area_range_begin_row;
+    uint64_t area_range_end_row;
+    uint64_t area_canvas_rows;
+    uint64_t area_rows_per_measure;
+    uint64_t area_snap_denominator;
+    double area_scroll_pixels;
     bool beat_section_selection_span_available;
     uint64_t beat_section_selection_begin_measure_number;
     uint64_t beat_section_selection_begin_row;
@@ -1198,6 +1207,11 @@ typedef struct WormUiWorkspaceView {
 
 typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_NONE = 0,
+    WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET,
+    WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE,
+    WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR,
+    WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE,
+    WORM_UI_COMPOSE_ACTION_AREA_DELETE,
     WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE,
     WORM_UI_COMPOSE_ACTION_ZOOM_IN,
     WORM_UI_COMPOSE_ACTION_ZOOM_OUT,
@@ -1437,6 +1451,11 @@ typedef struct WormUiWorkspaceAction {
     size_t metadata_output_group_index;
     const char* metadata_output_path;
     WormUiComposeActionKind compose_action;
+    uint64_t compose_area_begin_row;
+    uint64_t compose_area_end_row;
+    bool compose_area_virtual;
+    bool compose_area_begin_edge;
+    bool compose_area_clear_requested;
     uint64_t compose_measure_number;
     uint64_t compose_input_chart_id;
     uint64_t compose_input_document_revision;

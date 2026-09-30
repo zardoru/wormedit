@@ -82,19 +82,51 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual run with a looped selection.
 - **Out of scope:** playback rate (T-45), player-preview video.
 
-## T-45 Add a playback-rate control to the preview transport
+## T-45 Play the preview at a reduced rate with pitch change
 
-- **Status:** blocked-on-user
-- **Outcome:** preview plays at 50–150 % speed with the playhead, player preview, and metronome staying on the same sample-frame clock.
-- **Read first:** `include/wormedit/audio/transport.h`, `src/audio/transport.cpp`, `docs/chart-editor-plan/playback-audio.md`.
-- **Files owned:** decided after the STOP.
+- **Status:** ready
+- **Outcome:** chart preview plays at one of the rates 0.1, 0.2, 0.25, 0.33, 0.5, 0.75, 0.8, 0.9, 1.0 with pitch following speed (tape-style); the playhead, player preview, metronome, and loop (T-44) stay on the unchanged source sample-frame clock.
+- **Decision (user, 2026-09-30):** both modes are wanted, with and without pitch change; this card is the pitch-change mode, T-233 the pitch-preserving mode. Rates are stored as exact rationals: 1/10, 1/5, 1/4, **1/3** (labelled 0.33×), 1/2, 3/4, 4/5, 9/10, 1. No rates above 1 are offered.
+- **Read first:** `src/sys/sdl_preview_output.cpp` (`stream_callback`, `render_requested`), `include/wormedit/audio/preview_session.h` (`render`, `pump`), `src/sys/audio_transport_frame.cpp` (playhead/source-frame reporting), `docs/timing-preview-scheduling.md`.
+- **Files owned:** new `include/wormedit/audio/playback_rate.h`, new `src/audio/playback_rate.cpp`, new `tests/core/audio_playback_rate_tests.cpp`, `src/sys/sdl_preview_output.cpp/.h`, `src/sys/audio_transport_frame.cpp/.h`, `include/wormedit/audio/preview_session.h`, `src/audio/preview_session.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Steps:**
-  1. STOP: ask the user whether rate change may shift pitch (simple resample) or must preserve pitch (needs a time-stretch dependency). Record the answer in `docs/chart-editor-plan/decisions/open-questions.md`.
-  2. After the answer, split this card into a core-resampler card and a UI card before implementing.
-- **Invariants:** exact sample-frame clock for timing; Stop silence.
-- **Reject/failure behavior:** unsupported rates are rejected, not clamped silently.
-- **Verify:** defined by the split cards.
-- **Out of scope:** loop (T-44).
+  1. `playback_rate.h`: the fixed rate table above as `rational_t`, lookup by index, label text, and `output_frames_for(source_frames, rate)` / `source_frames_for(output_frames, rate)` with exact rounding rules. Tests for every entry, including 1/3.
+  2. The mixer keeps rendering **source-rate** frames exactly as today. Apply the rate at the SDL stream with `SDL_SetAudioStreamFrequencyRatio(stream, rate)` (SDL3 resamples and asks the callback for proportionally fewer frames). If that call is unavailable or rejects a value, fall back to `ma_linear_resampler` from the already vendored miniaudio (`src/audio/miniaudio_backend.c`) between `render()` and `SDL_PutAudioStreamData`; say in the report which path was used.
+  3. Playhead: convert the device-side latency/queued-frame estimate from output frames to source frames with the current rate, so the reported source frame stays exact; the timing clock itself never scales.
+  4. Rate changes during playback: change the ratio at the next callback; do not restart the session or reschedule events. Stop remains a hard boundary (existing Stop test must still pass).
+  5. Tests (headless, no SDL): at rate 1/2 a 1-second chart advances exactly `sample_rate / 2` source frames per second of output; at 1/3 there is no drift over 10 minutes of simulated callbacks (rounding carries a remainder).
+- **Invariants:** event scheduling, loop bounds, and the player preview use source frames only; `render()` stays allocation-free.
+- **Reject/failure behavior:** a rate not in the table is rejected, never clamped; if neither resampling path works, playback stays at 1.0 with a warning status.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.|sdl_preview'`; manual: play at 0.25 and confirm the playhead reaches a marker when its sound is heard.
+- **Out of scope:** pitch preservation (T-233), UI (T-234), rates above 1.0.
+
+## T-233 Preserve pitch at reduced playback rates
+
+- **Status:** blocked-on T-45
+- **Outcome:** a "Keep pitch" option plays the same rates without pitch change, using an in-house WSOLA time-stretcher on the mixed stereo output; the clock and playhead behave exactly as in T-45.
+- **Read first:** `include/wormedit/audio/playback_rate.h`, `src/sys/sdl_preview_output.cpp`, `include/wormedit/audio/preview_session.h`.
+- **Files owned:** new `include/wormedit/audio/time_stretch.h`, new `src/audio/time_stretch.cpp`, new `tests/core/audio_time_stretch_tests.cpp`, `src/sys/sdl_preview_output.cpp/.h`, `src/sys/audio_transport_frame.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Steps:**
+  1. WSOLA with fixed parameters (window 20 ms, overlap 50 %, search ±8 ms by normalized cross-correlation on the mid channel), preallocated buffers sized at construction for the lowest rate, `process(input, output)` allocation-free.
+  2. In keep-pitch mode the SDL stream ratio stays 1.0; the output stage asks the session for `ceil(output × rate) + lookahead` source frames and stretches them.
+  3. Report the stretcher's fixed latency so the playhead subtracts it (in source frames).
+  4. Tests: a 440 Hz sine at rate 1/2 keeps its dominant frequency within ±2 Hz and doubles in length within one window; silence stays silent; output is deterministic; switching modes mid-play flushes without clicks larger than one window fade.
+- **Invariants:** same as T-45; the stretcher never runs in the scheduling path.
+- **Reject/failure behavior:** if a callback cannot get enough source frames, output silence for that block and report an underrun, as today.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual listening at 0.5 and 0.1.
+- **Out of scope:** formant preservation, third-party libraries (Rubber Band/SoundTouch) unless the user asks.
+
+## T-234 Add rate and pitch controls to the transport UI
+
+- **Status:** blocked-on T-45
+- **Outcome:** the status-bar transport shows a rate dropdown with the nine rates (label "1×", "0.9×" … "0.1×") and a "Keep pitch" toggle (enabled once T-233 lands); commands `transport.rate_slower` / `transport.rate_faster` step through the table; the chosen rate and pitch mode persist per session.
+- **Read first:** `src/ui/nuklear/frontend.cpp` (`render_status_bar`), `src/core/command_registry.cpp`, `include/wormedit/audio/playback_rate.h`.
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `src/core/command_registry.cpp`, `src/sys/main.cpp` (dispatch and view only), `src/sys/transport_player_actions.cpp/.h`, `tests/core/command_registry_tests.cpp`.
+- **Steps:** 1. Scalar view: rate index, keep-pitch flag, keep-pitch availability. 2. Dropdown + toggle using the themed chrome helpers. 3. Registry commands with default chords that do not conflict (check `diagnose_shortcut_conflicts`); suggested Ctrl+[ and Ctrl+].
+- **Invariants:** changing rate never changes the document or cursor.
+- **Reject/failure behavior:** stepping past 0.1× or 1× does nothing.
+- **Verify:** standard build/test; smoke PNG of the status bar.
+- **Out of scope:** per-chart saved rates.
 
 ## T-46 Render synchronized side-by-side difficulties in Compare/Validate
 

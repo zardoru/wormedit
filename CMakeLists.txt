@@ -280,6 +280,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_resource_presenter.cpp
         src/sys/compose_view.cpp
         src/sys/compose_input.cpp
+        src/sys/compose_area_actions.cpp
         src/sys/compose_actions.cpp
         src/sys/compose_audition_requests.cpp
         src/sys/crash_backtrace.cpp
@@ -314,6 +315,7 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/audio_state.cpp
         src/ui/nuklear/bms_branch_panel.cpp
         src/ui/nuklear/compose_markers.cpp
+        src/ui/nuklear/compose_area_menu.cpp
         src/ui/nuklear/compose_canvas.cpp
         src/ui/nuklear/compose_toolbar.cpp
         src/ui/nuklear/compose_inspector.cpp

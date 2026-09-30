@@ -13,6 +13,7 @@ endif()
 
 add_executable(wormedit_core_tests
     ../src/sys/compose_resource_presenter.cpp
+    ../src/sys/compose_area_actions.cpp
     ../src/sys/application_commands.cpp
     ../src/sys/application_defaults.cpp
     ../src/sys/project_open.cpp
@@ -300,6 +301,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_frame_timing_tests
         sys/frame_timing_tests.cpp
         ../src/sys/frame_timing.cpp
+        ../src/sys/compose_area_actions.cpp
         ../src/sys/compose_view.cpp
         ../src/sys/compose_resource_presenter.cpp
         ../src/sys/workspace_projection.cpp

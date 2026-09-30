@@ -452,3 +452,77 @@ TEST_CASE("Go to measure validates authored display numbers and bounded input",
     CHECK_FALSE(worm_ui_nuklear_compose_measure_number(view, "4"));
     CHECK_FALSE(worm_ui_nuklear_compose_measure_number(view, "18446744073709551616"));
 }
+
+#include "ui/nuklear/compose_area_menu.h"
+
+TEST_CASE("Retained area rows project through zoom scroll and reversed field", "[unit][frontend][compose]") {
+    WormUiComposeView view{};
+    view.area_rows_per_measure = 192;
+    view.pixels_per_standard_measure = 384;
+    view.area_scroll_pixels = 100;
+    view.viewport_height_pixels = 600;
+    CHECK(compose_area_y(view, 96) == 92);
+    CHECK(compose_area_y(view, 288) == 476);
+    view.downscroll = true;
+    CHECK(compose_area_y(view, 96) == 508);
+    CHECK(compose_area_y(view, 288) == 124);
+    view.pixels_per_standard_measure = 192;
+    CHECK(compose_area_y(view, 1000) == -300);
+    view.area_rows_per_measure = 0;
+    CHECK(compose_area_y(view, 1000) == 0);
+}
+
+TEST_CASE("Area edge capture restores exact original virtual range and source binding", "[unit][frontend][compose]") {
+    WormUiComposeView view{};
+    view.chart_id = 7;
+    view.document_revision = 11;
+    view.area_range_begin_row = 144;
+    view.area_range_end_row = 10000;
+    view.area_range_virtual = true;
+    view.selected_note_count = 3;
+    view.selected_object_count = 5;
+    ComposeAreaCapture capture;
+    capture.start(view, false);
+    REQUIRE(capture.active);
+    CHECK_FALSE(capture.begin_edge);
+    CHECK(capture.current(view));
+    auto moved = view;
+    moved.area_range_end_row = 12000;
+    WormUiWorkspaceAction action{};
+    capture.restore(action);
+    CHECK(action.compose_action == WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE);
+    CHECK(action.compose_area_begin_row == 144);
+    CHECK(action.compose_area_end_row == 10000);
+    CHECK(action.compose_area_virtual);
+    CHECK(action.compose_input_chart_id == 7);
+    CHECK(action.compose_input_document_revision == 11);
+    CHECK(view.selected_note_count == 3);
+    CHECK(view.selected_object_count == 5);
+    moved.document_revision = 12;
+    CHECK_FALSE(capture.current(moved));
+    moved.document_revision = 11;
+    moved.chart_id = 8;
+    CHECK_FALSE(capture.current(moved));
+    capture.start(view, true);
+    CHECK(capture.begin_edge);
+}
+
+TEST_CASE("Compose retained bands own Escape and captured range gestures own shortcuts", "[unit][frontend][compose]") {
+    ComposeAreaShortcutContext context{true, true, false, false, false, true, true};
+    CHECK(compose_area_consumes_shortcut(context));
+    context.escape = false;
+    CHECK_FALSE(compose_area_consumes_shortcut(context));
+    context.capture = true;
+    CHECK(compose_area_consumes_shortcut(context));
+    context.band = false;
+    CHECK(compose_area_consumes_shortcut(context));
+}
+
+TEST_CASE("Compose area shortcuts defer to other tabs unfocused windows text fields and dialogs", "[unit][frontend][compose]") {
+    ComposeAreaShortcutContext context{true, true, false, false, true, true, true};
+    SECTION("other tab") { context.compose_active = false; }
+    SECTION("unfocused window") { context.focused = false; }
+    SECTION("text entry") { context.text_entry = true; }
+    SECTION("dialog") { context.blocked = true; }
+    CHECK_FALSE(compose_area_consumes_shortcut(context));
+}

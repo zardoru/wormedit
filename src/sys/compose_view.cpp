@@ -1,5 +1,6 @@
 #include "sys/frame_timing.h"
 #include "sys/compose_view.h"
+#include "sys/compose_area_actions.h"
 #include "sys/compose_resource_presenter.h"
 
 #include <wormedit/core/editor_scene.h>
@@ -1492,6 +1493,9 @@ void populate_compose_selection_preview(
         if (begin_row && end_row && *begin_row < *end_row &&
             begin_measure != cache.index->measures.entries.end() &&
             end_measure != cache.index->measures.entries.end()) {
+            view.area_range_available = true;
+            view.area_range_begin_row = *begin_row;
+            view.area_range_end_row = *end_row;
             view.beat_section_selection_span_available = true;
             view.beat_section_selection_begin_measure_number = static_cast<std::uint64_t>(
                 std::distance(cache.index->measures.entries.begin(), begin_measure) + 1);
@@ -1501,7 +1505,9 @@ void populate_compose_selection_preview(
             view.beat_section_selection_end_row = retained.end.row;
         } else {
             retained_state->retained_selection_range.reset();
+            retained_state->retained_canvas_selection_range.reset();
             interaction_view.retained_selection_range.reset();
+            interaction_view.retained_canvas_selection_range.reset();
         }
     }
     view.selected_note_count = retained_state->selected_notes.size();
@@ -1904,7 +1910,29 @@ std::uint64_t prepare_compose_projection_state(const compose_final_projection_co
         -view.viewport_height_pixels * wormedit::editor_cursor_edge_margin_fraction,
         maximum_scroll);
     interaction_view.viewport_scroll_pixels = retained_state->viewport_scroll_pixels;
+    view.area_canvas_rows = canvas_rows;
+    view.area_rows_per_measure = chart.divisions_per_standard_measure;
+    view.area_snap_denominator = retained_state->active_snap_denominator;
+    view.area_scroll_pixels = interaction_view.viewport_scroll_pixels;
+    if (view.area_range_available) {
+        retained_state->retained_canvas_selection_range = wormedit::canvas_row_span_t{
+            view.area_range_begin_row, view.area_range_end_row};
+    }
+    if (retained_state->retained_canvas_selection_range) {
+        const auto range = *retained_state->retained_canvas_selection_range;
+        if (range.begin_row < range.end_row && range.end_row < canvas_rows) {
+            view.area_range_available = true;
+            view.area_range_virtual = !retained_state->retained_selection_range.has_value();
+            view.area_range_begin_row = range.begin_row;
+            view.area_range_end_row = range.end_row;
+        } else {
+            retained_state->retained_canvas_selection_range.reset();
+        }
+        interaction_view.retained_canvas_selection_range = retained_state->retained_canvas_selection_range;
+    }
     view.pixels_per_standard_measure = interaction_view.pixels_per_standard_measure;
+    if (view.area_range_available && !view.area_range_virtual)
+        view.area_delete_supported = compose_area_delete_supported(chart, cache.index->measures, *retained_state);
     cache.interaction_view = interaction_view;
     const auto hover_gesture_active =
         retained_state->pending_hold.has_value() ||

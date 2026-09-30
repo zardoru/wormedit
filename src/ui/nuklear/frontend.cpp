@@ -5,6 +5,7 @@
 #include "ui/nuklear/audio_panel.h"
 #include "ui/nuklear/audio_state.h"
 #include "ui/nuklear/compose_panel.h"
+#include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/image_quad.h"
@@ -42,6 +43,7 @@
 using wormedit::ui::lucide::Glyph;
 
 static bool g_frame_timing_visible;
+static bool g_compose_area_shortcuts_active;
 static SDL_Window* g_window;
 static SDL_Renderer* g_renderer;
 static struct nk_context* g_context;
@@ -238,12 +240,20 @@ void worm_ui_nuklear_append_image_quad(void* canvas, short, short, unsigned shor
     }
 }
 
+static bool nuklear_text_entry_active(void);
+
 static void queue_shortcut_key_event(const SDL_KeyboardEvent* event) {
     if (!event || !g_window || !g_window_focused || event->type != SDL_EVENT_KEY_DOWN ||
         !event->down || event->windowID == 0 || event->windowID != SDL_GetWindowID(g_window) ||
         g_shortcut_events_overflowed) {
         return;
     }
+
+    if (compose_area_consumes_shortcut({g_compose_area_shortcuts_active, g_window_focused,
+        project_dialog_active() || g_new_project_wizard.open,
+        nuklear_text_entry_active(), compose_area_capture_active(),
+        compose_area_band_visible() && worm_ui_nuklear_compose_state().keyboard_focus,
+        event->key == SDLK_ESCAPE})) return;
 
     // SDL documents the usage-page-0x07 scancodes as the USB Keyboard/Keypad
     // usages used by command_registry. Exclude unknown, modifier usages, and
@@ -400,6 +410,7 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer) {
     g_renderer = renderer;
     g_context = context;
     g_window_focused = true;
+    g_compose_area_shortcuts_active = false;
     g_shortcut_event_count = 0;
     g_shortcut_events_overflowed = false;
     g_ime_composition_active = false;
@@ -1284,6 +1295,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     worm_ui_nuklear_emit_timing_cancellations(&view->timing, timing_tab_active, &action);
 
     const bool compose_tab_active = view->active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE;
+    g_compose_area_shortcuts_active = compose_tab_active && view->compose.visible &&
+        (!view->pending_bms_encoding_path || !view->pending_bms_encoding_path[0]);
     worm_ui_nuklear_prepare_compose_panel(&view->compose, compose_tab_active, g_window_focused,
                                           &action);
 

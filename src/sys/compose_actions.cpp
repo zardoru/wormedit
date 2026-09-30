@@ -1,4 +1,5 @@
 #include "sys/compose_actions.h"
+#include "sys/compose_area_actions.h"
 #include "sys/application_edit_helpers.h"
 #include "sys/compose_resource_presenter.h"
 #include "ui/frontend.h"
@@ -1737,6 +1738,8 @@ auto dispatch_compose_view_action(
             : editor_field_scroll_direction_t::up;
     editor_interaction_result_t result;
     std::string status;
+
+    if (auto response = dispatch_compose_area_action(action, history, state)) return *response;
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
         return {};
     }
@@ -1774,7 +1777,7 @@ auto dispatch_compose_workspace_action(
         status = dispatch_bms_branch_choice_action(action, history, workspace, interaction_state);
         return true;
     }
-    if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+    if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE && !action.compose_area_clear_requested) {
         return false;
     }
 

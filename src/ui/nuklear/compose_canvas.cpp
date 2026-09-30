@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_canvas.h"
+#include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/theme.h"
 
@@ -1239,6 +1240,7 @@ void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* vie
         draw_compose_scene_background(paint, timing_layout);
         draw_compose_waveform_layer(paint, timing_layout);
         draw_compose_grid_lines(paint);
+        draw_compose_area_band(context, *view, canvas, viewport);
         draw_compose_timing_layer(paint, timing_layout);
         draw_compose_hold_bodies(paint);
         const auto hovered_bgm = draw_compose_audio_markers(paint);

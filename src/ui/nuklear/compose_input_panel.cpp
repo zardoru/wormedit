@@ -29,6 +29,7 @@
 #include <string>
 
 #include "ui/nuklear/compose_input_panel.h"
+#include "ui/nuklear/compose_area_menu.h"
 
 static void reset_bmson_marker_move_capture() {
     state.bmson_marker_move_candidate_active = false;
@@ -532,6 +533,8 @@ static bool process_compose_escape_or_space(const auto& key_event,
             state.space_range_hold_active = false;
             state.space_range_hold_moved = false;
         }
+        if (view->area_range_available || compose_area_capture_active())
+            cancel_compose_area_capture(*action);
         return true;
     }
     if (key_event.keycode != static_cast<uint32_t>(SDLK_SPACE)) return false;
@@ -686,6 +689,8 @@ void process_compose_key_events(struct nk_context* context, const WormUiComposeV
     for (size_t event_index = 0; event_index < state.key_event_count && !state.action_overflowed;
          ++event_index) {
         const auto& key_event = state.key_events[event_index];
+        if (compose_area_capture_active() && key_event.keycode != static_cast<uint32_t>(SDLK_ESCAPE))
+            continue;
         process_compose_key_event(key_event, view, action, keyboard_ready,
                                   pointer_paint_mode_active);
     }
@@ -800,6 +805,7 @@ void prepare_compose_panel_input(const WormUiComposeView* view, bool compose_tab
     if (!action) {
         return;
     }
+    if (!compose_tab_active || !view || !view->visible) reset_compose_area_menu();
     if (view && compose_tab_active && view->visible) {
         state.action_overflowed = false;
         action->compose_input_chart_id = view->chart_id;
@@ -898,7 +904,7 @@ static ComposeViewportCursor update_compose_viewport_pointer(
         input.action->compose_viewport_pointer_valid = true;
         input.action->compose_viewport_pointer_x_pixels = x;
         input.action->compose_viewport_pointer_y_pixels = y;
-        if (state.middle_click_pending && state.middle_click_x >= input.viewport.x &&
+        if (!compose_area_capture_active() && state.middle_click_pending && state.middle_click_x >= input.viewport.x &&
             state.middle_click_x < input.input_right && state.middle_click_y >= input.viewport.y &&
             state.middle_click_y <= input.viewport.y + input.viewport.h) {
             input.action->compose_viewport_middle_click = true;
@@ -961,6 +967,18 @@ static void append_compose_wheel_inputs(const ComposeViewportInputContext& input
 
 ComposeViewportCursor collect_compose_viewport_inputs(
     const ComposeViewportInputContext& input) {
+    const bool competing_capture = state.space_range_hold_active || input.view->space_range_preview_visible || state.pointer_hold_active || state.lane_hold_active ||
+        state.note_paint_pointer_active || state.note_move_active || state.note_move_candidate_active ||
+        state.area_selection_active || state.area_selection_candidate_active ||
+        state.bmson_razor_pointer_active || state.bmson_marker_move_active ||
+        state.bmson_marker_move_candidate_active || state.semantic_layer_paint_pointer_active ||
+        state.inline_timing_open || state.timing_stage_drag_active ||
+        state.timing_marker_candidate_active || state.timing_marker_drag_active ||
+        state.beat_fit_drag_active || state.offset_fit_drag_active ||
+        state.waveform_beat_zero_drag_active || state.waveform_overview_drag_active;
+    if (!competing_capture || compose_area_capture_active())
+        process_compose_area_menu(input.context, *input.view, *input.action, input.viewport,
+                                  input.input_right, input.window_focused);
     const auto cursor = update_compose_viewport_pointer(input);
     append_compose_wheel_inputs(input);
     return cursor;
@@ -1119,6 +1137,7 @@ static void update_active_beat_fit_drag(const ComposeBeatFitInput& input) {
 }
 
 bool process_compose_beat_fit_pointer(const ComposeBeatFitInput& input) {
+    if (compose_area_pointer_consumed()) return true;
     if (state.offset_fit_drag_active) {
         update_active_offset_fit_drag(input);
         return true;
@@ -1320,6 +1339,7 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
 bool process_compose_double_clicks(const ComposeDoubleClickContext& input,
                                           bool compose_pointer_captured,
                                           bool window_focused) {
+    if (compose_area_pointer_consumed()) return true;
     if (compose_pointer_captured || !window_focused || !input.view->scene_available) return false;
     bool note_double_click_in_view = false;
     for (size_t click_index = 0; click_index < input.click_count; ++click_index) {
@@ -1397,6 +1417,7 @@ static void start_timing_stage_drag(const ComposePointerEventContext& input) {
 }
 
 void update_timing_stage_drag(const ComposePointerEventContext& input) {
+    if (compose_area_pointer_consumed()) return;
     if (state.timing_stage_drag_active)
         update_active_timing_stage_drag(input);
     else
@@ -1418,6 +1439,7 @@ static auto resource_pointer_can_start(const ComposePointerEventContext& input,
 
 auto begin_compose_resource_pointer(const ComposePointerEventContext& input,
                                            bool paint_pointer_consumed) -> bool {
+    if (compose_area_pointer_consumed()) return true;
     const auto& view = *input.view;
     auto* action = input.action;
     if (!resource_pointer_can_start(input, paint_pointer_consumed)) return false;
@@ -1543,6 +1565,7 @@ static void update_active_bmson_razor(const ComposePointerEventContext& input) {
 
 auto process_bmson_razor_pointer(const ComposePointerEventContext& input,
                                         bool paint_pointer_consumed) -> bool {
+    if (compose_area_pointer_consumed()) return true;
     if (state.bmson_razor_pointer_active) {
         update_active_bmson_razor(input);
         return true;
@@ -1648,6 +1671,7 @@ static void begin_bmson_marker_move_candidate(const ComposePointerEventContext& 
 
 auto process_bmson_marker_move_pointer(const ComposePointerEventContext& input,
                                               bool paint_pointer_consumed) -> bool {
+    if (compose_area_pointer_consumed()) return true;
     if (state.bmson_marker_move_active) {
         update_active_bmson_marker_move(input);
         return true;
@@ -1663,6 +1687,7 @@ auto process_bmson_marker_move_pointer(const ComposePointerEventContext& input,
 
 auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& input,
                                                  bool& paint_pointer_consumed) -> bool {
+    if (compose_area_pointer_consumed()) return true;
     const auto& view = *input.view;
     auto* action = input.action;
     if (!state.action_overflowed && state.semantic_layer_paint_pointer_active) {
@@ -1704,6 +1729,7 @@ auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& inpu
 
 void process_note_paint_pointer(const ComposePointerEventContext& input,
                                        bool& paint_pointer_consumed) {
+    if (compose_area_pointer_consumed()) return;
     const auto& view = *input.view;
     auto* action = input.action;
     if (!state.action_overflowed && state.note_paint_pointer_active) {
@@ -1860,6 +1886,7 @@ static auto update_area_selection_active(const ComposePointerEventContext& input
 
 void process_compose_drag_gestures(const ComposePointerEventContext& input,
                                           bool paint_pointer_consumed) {
+    if (compose_area_pointer_consumed()) return;
     if (update_note_move_candidate(input, paint_pointer_consumed)) return;
     if (update_note_move_active(input, paint_pointer_consumed)) return;
     if (update_area_selection_candidate(input, paint_pointer_consumed)) return;
@@ -1983,6 +2010,7 @@ static auto begin_compose_timing_marker_drag(const ComposePointerEventContext& i
 
 auto process_compose_timing_marker_pointer(const ComposePointerEventContext& input,
                                                   bool paint_pointer_consumed) -> bool {
+    if (compose_area_pointer_consumed()) return true;
     if (update_compose_timing_marker_drag(input)) return true;
     return begin_compose_timing_marker_drag(input, paint_pointer_consumed);
 }
@@ -2087,6 +2115,7 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
 
 void process_compose_pointer_actions(const ComposePointerEventContext& input,
                                            bool paint_pointer_consumed) {
+    if (compose_area_pointer_consumed()) return;
     if (handle_compose_measure_click(input, paint_pointer_consumed)) return;
     if (handle_compose_alt_pointer(input, paint_pointer_consumed)) return;
     if (handle_compose_note_field_pointer_start(input, paint_pointer_consumed)) return;

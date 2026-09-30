@@ -28,10 +28,10 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-200 Draw the selected area and give it an action menu
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** after an area drag or Space selection, the exact row interval stays visible as a translucent band across note, timing, and BGM lanes, with draggable top/bottom edges; right-clicking inside it opens a menu whose entries call existing commands (Quantize selection, Create section, Loop playback, Delete contents, Add SV recipe, Add SPEEDS span).
 - **Read first:** `include/wormedit/core/interaction.h` (`retained_selection_range`, `retained_canvas_selection_range`), `src/sys/compose_view.cpp` (the block that projects `retained_selection_range`), `src/ui/nuklear/compose_canvas.cpp`, `docs/chart-editor-plan/editing/interactions.md` (area selection).
-- **Files owned:** `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, new `src/ui/nuklear/compose_area_menu.cpp/.h`, `src/sys/compose_actions.cpp`, `CMakeLists.txt`, `tests/ui/nuklear_compose_state_tests.cpp`.
+- **Files owned:** `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, new `src/ui/nuklear/compose_area_menu.cpp/.h`, `src/sys/compose_actions.cpp`, `CMakeLists.txt`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`, new `src/sys/compose_area_actions.cpp/.h`, `tests/CMakeLists.txt`, `src/ui/nuklear/frontend.cpp` (shared action/test and Escape-routing scope extended by user approval on 2026-09-30).
 - **Steps:**
   1. Project the retained range as absolute top/bottom rows into the view (the begin/end fields already exist for sections; add pixel-independent rows).
   2. Draw the band under notes, above grid; edges highlight on hover.
@@ -40,7 +40,7 @@ Apply the stale-plan check (rule 9) first.
   5. Escape or a click outside clears the band.
 - **Invariants:** the band never changes the document; selection of notes is unchanged by edge drags unless the user re-selects.
 - **Reject/failure behavior:** a range made stale by an edit (measure removed) clears itself, as the projection already does.
-- **Verify:** standard build/test; smoke PNG after a scripted drag (see the Xvfb click helper in T-41 or `scripts/smoke-compose-virtual-x.sh`).
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure` (838/838 passed, parent rerun 2026-09-30); clang-tidy on affected C++ sources (no new complexity violations). Isolated Xvfb scripted area drag, edge drag and Escape restore, then context-menu capture inspected: `/tmp/wormedit-t200/parent-cancel.png`, `/tmp/wormedit-t200/final-menu.png`. Existing deletion supports notes and BGM; areas with timing/BGA or other unsupported objects disable Delete contents with an explanation. Loop playback and Compose SV/SPEEDS creation remain unavailable and explained in the menu. Logs and incremental patch: `/tmp/wormedit-t200/`.
 - **Out of scope:** new area commands beyond menu wiring.
 
 ## T-201 Show SV recipes as span objects in the Compose SV lane
@@ -96,7 +96,7 @@ Apply the stale-plan check (rule 9) first.
 - **Steps:**
   1. Pure function returning the arrow polygon (about 7–9 points) for a direction and a square tile, tested for bounds and orientation.
   2. Draw with `nk_fill_polygon` + `nk_stroke_polygon`; keep a square tile (width = lane width) for arrow lanes.
-  3. Project a snap class per note (4th, 8th, 12th, 16th, 24th, 32nd, other) and color with the provisional palette of question 14 (red, blue, purple, yellow, pink, orange, grey); make the palette one table so the answer can change it.
+  3. Project a snap class per note (4th, 8th, 12th, 16th, 24th, 32nd, other) and color with the user-confirmed palette of question 14 (red, blue, purple, yellow, pink, orange, grey); make the palette one table so the answer can change it.
   4. Selection, hover, semantic-layer color: draw as an outline ring so the snap fill stays visible.
 - **Invariants:** BMS tile lanes and hit-testing unchanged; the player preview can reuse the polygon function later.
 - **Reject/failure behavior:** tiles smaller than 10 px fall back to the current tile.
@@ -173,7 +173,7 @@ Apply the stale-plan check (rule 9) first.
 - **Status:** ready
 - **Outcome:** zooming Compose past the base level shows finer detail: a 32-frames-per-bin level is generated on demand for the visible range, and below 1 frame per pixel the waveform draws PCM samples from the decoded block cache.
 - **Read first:** `include/wormedit/audio/waveform.h` (`waveform_level_for_zoom`, `project_waveform`), `src/sys/waveform_analysis_runtime.cpp` (fixed `256`), `include/wormedit/audio/block_cache.h`, `src/sys/waveform_view_projection.cpp`.
-- **Files owned:** `include/wormedit/audio/waveform.h`, `src/audio/waveform.cpp`, `src/sys/waveform_analysis_runtime.cpp/.h`, `src/sys/waveform_view_projection.cpp/.h`, `tests/core/audio_waveform_tests.cpp`.
+- **Files owned:** `include/wormedit/audio/waveform.h`, `src/audio/waveform.cpp`, `src/sys/waveform_analysis_runtime.cpp/.h`, `src/sys/waveform_view_projection.cpp/.h`, `tests/core/audio_waveform_tests.cpp`, `src/audio/aligned_waveform.cpp`, `include/wormedit/audio/aligned_waveform.h`, `src/sys/application_frame_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp` (visible-range and PCM wiring scope extended by user approval on 2026-09-30).
 - **Steps:**
   1. Test first: at 4 frames/pixel the projection returns per-column min/max from a finer source than 256.
   2. Visible-range fine analysis job (bounded, cancelable, keyed by source and range).

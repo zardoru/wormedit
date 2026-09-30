@@ -66,3 +66,245 @@ TEST_CASE("every built-in command ID has a typed representation", "[unit][sys][c
         CHECK(parse_application_command(command.id.value).has_value());
     }
 }
+
+#include "sys/compose_area_actions.h"
+#include <algorithm>
+#include <array>
+#include <wormedit/formats/native_project.h>
+
+namespace {
+struct AreaFixture {
+    wormedit::document_history_t history;
+    wormedit::editor_interaction_state_t state;
+    WormUiWorkspaceAction action{};
+    AreaFixture() {
+        using namespace wormedit;
+        chart_document_t chart{
+            .id = chart_id_t{7},
+            .divisions_per_standard_measure = 960,
+            .measures = {{.id = measure_id_t{1}}, {.id = measure_id_t{2}}},
+            .lane_layouts = {{.id = object_id_t{100},
+                              .position = {measure_id_t{1}, 0},
+                              .layout = {.profile_id = "area-test",
+                                         .lanes = {{.id = lane_id_t{1}, .name = "Key"}}}}},
+            .bpms = {{.id = object_id_t{101},
+                      .position = {measure_id_t{1}, 0},
+                      .beats_per_minute = {120, 1}},
+                     {.id = object_id_t{102},
+                      .position = {measure_id_t{1}, 480},
+                      .beats_per_minute = {150, 1}}}};
+        chart.measures.front().notes = {
+            {.id = object_id_t{1}, .position = {measure_id_t{1}, 121}, .lane = lane_id_t{1}},
+            {.id = object_id_t{2}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}},
+            {.id = object_id_t{3}, .position = {measure_id_t{1}, 720}, .lane = lane_id_t{1}}};
+        history = make_document_history({.id = song_id_t{1}, .revision = 9, .charts = {chart}});
+        constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}};
+        auto setup = make_editor_interaction(history, chart_id_t{7}, lane_id_t{1},
+                                             {measure_id_t{1}, 0}, snaps, 4);
+        REQUIRE(setup);
+        state = *setup.state;
+        state.retained_selection_range =
+            position_span_t{{measure_id_t{1}, 121}, {measure_id_t{1}, 480}};
+        state.retained_canvas_selection_range = canvas_row_span_t{121, 480};
+        state.selected_notes = {object_id_t{1}};
+        state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{1}}};
+        action.compose_input_chart_id = 7;
+        action.compose_input_document_revision = history.document.revision;
+        action.compose_area_begin_row = 121;
+        action.compose_area_end_row = 620;
+    }
+    auto dispatch() -> std::string {
+        const auto result = dispatch_compose_area_action(action, history, state);
+        REQUIRE(result);
+        return *result;
+    }
+};
+} // namespace
+
+namespace {
+void check_area_unchanged(const AreaFixture& fixture, const std::optional<std::string>& original) {
+    CHECK(wormedit::write_native_project(fixture.history.document).bytes == original);
+    CHECK(fixture.history.undo.empty());
+    CHECK(fixture.state.selected_notes ==
+          std::vector<wormedit::object_id_t>{wormedit::object_id_t{1}});
+}
+void check_original_area(const AreaFixture& fixture) {
+    using namespace wormedit;
+    CHECK(fixture.state.retained_selection_range ==
+          position_span_t{{measure_id_t{1}, 121}, {measure_id_t{1}, 480}});
+}
+} // namespace
+
+TEST_CASE("Compose area resizing snaps only the moving edge and leaves edits and selection intact",
+          "[unit][sys][commands]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    const auto original = wormedit::write_native_project(fixture.history.document).bytes;
+    REQUIRE(original);
+    const auto selected = fixture.state.selected_objects;
+    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
+    CHECK(fixture.dispatch() == "Selected area resized.");
+    CHECK(fixture.state.retained_canvas_selection_range == canvas_row_span_t{121, 720});
+    check_area_unchanged(fixture, original);
+    CHECK(fixture.state.selected_objects == selected);
+}
+
+TEST_CASE("Compose area edge crossing normalizes rows and cancellation restores unsnapped bounds",
+          "[unit][sys][commands]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    const auto original = wormedit::write_native_project(fixture.history.document).bytes;
+    REQUIRE(original);
+    const auto selected = fixture.state.selected_objects;
+    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
+    fixture.action.compose_area_begin_edge = true;
+    fixture.action.compose_area_begin_row = 900;
+    fixture.action.compose_area_end_row = 480;
+    CHECK(fixture.dispatch() == "Selected area resized.");
+    CHECK(fixture.state.retained_canvas_selection_range == canvas_row_span_t{480, 960});
+    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE;
+    fixture.action.compose_area_begin_row = 121;
+    fixture.action.compose_area_end_row = 480;
+    CHECK(fixture.dispatch() == "Area resize canceled.");
+    check_original_area(fixture);
+    CHECK(wormedit::write_native_project(fixture.history.document).bytes == original);
+    CHECK(fixture.state.selected_objects == selected);
+}
+
+TEST_CASE("Compose area actions reject stale sources and extreme rows atomically",
+          "[unit][sys][commands]") {
+    AreaFixture fixture;
+    const auto original = wormedit::write_native_project(fixture.history.document).bytes;
+    REQUIRE(original);
+    const auto range = fixture.state.retained_selection_range;
+    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
+    SECTION("stale revision") {
+        ++fixture.action.compose_input_document_revision;
+    }
+    SECTION("other chart") {
+        ++fixture.action.compose_input_chart_id;
+    }
+    SECTION("overflow row") {
+        fixture.action.compose_area_end_row = std::numeric_limits<std::uint64_t>::max();
+    }
+    CHECK(fixture.dispatch() != "Selected area resized.");
+    CHECK(wormedit::write_native_project(fixture.history.document).bytes == original);
+    CHECK(fixture.state.retained_selection_range == range);
+    CHECK(fixture.history.undo.empty());
+}
+
+TEST_CASE("Compose area quantization changes selected notes only", "[unit][sys][commands]") {
+    AreaFixture fixture;
+    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
+    CHECK(fixture.dispatch() == "Selected notes quantized.");
+    const auto& chart = fixture.history.document.charts.front();
+    CHECK(chart.measures.front().notes[0].position.row == 240);
+    CHECK(chart.measures.front().notes[1].position.row == 480);
+    CHECK(chart.measures.front().notes[2].position.row == 720);
+    CHECK(chart.bpms[1].position.row == 480);
+    CHECK(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("Compose area deletion includes note endpoints while preserving outside contents",
+          "[unit][sys][commands]") {
+    AreaFixture fixture;
+    fixture.history.document.charts.front().bpms.resize(1);
+    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_DELETE;
+    CHECK(fixture.dispatch() == "Selected area contents deleted.");
+    const auto& chart = fixture.history.document.charts.front();
+    REQUIRE(chart.measures.front().notes.size() == 1);
+    CHECK(chart.measures.front().notes.front().id == wormedit::object_id_t{3});
+    REQUIRE(chart.bpms.size() == 1);
+    CHECK(chart.bpms.front().id == wormedit::object_id_t{101});
+    CHECK(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("Compose area resizing retains virtual canvas rows without materializing measures",
+          "[unit][sys][commands]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    fixture.history.document.charts.front().source_family = format_family_t::bms;
+    fixture.state.retained_selection_range.reset();
+    fixture.state.retained_canvas_selection_range = canvas_row_span_t{2400, 4800};
+    const auto original = wormedit::write_native_project(fixture.history.document).bytes;
+    REQUIRE(original);
+    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
+    fixture.action.compose_area_virtual = true;
+    fixture.action.compose_area_begin_row = 2400;
+    fixture.action.compose_area_end_row = 5000;
+    CHECK(fixture.dispatch() == "Selected area resized.");
+    CHECK(fixture.state.retained_canvas_selection_range == canvas_row_span_t{2400, 5040});
+    CHECK_FALSE(fixture.state.retained_selection_range);
+    check_area_unchanged(fixture, original);
+    fixture.action.compose_area_end_row = 960000;
+    CHECK(fixture.dispatch() != "Selected area resized.");
+    CHECK(wormedit::write_native_project(fixture.history.document).bytes == original);
+}
+
+TEST_CASE("Compose area deletion rejects unsupported timing atomically", "[unit][sys][commands]") {
+    AreaFixture fixture;
+    const auto original = wormedit::write_native_project(fixture.history.document).bytes;
+    REQUIRE(original);
+    CHECK_FALSE(compose_area_delete_supported(fixture.history, fixture.state));
+    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_DELETE;
+    CHECK(fixture.dispatch().find("notes and BGM only") != std::string::npos);
+    CHECK(wormedit::write_native_project(fixture.history.document).bytes == original);
+    CHECK(fixture.history.undo.empty());
+}
+
+TEST_CASE("Compose area deletion removes BGM at the inclusive tail and keeps outside BGM",
+          "[unit][sys][commands]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.bpms.resize(1);
+    chart.bgm_source_lanes.push_back({.id = object_id_t{300}, .name = "BGM"});
+    chart.measures.front().bgm_events = {{.id = object_id_t{201},
+                                          .position = {measure_id_t{1}, 480},
+                                          .source_lane = object_id_t{300}},
+                                         {.id = object_id_t{202},
+                                          .position = {measure_id_t{1}, 720},
+                                          .source_lane = object_id_t{300}}};
+    REQUIRE(compose_area_delete_supported(fixture.history, fixture.state));
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    CHECK(compose_area_delete_supported(chart, index, fixture.state));
+    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_DELETE;
+    CHECK(fixture.dispatch() == "Selected area contents deleted.");
+    const auto& events = fixture.history.document.charts.front().measures.front().bgm_events;
+    REQUIRE(events.size() == 1);
+    CHECK(events.front().id == object_id_t{202});
+    CHECK(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("Compose area edges follow absolute active grid across odd measure lengths",
+          "[unit][sys][commands]") {
+    using namespace wormedit;
+    AreaFixture fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.measures.front().definition = {{5, 8}, meter_t{5, 8}};
+    chart.measures.front().notes.back().position.row = 520;
+    fixture.state.retained_selection_range =
+        position_span_t{{measure_id_t{2}, 17}, {measure_id_t{2}, 480}};
+    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET;
+    fixture.action.compose_area_begin_row = 617;
+    fixture.action.compose_area_end_row = 1100;
+    CHECK(fixture.dispatch() == "Selected area resized.");
+    CHECK(fixture.state.retained_canvas_selection_range == canvas_row_span_t{617, 1200});
+    REQUIRE(fixture.state.retained_selection_range);
+    CHECK(fixture.state.retained_selection_range->begin == local_position_t{measure_id_t{2}, 17});
+    CHECK(fixture.state.retained_selection_range->end == local_position_t{measure_id_t{2}, 600});
+}
+
+TEST_CASE("Compose area quantization rejects ambiguous identities without edits", "[unit][sys][commands]") {
+    AreaFixture fixture;
+    auto& chart = fixture.history.document.charts.front();
+    chart.bpms.back().id = wormedit::object_id_t{1};
+    const auto revision = fixture.history.document.revision;
+    const auto position = chart.measures.front().notes.front().position;
+    fixture.action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
+    CHECK(fixture.dispatch().find("identities overlap") != std::string::npos);
+    CHECK(fixture.history.document.revision == revision);
+    CHECK(chart.measures.front().notes.front().position == position);
+    CHECK(chart.bpms.back().id == wormedit::object_id_t{1});
+    CHECK(fixture.history.undo.empty());
+}

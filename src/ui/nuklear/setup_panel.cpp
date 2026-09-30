@@ -1,3 +1,4 @@
+#include "ui/nuklear/chrome.h"
 #include "ui/nuklear/setup_panel.h"
 #include "ui/nuklear/setup_state.h"
 
@@ -49,7 +50,7 @@ void worm_ui_nuklear_render_setup_panel(struct nk_context* context,
     nk_layout_row_push(context, 0.28f);
     nk_label(context, "File family", NK_TEXT_LEFT);
     nk_layout_row_push(context, 0.72f);
-    const auto next_file = nk_combo(context, file_labels.data(), file_labels.size(), file_profile,
+    const auto next_file = wormedit::ui::chrome::safe_combo(context, file_labels.data(), file_labels.size(), file_profile,
                                     24, nk_vec2(280, 100));
     nk_layout_row_end(context);
 
@@ -58,7 +59,7 @@ void worm_ui_nuklear_render_setup_panel(struct nk_context* context,
     nk_label(context, "Timing syntax", NK_TEXT_LEFT);
     nk_layout_row_push(context, 0.72f);
     const auto next_timing =
-        nk_combo(context, timing_labels.data(), timing_labels.size(), timing_syntax, 24,
+        wormedit::ui::chrome::safe_combo(context, timing_labels.data(), timing_labels.size(), timing_syntax, 24,
                  nk_vec2(280, 120));
     nk_layout_row_end(context);
 
@@ -67,7 +68,7 @@ void worm_ui_nuklear_render_setup_panel(struct nk_context* context,
     nk_label(context, "Implementation target", NK_TEXT_LEFT);
     nk_layout_row_push(context, 0.72f);
     const auto next_implementation =
-        nk_combo(context, implementation_labels.data(), implementation_labels.size(),
+        wormedit::ui::chrome::safe_combo(context, implementation_labels.data(), implementation_labels.size(),
                  implementation, 24, nk_vec2(280, 120));
     nk_layout_row_end(context);
 

@@ -158,7 +158,7 @@ static void render_compose_snap_controls(nk_context* context) {
     if (wormedit::ui::chrome::IconButton{Glyph::magnet, tooltips[step_index]}.render(context))
         state.beat_fit_snap_step_index = static_cast<std::uint8_t>((step_index + 1) % std::size(steps));
     state.beat_fit_snap_step_index = static_cast<std::uint8_t>(std::min<int>(
-        nk_combo(context, steps, static_cast<int>(std::size(steps)),
+        wormedit::ui::chrome::safe_combo(context, steps, static_cast<int>(std::size(steps)),
                  state.beat_fit_snap_step_index, 20, nk_vec2(70, 140)),
         static_cast<int>(std::size(steps) - 1)));
 }

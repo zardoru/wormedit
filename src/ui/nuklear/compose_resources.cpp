@@ -120,7 +120,7 @@ auto render_export_group(const ResourcePanel& panel)
         std::snprintf(label.data(), label.size(), "Export: %s",
                       export_group->name[0] ? export_group->name
                                             : export_group->relative_output_path);
-        if (nk_combo_begin_label(context, label.data(),
+        if (wormedit::ui::chrome::safe_combo_begin_label(context, label.data(),
                                  nk_vec2(nk_widget_width(context), 220.0f))) {
             nk_layout_row_dynamic(context, 22, 1);
             for (std::size_t index = 0; index < view.output_group_count; ++index) {

@@ -299,7 +299,8 @@ static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_la
     if (!action) {
         return;
     }
-    action->shortcut_event_count = g_shortcut_event_count;
+    action->shortcut_event_count = g_new_project_wizard.open || !g_bms_encoding_path_seen.empty()
+                                       ? 0 : g_shortcut_event_count;
     for (size_t index = 0; index < g_shortcut_event_count; ++index) {
         action->shortcut_events[index] = g_shortcut_events[index];
     }
@@ -816,7 +817,7 @@ static void render_transport_rate(const WormUiWorkspaceView& view, WormUiWorkspa
     static const char* labels[]{"1×", "0.9×", "0.8×", "0.75×", "0.5×", "0.33×", "0.25×", "0.2×", "0.1×"};
     const int index = view.transport_rate_index < 9 ? 8 - view.transport_rate_index : 0;
     if (!view.transport_rate_available) nk_widget_disable_begin(g_context);
-    const int selected = nk_combo(g_context, labels, 9, index, 24, nk_vec2(100, 250));
+    const int selected = wormedit::ui::chrome::safe_combo(g_context, labels, 9, index, 24, nk_vec2(100, 250));
     if (!view.transport_rate_available) nk_widget_disable_end(g_context);
     if (view.transport_rate_available && selected != index && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
         action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
@@ -1134,19 +1135,34 @@ static void confirm_new_project_wizard(WormUiWorkspaceAction& action) {
     g_new_project_wizard.open = false;
 }
 
+static bool project_modal_active(const WormUiWorkspaceView& view) {
+    return g_new_project_wizard.open ||
+           (view.pending_bms_encoding_path && view.pending_bms_encoding_path[0]);
+}
+
+static nk_flags workspace_window_flags(const WormUiWorkspaceView& view) {
+    const auto flags = NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND;
+    return flags | (project_modal_active(view) ? NK_WINDOW_NO_INPUT : 0);
+}
+
+static bool begin_project_modal(const char* title, struct nk_rect bounds) {
+    nk_window_show(g_context, title, NK_SHOWN);
+    nk_window_set_focus(g_context, title);
+    return nk_begin(g_context, title, bounds,
+                    NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_NO_SCROLLBAR);
+}
+
 static void render_new_project_wizard(WormUiWorkspaceAction& action, int width, int height) {
     if (!g_new_project_wizard.open) return;
     constexpr std::array<const char*, 8> layout_labels{
         "4K", "5K", "6K", "7K", "8K", "9K", "10K", "14K"};
     const float popup_width = std::min(500.0f, std::max(280.0f, width - 24.0f));
     const float popup_height = g_new_project_wizard.audio ? 266.0f : 204.0f;
-    const auto region = nk_window_get_content_region(g_context);
-    const auto bounds = nk_rect((width - popup_width) * 0.5f - region.x,
-                                (height - popup_height) * 0.5f - region.y,
+    const auto bounds = nk_rect((width - popup_width) * 0.5f,
+                                (height - popup_height) * 0.5f,
                                 popup_width, popup_height);
-    if (!nk_popup_begin(g_context, NK_POPUP_STATIC, "Create project",
-                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) {
-        cancel_new_project_wizard(action);
+    if (!begin_project_modal("Create project", bounds)) {
+        nk_end(g_context);
         return;
     }
     nk_layout_row_dynamic(g_context, 28, 1);
@@ -1159,7 +1175,7 @@ static void render_new_project_wizard(WormUiWorkspaceAction& action, int width, 
     nk_layout_row_dynamic(g_context, 24, 1);
     nk_label(g_context, "Choose the initial chart layout", NK_TEXT_LEFT);
     nk_layout_row_dynamic(g_context, 30, 1);
-    const auto selected = nk_combo(g_context, layout_labels.data(),
+    const auto selected = wormedit::ui::chrome::safe_combo(g_context, layout_labels.data(),
                                    static_cast<int>(layout_labels.size()),
                                    g_new_project_wizard.layout_index, 25,
                                    nk_vec2(180.0f, 225.0f));
@@ -1175,15 +1191,13 @@ static void render_new_project_wizard(WormUiWorkspaceAction& action, int width, 
     nk_layout_row_dynamic(g_context, 34, 2);
     if (nk_button_label(g_context, "Cancel")) {
         cancel_new_project_wizard(action);
-        nk_popup_close(g_context);
     }
     if (audio_path_too_long) nk_widget_disable_begin(g_context);
     if (nk_button_label(g_context, "Create project") && !audio_path_too_long) {
         confirm_new_project_wizard(action);
-        nk_popup_close(g_context);
     }
     if (audio_path_too_long) nk_widget_disable_end(g_context);
-    nk_popup_end(g_context);
+    nk_end(g_context);
 }
 
 static void cancel_bms_encoding_dialog(WormUiWorkspaceAction& action) {
@@ -1222,13 +1236,11 @@ static void render_bms_encoding_dialog(const WormUiWorkspaceView& view,
     if (g_bms_encoding_choice >= count) g_bms_encoding_choice = 0;
     const float popup_width = std::min(520.0f, std::max(280.0f, width - 24.0f));
     const float popup_height = 252.0f;
-    const auto region = nk_window_get_content_region(g_context);
-    const auto bounds = nk_rect((width - popup_width) * 0.5f - region.x,
-                                (height - popup_height) * 0.5f - region.y,
+    const auto bounds = nk_rect((width - popup_width) * 0.5f,
+                                (height - popup_height) * 0.5f,
                                 popup_width, popup_height);
-    if (!nk_popup_begin(g_context, NK_POPUP_STATIC, "BMS text encoding",
-                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) {
-        cancel_bms_encoding_dialog(action);
+    if (!begin_project_modal("BMS text encoding", bounds)) {
+        nk_end(g_context);
         return;
     }
     nk_layout_row_dynamic(g_context, 30, 1);
@@ -1238,12 +1250,11 @@ static void render_bms_encoding_dialog(const WormUiWorkspaceView& view,
     nk_layout_row_dynamic(g_context, 42, 1);
     nk_label_wrap(g_context, "This chart contains non-ASCII text without a UTF-8 BOM.");
     nk_layout_row_dynamic(g_context, 30, 1);
-    g_bms_encoding_choice = nk_combo(g_context, labels.data(), count,
+    g_bms_encoding_choice = wormedit::ui::chrome::safe_combo(g_context, labels.data(), count,
                                       g_bms_encoding_choice, 25, nk_vec2(250.0f, 180.0f));
     nk_layout_row_dynamic(g_context, 34, 2);
     if (nk_button_label(g_context, "Cancel")) {
         cancel_bms_encoding_dialog(action);
-        nk_popup_close(g_context);
     }
     if (nk_button_label(g_context, "Open chart") &&
         action.kind == WORM_UI_WORKSPACE_ACTION_NONE &&
@@ -1251,27 +1262,30 @@ static void render_bms_encoding_dialog(const WormUiWorkspaceView& view,
         action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
         action.bms_encoding_index = indexes[static_cast<std::size_t>(g_bms_encoding_choice)];
         std::memcpy(action.project_path, path.c_str(), path.size() + 1);
-        nk_popup_close(g_context);
     }
-    nk_popup_end(g_context);
+    nk_end(g_context);
+}
+
+static void render_project_modals(const WorkspaceRenderContext& frame) {
+    if (!frame.view.pending_bms_encoding_path || !frame.view.pending_bms_encoding_path[0])
+        render_new_project_wizard(frame.action, frame.width, frame.height);
+    render_bms_encoding_dialog(frame.view, frame.action, frame.width, frame.height);
 }
 
 static void render_empty_project_window(const WorkspaceRenderContext& frame) {
     if (nk_begin(g_context, "wormedit-workspace",
                  nk_rect(0, 0, static_cast<float>(frame.width), static_cast<float>(frame.height)),
-                 NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
+                 workspace_window_flags(frame.view))) {
         render_title_bar(&frame.view, &frame.action);
         const float recovery_height = render_recovery_panel(frame.view, frame.action);
         const float available_height = std::max(100.0f,
                                                 static_cast<float>(frame.height) - 64.0f -
                                                     recovery_height);
         render_empty_project_content(frame.view, frame.action, available_height);
-        if (!frame.view.pending_bms_encoding_path ||
-            !frame.view.pending_bms_encoding_path[0])
-            render_new_project_wizard(frame.action, frame.width, frame.height);
-        render_bms_encoding_dialog(frame.view, frame.action, frame.width, frame.height);
+
     }
     nk_end(g_context);
+    render_project_modals(frame);
 }
 
 static void render_gpu_work_summary(const WormUiFrameTimingView& timer) {
@@ -1332,7 +1346,7 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
     }
     if (nk_begin(g_context, "wormedit-workspace",
                  nk_rect(0, 0, static_cast<float>(frame.width), static_cast<float>(frame.height)),
-                 NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
+                 workspace_window_flags(frame.view))) {
         render_title_bar(&view, &action);
         render_transport_seek_control(view, action);
         render_workspace_tabs(&view, &action);
@@ -1344,11 +1358,26 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
         nk_layout_row_dynamic(g_context, content_height, 1);
         render_workspace_content(view, action);
         render_status_bar(&view, &action);
-        if (!view.pending_bms_encoding_path || !view.pending_bms_encoding_path[0])
-            render_new_project_wizard(action, frame.width, frame.height);
-        render_bms_encoding_dialog(view, action, frame.width, frame.height);
+
     }
     nk_end(g_context);
+    render_project_modals(frame);
+}
+
+static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
+    if (project_modal_active(frame.view)) return;
+    if (!frame.view.project_loaded) {
+        worm_ui_nuklear_render_external_player_panel(g_context, &frame.view.external_player,
+                                                     &frame.action.external_player);
+        worm_ui_nuklear_render_tap_timing_panel(g_context, frame.view.tap_timing, frame.action.tap_timing);
+        return;
+    }
+    render_frame_timing_overlay(frame.width, frame.height);
+    worm_ui_nuklear_render_tap_timing_panel(g_context, frame.view.tap_timing, frame.action.tap_timing);
+    worm_ui_nuklear_render_external_player_panel(g_context, &frame.view.external_player,
+                                                 &frame.action.external_player);
+    worm_ui_nuklear_render_player_preview(g_context, g_renderer, &frame.view.player_preview,
+                                          &frame.action, frame.width, frame.height);
 }
 
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
@@ -1369,7 +1398,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         expose_shortcut_input(&action);
         return action;
     }
-    g_tap_timing_visible = view->tap_timing.visible;
+    g_tap_timing_visible = view->tap_timing.visible && !project_modal_active(*view);
     sync_pending_audio_project(*view);
 
     const auto* validation_error = workspace_validation_error(*view);
@@ -1397,8 +1426,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         worm_ui_nuklear_compose_discard_frame_input();
         worm_ui_nuklear_reconcile_timing_gestures(nullptr, false, false);
         render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
-        worm_ui_nuklear_render_external_player_panel(g_context, &view->external_player, &action.external_player);
-        worm_ui_nuklear_render_tap_timing_panel(g_context, view->tap_timing, action.tap_timing);
+        render_auxiliary_windows(WorkspaceRenderContext{*view, action, width, height});
         expose_shortcut_input(&action);
         g_audio.offset_escape_pending = false;
         return action;
@@ -1408,16 +1436,13 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
 
     const bool compose_tab_active = view->active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE;
     g_compose_area_shortcuts_active = compose_tab_active && view->compose.visible &&
-        (!view->pending_bms_encoding_path || !view->pending_bms_encoding_path[0]);
-    worm_ui_nuklear_prepare_compose_panel(&view->compose, compose_tab_active, g_window_focused,
+        !project_modal_active(*view);
+    worm_ui_nuklear_prepare_compose_panel(&view->compose,
+                                          compose_tab_active && !project_modal_active(*view), g_window_focused,
                                           &action);
 
     render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
-    render_frame_timing_overlay(width, height);
-    worm_ui_nuklear_render_tap_timing_panel(g_context, view->tap_timing, action.tap_timing);
-    worm_ui_nuklear_render_external_player_panel(g_context, &view->external_player, &action.external_player);
-    worm_ui_nuklear_render_player_preview(g_context, g_renderer, &view->player_preview, &action,
-                                          width, height);
+    render_auxiliary_windows(WorkspaceRenderContext{*view, action, width, height});
     const bool compose_lane_focused =
         worm_ui_nuklear_compose_lane_focused(&view->compose, compose_tab_active, g_window_focused);
     expose_shortcut_input(&action, compose_lane_focused,

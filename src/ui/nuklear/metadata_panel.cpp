@@ -1208,7 +1208,7 @@ static auto render_output_group_combo(const MetadataPanel& panel)
     nk_label(panel.context, "Export format", NK_TEXT_LEFT);
     nk_layout_row_push(panel.context, 0.72f);
     const auto* label = selected->name[0] ? selected->name : selected->relative_output_path;
-    if (nk_combo_begin_label(panel.context, label,
+    if (wormedit::ui::chrome::safe_combo_begin_label(panel.context, label,
                              nk_vec2(nk_widget_width(panel.context), 180.0f))) {
         nk_layout_row_dynamic(panel.context, 22, 1);
         for (size_t index = 0; index < metadata.output_group_count; ++index) {
@@ -1774,7 +1774,7 @@ void render_format_target_selector(const MetadataPanel& panel) {
     auto* context = panel.context;
     nk_layout_row_begin(context, NK_DYNAMIC, 25, 3);
     nk_layout_row_push(context, 0.2f);
-    if (nk_combo_begin_label(context, state.format_add_chart_scoped ? "Chart" : "Song",
+    if (wormedit::ui::chrome::safe_combo_begin_label(context, state.format_add_chart_scoped ? "Chart" : "Song",
                              nk_vec2(nk_widget_width(context), 70))) {
         nk_layout_row_dynamic(context, 22, 1);
         if (nk_combo_item_label(context, "Song", NK_TEXT_LEFT)) state.format_add_chart_scoped = false;
@@ -1784,7 +1784,7 @@ void render_format_target_selector(const MetadataPanel& panel) {
     }
     nk_layout_row_push(context, 0.5f);
     const auto family_label = metadata_format_family_name(state.format_add_family);
-    if (nk_combo_begin_label(context, family_label, nk_vec2(nk_widget_width(context), 180))) {
+    if (wormedit::ui::chrome::safe_combo_begin_label(context, family_label, nk_vec2(nk_widget_width(context), 180))) {
         static constexpr const char* names[]{"Native", "BMS", "StepMania", "osu!mania",
                                              "BMSON", "MIDI", "Quaver"};
         nk_layout_row_dynamic(context, 22, 1);

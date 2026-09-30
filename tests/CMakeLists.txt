@@ -284,6 +284,19 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         DISCOVERY_MODE PRE_TEST
     )
 
+    add_executable(wormedit_nuklear_popup_combo_tests
+        ui/nuklear_popup_combo_tests.cpp)
+    target_include_directories(wormedit_nuklear_popup_combo_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
+    target_compile_definitions(wormedit_nuklear_popup_combo_tests PRIVATE
+        WORMEDIT_SOURCE_ROOT="${CMAKE_SOURCE_DIR}")
+    target_link_libraries(wormedit_nuklear_popup_combo_tests PRIVATE
+        wormedit::ui_frontend Catch2::Catch2WithMain)
+    catch_discover_tests(wormedit_nuklear_popup_combo_tests
+        TEST_PREFIX "frontend-state."
+        PROPERTIES LABELS "unit;frontend;architecture"
+        DISCOVERY_MODE PRE_TEST)
+
     add_executable(wormedit_nuklear_sdl_backend_tests
         ui/nuklear_sdl_backend_tests.cpp
         ../src/ui/nuklear/sdl_backend.cpp

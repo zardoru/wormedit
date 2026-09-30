@@ -188,11 +188,11 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 
 ## T-264 Fix the crash from combo boxes inside popups
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** opening the new-project wizard's layout combo and the BMS text-encoding combo no longer aborts; no combo, menu, or contextual menu is ever opened inside another popup, and a guard makes any future violation fail safely instead of crashing.
 - **Cause (from a user crash report, macOS, 2026-09-30):** the backtrace ends in `nk_combo` → `nk_combo_begin_label` → `nk_combo_begin` → `nk_nonblock_begin` → `abort`. `nk_nonblock_begin` asserts `!(panel->type & NK_PANEL_SET_POPUP)`: Nuklear forbids opening a combo (itself a popup) inside a popup. In `src/ui/nuklear/frontend.cpp`, `render_new_project_wizard` opens `nk_popup_begin(..., "Create project", ...)` and calls `nk_combo` for the layout, and `render_bms_encoding_dialog` opens `nk_popup_begin(..., "BMS text encoding", ...)` and calls `nk_combo` for the encoding. Other combos (snap, playback rate, Setup policies, Metadata, markers, export group) are in ordinary windows. The user confirmed the trigger: after importing a song, choosing a layout in the new-project wizard (`render_new_project_wizard`); the BMS encoding dialog has the same defect and is fixed in the same card.
 - **Read first:** `src/ui/nuklear/frontend.cpp` (`render_new_project_wizard`, `render_bms_encoding_dialog`), `src/ui/nuklear/chrome.h`, `build/_deps/nuklear-src/nuklear.h` (`nk_nonblock_begin`).
-- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/chrome.h`, new `tests/ui/nuklear_popup_combo_tests.cpp`, `tests/CMakeLists.txt`.
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/chrome.h`, new `tests/ui/nuklear_popup_combo_tests.cpp`, `tests/CMakeLists.txt`; user-approved central-guard callers: `src/ui/nuklear/setup_panel.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_resources.cpp`, `src/ui/nuklear/compose_markers.cpp`, `src/ui/nuklear/metadata_panel.cpp`.
 - **Steps:**
   1. Reproduce: open New project (and the BMS encoding prompt with an ambiguous-encoding fixture from `tests/fixtures/bms/encoding/`) in a debug build and open each combo; confirm the abort.
   2. Turn both dialogs into ordinary Nuklear windows (`nk_begin` with `NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_NO_SCROLLBAR`, centered, focused with `nk_window_set_focus`, other input blocked the same way the popup did) so their combos are legal. Keep their actions, labels, and keyboard behavior identical.
@@ -200,5 +200,26 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
   4. Test with the headless Nuklear context (or T-41's harness): build a popup, call `safe_combo`, click it, and assert no abort and that a selection is returned.
 - **Invariants:** dialog results (layout index, encoding choice, cancel) unchanged; dialogs stay modal from the user's point of view.
 - **Reject/failure behavior:** none.
-- **Verify:** standard build/test in a debug build; manual: New project → change layout; open an ambiguous-encoding BMS → change encoding; both without crash on Linux and macOS.
+- **Verify:** before-fix debug Xvfb reproduced both actual `nk_nonblock_begin` assertions (wizard layout and CP932 encoding prompt), recorded in `/tmp/wormedit-t264/wizard-abort.log` and `/tmp/wormedit-t264/encoding-abort.log`. Central guard standalone and integrated headless tests passed 4/4 (22 assertions), including real inline selection and architecture enforcement. Corrected real Xvfb/SDL-dummy windows passed wizard layout selection, Cancel/reopen and 4K project creation; encoding CP932 selection, Cancel/reopen in the same context and successful import. PNG evidence: `/tmp/wormedit-t264/wizard-final-created.png`, `/tmp/wormedit-t264/encoding-final-opened.png`. An intermediate Cancel assertion from closing the active Nuklear window was fixed by ending dialog rendering through its existing state; final lifecycle checks passed. Debug integrated build passed; full suite 936/936 passed in 33.39s (`/tmp/wormedit-t237-t264-final-ctest.log`), frontend-state prefix 38/38 passed (`/tmp/wormedit-t264-frontend-prefix.log`), and affected new code passed clang-tidy complexity checks. User approved isolated Linux substitution; macOS runtime check remains unavailable and is not claimed. Linux isolated checks replace the requested local macOS run by explicit user authorization; macOS runtime verification remains pending.
 - **Out of scope:** theming (T-225).
+
+## T-265 Fix the audio lock-order deadlock (freeze on seek/start/stop)
+
+- **Status:** ready
+- **Outcome:** seeking, starting, stopping, and auditioning can never freeze the application: no SDL audio-device function is called while this code holds the SDL audio-stream lock.
+- **Cause (gdb on a frozen process, 2026-09-30; full dump saved as `/tmp/wormedit-deadlock-bt.txt`):**
+  - Main thread: `dispatch_transport_player_action` → `chart_preview_t::seek` (frame 2502878) → `sdl_preview_output_t::seek` (holds `SDL_LockAudioStream(stream_)`, `src/sys/sdl_preview_output.cpp:186`) → `activate_device` (line 130) → `SDL_PauseAudioStreamDevice` → `ObtainLogicalAudioDevice`, blocked on the **device** mutex.
+  - SDL audio thread (`SDLAudioP31`, PipeWire): `SDL_PlaybackAudioThreadIterate` (holds the **device** lock) → `SDL_GetAudioStreamDataAdjustGain`, blocked on the **stream** mutex.
+  - Classic AB/BA inversion; intermittent because it needs the audio callback to run at the same moment as the seek. All other threads were idle.
+- **All sites with the same pattern (device call inside the stream lock):** `sdl_preview_output_t::start` (lock line 146 → `activate_device` line 165, failure path 169), `sdl_preview_output_t::seek` (186 → 203, 207), `sdl_preview_output_t::stop` (276 → 285, and the failure path 277), `src/sys/sdl_audition_output.cpp` start (59 → 70–72, 79, 84) and stop (126 → 127, 133).
+- **Read first:** `src/sys/sdl_preview_output.cpp` (`start`, `seek`, `stop`, `activate_device`, `apply_output_mode`), `src/sys/sdl_audition_output.cpp`, SDL3 `SDL_audio.h` notes on `SDL_LockAudioStream`.
+- **Files owned:** `src/sys/sdl_preview_output.cpp/.h`, `src/sys/sdl_audition_output.cpp/.h`, `tests/sys/sdl_preview_output_tests.cpp`, `tests/sys/sdl_audition_output_tests.cpp`.
+- **Steps:**
+  1. Fix order everywhere: (a) `SDL_PauseAudioStreamDevice(stream_)` **without** holding the stream lock (the device is then not calling back); (b) `SDL_LockAudioStream`, reset session/output state, `SDL_ClearAudioStream`, `SDL_UnlockAudioStream`; (c) `SDL_ResumeAudioStreamDevice` without the lock. Failure paths follow the same order.
+  2. Split `activate_device` into `pause_device()` and `resume_device()` that assert (in debug builds) that this thread does not hold the stream lock (track it with a thread-local flag set by a small RAII lock guard used for every `SDL_LockAudioStream` in these files).
+  3. Check `apply_output_mode` (`SDL_SetAudioStreamFrequencyRatio`, `SDL_ClearAudioStream`) is only called outside device calls or under the same ordering.
+  4. Stress test with the dummy audio driver: 2,000 rapid seek/start/stop/rate changes from one thread while the device thread runs; the test must finish within a timeout (a hang fails the test), and the existing "Stop is silent on the next render" test must still pass.
+- **Invariants:** Stop is still a hard boundary (silence on the next callback); no audio from before a seek is heard after it.
+- **Reject/failure behavior:** device pause/resume failures keep today's error reporting.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'sdl_preview|sdl_audition|^audio\.'`; manual: rapid minimap clicks and seeks during playback on PipeWire for a few minutes without a freeze.
+- **Out of scope:** moving decode refill off the frame thread (T-212).

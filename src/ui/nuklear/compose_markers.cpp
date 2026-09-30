@@ -1,3 +1,4 @@
+#include "ui/nuklear/chrome.h"
 #include "ui/nuklear/compose_markers.h"
 
 #include "wormedit/nuklear_config.h"
@@ -170,7 +171,7 @@ void render_audio_bookmarks(struct nk_context* context, const WormUiComposeView&
     }
 
     nk_layout_row_dynamic(context, 25, 1);
-    if (nk_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
+    if (wormedit::ui::chrome::safe_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
         nk_layout_row_dynamic(context, 22, 1);
         if (nk_combo_item_label(context, "New audio-time bookmark", NK_TEXT_LEFT)) {
             state.audio_bookmark_id = 0;
@@ -242,7 +243,7 @@ void render_audio_sections(struct nk_context* context, const WormUiComposeView& 
     }
 
     nk_layout_row_dynamic(context, 25, 1);
-    if (nk_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
+    if (wormedit::ui::chrome::safe_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
         nk_layout_row_dynamic(context, 22, 1);
         if (nk_combo_item_label(context, "New audio-time section", NK_TEXT_LEFT)) {
             state.audio_section_id = 0;
@@ -343,7 +344,7 @@ void render_bookmarks(struct nk_context* context, const WormUiComposeView& view,
     }
 
     nk_layout_row_dynamic(context, 25, 1);
-    if (nk_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
+    if (wormedit::ui::chrome::safe_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
         nk_layout_row_dynamic(context, 22, 1);
         if (nk_combo_item_label(context, "New bookmark at cursor", NK_TEXT_LEFT)) {
             state.bookmark_id = 0;
@@ -411,7 +412,7 @@ void format_section_header(char (&header)[384], const WormUiComposeView& view,
 void render_section_picker(struct nk_context* context, const WormUiComposeView& view,
                            const char* header) {
     nk_layout_row_dynamic(context, 25, 1);
-    if (!nk_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
+    if (!wormedit::ui::chrome::safe_combo_begin_label(context, header, nk_vec2(nk_widget_width(context), 280.0F))) {
         return;
     }
     nk_layout_row_dynamic(context, 22, 1);

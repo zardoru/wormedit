@@ -4,7 +4,41 @@
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/lucide_icons.h"
 
+#include <algorithm>
+
 namespace wormedit::ui::chrome {
+
+// Nuklear popups cannot contain another popup. Keep this boundary shared by
+// every dropdown so a future popup caller receives a usable inline fallback.
+inline auto popup_panel(const nk_context* context) -> bool {
+    return context && context->current && context->current->layout &&
+           (static_cast<nk_flags>(context->current->layout->type) & NK_PANEL_SET_POPUP) != 0;
+}
+
+inline auto safe_combo(nk_context* context, const char* const* items, int count,
+                       int selected, int item_height, struct nk_vec2 size) -> int {
+    if (!context || !context->current || !context->current->layout || !items || count <= 0)
+        return selected;
+    if (!popup_panel(context))
+        return nk_combo(context, items, count, selected, item_height, size);
+    selected = std::clamp(selected, 0, count - 1);
+    for (int index = 0; index < count; ++index) {
+        nk_layout_row_dynamic(context, static_cast<float>(item_height), 1);
+        if (nk_select_label(context, items[index], NK_TEXT_LEFT, selected == index))
+            selected = index;
+    }
+    return selected;
+}
+
+inline auto safe_combo_begin_label(nk_context* context, const char* label,
+                                   struct nk_vec2 size) -> nk_bool {
+    if (!context || !context->current || !context->current->layout) return nk_false;
+    if (popup_panel(context)) {
+        nk_label(context, label, NK_TEXT_LEFT);
+        return nk_false;
+    }
+    return nk_combo_begin_label(context, label, size);
+}
 
 // Equal label/control shares keep property rows usable in narrow side panels.
 inline constexpr float property_label_ratio = 0.5f;

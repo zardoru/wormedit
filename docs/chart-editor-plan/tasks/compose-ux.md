@@ -241,19 +241,19 @@ conditional optimization remains unproven.
 
 ## T-214 Launch an external previewer (mBMplay and others)
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** Preferences hold a list of players with a path and three argument templates (from start, from here, stop) using `<apppath>`, `<filename>`, and `<measure>`; Play/Play here/Stop commands write a temporary BMS of the active chart beside the source (so relative `#WAV` paths resolve) and launch the player with an argument vector. Defaults copy iBMSC 3.5.5.16 (`MainWindow.vb` `pArgsInit`): mBMplay `"<filename>"`, `-s <measure> "<filename>"`, `-t`; uBMplay and o2play `-P -N0 "<filename>"`, `-P -N<measure> "<filename>"`, `-S`.
 - **Read first:** `src/formats/bms_writer.cpp` / `include/wormedit/formats/bms_writer.h` (active-projection export), `src/sys/main.cpp` (preferences path from the shortcut profile), `src/core/command_registry.cpp`.
-- **Files owned:** new `src/sys/external_player.cpp/.h`, new `tests/sys/external_player_tests.cpp`, `src/core/command_registry.cpp`, `src/sys/main.cpp`, `src/sys/application_command_dispatch.cpp`, `src/ui/frontend.h`, new `src/ui/nuklear/external_player_panel.cpp/.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** new `src/sys/external_player.cpp/.h`, new `tests/sys/external_player_tests.cpp`, `src/core/command_registry.cpp`, `src/sys/main.cpp`, `src/sys/application_command_dispatch.cpp`, `src/ui/frontend.h`, new `src/ui/nuklear/external_player_panel.cpp/.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `src/sys/application_commands.h/.cpp`, `src/sys/compose_view.h`, `src/ui/nuklear/frontend.cpp` (scope extension approved by user, 2026-09-30).
 - **Steps:**
   1. Pure template expansion into an argument vector (split the template on spaces outside quotes, then substitute; never build a shell string). Tests for quoting and `<measure>` from the cursor's source measure number.
   2. Temp file name `___wormedit_preview.bms` (or `.bme`/`.pms` matching the source) in the chart directory; remember and delete temp files on exit, as iBMSC does.
   3. Launch with `SDL_CreateProcess` (SDL3) without waiting; report failures in the status bar.
   4. On Linux/macOS allow the path to be a wrapper (for example `wine`) with the `.exe` in the argument template.
   5. Register `transport.external_play_start`, `transport.external_play_here`, `transport.external_stop`.
-- **Invariants:** the real chart file is never overwritten; no shell is invoked.
+- **Invariants:** the real chart file is never overwritten; no shell is invoked. Preview files are reserved exclusively and cleanup checks file identity; a running player keeps its preview busy. Native BMS projects use their authoritative asset directory when the imported basename is unavailable.
 - **Reject/failure behavior:** a missing player path opens the preferences panel; export errors block launch.
-- **Verify:** `ctest --test-dir build --output-on-failure -R 'external_player'`; manual run with a stub script that logs its arguments.
+- **Verify:** parent full build and 863/863 tests passed; final `ctest --test-dir build --output-on-failure -R 'external_player'` passed 6/6 after test-helper extraction. The actual Python logging stub verified quoted paths, source measure 37, active-branch BME export, busy/collision protection, foreign replacement preservation, and Stop arguments. Isolated Xvfb menu/preferences capture `/tmp/wormedit-next/external-preferences.png` inspected. Changed production/test functions pass clang-tidy complexity checks. Logs: `/tmp/wormedit-next/`, `/tmp/wormedit-t214/`.
 - **Out of scope:** non-BMS previewers (add templates per format later).
 
 ## T-215 Model osu!-style hitsounds on notes
@@ -291,3 +291,66 @@ conditional optimization remains unproven.
 - **Reject/failure behavior:** missing samples are silent with one diagnostic.
 - **Verify:** defined by the split cards.
 - **Out of scope:** skin browsing.
+
+## T-240 Stop high-zoom waveform flicker during playback
+
+- **Status:** ready
+- **Outcome:** at zoom levels below 256 frames per pixel, the Compose waveform keeps one drawing style and a stable data level while the song plays with the view following the playhead; no frame-to-frame alternation between the PCM polyline, the 32-frame level, and the 256-frame level.
+- **Cause (found by code reading, 2026-09-30):**
+  1. `service_compose_detail` in `src/sys/waveform_analysis_runtime.cpp` keys the detail analysis on the exact visible window `[begin_frame, end_frame)`. While following the playhead the window moves every frame, so the key changes every frame; the code cancels `detail_job_` and resets `detail_analysis_` each time, and a finished job rarely matches the already-moved key. Detail appears for a frame and disappears again.
+  2. `populate_compose_waveform_projection` in `src/sys/waveform_view_projection.cpp` chooses all-or-nothing per frame: the PCM path needs every visible block in the runtime's own `decoded_blocks_` cache (which the cancelled job never fills), and the 32-frame level must cover the whole window; otherwise the entire waveform falls back to the 256-frame level, drawn in a different style (peak/RMS envelope instead of sample polyline). Crossing into a new block flips the whole waveform.
+- **Read first:** `src/sys/waveform_analysis_runtime.cpp` (`service_compose_detail`), `src/sys/waveform_view_projection.cpp` (`populate_compose_waveform_projection`), `src/audio/aligned_waveform.cpp` (`aligned_waveform_window`, `project_aligned_waveform_samples`), `include/wormedit/audio/block_cache.h`.
+- **Files owned:** `src/sys/waveform_analysis_runtime.cpp/.h`, `src/sys/waveform_view_projection.cpp/.h`, `src/audio/aligned_waveform.cpp`, `include/wormedit/audio/aligned_waveform.h`, `src/sys/application_frame_projection.cpp` (passing the playback direction/rate only), `tests/core/audio_aligned_waveform_tests.cpp`.
+- **Steps:**
+  1. Confirm first: with the frame-timing overlay (T-211) or a debug counter, log per frame which path was used (PCM / 32 / 256). Record a 5-second playback at high zoom in the report; it should show the alternation.
+  2. Stable detail window: key the detail job on a chunk-aligned range (align to 65,536 frames) that covers the visible window plus one screen of margin behind and two screens ahead in the playback direction. Keep the current result while it still covers the visible window; request the next range when the view passes the middle of the ahead margin. Never reset `detail_analysis_` until its replacement covers the view.
+  3. Style follows zoom only: pick the drawing mode from `frames_per_pixel` with hysteresis (enter sample mode below 0.9, leave above 1.1; enter detail level below 230, leave above 280). Availability must not change the mode.
+  4. Partial composition: build rows per pixel span from the best level available for that span (PCM blocks, then 32, then 256), converted to the chosen style. In sample mode, spans without PCM draw the 32-frame min/max as the same polyline style.
+  5. PCM prefetch: during playback, request the blocks for the ahead margin in the waveform cache; if the preview cache already holds blocks for the same source identity and revision, read them from there instead of decoding twice.
+  6. Regression test: a fake job/cache and a window advancing 3 pixels per frame for 600 frames; after the first ahead range completes, assert the chosen level and style never change from one frame to the next, and that no completed result is discarded while it still covers the view.
+- **Invariants:** bounded memory (the padded range is bounded by the existing projection column cap); the frame thread never decodes; idle (not playing) behavior matches today.
+- **Reject/failure behavior:** if prefetch cannot keep up (for example at very high zoom and 1× rate), keep drawing the chosen style from the best available level; never switch style.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual: Ctrl+Space at maximum zoom on a real song, no flicker; include the before/after per-frame path log in the report.
+- **Out of scope:** scene reuse during following (T-213), waveform colors.
+
+## T-241 Seek the audio by clicking the status-bar minimap
+
+- **Status:** ready
+- **Outcome:** a click on the minimap moves the song position to that exact audio frame: while playing, playback continues from there (the following view jumps with it); while paused, a plain click cancels the paused playhead (the pause and its resume point are discarded, as Stop does) and the view jumps, while Ctrl+click (⌘ on macOS) instead moves the paused playhead there and keeps the pause, so Resume continues from the clicked point; a preference swaps which of the two a plain click does; while paused or stopped, the Compose view and edit cursor move to that position, so the next Play from cursor starts there. Dragging keeps today's view scrubbing and seeks once on release; Shift+click only scrolls the view (today's behavior).
+- **Current behavior (2026-09-30):** `seek_compose_waveform` in `src/sys/compose_input.cpp` (input `WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK`) converts the click fraction to a frame and only scrolls the view to center it. It never touches the transport, and during playback the playhead-following scroll overrides it at once, so a click appears to do nothing.
+- **Read first:** `src/ui/nuklear/compose_input_panel.cpp` (`process_compose_overview_input`), `src/sys/compose_input.cpp` (`seek_compose_waveform`), `src/sys/chart_preview_state.cpp` (`chart_preview_t::seek`, `resume_frame`, `paused`), `src/sys/main.cpp` (`state.transport_seek`), `src/sys/transport_player_actions.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `src/ui/frontend.h`, `src/sys/compose_input.cpp`, `src/sys/chart_preview_state.cpp/.h`, `src/sys/main.cpp` (callback wiring only), `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`.
+- **Steps:**
+  1. Frontend: separate click from drag with the existing 4-pixel threshold; a click emits a new input `WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK` with the fraction and the Shift and primary-modifier states; a drag keeps emitting `…_OVERVIEW_SEEK` for view scrolling and emits one `…_OVERVIEW_CLICK` at release.
+  2. Mapping: frame = `round(fraction × (total_frames − 1))` on the waveform's sample rate. Confirm that the preview schedule clock uses the same frame numbering as the music source (both use the normalized output rate); if not, convert through the timing index and say so in the report.
+  3. Playing: call `application_state.transport_seek(frame)`; the following view catches up on the next frame.
+  4. Paused (user decisions 2026-09-30; both behaviors are wanted):
+     - **Cancel and jump** (plain click by default): stop through the existing path (`application_state.transport_stop` → `chart_preview_t::stop` → `reset_transport()`, which clears `paused` and `resume_frame`), then continue as in step 5.
+     - **Move the paused playhead** (primary-modifier click by default): call `application_state.transport_seek(frame)`; `chart_preview_t::seek` keeps `paused = true` and sets `resume_frame`. Also move the view and cursor as in step 5 so what the user sees matches where Resume will start.
+     - A boolean preference `minimap_click_moves_paused_playhead` (default false) swaps the two gestures; store it with the other UI preferences (T-228's preferences file when it exists, otherwise session-only).
+  5. Stopped (including after step 4): no transport call. Move the view so the frame sits at the playhead anchor, and move the edit cursor to the latest active-snap row at or before that frame, so Play from cursor starts there. No schedule compilation is needed.
+  6. Shift+click: keep the current `seek_compose_waveform` view-only behavior.
+  7. Frames past the chart's compiled end clamp to the end; frames before beat zero seek to the first audible frame (≥ 0).
+  8. Tests: click-vs-drag threshold (state test); seek while playing calls the transport once; a plain click while paused stops the transport (no resume frame remains) and moves the cursor; a modifier click while paused keeps the pause with `resume_frame` equal to the clicked frame; the preference swaps both; a click while stopped moves only view and cursor; a drag produces exactly one seek at release.
+- **Invariants:** no document change; clicking never starts playback by itself.
+- **Reject/failure behavior:** if the transport seek fails while playing, keep playing and show the existing message; view and cursor still jump.
+- **Verify:** standard build/test; manual: while playing, click near the end of the minimap and hear the jump; while paused, click and confirm the pause indicator clears and the view jumps; then Ctrl+Space starts at the clicked point; pause again, Ctrl+click elsewhere, Resume continues from that point.
+- **Out of scope:** hover time tooltip on the minimap (can be a follow-up), scrubbing audio while dragging.
+
+## T-242 Bind lane keys on imported StepMania and osu!mania charts
+
+- **Status:** ready
+- **Outcome:** pressing 1–4 on a 4K StepMania chart (and the number row on osu!mania/other imported charts up to 10 lanes) places or toggles notes at the edit cursor exactly as on new charts; charts that cannot get a default binding say so in Compose instead of silently ignoring keys.
+- **Cause (verified 2026-09-30):** importing `tests/fixtures/stepmania/matched-timing.sm` with the real parser yields `input_profile.profile_id == ""` and **0 bindings**. `src/formats/stepmania.cpp` and `src/formats/osu_mania.cpp` never set `chart.input_profile`; only new charts (`make_number_row_input_profile` in `src/sys/application_defaults.cpp`), BMS (`src/formats/bms.cpp`), and BMSON set one. Compose emits `WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS` only for keys found in `chart.input_profile.bindings` (`src/sys/compose_view.cpp`), so every lane key is dropped. Native projects saved from such imports persist the empty profile, so the fix must also cover loading. The note-kind palette (T-205) uses Alt+digits and does not conflict.
+- **Read first:** `include/wormedit/core/lane_profiles.h` (`make_number_row_input_profile`), `src/sys/application_defaults.cpp` (`make_playable_profile`), `src/formats/stepmania.cpp`, `src/formats/osu_mania.cpp`, `src/core/document.cpp` (`validate_input_profile`).
+- **Files owned:** `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `tests/core/lane_profile_tests.cpp`, `src/formats/stepmania.cpp`, `src/formats/osu_mania.cpp`, `tests/formats/stepmania_tests.cpp`, `tests/formats/osu_mania_tests.cpp`, `src/sys/project_open.cpp`, `tests/sys/project_open_tests.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp` (hint only).
+- **Steps:**
+  1. Core helper `default_input_profile_for(const lane_layout_t&) -> std::optional<input_profile_t>` that returns the number-row profile (the same bindings new charts get) for single-stage layouts of 1–10 playable lanes, and the existing split-stage helper for split layouts. Tests for 4K, 7K, 10K, 11K (none).
+  2. StepMania and osu!mania readers assign it to each chart whose layout qualifies; the profile id records its origin (for example `number-row-default`). Re-import/export must stay semantically equal (the profile is editor data, not written to `.sm`/`.ssc`/`.osu`).
+  3. On opening any project or chart (`src/sys/project_open.cpp`), fill an **empty** profile with the default through a revision-free load normalization (not an undoable edit, and not marking the document dirty); never overwrite a non-empty profile.
+  4. When a chart still has no bindings, the lane-key legend / Compose hint shows "No lane keys are bound for this chart" instead of nothing.
+  5. Tests: SM and osu! imports have bindings; a native project with an empty profile opens with bindings and is not dirty; a BMS chart keeps its imported profile.
+- **Invariants:** existing non-empty profiles are untouched; exported chart bytes unchanged.
+- **Reject/failure behavior:** layouts with more than 10 single-stage lanes get no default and show the hint.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'stepmania|osu|project_open|lane_profile'`; manual: open an `.sm`, place the cursor, press 2 and 3, notes appear in lanes 2 and 3.
+- **Out of scope:** remapping lane keys per chart (T-59 covers shortcuts), StepMania's DFJK-style profiles (add as a named choice later).

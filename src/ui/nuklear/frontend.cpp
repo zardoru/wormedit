@@ -1,3 +1,4 @@
+#include "ui/nuklear/external_player_panel.h"
 #define NK_IMPLEMENTATION
 #define NK_SDL3_RENDERER_IMPLEMENTATION
 
@@ -410,6 +411,7 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer) {
     g_renderer = renderer;
     g_context = context;
     g_window_focused = true;
+    worm_ui_nuklear_reset_external_player_panel();
     g_compose_area_shortcuts_active = false;
     g_shortcut_event_count = 0;
     g_shortcut_events_overflowed = false;
@@ -423,6 +425,7 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer) {
 }
 
 void worm_ui_frontend_shutdown(void) {
+    worm_ui_nuklear_reset_external_player_panel();
     reset_project_dialog();
     g_new_project_wizard = {};
     if (!g_context) {
@@ -632,11 +635,26 @@ static void render_project_menu_navigation(const WormUiWorkspaceView* view,
     }
 }
 
+static void render_external_player_menu(const WormUiWorkspaceView& view,
+                                         WormUiWorkspaceAction& action) {
+    nk_layout_row_dynamic(g_context, 25, 1);
+    if (nk_menu_item_label(g_context, "External player preferences...", NK_TEXT_LEFT))
+        action.external_player.kind = WORM_UI_EXTERNAL_PLAYER_OPEN;
+    if (!view.project_loaded) return;
+    if (nk_menu_item_label(g_context, "External play from start", NK_TEXT_LEFT))
+        action.external_player.kind = WORM_UI_EXTERNAL_PLAYER_PLAY_START;
+    if (nk_menu_item_label(g_context, "External play from here", NK_TEXT_LEFT))
+        action.external_player.kind = WORM_UI_EXTERNAL_PLAYER_PLAY_HERE;
+    if (nk_menu_item_label(g_context, "External stop", NK_TEXT_LEFT))
+        action.external_player.kind = WORM_UI_EXTERNAL_PLAYER_STOP;
+}
+
 static void render_project_menu(const WormUiWorkspaceView* view,
                                 WormUiWorkspaceAction* action) {
-    if (!nk_menu_begin_label(g_context, "Project", NK_TEXT_LEFT, nk_vec2(230, 420))) return;
+    if (!nk_menu_begin_label(g_context, "Project", NK_TEXT_LEFT, nk_vec2(250, 540))) return;
     render_project_menu_files(view, action);
     render_project_menu_navigation(view, action);
+    render_external_player_menu(*view, *action);
     nk_layout_row_dynamic(g_context, 25, 1);
     if (nk_menu_item_label(g_context, "Quit", NK_TEXT_LEFT))
         action->kind = WORM_UI_WORKSPACE_ACTION_QUIT;
@@ -1309,6 +1327,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         worm_ui_nuklear_compose_discard_frame_input();
         worm_ui_nuklear_reconcile_timing_gestures(nullptr, false, false);
         render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
+        worm_ui_nuklear_render_external_player_panel(g_context, &view->external_player, &action.external_player);
         expose_shortcut_input(&action);
         g_audio.offset_escape_pending = false;
         return action;
@@ -1324,6 +1343,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
 
     render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
     render_frame_timing_overlay(width, height);
+    worm_ui_nuklear_render_external_player_panel(g_context, &view->external_player, &action.external_player);
     worm_ui_nuklear_render_player_preview(g_context, g_renderer, &view->player_preview, &action,
                                           width, height);
     const bool compose_lane_focused =

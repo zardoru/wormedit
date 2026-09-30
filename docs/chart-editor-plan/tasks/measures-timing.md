@@ -168,3 +168,83 @@ stale-plan check (rule 9) first.
 - **Reject/failure behavior:** no onset in range → unsnapped.
 - **Verify:** standard build/test; manual drag.
 - **Out of scope:** local Ctrl-drag fit (T-78 follow-up).
+
+## T-235 Toggle the metronome on and off
+
+- **Status:** ready
+- **Outcome:** a metronome toggle (status-bar icon button, command `transport.toggle_metronome`, default off) enables or silences metronome clicks immediately, including during playback, without rebuilding the preview schedule.
+- **Read first:** `src/sys/chart_preview_state.cpp` (`include_metronome = !metronome_bindings.empty()`), `include/wormedit/audio/preview_bridge.h` (`metronome_head_`), `src/sys/audio_source_registration.cpp` (internal metronome sources), `src/ui/nuklear/frontend.cpp` (`render_status_bar`).
+- **Files owned:** `include/wormedit/audio/preview_bridge.h`, `src/audio/preview_bridge.cpp`, `tests/core/audio_preview_bridge_tests.cpp`, `src/sys/chart_preview_state.cpp/.h`, `src/sys/main.cpp` (state and dispatch only), `src/core/command_registry.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`.
+- **Steps:**
+  1. Always compile the metronome queue; add an atomic `metronome_enabled` flag to the bridge. While disabled, the bridge advances the metronome head without scheduling voices, so re-enabling resumes on the next beat rather than replaying missed clicks.
+  2. Test: disabled → zero metronome voices over 4 measures; enable mid-play → first click lands exactly on the next beat frame.
+  3. Status-bar button (Lucide `audio-lines` or a metronome-like glyph from the vendored subset) and registry command; the state persists for the session. T-51's Timing Settings panel reuses the same flag.
+- **Invariants:** music, keysound, and BGM scheduling unchanged; Stop semantics unchanged.
+- **Reject/failure behavior:** none.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual toggle during playback.
+- **Out of scope:** metronome volume and accent patterns (T-51).
+
+## T-236 Estimate BPM and phase from taps
+
+- **Status:** ready
+- **Outcome:** a headless `tap_tempo_estimator_t` turns tap times (in audio source frames of the playing song) into a BPM, a beat-zero phase (the audio frame of a downbeat), and a confidence, using the last 4 measures of taps.
+- **Read first:** `include/wormedit/core/timing.h` (frames/seconds conversions), `include/wormedit/core/rational.h` (exact float→rational helper), `docs/chart-editor-plan/playback-audio.md` (beat-fit modes).
+- **Files owned:** new `include/wormedit/core/tap_tempo.h`, new `src/core/tap_tempo.cpp`, new `tests/core/tap_tempo_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Steps:**
+  1. Window: the last `4 × beats_per_measure` taps (16 in 4/4) held in a fixed-size array; no heap growth.
+  2. Estimate with a least-squares line through (beat index, tap frame), not an average of intervals: the slope is frames per beat, the intercept is the phase. Keep running sums (Σi, Σt, Σi², Σit) updated as taps enter and leave the window. Also offer a "whole session" mode that keeps only the sums, with no window.
+  3. Beat indices: the first tap is beat 0; each later tap's index advances by the nearest integer number of estimated beats, so a skipped tap does not halve the tempo. The first 4 taps use raw intervals to seed the estimate.
+  4. Outliers: an interval under 0.5× or over 1.75× the current estimate after the seed is ignored; 2 seconds without a tap resets the estimator.
+  5. Outputs: BPM (double and exact rational from the helper), suggestions rounded to 1 and 0.5 BPM, phase frame, residual standard deviation in ms, tap count, and "stable" when at least 8 taps and std-dev under 12 ms.
+  6. Tests with synthetic taps: exact 120 BPM → 120.000; ±10 ms jitter → within 0.3 BPM; one skipped tap; one double tap; tempo change resets through the window; the downbeat phase falls within 5 ms of the true value.
+- **Invariants:** deterministic; no allocation after construction.
+- **Reject/failure behavior:** fewer than 4 taps → no estimate.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`.
+- **Out of scope:** UI (T-237), audio onset detection (T-80).
+
+## T-237 Add an osu!-style tap timing assistant
+
+- **Status:** blocked-on T-236
+- **Outcome:** a modeless "Tap timing" panel shows a circle divided into N segments (N = beats per measure of the current meter, default 4) that light in turn on the estimated beat while the song plays, with a bright flash on the downbeat; the tap key (T, or Space while the panel has focus) records taps at the current playhead source frame; the panel shows BPM, ms per beat, offset ms, deviation ms, and taps n/16, with Reset.
+- **Read first:** `include/wormedit/core/tap_tempo.h`, `src/sys/audio_transport_frame.cpp` (current source frame), `src/ui/nuklear/player_preview.cpp` (a modeless overlay to copy the window pattern from), `src/core/command_registry.cpp`.
+- **Files owned:** new `src/ui/nuklear/tap_timing_panel.cpp/.h`, new `src/sys/tap_timing_runtime.cpp/.h`, `src/ui/frontend.h`, `src/sys/main.cpp` (ownership, dispatch, and view only), `src/core/command_registry.cpp`, `CMakeLists.txt`.
+- **Steps:**
+  1. The runtime owns the estimator; taps use the transport's exact current source frame at event time (with the SDL key event timestamp converted to frames), not the frame-start time.
+  2. The circle is drawn with `nk_fill_arc`, one segment per beat, using the theme roles (accent for the current beat, selected for the downbeat).
+  3. Tapping works only while the song is playing; otherwise show "Play the song, then tap on the beat".
+  4. Registry commands `timing.tap_assistant` (open/close) and `timing.tap` (tap).
+- **Invariants:** tapping never edits the document.
+- **Reject/failure behavior:** stale transport sessions (seek/stop) reset the estimator.
+- **Verify:** standard build/test; smoke PNG of the panel; manual tapping over a fixture song.
+- **Out of scope:** clicks (T-238), applying the result (T-239).
+
+## T-238 Click on the estimated beat while tapping
+
+- **Status:** blocked-on T-237, T-235
+- **Outcome:** while the assistant is open, the metronome clicks on the **estimated** grid (not the chart's timing) so the user can hear whether the estimate matches the music; the accent click falls on the estimated downbeat; the T-235 toggle controls it.
+- **Read first:** `include/wormedit/audio/preview_bridge.h`, `src/audio/preview_bridge.cpp`, `src/sys/tap_timing_runtime.h`.
+- **Files owned:** `include/wormedit/audio/preview_bridge.h`, `src/audio/preview_bridge.cpp`, `tests/core/audio_preview_bridge_tests.cpp`, `src/sys/tap_timing_runtime.cpp`.
+- **Steps:**
+  1. Add a bounded "assist click" queue to the bridge that the control thread refills with the next few predicted beat frames (lookahead about 200 ms) from the current estimate.
+  2. While it is active, chart metronome clicks are muted so the two grids never sound together.
+  3. Test: with a 120 BPM estimate, clicks land exactly on the predicted frames; changing the estimate replaces only clicks not yet scheduled.
+- **Invariants:** voices are scheduled on the control thread only; `render()` unchanged.
+- **Reject/failure behavior:** no estimate → no assist clicks.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual listen.
+- **Out of scope:** count-in.
+
+## T-239 Apply the tapped BPM and offset to the chart
+
+- **Status:** blocked-on T-237
+- **Outcome:** "Apply" in the assistant sets the chart's initial BPM (raw, 1-rounded, or 0.5-rounded, chosen in the panel) and moves the audio offset so the estimated downbeat nearest the chart start becomes beat zero, as one undoable command; the result is previewed as a ghost grid on the waveform before Apply, like the existing offset drag.
+- **Read first:** `include/wormedit/core/bpm_editor.h` (`apply_bpm_edit`), `include/wormedit/core/audio_offset_editor.h` (`apply_audio_offset_edit`, offset drag preview), `include/wormedit/core/command.h`.
+- **Files owned:** new `include/wormedit/core/tap_timing_apply.h`, new `src/core/tap_timing_apply.cpp`, new `tests/core/tap_timing_apply_tests.cpp`, `src/sys/tap_timing_runtime.cpp`, `src/ui/nuklear/tap_timing_panel.cpp`, `src/sys/compose_waveform_overlays.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Steps:**
+  1. Core: one command that updates the row-0 BPM and the signed beat-zero offset together (exact rational offset from the phase frame), revision-checked.
+  2. If the chart already has later BPM changes, STOP and ask whether Apply should also shift them or only set the initial segment; until answered, disable Apply for such charts with that explanation.
+  3. Ghost preview reuses the offset-drag overlay path.
+  4. Tests: apply on an empty chart; undo restores both values in one step; timing lock rejects.
+- **Invariants:** notes keep their beat positions (they move with the grid), as with the existing offset edit.
+- **Reject/failure behavior:** a stale revision or unstable estimate (not "stable") disables Apply.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`; manual tap-and-apply on a fixture song.
+- **Out of scope:** multi-segment tempo detection.

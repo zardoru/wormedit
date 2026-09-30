@@ -309,10 +309,12 @@ if(WORMEDIT_BUILD_APP)
         src/sys/workspace_projection.cpp
         src/sys/workspace_frame_view.cpp
         src/sys/transport_player_actions.cpp
+        src/sys/external_player.cpp
         src/sys/platform_recovery.cpp
         src/sys/platform_shortcut_profile.cpp
         src/sys/window.cpp
         src/ui/nuklear/audio_panel.cpp
+        src/ui/nuklear/external_player_panel.cpp
         src/ui/nuklear/audio_state.cpp
         src/ui/nuklear/bms_branch_panel.cpp
         src/ui/nuklear/arrow_glyph.cpp

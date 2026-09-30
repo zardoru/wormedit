@@ -125,7 +125,7 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 - **Steps:** 1. Scalar view: rate index, keep-pitch flag, keep-pitch availability. 2. Dropdown + toggle using the themed chrome helpers. 3. Registry commands with default chords that do not conflict (check `diagnose_shortcut_conflicts`); implemented Primary+F11 (slower) and Primary+F12 (faster), using supported keys and checking registry conflicts.
 - **Invariants:** changing rate never changes the document or cursor.
 - **Reject/failure behavior:** stepping past 0.1× or 1× does nothing.
-- **Verify:** `cmake --build build` passed; 821/821 filtered core/audio/frontend/documentation tests passed; isolated Xvfb smoke `/tmp/wormedit-t234/status.png` inspected with rate dropdown and disabled Keep pitch. Clang-tidy run on changed sources; final integrated verification follows parent handoff.
+- **Verify:** `cmake --build build` passed; 821/821 filtered core/audio/frontend/documentation tests passed; isolated Xvfb smoke `/tmp/wormedit-t234/status.png` inspected with rate dropdown and disabled Keep pitch. Final parent build and full suite 863/863 passed; changed project functions pass clang-tidy complexity checks.
 - **Out of scope:** per-chart saved rates.
 
 ## T-46 Render synchronized side-by-side difficulties in Compare/Validate

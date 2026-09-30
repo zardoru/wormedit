@@ -1167,6 +1167,43 @@ typedef struct WormUiPlayerPreviewView {
 
 // Private scalar view consumed by the selected frontend adapter. The owning
 // application keeps every pointed-to string alive for the duration of compose.
+// Plain view/action data; the application owns persistence and launching.
+struct WormUiExternalPlayerDefinitionView {
+    const char* name;
+    const char* path;
+    const char* start_arguments;
+    const char* here_arguments;
+    const char* stop_arguments;
+};
+struct WormUiExternalPlayerView {
+    int visible;
+    uint64_t revision;
+    const struct WormUiExternalPlayerDefinitionView* players;
+    size_t player_count;
+    size_t selected;
+};
+enum WormUiExternalPlayerActionKind {
+    WORM_UI_EXTERNAL_PLAYER_NONE,
+    WORM_UI_EXTERNAL_PLAYER_SELECT,
+    WORM_UI_EXTERNAL_PLAYER_SAVE,
+    WORM_UI_EXTERNAL_PLAYER_ADD,
+    WORM_UI_EXTERNAL_PLAYER_REMOVE,
+    WORM_UI_EXTERNAL_PLAYER_CLOSE,
+    WORM_UI_EXTERNAL_PLAYER_OPEN,
+    WORM_UI_EXTERNAL_PLAYER_PLAY_START,
+    WORM_UI_EXTERNAL_PLAYER_PLAY_HERE,
+    WORM_UI_EXTERNAL_PLAYER_STOP
+};
+struct WormUiExternalPlayerAction {
+    enum WormUiExternalPlayerActionKind kind;
+    size_t selected;
+    char name[4097];
+    char path[4097];
+    char start_arguments[4097];
+    char here_arguments[4097];
+    char stop_arguments[4097];
+};
+
 typedef struct WormUiWorkspaceView {
     bool project_loaded;
     bool project_has_native_path;
@@ -1214,6 +1251,7 @@ typedef struct WormUiWorkspaceView {
     WormUiComposeView compose;
     WormUiAudioSlicesView audio_slices;
     WormUiPlayerPreviewView player_preview;
+    struct WormUiExternalPlayerView external_player;
 } WormUiWorkspaceView;
 
 typedef enum WormUiComposeActionKind {
@@ -1412,6 +1450,7 @@ typedef enum WormUiMetadataEditKind {
 
 typedef struct WormUiWorkspaceAction {
     WormUiWorkspaceActionKind kind;
+    struct WormUiExternalPlayerAction external_player;
     char project_path[WORM_UI_PROJECT_PATH_CAPACITY];
     // OPEN_FILE: 0 automatic, 1 UTF-8, 2 CP932, 3 EUC-KR, 4 CP949,
     // 5 Windows-1252.

@@ -1,6 +1,7 @@
 #include "sys/application_command_dispatch.h"
 
 #include "sys/compose_input.h"
+#include "sys/external_player.h"
 #include "sys/transport_player_actions.h"
 #include "ui/frontend.h"
 
@@ -124,6 +125,20 @@ auto history_command(command_context_t& context) -> std::optional<command_result
         return context.rebind();
     }
     return std::nullopt;
+}
+
+auto external_player_command(command_context_t& context) -> std::optional<command_result_t> {
+    external_player_action_t action;
+    switch (context.command.kind) {
+    case command_kind_t::transport_external_play_start: action = external_player_action_t::play_start; break;
+    case command_kind_t::transport_external_play_here: action = external_player_action_t::play_here; break;
+    case command_kind_t::transport_external_stop: action = external_player_action_t::stop; break;
+    default: return std::nullopt;
+    }
+    if (!context.application_state.external_player)
+        return reject_application_command(context.status, "External player is unavailable.");
+    context.status = context.application_state.external_player(action);
+    return command_result_t{.accepted = true};
 }
 
 auto transport_command(command_context_t& context) -> std::optional<command_result_t> {
@@ -368,6 +383,7 @@ auto invoke_application_command(
     if (auto result = history_command(context)) return *result;
     if (auto result = note_kind_command(context)) return *result;
     if (auto result = transport_command(context)) return *result;
+    if (auto result = external_player_command(context)) return *result;
     if (auto result = edit_commands(context)) return *result;
     if (auto result = selection_commands(context)) return *result;
     if (auto result = navigation_commands(context)) return *result;

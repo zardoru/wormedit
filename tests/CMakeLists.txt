@@ -235,6 +235,22 @@ if(TARGET wormedit_video_decoder AND TARGET wormedit_visual_decoder)
 endif()
 
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
+    add_executable(wormedit_external_player_tests
+        sys/external_player_tests.cpp
+        ../src/sys/external_player.cpp
+    )
+    target_include_directories(wormedit_external_player_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/src"
+    )
+    target_link_libraries(wormedit_external_player_tests PRIVATE
+        wormedit::core SDL3::SDL3 Catch2::Catch2WithMain
+    )
+    catch_discover_tests(wormedit_external_player_tests
+        TEST_PREFIX "external_player."
+        PROPERTIES LABELS "integration;external_player"
+        DISCOVERY_MODE PRE_TEST
+    )
+
     add_executable(wormedit_frontend_state_tests
         ui/nuklear_audio_state_tests.cpp
         ui/arrow_glyph_tests.cpp

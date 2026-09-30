@@ -100,6 +100,8 @@ struct compose_scene_cache_t {
     std::string status;
 };
 
+enum class external_player_action_t;
+
 struct application_command_state_t {
     struct bmson_marker_draft_t {
         wormedit::chart_id_t chart;
@@ -161,6 +163,7 @@ struct application_command_state_t {
     std::function<std::optional<std::int64_t>()> transport_audio_milliseconds;
     std::function<std::string(std::int64_t)> transport_seek_audio_milliseconds;
     std::function<void()> transport_stop;
+    std::function<std::string(external_player_action_t)> external_player;
     std::function<std::string()> transport_cancel_restore;
     std::optional<double> preview_playhead_absolute_row;
 };

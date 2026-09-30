@@ -25,6 +25,9 @@
 #include "sys/metadata_view_projection.h"
 #include "sys/platform_recovery.h"
 #include "sys/platform_shortcut_profile.h"
+#include "sys/external_player.h"
+#include <SDL3/SDL_filesystem.h>
+#include <wormedit/core/virtual_canvas.h>
 #include "sys/project_open.h"
 #include "sys/project_save_paths.h"
 #include "sys/player_preview_presenter.h"
@@ -1455,6 +1458,131 @@ void refresh_transport_rate_commands(wormedit::command_registry_t& registry,
                                        available && state.transport_rate_index < 8, std::nullopt);
 }
 
+struct external_player_runtime_t {
+    wormedit::sys::external_player_t player;
+    wormedit::sys::external_player_preferences_t preferences = wormedit::sys::default_external_player_preferences();
+    std::filesystem::path preference_path;
+    std::filesystem::path source_path;
+    bool visible{};
+    std::uint64_t revision{};
+    std::vector<WormUiExternalPlayerDefinitionView> views;
+};
+
+void initialize_external_player(external_player_runtime_t& runtime, std::string& status) {
+    const auto path = wormedit::prepare_platform_shortcut_profile_path();
+    if (!path) { status += " External-player preferences directory unavailable."; return; }
+    runtime.preference_path = path.path.parent_path() / "external-players.conf";
+    const auto error = wormedit::sys::load_external_player_preferences(runtime.preference_path, runtime.preferences);
+    if (!error.empty()) status += " " + error;
+}
+
+auto external_source_measure(const wormedit::chart_document_t& chart,
+    const std::optional<wormedit::editor_interaction_state_t>& interaction) -> std::optional<std::uint64_t> {
+    if (!interaction || interaction->chart != chart.id) return std::nullopt;
+    const auto built = wormedit::build_virtual_canvas(chart);
+    const auto* canvas = std::get_if<wormedit::virtual_canvas_t>(&built);
+    if (!canvas) return std::nullopt;
+    const auto row = interaction->virtual_bms_cursor_row
+        ? interaction->virtual_bms_cursor_row : wormedit::absolute_row(canvas->authored_index, interaction->cursor);
+    const auto measure = row ? canvas->measure_containing(*row) : std::nullopt;
+    return measure ? std::optional<std::uint64_t>{measure->number} : std::nullopt;
+}
+
+auto launch_external_player(external_player_runtime_t& runtime,
+    wormedit::sys::external_player_action_t action, const wormedit::document_history_t& history,
+    const wormedit::workspace_controller_t& workspace,
+    const std::optional<wormedit::editor_interaction_state_t>& interaction,
+    const std::filesystem::path& asset_base) -> std::string {
+    using namespace wormedit::sys;
+    if (runtime.preferences.selected >= runtime.preferences.players.size()) {
+        runtime.visible = true;
+        return "Choose an external player in Preferences.";
+    }
+    const auto& player = runtime.preferences.players[runtime.preferences.selected];
+    if (player.path.empty()) { runtime.visible = true; return "Choose an external player in Preferences."; }
+    const auto* chart = selected_chart(history, workspace);
+    if (action != external_player_action_t::stop && (!chart || chart->source_family != wormedit::format_family_t::bms))
+        return "External preview requires a selected BMS chart.";
+    std::uint64_t measure{};
+    if (action == external_player_action_t::play_here) {
+        const auto source_measure = external_source_measure(*chart, interaction);
+        if (!source_measure) return "Place the Compose cursor before playing externally from here.";
+        measure = *source_measure;
+    }
+    auto source = runtime.source_path;
+    if (source.empty() && chart && !asset_base.empty()) {
+        // Native projects retain the authoritative resource directory, but no imported basename.
+        bool popn{};
+        for (const auto& layout : chart->lane_layouts)
+            popn = popn || layout.layout.profile_id.starts_with("pms-");
+        source = asset_base / (popn ? "chart.pms" : "chart.bms");
+    }
+    const char* application_path = SDL_GetBasePath();
+    const auto result = runtime.player.launch(player, action, history.document,
+        chart ? chart->id : wormedit::chart_id_t{}, source, measure,
+        application_path ? application_path : "");
+    if (result.open_preferences) runtime.visible = true;
+    return result.launched ? "External player command launched." : result.error;
+}
+
+void project_external_player_view(external_player_runtime_t& runtime, WormUiWorkspaceView& view) {
+    runtime.views.clear();
+    for (const auto& player : runtime.preferences.players)
+        runtime.views.push_back({player.name.c_str(), player.path.c_str(), player.start_arguments.c_str(),
+                                 player.here_arguments.c_str(), player.stop_arguments.c_str()});
+    view.external_player = {runtime.visible, runtime.revision, runtime.views.data(),
+                           runtime.views.size(), runtime.preferences.selected};
+}
+
+auto edit_external_player_preferences(external_player_runtime_t& runtime,
+    const WormUiExternalPlayerAction& action) -> std::string {
+    auto candidate = runtime.preferences;
+    switch (action.kind) {
+    case WORM_UI_EXTERNAL_PLAYER_SELECT:
+        if (action.selected >= candidate.players.size()) return "External player selection is invalid.";
+        candidate.selected = action.selected;
+        break;
+    case WORM_UI_EXTERNAL_PLAYER_SAVE:
+        if (action.selected >= candidate.players.size()) return "External player selection is invalid.";
+        candidate.players[action.selected] = {action.name, action.path, action.start_arguments,
+                                              action.here_arguments, action.stop_arguments};
+        break;
+    case WORM_UI_EXTERNAL_PLAYER_ADD:
+        candidate.players.push_back({"New player", "", "\"<filename>\"", "-s <measure> \"<filename>\"", "-t"});
+        candidate.selected = candidate.players.size() - 1;
+        break;
+    case WORM_UI_EXTERNAL_PLAYER_REMOVE:
+        if (candidate.players.size() <= 1) return "Keep at least one external player definition.";
+        candidate.players.erase(candidate.players.begin() + static_cast<std::ptrdiff_t>(candidate.selected));
+        candidate.selected = 0;
+        break;
+    default: return {};
+    }
+    if (runtime.preference_path.empty()) return "External-player preferences directory unavailable.";
+    const auto error = wormedit::sys::save_external_player_preferences(runtime.preference_path, candidate);
+    if (!error.empty()) return error;
+    runtime.preferences = std::move(candidate);
+    ++runtime.revision;
+    return "External-player preferences saved.";
+}
+
+auto dispatch_external_player_action(external_player_runtime_t& runtime,
+    const WormUiExternalPlayerAction& action, const application_command_state_t& state,
+    std::string& status) -> bool {
+    using wormedit::sys::external_player_action_t;
+    if (action.kind == WORM_UI_EXTERNAL_PLAYER_NONE) return false;
+    if (action.kind == WORM_UI_EXTERNAL_PLAYER_OPEN) runtime.visible = true;
+    else if (action.kind == WORM_UI_EXTERNAL_PLAYER_CLOSE) runtime.visible = false;
+    else if (action.kind == WORM_UI_EXTERNAL_PLAYER_PLAY_START && state.external_player)
+        status = state.external_player(external_player_action_t::play_start);
+    else if (action.kind == WORM_UI_EXTERNAL_PLAYER_PLAY_HERE && state.external_player)
+        status = state.external_player(external_player_action_t::play_here);
+    else if (action.kind == WORM_UI_EXTERNAL_PLAYER_STOP && state.external_player)
+        status = state.external_player(external_player_action_t::stop);
+    else status = edit_external_player_preferences(runtime, action);
+    return true;
+}
+
 void refresh_note_kind_commands(wormedit::command_registry_t& registry,
     const wormedit::chart_document_t* chart,
     const std::optional<wormedit::editor_interaction_state_t>& compose_state,
@@ -2110,6 +2238,7 @@ void reset_project_edit_state(application_command_state_t& current) {
     next.transport_audio_milliseconds = std::move(current.transport_audio_milliseconds);
     next.transport_seek_audio_milliseconds = std::move(current.transport_seek_audio_milliseconds);
     next.transport_stop = std::move(current.transport_stop);
+    next.external_player = std::move(current.external_player);
     next.transport_cancel_restore = std::move(current.transport_cancel_restore);
     current = std::move(next);
 }
@@ -2163,6 +2292,7 @@ auto replace_project_session(Context& context, wormedit::song_document_t documen
     context.pending_bms_encoding_path_ref.clear();
     context.active_project_path_ref = std::move(native_path);
     context.asset_base_ref = std::move(asset_base);
+    context.external_player_runtime_ref.source_path.clear();
     context.scanned_primary_version_ref = saved_version;
     reset_project_runtime_state(context);
     return true;
@@ -2243,6 +2373,7 @@ void save_project_session(Context& context, const WormUiWorkspaceAction& action)
     context.active_project_path_ref = destination;
     context.native_project_loaded_ref = true;
     context.asset_base_ref = destination_base;
+    context.external_player_runtime_ref.source_path.clear();
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     (void)wormedit::sys::reconcile_audition_sources(context.audition_reconciliation_ref, true);
 #endif
@@ -2279,6 +2410,7 @@ void open_project_session(Context& context, const WormUiWorkspaceAction& action)
                                 opened.native_project,
                                 opened.native_project ? opened.source_path : std::filesystem::path{},
                                 opened.asset_base)) {
+        context.external_player_runtime_ref.source_path = opened.native_project ? std::filesystem::path{} : opened.source_path;
         context.status_ref = opened.native_project
             ? "Project opened: " + opened.source_path.string()
             : "Chart imported from " + opened.source_path.string() + ". Save it as a project.";
@@ -2720,6 +2852,12 @@ int main(int argc, char** argv) {
     wormedit::viewport_input_controller_t compose_viewport_input;
     wormedit::editor_navigation_input_controller_t compose_navigation_input;
     application_command_state_t application_command_state;
+    external_player_runtime_t external_player_runtime;
+    initialize_external_player(external_player_runtime, status);
+    application_command_state.external_player = [&](wormedit::sys::external_player_action_t action) {
+        return launch_external_player(external_player_runtime, action, history, workspace,
+                                      compose_interaction_state, asset_base);
+    };
     wormedit::sys::inline_preview_cursor_t inline_preview_cursor;
     wormedit::stepmania_export_policy_t stepmania_export_policy;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -2816,6 +2954,7 @@ int main(int argc, char** argv) {
         decltype(autosave_loop)& autosave_loop_ref;
         decltype(recovery_controller)& recovery_controller_ref;
         decltype(scanned_primary_version)& scanned_primary_version_ref;
+        decltype(external_player_runtime)& external_player_runtime_ref;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         decltype(audition_reconciliation)& audition_reconciliation_ref;
 #endif
@@ -2852,6 +2991,7 @@ int main(int argc, char** argv) {
         autosave_loop,
         recovery_controller,
         scanned_primary_version,
+        external_player_runtime,
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         audition_reconciliation,
 #endif
@@ -2948,6 +3088,7 @@ int main(int argc, char** argv) {
             flattened.view.transport_rate_available = static_cast<bool>(application_command_state.transport_set_playback_rate);
             flattened.view.transport_keep_pitch = application_command_state.transport_keep_pitch;
             flattened.view.transport_keep_pitch_available = application_command_state.transport_keep_pitch_available;
+            project_external_player_view(external_player_runtime, flattened.view);
             flattened.view.project_loaded = session_loaded;
             flattened.view.project_has_native_path = native_project_loaded;
             flattened.view.pending_new_project_audio_path = pending_audio_project_path.c_str();
@@ -2969,8 +3110,10 @@ int main(int argc, char** argv) {
 #endif
             const bool shortcut_handled = process_compose_frame_action(
                 compose_frame_action_context, action, compose_viewport_delta_seconds);
+            const bool external_handled = dispatch_external_player_action(external_player_runtime, action.external_player,
+                application_command_state, status);
             dispatch_workspace_frame_action(
-                workspace_frame_action_context, action, shortcut_handled, selected_waveform_sample_rate,
+                workspace_frame_action_context, action, shortcut_handled || external_handled, selected_waveform_sample_rate,
                 flattened.view.compose.viewport_height_pixels);
         }
 
@@ -2989,6 +3132,7 @@ int main(int argc, char** argv) {
     preview_output.close();
     audition_output.close();
 #endif
+    external_player_runtime.player.cleanup();
     wormedit::sys::shutdown_application_runtime(runtime);
     return 0;
 }

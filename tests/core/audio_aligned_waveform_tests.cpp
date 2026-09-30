@@ -253,3 +253,146 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
                                    too_tall, source)
               .status == aligned_waveform_status_t::capacity_exceeded);
 }
+
+namespace {
+struct detail_follow_simulation_t {
+    std::optional<wormedit::audio::aligned_waveform_detail_range_t> pending;
+    std::optional<wormedit::audio::aligned_waveform_detail_range_t> completed;
+    wormedit::audio::aligned_waveform_style_t style;
+    int remaining{};
+    int requests{};
+    int discarded{};
+    int rejected{};
+    bool reject_next{};
+    bool stable{true};
+    bool ready{};
+
+    void advance(wormedit::audio::aligned_waveform_window_t window) {
+        using namespace wormedit::audio;
+        update_aligned_waveform_style(style, window.frames_per_pixel);
+        if (pending && --remaining == 0) {
+            if (reject_next) { reject_next = false; ++rejected; }
+            else if (pending->covers(window)) { completed = pending; ready = true; }
+            else ++discarded;
+            pending.reset();
+        }
+        if (ready) stable = stable && completed->covers(window) && style.detail_level && !style.sample_points;
+        if (!pending && (!completed || completed->needs_refill(window, 1))) {
+            pending = padded_aligned_waveform_range(window);
+            remaining = 5;
+            ++requests;
+        }
+    }
+};
+
+auto filled_waveform(std::uint32_t level, std::uint64_t begin, std::uint64_t end,
+                     std::uint64_t total) -> wormedit::audio::waveform_t {
+    using namespace wormedit::audio;
+    waveform_t waveform;
+    waveform.key = {{"fake:follow", "content:v1"}, level, begin, end};
+    waveform.total_frames = total;
+    waveform.bins.resize((end - begin + level - 1U) / level);
+    for (auto& bin : waveform.bins) {
+        bin.minimum = {-0.5f, -0.25f};
+        bin.maximum = {0.5f, 0.25f};
+        bin.absolute_peak = {0.5f, 0.25f};
+        bin.rms = {0.25f, 0.125f};
+        bin.frame_count = level;
+    }
+    return waveform;
+}
+
+auto stable_sample_follow() -> bool {
+    using namespace wormedit::audio;
+    auto chart = chart_fixture();
+    chart.bpms.front().beats_per_minute = {12000, 1};
+    const auto timing = wormedit::build_timing_index(chart);
+    if (!timing) return false;
+    const auto overview = filled_waveform(256, 0, 88200, 88200);
+    const auto detail = filled_waveform(32, 0, 512, 88200);
+    decoded_block_cache_t cache;
+    std::vector<float> pcm(maximum_read_frames * output_channel_count, 0.25f);
+    aligned_waveform_style_t style;
+    bool saw_pcm{}, saw_detail{}, saw_overview{};
+    for (std::size_t frame = 0; frame < 600; ++frame) {
+        if (frame % 60 == 0) {
+            cache.clear();
+            if (frame % 120 == 0)
+                static_cast<void>(cache.store({overview.key.source, 0}, maximum_read_frames, pcm));
+        }
+        const aligned_waveform_request_t request{.viewport_scroll_pixels = frame * 3.0,
+            .viewport_height_pixels = 64, .pixels_per_standard_measure = 1923};
+        const auto window = aligned_waveform_window(overview, *timing.index, request);
+        if (!window) return false;
+        update_aligned_waveform_style(style, window->frames_per_pixel);
+        const auto projected = project_composed_aligned_waveform(overview, &detail, *timing.index,
+                                                                  request, &cache, style);
+        if (!projected || projected.rows.empty() || !style.sample_points || !style.detail_level ||
+            projected.rows.size() > request.maximum_rows || projected.chosen_frames_per_bin != 32) return false;
+        saw_pcm = saw_pcm || projected.pcm_spans != 0;
+        saw_detail = saw_detail || projected.detail_spans != 0;
+        saw_overview = saw_overview || projected.overview_spans != 0;
+        if (!std::ranges::all_of(projected.rows, [](const auto& row) { return row.sample_point; })) return false;
+    }
+    return saw_pcm && saw_detail && saw_overview;
+}
+}
+
+TEST_CASE("aligned waveform follows 600 advancing frames without discarding covering detail", "[audio][waveform]") {
+    detail_follow_simulation_t simulation;
+    for (std::uint64_t frame = 0; frame < 600; ++frame) {
+        const auto begin = 65000 + frame * 3U * 128U;
+        simulation.advance({begin, begin + 400U * 128U, 128.0});
+    }
+    CHECK(simulation.ready);
+    CHECK(simulation.stable);
+    CHECK(simulation.discarded == 0);
+    CHECK(simulation.requests >= 3);
+}
+
+TEST_CASE("aligned waveform mode uses zoom hysteresis independently of availability", "[audio][waveform]") {
+    using namespace wormedit::audio;
+    aligned_waveform_style_t style;
+    update_aligned_waveform_style(style, 0.8);
+    CHECK(style == aligned_waveform_style_t{true, true});
+    update_aligned_waveform_style(style, 1.0);
+    CHECK(style.sample_points);
+    update_aligned_waveform_style(style, 1.2);
+    CHECK_FALSE(style.sample_points);
+    update_aligned_waveform_style(style, 260);
+    CHECK(style.detail_level);
+    update_aligned_waveform_style(style, 281);
+    CHECK_FALSE(style.detail_level);
+    update_aligned_waveform_style(style, 250);
+    CHECK_FALSE(style.detail_level);
+}
+
+TEST_CASE("aligned waveform composes partial PCM and detail with one sample style for 600 frames", "[audio][waveform]") {
+    CHECK(stable_sample_follow());
+}
+
+TEST_CASE("aligned waveform detail ranges align and bound both playback directions", "[audio][waveform]") {
+    using namespace wormedit::audio;
+    const aligned_waveform_window_t window{400000, 450000, 128};
+    const auto forward = padded_aligned_waveform_range(window, 1);
+    const auto reverse = padded_aligned_waveform_range(window, -1);
+    REQUIRE(forward);
+    REQUIRE(reverse);
+    CHECK(forward->covers(window));
+    CHECK(reverse->covers(window));
+    CHECK(forward->begin_frame % 65536 == 0);
+    CHECK(forward->end_frame % 65536 == 0);
+}
+
+TEST_CASE("aligned waveform retains covering detail and retries a rejected replacement", "[audio][waveform]") {
+    detail_follow_simulation_t simulation;
+    for (std::uint64_t frame = 0; frame < 600; ++frame) {
+        if (frame == 10) simulation.reject_next = true;
+        const auto begin = 65000 + frame * 3U * 128U;
+        simulation.advance({begin, begin + 400U * 128U, 128.0});
+    }
+    CHECK(simulation.rejected == 1);
+    CHECK(simulation.stable);
+    CHECK(simulation.discarded == 0);
+    CHECK(simulation.requests >= 4);
+}

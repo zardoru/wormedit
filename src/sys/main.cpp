@@ -2790,7 +2790,6 @@ int main(int argc, char** argv) {
 #endif
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     wormedit::audio::decoded_source_registry_t audition_sources;
-    wormedit::sys::runtime::waveform_analysis_t waveform_runtime{audition_sources};
     wormedit::audio::decoded_block_cache_t audition_cache;
     wormedit::audio::transport_t audition_transport{audition_cache};
     wormedit::audio::audition_transport_bridge_t audition_bridge{audition_transport};
@@ -2800,6 +2799,7 @@ int main(int argc, char** argv) {
     wormedit::sys::sdl_audition_output_t audition_output{audition_session};
     wormedit::audio::decoded_block_cache_t preview_cache{
         wormedit::audio::preview_block_cache_limits()};
+    wormedit::sys::runtime::waveform_analysis_t waveform_runtime{audition_sources, &preview_cache};
     wormedit::audio::transport_t preview_transport{preview_cache};
     wormedit::audio::preview_transport_bridge_t preview_bridge{preview_transport};
     wormedit::audio::preview_session_t preview_session{audition_sources, preview_transport,

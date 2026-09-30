@@ -217,8 +217,8 @@ conditional optimization remains unproven.
 
 ## T-212 Move preview decode refill off the frame thread
 
-- **Status:** blocked-on T-211
-- **Outcome:** only if T-211 shows the audio pump costs more than 1 ms at p99: the preview session's refill runs on a worker; the frame thread only publishes positions and reads status.
+- **Status:** blocked-on T-243
+- **Outcome:** only if T-243's split timers show the decode pump alone costs more than 1 ms at p99 (T-211 measured 1.451 ms p99 for service + pump together): the preview session's refill runs on a worker; the frame thread only publishes positions and reads status.
 - **Read first:** `src/sys/sdl_preview_output.cpp`, `include/wormedit/audio/preview_session.h` (control-thread contract), `docs/async-task-scheduling.md`.
 - **Files owned:** `src/sys/sdl_preview_output.cpp/.h`, `src/audio/preview_session.cpp`, `tests/sys/sdl_preview_output_tests.cpp`.
 - **Steps:** 1. Dedicated refill thread with the existing generation guards. 2. Hard Stop still silent on the next render (existing test must pass).
@@ -229,8 +229,8 @@ conditional optimization remains unproven.
 
 ## T-213 Reuse the Compose scene while only the scroll changes
 
-- **Status:** blocked-on T-211
-- **Outcome:** only if T-211 shows scene rebuild dominates: during playhead following, a scroll change reuses the cached scene for a margin of rows above/below and translates it, rebuilding only when the viewport leaves the cached window or the revision changes.
+- **Status:** blocked-on T-243
+- **Outcome:** after T-243 removes the larger workspace cost, Compose scene (4.385 ms average in T-211, 63 % of a 144 Hz frame) is the next CPU phase to cut: during playhead following, a scroll change reuses the cached scene for a margin of rows above/below and translates it, rebuilding only when the viewport leaves the cached window or the revision changes.
 - **Read first:** `src/sys/compose_view.cpp` (`compose_scene_cache_t`, rebuild conditions), `src/core/editor_scene.cpp`.
 - **Files owned:** `src/sys/compose_view.cpp/.h`, `src/core/editor_scene.cpp`, `tests/core/editor_scene_tests.cpp`.
 - **Steps:** 1. Compose one screen of extra rows each side. 2. Rebuild when fewer than a quarter screen remains. 3. Test that translated primitives equal a fresh build at the same scroll.
@@ -294,13 +294,13 @@ conditional optimization remains unproven.
 
 ## T-240 Stop high-zoom waveform flicker during playback
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** at zoom levels below 256 frames per pixel, the Compose waveform keeps one drawing style and a stable data level while the song plays with the view following the playhead; no frame-to-frame alternation between the PCM polyline, the 32-frame level, and the 256-frame level.
 - **Cause (found by code reading, 2026-09-30):**
   1. `service_compose_detail` in `src/sys/waveform_analysis_runtime.cpp` keys the detail analysis on the exact visible window `[begin_frame, end_frame)`. While following the playhead the window moves every frame, so the key changes every frame; the code cancels `detail_job_` and resets `detail_analysis_` each time, and a finished job rarely matches the already-moved key. Detail appears for a frame and disappears again.
   2. `populate_compose_waveform_projection` in `src/sys/waveform_view_projection.cpp` chooses all-or-nothing per frame: the PCM path needs every visible block in the runtime's own `decoded_blocks_` cache (which the cancelled job never fills), and the 32-frame level must cover the whole window; otherwise the entire waveform falls back to the 256-frame level, drawn in a different style (peak/RMS envelope instead of sample polyline). Crossing into a new block flips the whole waveform.
 - **Read first:** `src/sys/waveform_analysis_runtime.cpp` (`service_compose_detail`), `src/sys/waveform_view_projection.cpp` (`populate_compose_waveform_projection`), `src/audio/aligned_waveform.cpp` (`aligned_waveform_window`, `project_aligned_waveform_samples`), `include/wormedit/audio/block_cache.h`.
-- **Files owned:** `src/sys/waveform_analysis_runtime.cpp/.h`, `src/sys/waveform_view_projection.cpp/.h`, `src/audio/aligned_waveform.cpp`, `include/wormedit/audio/aligned_waveform.h`, `src/sys/application_frame_projection.cpp` (passing the playback direction/rate only), `tests/core/audio_aligned_waveform_tests.cpp`.
+- **Files owned:** `src/sys/waveform_analysis_runtime.cpp/.h`, `src/sys/waveform_view_projection.cpp/.h`, `src/audio/aligned_waveform.cpp`, `include/wormedit/audio/aligned_waveform.h`, `src/sys/application_frame_projection.cpp` (playback direction/rate and cache connection), `src/sys/main.cpp` (preview-cache wiring; scope extensions approved by user), `tests/core/audio_aligned_waveform_tests.cpp`.
 - **Steps:**
   1. Confirm first: with the frame-timing overlay (T-211) or a debug counter, log per frame which path was used (PCM / 32 / 256). Record a 5-second playback at high zoom in the report; it should show the alternation.
   2. Stable detail window: key the detail job on a chunk-aligned range (align to 65,536 frames) that covers the visible window plus one screen of margin behind and two screens ahead in the playback direction. Keep the current result while it still covers the visible window; request the next range when the view passes the middle of the ahead margin. Never reset `detail_analysis_` until its replacement covers the view.
@@ -310,7 +310,7 @@ conditional optimization remains unproven.
   6. Regression test: a fake job/cache and a window advancing 3 pixels per frame for 600 frames; after the first ahead range completes, assert the chosen level and style never change from one frame to the next, and that no completed result is discarded while it still covers the view.
 - **Invariants:** bounded memory (the padded range is bounded by the existing projection column cap); the frame thread never decodes; idle (not playing) behavior matches today.
 - **Reject/failure behavior:** if prefetch cannot keep up (for example at very high zoom and 1× rate), keep drawing the chosen style from the best available level; never switch style.
-- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual: Ctrl+Space at maximum zoom on a real song, no flicker; include the before/after per-frame path log in the report.
+- **Verify:** Parent full build and 881/881 tests passed; audio 98/98 passed. Affected C++ functions pass the complexity check; six selectively staged translation units independently pass syntax compilation. **Verification adjustment (user, 2026-09-30):** a generated 20-second PCM fixture in isolated Xvfb with SDL dummy audio replaces the real-song playback check. Five-second instrumented playback at approximately 0.459 frames/pixel: before, 122 frames (109 PCM, 13 coarse-256) and 26 path transitions; after, 116 frames, all sample style with chosen 32-frame detail level, zero style/level transitions. The final trace includes 2,470 PCM spans, zero detail spans and 19 coarse fallback spans, without changing the chosen style. Mean debugger-observed frame intervals were 41.20 ms before and 43.37 ms after; these are instrumented observations. Final waveform PNG inspected. Per-frame logs, trace summary and syntax results: `/tmp/wormedit-t240/`.
 - **Out of scope:** scene reuse during following (T-213), waveform colors.
 
 ## T-241 Seek the audio by clicking the status-bar minimap
@@ -354,3 +354,49 @@ conditional optimization remains unproven.
 - **Reject/failure behavior:** layouts with more than 10 single-stage lanes get no default and show the hint.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'stepmania|osu|project_open|lane_profile'`; manual: open an `.sm`, place the cursor, press 2 and 3, notes appear in lanes 2 and 3.
 - **Out of scope:** remapping lane keys per chart (T-59 covers shortcuts), StepMania's DFJK-style profiles (add as a named choice later).
+
+## T-243 Cut workspace projection cost during Ctrl+Space playback
+
+- **Status:** ready
+- **Outcome:** with the T-211 fixture (50,000-note StepMania chart, Compose visible, following playback), "Workspace projection" drops from 18.8 ms average to under 3 ms, and the combined CPU phases (events + audio + workspace + scene + Nuklear) fit in a 6.94 ms (144 Hz) budget except render/present.
+- **Evidence (T-211, 2026-09-30):** phases are exclusive (`frame_timing_t::enter` stops the previous phase). Average ms: workspace 18.773, render/present 27.641, scene 4.385, Nuklear 0.701, audio 0.233, events 0.064. CPU without render ≈ 24.2 ms, so 144 Hz is impossible regardless of GPU until workspace projection shrinks.
+- **Known waste (code reading):** `project_application_frame` (`src/sys/application_frame_projection.cpp`) forces `flattened.view.timing.visible = true` whenever Compose is visible and calls `populate_timing_view`, which builds the **whole-chart** Timing-tab projection every frame: `populate_speed_cache`, `populate_timing_grid_and_speeds` (grid lines and speed spans for the entire chart), an uncached `build_measure_index(chart)`, `populate_timing_markers` for every timing event, and the recipe/stage views; then it sets `visible = false`. The Compose frontend reads only `chart_id`, `document_revision`, `initial_bpm_*`, `stage_*`, and `sv_recipe` from that view (grep `timing_view` in `src/ui/nuklear/compose_*.cpp`).
+- **Read first:** `src/sys/application_frame_projection.cpp`, `src/sys/timing_view.cpp` (`populate_timing_view`), `src/sys/frame_timing.h/.cpp`, `src/sys/workspace_frame_view.cpp`, `src/sys/workspace_projection.cpp` (`flatten_workspace`).
+- **Files owned:** `src/sys/application_frame_projection.cpp/.h`, `src/sys/timing_view.cpp/.h`, `src/sys/frame_timing.h/.cpp`, `src/ui/nuklear/frontend.cpp` (overlay rows only), `tests/sys/frame_timing_tests.cpp`, `tests/ui/nuklear_timing_state_tests.cpp`.
+- **Steps:**
+  1. Split the workspace phase into sub-phases shown indented in the overlay and the `WORMEDIT_FRAME_TIMING_REPORT` file: flatten, frame view (player preview presenter), metadata, audio waveform views, timing view, compose waveform detail + projection, waveform overlays, source playhead, BMSON projection. Also split "Audio service/pump" into service and pump (feeds T-212). Rerun the T-211 fixture and put the before table in the report.
+  2. Add `populate_timing_view_for_compose` that fills only the fields Compose reads (chart id, revision, initial BPM, stage, recipe draft/preview) and skips speed cache, grid, speed spans, markers, and the measure index. Call it instead of the full function when the Timing tab is not active. Keep the full path for the Timing tab.
+  3. Cache `build_measure_index` in `timing_scene_cache_t` by document revision for the Timing tab path.
+  4. Fix the next-largest sub-phase from step 1 if it exceeds 1 ms average; typical suspects and their fixes: player preview presenter rebuilding its scene per frame when hidden (skip when not visible); `project_waveform_overview` walking the whole song per frame (cache per waveform + revision, only the visible-range marker moves); PCM sample projection calling `musical_position_at` per sample (compute the row of the first sample, then step with the local frames-per-row inside one timing segment).
+  5. Test: a state test that Compose-mode projection does not produce timing grid lines/markers and still exposes stage/recipe/BPM fields; the T-211 fixture run's after table.
+- **Invariants:** the Timing tab renders exactly as before; Compose inline timing editing, SV recipe drafts, and the initial BPM tile work unchanged.
+- **Reject/failure behavior:** none.
+- **Verify:** standard build/test; before/after tables in the report; smoke PNGs of `compose` and `timing`.
+- **Out of scope:** render/present cost (T-244, T-245), scene reuse (T-213).
+
+## T-244 Use 32-bit Nuklear draw indices
+
+- **Status:** ready
+- **Outcome:** dense frames (the 50,000-note fixture at 256 notes per measure that T-211 found tripping the 16-bit vertex-index assertion) render without assertions or missing geometry.
+- **Cause:** `include/wormedit/nuklear_config.h` does not define `NK_UINT_DRAW_INDEX`, so `nk_draw_index` is 16-bit and a single draw list overflows past 65,535 vertices; `src/ui/nuklear/frontend.cpp` also builds custom quads with `nk_draw_index`.
+- **Read first:** `include/wormedit/nuklear_config.h`, `src/ui/nuklear/frontend.cpp` (the custom quad code near `static_cast<nk_draw_index>` and the geometry submission), `src/sys/window.cpp` (renderer).
+- **Files owned:** `include/wormedit/nuklear_config.h`, `src/ui/nuklear/frontend.cpp`, `tests/ui/nuklear_player_preview_texture_tests.cpp` or a new `tests/ui/nuklear_draw_index_tests.cpp`, `tests/CMakeLists.txt`.
+- **Steps:** 1. Define `NK_UINT_DRAW_INDEX` before including Nuklear everywhere (the config header is the single include point; grep for other `#include <nuklear.h>`). 2. Make the geometry submission pass 4-byte indices to SDL (`SDL_RenderGeometryRaw` with `size_indices = 4`). 3. A test that converts a synthetic command buffer with more than 70,000 vertices and checks index values.
+- **Invariants:** identical output for ordinary frames.
+- **Reject/failure behavior:** none.
+- **Verify:** standard build/test; the 256-notes-per-measure fixture no longer asserts; smoke PNG.
+- **Out of scope:** reducing vertex count (T-245).
+
+## T-245 Measure render/present on a real 144 Hz display
+
+- **Status:** blocked-on-user
+- **Outcome:** a frame-timing report from the user's machine (real GPU, VSync on, 144 Hz) after T-243 and T-244, used to decide whether render/present needs work (Xvfb's 27.6 ms is not representative: software presentation without DRI3).
+- **Read first:** `src/sys/frame_timing.cpp` (`WORMEDIT_FRAME_TIMING_REPORT`).
+- **Files owned:** this card.
+- **Steps:**
+  1. STOP and ask the user to run, with a dense chart playing (Ctrl+Space) for at least 5 seconds: `WORMEDIT_FRAME_TIMING_REPORT=/tmp/wormedit-frames.txt build/wormedit <project>` and paste the last block of that file.
+  2. If render/present exceeds ~2 ms without VSync wait, add a card to reduce vertex count (batch lane backgrounds and grid lines into single rects, skip off-screen primitives, avoid per-row waveform quads at low zoom).
+- **Invariants:** none.
+- **Reject/failure behavior:** none.
+- **Verify:** the pasted report.
+- **Out of scope:** implementation.

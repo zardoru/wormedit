@@ -8,6 +8,7 @@
 #include "sys/waveform_view_projection.h"
 
 #include <wormedit/window.h>
+#include <wormedit/audio/playback_rate.h>
 
 namespace wormedit::sys {
 
@@ -107,13 +108,17 @@ auto project_application_frame(application_frame_projection_context_t context)
              .viewport_height_pixels = flattened.view.compose.viewport_height_pixels,
              .pixels_per_standard_measure = flattened.view.compose.pixels_per_standard_measure});
     }
-    context.waveform_runtime.service_compose_detail(context.workspace.transport.audio_asset, detail_window);
+    context.waveform_runtime.service_compose_detail(context.workspace.transport.audio_asset, detail_window,
+        flattened.view.transport_playing, static_cast<double>(audio::playback_rates[std::min<std::size_t>(
+            context.application_command_state.transport_rate_index, 8)].numerator) /
+        audio::playback_rates[std::min<std::size_t>(context.application_command_state.transport_rate_index, 8)].denominator);
     const bool compose_waveform_overview_available = populate_compose_waveform_projection(
         flattened, context.compose_scene_cache, compose_waveform_analysis,
         context.waveform_runtime.waveform_job().busy(),
         context.workspace.transport.audio_asset.has_value(),
         context.compose_interaction_state ? &*context.compose_interaction_state : nullptr,
-        context.waveform_runtime.detail_analysis().get(), &context.waveform_runtime.decoded_blocks());
+        context.waveform_runtime.detail_analysis().get(), &context.waveform_runtime.decoded_blocks(),
+        context.waveform_runtime.playback_style());
     populate_compose_waveform_overlays(
         compose_waveform_overview_available, flattened, context.history, context.workspace,
         context.compose_scene_cache,

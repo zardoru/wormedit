@@ -5,16 +5,78 @@
 #include "sys/compose_input.h"
 
 #include <algorithm>
+#include <span>
 
 namespace wormedit::sys::runtime {
 
-waveform_analysis_t::waveform_analysis_t(audio::decoded_source_registry_t& sources)
-    : sources_(sources),
-      waveform_job_(sources_, decoded_blocks_, waveform_cache_, scheduler_),
-      channel_waveform_job_(sources_, decoded_blocks_, waveform_cache_, scheduler_),
+waveform_analysis_t::waveform_analysis_t(audio::decoded_source_registry_t& sources,
+    audio::decoded_block_cache_t* preview_blocks)
+    : sources_(sources), preview_blocks_(preview_blocks),
+      waveform_job_(sources_, coarse_blocks_, waveform_cache_, scheduler_),
+      channel_waveform_job_(sources_, coarse_blocks_, waveform_cache_, scheduler_),
       detail_job_(sources_, decoded_blocks_, waveform_cache_, scheduler_) {}
 
+waveform_analysis_t::~waveform_analysis_t() {
+    cancel_detail_worker();
+    if (detail_worker_) static_cast<void>(detail_worker_.wait());
+}
+
+void waveform_analysis_t::cancel_detail_worker() noexcept {
+    if (detail_worker_) detail_worker_.cancel();
+    ++detail_generation_;
+}
+
+void waveform_analysis_t::borrow_preview_blocks(const audio::waveform_key_t& key,
+                                               std::stop_token stop) {
+    if (!preview_blocks_ || key.begin_frame >= key.end_frame) return;
+    const auto first = key.begin_frame / audio::maximum_read_frames;
+    const auto last = (key.end_frame - 1U) / audio::maximum_read_frames;
+    for (auto index = first; index <= last && !stop.stop_requested(); ++index) {
+        const audio::audio_block_key_t block_key{key.source, index};
+        if (decoded_blocks_.contains(block_key)) continue;
+        if (const auto resident = preview_blocks_->find(block_key))
+            static_cast<void>(decoded_blocks_.store(block_key, resident->frame_count,
+                                                   resident->interleaved_stereo));
+    }
+}
+
+auto waveform_analysis_t::request_detail_worker(asset_id_t asset, audio::waveform_key_t key,
+                                               bool samples) -> bool {
+    if (detail_task_) return false;
+    task_graph_t graph{1};
+    const auto generation = detail_generation_;
+    const auto task = graph.add_task({}, [this, asset, key, samples](
+        std::span<const task_result_t>, std::stop_token stop) {
+        borrow_preview_blocks(key, stop);
+        auto analysis = sources_.analyze_waveform(asset, decoded_blocks_, waveform_cache_, 32,
+            {.begin_frame = key.begin_frame, .end_frame = key.end_frame, .require_cached_pcm = samples}, stop);
+        return task_result_t::success(make_task_value(
+            std::make_shared<const audio::waveform_analysis_result_t>(std::move(analysis))));
+    });
+    if (!task) return false;
+    auto submitted = scheduler_.submit(std::move(graph));
+    if (!submitted) return false;
+    detail_worker_ = std::move(submitted.graph);
+    detail_task_ = *task.id;
+    worker_asset_ = asset;
+    // Generation travels in the completion field, and cancelled results are never installed.
+    worker_generation_ = generation;
+    return true;
+}
+
+auto waveform_analysis_t::poll_detail_worker() -> std::optional<audio::waveform_job_completion_t> {
+    if (!detail_task_) return std::nullopt;
+    const auto completed = detail_worker_.result(*detail_task_);
+    if (!completed) return std::nullopt;
+    detail_task_.reset();
+    detail_worker_ = {};
+    if (worker_generation_ != detail_generation_) return std::nullopt;
+    return audio::waveform_job_completion_t{.generation = worker_generation_, .asset = *worker_asset_,
+        .analysis = task_value_cast<audio::waveform_analysis_result_t>(*completed)};
+}
+
 void waveform_analysis_t::reset_sources() {
+    cancel_detail_worker();
     waveform_job_.cancel();
     waveform_job_asset_.reset();
     waveform_analysis_.reset();
@@ -25,7 +87,10 @@ void waveform_analysis_t::reset_sources() {
     detail_asset_.reset();
     detail_key_.reset();
     detail_analysis_.reset();
+    detail_style_ = {};
+    playing_detail_ = false;
     decoded_blocks_.clear();
+    coarse_blocks_.clear();
     waveform_cache_.clear();
 }
 
@@ -66,7 +131,71 @@ void waveform_analysis_t::service_workspace_waveform(
 
 }
 
-void waveform_analysis_t::service_compose_detail(
+auto waveform_analysis_t::retained_detail_range() const
+    -> std::optional<audio::aligned_waveform_detail_range_t> {
+    if (!detail_analysis_ || !detail_analysis_->waveform) return std::nullopt;
+    const auto& key = detail_analysis_->waveform->key;
+    return audio::aligned_waveform_detail_range_t{key.begin_frame, key.end_frame};
+}
+
+auto waveform_analysis_t::cached_detail_window(const audio::waveform_key_t& key,
+                                              audio::aligned_waveform_window_t window) -> bool {
+    if (window.end_frame <= window.begin_frame) return false;
+    const auto first = window.begin_frame / audio::maximum_read_frames;
+    const auto last = (window.end_frame - 1U) / audio::maximum_read_frames;
+    for (auto index = first; index <= last; ++index) {
+        const auto frames = decoded_blocks_.cached_frame_count({key.source, index});
+        const auto needed = std::min(window.end_frame - index * audio::maximum_read_frames,
+                                     static_cast<std::uint64_t>(audio::maximum_read_frames));
+        if (!frames || *frames < needed) return false;
+    }
+    return true;
+}
+
+void waveform_analysis_t::service_compose_detail(std::optional<asset_id_t> asset,
+    std::optional<audio::aligned_waveform_window_t> window, bool playing, double playback_rate) {
+    if (playing_detail_ != playing) {
+        detail_job_.cancel();
+        cancel_detail_worker();
+        detail_key_.reset();
+    }
+    playing_detail_ = playing;
+    const auto completed = poll_detail_worker();
+    if (!playing) {
+        service_idle_detail(asset, window);
+        return;
+    }
+    const auto binding = asset ? sources_.binding(*asset) : std::nullopt;
+    if (!binding || !window) return;
+    if (detail_asset_ != asset || (detail_key_ && detail_key_->source != binding->source)) {
+        cancel_detail_worker();
+        detail_key_.reset();
+        detail_analysis_.reset();
+        detail_asset_ = asset;
+    }
+    if (completed && completed->asset == asset &&
+        completed->analysis && completed->analysis->waveform) {
+        const auto& key = completed->analysis->waveform->key;
+        if (key.source == binding->source &&
+            audio::aligned_waveform_detail_range_t{key.begin_frame, key.end_frame}.covers(*window))
+            detail_analysis_ = completed->analysis;
+    }
+    audio::update_aligned_waveform_style(detail_style_, window->frames_per_pixel);
+    if (!detail_style_.detail_level || detail_task_) return;
+    const int direction = playback_rate < 0 ? -1 : 1;
+    const auto retained = retained_detail_range();
+    const bool pcm_ready = !detail_style_.sample_points ||
+        cached_detail_window({binding->source, 32}, *window);
+    if (retained && pcm_ready && !retained->needs_refill(*window, direction)) return;
+    auto range = audio::padded_aligned_waveform_range(*window, direction);
+    if (!range) return;
+    range->end_frame = std::min(range->end_frame, binding->output_frame_count);
+    if (retained == range && retained->covers(*window) && pcm_ready) return;
+    const audio::waveform_key_t requested{binding->source, 32, range->begin_frame, range->end_frame};
+    if (request_detail_worker(*asset, requested, detail_style_.sample_points)) detail_key_ = requested;
+}
+
+void waveform_analysis_t::service_idle_detail(
     std::optional<asset_id_t> asset, std::optional<audio::aligned_waveform_window_t> window) {
     const auto binding = asset ? sources_.binding(*asset) : std::nullopt;
     if (!binding || !window || window->frames_per_pixel >= 256.0 ||

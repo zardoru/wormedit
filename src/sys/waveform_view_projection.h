@@ -4,6 +4,7 @@
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/audio/waveform.h>
+#include <wormedit/audio/aligned_waveform.h>
 
 namespace wormedit::sys {
 
@@ -21,7 +22,8 @@ void populate_audio_waveform_views(
     bool has_selected_audio_asset,
     const wormedit::editor_interaction_state_t* interaction_state,
     const audio::waveform_analysis_result_t* detail_analysis = nullptr,
-    audio::decoded_block_cache_t* decoded_blocks = nullptr) -> bool;
+    audio::decoded_block_cache_t* decoded_blocks = nullptr,
+    const audio::aligned_waveform_style_t* stable_style = nullptr) -> bool;
 
 } // namespace wormedit::sys
 #endif

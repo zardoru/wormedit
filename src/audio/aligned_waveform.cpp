@@ -83,7 +83,165 @@ auto accumulate_column(aligned_waveform_row_t& row, const waveform_column_t& col
     }
 }
 
+auto waveform_covers(const waveform_t& waveform, std::uint64_t begin, std::uint64_t end) -> bool {
+    const auto finish = waveform.key.end_frame == 0 ? waveform.total_frames : waveform.key.end_frame;
+    return waveform.key.frames_per_bin != 0 && begin >= waveform.key.begin_frame && end <= finish;
+}
+
+auto bin_span(const waveform_t& waveform, std::uint64_t begin, std::uint64_t end)
+    -> std::optional<waveform_column_t> {
+    if (!waveform_covers(waveform, begin, end) || begin >= end) return std::nullopt;
+    const auto first = (begin - waveform.key.begin_frame) / waveform.key.frames_per_bin;
+    const auto last = (end - 1U - waveform.key.begin_frame) / waveform.key.frames_per_bin;
+    if (last >= waveform.bins.size()) return std::nullopt;
+    waveform_column_t column{.begin_frame = begin, .end_frame = end};
+    column.minimum = waveform.bins[first].minimum;
+    column.maximum = waveform.bins[first].maximum;
+    for (auto index = first; index <= last; ++index) {
+        const auto& bin = waveform.bins[index];
+        for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
+            column.minimum[channel] = std::min(column.minimum[channel], bin.minimum[channel]);
+            column.maximum[channel] = std::max(column.maximum[channel], bin.maximum[channel]);
+            column.absolute_peak[channel] = std::max(column.absolute_peak[channel], bin.absolute_peak[channel]);
+            column.rms[channel] = std::max(column.rms[channel], bin.rms[channel]);
+        }
+    }
+    return column;
+}
+
+void accumulate_pcm_column(waveform_column_t& column, const decoded_audio_block_t& block,
+                           std::uint64_t begin, std::uint64_t end) {
+    const auto block_begin = block.key.block_index * maximum_read_frames;
+    for (auto frame = begin; frame < end; ++frame) {
+        for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
+            const auto value = block.interleaved_stereo[(frame - block_begin) * output_channel_count + channel];
+            column.minimum[channel] = std::min(column.minimum[channel], value);
+            column.maximum[channel] = std::max(column.maximum[channel], value);
+            column.absolute_peak[channel] = std::max(column.absolute_peak[channel], std::abs(value));
+            column.rms[channel] += value * value;
+        }
+    }
+}
+
+auto pcm_span(decoded_block_cache_t& cache, const audio_source_identity_t& source,
+              std::uint64_t begin, std::uint64_t end) -> std::optional<waveform_column_t> {
+    waveform_column_t column{.begin_frame = begin, .end_frame = end,
+                             .minimum = {1, 1}, .maximum = {-1, -1}};
+    for (auto frame = begin; frame < end;) {
+        const auto index = frame / maximum_read_frames;
+        const auto next = std::min(end, (index + 1U) * maximum_read_frames);
+        bool complete{};
+        const bool found = cache.with_block({source, index}, [&](const auto& block) {
+            complete = next - index * maximum_read_frames <= block.frame_count;
+            if (complete) accumulate_pcm_column(column, block, frame, next);
+        });
+        if (!found || !complete) return std::nullopt;
+        frame = next;
+    }
+    for (auto& rms : column.rms) rms = std::sqrt(rms / static_cast<float>(end - begin));
+    return column;
+}
+
+struct composed_waveform_context_t {
+    const waveform_t& overview;
+    const waveform_t* detail;
+    const timing_index_t& timing;
+    const aligned_waveform_request_t& request;
+    decoded_block_cache_t* blocks;
+    aligned_waveform_style_t style;
+    long double rows_per_pixel;
+};
+
+struct composed_column_t {
+    waveform_column_t column;
+    std::uint32_t source_level{};
+};
+
+auto composed_pixel_column(const composed_waveform_context_t& context, double first_pixel,
+                            double last_pixel) -> std::optional<composed_column_t> {
+    const auto first_row = std::clamp((context.request.viewport_scroll_pixels + first_pixel) *
+        context.rows_per_pixel, 0.0L, static_cast<long double>(context.timing.total_rows));
+    const auto last_row = std::clamp((context.request.viewport_scroll_pixels + last_pixel) *
+        context.rows_per_pixel, 0.0L, static_cast<long double>(context.timing.total_rows));
+    if (first_row >= last_row) return std::nullopt;
+    const auto first = frame_at_fractional_row(context.overview, context.timing, first_row, false);
+    const auto last = frame_at_fractional_row(context.overview, context.timing, last_row, true);
+    if (!first || !last) return std::nullopt;
+    const auto begin = static_cast<std::uint64_t>(std::clamp(*first, 0.0L,
+        static_cast<long double>(context.overview.total_frames)));
+    const auto end = static_cast<std::uint64_t>(std::clamp(*last, 0.0L,
+        static_cast<long double>(context.overview.total_frames)));
+    if (begin >= end) return std::nullopt;
+    if (context.blocks) {
+        if (auto pcm = pcm_span(*context.blocks, context.overview.key.source, begin, end))
+            return composed_column_t{*pcm, 1};
+    }
+    if (context.style.detail_level && context.detail &&
+        context.detail->key.source == context.overview.key.source) {
+        if (auto detail = bin_span(*context.detail, begin, end))
+            return composed_column_t{*detail, 32};
+    }
+    const auto coarse = bin_span(context.overview, begin, end);
+    return coarse ? std::optional<composed_column_t>{{*coarse, 256}} : std::nullopt;
+}
+
+void append_composed_rows(aligned_waveform_result_t& result, const waveform_column_t& column,
+                          double first_pixel, double last_pixel, bool samples) {
+    if (samples) {
+        const auto span = last_pixel - first_pixel;
+        result.rows.push_back({.y_pixels = first_pixel + span * 0.25,
+                               .sample_point = true, .samples = column.minimum});
+        result.rows.push_back({.y_pixels = first_pixel + span * 0.75,
+                               .sample_point = true, .samples = column.maximum});
+    } else {
+        result.rows.push_back({.y_pixels = (first_pixel + last_pixel) * 0.5,
+            .absolute_peak = column.absolute_peak, .rms = column.rms});
+    }
+}
+
 } // namespace
+
+auto aligned_waveform_detail_range_t::covers(aligned_waveform_window_t window) const noexcept -> bool {
+    return begin_frame <= window.begin_frame && end_frame >= window.end_frame;
+}
+
+auto aligned_waveform_detail_range_t::needs_refill(aligned_waveform_window_t window,
+                                                  int direction) const noexcept -> bool {
+    if (!covers(window)) return true;
+    const auto span = window.end_frame - window.begin_frame;
+    return direction < 0 ? window.begin_frame - begin_frame <= span
+                         : end_frame - window.end_frame <= span;
+}
+
+auto padded_aligned_waveform_range(aligned_waveform_window_t window, int direction)
+    -> std::optional<aligned_waveform_detail_range_t> {
+    constexpr std::uint64_t chunk = 65'536;
+    constexpr std::uint64_t capacity = maximum_waveform_projection_columns * 32ULL;
+    if (window.end_frame <= window.begin_frame) return std::nullopt;
+    const auto span = window.end_frame - window.begin_frame;
+    if (span > capacity - chunk) return std::nullopt;
+    const auto margin = std::min(span, (capacity - span - chunk) / 3U);
+    const auto behind = direction < 0 ? margin * 2U : margin;
+    const auto ahead = direction < 0 ? margin : margin * 2U;
+    auto begin = window.begin_frame - std::min(window.begin_frame, behind);
+    begin -= begin % chunk;
+    const auto maximum = std::numeric_limits<std::uint64_t>::max();
+    auto end = window.end_frame + std::min(maximum - window.end_frame, ahead);
+    const auto padding = (chunk - end % chunk) % chunk;
+    end += std::min(maximum - end, padding);
+    end = std::min(end, begin + std::min(maximum - begin, capacity));
+    if (end < window.end_frame) return std::nullopt;
+    return aligned_waveform_detail_range_t{begin, end};
+}
+
+void update_aligned_waveform_style(aligned_waveform_style_t& style,
+                                   double frames_per_pixel) noexcept {
+    if (!std::isfinite(frames_per_pixel) || frames_per_pixel < 0) return;
+    if (style.sample_points && frames_per_pixel > 1.1) style.sample_points = false;
+    else if (!style.sample_points && frames_per_pixel < 0.9) style.sample_points = true;
+    if (style.detail_level && frames_per_pixel > 280) style.detail_level = false;
+    else if (!style.detail_level && frames_per_pixel < 230) style.detail_level = true;
+}
 
 auto aligned_waveform_window(const waveform_t& waveform, const timing_index_t& timing,
     aligned_waveform_request_t request) -> std::optional<aligned_waveform_window_t> {
@@ -200,6 +358,43 @@ auto project_aligned_waveform(const waveform_t& waveform, const timing_index_t& 
             result.rows.push_back(pixels[pixel]);
         }
     }
+    return result;
+}
+
+auto project_composed_aligned_waveform(const waveform_t& overview, const waveform_t* detail,
+    const timing_index_t& timing, aligned_waveform_request_t request,
+    decoded_block_cache_t* blocks, aligned_waveform_style_t style) -> aligned_waveform_result_t {
+    aligned_waveform_result_t result;
+    if (!aligned_waveform_window(overview, timing, request) || request.maximum_rows == 0 ||
+        request.maximum_rows > maximum_aligned_waveform_rows) return result;
+    result.chosen_frames_per_bin = style.detail_level ? 32 : 256;
+    const auto points = style.sample_points ? 2U : 1U;
+    if (request.viewport_height_pixels > maximum_aligned_waveform_rows || request.maximum_rows < points) {
+        result.status = aligned_waveform_status_t::capacity_exceeded;
+        return result;
+    }
+    const auto height = static_cast<std::size_t>(std::ceil(request.viewport_height_pixels));
+    if (style.sample_points && blocks) {
+        auto samples = project_aligned_waveform_samples(overview, timing, request, *blocks);
+        if (samples && !samples.rows.empty()) {
+            samples.chosen_frames_per_bin = result.chosen_frames_per_bin;
+            samples.pcm_spans = 1; // One fully cache-resident span; keep exact source-frame vertices.
+            return samples;
+        }
+    }
+    const auto stride = std::max<std::size_t>(1, (height * points + request.maximum_rows - 1U) / request.maximum_rows);
+    const composed_waveform_context_t context{overview, detail, timing, request, blocks, style,
+        static_cast<long double>(timing.divisions_per_standard_measure) / request.pixels_per_standard_measure};
+    for (std::size_t pixel = 0; pixel < height; pixel += stride) {
+        const auto end = std::min(pixel + stride, height);
+        if (const auto column = composed_pixel_column(context, pixel, end)) {
+            if (column->source_level == 1) ++result.pcm_spans;
+            else if (column->source_level == 32) ++result.detail_spans;
+            else ++result.overview_spans;
+            append_composed_rows(result, column->column, pixel, end, style.sample_points);
+        }
+    }
+    result.status = aligned_waveform_status_t::projected;
     return result;
 }
 

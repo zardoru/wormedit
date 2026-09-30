@@ -62,7 +62,8 @@ auto populate_compose_waveform_projection(
     bool has_selected_audio_asset,
     const wormedit::editor_interaction_state_t* interaction_state,
     const audio::waveform_analysis_result_t* detail_analysis,
-    audio::decoded_block_cache_t* decoded_blocks) -> bool {
+    audio::decoded_block_cache_t* decoded_blocks,
+    const audio::aligned_waveform_style_t* stable_style) -> bool {
     cache.waveform_overview_total_frames = 0;
     cache.waveform_overview_sample_rate = 0;
     auto& compose = flattened.view.compose;
@@ -87,11 +88,13 @@ auto populate_compose_waveform_projection(
         detail_analysis->waveform->key.begin_frame <= window->begin_frame &&
         detail_analysis->waveform->key.end_frame >= window->end_frame)
         selected_waveform = &*detail_analysis->waveform;
-    auto aligned = decoded_blocks
-        ? audio::project_aligned_waveform_samples(waveform, *cache.marker_timing_index,
-                                                  request, *decoded_blocks)
-        : audio::aligned_waveform_result_t{};
-    if (!aligned || aligned.rows.empty())
+    auto aligned = stable_style
+        ? audio::project_composed_aligned_waveform(waveform,
+            detail_analysis && detail_analysis->waveform ? &*detail_analysis->waveform : nullptr,
+            *cache.marker_timing_index, request, decoded_blocks, *stable_style)
+        : (decoded_blocks ? audio::project_aligned_waveform_samples(waveform,
+            *cache.marker_timing_index, request, *decoded_blocks) : audio::aligned_waveform_result_t{});
+    if (!stable_style && (!aligned || aligned.rows.empty()))
         aligned = audio::project_aligned_waveform(*selected_waveform, *cache.marker_timing_index, request);
     if (aligned) {
         flattened.compose.waveform.row.reserve(aligned.rows.size());

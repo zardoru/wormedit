@@ -231,4 +231,20 @@ struct editor_field_scene_result_t {
                                            const editor_field_scene_request_t& request = {})
     -> editor_field_scene_result_t;
 
+// A revision-bound screen window. Transient edit previews use fresh composition.
+// Counters distinguish actual window rebuilds from scroll-only projections.
+struct editor_field_scene_window_t {
+    std::optional<editor_field_scene_t> scene;
+    editor_interaction_view_model_t view;
+    editor_field_scene_request_t request;
+    std::uint64_t canvas_rows{};
+    std::size_t rebuild_count{};
+    std::size_t reuse_count{};
+};
+
+[[nodiscard]] auto make_editor_field_scene_reusing_window(
+    const chart_document_t& chart, const editor_field_scene_index_t& index,
+    const editor_interaction_view_model_t& view, const editor_field_scene_request_t& request,
+    editor_field_scene_window_t& window) -> editor_field_scene_result_t;
+
 } // namespace wormedit

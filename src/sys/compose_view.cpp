@@ -2121,8 +2121,8 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
         .maximum_grid_lines = WORM_UI_COMPOSE_GRID_CAPACITY,
         .maximum_scene_primitives = WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY};
     const auto frame_scene_previous = frame_timing().enter(frame_phase_t::scene);
-    const auto composed = wormedit::make_editor_field_scene(chart, *cache.index, interaction_view,
-                                                            cache.preview_scene_request);
+    const auto composed = wormedit::make_editor_field_scene_reusing_window(chart, *cache.index, interaction_view,
+                                                            cache.preview_scene_request, cache.scene_window);
     frame_timing().restore(frame_scene_previous);
     if (!composed.scene || composed.has_errors()) {
         flattened.compose.status = composed.diagnostics.empty()

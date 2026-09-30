@@ -229,14 +229,15 @@ conditional optimization remains unproven.
 
 ## T-213 Reuse the Compose scene while only the scroll changes
 
-- **Status:** blocked-on T-243
+- **Status:** done
 - **Outcome:** after T-243 removes the larger workspace cost, Compose scene (4.385 ms average in T-211, 63 % of a 144 Hz frame) is the next CPU phase to cut: during playhead following, a scroll change reuses the cached scene for a margin of rows above/below and translates it, rebuilding only when the viewport leaves the cached window or the revision changes.
 - **Read first:** `src/sys/compose_view.cpp` (`compose_scene_cache_t`, rebuild conditions), `src/core/editor_scene.cpp`.
-- **Files owned:** `src/sys/compose_view.cpp/.h`, `src/core/editor_scene.cpp`, `tests/core/editor_scene_tests.cpp`.
+- **Files owned:** `src/sys/compose_view.cpp/.h`, `src/core/editor_scene.cpp`, `include/wormedit/core/editor_scene.h`, `tests/core/editor_scene_tests.cpp` (core API scope extension approved by user, 2026-09-30).
 - **Steps:** 1. Compose one screen of extra rows each side. 2. Rebuild when fewer than a quarter screen remains. 3. Test that translated primitives equal a fresh build at the same scroll.
 - **Invariants:** identical pixels to a fresh build.
 - **Reject/failure behavior:** any mismatch falls back to rebuilding.
-- **Verify:** standard build/test; T-211 numbers before/after.
+- **Verify:** integrated build passed; three actual-helper fresh-composition tests and ten frame-timing tests passed (13/13). Both scroll directions, fractional scroll, layout transitions, long holds, BGM, cursor changes, invalidation, and primitive-limit rejection are covered. Coordinated isolated Xvfb/dummy-audio capture reduced scene time from 4.058 ms to 0.0617 ms; combined CPU time is about 4.9196 ms. A three-screen window rebuilds at a quarter-screen remaining margin; transient previews and comparison/grouping requests use fresh composition. Projected failures or primitive-limit excess fall back to fresh composition. No new clang-tidy complexity violations.
+- **Decision:** user approved advancing T-213 in parallel with T-243 on 2026-09-30; T-243 workspace optimization continues independently.
 - **Out of scope:** GPU-side caching.
 
 ## T-214 Launch an external previewer (mBMplay and others)

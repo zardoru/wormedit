@@ -665,6 +665,18 @@ struct editor_interaction_result_t {
     }
 };
 
+// A borrowed measure index is valid only for this chart and document revision.
+struct editor_measure_geometry_t {
+    chart_id_t chart;
+    std::uint64_t document_revision{};
+    const measure_index_t* index{};
+};
+
+// Update the non-authoring playback cursor and viewport using retained geometry.
+[[nodiscard]] auto follow_editor_playhead(document_history_t& history,
+    editor_interaction_state_t& state, editor_measure_geometry_t geometry,
+    local_position_t position, double target_scroll) -> editor_interaction_result_t;
+
 // Creates transient, frontend-independent editing state from a validated
 // history snapshot. Snap denominators are ordered by editor preference.
 [[nodiscard]] auto make_editor_interaction(const document_history_t& history, chart_id_t chart,

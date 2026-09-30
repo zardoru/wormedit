@@ -392,3 +392,81 @@ TEST_CASE("Compose controls retain measure geometry until the document revision 
     CHECK(cache.cached_measure_index->total_rows == 960960);
     CHECK(cache.revision == history.document.revision);
 }
+
+namespace {
+auto playhead_test_state(const document_history_t& history) -> editor_interaction_state_t {
+    const std::uint64_t snaps[]{4, 8, 16};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+        {measure_id_t{1}, 0}, snaps, 16, 800);
+    REQUIRE(setup.state);
+    return *setup.state;
+}
+void compare_follow_state(const editor_interaction_state_t& actual,
+                          const editor_interaction_state_t& expected) {
+    CHECK(actual.cursor == expected.cursor);
+    CHECK(actual.virtual_bms_cursor_row == expected.virtual_bms_cursor_row);
+    CHECK(actual.active_lane == expected.active_lane);
+    CHECK(actual.viewport_scroll_pixels == Catch::Approx(expected.viewport_scroll_pixels));
+    CHECK((actual.fixed_cursor_screen_y_pixels == expected.fixed_cursor_screen_y_pixels &&
+           actual.scroll_direction == expected.scroll_direction &&
+           actual.armed_note_kind == expected.armed_note_kind));
+}
+void compare_follow_step(document_history_t& history, const measure_index_t& index,
+                         editor_interaction_state_t& actual, editor_interaction_state_t& expected,
+                         double row, bool anchored) {
+    const auto& chart = history.document.charts.front();
+    const auto bounded = std::min(static_cast<long double>(row),
+                                   static_cast<long double>(index.total_rows - 1));
+    const auto step = chart.divisions_per_standard_measure / expected.active_snap_denominator;
+    const auto snapped_row = static_cast<std::uint64_t>(std::floor(bounded / step)) * step;
+    const auto after = std::ranges::upper_bound(index.entries, snapped_row, {},
+        &measure_index_entry_t::absolute_begin_row);
+    const auto measure = std::prev(after);
+    const local_position_t position{measure->id, snapped_row - measure->absolute_begin_row};
+    const auto previous_scroll = expected.viewport_scroll_pixels;
+    if (expected.cursor != position || expected.virtual_bms_cursor_row)
+        REQUIRE(dispatch_editor_action(history, expected,
+            jump_edit_cursor_action_t{position, history.document.revision}));
+    const auto target = compose_playhead_scroll_target(expected, chart, bounded, previous_scroll, anchored);
+    REQUIRE(target);
+    if (std::abs(*target - expected.viewport_scroll_pixels) >= 0.001)
+        REQUIRE(dispatch_editor_action(history, expected,
+            scroll_editor_view_action_t{.vertical_pixels = *target - expected.viewport_scroll_pixels}));
+    REQUIRE(follow_compose_playhead(history, actual, row, anchored,
+        {chart.id, history.document.revision, &index}));
+    compare_follow_state(actual, expected);
+}
+}
+TEST_CASE("Retained playhead geometry preserves dispatcher cursor and viewport transitions", "[sys][frame-timing][follow]") {
+    auto song = dense_song();
+    auto& chart = song.charts.front();
+    auto layout = chart.lane_layouts.front();
+    layout.id = object_id_t{60000};
+    layout.position = {measure_id_t{2}, 0};
+    layout.layout.lanes.front().id = lane_id_t{2};
+    chart.lane_layouts.push_back(layout);
+    auto history = make_document_history(std::move(song));
+    const auto index = std::get<measure_index_t>(build_measure_index(history.document.charts.front()));
+    auto actual = playhead_test_state(history);
+    auto expected = actual;
+    for (const auto row : {0.0, 59.9, 60.0, 959.9, 960.0, 1920.0, 959999.0, 2000000.0, 60.0}) {
+        compare_follow_step(history, index, actual, expected, row, true);
+        compare_follow_step(history, index, actual, expected, row, false);
+    }
+    CHECK(history.document.revision == 1);
+    CHECK(history.undo.empty());
+}
+TEST_CASE("Retained playhead geometry rejects stale provenance and active gestures", "[sys][frame-timing][follow]") {
+    auto history = make_document_history(dense_song());
+    const auto index = std::get<measure_index_t>(build_measure_index(history.document.charts.front()));
+    auto state = playhead_test_state(history);
+    const auto before = state;
+    CHECK_FALSE(follow_compose_playhead(history, state, 1920, true, {chart_id_t{2}, 1, &index}));
+    CHECK_FALSE(follow_compose_playhead(history, state, 1920, true, {chart_id_t{1}, 2, &index}));
+    compare_follow_state(state, before);
+    state.pending_editor_area_selection.emplace();
+    CHECK_FALSE(follow_compose_playhead(history, state, 1920, true, {chart_id_t{1}, 1, &index}));
+    CHECK_FALSE(follow_editor_playhead(history, state, {chart_id_t{1}, 1, &index},
+        {measure_id_t{3}, 0}, 100));
+    compare_follow_state(state, before);
+}

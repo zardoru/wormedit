@@ -2693,6 +2693,12 @@ auto handle_workspace_view_error(const Model& model, std::string& status, bool& 
     return true;
 }
 
+auto retained_compose_geometry(const compose_scene_cache_t& cache)
+    -> wormedit::editor_measure_geometry_t {
+    return {cache.chart, cache.revision,
+            cache.cached_measure_index ? &*cache.cached_measure_index : nullptr};
+}
+
 void prepare_bound_workspace_frame(
     const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
@@ -3082,7 +3088,8 @@ int main(int argc, char** argv) {
                 (void)wormedit::sys::follow_compose_playhead(
                     history, *compose_interaction_state,
                     *application_command_state.preview_playhead_absolute_row,
-                    preview_output.playing());
+                    preview_output.playing(),
+                    retained_compose_geometry(compose_scene_cache));
             }
 #endif
 

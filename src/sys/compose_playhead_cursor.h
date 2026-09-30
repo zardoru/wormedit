@@ -10,6 +10,7 @@
 #include <limits>
 #include <optional>
 #include <ranges>
+#include <utility>
 
 namespace wormedit::sys {
 
@@ -52,7 +53,8 @@ namespace wormedit::sys {
 // Keep Compose's snapped edit cursor on the currently audible chart row.
 [[nodiscard]] inline auto follow_compose_playhead(document_history_t& history,
                                                    editor_interaction_state_t& state,
-                                                   double absolute_row, bool anchored) -> bool {
+                                                   double absolute_row, bool anchored,
+                                                   editor_measure_geometry_t geometry = {}) -> bool {
     if (!std::isfinite(absolute_row) || absolute_row < 0.0 ||
         playhead_cursor_edit_blocked(state))
         return false;
@@ -61,8 +63,16 @@ namespace wormedit::sys {
     if (chart == history.document.charts.end() || state.active_snap_denominator == 0 ||
         chart->divisions_per_standard_measure % state.active_snap_denominator != 0)
         return false;
-    const auto built = build_measure_index(*chart);
-    const auto* index = std::get_if<measure_index_t>(&built);
+    if (geometry.index && (geometry.chart != chart->id ||
+                           geometry.document_revision != history.document.revision)) return false;
+    std::optional<measure_index_t> built;
+    if (!geometry.index) {
+        auto result = build_measure_index(*chart);
+        if (auto* index = std::get_if<measure_index_t>(&result)) built = std::move(*index);
+        else return false;
+        geometry = {chart->id, history.document.revision, &*built};
+    }
+    const auto* index = geometry.index;
     if (!index || index->total_rows == 0) return false;
     const auto previous_scroll = state.viewport_scroll_pixels;
     const auto step = chart->divisions_per_standard_measure / state.active_snap_denominator;
@@ -74,17 +84,11 @@ namespace wormedit::sys {
     if (after == index->entries.begin()) return false;
     const auto measure = std::prev(after);
     const local_position_t position{measure->id, row - measure->absolute_begin_row};
-    if ((state.cursor != position || state.virtual_bms_cursor_row) &&
-        !dispatch_editor_action(
-            history, state, jump_edit_cursor_action_t{position, history.document.revision}))
-        return false;
     const auto target_scroll = compose_playhead_scroll_target(
         state, *chart, bounded_row, previous_scroll, anchored);
     if (!target_scroll) return false;
-    if (std::abs(*target_scroll - state.viewport_scroll_pixels) < 0.001) return true;
-    return static_cast<bool>(dispatch_editor_action(
-        history, state, scroll_editor_view_action_t{
-                            .vertical_pixels = *target_scroll - state.viewport_scroll_pixels}));
+    return static_cast<bool>(follow_editor_playhead(history, state, geometry, position,
+                                                   *target_scroll));
 }
 
 } // namespace wormedit::sys

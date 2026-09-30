@@ -488,14 +488,22 @@ auto valid_viewport(const chart_document_t& chart, const measure_index_t& index,
     return true;
 }
 
+auto retained_or_built_measure_index(const chart_document_t& chart,
+                                     const measure_index_t* retained)
+    -> std::variant<measure_index_t, diagnostic_list_t> {
+    if (retained) return *retained;
+    return build_measure_index(chart);
+}
+
 auto resolve_view_geometry(const document_history_t& history,
-                           const editor_interaction_state_t& state)
+                           const editor_interaction_state_t& state,
+                           const measure_index_t* retained = nullptr)
     -> std::variant<view_geometry_t, diagnostic_list_t> {
     const auto* chart = find_chart(history.document, state.chart);
     if (!chart)
         return diagnostic_list_t{error(diagnostic_code_t::invalid_id,
                                        "editor interaction refers to an unknown chart")};
-    const auto built = build_measure_index(*chart);
+    const auto built = retained_or_built_measure_index(*chart, retained);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built)) return *diagnostics;
     auto index = std::get<measure_index_t>(built);
     const auto canvas = resolve_canvas_cursor(*chart, index, state);
@@ -573,9 +581,10 @@ auto area_selection_anchor_y(const pending_editor_area_selection_t& pending,
            viewport_scroll;
 }
 
-auto make_view(const document_history_t& history, const editor_interaction_state_t& state)
+auto make_view(const document_history_t& history, const editor_interaction_state_t& state,
+               const measure_index_t* retained = nullptr)
     -> std::variant<editor_interaction_view_model_t, diagnostic_list_t> {
-    auto resolved = resolve_view_geometry(history, state);
+    auto resolved = resolve_view_geometry(history, state, retained);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&resolved)) return *diagnostics;
     auto geometry = std::get<view_geometry_t>(std::move(resolved));
     auto range_preview = make_space_range_preview(history, state, geometry);
@@ -1447,12 +1456,80 @@ auto diagnostic_result(const document_history_t& history, const editor_interacti
     return result;
 }
 
+auto playhead_gesture_active(const editor_interaction_state_t& state) -> bool {
+    return state.pending_hold || !state.additional_keyboard_holds.empty() ||
+           state.pending_virtual_lane_key || state.pending_note_duration_gesture ||
+           state.pending_note_move_gesture || state.pending_note_paint_gesture ||
+           state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
+           state.pending_space_range_selection;
+}
+
+auto proposed_playhead_cursor(const document_history_t& history,
+                             const chart_document_t& chart, const measure_index_t& index,
+                             const editor_interaction_state_t& state, local_position_t position)
+    -> std::variant<editor_interaction_state_t, diagnostic_list_t> {
+    auto proposed = state;
+    if (proposed.cursor == position && !proposed.virtual_bms_cursor_row) return proposed;
+    proposed.cursor = position;
+    proposed.virtual_bms_cursor_row.reset();
+    if (!interaction_detail::keep_cursor_visible(chart, index, proposed))
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
+                                      "playhead cursor cannot keep the viewport valid")};
+    auto view = make_view(history, proposed, &index);
+    if (std::holds_alternative<diagnostic_list_t>(view)) {
+        const auto replacement = transition_lane(chart, index, state.cursor, position,
+                                                 state.active_lane);
+        if (replacement) {
+            proposed.active_lane = *replacement;
+            view = make_view(history, proposed, &index);
+        }
+    }
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&view)) return *diagnostics;
+    return proposed;
+}
+
 } // namespace
 
 auto inspect_editor_interaction(const document_history_t& history,
                                 const editor_interaction_state_t& state)
     -> std::variant<editor_interaction_view_model_t, diagnostic_list_t> {
     return make_view(history, state);
+}
+
+auto follow_editor_playhead(document_history_t& history, editor_interaction_state_t& state,
+                            editor_measure_geometry_t geometry, local_position_t position,
+                            double target_scroll) -> editor_interaction_result_t {
+    const auto* chart = find_chart(history.document, state.chart);
+    if (!chart || !geometry.index || geometry.chart != state.chart ||
+        geometry.document_revision != history.document.revision ||
+        !std::isfinite(target_scroll) || playhead_gesture_active(state))
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                     "playhead geometry is stale or playback editing is blocked")}};
+    const auto& index = *geometry.index;
+    if (!absolute_row(index, position))
+        return {.diagnostics = {error(diagnostic_code_t::row_out_of_range,
+                                     "playhead cursor is outside chart geometry")}};
+    if (!note_kind_allowed(*chart, state.armed_note_kind)) state.armed_note_kind = note_kind_t::tap;
+    auto initial = make_view(history, state, &index);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&initial))
+        return {.diagnostics = *diagnostics};
+    auto candidate = proposed_playhead_cursor(history, *chart, index, state, position);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&candidate))
+        return {.diagnostics = *diagnostics};
+    auto proposed = std::get<editor_interaction_state_t>(std::move(candidate));
+    const auto maximum = maximum_viewport_scroll(*chart, index,
+        proposed.pixels_per_standard_measure, proposed.viewport_height_pixels);
+    if (!maximum)
+        return {.diagnostics = {error(diagnostic_code_t::invalid_resolution,
+                                     "playhead viewport geometry is invalid")}};
+    if (std::abs(target_scroll - proposed.viewport_scroll_pixels) >= 0.001)
+        proposed.viewport_scroll_pixels = std::clamp(target_scroll,
+            minimum_viewport_scroll(proposed.viewport_height_pixels), *maximum);
+    auto view = make_view(history, proposed, &index);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&view))
+        return {.diagnostics = *diagnostics};
+    state = std::move(proposed);
+    return {.accepted = true, .view = std::get<editor_interaction_view_model_t>(std::move(view))};
 }
 
 auto paint_cell_hash_t::operator()(paint_cell_key_t cell) const noexcept -> std::size_t {

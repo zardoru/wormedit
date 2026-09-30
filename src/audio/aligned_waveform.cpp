@@ -142,6 +142,44 @@ auto pcm_span(decoded_block_cache_t& cache, const audio_source_identity_t& sourc
     return column;
 }
 
+// Cached affine clock inside one uninterrupted timing segment. Boundary rows
+// retain the exact query path so pauses and warp edges keep their side semantics.
+struct row_frame_cursor_t {
+    const timing_segment_t* segment{};
+    long double begin_seconds{};
+    long double seconds_per_row{};
+
+    void select(const timing_index_t& timing, std::uint64_t row) {
+        if (segment && row >= segment->begin_row && row < segment->end_row) return;
+        const auto after = std::ranges::upper_bound(timing.segments, row, {},
+                                                   &timing_segment_t::begin_row);
+        segment = after == timing.segments.begin() ? nullptr : &*std::prev(after);
+        if (!segment || segment->begin_seconds.denominator == 0 ||
+            segment->end_seconds.denominator == 0 || segment->end_row <= segment->begin_row) {
+            segment = nullptr;
+            return;
+        }
+        begin_seconds = static_cast<long double>(segment->begin_seconds.numerator) /
+                        segment->begin_seconds.denominator;
+        const auto finish = static_cast<long double>(segment->end_seconds.numerator) /
+                            segment->end_seconds.denominator;
+        seconds_per_row = (finish - begin_seconds) / (segment->end_row - segment->begin_row);
+    }
+
+    auto frame(const waveform_t& waveform, const timing_index_t& timing,
+               long double row, bool end) -> std::optional<long double> {
+        const auto floor_row = static_cast<std::uint64_t>(std::floor(row));
+        select(timing, floor_row);
+        if (!segment || floor_row <= segment->begin_row || row >= segment->end_row ||
+            floor_row + 1U > segment->end_row)
+            return frame_at_fractional_row(waveform, timing, row, end);
+        const auto seconds = begin_seconds + (row - segment->begin_row) * seconds_per_row;
+        const auto frame = seconds * waveform.sample_rate;
+        if (!std::isfinite(frame)) return std::nullopt;
+        return end ? std::ceil(frame) : std::floor(frame);
+    }
+};
+
 struct composed_waveform_context_t {
     const waveform_t& overview;
     const waveform_t* detail;
@@ -150,6 +188,7 @@ struct composed_waveform_context_t {
     decoded_block_cache_t* blocks;
     aligned_waveform_style_t style;
     long double rows_per_pixel;
+    row_frame_cursor_t& clock;
 };
 
 struct composed_column_t {
@@ -164,15 +203,15 @@ auto composed_pixel_column(const composed_waveform_context_t& context, double fi
     const auto last_row = std::clamp((context.request.viewport_scroll_pixels + last_pixel) *
         context.rows_per_pixel, 0.0L, static_cast<long double>(context.timing.total_rows));
     if (first_row >= last_row) return std::nullopt;
-    const auto first = frame_at_fractional_row(context.overview, context.timing, first_row, false);
-    const auto last = frame_at_fractional_row(context.overview, context.timing, last_row, true);
+    const auto first = context.clock.frame(context.overview, context.timing, first_row, false);
+    const auto last = context.clock.frame(context.overview, context.timing, last_row, true);
     if (!first || !last) return std::nullopt;
     const auto begin = static_cast<std::uint64_t>(std::clamp(*first, 0.0L,
         static_cast<long double>(context.overview.total_frames)));
     const auto end = static_cast<std::uint64_t>(std::clamp(*last, 0.0L,
         static_cast<long double>(context.overview.total_frames)));
     if (begin >= end) return std::nullopt;
-    if (context.blocks) {
+    if (context.blocks && (context.style.sample_points || context.style.detail_level)) {
         if (auto pcm = pcm_span(*context.blocks, context.overview.key.source, begin, end))
             return composed_column_t{*pcm, 1};
     }
@@ -383,8 +422,9 @@ auto project_composed_aligned_waveform(const waveform_t& overview, const wavefor
         }
     }
     const auto stride = std::max<std::size_t>(1, (height * points + request.maximum_rows - 1U) / request.maximum_rows);
+    row_frame_cursor_t clock;
     const composed_waveform_context_t context{overview, detail, timing, request, blocks, style,
-        static_cast<long double>(timing.divisions_per_standard_measure) / request.pixels_per_standard_measure};
+        static_cast<long double>(timing.divisions_per_standard_measure) / request.pixels_per_standard_measure, clock};
     for (std::size_t pixel = 0; pixel < height; pixel += stride) {
         const auto end = std::min(pixel + stride, height);
         if (const auto column = composed_pixel_column(context, pixel, end)) {

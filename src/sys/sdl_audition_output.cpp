@@ -1,3 +1,4 @@
+#include "sys/frame_timing.h"
 #include "sys/sdl_audition_output.h"
 
 #include <SDL3/SDL_error.h>
@@ -103,7 +104,10 @@ auto sdl_audition_output_t::service() -> std::optional<sdl_audition_service_resu
     if (stream_ == nullptr || !session_.active()) {
         return std::nullopt;
     }
-    auto pumped = session_.pump();
+    auto pumped = [&] {
+        frame_phase_scope_t pump(frame_phase_t::audio_pump);
+        return session_.pump();
+    }();
     if (pumped.status == audio::audition_pump_status_t::stale_generation) {
         return std::nullopt;
     }

@@ -152,6 +152,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
             sys/sdl_audition_output_tests.cpp
             sys/sdl_preview_output_tests.cpp
             ../src/sys/chart_preview_state.cpp
+            ../src/sys/frame_timing.cpp
             ../src/sys/sdl_audition_output.cpp
             ../src/sys/sdl_preview_output.cpp
         )
@@ -325,12 +326,18 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/compose_view.cpp
         ../src/ui/nuklear/arrow_glyph.cpp
         ../src/sys/compose_resource_presenter.cpp
+        ../src/sys/timing_view.cpp
         ../src/sys/workspace_projection.cpp
     )
     target_include_directories(wormedit_frame_timing_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/generated")
     target_link_libraries(wormedit_frame_timing_tests PRIVATE
         wormedit::core SDL3::SDL3 Catch2::Catch2WithMain)
+    if(TARGET wormedit_audio_decoder)
+        target_sources(wormedit_frame_timing_tests PRIVATE ../src/sys/waveform_view_projection.cpp)
+        target_compile_definitions(wormedit_frame_timing_tests PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1)
+        target_link_libraries(wormedit_frame_timing_tests PRIVATE wormedit::audio_decoder)
+    endif()
     catch_discover_tests(wormedit_frame_timing_tests TEST_PREFIX "frame-timing."
         PROPERTIES LABELS "unit;sys;performance" DISCOVERY_MODE PRE_TEST)
 endif()

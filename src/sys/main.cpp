@@ -3050,7 +3050,7 @@ int main(int argc, char** argv) {
                                      platform_recovery.path, status);
         wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::audio);
+        wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::audio_service);
         wormedit::sys::service_audio_transport_frame(
             history.document, workspace, preview_state, preview_session,
             audition_output, preview_output,

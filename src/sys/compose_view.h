@@ -12,6 +12,10 @@
 #include <wormedit/core/timing_lane_controller.h>
 #include <wormedit/core/workspace.h>
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+#include <wormedit/audio/waveform.h>
+#endif
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -83,6 +87,12 @@ struct compose_scene_cache_t {
     double channel_waveform_pixels_per_measure{};
     bool channel_waveform_projection_valid{};
     std::vector<WormUiComposeWaveformRowView> channel_waveform_rows;
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    std::optional<wormedit::audio::waveform_key_t> waveform_overview_key;
+    const void* waveform_overview_identity{};
+    std::uint64_t waveform_overview_revision{};
+    std::vector<WormUiComposeWaveformOverviewRowView> waveform_overview_rows;
+#endif
     std::uint64_t waveform_overview_total_frames{};
     std::uint32_t waveform_overview_sample_rate{};
     std::optional<wormedit::editor_interaction_view_model_t> interaction_view;

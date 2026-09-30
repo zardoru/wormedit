@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <ranges>
+#include <limits>
 #include <type_traits>
 #include <unordered_map>
 #include <variant>
@@ -654,7 +655,93 @@ void populate_timing_markers(flattened_workspace_t& flattened,
     }
 }
 
+auto compose_total_rows(timing_scene_cache_t& cache, const wormedit::chart_document_t& chart,
+                        std::uint64_t revision) -> std::uint64_t {
+    if (cache.chart != chart.id || cache.revision != revision)
+        cache = {.chart = chart.id, .revision = revision};
+    if (cache.compose_rows_attempted) return cache.compose_total_rows;
+    cache.compose_rows_attempted = true;
+    for (const auto& measure : chart.measures) {
+        const auto valid = wormedit::validate_measure(chart.divisions_per_standard_measure,
+                                                     measure.definition);
+        if (!valid || *valid.row_capacity > std::numeric_limits<std::uint64_t>::max() - cache.compose_total_rows) {
+            cache.compose_total_rows = 0;
+            return 0;
+        }
+        cache.compose_total_rows += *valid.row_capacity;
+    }
+    return cache.compose_total_rows;
+}
+
+auto cached_measures(timing_scene_cache_t& cache, const wormedit::chart_document_t& chart,
+                     std::uint64_t revision) -> const wormedit::measure_index_t* {
+    if (cache.chart != chart.id || cache.revision != revision)
+        cache = {.chart = chart.id, .revision = revision};
+    if (!cache.measure_attempted) {
+        cache.measure_attempted = true;
+        auto result = wormedit::build_measure_index(chart);
+        if (auto* measures = std::get_if<wormedit::measure_index_t>(&result))
+            cache.measures = std::move(*measures);
+    }
+    return cache.measures ? &*cache.measures : nullptr;
+}
+
+void populate_initial_bpm(WormUiTimingView& view, const wormedit::chart_document_t& chart) {
+    if (!chart.measures.empty()) {
+        for (const auto& bpm : chart.bpms) {
+            if (bpm.position.measure == chart.measures.front().id && bpm.position.row == 0) {
+                view.initial_bpm_present = true;
+                view.initial_bpm_event_id = bpm.id.value;
+                view.initial_bpm_value =
+                    static_cast<double>(rational_as_long_double(bpm.beats_per_minute));
+            }
+        }
+    }
+}
+
 } // namespace
+
+void populate_timing_view_for_compose(
+    flattened_workspace_t& flattened, const wormedit::document_history_t& history,
+    const wormedit::workspace_controller_t& workspace, timing_scene_cache_t& cache,
+    int window_width, int window_height,
+    const timing_grid_state_t& timing_grid,
+    const wormedit::timing_lane_pseudonote_preview_t* stage,
+    const wormedit::sv_recipe_draft_t* recipe_draft,
+    const wormedit::sv_recipe_draft_preview_t* recipe_preview, bool recipe_selection_armed) {
+    if (!workspace.selected_chart) return;
+    const auto selected = std::ranges::find(history.document.charts, *workspace.selected_chart,
+                                           &wormedit::chart_document_t::id);
+    if (selected == history.document.charts.end()) return;
+    const auto& chart = *selected;
+    auto& view = flattened.view.timing;
+    view.chart_id = chart.id.value;
+    view.document_revision = history.document.revision;
+    view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
+    view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
+    view.total_rows = compose_total_rows(cache, chart, history.document.revision);
+    view.scene_available = view.total_rows != 0;
+    populate_initial_bpm(view, chart);
+    view.active_snap_denominator = timing_grid.active_denominator;
+    view.supported_snap_denominators = timing_grid.supported_denominators.data();
+    view.supported_snap_denominator_count = timing_grid.supported_denominators.size();
+    const bool editing_stage = stage && stage->status == wormedit::timing_lane_pseudonote_status_t::editing;
+    const bool editing_recipe = recipe_draft && recipe_draft->status == wormedit::sv_recipe_draft_status_t::editing;
+    if (!editing_stage && !editing_recipe) {
+        populate_timing_recipe_view(flattened, chart, nullptr, recipe_draft, recipe_preview,
+                                   recipe_selection_armed);
+        return;
+    }
+    const auto* measures = cached_measures(cache, chart, history.document.revision);
+    const auto row_to_pixels = [&](long double row) {
+        return measures && measures->total_rows > 0
+            ? static_cast<double>(row / measures->total_rows * view.viewport_height_pixels) : 0.0;
+    };
+    populate_timing_recipe_view(flattened, chart, measures, recipe_draft, recipe_preview,
+                               recipe_selection_armed);
+    populate_timing_stage_view(flattened, view, chart, measures, stage, timing_grid,
+                              history.document.revision, row_to_pixels);
+}
 
 void populate_timing_view(flattened_workspace_t& flattened,
                           const wormedit::document_history_t& history,
@@ -686,16 +773,7 @@ void populate_timing_view(flattened_workspace_t& flattened,
     const auto& chart = *chart_it;
     view.chart_id = chart.id.value;
     view.document_revision = history.document.revision;
-    if (!chart.measures.empty()) {
-        for (const auto& bpm : chart.bpms) {
-            if (bpm.position.measure == chart.measures.front().id && bpm.position.row == 0) {
-                view.initial_bpm_present = true;
-                view.initial_bpm_event_id = bpm.id.value;
-                view.initial_bpm_value =
-                    static_cast<double>(rational_as_long_double(bpm.beats_per_minute));
-            }
-        }
-    }
+    populate_initial_bpm(view, chart);
     view.active_snap_denominator = timing_grid.active_denominator;
     view.supported_snap_denominators = timing_grid.supported_denominators.data();
     view.supported_snap_denominator_count = timing_grid.supported_denominators.size();
@@ -722,8 +800,7 @@ void populate_timing_view(flattened_workspace_t& flattened,
                                          row_to_pixels)) {
         return;
     }
-    const auto measure_result = wormedit::build_measure_index(chart);
-    const auto* measures = std::get_if<wormedit::measure_index_t>(&measure_result);
+    const auto* measures = cached_measures(cache, chart, history.document.revision);
     populate_timing_markers(flattened, chart, measures, view, row_to_pixels);
     view.scene_available = true;
     view.truncated = view.truncated || cache.truncated;

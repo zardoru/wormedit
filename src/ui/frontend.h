@@ -1612,7 +1612,7 @@ void worm_ui_frontend_resource_placed(uint64_t placed_resource_id, uint64_t next
 void worm_ui_frontend_render(int window_width, int window_height);
 
 #define WORM_UI_FRAME_TIMING_CAPACITY 240
-#define WORM_UI_FRAME_TIMING_PHASE_COUNT 6
+#define WORM_UI_FRAME_TIMING_PHASE_COUNT 18
 typedef struct WormUiFrameTimingStats {
     size_t count;
     double average_ms;

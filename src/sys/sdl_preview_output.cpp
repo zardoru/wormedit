@@ -1,3 +1,4 @@
+#include "sys/frame_timing.h"
 #include "sys/sdl_preview_output.h"
 
 #include <SDL3/SDL_error.h>
@@ -144,7 +145,10 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
         if (rate_unavailable) return sdl_preview_service_result_t{.rate_unavailable = true};
         return std::nullopt;
     }
-    auto pumped = session_.pump();
+    auto pumped = [&] {
+        frame_phase_scope_t pump(frame_phase_t::audio_pump);
+        return session_.pump();
+    }();
     if (pumped.decode.has_value() &&
         pumped.decode->status == audio::preview_pump_status_t::stale_generation) {
         return std::nullopt;

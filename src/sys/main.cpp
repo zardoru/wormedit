@@ -1378,6 +1378,9 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
                                  auto& audition_session, auto& preview_session, auto& preview_state,
                                  auto& audition_sources, auto& preview_metronome_bindings,
                                  auto& audition_output, auto& preview_output) {
+    state.transport_set_playback_rate = [&](wormedit::rational_t rate) {
+        return preview_output.set_playback_rate(rate);
+    };
     state.transport_active = [&] {
         return audition_session.active() || preview_session.active() || preview_state.paused;
     };
@@ -1443,6 +1446,15 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
 }
 #endif
 
+void refresh_transport_rate_commands(wormedit::command_registry_t& registry,
+                                     const application_command_state_t& state) {
+    const bool available = static_cast<bool>(state.transport_set_playback_rate);
+    (void)wormedit::update_command_state(registry, {"transport.rate_slower"},
+                                       available && state.transport_rate_index > 0, std::nullopt);
+    (void)wormedit::update_command_state(registry, {"transport.rate_faster"},
+                                       available && state.transport_rate_index < 8, std::nullopt);
+}
+
 void refresh_application_command_states(
     wormedit::command_registry_t& registry, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
@@ -1491,6 +1503,7 @@ void refresh_application_command_states(
         chart != nullptr && static_cast<bool>(application_state.transport_play_pause));
     set("transport.play_from_start",
         chart != nullptr && static_cast<bool>(application_state.transport_play_from_start));
+    refresh_transport_rate_commands(registry, application_state);
     set("transport.stop",
         application_state.transport_active && application_state.transport_active());
 
@@ -2068,6 +2081,10 @@ void append_shortcut_startup_diagnostic(
 
 void reset_project_edit_state(application_command_state_t& current) {
     application_command_state_t next;
+    next.transport_rate_index = current.transport_rate_index;
+    next.transport_keep_pitch = current.transport_keep_pitch;
+    next.transport_keep_pitch_available = current.transport_keep_pitch_available;
+    next.transport_set_playback_rate = std::move(current.transport_set_playback_rate);
     next.transport_active = std::move(current.transport_active);
     next.transport_inline_active = std::move(current.transport_inline_active);
     next.transport_play_pause = std::move(current.transport_play_pause);
@@ -2910,6 +2927,10 @@ int main(int argc, char** argv) {
                  .preview_output_available = preview_output.available(),
 #endif
                 });
+            flattened.view.transport_rate_index = static_cast<uint8_t>(application_command_state.transport_rate_index);
+            flattened.view.transport_rate_available = static_cast<bool>(application_command_state.transport_set_playback_rate);
+            flattened.view.transport_keep_pitch = application_command_state.transport_keep_pitch;
+            flattened.view.transport_keep_pitch_available = application_command_state.transport_keep_pitch_available;
             flattened.view.project_loaded = session_loaded;
             flattened.view.project_has_native_path = native_project_loaded;
             flattened.view.pending_new_project_audio_path = pending_audio_project_path.c_str();

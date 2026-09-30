@@ -417,3 +417,18 @@ TEST_CASE("transport shortcuts distinguish cursor playback from play from start"
                           command_id_t{"transport.play_pause"},
                           command_id_t{"transport.play_from_start"}});
 }
+
+TEST_CASE("Playback rate shortcuts have no registry conflicts", "[unit][commands]") {
+    const auto registry = make_default_editor_command_registry(
+        [](const command_invocation_context_t&) { return command_invocation_result_t{}; });
+    CHECK(diagnose_shortcut_conflicts(registry, shortcut_primary_modifier_t::control).empty());
+    CHECK(diagnose_shortcut_conflicts(registry, shortcut_primary_modifier_t::meta).empty());
+    const auto* slower = find_command(registry, command_id_t{"transport.rate_slower"});
+    const auto* faster = find_command(registry, command_id_t{"transport.rate_faster"});
+    REQUIRE(slower);
+    REQUIRE(faster);
+    CHECK(slower->default_shortcuts.front().modifiers == static_cast<shortcut_modifiers_t>(shortcut_modifier_t::primary));
+    CHECK(faster->default_shortcuts.front().modifiers == static_cast<shortcut_modifiers_t>(shortcut_modifier_t::primary));
+    CHECK(slower->default_shortcuts.front().key == shortcut_key_t::f11);
+    CHECK(faster->default_shortcuts.front().key == shortcut_key_t::f12);
+}

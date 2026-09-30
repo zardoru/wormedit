@@ -19,6 +19,8 @@ constexpr command_name_t command_names[]{
     {"transport.play_pause", application_command_kind_t::transport_play_pause},
     {"transport.play_from_start", application_command_kind_t::transport_play_from_start},
     {"transport.stop", application_command_kind_t::transport_stop},
+    {"transport.rate_slower", application_command_kind_t::transport_rate_slower},
+    {"transport.rate_faster", application_command_kind_t::transport_rate_faster},
     {"edit.delete", application_command_kind_t::edit_delete},
     {"selection.clear", application_command_kind_t::selection_clear},
     {"selection.select_all", application_command_kind_t::selection_select_all},

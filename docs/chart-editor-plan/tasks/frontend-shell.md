@@ -118,14 +118,14 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 
 ## T-234 Add rate and pitch controls to the transport UI
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** the status-bar transport shows a rate dropdown with the nine rates (label "1×", "0.9×" … "0.1×") and a "Keep pitch" toggle (enabled once T-233 lands); commands `transport.rate_slower` / `transport.rate_faster` step through the table; the chosen rate and pitch mode persist per session.
 - **Read first:** `src/ui/nuklear/frontend.cpp` (`render_status_bar`), `src/core/command_registry.cpp`, `include/wormedit/audio/playback_rate.h`.
-- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `src/core/command_registry.cpp`, `src/sys/main.cpp` (dispatch and view only), `src/sys/transport_player_actions.cpp/.h`, `tests/core/command_registry_tests.cpp`.
-- **Steps:** 1. Scalar view: rate index, keep-pitch flag, keep-pitch availability. 2. Dropdown + toggle using the themed chrome helpers. 3. Registry commands with default chords that do not conflict (check `diagnose_shortcut_conflicts`); suggested Ctrl+[ and Ctrl+].
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `src/core/command_registry.cpp`, `src/sys/main.cpp` (dispatch and view only), `src/sys/transport_player_actions.cpp/.h`, `tests/core/command_registry_tests.cpp`, `src/sys/compose_view.h`, `src/sys/application_commands.h/.cpp`, `src/sys/application_command_dispatch.cpp`, `tests/sys/application_commands_tests.cpp` (scope extension approved by user, 2026-09-30).
+- **Steps:** 1. Scalar view: rate index, keep-pitch flag, keep-pitch availability. 2. Dropdown + toggle using the themed chrome helpers. 3. Registry commands with default chords that do not conflict (check `diagnose_shortcut_conflicts`); implemented Primary+F11 (slower) and Primary+F12 (faster), using supported keys and checking registry conflicts.
 - **Invariants:** changing rate never changes the document or cursor.
 - **Reject/failure behavior:** stepping past 0.1× or 1× does nothing.
-- **Verify:** standard build/test; smoke PNG of the status bar.
+- **Verify:** `cmake --build build` passed; 821/821 filtered core/audio/frontend/documentation tests passed; isolated Xvfb smoke `/tmp/wormedit-t234/status.png` inspected with rate dropdown and disabled Keep pitch. Clang-tidy run on changed sources; final integrated verification follows parent handoff.
 - **Out of scope:** per-chart saved rates.
 
 ## T-46 Render synchronized side-by-side difficulties in Compare/Validate

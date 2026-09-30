@@ -149,6 +149,10 @@ struct application_command_state_t {
     std::uint8_t compose_timing_lane_visibility_mask{0xff};
     bool player_preview_visible{};
     wormedit::player_preview_skin_t player_preview_skin{wormedit::player_preview_skin_t::neutral};
+    std::size_t transport_rate_index{8};
+    bool transport_keep_pitch{};
+    bool transport_keep_pitch_available{};
+    std::function<bool(wormedit::rational_t)> transport_set_playback_rate;
     std::function<bool()> transport_active;
     std::function<bool()> transport_inline_active;
     std::function<std::string()> transport_play_pause;

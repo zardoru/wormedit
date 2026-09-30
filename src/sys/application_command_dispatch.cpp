@@ -1,6 +1,7 @@
 #include "sys/application_command_dispatch.h"
 
 #include "sys/compose_input.h"
+#include "sys/transport_player_actions.h"
 #include "ui/frontend.h"
 
 #include <wormedit/core/command.h>
@@ -128,6 +129,15 @@ auto history_command(command_context_t& context) -> std::optional<command_result
 auto transport_command(command_context_t& context) -> std::optional<command_result_t> {
     const auto kind = context.command.kind;
     auto& app = context.application_state;
+    if (kind == command_kind_t::transport_rate_slower || kind == command_kind_t::transport_rate_faster) {
+        const bool faster = kind == command_kind_t::transport_rate_faster;
+        const bool boundary = (faster && app.transport_rate_index == 8) ||
+                              (!faster && app.transport_rate_index == 0);
+        if (!boundary && !step_transport_rate(app, faster))
+            return reject_application_command(context.status, "Playback output rejected the rate change.");
+        context.status = boundary ? "Playback rate unchanged." : "Playback rate changed.";
+        return command_result_t{.accepted = true};
+    }
     if (kind == command_kind_t::transport_play_pause) {
         if (!app.transport_play_pause)
             return reject_application_command(context.status, "Chart preview is unavailable.");

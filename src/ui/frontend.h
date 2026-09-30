@@ -101,6 +101,8 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK,
+    WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE,
+    WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH,
     WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET,
     WORM_UI_WORKSPACE_ACTION_SELECT_VISUAL_ASSET,
     WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW,
@@ -1181,6 +1183,10 @@ typedef struct WormUiWorkspaceView {
     bool transport_available;
     bool transport_playing;
     bool transport_paused;
+    uint8_t transport_rate_index;
+    bool transport_rate_available;
+    bool transport_keep_pitch;
+    bool transport_keep_pitch_available;
     uint64_t transport_frame;
     uint64_t transport_end_frame;
     uint32_t transport_sample_rate;
@@ -1411,6 +1417,8 @@ typedef struct WormUiWorkspaceAction {
     WormUiWorkspaceTab tab;
     uint64_t recovery_scan_generation;
     uint64_t transport_seek_frame;
+    uint8_t transport_rate_index;
+    bool transport_keep_pitch;
     uint64_t audio_asset_id;
     uint64_t visual_asset_id;
     WormUiPlayerPreviewSkin player_preview_skin;

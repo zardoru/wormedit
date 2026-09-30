@@ -17,6 +17,8 @@ enum class application_command_kind_t {
     transport_play_pause,
     transport_play_from_start,
     transport_stop,
+    transport_rate_slower,
+    transport_rate_faster,
     edit_delete,
     selection_clear,
     selection_select_all,

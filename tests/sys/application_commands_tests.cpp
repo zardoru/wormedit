@@ -1,3 +1,4 @@
+#include "sys/transport_player_actions.h"
 #include "sys/application_commands.h"
 
 #include <wormedit/core/command_registry.h>
@@ -307,4 +308,35 @@ TEST_CASE("Compose area quantization rejects ambiguous identities without edits"
     CHECK(chart.measures.front().notes.front().position == position);
     CHECK(chart.bpms.back().id == wormedit::object_id_t{1});
     CHECK(fixture.history.undo.empty());
+}
+
+
+TEST_CASE("Transport rates accept exact preferences and reject boundaries", "[unit][sys][commands]") {
+    application_command_state_t state;
+    wormedit::rational_t requested{1, 1};
+    int calls = 0;
+    state.transport_set_playback_rate = [&](wormedit::rational_t rate) {
+        requested = rate;
+        ++calls;
+        return true;
+    };
+    CHECK_FALSE(step_transport_rate(state, true));
+    CHECK(calls == 0);
+    for (std::size_t index = 8; index > 0; --index) {
+        REQUIRE(step_transport_rate(state, false));
+        CHECK(state.transport_rate_index == index - 1);
+        CHECK(requested == wormedit::audio::playback_rates[index - 1]);
+    }
+    CHECK_FALSE(step_transport_rate(state, false));
+    CHECK(calls == 8);
+    CHECK_FALSE(set_transport_rate(state, 9));
+    state.transport_set_playback_rate = [](wormedit::rational_t) { return false; };
+    CHECK_FALSE(step_transport_rate(state, true));
+    CHECK(state.transport_rate_index == 0);
+    CHECK_FALSE(state.transport_keep_pitch_available);
+    CHECK_FALSE(state.transport_keep_pitch);
+    REQUIRE(parse_application_command("transport.rate_slower"));
+    REQUIRE(parse_application_command("transport.rate_faster"));
+    CHECK(parse_application_command("transport.rate_slower")->kind == application_command_kind_t::transport_rate_slower);
+    CHECK(parse_application_command("transport.rate_faster")->kind == application_command_kind_t::transport_rate_faster);
 }

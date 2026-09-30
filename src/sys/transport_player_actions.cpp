@@ -57,6 +57,11 @@ auto dispatch_transport_player_action(
     wormedit::stepmania_export_policy_t& stepmania_export_policy)
     -> std::optional<std::string> {
     switch (action.kind) {
+    case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE:
+        return set_transport_rate(application_state, action.transport_rate_index)
+                   ? "Playback rate changed." : "Playback rate unchanged.";
+    case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH:
+        return "Keep pitch is unavailable.";
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE:
         return application_state.transport_play_pause
                    ? application_state.transport_play_pause()

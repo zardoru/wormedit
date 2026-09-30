@@ -742,11 +742,32 @@ static auto workspace_status_line(const WormUiWorkspaceView& view) -> std::strin
     return status;
 }
 
+static void render_transport_rate(const WormUiWorkspaceView& view, WormUiWorkspaceAction* action) {
+    static const char* labels[]{"1×", "0.9×", "0.8×", "0.75×", "0.5×", "0.33×", "0.25×", "0.2×", "0.1×"};
+    const int index = view.transport_rate_index < 9 ? 8 - view.transport_rate_index : 0;
+    if (!view.transport_rate_available) nk_widget_disable_begin(g_context);
+    const int selected = nk_combo(g_context, labels, 9, index, 24, nk_vec2(100, 250));
+    if (!view.transport_rate_available) nk_widget_disable_end(g_context);
+    if (view.transport_rate_available && selected != index && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
+        action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
+        action->transport_rate_index = static_cast<uint8_t>(8 - selected);
+    }
+    if (!view.transport_keep_pitch_available) nk_widget_disable_begin(g_context);
+    if (wormedit::ui::chrome::mode_button(g_context, "Keep pitch", "Preserve pitch at reduced speed", view.transport_keep_pitch) &&
+        view.transport_keep_pitch_available && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
+        action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH;
+        action->transport_keep_pitch = !view.transport_keep_pitch;
+    }
+    if (!view.transport_keep_pitch_available) nk_widget_disable_end(g_context);
+}
+
 static void render_status_bar(const WormUiWorkspaceView* view,
                               WormUiWorkspaceAction* action) {
     const bool minimap_available = status_minimap_available(view->compose);
     nk_layout_row_template_begin(g_context, 30);
     wormedit::ui::chrome::IconButton::layout_columns(g_context, 3);
+    nk_layout_row_template_push_static(g_context, 80);
+    nk_layout_row_template_push_static(g_context, 100);
     nk_layout_row_template_push_dynamic(g_context);
     if (minimap_available) nk_layout_row_template_push_variable(g_context, 120);
     nk_layout_row_template_push_static(g_context, 80);
@@ -775,6 +796,7 @@ static void render_status_bar(const WormUiWorkspaceView* view,
                                          view->player_preview.visible}.render(g_context) &&
         action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
         action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
+    render_transport_rate(*view, action);
     const auto status = workspace_status_line(*view);
     nk_label(g_context, status.c_str(), NK_TEXT_LEFT);
     render_status_minimap(*view, action, minimap_available);

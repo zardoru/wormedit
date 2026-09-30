@@ -185,3 +185,20 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 - **Reject/failure behavior:** failed decodes show the missing-resource placeholder.
 - **Verify:** standard build/test; smoke PNG with a BMS fixture that has `#BMP`.
 - **Out of scope:** video thumbnails.
+
+## T-264 Fix the crash from combo boxes inside popups
+
+- **Status:** ready
+- **Outcome:** opening the new-project wizard's layout combo and the BMS text-encoding combo no longer aborts; no combo, menu, or contextual menu is ever opened inside another popup, and a guard makes any future violation fail safely instead of crashing.
+- **Cause (from a user crash report, macOS, 2026-09-30):** the backtrace ends in `nk_combo` → `nk_combo_begin_label` → `nk_combo_begin` → `nk_nonblock_begin` → `abort`. `nk_nonblock_begin` asserts `!(panel->type & NK_PANEL_SET_POPUP)`: Nuklear forbids opening a combo (itself a popup) inside a popup. In `src/ui/nuklear/frontend.cpp`, `render_new_project_wizard` opens `nk_popup_begin(..., "Create project", ...)` and calls `nk_combo` for the layout, and `render_bms_encoding_dialog` opens `nk_popup_begin(..., "BMS text encoding", ...)` and calls `nk_combo` for the encoding. Other combos (snap, playback rate, Setup policies, Metadata, markers, export group) are in ordinary windows. The user confirmed the trigger: after importing a song, choosing a layout in the new-project wizard (`render_new_project_wizard`); the BMS encoding dialog has the same defect and is fixed in the same card.
+- **Read first:** `src/ui/nuklear/frontend.cpp` (`render_new_project_wizard`, `render_bms_encoding_dialog`), `src/ui/nuklear/chrome.h`, `build/_deps/nuklear-src/nuklear.h` (`nk_nonblock_begin`).
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/chrome.h`, new `tests/ui/nuklear_popup_combo_tests.cpp`, `tests/CMakeLists.txt`.
+- **Steps:**
+  1. Reproduce: open New project (and the BMS encoding prompt with an ambiguous-encoding fixture from `tests/fixtures/bms/encoding/`) in a debug build and open each combo; confirm the abort.
+  2. Turn both dialogs into ordinary Nuklear windows (`nk_begin` with `NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_NO_SCROLLBAR`, centered, focused with `nk_window_set_focus`, other input blocked the same way the popup did) so their combos are legal. Keep their actions, labels, and keyboard behavior identical.
+  3. Add `chrome::safe_combo(...)`: if the current panel is a popup (`ctx->current->layout->type & NK_PANEL_SET_POPUP`), render the choices as an inline selectable list instead of opening a combo; otherwise call `nk_combo`. Use it for every `nk_combo` call site, and add `chrome::safe_combo_begin_label` for the `nk_combo_begin_label` sites.
+  4. Test with the headless Nuklear context (or T-41's harness): build a popup, call `safe_combo`, click it, and assert no abort and that a selection is returned.
+- **Invariants:** dialog results (layout index, encoding choice, cancel) unchanged; dialogs stay modal from the user's point of view.
+- **Reject/failure behavior:** none.
+- **Verify:** standard build/test in a debug build; manual: New project → change layout; open an ambiguous-encoding BMS → change encoding; both without crash on Linux and macOS.
+- **Out of scope:** theming (T-225).

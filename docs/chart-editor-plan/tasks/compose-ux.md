@@ -185,15 +185,35 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-211 Measure frame time during Ctrl+Space playback
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** a View → "Frame timing" overlay shows the last 240 frame times and per-phase averages (event handling, audio service/pump, workspace projection, Compose scene, Nuklear build, render/present); a headless test reproduces play-follow projection on a 50,000-note chart and prints the same phases.
 - **Read first:** `src/sys/main.cpp` (main loop), `src/sys/sdl_preview_output.cpp` (`service`, `session_.pump()`), `src/sys/compose_view.cpp` (scene cache rebuild), `src/sys/window.cpp` (VSync).
-- **Files owned:** new `src/sys/frame_timing.cpp/.h`, `src/sys/main.cpp` (timer calls only), `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, new `tests/sys/frame_timing_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
-- **Steps:** 1. Fixed ring buffer of phase timings (`SDL_GetPerformanceCounter`). 2. Overlay toggle. 3. Report the numbers from a real 144 Hz run to the user.
+- **Files owned:** new `src/sys/frame_timing.cpp/.h`, `src/sys/main.cpp` (timer calls only), `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, new `tests/sys/frame_timing_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `src/sys/application_frame_projection.cpp` (timer calls only), `src/sys/compose_view.cpp` (timer calls only).
+- **Steps:** 1. Fixed ring buffer of phase timings (`SDL_GetPerformanceCounter`). 2. Overlay toggle. 3. Report isolated Xvfb playback measurements and the test environment to the user (user approved replacing the real 144 Hz run on 2026-09-30).
 - **Invariants:** zero allocation per frame when the overlay is hidden.
 - **Reject/failure behavior:** none.
-- **Verify:** standard build/test; include the measured table in the report.
+- **Verify:** standard build/test; include the measured table in the report. Implementation, 824 tests, and isolated Xvfb playback/overlay checks passed on 2026-09-30. The user approved isolated measurements instead of real 144 Hz playback verification; automated windows stay outside the user's Niri session. A 50,000-note fixture at 256 notes/measure reproduced the backend's 16-bit vertex-index assertion; the verified 48-notes/measure fixture retains all 50,000 notes. The renderer limit is separate follow-up work.
 - **Out of scope:** fixes (T-212, T-213).
+
+Measured isolated playback window (240 frames): Xvfb/X11, SDL GPU renderer,
+dummy audio device, 1280×980 window, 50,000-note StepMania chart at 48 notes per
+measure, local 48 kHz mono WAV. These are observations in this environment,
+not a 144 Hz display benchmark. Audio covers aggregate transport service/pump,
+not the decode pump alone.
+
+| Phase | Average (ms) | p99 (ms) |
+|---|---:|---:|
+| Frame | 51.801 | 54.126 |
+| Event handling | 0.064 | 0.710 |
+| Audio service/pump | 0.233 | 1.451 |
+| Workspace projection | 18.773 | 20.122 |
+| Compose scene | 4.385 | 4.926 |
+| Nuklear build | 0.701 | 0.774 |
+| Render/present | 27.641 | 29.162 |
+
+The aggregate audio p99 does not prove that decode refill alone exceeds T-212's
+threshold. Compose scene is not the dominant CPU phase in this run; T-213's
+conditional optimization remains unproven.
 
 ## T-212 Move preview decode refill off the frame thread
 

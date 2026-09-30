@@ -41,6 +41,7 @@
 
 using wormedit::ui::lucide::Glyph;
 
+static bool g_frame_timing_visible;
 static SDL_Window* g_window;
 static SDL_Renderer* g_renderer;
 static struct nk_context* g_context;
@@ -645,6 +646,9 @@ static void render_view_menu(const WormUiWorkspaceView* view,
             action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
             action->compose_action = WORM_UI_COMPOSE_ACTION_RESET_VIEW;
     }
+    nk_layout_row_dynamic(g_context, 25, 1);
+    if (nk_menu_item_label(g_context, g_frame_timing_visible ? "Hide frame timing" : "Frame timing", NK_TEXT_LEFT))
+        g_frame_timing_visible = !g_frame_timing_visible;
     nk_menu_end(g_context);
 }
 
@@ -1147,6 +1151,38 @@ static void render_empty_project_window(const WorkspaceRenderContext& frame) {
     nk_end(g_context);
 }
 
+static void render_frame_timing_overlay(int width, int height) {
+    if (!g_frame_timing_visible) return;
+    const auto timer = worm_ui_frame_timing_view();
+    const float panel_width = std::min(480.0f, static_cast<float>(width));
+    const float panel_height = std::min(340.0f, static_cast<float>(height));
+    if (nk_begin(g_context, "Frame timing",
+                 nk_rect(static_cast<float>(width) - panel_width, 42, panel_width, panel_height),
+                 NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_TITLE)) {
+        const auto frame = timer.frame;
+        nk_layout_row_dynamic(g_context, 22, 1);
+        nk_labelf(g_context, NK_TEXT_LEFT, "Last %zu frames: avg %.3f ms, p99 %.3f ms",
+                  frame.count, frame.average_ms, frame.p99_ms);
+        nk_layout_row_dynamic(g_context, 90, 1);
+        const auto maximum_ms = timer.count == 0 ? 1.0 : std::max(1.0,
+            *std::max_element(timer.frame_ms, timer.frame_ms + timer.count));
+        if (nk_chart_begin(g_context, NK_CHART_LINES, static_cast<int>(timer.count), 0.0f,
+                           static_cast<float>(maximum_ms))) {
+            for (std::size_t i = 0; i < timer.count; ++i)
+                nk_chart_push(g_context, static_cast<float>(timer.frame_ms[i]));
+            nk_chart_end(g_context);
+        }
+        for (std::size_t i = 0; i < WORM_UI_FRAME_TIMING_PHASE_COUNT; ++i) {
+            const auto summary = timer.phases[i];
+            nk_layout_row_dynamic(g_context, 22, 1);
+            if (summary.count == 0) nk_labelf(g_context, NK_TEXT_LEFT, "%s: N/A", timer.phase_names[i]);
+            else nk_labelf(g_context, NK_TEXT_LEFT, "%s: avg %.3f ms, p99 %.3f ms",
+                           timer.phase_names[i], summary.average_ms, summary.p99_ms);
+        }
+    }
+    nk_end(g_context);
+}
+
 static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
     const auto& view = frame.view;
     auto& action = frame.action;
@@ -1232,6 +1268,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
                                           &action);
 
     render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
+    render_frame_timing_overlay(width, height);
     worm_ui_nuklear_render_player_preview(g_context, g_renderer, &view->player_preview, &action,
                                           width, height);
     const bool compose_lane_focused =

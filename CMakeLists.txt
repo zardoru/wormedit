@@ -292,6 +292,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/project_open.cpp
         src/sys/project_save_paths.cpp
         src/sys/main.cpp
+        src/sys/frame_timing.cpp
         src/sys/timing_view.cpp
         src/sys/timing_edit_runtime.cpp
         src/sys/metadata_drop_state.cpp

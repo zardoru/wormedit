@@ -1,3 +1,4 @@
+#include "sys/frame_timing.h"
 #include "sys/application_frame_projection.h"
 
 #include "sys/bmson_waveform_projection.h"
@@ -12,6 +13,7 @@ namespace wormedit::sys {
 
 auto project_application_frame(application_frame_projection_context_t context)
     -> flattened_workspace_t {
+    frame_phase_scope_t frame_projection(frame_phase_t::workspace);
     auto flattened = flatten_workspace(
         context.model, context.history.document, context.status, context.recovery_controller.view(),
         context.recovery_scan_configured, context.stepmania_export_policy);

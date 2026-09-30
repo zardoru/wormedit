@@ -12,6 +12,7 @@
 - Application build directory: `build` (contains `compile_commands.json`, `build/wormedit`, and the frontend tests). Headless-only: `cmake --preset headless`.
 - Build: `cmake --build build`. Run everything: `ctest --test-dir build --output-on-failure`. Filter by prefix: `-R '^core\.'`, `'^frontend-state\.'`, `'^audio\.'`, `'^documentation\.'`.
 - Visual check of the real window: `scripts/smoke-compose-virtual-x.sh /tmp/out.png compose`, then open the PNG.
+- Keep automated visual checks inside isolated Xvfb; do not open test windows on the user's Niri desktop.
 - Never report a test as passing without running it and reading its output.
 
 ## Delegating from Claude to Codex implementers

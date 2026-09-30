@@ -1,3 +1,4 @@
+#include "sys/frame_timing.h"
 #include "sys/compose_view.h"
 #include "sys/compose_resource_presenter.h"
 
@@ -1636,6 +1637,7 @@ std::optional<wormedit::measure_index_t> prepare_compose_chart_view(
     }
     if (!cache.attempted || cache.chart != chart.id ||
         cache.revision != history.document.revision) {
+        frame_phase_scope_t frame_scene_index(frame_phase_t::scene);
         cache.index.reset();
         cache.bgm_rows_by_id.clear();
         cache.hit_test_index.reset();
@@ -2070,8 +2072,10 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
         .excluded_semantic_layers = application_state.excluded_semantic_layer_filters,
         .maximum_grid_lines = WORM_UI_COMPOSE_GRID_CAPACITY,
         .maximum_scene_primitives = WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY};
+    const auto frame_scene_previous = frame_timing().enter(frame_phase_t::scene);
     const auto composed = wormedit::make_editor_field_scene(chart, *cache.index, interaction_view,
                                                             cache.preview_scene_request);
+    frame_timing().restore(frame_scene_previous);
     if (!composed.scene || composed.has_errors()) {
         flattened.compose.status = composed.diagnostics.empty()
                                                ? "The chart field could not be composed."

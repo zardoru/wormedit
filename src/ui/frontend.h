@@ -1520,3 +1520,20 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view);
 WormUiWorkspaceAction worm_ui_frontend_workspace_error(const char* diagnostic);
 void worm_ui_frontend_resource_placed(uint64_t placed_resource_id, uint64_t next_resource_id);
 void worm_ui_frontend_render(int window_width, int window_height);
+
+#define WORM_UI_FRAME_TIMING_CAPACITY 240
+#define WORM_UI_FRAME_TIMING_PHASE_COUNT 6
+typedef struct WormUiFrameTimingStats {
+    size_t count;
+    double average_ms;
+    double p99_ms;
+} WormUiFrameTimingStats;
+typedef struct WormUiFrameTimingView {
+    size_t count;
+    double frame_ms[WORM_UI_FRAME_TIMING_CAPACITY];
+    WormUiFrameTimingStats frame;
+    const char* phase_names[WORM_UI_FRAME_TIMING_PHASE_COUNT];
+    WormUiFrameTimingStats phases[WORM_UI_FRAME_TIMING_PHASE_COUNT];
+} WormUiFrameTimingView;
+// Called only while the frontend's diagnostic overlay is visible.
+WormUiFrameTimingView worm_ui_frame_timing_view(void);

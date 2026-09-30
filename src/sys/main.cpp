@@ -1,3 +1,4 @@
+#include "sys/frame_timing.h"
 #include "wormedit/audio.h"
 #include "wormedit/window.h"
 
@@ -2822,6 +2823,8 @@ int main(int argc, char** argv) {
 #endif
     };
     while (running) {
+        wormedit::sys::frame_timing().begin_frame();
+        wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::events);
         if (!wormedit::sys::poll_frontend_events(
                 window, metadata_drop, workspace, history, asset_base,
                 can_offer_audio_project_drop(session_loaded, fresh_blank_project, history),
@@ -2837,16 +2840,20 @@ int main(int argc, char** argv) {
         tick_loaded_project_autosave(session_loaded, autosave_loop, history,
                                      native_project_loaded, active_project_path,
                                      platform_recovery.path, status);
+        wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::audio);
         wormedit::sys::service_audio_transport_frame(
             history.document, workspace, preview_state, preview_session,
             audition_output, preview_output,
             application_command_state.preview_playhead_absolute_row, status);
+        wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
         waveform_runtime.service(
             history.document, workspace, compose_scene_cache,
             compose_interaction_state ? &*compose_interaction_state : nullptr, status);
 #endif
 
+        wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::workspace);
         cancel_stale_compose_interaction(compose_interaction_state, history, workspace);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         if (workspace.active_tab == wormedit::workspace_tab_t::compose &&
@@ -2909,7 +2916,9 @@ int main(int argc, char** argv) {
             flattened.view.pending_bms_encoding_path = pending_bms_encoding_path.c_str();
             // Projection returns by value; refresh view pointers after any move.
             flattened.rebind_view_pointers();
+            const auto frame_nuklear_previous = wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::nuklear);
             auto action = worm_ui_frontend_compose(&flattened.view);
+            wormedit::sys::frame_timing().restore(frame_nuklear_previous);
             std::optional<std::uint32_t> selected_waveform_sample_rate;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
             if (waveform_runtime.waveform_analysis() &&
@@ -2927,7 +2936,9 @@ int main(int argc, char** argv) {
                 flattened.view.compose.viewport_height_pixels);
         }
 
+        wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::render);
         wormedit::sys::render_application_frame(window);
+        wormedit::sys::frame_timing().end_frame();
     }
 
     resource_copy_runtime.cancel();

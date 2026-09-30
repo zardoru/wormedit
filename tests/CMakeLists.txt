@@ -294,3 +294,19 @@ if(WORMEDIT_ENABLE_LUA)
         DISCOVERY_MODE PRE_TEST
     )
 endif()
+
+if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
+    add_executable(wormedit_frame_timing_tests
+        sys/frame_timing_tests.cpp
+        ../src/sys/frame_timing.cpp
+        ../src/sys/compose_view.cpp
+        ../src/sys/compose_resource_presenter.cpp
+        ../src/sys/workspace_projection.cpp
+    )
+    target_include_directories(wormedit_frame_timing_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/generated")
+    target_link_libraries(wormedit_frame_timing_tests PRIVATE
+        wormedit::core SDL3::SDL3 Catch2::Catch2WithMain)
+    catch_discover_tests(wormedit_frame_timing_tests TEST_PREFIX "frame-timing."
+        PROPERTIES LABELS "unit;sys;performance" DISCOVERY_MODE PRE_TEST)
+endif()

@@ -170,7 +170,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-210 Add waveform detail at high zoom
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** zooming Compose past the base level shows finer detail: a 32-frames-per-bin level is generated on demand for the visible range, and below 1 frame per pixel the waveform draws PCM samples from the decoded block cache.
 - **Read first:** `include/wormedit/audio/waveform.h` (`waveform_level_for_zoom`, `project_waveform`), `src/sys/waveform_analysis_runtime.cpp` (fixed `256`), `include/wormedit/audio/block_cache.h`, `src/sys/waveform_view_projection.cpp`.
 - **Files owned:** `include/wormedit/audio/waveform.h`, `src/audio/waveform.cpp`, `src/sys/waveform_analysis_runtime.cpp/.h`, `src/sys/waveform_view_projection.cpp/.h`, `tests/core/audio_waveform_tests.cpp`, `src/audio/aligned_waveform.cpp`, `include/wormedit/audio/aligned_waveform.h`, `src/sys/application_frame_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp` (visible-range and PCM wiring scope extended by user approval on 2026-09-30).
@@ -180,7 +180,7 @@ Apply the stale-plan check (rule 9) first.
   3. Sample-level path: read the visible block(s) from the cache, emit one polyline point per frame.
 - **Invariants:** memory bounded by the visible range; the frame thread never decodes.
 - **Reject/failure behavior:** while fine data is pending, draw the coarse level.
-- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual zoom check.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^audio\.'` (93/93 passed); parent full suite (849/849 passed, 2026-09-30). Clang-tidy on affected C++ sources: no new complexity warnings. Isolated Xvfb zoom captures inspected: `/tmp/wormedit-t210/visual/base.png` (32-frame detail at approximately 4.59 frames/pixel), `zoom.png` (signed stereo PCM at approximately 0.456 frames/pixel). Added short-source/clipped-end regression so source clipping cannot falsely select the sample path. Logs and incremental patch: `/tmp/wormedit-t210/`.
 - **Out of scope:** spectrograms.
 
 ## T-211 Measure frame time during Ctrl+Space playback

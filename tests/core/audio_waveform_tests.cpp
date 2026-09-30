@@ -1,4 +1,5 @@
 #include <wormedit/audio/waveform.h>
+#include <wormedit/audio/aligned_waveform.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -280,4 +281,186 @@ TEST_CASE("waveform analysis cancellation publishes no partial cache entry",
     CHECK_FALSE(result.waveform.has_value());
     CHECK(waveforms.stats().entries == 0);
     CHECK(blocks.stats().entries == 0);
+}
+
+namespace {
+using namespace wormedit::audio;
+
+auto detail_pcm() -> std::vector<float> {
+    std::vector<float> samples(2048 * output_channel_count, 0.0f);
+    for (std::size_t frame = 512; frame < 544; ++frame) {
+        samples[frame * 2] = 0.75f;
+        samples[frame * 2 + 1] = -0.5f;
+    }
+    return samples;
+}
+
+void check_fine_geometry(const waveform_analysis_result_t& fine) {
+    REQUIRE(fine.waveform);
+    CHECK(fine.waveform->bins.size() == 8);
+    CHECK(fine.waveform->total_frames == 2048);
+}
+
+void check_fine_values(const waveform_projection_result_t& projected) {
+    REQUIRE(projected);
+    CHECK(projected.level_frames_per_bin == 32);
+    CHECK(projected.columns.front().minimum[0] == 0.75f);
+    CHECK(projected.columns.front().maximum[1] == -0.5f);
+}
+
+void check_fine_bounds(const waveform_t& waveform, const waveform_projection_result_t& projected) {
+    CHECK(projected.columns[8].maximum[0] == 0.0f);
+    CHECK(projected.columns.front().begin_frame == 512);
+    CHECK(project_waveform(waveform,
+        {.begin_frame = 0, .end_frame = 256, .pixel_width = 64}).status ==
+        waveform_projection_status_t::invalid_window);
+}
+
+void check_other_range(decoder_t& decoder, decoded_block_cache_t& blocks, waveform_cache_t& cache,
+                       const audio_source_identity_t& source) {
+    const auto other = analyze_waveform(decoder, blocks, cache, source, 32,
+                                       {.begin_frame = 768, .end_frame = 1024});
+    REQUIRE(other.waveform);
+    CHECK(other.status == waveform_analysis_status_t::generated);
+    CHECK(cache.stats().entries == 3);
+}
+
+void check_cancelled_range(decoder_t& decoder, decoded_block_cache_t& blocks, waveform_cache_t& cache,
+                           const audio_source_identity_t& source) {
+    std::stop_source cancelled;
+    cancelled.request_stop();
+    CHECK(analyze_waveform(decoder, blocks, cache, source, 32,
+          {.begin_frame = 1024, .end_frame = 1280}, cancelled.get_token()).status ==
+          waveform_analysis_status_t::cancelled);
+    CHECK(cache.stats().entries == 3);
+}
+
+void check_signed_points(const std::vector<waveform_sample_t>& samples) {
+    REQUIRE(samples.size() == 2);
+    CHECK(samples.front().frame == 1);
+    CHECK(samples.front().samples[0] == -0.75f);
+    CHECK(samples.front().samples[1] == 0.125f);
+}
+
+void check_missing_points(decoded_block_cache_t& blocks, const audio_source_identity_t& source) {
+    CHECK_FALSE(project_cached_waveform_samples(blocks, source, 1, 4));
+    CHECK_FALSE(project_cached_waveform_samples(blocks, {"generated:samples", "pcm:v2"}, 1, 3));
+    CHECK_FALSE(project_cached_waveform_samples(blocks, source, 0, 3, 2));
+    blocks.clear();
+    CHECK_FALSE(project_cached_waveform_samples(blocks, source, 1, 3));
+}
+
+auto detail_timing() -> wormedit::timing_index_t {
+    wormedit::timing_index_t timing;
+    timing.divisions_per_standard_measure = 960;
+    timing.total_rows = 960;
+    timing.rows = {{.absolute_row = 0, .before_delays_seconds = {0, 1},
+        .event_seconds = {0, 1}, .after_stops_seconds = {0, 1}, .effective_bpm = {120, 1}},
+        {.absolute_row = 960, .before_delays_seconds = {2, 1}, .event_seconds = {2, 1},
+         .after_stops_seconds = {2, 1}, .effective_bpm = {120, 1}}};
+    timing.segments = {{.begin_row = 0, .end_row = 960, .begin_seconds = {0, 1},
+        .end_seconds = {2, 1}, .effective_bpm = {120, 1}}};
+    return timing;
+}
+
+void check_detail_window(const waveform_t& waveform, const wormedit::timing_index_t& timing,
+                         aligned_waveform_request_t request) {
+    const auto window = aligned_waveform_window(waveform, timing, request);
+    REQUIRE(window);
+    CHECK(window->end_frame - window->begin_frame <= 5);
+    CHECK(window->frames_per_pixel < 1.0);
+}
+
+void check_aligned_samples(const aligned_waveform_result_t& projected) {
+    REQUIRE(projected);
+    REQUIRE_FALSE(projected.rows.empty());
+    CHECK(projected.rows.front().sample_point);
+    CHECK(projected.rows.front().samples[0] == -0.75f);
+}
+
+void check_aligned_sample_bounds(const aligned_waveform_result_t& projected) {
+    CHECK(projected.rows.front().samples[1] == 0.25f);
+    CHECK(projected.rows.front().y_pixels >= 0.0);
+    CHECK(projected.rows.back().y_pixels < 8.0);
+}
+
+void check_aligned_fallback(const waveform_t& waveform, const wormedit::timing_index_t& timing,
+                            aligned_waveform_request_t request, decoded_block_cache_t& blocks) {
+    blocks.clear();
+    CHECK_FALSE(project_aligned_waveform_samples(waveform, timing, request, blocks));
+    CHECK(project_aligned_waveform(waveform, timing, request));
+}
+} // namespace
+
+TEST_CASE("visible fine waveform preserves frame coordinates and isolates range cache keys",
+          "[unit][audio][waveform][detail]") {
+    using namespace wormedit::audio;
+    decoder_t decoder;
+    REQUIRE(decoder.open_pcm(detail_pcm()));
+    decoded_block_cache_t blocks;
+    waveform_cache_t cache;
+    const audio_source_identity_t source{"generated:detail", "pcm:v1"};
+    REQUIRE(analyze_waveform(decoder, blocks, cache, source, 256).waveform);
+    const auto fine = analyze_waveform(decoder, blocks, cache, source, 32,
+                                      {.begin_frame = 512, .end_frame = 768});
+    check_fine_geometry(fine);
+    const auto projected = project_waveform(*fine.waveform,
+        {.begin_frame = 512, .end_frame = 768, .pixel_width = 64});
+    check_fine_values(projected);
+    check_fine_bounds(*fine.waveform, projected);
+    check_other_range(decoder, blocks, cache, source);
+    check_cancelled_range(decoder, blocks, cache, source);
+}
+
+TEST_CASE("sample waveform projection reads signed visible PCM and falls back on cache misses",
+          "[unit][audio][waveform][detail]") {
+    using namespace wormedit::audio;
+    decoded_block_cache_t blocks;
+    const audio_source_identity_t source{"generated:samples", "pcm:v1"};
+    const std::vector<float> pcm{0.25f, -0.5f, -0.75f, 0.125f, 0.5f, -0.25f};
+    REQUIRE(blocks.store({source, 0}, 3, pcm) == block_store_status_t::stored);
+    const auto samples = project_cached_waveform_samples(blocks, source, 1, 3);
+    REQUIRE(samples);
+    check_signed_points(*samples);
+    check_missing_points(blocks, source);
+}
+
+TEST_CASE("aligned high zoom uses fractional musical rows and signed sample points",
+          "[unit][audio][waveform][detail]") {
+    using namespace wormedit::audio;
+    std::vector<float> pcm(64 * 2, 0.0f);
+    pcm[2] = -0.75f;
+    pcm[3] = 0.25f;
+    decoder_t decoder;
+    REQUIRE(decoder.open_pcm(pcm));
+    decoded_block_cache_t blocks;
+    waveform_cache_t cache;
+    const auto analysis = analyze_waveform(decoder, blocks, cache,
+        {"generated:aligned-detail", "pcm:v1"}, 32);
+    REQUIRE(analysis.waveform);
+    const auto timing = detail_timing();
+    const aligned_waveform_request_t request{.viewport_scroll_pixels = 2,
+        .viewport_height_pixels = 8, .pixels_per_standard_measure = 176400};
+    check_detail_window(*analysis.waveform, timing, request);
+    const auto projected = project_aligned_waveform_samples(*analysis.waveform, timing, request, blocks);
+    check_aligned_samples(projected);
+    check_aligned_sample_bounds(projected);
+    check_aligned_fallback(*analysis.waveform, timing, request, blocks);
+}
+
+TEST_CASE("short sources and clipped chart ends retain the actual waveform zoom scale",
+          "[unit][audio][waveform][detail]") {
+    using namespace wormedit::audio;
+    waveform_t waveform;
+    waveform.sample_rate = output_sample_rate;
+    waveform.total_frames = 64;
+    const auto timing = detail_timing();
+    const aligned_waveform_request_t coarse{.viewport_height_pixels = 800,
+        .pixels_per_standard_measure = 192};
+    const auto window = aligned_waveform_window(waveform, timing, coarse);
+    REQUIRE(window);
+    CHECK(window->end_frame == 64);
+    CHECK(window->frames_per_pixel > 400.0);
+    decoded_block_cache_t blocks;
+    CHECK_FALSE(project_aligned_waveform_samples(waveform, timing, coarse, blocks));
 }

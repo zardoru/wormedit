@@ -24,6 +24,26 @@ auto frame_at(signed_rational_t seconds, std::uint32_t sample_rate, std::uint64_
     return std::min(*frame.frame, total_frames);
 }
 
+auto frame_at_fractional_row(const waveform_t& waveform, const timing_index_t& timing,
+                             long double row, bool end) -> std::optional<long double> {
+    const auto floor_row = static_cast<std::uint64_t>(std::floor(row));
+    const auto fraction = row - floor_row;
+    const auto before = timing_at(timing, floor_row,
+        fraction == 0.0L && !end ? timing_boundary_side_t::before_delays
+                                : timing_boundary_side_t::after_stops);
+    if (!before || !before.seconds) return std::nullopt;
+    auto seconds = static_cast<long double>(before.seconds->numerator) / before.seconds->denominator;
+    if (fraction != 0.0L) {
+        const auto after = timing_at(timing, floor_row + 1U, timing_boundary_side_t::before_delays);
+        if (!after || !after.seconds) return std::nullopt;
+        const auto next = static_cast<long double>(after.seconds->numerator) / after.seconds->denominator;
+        seconds += (next - seconds) * fraction;
+    }
+    const auto frame = seconds * waveform.sample_rate;
+    if (!std::isfinite(frame)) return std::nullopt;
+    return end ? std::ceil(frame) : std::floor(frame);
+}
+
 struct aligned_row_context_t {
     const waveform_t& waveform;
     const timing_index_t& timing;
@@ -65,6 +85,61 @@ auto accumulate_column(aligned_waveform_row_t& row, const waveform_column_t& col
 
 } // namespace
 
+auto aligned_waveform_window(const waveform_t& waveform, const timing_index_t& timing,
+    aligned_waveform_request_t request) -> std::optional<aligned_waveform_window_t> {
+    if (!std::isfinite(request.viewport_scroll_pixels) ||
+        !std::isfinite(request.viewport_height_pixels) ||
+        !std::isfinite(request.pixels_per_standard_measure) ||
+        request.viewport_height_pixels <= 0 || request.pixels_per_standard_measure <= 0 ||
+        timing.divisions_per_standard_measure == 0 || timing.total_rows == 0 ||
+        waveform.sample_rate == 0 || waveform.total_frames == 0) return std::nullopt;
+    const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
+                                request.pixels_per_standard_measure;
+    const auto first = std::clamp(request.viewport_scroll_pixels * rows_per_pixel,
+                                 0.0L, static_cast<long double>(timing.total_rows));
+    const auto last = std::clamp((request.viewport_scroll_pixels + request.viewport_height_pixels) *
+                                rows_per_pixel, 0.0L, static_cast<long double>(timing.total_rows));
+    if (first >= last) return std::nullopt;
+    const auto begin = frame_at_fractional_row(waveform, timing, first, false);
+    const auto end = frame_at_fractional_row(waveform, timing, last, true);
+    if (!begin || !end || *begin >= *end) return std::nullopt;
+    const auto clipped_begin = static_cast<std::uint64_t>(std::clamp(*begin,
+        0.0L, static_cast<long double>(waveform.total_frames)));
+    const auto clipped_end = static_cast<std::uint64_t>(std::clamp(*end,
+        0.0L, static_cast<long double>(waveform.total_frames)));
+    if (clipped_begin >= clipped_end) return std::nullopt;
+    const auto visible_pixels = (last - first) / rows_per_pixel;
+    return aligned_waveform_window_t{clipped_begin, clipped_end,
+        static_cast<double>((*end - *begin) / visible_pixels)};
+}
+
+auto project_aligned_waveform_samples(const waveform_t& waveform, const timing_index_t& timing,
+    aligned_waveform_request_t request, decoded_block_cache_t& cache) -> aligned_waveform_result_t {
+    aligned_waveform_result_t result;
+    const auto window = aligned_waveform_window(waveform, timing, request);
+    if (!window || window->frames_per_pixel >= 1.0 || request.maximum_rows == 0 ||
+        request.maximum_rows > maximum_aligned_waveform_rows) return result;
+    const auto samples = project_cached_waveform_samples(cache, waveform.key.source,
+        window->begin_frame, window->end_frame, request.maximum_rows);
+    if (!samples) return result;
+    const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
+                               request.pixels_per_standard_measure;
+    for (const auto& sample : *samples) {
+        if (sample.frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
+            return result;
+        const auto musical = musical_position_at(timing,
+            {static_cast<std::int64_t>(sample.frame), waveform.sample_rate});
+        if (!musical || !musical.absolute_row) return result;
+        const auto y = static_cast<long double>(musical.absolute_row->numerator) /
+                       musical.absolute_row->denominator / rows_per_pixel - request.viewport_scroll_pixels;
+        if (y >= 0 && y < request.viewport_height_pixels)
+            result.rows.push_back({.y_pixels = static_cast<double>(y), .sample_point = true,
+                                   .samples = sample.samples});
+    }
+    result.status = aligned_waveform_status_t::projected;
+    return result;
+}
+
 auto project_aligned_waveform(const waveform_t& waveform, const timing_index_t& timing,
                               aligned_waveform_request_t request) -> aligned_waveform_result_t {
     aligned_waveform_result_t result;
@@ -94,40 +169,12 @@ auto project_aligned_waveform(const waveform_t& waveform, const timing_index_t& 
     const auto height = static_cast<std::size_t>(std::ceil(request.viewport_height_pixels));
     const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
                                 request.pixels_per_standard_measure;
-    const auto first_row = std::clamp(
-        std::floor(static_cast<long double>(request.viewport_scroll_pixels) * rows_per_pixel), 0.0L,
-        static_cast<long double>(timing.total_rows));
-    const auto last_row =
-        std::clamp(std::ceil((static_cast<long double>(request.viewport_scroll_pixels) +
-                              request.viewport_height_pixels) *
-                             rows_per_pixel),
-                   0.0L, static_cast<long double>(timing.total_rows));
     result.status = aligned_waveform_status_t::projected;
-    if (first_row >= last_row) {
-        return result;
-    }
-    const auto begin_time = timing_at(timing, static_cast<std::uint64_t>(first_row),
-                                      timing_boundary_side_t::before_delays);
-    const auto end_time = timing_at(timing, static_cast<std::uint64_t>(last_row),
-                                    timing_boundary_side_t::after_stops);
-    if (!begin_time || !end_time) {
-        result.status = aligned_waveform_status_t::invalid_timing;
-        return result;
-    }
-    const auto begin = frame_at(*begin_time.seconds, waveform.sample_rate, waveform.total_frames,
-                                sample_rounding_t::floor);
-    const auto end = frame_at(*end_time.seconds, waveform.sample_rate, waveform.total_frames,
-                              sample_rounding_t::ceil);
-    if (!begin || !end) {
-        result.status = aligned_waveform_status_t::invalid_timing;
-        return result;
-    }
-    if (*begin >= *end) {
-        return result;
-    }
+    const auto window = aligned_waveform_window(waveform, timing, request);
+    if (!window) return result;
     const auto projection = project_waveform(
-        waveform, {.begin_frame = *begin,
-                   .end_frame = *end,
+        waveform, {.begin_frame = window->begin_frame,
+                   .end_frame = window->end_frame,
                    .pixel_width = std::min(height * 2U, maximum_aligned_waveform_rows),
                    .maximum_columns = maximum_aligned_waveform_rows});
     if (!projection) {

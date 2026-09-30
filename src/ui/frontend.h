@@ -415,6 +415,8 @@ typedef struct WormUiComposeWaveformRowView {
     double y_pixels;
     float absolute_peak[2];
     float rms[2];
+    bool sample_point;
+    float samples[2];
 } WormUiComposeWaveformRowView;
 
 typedef struct WormUiComposeWaveformOverviewRowView {

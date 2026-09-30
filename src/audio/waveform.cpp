@@ -159,14 +159,24 @@ auto valid_bins(std::span<const waveform_bin_t> bins, std::uint64_t total_frames
     return accounted_frames == total_frames;
 }
 
+auto waveform_end(const waveform_t& waveform) -> std::uint64_t {
+    return waveform.key.end_frame == 0 ? waveform.total_frames : waveform.key.end_frame;
+}
+
+auto waveform_frames(const waveform_t& waveform) -> std::uint64_t {
+    const auto end = waveform_end(waveform);
+    return end <= waveform.total_frames && waveform.key.begin_frame < end
+               ? end - waveform.key.begin_frame : 0;
+}
+
 auto valid_waveform_geometry(const waveform_t& waveform) -> bool {
     if (!valid_source(waveform.key.source) || waveform.key.frames_per_bin == 0 ||
-        waveform.sample_rate != output_sample_rate || waveform.total_frames == 0 ||
+        waveform.sample_rate != output_sample_rate || waveform_frames(waveform) == 0 ||
         waveform.bins.empty()) {
         return false;
     }
     auto frames_per_bin = static_cast<std::uint64_t>(waveform.key.frames_per_bin);
-    auto expected_bins = 1U + (waveform.total_frames - 1U) / frames_per_bin;
+    auto expected_bins = 1U + (waveform_frames(waveform) - 1U) / frames_per_bin;
     if (expected_bins != waveform.bins.size()) {
         return false;
     }
@@ -175,7 +185,7 @@ auto valid_waveform_geometry(const waveform_t& waveform) -> bool {
             return false;
         }
         frames_per_bin *= 2U;
-        expected_bins = 1U + (waveform.total_frames - 1U) / frames_per_bin;
+        expected_bins = 1U + (waveform_frames(waveform) - 1U) / frames_per_bin;
         if (level.frames_per_bin != frames_per_bin || level.bins.size() != expected_bins) {
             return false;
         }
@@ -189,7 +199,7 @@ auto valid_waveform(const waveform_t& waveform, std::size_t maximum_bins) -> boo
         waveform.bins.size() > maximum_bins) {
         return false;
     }
-    if (!valid_bins(waveform.bins, waveform.total_frames, waveform.key.frames_per_bin)) {
+    if (!valid_bins(waveform.bins, waveform_frames(waveform), waveform.key.frames_per_bin)) {
         return false;
     }
     auto prior_frames_per_bin = static_cast<std::uint64_t>(waveform.key.frames_per_bin);
@@ -198,7 +208,7 @@ auto valid_waveform(const waveform_t& waveform, std::size_t maximum_bins) -> boo
         if (prior_frames_per_bin > std::numeric_limits<std::uint64_t>::max() / 2U ||
             level.frames_per_bin != prior_frames_per_bin * 2U ||
             level.bins.size() != (prior_bin_count + 1U) / 2U ||
-            !valid_bins(level.bins, waveform.total_frames, level.frames_per_bin)) {
+            !valid_bins(level.bins, waveform_frames(waveform), level.frames_per_bin)) {
             return false;
         }
         prior_frames_per_bin = level.frames_per_bin;
@@ -270,41 +280,39 @@ auto read_analysis_block(waveform_analysis_work_t& work, std::uint64_t block_ind
 
 auto accumulate_analysis_block(const decoded_audio_block_t& block, std::uint64_t& visited_frames,
                                waveform_analysis_work_t& work) -> void {
-    for (std::size_t frame = 0; frame < block.frame_count; ++frame) {
-        const auto global_frame = visited_frames + frame;
-        const auto bin_index = static_cast<std::size_t>(global_frame / work.frames_per_bin);
+    const auto block_begin = block.key.block_index * maximum_read_frames;
+    const auto first = std::max(block_begin, work.waveform.key.begin_frame);
+    const auto end = std::min(block_begin + block.frame_count, waveform_end(work.waveform));
+    for (auto global_frame = first; global_frame < end; ++global_frame) {
+        const auto frame = static_cast<std::size_t>(global_frame - block_begin);
+        const auto bin_index = static_cast<std::size_t>(
+            (global_frame - work.waveform.key.begin_frame) / work.frames_per_bin);
         auto& bin = work.waveform.bins[bin_index];
         ++bin.frame_count;
+        ++visited_frames;
         for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
             const auto sample = block.interleaved_stereo[frame * output_channel_count + channel];
             bin.minimum[channel] = std::min(bin.minimum[channel], sample);
             bin.maximum[channel] = std::max(bin.maximum[channel], sample);
             bin.absolute_peak[channel] = std::max(bin.absolute_peak[channel], std::abs(sample));
-            work.square_sums[bin_index][channel] +=
-                static_cast<double>(sample) * static_cast<double>(sample);
+            work.square_sums[bin_index][channel] += static_cast<double>(sample) * sample;
         }
     }
-    visited_frames += block.frame_count;
 }
 
 auto decode_analysis_blocks(waveform_analysis_work_t& work) -> waveform_analysis_result_t {
-    const auto block_count =
-        1U + (work.stream_info.output_frame_count - 1U) / maximum_read_frames;
+    const auto first_block = work.waveform.key.begin_frame / maximum_read_frames;
+    const auto last_block = (waveform_end(work.waveform) - 1U) / maximum_read_frames;
     std::uint64_t visited_frames{};
-    for (std::uint64_t index = 0; index < block_count; ++index) {
-        if (work.stop.stop_requested()) {
-            return {.status = waveform_analysis_status_t::cancelled};
-        }
+    for (auto index = first_block; index <= last_block; ++index) {
+        if (work.stop.stop_requested()) return {.status = waveform_analysis_status_t::cancelled};
         waveform_analysis_result_t failure;
         auto block = read_analysis_block(work, index, failure);
-        if (!block.has_value()) {
-            return failure;
-        }
+        if (!block) return failure;
         accumulate_analysis_block(*block, visited_frames, work);
     }
-    if (visited_frames != work.stream_info.output_frame_count) {
+    if (visited_frames != waveform_frames(work.waveform))
         return {.status = waveform_analysis_status_t::decode_failed};
-    }
     return {.status = waveform_analysis_status_t::generated};
 }
 
@@ -495,14 +503,15 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
                       waveform_cache_t& waveform_cache, audio_source_identity_t source,
                       std::uint32_t frames_per_bin, waveform_analysis_options_t options,
                       std::stop_token stop) -> waveform_analysis_result_t {
-    const waveform_key_t key{.source = std::move(source), .frames_per_bin = frames_per_bin};
+    const waveform_key_t key{.source = std::move(source), .frames_per_bin = frames_per_bin,
+                             .begin_frame = options.begin_frame, .end_frame = options.end_frame};
     if (!valid_source(key.source) || frames_per_bin == 0) {
         return {.status = waveform_analysis_status_t::invalid_request};
     }
     if (stop.stop_requested()) {
         return {.status = waveform_analysis_status_t::cancelled};
     }
-    if (auto cached = waveform_cache.find(key); cached.has_value()) {
+    if (auto cached = waveform_cache.find(key); cached && !options.require_cached_pcm) {
         return {.status = waveform_analysis_status_t::cache_hit, .waveform = std::move(cached)};
     }
 
@@ -510,7 +519,10 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
     if (!info.has_value()) {
         return {.status = waveform_analysis_status_t::decoder_unavailable};
     }
-    const auto count = expected_bin_count(info->output_frame_count, frames_per_bin);
+    const auto end = key.end_frame == 0 ? info->output_frame_count : key.end_frame;
+    if (key.begin_frame >= end || end > info->output_frame_count)
+        return {.status = waveform_analysis_status_t::invalid_request};
+    const auto count = expected_bin_count(end - key.begin_frame, frames_per_bin);
     const auto bytes = count.has_value() && *count <= std::numeric_limits<std::size_t>::max()
                            ? bins_bytes(static_cast<std::size_t>(*count))
                            : std::nullopt;
@@ -559,6 +571,31 @@ auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
             .waveform = std::move(work.waveform)};
 }
 
+auto project_cached_waveform_samples(decoded_block_cache_t& cache,
+    const audio_source_identity_t& source, std::uint64_t begin_frame, std::uint64_t end_frame,
+    std::size_t maximum_samples) -> std::optional<std::vector<waveform_sample_t>> {
+    if (begin_frame >= end_frame || end_frame - begin_frame > maximum_samples ||
+        maximum_samples > maximum_waveform_projection_columns) return std::nullopt;
+    std::vector<waveform_sample_t> points;
+    points.reserve(static_cast<std::size_t>(end_frame - begin_frame));
+    const auto first = begin_frame / maximum_read_frames;
+    const auto last = (end_frame - 1U) / maximum_read_frames;
+    for (auto index = first; index <= last; ++index) {
+        const auto found = cache.with_block({source, index}, [&](const decoded_audio_block_t& block) {
+            const auto block_begin = index * maximum_read_frames;
+            const auto end = std::min(end_frame, block_begin + block.frame_count);
+            for (auto frame = std::max(begin_frame, block_begin); frame < end; ++frame) {
+                const auto offset = static_cast<std::size_t>(frame - block_begin) * output_channel_count;
+                points.push_back({frame, {block.interleaved_stereo[offset],
+                                         block.interleaved_stereo[offset + 1U]}});
+            }
+        });
+        if (!found) return std::nullopt;
+    }
+    if (points.size() != end_frame - begin_frame) return std::nullopt;
+    return points;
+}
+
 auto waveform_level_for_zoom(const waveform_t& waveform, double source_frames_per_pixel)
     -> std::optional<waveform_level_view_t> {
     if (!std::isfinite(source_frames_per_pixel) || source_frames_per_pixel <= 0.0 ||
@@ -587,7 +624,8 @@ auto project_waveform(const waveform_t& waveform, waveform_projection_request_t 
     if (!valid_waveform_geometry(waveform)) {
         return {.status = waveform_projection_status_t::invalid_waveform};
     }
-    if (request.begin_frame >= request.end_frame || request.end_frame > waveform.total_frames ||
+    if (request.begin_frame >= request.end_frame ||
+        request.begin_frame < waveform.key.begin_frame || request.end_frame > waveform_end(waveform) ||
         request.pixel_width == 0) {
         return {.status = waveform_projection_status_t::invalid_window};
     }
@@ -626,8 +664,8 @@ auto project_waveform(const waveform_t& waveform, waveform_projection_request_t 
         column.maximum.fill(-std::numeric_limits<float>::infinity());
         std::array<double, output_channel_count> weighted_squares{};
         double weighted_frames{};
-        const auto first_bin = begin_frame / level->frames_per_bin;
-        const auto last_bin = (end_frame - 1U) / level->frames_per_bin;
+        const auto first_bin = (begin_frame - waveform.key.begin_frame) / level->frames_per_bin;
+        const auto last_bin = (end_frame - 1U - waveform.key.begin_frame) / level->frames_per_bin;
         for (auto bin_index = first_bin; bin_index <= last_bin; ++bin_index) {
             const auto& bin = level->bins[static_cast<std::size_t>(bin_index)];
             if (!valid_bin(bin, level->frames_per_bin)) {

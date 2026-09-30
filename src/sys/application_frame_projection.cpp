@@ -97,11 +97,23 @@ auto project_application_frame(application_frame_projection_context_t context)
         context.waveform_runtime.waveform_asset() == context.workspace.transport.audio_asset
             ? context.waveform_runtime.waveform_analysis().get()
             : nullptr;
+    std::optional<audio::aligned_waveform_window_t> detail_window;
+    if (compose_waveform_analysis && compose_waveform_analysis->waveform &&
+        context.compose_scene_cache.marker_timing_index && context.compose_interaction_state &&
+        flattened.view.compose.visible && flattened.view.compose.scene_available) {
+        detail_window = audio::aligned_waveform_window(*compose_waveform_analysis->waveform,
+            *context.compose_scene_cache.marker_timing_index,
+            {.viewport_scroll_pixels = context.compose_interaction_state->viewport_scroll_pixels,
+             .viewport_height_pixels = flattened.view.compose.viewport_height_pixels,
+             .pixels_per_standard_measure = flattened.view.compose.pixels_per_standard_measure});
+    }
+    context.waveform_runtime.service_compose_detail(context.workspace.transport.audio_asset, detail_window);
     const bool compose_waveform_overview_available = populate_compose_waveform_projection(
         flattened, context.compose_scene_cache, compose_waveform_analysis,
         context.waveform_runtime.waveform_job().busy(),
         context.workspace.transport.audio_asset.has_value(),
-        context.compose_interaction_state ? &*context.compose_interaction_state : nullptr);
+        context.compose_interaction_state ? &*context.compose_interaction_state : nullptr,
+        context.waveform_runtime.detail_analysis().get(), &context.waveform_runtime.decoded_blocks());
     populate_compose_waveform_overlays(
         compose_waveform_overview_available, flattened, context.history, context.workspace,
         context.compose_scene_cache,

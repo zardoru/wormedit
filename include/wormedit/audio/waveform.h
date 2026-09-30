@@ -18,6 +18,9 @@ namespace wormedit::audio {
 struct waveform_key_t {
     audio_source_identity_t source;
     std::uint32_t frames_per_bin{};
+    std::uint64_t begin_frame{};
+    // Zero means the complete source; otherwise bins cover this exclusive end.
+    std::uint64_t end_frame{};
 
     auto operator==(const waveform_key_t&) const -> bool = default;
 };
@@ -120,6 +123,9 @@ struct waveform_analysis_options_t {
     std::size_t parallel_minimum_bins{16'384};
     std::size_t maximum_parallel_workers{4};
     std::size_t parallel_partition_alignment_bytes{64};
+    std::uint64_t begin_frame{};
+    std::uint64_t end_frame{};
+    bool require_cached_pcm{};
 };
 
 // Waveform peaks are derived analysis and therefore have their own bounded LRU;
@@ -175,6 +181,16 @@ struct waveform_analysis_result_t {
                                     audio_source_identity_t source, std::uint32_t frames_per_bin,
                                     waveform_analysis_options_t options = {},
                                     std::stop_token stop = {}) -> waveform_analysis_result_t;
+
+struct waveform_sample_t {
+    std::uint64_t frame{};
+    std::array<float, output_channel_count> samples{};
+};
+
+// Cache-only: missing PCM returns no partial polyline and never invokes a decoder.
+[[nodiscard]] auto project_cached_waveform_samples(decoded_block_cache_t& cache,
+    const audio_source_identity_t& source, std::uint64_t begin_frame, std::uint64_t end_frame,
+    std::size_t maximum_samples = 4'096) -> std::optional<std::vector<waveform_sample_t>>;
 
 // Chooses the cached level closest to one RMS/peak bucket per screen pixel.
 // Values finer than the base level select the base; sample-level rendering can

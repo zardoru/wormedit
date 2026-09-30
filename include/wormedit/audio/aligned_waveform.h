@@ -20,10 +20,22 @@ struct aligned_waveform_request_t {
     std::size_t maximum_rows{maximum_aligned_waveform_rows};
 };
 
+struct aligned_waveform_window_t {
+    std::uint64_t begin_frame{};
+    std::uint64_t end_frame{};
+    double frames_per_pixel{};
+};
+
+[[nodiscard]] auto aligned_waveform_window(const waveform_t& waveform,
+    const timing_index_t& timing, aligned_waveform_request_t request)
+    -> std::optional<aligned_waveform_window_t>;
+
 struct aligned_waveform_row_t {
     double y_pixels{};
     std::array<float, output_channel_count> absolute_peak{};
     std::array<float, output_channel_count> rms{};
+    bool sample_point{};
+    std::array<float, output_channel_count> samples{};
 };
 
 enum class aligned_waveform_status_t {
@@ -63,6 +75,10 @@ struct waveform_overview_result_t {
 [[nodiscard]] auto project_waveform_overview(
     const waveform_t& waveform, const timing_index_t& timing, aligned_waveform_request_t viewport,
     std::size_t maximum_rows = maximum_waveform_overview_rows) -> waveform_overview_result_t;
+
+[[nodiscard]] auto project_aligned_waveform_samples(const waveform_t& waveform,
+    const timing_index_t& timing, aligned_waveform_request_t request, decoded_block_cache_t& cache)
+    -> aligned_waveform_result_t;
 
 // Projects normalized source peaks through the exact chart timing inverse onto
 // the shared vertical musical viewport. It reads only derived waveform data.

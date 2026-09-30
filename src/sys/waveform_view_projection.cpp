@@ -60,7 +60,9 @@ auto populate_compose_waveform_projection(
     flattened_workspace_t& flattened, compose_scene_cache_t& cache,
     const wormedit::audio::waveform_analysis_result_t* analysis, bool analysis_pending,
     bool has_selected_audio_asset,
-    const wormedit::editor_interaction_state_t* interaction_state) -> bool {
+    const wormedit::editor_interaction_state_t* interaction_state,
+    const audio::waveform_analysis_result_t* detail_analysis,
+    audio::decoded_block_cache_t* decoded_blocks) -> bool {
     cache.waveform_overview_total_frames = 0;
     cache.waveform_overview_sample_rate = 0;
     auto& compose = flattened.view.compose;
@@ -73,12 +75,24 @@ auto populate_compose_waveform_projection(
         return false;
 
     const auto& waveform = *analysis->waveform;
-    const auto aligned = wormedit::audio::project_aligned_waveform(
-        waveform, *cache.marker_timing_index,
-        {.viewport_scroll_pixels = interaction_state->viewport_scroll_pixels,
-         .viewport_height_pixels = compose.viewport_height_pixels,
-         .pixels_per_standard_measure = compose.pixels_per_standard_measure,
-         .maximum_rows = WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY});
+    const audio::aligned_waveform_request_t request{
+        .viewport_scroll_pixels = interaction_state->viewport_scroll_pixels,
+        .viewport_height_pixels = compose.viewport_height_pixels,
+        .pixels_per_standard_measure = compose.pixels_per_standard_measure,
+        .maximum_rows = WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY};
+    const auto window = audio::aligned_waveform_window(waveform, *cache.marker_timing_index, request);
+    const auto* selected_waveform = &waveform;
+    if (window && detail_analysis && detail_analysis->waveform &&
+        detail_analysis->waveform->key.source == waveform.key.source &&
+        detail_analysis->waveform->key.begin_frame <= window->begin_frame &&
+        detail_analysis->waveform->key.end_frame >= window->end_frame)
+        selected_waveform = &*detail_analysis->waveform;
+    auto aligned = decoded_blocks
+        ? audio::project_aligned_waveform_samples(waveform, *cache.marker_timing_index,
+                                                  request, *decoded_blocks)
+        : audio::aligned_waveform_result_t{};
+    if (!aligned || aligned.rows.empty())
+        aligned = audio::project_aligned_waveform(*selected_waveform, *cache.marker_timing_index, request);
     if (aligned) {
         flattened.compose.waveform.row.reserve(aligned.rows.size());
         for (const auto& row : aligned.rows) {
@@ -88,6 +102,8 @@ auto populate_compose_waveform_projection(
                                   std::clamp(row.absolute_peak[1], 0.0f, 1.0f)},
                 .rms = {std::clamp(row.rms[0], 0.0f, 1.0f),
                         std::clamp(row.rms[1], 0.0f, 1.0f)},
+                .sample_point = row.sample_point,
+                .samples = {row.samples[0], row.samples[1]},
             });
         }
         compose.waveform_rows = flattened.compose.waveform.row.data();

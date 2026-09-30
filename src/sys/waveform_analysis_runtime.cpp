@@ -11,7 +11,8 @@ namespace wormedit::sys::runtime {
 waveform_analysis_t::waveform_analysis_t(audio::decoded_source_registry_t& sources)
     : sources_(sources),
       waveform_job_(sources_, decoded_blocks_, waveform_cache_, scheduler_),
-      channel_waveform_job_(sources_, decoded_blocks_, waveform_cache_, scheduler_) {}
+      channel_waveform_job_(sources_, decoded_blocks_, waveform_cache_, scheduler_),
+      detail_job_(sources_, decoded_blocks_, waveform_cache_, scheduler_) {}
 
 void waveform_analysis_t::reset_sources() {
     waveform_job_.cancel();
@@ -20,6 +21,10 @@ void waveform_analysis_t::reset_sources() {
     channel_waveform_job_.cancel();
     channel_waveform_job_asset_.reset();
     channel_waveform_analysis_.reset();
+    detail_job_.cancel();
+    detail_asset_.reset();
+    detail_key_.reset();
+    detail_analysis_.reset();
     decoded_blocks_.clear();
     waveform_cache_.clear();
 }
@@ -59,6 +64,39 @@ void waveform_analysis_t::service_workspace_waveform(
         }
     }
 
+}
+
+void waveform_analysis_t::service_compose_detail(
+    std::optional<asset_id_t> asset, std::optional<audio::aligned_waveform_window_t> window) {
+    const auto binding = asset ? sources_.binding(*asset) : std::nullopt;
+    if (!binding || !window || window->frames_per_pixel >= 256.0 ||
+        window->end_frame - window->begin_frame > audio::maximum_waveform_projection_columns) {
+        detail_job_.cancel();
+        detail_asset_.reset();
+        detail_key_.reset();
+        detail_analysis_.reset();
+        return;
+    }
+    const audio::waveform_key_t key{binding->source, 32, window->begin_frame, window->end_frame};
+    if (detail_key_ != key || detail_asset_ != asset) {
+        detail_job_.cancel();
+        detail_analysis_.reset();
+        detail_key_ = key;
+        detail_asset_ = asset;
+    }
+    if (const auto completed = detail_job_.poll(); completed && completed->asset == asset &&
+        completed->analysis && completed->analysis->waveform &&
+        completed->analysis->waveform->key == key) {
+        detail_analysis_ = completed->analysis;
+    }
+    const bool pcm_missing = window->frames_per_pixel < 1.0 &&
+        !audio::project_cached_waveform_samples(decoded_blocks_, key.source,
+            key.begin_frame, key.end_frame, audio::maximum_aligned_waveform_rows);
+    if (detail_job_.busy() || (detail_analysis_ && !pcm_missing)) return;
+    const auto started = detail_job_.request(*asset, 32,
+        {.begin_frame = key.begin_frame, .end_frame = key.end_frame,
+         .require_cached_pcm = window->frames_per_pixel < 1.0});
+    (void)started; // A busy bounded scheduler retries next frame and retains coarse rendering.
 }
 
 auto waveform_analysis_t::selected_channel_asset(

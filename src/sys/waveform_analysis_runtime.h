@@ -6,6 +6,7 @@
 
 #include <wormedit/audio/source_registry.h>
 #include <wormedit/audio/waveform.h>
+#include <wormedit/audio/aligned_waveform.h>
 #include <wormedit/audio/waveform_job.h>
 #include <wormedit/core/document.h>
 #include <wormedit/core/workspace.h>
@@ -31,6 +32,16 @@ public:
                  compose_scene_cache_t& compose_scene_cache,
                  const editor_interaction_state_t* compose_interaction_state,
                  std::string& status);
+
+    void service_compose_detail(std::optional<asset_id_t> asset,
+                                std::optional<audio::aligned_waveform_window_t> window);
+    [[nodiscard]] auto detail_analysis() const noexcept
+        -> const std::shared_ptr<const audio::waveform_analysis_result_t>& {
+        return detail_analysis_;
+    }
+    [[nodiscard]] auto decoded_blocks() noexcept -> audio::decoded_block_cache_t& {
+        return decoded_blocks_;
+    }
 
     [[nodiscard]] auto waveform_job() noexcept -> audio::waveform_job_t& { return waveform_job_; }
     [[nodiscard]] auto waveform_job() const noexcept -> const audio::waveform_job_t& {
@@ -78,6 +89,10 @@ private:
     task_scheduler_t scheduler_{2, 4};
     audio::waveform_job_t waveform_job_;
     audio::waveform_job_t channel_waveform_job_;
+    audio::waveform_job_t detail_job_;
+    std::optional<asset_id_t> detail_asset_;
+    std::optional<audio::waveform_key_t> detail_key_;
+    std::shared_ptr<const audio::waveform_analysis_result_t> detail_analysis_;
     std::optional<asset_id_t> waveform_job_asset_;
     std::shared_ptr<const audio::waveform_analysis_result_t> waveform_analysis_;
     std::optional<asset_id_t> channel_waveform_job_asset_;

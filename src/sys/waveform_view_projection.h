@@ -19,7 +19,9 @@ void populate_audio_waveform_views(
     flattened_workspace_t& flattened, compose_scene_cache_t& cache,
     const wormedit::audio::waveform_analysis_result_t* analysis, bool analysis_pending,
     bool has_selected_audio_asset,
-    const wormedit::editor_interaction_state_t* interaction_state) -> bool;
+    const wormedit::editor_interaction_state_t* interaction_state,
+    const audio::waveform_analysis_result_t* detail_analysis = nullptr,
+    audio::decoded_block_cache_t* decoded_blocks = nullptr) -> bool;
 
 } // namespace wormedit::sys
 #endif

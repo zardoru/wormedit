@@ -375,6 +375,25 @@ static void draw_compose_scene_background(const ComposePaintContext& paint,
     draw_compose_bgm_lanes(paint);
 }
 
+static void draw_compose_waveform_samples(const ComposePaintContext& paint,
+                                          float center, float half_width) {
+    const auto& view = *paint.view;
+    for (size_t index = 1; index < view.waveform_row_count; ++index) {
+        const auto& before = view.waveform_rows[index - 1U];
+        const auto& after = view.waveform_rows[index];
+        if (!before.sample_point || !after.sample_point) continue;
+        for (size_t channel = 0; channel < 2; ++channel) {
+            const auto color = channel == 0 ? nk_rgba(114, 222, 239, 190)
+                                            : nk_rgba(238, 160, 114, 190);
+            nk_stroke_line(paint.canvas,
+                center + std::clamp(before.samples[channel], -1.0f, 1.0f) * half_width,
+                compose_projected_y(paint, before.y_pixels),
+                center + std::clamp(after.samples[channel], -1.0f, 1.0f) * half_width,
+                compose_projected_y(paint, after.y_pixels), 1.0f, color);
+        }
+    }
+}
+
 static void draw_compose_waveform(const ComposePaintContext& paint) {
     const auto& view = *paint.view;
     if (view.waveform_row_count == 0) {
@@ -385,6 +404,10 @@ static void draw_compose_waveform(const ComposePaintContext& paint) {
     const auto right = paint.viewport.x + static_cast<float>(view.playable_field_right_pixels) * scale;
     const auto center = (left + right) * 0.5f;
     const auto half_width = std::max(0.0f, (right - left) * 0.47f);
+    if (view.waveform_rows[0].sample_point) {
+        draw_compose_waveform_samples(paint, center, half_width);
+        return;
+    }
     for (size_t index = 0; index < view.waveform_row_count; ++index) {
         const auto& row = view.waveform_rows[index];
         const auto y = compose_projected_y(paint, row.y_pixels);

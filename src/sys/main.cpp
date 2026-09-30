@@ -2244,6 +2244,12 @@ void open_project_session(Context& context, const WormUiWorkspaceAction& action)
         context.status_ref = opened.native_project
             ? "Project opened: " + opened.source_path.string()
             : "Chart imported from " + opened.source_path.string() + ". Save it as a project.";
+        if (!opened.warnings.empty()) {
+            context.status_ref = "Chart imported with audio warning: " + opened.warnings.front();
+            if (opened.warnings.size() > 1)
+                context.status_ref += " (" + std::to_string(opened.warnings.size()) +
+                                      " resolution warnings total)";
+        }
     }
 }
 

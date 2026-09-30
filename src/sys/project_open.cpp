@@ -7,14 +7,17 @@
 #include <wormedit/formats/stepmania.h>
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <span>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace wormedit::sys {
 namespace {
@@ -77,6 +80,175 @@ auto read_bounded_file(const std::filesystem::path& path, std::size_t limit,
     return bytes;
 }
 
+auto utf8_path(const std::filesystem::path& path) -> std::string {
+    const auto bytes = path.generic_u8string();
+    return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
+}
+
+auto ascii_lower(std::string value) -> std::string {
+    std::transform(value.begin(), value.end(), value.begin(), [](char character) {
+        return character >= 'A' && character <= 'Z'
+                   ? static_cast<char>(character - 'A' + 'a')
+                   : character;
+    });
+    return value;
+}
+
+struct bms_audio_directory_inventory_t {
+    std::map<std::string, std::vector<std::filesystem::path>> directories;
+    std::map<std::pair<std::string, std::string>, std::vector<std::filesystem::path>> files;
+};
+
+using bms_audio_directory_cache_t =
+    std::map<std::filesystem::path, bms_audio_directory_inventory_t>;
+
+auto directory_inventory(bms_audio_directory_cache_t& cache,
+                         const std::filesystem::path& directory)
+    -> const bms_audio_directory_inventory_t& {
+    auto [position, inserted] = cache.try_emplace(directory);
+    if (!inserted) return position->second;
+    auto& inventory = position->second;
+    std::error_code error;
+    for (std::filesystem::directory_iterator entry(directory, error), end; !error && entry != end;
+         entry.increment(error)) {
+        std::error_code type_error;
+        const auto path = entry->path();
+        if (entry->is_directory(type_error) && !type_error) {
+            inventory.directories[ascii_lower(utf8_path(path.filename()))].push_back(path);
+        } else if (entry->is_regular_file(type_error) && !type_error) {
+            inventory.files[{ascii_lower(utf8_path(path.stem())),
+                             ascii_lower(utf8_path(path.extension()))}]
+                .push_back(path);
+        }
+    }
+    for (auto& [name, paths] : inventory.directories) std::sort(paths.begin(), paths.end());
+    for (auto& [name, paths] : inventory.files) std::sort(paths.begin(), paths.end());
+    return inventory;
+}
+
+auto matching_directories(bms_audio_directory_cache_t& cache,
+                          const std::filesystem::path& directory, const std::string& name)
+    -> const std::vector<std::filesystem::path>& {
+    const auto& entries = directory_inventory(cache, directory).directories;
+    const auto found = entries.find(name);
+    static const std::vector<std::filesystem::path> empty;
+    return found == entries.end() ? empty : found->second;
+}
+
+auto candidate_list(const std::vector<std::filesystem::path>& candidates) -> std::string {
+    std::string list;
+    for (const auto& candidate : candidates) {
+        if (!list.empty()) list += ", ";
+        list += utf8_path(candidate);
+    }
+    return list;
+}
+
+auto resolved_audio_directory(const std::filesystem::path& source,
+                              const std::filesystem::path& asset_base,
+                              bms_audio_directory_cache_t& cache,
+                              std::string& warning) -> std::optional<std::filesystem::path> {
+    if (source.empty() || source.is_absolute()) {
+        warning = "Unsafe BMS audio path: " + utf8_path(source);
+        return std::nullopt;
+    }
+    auto directory = asset_base;
+    for (const auto& part : source.parent_path()) {
+        if (part == ".") continue;
+        if (part == "..") {
+            warning = "Unsafe BMS audio path: " + utf8_path(source);
+            return std::nullopt;
+        }
+        const auto folded_name = ascii_lower(utf8_path(part));
+        const auto& matches = matching_directories(cache, directory, folded_name);
+        const auto exact = std::find_if(matches.begin(), matches.end(), [&](const auto& match) {
+            return match.filename() == part;
+        });
+        if (exact != matches.end()) {
+            directory = *exact;
+            continue;
+        }
+        if (matches.size() > 1) {
+            warning = "Ambiguous BMS audio directory for " + utf8_path(source) + ": " +
+                      candidate_list(matches);
+            return std::nullopt;
+        }
+        if (matches.empty()) return std::nullopt;
+        directory = matches.front();
+    }
+    return directory;
+}
+
+auto extension_matches(bms_audio_directory_cache_t& cache,
+                       const std::filesystem::path& directory, const std::string& stem,
+                       const std::string& extension)
+    -> const std::vector<std::filesystem::path>& {
+    const auto& entries = directory_inventory(cache, directory).files;
+    const auto found = entries.find({stem, extension});
+    static const std::vector<std::filesystem::path> empty;
+    return found == entries.end() ? empty : found->second;
+}
+
+auto existing_bms_audio_path(const std::filesystem::path& source,
+                             const std::filesystem::path& asset_base,
+                             bms_audio_directory_cache_t& cache,
+                             std::string& warning) -> std::optional<std::filesystem::path> {
+    auto normalized_text = source.generic_u8string();
+    std::replace(normalized_text.begin(), normalized_text.end(), u8'\\', u8'/');
+    if (normalized_text.size() >= 2 && normalized_text[1] == u8':' &&
+        ((normalized_text.front() >= u8'A' && normalized_text.front() <= u8'Z') ||
+         (normalized_text.front() >= u8'a' && normalized_text.front() <= u8'z'))) {
+        warning = "Unsafe BMS audio path: " + utf8_path(source);
+        return std::nullopt;
+    }
+    const std::filesystem::path normalized{normalized_text};
+    const auto directory = resolved_audio_directory(normalized, asset_base, cache, warning);
+    if (!directory) return std::nullopt;
+    const auto stem = ascii_lower(utf8_path(normalized.stem()));
+    const auto authored_extension = ascii_lower(utf8_path(normalized.extension()));
+    const auto& same_extension = extension_matches(cache, *directory, stem, authored_extension);
+    const auto exact =
+        std::find_if(same_extension.begin(), same_extension.end(), [&](const auto& match) {
+            return match.filename() == normalized.filename();
+        });
+    if (exact != same_extension.end()) return exact->lexically_relative(asset_base);
+    if (same_extension.size() == 1)
+        return same_extension.front().lexically_relative(asset_base);
+    if (same_extension.size() > 1) {
+        warning = "Ambiguous BMS audio for " + utf8_path(source) + ": " +
+                  candidate_list(same_extension);
+        return std::nullopt;
+    }
+
+    constexpr std::array extensions{".wav", ".ogg", ".flac"};
+    std::vector<std::filesystem::path> alternatives;
+    for (const auto* extension : extensions) {
+        if (authored_extension == extension) continue;
+        const std::string alternate_extension{extension};
+        const auto& matches = extension_matches(cache, *directory, stem, alternate_extension);
+        alternatives.insert(alternatives.end(), matches.begin(), matches.end());
+    }
+    if (alternatives.size() == 1)
+        return alternatives.front().lexically_relative(asset_base);
+    if (alternatives.size() > 1)
+        warning = "Ambiguous BMS audio for " + utf8_path(source) + ": " +
+                  candidate_list(alternatives);
+    return std::nullopt;
+}
+
+void resolve_bms_audio_assets(song_document_t& document,
+                              const std::filesystem::path& asset_base,
+                              std::vector<std::string>& warnings) {
+    bms_audio_directory_cache_t cache;
+    for (auto& asset : document.audio_assets) {
+        std::string warning;
+        const auto actual = existing_bms_audio_path(asset.source_path, asset_base, cache, warning);
+        if (!warning.empty()) warnings.push_back(std::move(warning));
+        if (!actual || *actual == asset.source_path) continue;
+        asset.source_path = *actual;
+    }
+}
+
 template <typename ParseResult>
 void take_parsed_document(ParseResult parsed, std::string_view format,
                           project_open_result_t& result) {
@@ -117,6 +289,8 @@ void parse_selected_file(std::string_view extension, const std::string& source,
                            std::string::npos;
             });
         take_parsed_document(std::move(parsed), "BMS chart", result);
+        if (result.document)
+            resolve_bms_audio_assets(*result.document, result.asset_base, result.warnings);
     } else if (extension == ".bmson") {
         auto options = bmson_parse_options_t{};
         options.asset_base_directory = result.asset_base;

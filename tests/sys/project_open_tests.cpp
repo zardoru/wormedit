@@ -2,6 +2,7 @@
 #include "sys/project_save_paths.h"
 
 #include <wormedit/formats/bms.h>
+#include <wormedit/formats/bms_writer.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/native_project_storage.h>
 
@@ -76,6 +77,17 @@ void check_native_identity(const wormedit::sys::project_open_result_t& opened,
     CHECK(opened.asset_base == path.parent_path());
 }
 
+void check_single_audio_asset(const wormedit::sys::project_open_result_t& opened,
+                              const std::filesystem::path& resolved_path,
+                              std::string_view authored_name) {
+    INFO(opened.error);
+    REQUIRE(opened.document);
+    REQUIRE(opened.document->audio_assets.size() == 1);
+    REQUIRE(opened.document->resources.size() == 1);
+    CHECK(opened.document->audio_assets.front().source_path == resolved_path);
+    CHECK(opened.document->resources.front().name == authored_name);
+}
+
 } // namespace
 
 TEST_CASE("opening chart files keeps their source directory and leaves them unsaved",
@@ -126,6 +138,105 @@ TEST_CASE("opened chart resolves audio beside its source before a native project
     CHECK(opened.asset_base == temporary.path);
     CHECK(std::filesystem::exists(opened.asset_base /
                                   opened.document->audio_assets.front().source_path));
+}
+
+TEST_CASE("BMS audio fallback finds a differently cased Ogg beside its chart",
+          "[integration][sys][project-open][bms-audio]") {
+    temporary_project_directory_t temporary;
+    const auto chart = temporary.path / "song.bme";
+    std::ofstream(chart) << "#PLAYER 1\n#TITLE Audio fallback\n#BPM 120\n"
+                           "#WAV01 AuDiO\\KEYSOUND-C4.WAV\n#00111:01\n";
+    REQUIRE(std::filesystem::copy_file(fixture("audio", "keysound-c4.ogg"),
+                                       temporary.path / "audio/keysound-c4.ogg"));
+
+    const auto opened = wormedit::sys::open_project_file(chart);
+    check_single_audio_asset(opened, "audio/keysound-c4.ogg", "AuDiO\\KEYSOUND-C4.WAV");
+    CHECK(opened.warnings.empty());
+    const auto exported = wormedit::write_bms(*opened.document);
+    REQUIRE(exported.bytes);
+    CHECK(exported.bytes->find("#WAV01 AuDiO\\KEYSOUND-C4.WAV") != std::string::npos);
+}
+
+TEST_CASE("BMS audio fallback keeps an existing exact source",
+          "[integration][sys][project-open][bms-audio]") {
+    temporary_project_directory_t temporary;
+    const auto chart = temporary.path / "song.bms";
+    std::ofstream(chart) << "#PLAYER 1\n#TITLE Exact audio\n#BPM 120\n"
+                           "#WAV01 audio/source.wav\n#00111:01\n";
+    std::ofstream(temporary.path / "audio/source.wav") << "exact source";
+    std::ofstream(temporary.path / "audio/source.ogg") << "alternate source";
+
+    const auto opened = wormedit::sys::open_project_file(chart);
+    check_single_audio_asset(opened, "audio/source.wav", "audio/source.wav");
+    CHECK(opened.warnings.empty());
+}
+
+TEST_CASE("BMS audio fallback reports competing matches and keeps the authored path",
+          "[integration][sys][project-open][bms-audio]") {
+    temporary_project_directory_t temporary;
+    const auto chart = temporary.path / "song.bms";
+    std::ofstream(chart) << "#PLAYER 1\n#TITLE Ambiguous audio\n#BPM 120\n"
+                           "#WAV01 audio/source.mp3\n#00111:01\n";
+    std::ofstream(temporary.path / "audio/source.wav") << "first candidate";
+    std::ofstream(temporary.path / "audio/SOURCE.OGG") << "second candidate";
+
+    const auto opened = wormedit::sys::open_project_file(chart);
+    check_single_audio_asset(opened, "audio/source.mp3", "audio/source.mp3");
+    REQUIRE(opened.warnings.size() == 1);
+    CHECK(opened.warnings.front().find("source.wav") != std::string::npos);
+    CHECK(opened.warnings.front().find("SOURCE.OGG") != std::string::npos);
+}
+
+TEST_CASE("BMS audio fallback accepts a uniquely matched FLAC file",
+          "[integration][sys][project-open][bms-audio]") {
+    temporary_project_directory_t temporary;
+    const auto chart = temporary.path / "song.bms";
+    std::ofstream(chart) << "#PLAYER 1\n#TITLE FLAC fallback\n#BPM 120\n"
+                           "#WAV01 audio/sample.wav\n#00111:01\n";
+    std::ofstream(temporary.path / "audio/SAMPLE.FLAC") << "sample";
+
+    const auto opened = wormedit::sys::open_project_file(chart);
+    check_single_audio_asset(opened, "audio/SAMPLE.FLAC", "audio/sample.wav");
+    CHECK(opened.warnings.empty());
+}
+
+TEST_CASE("BMS audio fallback reports case-folded duplicate filenames",
+          "[integration][sys][project-open][bms-audio]") {
+    temporary_project_directory_t temporary;
+    const auto chart = temporary.path / "song.bms";
+    std::ofstream(chart) << "#PLAYER 1\n#TITLE Duplicate audio\n#BPM 120\n"
+                           "#WAV01 audio/sample.wav\n#00111:01\n";
+    std::ofstream(temporary.path / "audio/SAMPLE.OGG") << "first candidate";
+    if (std::filesystem::exists(temporary.path / "audio/sample.ogg")) {
+        SUCCEED("This filesystem folds filename case and cannot represent both candidates");
+        return;
+    }
+    std::ofstream(temporary.path / "audio/sample.ogg") << "second candidate";
+
+    const auto opened = wormedit::sys::open_project_file(chart);
+    check_single_audio_asset(opened, "audio/sample.wav", "audio/sample.wav");
+    REQUIRE(opened.warnings.size() == 1);
+    CHECK(opened.warnings.front().find("SAMPLE.OGG") != std::string::npos);
+    CHECK(opened.warnings.front().find("sample.ogg") != std::string::npos);
+}
+
+TEST_CASE("BMS audio fallback rejects traversal and drive paths",
+          "[integration][sys][project-open][bms-audio]") {
+    temporary_project_directory_t temporary;
+    const auto chart = temporary.path / "song.bms";
+    std::ofstream(chart) << "#PLAYER 1\n#TITLE Unsafe audio\n#BPM 120\n"
+                           "#WAV01 ..\\outside.wav\n#WAV02 C:\\outside.wav\n"
+                           "#00111:0102\n";
+
+    const auto opened = wormedit::sys::open_project_file(chart);
+    INFO(opened.error);
+    REQUIRE(opened.document);
+    REQUIRE(opened.document->audio_assets.size() == 2);
+    CHECK((opened.document->audio_assets[0].source_path == "..\\outside.wav" &&
+           opened.document->audio_assets[1].source_path == "C:\\outside.wav"));
+    REQUIRE(opened.warnings.size() == 2);
+    CHECK((opened.warnings[0].find("Unsafe") != std::string::npos &&
+           opened.warnings[1].find("Unsafe") != std::string::npos));
 }
 
 TEST_CASE("opening a native project preserves its saved document identity",

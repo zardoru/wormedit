@@ -62,6 +62,7 @@ add_library(wormedit_core
     src/core/marker_editor.cpp
     src/core/marker_navigation.cpp
     src/core/metadata_editor.cpp
+    src/core/chart_editor.cpp
     src/core/measure.cpp
     src/core/measure_editor.cpp
     src/core/note_label_editor.cpp

@@ -118,7 +118,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-259 Add chart management commands
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** revision-checked, undoable core commands to duplicate a chart (new stable IDs for the chart and all its objects, same shared resources, name suffixed " (copy)"), delete a chart (removing it from output groups; deleting the last chart is rejected), reorder charts, and move a chart between output groups.
 - **Read first:** `include/wormedit/core/document.h` (`chart_document_t`, `output_group_t`, song aggregate), `include/wormedit/core/command.h`, T-52 in `docs/chart-editor-plan/tasks/editing-commands.md` (new chart command, same new file).
 - **Files owned:** `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp` (created by T-52 or here if T-52 has not landed), `tests/core/chart_editor_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -129,7 +129,7 @@ Apply the stale-plan check (rule 9) first.
   4. Tests: duplicate validates and shares resources; undo of each; stale revision rejects; delete-last rejects.
 - **Invariants:** resources and assets are never copied or deleted by these commands.
 - **Reject/failure behavior:** any validation failure rejects without a history entry.
-- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'` passed 746/746 in 15.86 seconds (`/tmp/wormedit-t259/core-prefix.log`). Clean-index production/test compilation and private linking passed; focused chart-management cases passed 7/7 with 74 assertions (`/tmp/wormedit-t259/focused-final.log`). Tests cover full graph remapping, shared resources, retained BMS branches/projections, undo/redo, history-retained ID freshness, and exact serialized-document preservation on rejection. Both affected C++ files passed clang-tidy cognitive-complexity checks (`/tmp/wormedit-t259/tidy-final.log`).
 - **Out of scope:** UI (T-260), importing charts (T-262).
 
 ## T-260 Turn Setup into a Project tab with a chart manager

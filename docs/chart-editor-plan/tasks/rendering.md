@@ -138,10 +138,10 @@ Application builds pass; coordinated full suite 919/919 and focused backend test
 
 ## T-248 Draw the Compose field with a wormedit renderer outside Nuklear
 
-- **Status:** blocked-on T-247
+- **Status:** ready
 - **Outcome:** everything inside the Compose field rectangle is drawn by a new frontend-private field renderer that builds per-layer vertex batches directly from the scalar Compose view and submits them with `SDL_RenderGeometryRaw` (no Nuklear shapes, no `nk_convert`, no anti-aliasing for axis-aligned primitives), culled to the viewport; Nuklear keeps only the surrounding chrome.
 - **Read first:** `src/ui/nuklear/compose_canvas.cpp` (all `draw_compose_*` functions), `src/ui/nuklear/arrow_glyph.h`, `src/ui/nuklear/sdl_backend.h` (T-247), `docs/references/ui-backend-boundary.md`, the file-header decision above.
-- **Files owned:** new `src/ui/field/field_renderer.cpp/.h` (SDL-only, no Nuklear includes), new `src/ui/field/field_glyphs.cpp/.h` (arrow polygons and a small glyph-atlas text path reusing the Nuklear font atlas texture), `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/sdl_backend.cpp`, `CMakeLists.txt`, the architecture test (allow `src/ui/field` to include SDL but not Nuklear), new `tests/ui/field_renderer_tests.cpp`, `tests/CMakeLists.txt`.
+- **Files owned:** new `src/ui/field/field_renderer.cpp/.h` (SDL-only, no Nuklear includes), new `src/ui/field/field_glyphs.cpp/.h` (arrow polygons and a small glyph-atlas text path reusing the Nuklear font atlas texture), `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/sdl_backend.cpp/.h` (header extension approved by user), `src/ui/nuklear/compose_area_menu.cpp/.h` (user-approved migration of the existing field band drawing helper), `CMakeLists.txt`, `cmake/check_ui_boundary.cmake` (allow `src/ui/field` to include SDL but not Nuklear), new `tests/ui/field_renderer_tests.cpp`, `tests/CMakeLists.txt`.
 - **Steps:**
   1. Renderer API on plain types: `begin(viewport_px, scale)`, `rect(layer, rect, rgba8)`, `hline/vline(layer, …)`, `polygon(layer, points, rgba8, aa_fringe)`, `text(layer, pos, utf8, rgba8)`, `submit(SDL_Renderer*)`. Batches are persistent vectors, reused each frame; rectangles are pixel-snapped.
   2. Reserve the field in Nuklear with one empty widget and one `nk_push_custom` command whose callback (run by the T-247 backend in stream order) calls `submit`, with the field clip rect applied.

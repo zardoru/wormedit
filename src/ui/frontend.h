@@ -620,6 +620,8 @@ typedef struct WormUiComposeOutputGroupView {
 // Coordinates are relative to the scene viewport; no chart/core types cross
 // the private frontend boundary.
 typedef struct WormUiComposeView {
+    uint32_t armed_note_kind;
+    uint32_t allowed_note_kind_mask;
     bool visible;
     bool scene_available;
     bool downscroll;
@@ -1295,6 +1297,7 @@ typedef enum WormUiComposeActionKind {
 
 typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_NONE = 0,
+    WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND,
     WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD,
     WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD,
     WORM_UI_COMPOSE_INPUT_POINTER_CLICK,
@@ -1362,6 +1365,7 @@ typedef enum WormUiComposeNavigationAction {
 
 typedef struct WormUiComposeInputAction {
     WormUiComposeInputKind kind;
+    uint32_t note_kind;
     uint64_t lane_id;
     uint64_t object_id;
     uint64_t timing_chart_id;

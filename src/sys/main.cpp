@@ -1455,6 +1455,21 @@ void refresh_transport_rate_commands(wormedit::command_registry_t& registry,
                                        available && state.transport_rate_index < 8, std::nullopt);
 }
 
+void refresh_note_kind_commands(wormedit::command_registry_t& registry,
+    const wormedit::chart_document_t* chart,
+    const std::optional<wormedit::editor_interaction_state_t>& compose_state,
+    bool compose_ready, bool pending) {
+    using namespace wormedit;
+    constexpr std::pair<std::string_view, note_kind_t> note_kinds[]{
+        {"tap", note_kind_t::tap}, {"hold", note_kind_t::hold}, {"mine", note_kind_t::mine},
+        {"invisible", note_kind_t::invisible}, {"lift", note_kind_t::lift},
+        {"fake", note_kind_t::fake}, {"roll", note_kind_t::roll}};
+    for (const auto& [name, kind] : note_kinds)
+        (void)update_command_state(registry, command_id_t{"edit.note_kind_" + std::string(name)},
+            compose_ready && note_kind_allowed(*chart, kind) && !pending,
+            compose_ready && compose_state->armed_note_kind == kind);
+}
+
 void refresh_application_command_states(
     wormedit::command_registry_t& registry, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
@@ -1487,6 +1502,8 @@ void refresh_application_command_states(
     set("history.undo", !history.undo.empty());
     set("history.redo", !history.redo.empty());
     set("edit.delete", compose_ready);
+    refresh_note_kind_commands(registry, chart, compose_state, compose_ready, pending);
+
     set("selection.clear", compose_ready && (inline_preview_active(application_state) ||
                                             pending || !compose_state->selected_objects.empty() ||
                                              application_state.note_paint_mode_active ||

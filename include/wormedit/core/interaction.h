@@ -566,6 +566,7 @@ struct pending_editor_area_selection_t {
 struct editor_interaction_state_t {
     chart_id_t chart;
     lane_id_t active_lane;
+    note_kind_t armed_note_kind{note_kind_t::tap};
     local_position_t cursor;
     std::optional<std::uint64_t> virtual_bms_cursor_row;
     struct virtual_lane_key_t {
@@ -898,6 +899,12 @@ auto clear_editor_double_click_state(editor_double_click_state_t& state) -> void
                                                     const editor_interaction_view_model_t& view,
                                                     const editor_area_selection_request_t& request)
     -> std::variant<std::vector<editor_selection_object_t>, diagnostic_list_t>;
+
+// The chart source family determines which authoring kinds are available.
+[[nodiscard]] auto note_kind_allowed(const chart_document_t& chart, note_kind_t kind) -> bool;
+[[nodiscard]] auto arm_note_kind(const document_history_t& history,
+                                 editor_interaction_state_t& state, note_kind_t kind)
+    -> editor_interaction_result_t;
 
 // Dispatches one typed frontend action. Document edits are published through
 // commit_document_command so validation, undo, and redo share one boundary.

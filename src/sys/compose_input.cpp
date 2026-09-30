@@ -463,6 +463,11 @@ auto dispatch_compose_keyboard_input(
     wormedit::editor_interaction_result_t& result, std::string_view& accepted)
     -> compose_input_family_result_t {
     switch (input.kind) {
+    case WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND:
+        result = wormedit::arm_note_kind(history, state,
+            static_cast<wormedit::note_kind_t>(input.note_kind));
+        accepted = "Note kind armed.";
+        return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS:
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE:
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL:
@@ -1934,6 +1939,94 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
     return std::nullopt;
 }
 
+auto place_note_from_pointer(compose_input_context_t& context,
+                              const auto& target,
+                              wormedit::editor_interaction_result_t& result,
+                              std::string_view& accepted) -> void {
+    using namespace wormedit;
+    result = dispatch_editor_action(context.history, context.state,
+        context.state.pending_hold
+            ? editor_ui_action_t{commit_hold_action_t{target.position}}
+            : editor_ui_action_t{place_tap_action_t{target.position}});
+    accepted = context.state.pending_hold ? "Hold gesture started; click its end row."
+                                          : "Note placed.";
+}
+
+auto place_virtual_note_from_pointer(compose_input_context_t& context,
+                                      std::uint64_t row, wormedit::lane_id_t lane,
+                                      wormedit::editor_interaction_result_t& result,
+                                      std::string_view& accepted) -> void {
+    using namespace wormedit;
+    const auto& pending = context.state.pending_virtual_lane_key;
+    if (pending) {
+        const auto anchor = pending->canvas_row;
+        const auto hold_lane = pending->lane;
+        context.state.pending_virtual_lane_key.reset();
+        result = dispatch_editor_action(context.history, context.state,
+            place_virtual_bms_hold_action_t{anchor, row, hold_lane});
+        if (!result) context.state.pending_virtual_lane_key =
+            editor_interaction_state_t::virtual_lane_key_t{anchor, hold_lane, context.history.document.revision};
+        accepted = "Hold gesture committed.";
+    } else if (context.state.armed_note_kind == note_kind_t::hold) {
+        context.state.pending_virtual_lane_key =
+            editor_interaction_state_t::virtual_lane_key_t{row, lane, context.history.document.revision};
+        result.accepted = true;
+        accepted = "Hold gesture started; click its end row.";
+    } else {
+        result = dispatch_editor_action(context.history, context.state,
+            place_virtual_bms_tap_action_t{row, lane});
+        accepted = "Note placed in virtual BMS measure.";
+    }
+}
+
+auto finish_virtual_hold_at_authored_row(compose_input_context_t& context,
+                                         const wormedit::chart_document_t& chart,
+                                         wormedit::local_position_t position, wormedit::lane_id_t lane,
+                                         wormedit::editor_interaction_result_t& result,
+                                         std::string_view& accepted) -> bool {
+    if (!context.state.pending_virtual_lane_key) return false;
+    const auto built = wormedit::build_measure_index(chart);
+    const auto* index = std::get_if<wormedit::measure_index_t>(&built);
+    const auto row = index ? wormedit::absolute_row(*index, position) : std::nullopt;
+    if (!row) return false;
+    place_virtual_note_from_pointer(context, *row, lane, result, accepted);
+    return true;
+}
+
+auto select_or_place_virtual_pointer(const WormUiComposeInputAction& input,
+                                  compose_input_context_t& context,
+                                  const wormedit::chart_document_t& chart,
+                                  const wormedit::editor_interaction_view_model_t& view,
+                                  wormedit::editor_area_selection_mode_t mode,
+                                  wormedit::editor_interaction_result_t& result,
+                                  std::string_view& accepted) -> std::optional<std::string> {
+    using namespace wormedit;
+    const auto virtual_hit =
+        context.virtual_bms_hit_at(chart, view, input.x_pixels, input.y_pixels);
+    if (!virtual_hit)
+        return "Click inside an editable lane to select a note or position.";
+    if (mode == editor_area_selection_mode_t::replace) {
+        place_virtual_note_from_pointer(context, virtual_hit->first, virtual_hit->second, result, accepted);
+        return std::nullopt;
+    }
+    const auto built = build_virtual_canvas(chart);
+    const auto* canvas = std::get_if<virtual_canvas_t>(&built);
+    const auto measure = canvas ? canvas->measure_containing(virtual_hit->first) : std::nullopt;
+    if (!measure)
+        return "The clicked BMS measure is unavailable.";
+    auto candidate = context.state;
+    result = dispatch_editor_action(context.history, candidate,
+                                    select_bms_canvas_measure_action_t{measure->number});
+    if (result.accepted) {
+        context.state.cursor = candidate.cursor;
+        context.state.virtual_bms_cursor_row = candidate.virtual_bms_cursor_row;
+        context.state.viewport_scroll_pixels = candidate.viewport_scroll_pixels;
+        context.state.active_lane = virtual_hit->second;
+    }
+    accepted = "BMS measure selected.";
+    return std::nullopt;
+}
+
 auto select_compose_pointer_target(const WormUiComposeInputAction& input,
                                    compose_input_context_t& context,
                                    wormedit::editor_interaction_result_t& result,
@@ -1946,35 +2039,20 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
     if (!chart || !view)
         return "The selected chart field is no longer available.";
     const auto target = context.hit_target_at(*chart, *view, input.x_pixels, input.y_pixels);
-    if (!target) {
-        const auto virtual_hit =
-            context.virtual_bms_hit_at(*chart, *view, input.x_pixels, input.y_pixels);
-        if (!virtual_hit)
-            return "Click inside an editable lane to select a note or position.";
-        const auto built = build_virtual_canvas(*chart);
-        const auto* canvas = std::get_if<virtual_canvas_t>(&built);
-        const auto measure = canvas ? canvas->measure_containing(virtual_hit->first) : std::nullopt;
-        if (!measure)
-            return "The clicked BMS measure is unavailable.";
-        auto candidate = context.state;
-        result = dispatch_editor_action(context.history, candidate,
-                                        select_bms_canvas_measure_action_t{measure->number});
-        if (result.accepted) {
-            if (*mode == editor_area_selection_mode_t::replace) {
-                context.state = std::move(candidate);
-            } else {
-                context.state.cursor = candidate.cursor;
-                context.state.virtual_bms_cursor_row = candidate.virtual_bms_cursor_row;
-                context.state.viewport_scroll_pixels = candidate.viewport_scroll_pixels;
-            }
-            context.state.active_lane = virtual_hit->second;
-        }
-        accepted = "BMS measure selected.";
+    if (!target)
+        return select_or_place_virtual_pointer(input, context, *chart, *view, *mode, result, accepted);
+    if (*mode == editor_area_selection_mode_t::replace &&
+        finish_virtual_hold_at_authored_row(context, *chart, target->position, target->lane, result, accepted))
         return std::nullopt;
-    }
     context.state.active_lane = target->lane;
     context.state.cursor = target->position;
     context.state.virtual_bms_cursor_row.reset();
+    const bool clicked_hold_end = context.state.pending_hold &&
+                                  !context.state.pending_hold->gesture_source;
+    if (*mode == editor_area_selection_mode_t::replace && (!target->note || clicked_hold_end)) {
+        place_note_from_pointer(context, *target, result, accepted);
+        return std::nullopt;
+    }
     const auto selection =
         target->note
             ? select_editor_objects_action_t{{{editor_selection_object_kind_t::note,

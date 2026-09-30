@@ -183,6 +183,31 @@ static void render_compose_offset_toolbar(const ComposeToolbarContext& toolbar) 
     nk_label(toolbar.context, "", NK_TEXT_LEFT);
 }
 
+static void render_note_kind_palette(const ComposeToolbarContext& toolbar) {
+    // Stable shortcut order differs from the document enum order.
+    static constexpr uint32_t kinds[]{0, 1, 4, 3, 5, 6, 2};
+    static constexpr Glyph icons[]{Glyph::square, Glyph::minus, Glyph::x,
+        Glyph::eye, Glyph::chevron_left, Glyph::layers, Glyph::audio_lines};
+    static constexpr const char* labels[]{"Tap (Alt+1)", "Hold (Alt+2; click to begin hold gesture)",
+        "Mine (Alt+3)", "Invisible (Alt+4)", "Lift (Alt+5)", "Fake (Alt+6)",
+        "Roll (Alt+7; click to begin hold gesture)"};
+    unsigned count{};
+    for (const auto kind : kinds)
+        if ((toolbar.view->allowed_note_kind_mask & (1U << kind)) != 0) ++count;
+    if (count == 0) return;
+    nk_layout_row_static(toolbar.context, 27, 30, static_cast<int>(count));
+    for (std::size_t index = 0; index < std::size(kinds); ++index) {
+        const auto kind = kinds[index];
+        if ((toolbar.view->allowed_note_kind_mask & (1U << kind)) == 0) continue;
+        if (wormedit::ui::chrome::IconButton{icons[index], labels[index],
+                toolbar.view->armed_note_kind == kind}.render(toolbar.context) &&
+            toolbar.action->compose_input_count < WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {
+            toolbar.action->compose_inputs[toolbar.action->compose_input_count++] = {
+                .kind = WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND, .note_kind = kind};
+        }
+    }
+}
+
 void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     update_compose_note_label_cache(toolbar.view);
     auto* context = toolbar.context;
@@ -209,4 +234,5 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     render_compose_view_controls(toolbar);
     render_compose_offset_toolbar(toolbar);
     render_compose_bgm_scroll_controls(toolbar);
+    render_note_kind_palette(toolbar);
 }

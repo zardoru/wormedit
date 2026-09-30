@@ -340,3 +340,40 @@ TEST_CASE("Transport rates accept exact preferences and reject boundaries", "[un
     CHECK(parse_application_command("transport.rate_slower")->kind == application_command_kind_t::transport_rate_slower);
     CHECK(parse_application_command("transport.rate_faster")->kind == application_command_kind_t::transport_rate_faster);
 }
+
+namespace {
+void check_note_kind_command_parser(std::string_view name, unsigned kind) {
+    const auto id = "edit.note_kind_" + std::string(name);
+    const auto command = parse_application_command(id);
+    REQUIRE(command);
+    CHECK(command->kind == application_command_kind_t::edit_note_kind);
+    CHECK(command->note_kind == kind);
+}
+void check_note_kind_command_shortcut(const wormedit::command_registry_t& registry,
+                                      std::string_view name, std::size_t index) {
+    using namespace wormedit;
+    const auto id = "edit.note_kind_" + std::string(name);
+    const auto registration = std::ranges::find_if(registry.commands,
+        [&](const auto& entry) { return entry.id.value == id; });
+    REQUIRE(registration != registry.commands.end());
+    REQUIRE(registration->default_shortcuts.size() == 1);
+    CHECK(registration->default_shortcuts.front().key ==
+        static_cast<shortcut_key_t>(static_cast<unsigned>(shortcut_key_t::digit_1) + index));
+    CHECK(registration->default_shortcuts.front().modifiers ==
+        static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt));
+}
+} // namespace
+
+TEST_CASE("Note kind commands preserve lane and layer shortcut chords", "[unit][sys][commands]") {
+    using namespace wormedit;
+    const auto registry = make_default_editor_command_registry(
+        [](const command_invocation_context_t&) { return command_invocation_result_t{}; });
+    const std::array names{"tap", "hold", "mine", "invisible", "lift", "fake", "roll"};
+    const std::array kinds{0U, 1U, 4U, 3U, 5U, 6U, 2U};
+    for (std::size_t index = 0; index < names.size(); ++index) {
+        check_note_kind_command_parser(names[index], kinds[index]);
+        check_note_kind_command_shortcut(registry, names[index], index);
+    }
+    CHECK_FALSE(parse_application_command("edit.note_kind_invalid"));
+    CHECK_FALSE(parse_application_command("edit.note_kind_tap.extra"));
+}

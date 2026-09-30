@@ -2041,6 +2041,11 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     auto& retained_state = input.retained_state;
     auto& application_state = input.application_state;
     auto& view = input.view;
+    view.armed_note_kind = static_cast<std::uint32_t>(retained_state->armed_note_kind);
+    view.allowed_note_kind_mask = 0;
+    for (unsigned kind = 0; kind <= static_cast<unsigned>(wormedit::note_kind_t::fake); ++kind)
+        if (wormedit::note_kind_allowed(chart, static_cast<wormedit::note_kind_t>(kind)))
+            view.allowed_note_kind_mask |= 1U << kind;
     auto& interaction_view = input.interaction_view;
     const auto& timing_stage = input.timing_stage;
     const auto downscroll = input.downscroll;

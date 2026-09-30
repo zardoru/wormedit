@@ -4193,3 +4193,108 @@ TEST_CASE("global marquee rejects changed viewport height without committing its
           "[unit][core][interaction][selection][area][global][geometry][resize]") {
     check_global_projection_change_rejected(&editor_interaction_state_t::viewport_height_pixels);
 }
+
+namespace {
+// Keep Catch assertion macro expansion outside loop-heavy scenario functions.
+void require_note_kind_condition(const auto& condition) {
+    REQUIRE(static_cast<bool>(condition));
+}
+void check_note_kind_condition(const auto& condition) {
+    CHECK(static_cast<bool>(condition));
+}
+} // namespace
+
+TEST_CASE("Compose note kind availability follows the chart family", "[interaction][note-kind]") {
+    auto chart = make_song().charts.front();
+    const std::array all{note_kind_t::tap, note_kind_t::hold, note_kind_t::mine,
+        note_kind_t::invisible, note_kind_t::lift, note_kind_t::fake, note_kind_t::roll};
+    for (auto family : {format_family_t::bms, format_family_t::stepmania,
+                        format_family_t::osu_mania, format_family_t::quaver}) {
+        chart.source_family = family;
+        for (const auto kind : all) {
+            const bool common = kind == note_kind_t::tap || kind == note_kind_t::hold || kind == note_kind_t::mine;
+            const bool expected = common || (family == format_family_t::bms && kind == note_kind_t::invisible) ||
+                (family == format_family_t::stepmania && (kind == note_kind_t::roll || kind == note_kind_t::lift || kind == note_kind_t::fake));
+            check_note_kind_condition(note_kind_allowed(chart, kind) == expected);
+        }
+        check_note_kind_condition(!(note_kind_allowed(chart, static_cast<note_kind_t>(100))));
+    }
+}
+
+TEST_CASE("Armed tap-like kinds place and toggle without converting existing notes", "[interaction][note-kind]") {
+    for (const auto kind : {note_kind_t::mine, note_kind_t::invisible, note_kind_t::lift, note_kind_t::fake}) {
+        auto history = make_document_history(make_song());
+        auto state = make_state(history);
+        check_note_kind_condition(state.armed_note_kind == note_kind_t::tap);
+        const auto revision = history.document.revision;
+        require_note_kind_condition(arm_note_kind(history, state, kind));
+        check_note_kind_condition(history.document.revision == revision);
+        require_note_kind_condition(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{1}, 0}}));
+        require_note_kind_condition(note_count(history) == 1);
+        check_note_kind_condition(history.document.charts.front().measures.front().notes.front().kind == kind);
+        require_note_kind_condition(arm_note_kind(history, state, note_kind_t::tap));
+        check_note_kind_condition(!(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{1}, 0}})));
+        check_note_kind_condition(note_count(history) == 1);
+        require_note_kind_condition(arm_note_kind(history, state, kind));
+        require_note_kind_condition(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{1}, 0}}));
+        check_note_kind_condition(note_count(history) == 0);
+    }
+}
+
+TEST_CASE("Note kind arming rejects unsupported kinds and active gestures", "[interaction][note-kind]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(song);
+    auto state = make_state(history);
+    check_note_kind_condition(!(arm_note_kind(history, state, note_kind_t::roll)));
+    check_note_kind_condition(state.armed_note_kind == note_kind_t::tap);
+    require_note_kind_condition(dispatch_editor_action(history, state, begin_hold_action_t{{measure_id_t{1}, 0}}));
+    check_note_kind_condition(!(arm_note_kind(history, state, note_kind_t::mine)));
+    require_note_kind_condition(dispatch_editor_action(history, state, cancel_hold_action_t{}));
+    require_note_kind_condition(arm_note_kind(history, state, note_kind_t::mine));
+    require_note_kind_condition(dispatch_editor_action(history, state, begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}}));
+    check_note_kind_condition(!(arm_note_kind(history, state, note_kind_t::tap)));
+    require_note_kind_condition(dispatch_editor_action(history, state, end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}}));
+    require_note_kind_condition(note_count(history) == 2);
+    for (const auto& note : history.document.charts.front().measures.front().notes)
+        check_note_kind_condition(note.kind == note_kind_t::mine);
+}
+
+TEST_CASE("Hold and Roll palette use explicit duration gestures", "[interaction][note-kind]") {
+    for (const auto kind : {note_kind_t::hold, note_kind_t::roll}) {
+        auto history = make_document_history(make_song());
+        auto state = make_state(history);
+        require_note_kind_condition(arm_note_kind(history, state, kind));
+        check_note_kind_condition(!(dispatch_editor_action(history, state, begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}})));
+        check_note_kind_condition(!(state.pending_note_paint_gesture));
+        require_note_kind_condition(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{1}, 0}}));
+        check_note_kind_condition(note_count(history) == 0);
+        require_note_kind_condition(state.pending_hold);
+        check_note_kind_condition(!(dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{1}, 0}})));
+        require_note_kind_condition(state.pending_hold);
+        require_note_kind_condition(dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{1}, 240}}));
+        require_note_kind_condition(note_count(history) == 1);
+        check_note_kind_condition(history.document.charts.front().measures.front().notes.front().kind == kind);
+        check_note_kind_condition(history.document.charts.front().measures.front().notes.front().end == local_position_t{measure_id_t{1}, 240});
+    }
+}
+
+TEST_CASE("Virtual BMS armed kinds stay atomic with explicit hold durations", "[interaction][note-kind]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = make_document_history(song);
+    auto state = make_state(history);
+    require_note_kind_condition(arm_note_kind(history, state, note_kind_t::mine));
+    require_note_kind_condition(dispatch_editor_action(history, state, place_virtual_bms_tap_action_t{2400, lane_id_t{1}}));
+    require_note_kind_condition(note_count(history) == 1);
+    check_note_kind_condition(history.document.charts.front().measures.back().notes.front().kind == note_kind_t::mine);
+    require_note_kind_condition(arm_note_kind(history, state, note_kind_t::hold));
+    const auto revision = history.document.revision;
+    const auto measures = history.document.charts.front().measures.size();
+    check_note_kind_condition(!(dispatch_editor_action(history, state, place_virtual_bms_hold_action_t{4800, 4800, lane_id_t{1}})));
+    check_note_kind_condition(history.document.revision == revision);
+    check_note_kind_condition(history.document.charts.front().measures.size() == measures);
+    require_note_kind_condition(dispatch_editor_action(history, state, place_virtual_bms_hold_action_t{4800, 5040, lane_id_t{1}}));
+    require_note_kind_condition(note_count(history) == 2);
+    check_note_kind_condition(history.document.charts.front().measures.back().notes.front().kind == note_kind_t::hold);
+}

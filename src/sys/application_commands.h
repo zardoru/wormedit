@@ -20,6 +20,7 @@ enum class application_command_kind_t {
     transport_rate_slower,
     transport_rate_faster,
     edit_delete,
+    edit_note_kind,
     selection_clear,
     selection_select_all,
     selection_invert,
@@ -51,6 +52,7 @@ struct application_command_t {
     // Set only for semantic_layer_select_slot. Slots in the external ID format
     // are one-based and must be positive.
     std::optional<std::size_t> semantic_layer_slot;
+    std::optional<unsigned> note_kind;
 
     auto operator==(const application_command_t&) const -> bool = default;
 };

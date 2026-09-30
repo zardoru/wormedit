@@ -290,6 +290,16 @@ auto timing_lock_command(command_context_t& context) -> std::optional<command_re
     return command_result_t{.accepted = true};
 }
 
+auto note_kind_command(command_context_t& context) -> std::optional<command_result_t> {
+    if (context.command.kind != command_kind_t::edit_note_kind) return std::nullopt;
+    auto* state = context.compose();
+    if (!state || !context.command.note_kind)
+        return reject_application_command(context.status, "Note kind requires the active Compose chart.");
+    const auto result = wormedit::arm_note_kind(context.history, *state,
+        static_cast<wormedit::note_kind_t>(*context.command.note_kind));
+    return accept_editor_command(result, context.status, "Note kind armed.");
+}
+
 auto semantic_layer_slot_command(command_context_t& context) -> command_result_t {
     using namespace wormedit;
     auto* state = context.compose();
@@ -356,6 +366,7 @@ auto invoke_application_command(
                               application_state, status};
     const auto kind = command.kind;
     if (auto result = history_command(context)) return *result;
+    if (auto result = note_kind_command(context)) return *result;
     if (auto result = transport_command(context)) return *result;
     if (auto result = edit_commands(context)) return *result;
     if (auto result = selection_commands(context)) return *result;

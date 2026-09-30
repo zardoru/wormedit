@@ -105,14 +105,14 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-205 Add a note-kind palette to Compose
 
-- **Status:** ready
-- **Outcome:** the toolbar shows the note kinds the chart's profile allows (tap, hold, mine, invisible, lift, fake, roll) as toggle buttons with number-row shortcuts (1–7); click, lane-key, and paint placement create the armed kind.
+- **Status:** done
+- **Outcome:** the toolbar shows the note kinds the chart's profile allows (tap, hold, mine, invisible, lift, fake, roll) as toggle buttons with Alt+number-row shortcuts (Alt+1–7; plain digits retain lane entry and Ctrl/Primary+digits retain semantic-layer selection, user decision 2026-09-30); click, lane-key, and paint placement create the armed kind.
 - **Read first:** `include/wormedit/core/document.h` (`note_kind_t`), `include/wormedit/core/interaction.h` (placement actions), `src/ui/nuklear/compose_toolbar.cpp`, `src/core/command_registry.cpp`.
-- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `tests/core/interaction_tests.cpp`, `src/core/command_registry.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_toolbar.cpp`.
-- **Steps:** 1. Armed kind in interaction state (default tap). 2. Per-profile allowed set (BMS: tap, hold, invisible, mine; SM: tap, hold, roll, mine, lift, fake; osu!/Quaver: tap, hold, mine). 3. Registry commands `edit.note_kind_<kind>`. 4. Toolbar buttons with icons.
+- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `tests/core/interaction_tests.cpp`, `src/core/command_registry.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_toolbar.cpp`, `src/sys/application_commands.h`, `src/sys/application_commands.cpp`, `src/sys/application_command_dispatch.cpp`, `src/sys/main.cpp` (enabled/checked state), `tests/sys/application_commands_tests.cpp`, this card (scope extended by user approval 2026-09-30).
+- **Steps:** 1. Armed kind in interaction state (default tap). 2. Per-profile allowed set (BMS: tap, hold, invisible, mine; SM: tap, hold, roll, mine, lift, fake; osu!/Quaver: tap, hold, mine). 3. Registry commands `edit.note_kind_<kind>`. 4. Toolbar buttons with icons. User decision 2026-09-30: clicking Hold/Roll begins the existing hold gesture; painting with Hold/Roll asks the user to use that gesture instead of inventing a duration.
 - **Invariants:** hold entry gestures still create holds regardless of the armed tap-like kind (roll when T-170 lands).
 - **Reject/failure behavior:** switching to a chart whose profile lacks the armed kind resets to tap.
-- **Verify:** standard build/test.
+- **Verify:** parent `cmake --build build` passed; full suite 863/863 passed. Clang-tidy found no new project complexity violations. Isolated Xvfb captures `/tmp/wormedit-next/mine-click.png` and `hold-click.png` inspected: Alt+3 creates a mine and Alt+2 completes a two-click hold. Logs and independent staged-cut syntax checks: `/tmp/wormedit-next/`, `/tmp/wormedit-t205/`.
 - **Out of scope:** converting existing notes' kind (add later as a selection command).
 
 ## T-206 Redesign the inspector's resource list

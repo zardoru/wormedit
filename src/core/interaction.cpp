@@ -830,7 +830,7 @@ struct paint_overlap_sweep_t {
         std::greater<>> ending;
     std::map<std::uint64_t, paint_note_interval_t> active;
 
-    auto process(const paint_row_t& row, note_paint_plan_t& plan)
+    auto process(const paint_row_t& row, note_paint_plan_t& plan, note_kind_t kind)
         -> std::optional<diagnostic_t> {
         if (!lane || *lane != row.lane) {
             while (next_interval < intervals.size() &&
@@ -858,7 +858,7 @@ struct paint_overlap_sweep_t {
                         "paint gesture overlaps multiple same-lane notes",
                         active.begin()->second.note);
         const auto& [id, note] = *active.begin();
-        if (note.kind == note_kind_t::tap && !note.has_end && note.begin == row.row &&
+        if (note.kind == kind && !note.has_end && note.begin == row.row &&
             note.end == row.row) {
             plan.removals.push_back(object_id_t{id});
             return std::nullopt;
@@ -869,7 +869,7 @@ struct paint_overlap_sweep_t {
 };
 
 auto plan_note_paint(const chart_document_t& chart, const measure_index_t& index,
-                     std::span<const note_paint_target_t> targets)
+                     std::span<const note_paint_target_t> targets, note_kind_t kind)
     -> std::variant<note_paint_plan_t, diagnostic_list_t> {
     auto intervals = paint_note_intervals(chart, index);
     auto rows_result = paint_rows(index, targets);
@@ -881,7 +881,7 @@ auto plan_note_paint(const chart_document_t& chart, const measure_index_t& index
     paint_overlap_sweep_t sweep{.intervals = intervals, .next_interval = 0, .lane = std::nullopt,
                                 .ending = {}, .active = {}};
     for (const auto& row : rows) {
-        if (auto failure = sweep.process(row, plan)) return diagnostic_list_t{*failure};
+        if (auto failure = sweep.process(row, plan, kind)) return diagnostic_list_t{*failure};
     }
     return plan;
 }
@@ -1577,6 +1577,8 @@ auto recover_editor_interaction(const document_history_t& history,
         result.state->fixed_cursor_screen_y_pixels = previous.fixed_cursor_screen_y_pixels;
         result.state->scroll_direction = previous.scroll_direction;
     }
+    if (note_kind_allowed(*chart, previous.armed_note_kind))
+        result.state->armed_note_kind = previous.armed_note_kind;
     const auto view = make_view(history, *result.state);
     if (const auto* recovered = std::get_if<editor_interaction_view_model_t>(&view)) {
         result.view = *recovered;
@@ -2320,6 +2322,9 @@ auto begin_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
                               local_position_t position, bool pointer_captured)
     -> editor_interaction_result_t {
     auto& state = context.state;
+    if (state.armed_note_kind == note_kind_t::hold || state.armed_note_kind == note_kind_t::roll)
+        return diagnostic_result(context.history, state,
+            {error(diagnostic_code_t::invalid_hold, "Use the hold gesture to place Hold or Roll notes; painting needs an explicit end.")});
     if (!pointer_captured)
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
@@ -2376,7 +2381,7 @@ struct prepared_note_paint_t {
 };
 
 auto prepare_note_paint_document(const document_history_t& history, chart_id_t chart_id,
-                                const note_paint_plan_t& plan)
+                                const note_paint_plan_t& plan, note_kind_t kind)
     -> std::variant<prepared_note_paint_t, diagnostic_list_t> {
     const auto first_id = plan.additions.empty()
                               ? std::optional<object_id_t>{}
@@ -2411,7 +2416,7 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
         found->second->notes.push_back({.id = id,
                                         .position = target.position,
                                         .lane = target.lane,
-                                        .kind = note_kind_t::tap});
+                                        .kind = kind});
         prepared.painted_notes.push_back(id);
     }
     return prepared;
@@ -2435,7 +2440,7 @@ auto end_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "note paint gesture is stale after a document edit")});
-    auto planned = plan_note_paint(context.chart, context.index, *pending.targets);
+    auto planned = plan_note_paint(context.chart, context.index, *pending.targets, state.armed_note_kind);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, state, *diagnostics);
     const auto& plan = std::get<note_paint_plan_t>(planned);
@@ -2443,7 +2448,7 @@ auto end_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_id,
                                         "paint gesture contains no note changes")});
-    auto prepared = prepare_note_paint_document(context.history, state.chart, plan);
+    auto prepared = prepare_note_paint_document(context.history, state.chart, plan, state.armed_note_kind);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&prepared))
         return diagnostic_result(context.history, state, *diagnostics);
     auto result = std::get<prepared_note_paint_t>(std::move(prepared));
@@ -2877,6 +2882,10 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position)
             history, state,
             {error(diagnostic_code_t::unknown_lane,
                    "hold lane is unavailable at the snapped end")});
+    if (*snapped == pending.position &&
+        (state.armed_note_kind == note_kind_t::hold || state.armed_note_kind == note_kind_t::roll))
+        return diagnostic_result(history, state,
+            {error(diagnostic_code_t::invalid_hold, "Move to a different row to finish the Hold or Roll gesture.")});
     const auto plan = plan_hold_placement(context.chart, context.index, pending.lane,
                                           pending.position, *snapped);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
@@ -2903,7 +2912,9 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position)
                        "normalized hold head refers to an unknown measure")});
         measure->notes.push_back({.id = *id, .position = placement.head,
                                   .lane = pending.lane,
-                                  .kind = placement.tail ? note_kind_t::hold : note_kind_t::tap,
+                                  .kind = placement.tail
+                                      ? (state.armed_note_kind == note_kind_t::roll ? note_kind_t::roll : note_kind_t::hold)
+                                      : state.armed_note_kind,
                                   .end = placement.tail});
     }
     const auto label = placement.adds_note
@@ -3306,6 +3317,10 @@ auto commit_virtual_hold(virtual_note_context_t& context,
                          const place_virtual_bms_hold_action_t& action,
                          const virtual_hold_rows_t& rows)
     -> editor_interaction_result_t {
+    if (rows.anchor == rows.end &&
+        (context.state.armed_note_kind == note_kind_t::hold || context.state.armed_note_kind == note_kind_t::roll))
+        return diagnostic_result(context.history, context.state,
+            {error(diagnostic_code_t::invalid_hold, "Move to a different row to finish the Hold or Roll gesture.")});
     auto proposed = context.history.document;
     auto* chart = find_chart(proposed, context.state.chart);
     if (const auto diagnostics = extend_virtual_chart(*chart, rows.measure_count))
@@ -3339,7 +3354,9 @@ auto commit_virtual_hold(virtual_note_context_t& context,
         const auto target = std::ranges::find(chart->measures, placement.head.measure,
                                               &measure_chunk_t::id);
         target->notes.push_back({.id = *id, .position = placement.head, .lane = action.lane,
-                                 .kind = placement.tail ? note_kind_t::hold : note_kind_t::tap,
+                                 .kind = placement.tail
+                                     ? (context.state.armed_note_kind == note_kind_t::roll ? note_kind_t::roll : note_kind_t::hold)
+                                     : context.state.armed_note_kind,
                                  .end = placement.tail});
     }
     auto command = commit_document_command(
@@ -3451,7 +3468,7 @@ auto place_virtual_bms_tap(virtual_note_context_t& context,
     const local_position_t position{chart->measures[resolved.measure].id,
                                     resolved.row - resolved.measure_begin_row};
     chart->measures[resolved.measure].notes.push_back(
-        {.id = *id, .position = position, .lane = action.lane, .kind = note_kind_t::tap,
+        {.id = *id, .position = position, .lane = action.lane, .kind = context.state.armed_note_kind,
          .sound = action.sample});
     auto command = commit_document_command(context.history, std::move(proposed),
                                            "Place tap in virtual BMS measure");
@@ -3598,7 +3615,7 @@ auto place_tap(tap_placement_context_t& context, const place_tap_action_t& actio
                    "tap placement overlaps a same-lane hold", *overlap)});
     std::string label;
     if (existing != measure->notes.end()) {
-        if (existing->kind != note_kind_t::tap || existing->end)
+        if (existing->kind != state.armed_note_kind || existing->end)
             return diagnostic_result(
                 history, state,
                 {error(diagnostic_code_t::collision,
@@ -3612,8 +3629,8 @@ auto place_tap(tap_placement_context_t& context, const place_tap_action_t& actio
                                      {error(diagnostic_code_t::invalid_id,
                                             "chart object ID sequence is exhausted")});
         measure->notes.push_back({.id = *id, .position = *snapped, .lane = state.active_lane,
-                                  .kind = note_kind_t::tap});
-        label = "Place tap note";
+                                  .kind = state.armed_note_kind});
+        label = "Place note";
     }
     auto command = commit_document_command(history, std::move(proposed), std::move(label));
     if (!command)
@@ -4315,6 +4332,36 @@ auto validate_virtual_cursor_action(const document_history_t& history,
                                     "this edit requires a materialized cursor measure")});
 }
 
+auto note_kind_allowed(const chart_document_t& chart, note_kind_t kind) -> bool {
+    if (kind == note_kind_t::tap || kind == note_kind_t::hold || kind == note_kind_t::mine)
+        return true;
+    switch (chart.source_family) {
+    case format_family_t::bms:
+    case format_family_t::bmson:
+        return kind == note_kind_t::invisible;
+    case format_family_t::stepmania:
+        return kind == note_kind_t::roll || kind == note_kind_t::lift || kind == note_kind_t::fake;
+    case format_family_t::native_project:
+        return kind == note_kind_t::roll || kind == note_kind_t::invisible ||
+               kind == note_kind_t::lift || kind == note_kind_t::fake;
+    default:
+        return false;
+    }
+}
+
+auto arm_note_kind(const document_history_t& history, editor_interaction_state_t& state,
+                    note_kind_t kind) -> editor_interaction_result_t {
+    const auto* chart = find_chart(history.document, state.chart);
+    if (!chart || !note_kind_allowed(*chart, kind))
+        return diagnostic_result(history, state,
+            {error(diagnostic_code_t::invalid_binding, "Note kind is unavailable for this chart profile.")});
+    if (state.pending_hold || state.pending_virtual_lane_key || state.pending_note_paint_gesture)
+        return diagnostic_result(history, state,
+            {error(diagnostic_code_t::invalid_hold, "Finish or cancel note placement before changing kind.")});
+    state.armed_note_kind = kind;
+    return space_selection_view_result(make_view(history, state));
+}
+
 auto dispatch_editor_action(document_history_t& history, editor_interaction_state_t& state,
                             const editor_ui_action_t& action) -> editor_interaction_result_t {
     if (auto canceled = handle_editor_cancellation(history, state, action))
@@ -4323,6 +4370,9 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
         return *rejected;
     if (auto rejected = validate_virtual_cursor_action(history, state, action))
         return *rejected;
+    const auto* kind_chart = find_chart(history.document, state.chart);
+    if (kind_chart && !note_kind_allowed(*kind_chart, state.armed_note_kind))
+        state.armed_note_kind = note_kind_t::tap;
     const auto initial_view = make_view(history, state);
     if (std::holds_alternative<diagnostic_list_t>(initial_view)) {
         return diagnostic_result(history, state, std::get<diagnostic_list_t>(initial_view));
@@ -4444,6 +4494,8 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
 
     tap_placement_context_t tap_placement{history, state, *chart, index};
     const auto handle_place_tap = [&](const place_tap_action_t& typed_action) -> editor_interaction_result_t {
+        if (state.armed_note_kind == note_kind_t::hold || state.armed_note_kind == note_kind_t::roll)
+            return begin_hold_action(hold_gestures, typed_action.position);
         return place_tap(tap_placement, typed_action);
     };
 

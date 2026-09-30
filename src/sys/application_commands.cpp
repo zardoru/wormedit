@@ -2,6 +2,7 @@
 
 #include <charconv>
 #include <string_view>
+#include <utility>
 
 namespace wormedit::sys {
 namespace {
@@ -62,6 +63,17 @@ auto compose_input_status_with_precedence(std::string_view current,
 
 auto parse_application_command(std::string_view id) noexcept
     -> std::optional<application_command_t> {
+    constexpr std::pair<std::string_view, unsigned> note_kinds[]{
+        {"tap", 0}, {"hold", 1}, {"mine", 4}, {"invisible", 3},
+        {"lift", 5}, {"fake", 6}, {"roll", 2}};
+    constexpr std::string_view note_kind_prefix = "edit.note_kind_";
+    if (id.starts_with(note_kind_prefix)) {
+        for (const auto& [name, kind] : note_kinds)
+            if (id.substr(note_kind_prefix.size()) == name)
+                return application_command_t{.kind = application_command_kind_t::edit_note_kind,
+                    .note_kind = kind};
+        return std::nullopt;
+    }
     for (const auto& command : command_names) {
         if (command.id == id) {
             return application_command_t{.kind = command.kind, .semantic_layer_slot = std::nullopt};

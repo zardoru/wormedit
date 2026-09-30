@@ -22,6 +22,7 @@ add_executable(wormedit_core_tests
     core/autosave_loop_tests.cpp
     core/bms_branch_editor_tests.cpp
     core/bmson_sound_channel_editor_tests.cpp
+    core/bmson_slice_reset_tests.cpp
     core/bpm_editor_tests.cpp
     core/bga_preview_tests.cpp
     core/chart_compare_tests.cpp

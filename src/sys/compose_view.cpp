@@ -676,6 +676,7 @@ bool initialize_compose_view_state(
     view.playable_field_left_pixels = compose_measure_rail_width_pixels;
     view.playable_field_right_pixels = view.viewport_width_pixels;
     view.bms_measure_labels = false;
+    view.compose_measure_count = 0;
     view.selected_bms_measure_number_plus_one = 0;
     view.timing_document_begin_fraction = 0.0;
     view.timing_document_end_fraction = 1.0;
@@ -1893,15 +1894,15 @@ std::uint64_t prepare_compose_projection_state(const compose_final_projection_co
         if (const auto* canvas = std::get_if<wormedit::virtual_canvas_t>(&built_canvas))
             canvas_rows = canvas->total_rows;
     }
-    const auto content_height = static_cast<long double>(canvas_rows) *
+    const auto content_height = static_cast<double>(canvas_rows) *
                                 interaction_view.pixels_per_standard_measure /
-                                chart.divisions_per_standard_measure;
+                                static_cast<double>(chart.divisions_per_standard_measure);
     const auto maximum_scroll = wormedit::editor_maximum_viewport_scroll(
-        content_height, static_cast<long double>(view.viewport_height_pixels));
+        content_height, view.viewport_height_pixels);
     retained_state->viewport_scroll_pixels = std::clamp(
         retained_state->viewport_scroll_pixels,
         -view.viewport_height_pixels * wormedit::editor_cursor_edge_margin_fraction,
-        static_cast<double>(maximum_scroll));
+        maximum_scroll);
     interaction_view.viewport_scroll_pixels = retained_state->viewport_scroll_pixels;
     view.pixels_per_standard_measure = interaction_view.pixels_per_standard_measure;
     cache.interaction_view = interaction_view;
@@ -2005,6 +2006,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     const auto downscroll = input.downscroll;
     flattened.compose.interaction_view = interaction_view;
     view.bms_measure_labels = chart.source_family == wormedit::format_family_t::bms;
+    view.compose_measure_count = chart.measures.size();
     view.selected_bms_measure_number_plus_one =
         interaction_view.selected_canvas_measure
             ? static_cast<std::uint32_t>(*interaction_view.selected_canvas_measure + 1)
@@ -2097,10 +2099,85 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     return true;
 }
 
+void append_area_object_geometry(wormedit::editor_area_geometry_snapshot_t& snapshot,
+    wormedit::editor_selection_object_t object, WormUiComposeRect bounds,
+    const WormUiComposeView& view, bool downscroll) {
+    const auto first = compose_source_y(bounds.top, view.viewport_height_pixels, downscroll);
+    const auto last = compose_source_y(bounds.bottom, view.viewport_height_pixels, downscroll);
+    snapshot.objects.push_back({object, bounds.left, std::min(first, last), bounds.right,
+                                std::max(first, last)});
+}
+
+auto area_timing_kind(WormUiTimingLaneKind lane)
+    -> std::optional<wormedit::editor_selection_object_kind_t> {
+    using kind = wormedit::editor_selection_object_kind_t;
+    switch (lane) {
+    case WORM_UI_TIMING_LANE_BPM: return kind::bpm_event;
+    case WORM_UI_TIMING_LANE_SCROLL: return kind::scroll_event;
+    case WORM_UI_TIMING_LANE_SPEED: return kind::speed_event;
+    case WORM_UI_TIMING_LANE_STOP: return kind::stop_event;
+    case WORM_UI_TIMING_LANE_DELAY: return kind::delay_event;
+    case WORM_UI_TIMING_LANE_WARP: return kind::warp_event;
+    case WORM_UI_TIMING_LANE_KIAI: return kind::kiai_event;
+    case WORM_UI_TIMING_LANE_ANCHOR: return kind::timing_anchor;
+    case WORM_UI_TIMING_LANE_COUNT: return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+void append_area_timing_geometry(wormedit::editor_area_geometry_snapshot_t& snapshot,
+                                const WormUiComposeView& view, bool downscroll) {
+    const auto count = std::popcount(view.timing_lane_visibility_mask);
+    if (count == 0) return;
+    const auto width = (view.playable_field_left_pixels - 42.0) / count;
+    for (std::size_t i = 0; i < view.timing_marker_count; ++i) {
+        const auto& marker = view.timing_markers[i];
+        const auto kind = area_timing_kind(marker.lane);
+        if (!kind || marker.object_id == 0) continue;
+        const auto bit = static_cast<std::uint8_t>(1U << static_cast<unsigned>(marker.lane));
+        if ((view.timing_lane_visibility_mask & bit) == 0) continue;
+        const auto slot = std::popcount(static_cast<std::uint8_t>(
+            view.timing_lane_visibility_mask & (bit - 1)));
+        const auto inner_left = 42.0 + width * slot + 2.0;
+        const auto inner_width = std::max(0.0, width - 4.0);
+        const auto left = inner_left + inner_width * marker.marker_left_fraction;
+        const auto right = std::max(left + 1.0,
+            inner_left + inner_width * marker.marker_right_fraction);
+        const auto top = std::clamp(marker.marker_y_pixels - 8.0, 0.0,
+                                    std::max(0.0, view.viewport_height_pixels - 16.0));
+        append_area_object_geometry(snapshot, {*kind, wormedit::object_id_t{marker.object_id}},
+                                     {left, top, right, top + 16.0}, view, downscroll);
+    }
+}
+
+void cache_area_object_geometry(const compose_final_projection_context_t& input) {
+    auto& cache = input.cache;
+    const auto& view = input.view;
+    if (!view.scene_available) {
+        cache.area_object_geometry.reset();
+        return;
+    }
+    auto snapshot = std::make_shared<wormedit::editor_area_geometry_snapshot_t>();
+    snapshot->chart = input.chart.id;
+    snapshot->document_revision = input.history.document.revision;
+    snapshot->projection = wormedit::editor_area_geometry_projection_t{
+        input.interaction_view.viewport_scroll_pixels, input.interaction_view.pixels_per_standard_measure,
+        input.interaction_view.viewport_height_pixels};
+    for (std::size_t i = 0; i < view.bgm_event_count; ++i) {
+        const auto& event = view.bgm_events[i];
+        append_area_object_geometry(*snapshot,
+            {wormedit::editor_selection_object_kind_t::bgm_event,
+             wormedit::object_id_t{event.event_id}}, event.bounds, view, input.downscroll);
+    }
+    append_area_timing_geometry(*snapshot, view, input.downscroll);
+    cache.area_object_geometry = std::move(snapshot);
+}
+
 void populate_compose_final_projection(const compose_final_projection_context_t& input) {
     const auto rows = prepare_compose_projection_state(input);
     populate_compose_pending_previews(input);
     (void)compose_project_scene(input, rows);
+    cache_area_object_geometry(input);
 }
 
 } // namespace
@@ -2112,6 +2189,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
                            std::optional<wormedit::editor_interaction_state_t>& retained_state,
                            application_command_state_t& application_state,
                            const wormedit::timing_lane_pseudonote_preview_t* timing_stage) {
+    cache.area_object_geometry.reset();
     if (!initialize_compose_view_state(flattened, cache, window_width, window_height,
                                        retained_state, application_state)) {
         return;

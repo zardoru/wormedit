@@ -7,6 +7,7 @@
 #include <cstdint>
 
 struct nk_context;
+struct nk_rect;
 
 [[nodiscard]] int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view);
 
@@ -39,3 +40,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
 [[nodiscard]] bool worm_ui_nuklear_compose_lane_focused(const WormUiComposeView* view,
                                                         bool compose_tab_active,
                                                         bool window_focused);
+
+void worm_ui_nuklear_render_compose_minimap(struct nk_context* context,
+    const WormUiComposeView* view, WormUiWorkspaceAction* action,
+    struct nk_rect bounds, bool window_focused);

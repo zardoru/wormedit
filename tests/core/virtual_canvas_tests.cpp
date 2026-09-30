@@ -1,7 +1,10 @@
 #include <wormedit/core/virtual_canvas.h>
+#include <wormedit/core/editor_scene.h>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
 
 namespace {
@@ -72,4 +75,91 @@ TEST_CASE("virtual BMS tail rejects row overflow without changing the chart",
     REQUIRE(std::holds_alternative<wormedit::diagnostic_list_t>(built));
     CHECK_FALSE(std::get<wormedit::diagnostic_list_t>(built).empty());
     CHECK(chart.measures.size() == 1);
+}
+
+namespace {
+
+struct virtual_scene_boundary_fixture_t {
+    wormedit::chart_document_t chart;
+    wormedit::virtual_canvas_t canvas;
+    wormedit::editor_field_scene_index_t index;
+    wormedit::editor_interaction_view_model_t view;
+    wormedit::editor_field_scene_request_t request;
+};
+
+auto make_virtual_scene_boundary_fixture() -> virtual_scene_boundary_fixture_t {
+    virtual_scene_boundary_fixture_t fixture;
+    fixture.chart = chart_with_two_measures(wormedit::format_family_t::bms);
+    fixture.chart.lane_layouts = {{
+        .id = wormedit::object_id_t{20},
+        .position = {wormedit::measure_id_t{10}, 0},
+        .layout = {.profile_id = "virtual-tail",
+                   .display_name = "Virtual tail",
+                   .lanes = {{.id = wormedit::lane_id_t{1},
+                              .name = "Key 1",
+                              .role = wormedit::lane_role_t::playable,
+                              .glyph = wormedit::lane_glyph_t::bar}}}}};
+    const auto built = wormedit::build_virtual_canvas(fixture.chart);
+    REQUIRE(std::holds_alternative<wormedit::virtual_canvas_t>(built));
+    fixture.canvas = std::get<wormedit::virtual_canvas_t>(built);
+    const auto indexed = wormedit::build_editor_field_scene_index(fixture.chart, 7);
+    REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(indexed));
+    fixture.index = std::get<wormedit::editor_field_scene_index_t>(indexed);
+    fixture.view = {.chart = fixture.chart.id,
+                    .active_lane = wormedit::lane_id_t{1},
+                    .cursor = {wormedit::measure_id_t{10}, 0},
+                    .active_snap_denominator = 4,
+                    .supported_snap_denominators = {4},
+                    .document_revision = 7,
+                    .pixels_per_standard_measure = 96.0,
+                    .viewport_height_pixels = 480.0};
+    const auto content_height = static_cast<double>(fixture.canvas.total_rows) *
+                                fixture.view.pixels_per_standard_measure /
+                                static_cast<double>(fixture.chart.divisions_per_standard_measure);
+    fixture.view.viewport_scroll_pixels = wormedit::editor_maximum_viewport_scroll(
+        content_height, fixture.view.viewport_height_pixels);
+    fixture.request = {
+        .field_left_pixels = 10.0, .field_width_pixels = 200.0, .include_virtual_bms_tail = true};
+    return fixture;
+}
+
+void require_virtual_scene_boundary_visible(const virtual_scene_boundary_fixture_t& fixture) {
+    const auto projected = wormedit::make_editor_field_scene(
+        fixture.chart, fixture.index, fixture.view, fixture.request);
+    REQUIRE(projected);
+    const auto last_measure = fixture.canvas.measure_at(999);
+    REQUIRE(last_measure);
+    CHECK(std::ranges::any_of(projected.scene->grid_lines, [&](const auto& line) {
+        return line.kind == wormedit::editor_grid_line_kind_t::measure &&
+               line.chart_row.whole_rows == last_measure->begin_row && line.y_pixels >= 0.0 &&
+               line.y_pixels <= fixture.view.viewport_height_pixels;
+    }));
+}
+
+void check_virtual_scene_boundary_rejected(const virtual_scene_boundary_fixture_t& fixture) {
+    auto view = fixture.view;
+    view.viewport_scroll_pixels = std::nextafter(
+        view.viewport_scroll_pixels, std::numeric_limits<double>::infinity());
+    const auto rejected = wormedit::make_editor_field_scene(
+        fixture.chart, fixture.index, view, fixture.request);
+    CHECK_FALSE(rejected);
+    CHECK(std::ranges::any_of(rejected.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.code == wormedit::diagnostic_code_t::row_out_of_range;
+    }));
+}
+
+void check_virtual_scene_authored_buckets(const virtual_scene_boundary_fixture_t& fixture) {
+    CHECK(fixture.chart.measures.size() == 2);
+    CHECK(fixture.index.measures.entries.size() == 2);
+}
+
+} // namespace
+
+TEST_CASE("virtual BMS scene accepts the controller scroll limit and rejects its next value",
+          "[unit][core][virtual-canvas][editor-scene]") {
+    const auto fixture = make_virtual_scene_boundary_fixture();
+    require_virtual_scene_boundary_visible(fixture);
+    check_virtual_scene_authored_buckets(fixture);
+    check_virtual_scene_boundary_rejected(fixture);
+    check_virtual_scene_authored_buckets(fixture);
 }

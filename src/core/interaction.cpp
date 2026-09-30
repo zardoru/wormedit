@@ -565,6 +565,14 @@ auto valid_retained_canvas_range(const editor_interaction_state_t& state,
              state.retained_canvas_selection_range->end_row);
 }
 
+auto area_selection_anchor_y(const pending_editor_area_selection_t& pending,
+                              double viewport_scroll) -> double {
+    if (!pending.object_geometry || !pending.object_geometry->projection)
+        return pending.anchor_y_pixels;
+    return pending.anchor_y_pixels + pending.object_geometry->projection->viewport_scroll_pixels -
+           viewport_scroll;
+}
+
 auto make_view(const document_history_t& history, const editor_interaction_state_t& state)
     -> std::variant<editor_interaction_view_model_t, diagnostic_list_t> {
     auto resolved = resolve_view_geometry(history, state);
@@ -618,11 +626,13 @@ auto make_view(const document_history_t& history, const editor_interaction_state
                   .document_revision = state.pending_editor_area_selection->document_revision,
                   .left_pixels = std::min(state.pending_editor_area_selection->anchor_x_pixels,
                                            state.pending_editor_area_selection->current_x_pixels),
-                  .top_pixels = std::min(state.pending_editor_area_selection->anchor_y_pixels,
+                  .top_pixels = std::min(area_selection_anchor_y(*state.pending_editor_area_selection,
+                                                       state.viewport_scroll_pixels),
                                           state.pending_editor_area_selection->current_y_pixels),
                   .right_pixels = std::max(state.pending_editor_area_selection->anchor_x_pixels,
                                             state.pending_editor_area_selection->current_x_pixels),
-                  .bottom_pixels = std::max(state.pending_editor_area_selection->anchor_y_pixels,
+                  .bottom_pixels = std::max(area_selection_anchor_y(*state.pending_editor_area_selection,
+                                                       state.viewport_scroll_pixels),
                                              state.pending_editor_area_selection->current_y_pixels),
                   .notes = state.pending_editor_area_selection->notes,
                   .objects = state.pending_editor_area_selection->objects}} : std::nullopt,
@@ -3824,6 +3834,18 @@ struct area_selection_context_t {
     std::function<editor_interaction_result_t()> cancel_gesture;
 };
 
+auto valid_area_selection_capture(const begin_editor_area_selection_action_t& request,
+                                   double viewport_height) -> bool {
+    return std::isfinite(request.x_pixels) && std::isfinite(request.y_pixels) &&
+        std::isfinite(request.field_left_pixels) &&
+        std::isfinite(request.field_width_pixels) && request.field_width_pixels > 0.0 &&
+        std::isfinite(request.field_left_pixels + request.field_width_pixels) &&
+        (request.canvas_pointer_capture ||
+         (request.x_pixels >= request.field_left_pixels &&
+          request.x_pixels < request.field_left_pixels + request.field_width_pixels)) &&
+        request.y_pixels >= 0.0 && request.y_pixels < viewport_height;
+}
+
 auto begin_area_selection_gesture(area_selection_context_t& context,
                                   const begin_editor_area_selection_action_t& request)
     -> editor_interaction_result_t {
@@ -3840,13 +3862,7 @@ auto begin_area_selection_gesture(area_selection_context_t& context,
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "another editor gesture is already active")});
-    if (!std::isfinite(request.x_pixels) || !std::isfinite(request.y_pixels) ||
-        !std::isfinite(request.field_left_pixels) ||
-        !std::isfinite(request.field_width_pixels) || request.field_width_pixels <= 0.0 ||
-        !std::isfinite(request.field_left_pixels + request.field_width_pixels) ||
-        request.x_pixels < request.field_left_pixels ||
-        request.x_pixels >= request.field_left_pixels + request.field_width_pixels ||
-        request.y_pixels < 0.0 || request.y_pixels >= state.viewport_height_pixels)
+    if (!valid_area_selection_capture(request, state.viewport_height_pixels))
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_resolution,
                                         "area selection must begin inside the chart field")});
@@ -3871,6 +3887,7 @@ auto begin_area_selection_gesture(area_selection_context_t& context,
         .field_width_pixels = request.field_width_pixels,
     };
     area.scope = request.scope;
+    area.object_geometry = request.object_geometry;
     auto queried = editor_objects_in_area_selection(context.chart, *hit_index, view, area);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&queried))
         return diagnostic_result(history, state, *diagnostics);
@@ -3894,6 +3911,7 @@ auto begin_area_selection_gesture(area_selection_context_t& context,
         .scope = request.scope,
         .objects = std::make_shared<const std::vector<editor_selection_object_t>>(
             std::move(objects)),
+        .object_geometry = request.object_geometry,
     };
     return space_selection_view_result(make_view(history, state));
 }
@@ -3923,13 +3941,14 @@ auto update_area_selection_gesture(area_selection_context_t& context, double x_p
     const auto& view = std::get<editor_interaction_view_model_t>(context.initial_view);
     editor_area_selection_request_t area{
         .start_x_pixels = pending.anchor_x_pixels,
-        .start_y_pixels = pending.anchor_y_pixels,
+        .start_y_pixels = area_selection_anchor_y(pending, view.viewport_scroll_pixels),
         .end_x_pixels = x_pixels,
         .end_y_pixels = y_pixels,
         .field_left_pixels = pending.field_left_pixels,
         .field_width_pixels = pending.field_width_pixels,
     };
     area.scope = pending.scope;
+    area.object_geometry = pending.object_geometry;
     auto queried = editor_objects_in_area_selection(
         context.chart, *pending.hit_index, view, area);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&queried))
@@ -3956,7 +3975,7 @@ auto retain_area_selection_range(area_selection_context_t& context,
     const auto last_view_y = std::nextafter(view.viewport_height_pixels, 0.0);
     const auto anchor = position_at_row_y_pixels(
         context.chart, context.index, view,
-        std::clamp(pending.anchor_y_pixels, 0.0, last_view_y));
+        std::clamp(area_selection_anchor_y(pending, view.viewport_scroll_pixels), 0.0, last_view_y));
     const auto tail = position_at_row_y_pixels(
         context.chart, context.index, view,
         std::clamp(pending.current_y_pixels, 0.0, last_view_y));
@@ -3964,7 +3983,7 @@ auto retain_area_selection_range(area_selection_context_t& context,
         anchor && tail ? normalized_position_span(context.index, *anchor, *tail) : std::nullopt;
     const auto anchor_row = absolute_row_at_y_pixels(
         context.chart, context.index, view,
-        std::clamp(pending.anchor_y_pixels, 0.0, last_view_y), true);
+        std::clamp(area_selection_anchor_y(pending, view.viewport_scroll_pixels), 0.0, last_view_y), true);
     const auto tail_row = absolute_row_at_y_pixels(
         context.chart, context.index, view,
         std::clamp(pending.current_y_pixels, 0.0, last_view_y), true);

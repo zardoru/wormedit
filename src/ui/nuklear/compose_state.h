@@ -9,6 +9,24 @@
 #include <optional>
 #include <string>
 
+struct worm_ui_nuklear_overview_capture_t {
+    std::uint64_t chart_id{};
+    std::uint64_t revision{};
+    std::uint64_t asset_id{};
+    std::uint64_t total_frames{};
+    std::uint32_t sample_rate{};
+    double left{};
+    double width{};
+};
+
+auto worm_ui_nuklear_overview_fraction(double x, double left, double width)
+    -> std::optional<double>;
+auto worm_ui_nuklear_overview_frame_delta(double x, double anchor, double width,
+                                         std::uint64_t total_frames) -> std::int64_t;
+auto worm_ui_nuklear_overview_capture_matches(
+    const worm_ui_nuklear_overview_capture_t& capture, const WormUiComposeView& view,
+    double left, double width, bool available, bool window_focused) -> bool;
+
 struct worm_ui_nuklear_compose_key_event_t {
     std::uint32_t keycode{};
     std::uint32_t scancode{};
@@ -107,7 +125,15 @@ struct worm_ui_nuklear_compose_state_t {
     float inline_timing_anchor_screen_y{};
     std::array<char, 64> inline_timing_text{};
     std::array<char, 128> inline_timing_error{};
+    bool go_to_measure_open{};
+    bool go_to_measure_cancel_pending{};
+    bool go_to_measure_focus_pending{};
+    std::uint64_t go_to_measure_chart_id{};
+    std::uint64_t go_to_measure_revision{};
+    std::array<char, 32> go_to_measure_text{};
+    std::array<char, 96> go_to_measure_error{};
     bool waveform_overview_drag_active{};
+    worm_ui_nuklear_overview_capture_t waveform_overview_capture{};
     bool waveform_beat_zero_drag_active{};
     bool beat_fit_drag_active{};
     bool offset_fit_drag_active{};
@@ -119,8 +145,9 @@ struct worm_ui_nuklear_compose_state_t {
     float beat_fit_anchor_screen_y{};
     std::uint8_t beat_fit_snap_step_index{};
     bool beat_fit_ctrl_held{};
-    float waveform_beat_zero_drag_anchor_y{};
-    float waveform_beat_zero_drag_height{};
+    float waveform_beat_zero_drag_anchor_x{};
+    float waveform_beat_zero_drag_width{};
+    float waveform_beat_zero_drag_left{};
     std::uint64_t waveform_beat_zero_drag_total_frames{};
     std::uint64_t waveform_beat_zero_drag_chart_id{};
     std::uint64_t waveform_beat_zero_drag_revision{};
@@ -205,3 +232,9 @@ void worm_ui_nuklear_compose_file_dialog_complete(
 [[nodiscard]] auto worm_ui_nuklear_compose_file_dialog_take()
     -> std::optional<worm_ui_nuklear_compose_file_dialog_result_t>;
 [[nodiscard]] auto worm_ui_nuklear_compose_file_dialog_open() -> bool;
+
+auto worm_ui_nuklear_overview_source_fraction(const WormUiComposeView& view)
+    -> std::optional<double>;
+
+auto worm_ui_nuklear_compose_measure_number(const WormUiComposeView& view, const char* text)
+    -> std::optional<std::uint64_t>;

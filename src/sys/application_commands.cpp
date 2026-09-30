@@ -50,6 +50,14 @@ constexpr std::string_view semantic_layer_slot_prefix = "semantic_layer.select_s
 
 } // namespace
 
+auto compose_input_status_with_precedence(std::string_view current,
+                                         std::string_view input) noexcept -> std::string_view {
+    if (input.empty() || (!current.empty() && input == "Compose navigation canceled.")) {
+        return current;
+    }
+    return input;
+}
+
 auto parse_application_command(std::string_view id) noexcept
     -> std::optional<application_command_t> {
     for (const auto& command : command_names) {

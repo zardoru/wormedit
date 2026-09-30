@@ -988,7 +988,9 @@ void update_compose_pointer_hover(const WormUiWorkspaceAction& ui_action, bool g
             scene_cache.hover = hover_editor_object(
                 *chart, *scene_cache.hit_test_index, *interaction_view,
                 {.x_pixels = ui_action.compose_pointer_hover_x_pixels,
-                 .y_pixels = ui_action.compose_pointer_hover_y_pixels,
+                 .y_pixels = compose_source_y(ui_action.compose_pointer_hover_y_pixels,
+                                              interaction_view->viewport_height_pixels,
+                                              compose_field_downscroll(*chart)),
                  .field_left_pixels = field_left_pixels,
                  .field_width_pixels = field_width_pixels,
                  .hit_radius_pixels = 8.0,
@@ -1431,7 +1433,9 @@ auto dispatch_compose_selection_input(const WormUiComposeInputAction& input,
                                       wormedit::editor_interaction_result_t& result,
                                       std::string_view& accepted, SelectionMode&& selection_mode,
                                       InputSourceY&& input_source_y, double field_left_pixels,
-                                      double field_width_pixels) -> compose_input_family_result_t {
+                                      double field_width_pixels,
+                                      const std::shared_ptr<const wormedit::editor_area_geometry_snapshot_t>& geometry)
+    -> compose_input_family_result_t {
     using namespace wormedit;
     switch (input.kind) {
         case WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN:
@@ -1445,6 +1449,11 @@ auto dispatch_compose_selection_input(const WormUiComposeInputAction& input,
                                                 .field_left_pixels = field_left_pixels,
                                                 .field_width_pixels = field_width_pixels,
                                                 .mode = *selection_mode(input.selection_mode),
+                                                .scope = geometry
+                                                    ? editor_selection_scope_t{true, true, true, true}
+                                                    : editor_selection_scope_t{},
+                                                .canvas_pointer_capture = true,
+                                                .object_geometry = geometry,
                                             });
             accepted = "Area selection started.";
             break;
@@ -1930,6 +1939,8 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
                                    wormedit::editor_interaction_result_t& result,
                                    std::string_view& accepted) -> std::optional<std::string> {
     using namespace wormedit;
+    const auto mode = context.selection_mode(input.selection_mode);
+    if (!mode) return "Compose pointer selection used an unknown selection mode.";
     const auto* chart = context.chart();
     const auto view = compose_view_for_state(context.history, context.state);
     if (!chart || !view)
@@ -1945,9 +1956,19 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
         const auto measure = canvas ? canvas->measure_containing(virtual_hit->first) : std::nullopt;
         if (!measure)
             return "The clicked BMS measure is unavailable.";
-        result = dispatch_editor_action(context.history, context.state,
+        auto candidate = context.state;
+        result = dispatch_editor_action(context.history, candidate,
                                         select_bms_canvas_measure_action_t{measure->number});
-        context.state.active_lane = virtual_hit->second;
+        if (result.accepted) {
+            if (*mode == editor_area_selection_mode_t::replace) {
+                context.state = std::move(candidate);
+            } else {
+                context.state.cursor = candidate.cursor;
+                context.state.virtual_bms_cursor_row = candidate.virtual_bms_cursor_row;
+                context.state.viewport_scroll_pixels = candidate.viewport_scroll_pixels;
+            }
+            context.state.active_lane = virtual_hit->second;
+        }
         accepted = "BMS measure selected.";
         return std::nullopt;
     }
@@ -1958,9 +1979,9 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
         target->note
             ? select_editor_objects_action_t{{{editor_selection_object_kind_t::note,
                                                *target->note}},
-                                             editor_area_selection_mode_t::replace,
+                                             *mode,
                                              true}
-            : select_editor_objects_action_t{{}, editor_area_selection_mode_t::replace, false};
+            : select_editor_objects_action_t{{}, *mode, false};
     result = dispatch_editor_action(context.history, context.state, selection);
     accepted = target->note ? "Note selected." : "Edit cursor moved to the clicked row.";
     return std::nullopt;
@@ -2357,7 +2378,7 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
     const auto source_y = [&context](double y) { return context.input_source_y(y); };
     const auto selection = dispatch_compose_selection_input(
         input, context.history, context.state, result, accepted, selection_mode, source_y,
-        context.field_left_pixels, context.field_width_pixels);
+        context.field_left_pixels, context.field_width_pixels, context.scene_cache.area_object_geometry);
     return selection;
 }
 

@@ -1868,11 +1868,10 @@ auto prepare_scene_visible_rows(const chart_document_t& chart,
     if (!canvas_rows) {
         return std::nullopt;
     }
-    const auto pixels_per_row = static_cast<long double>(view.pixels_per_standard_measure) /
-                                chart.divisions_per_standard_measure;
-    const auto content_height = static_cast<long double>(*canvas_rows) * pixels_per_row;
-    const auto maximum_scroll = editor_maximum_viewport_scroll(
-        content_height, static_cast<long double>(view.viewport_height_pixels));
+    const auto content_height = static_cast<double>(*canvas_rows) * view.pixels_per_standard_measure /
+                                static_cast<double>(chart.divisions_per_standard_measure);
+    const auto maximum_scroll =
+        editor_maximum_viewport_scroll(content_height, view.viewport_height_pixels);
     if (!viewport_scroll_in_range(view.viewport_scroll_pixels, view.viewport_height_pixels,
                                   maximum_scroll)) {
         diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,

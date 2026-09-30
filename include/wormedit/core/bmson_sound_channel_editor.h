@@ -14,6 +14,12 @@ namespace wormedit {
     document_history_t& history, std::uint64_t expected_revision,
     chart_id_t chart, object_id_t sound_channel_event) -> document_command_result_t;
 
+// Sets every retained event at the selected non-playable event's pulse to
+// restart or continue. An already matching pulse creates no history entry.
+[[nodiscard]] auto set_bmson_sound_channel_restart(
+    document_history_t& history, std::uint64_t expected_revision,
+    chart_id_t chart, object_id_t sound_channel_event, bool restart) -> document_command_result_t;
+
 // Moves one semantic BMSON BGM marker and its retained source event together.
 // The target must be an exact chart row free within that sound channel.
 [[nodiscard]] auto move_bmson_bgm_marker(document_history_t& history,

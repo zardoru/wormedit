@@ -56,4 +56,10 @@ struct application_command_t {
 [[nodiscard]] auto parse_application_command(std::string_view id) noexcept
     -> std::optional<application_command_t>;
 
+// Focus cleanup emits navigation cancellation even on otherwise idle frames.
+// Keep the last command result until input produces a meaningful new status.
+[[nodiscard]] auto compose_input_status_with_precedence(std::string_view current,
+                                                       std::string_view input) noexcept
+    -> std::string_view;
+
 } // namespace wormedit::sys

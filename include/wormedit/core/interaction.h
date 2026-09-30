@@ -211,6 +211,28 @@ struct editor_selection_object_t {
     auto operator<=>(const editor_selection_object_t&) const = default;
 };
 
+// Frontend-projected, canonical-source-Y rectangles for non-note canvas objects.
+struct editor_area_object_geometry_t {
+    editor_selection_object_t object;
+    double left_pixels{};
+    double top_pixels{};
+    double right_pixels{};
+    double bottom_pixels{};
+};
+
+struct editor_area_geometry_projection_t {
+    double viewport_scroll_pixels{};
+    double pixels_per_standard_measure{};
+    double viewport_height_pixels{};
+};
+
+struct editor_area_geometry_snapshot_t {
+    chart_id_t chart;
+    std::uint64_t document_revision{};
+    std::vector<editor_area_object_geometry_t> objects;
+    std::optional<editor_area_geometry_projection_t> projection;
+};
+
 // A validated, revision-bound intent to audition one semantic sound object.
 // Runtime audio resolves resources, BMSON slices, and fused layers from this
 // identity rather than relying on a lossy resource-only hint.
@@ -237,6 +259,8 @@ struct begin_editor_area_selection_action_t {
     editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
     bool pointer_captured{true};
     editor_selection_scope_t scope{};
+    bool canvas_pointer_capture{};
+    std::shared_ptr<const editor_area_geometry_snapshot_t> object_geometry;
 };
 
 struct update_editor_area_selection_action_t {
@@ -536,6 +560,7 @@ struct pending_editor_area_selection_t {
     std::shared_ptr<const std::vector<object_id_t>> notes;
     editor_selection_scope_t scope{};
     std::shared_ptr<const std::vector<editor_selection_object_t>> objects;
+    std::shared_ptr<const editor_area_geometry_snapshot_t> object_geometry;
 };
 
 struct editor_interaction_state_t {
@@ -818,6 +843,7 @@ struct editor_area_selection_request_t {
     double field_left_pixels{};
     double field_width_pixels{};
     editor_selection_scope_t scope{};
+    std::shared_ptr<const editor_area_geometry_snapshot_t> object_geometry;
 };
 
 [[nodiscard]] auto build_editor_hit_test_index(const chart_document_t& chart,

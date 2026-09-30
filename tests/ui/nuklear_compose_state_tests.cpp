@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstring>
+#include <limits>
 
 namespace {
 
@@ -292,4 +293,162 @@ TEST_CASE("Inline timing anchor edits preserve lock state", "[unit][frontend][co
     check_primary(action, "18446744073709551615", "1");
     CHECK_FALSE(worm_ui_nuklear_inline_timing_confirm(view, "-1", action));
     CHECK(std::strcmp(action.timing_primary_numerator_text, "18446744073709551615") == 0);
+}
+
+namespace {
+
+void check_overview_invalid_dimensions() {
+    CHECK_FALSE(worm_ui_nuklear_overview_fraction(10.0, 0.0, 0.0));
+    CHECK_FALSE(worm_ui_nuklear_overview_fraction(
+        std::numeric_limits<double>::infinity(), 0.0, 100.0));
+}
+
+void check_overview_capture_host(const worm_ui_nuklear_overview_capture_t& capture,
+                                 const WormUiComposeView& view) {
+    CHECK_FALSE(worm_ui_nuklear_overview_capture_matches(capture, view, 10.0, 100.0, false, true));
+    CHECK_FALSE(worm_ui_nuklear_overview_capture_matches(capture, view, 10.0, 100.0, true, false));
+    CHECK_FALSE(worm_ui_nuklear_overview_capture_matches(capture, view, 10.0, 101.0, true, true));
+    CHECK_FALSE(worm_ui_nuklear_overview_capture_matches(capture, view, 11.0, 100.0, true, true));
+}
+
+void check_overview_capture_identity(const worm_ui_nuklear_overview_capture_t& capture,
+                                     WormUiComposeView view) {
+    ++view.document_revision;
+    CHECK_FALSE(worm_ui_nuklear_overview_capture_matches(capture, view, 10.0, 100.0, true, true));
+    --view.document_revision;
+    ++view.selected_audio_asset_id;
+    CHECK_FALSE(worm_ui_nuklear_overview_capture_matches(capture, view, 10.0, 100.0, true, true));
+}
+
+} // namespace
+
+TEST_CASE("Horizontal overview coordinates clamp and reject invalid dimensions",
+          "[frontend][compose][overview]") {
+    CHECK(worm_ui_nuklear_overview_fraction(10.0, 10.0, 100.0) == 0.0);
+    CHECK(worm_ui_nuklear_overview_fraction(110.0, 10.0, 100.0) == 1.0);
+    CHECK(worm_ui_nuklear_overview_fraction(-20.0, 10.0, 100.0) == 0.0);
+    CHECK(worm_ui_nuklear_overview_fraction(200.0, 10.0, 100.0) == 1.0);
+    CHECK(worm_ui_nuklear_overview_fraction(60.0, 10.0, 100.0) == 0.5);
+    check_overview_invalid_dimensions();
+}
+
+TEST_CASE("Horizontal overview drag remains sample-frame exact and bounded",
+          "[frontend][compose][overview]") {
+    CHECK(worm_ui_nuklear_overview_frame_delta(60.0, 10.0, 100.0, 48'000) == 24'000);
+    CHECK(worm_ui_nuklear_overview_frame_delta(-40.0, 10.0, 100.0, 48'000) == -24'000);
+    CHECK(worm_ui_nuklear_overview_frame_delta(11.0, 10.0, 96'000.0, 48'000) == 1);
+    CHECK(worm_ui_nuklear_overview_frame_delta(10.0, 10.0, 0.0, 48'000) == 0);
+    CHECK(worm_ui_nuklear_overview_frame_delta(1e100, 0.0, 1.0, 48'000) ==
+          std::numeric_limits<std::int64_t>::max());
+    CHECK(worm_ui_nuklear_overview_frame_delta(-1e100, 0.0, 1.0, 48'000) ==
+          std::numeric_limits<std::int64_t>::min());
+}
+
+TEST_CASE("Overview capture rejects stale source focus availability and resize",
+          "[frontend][compose][overview]") {
+    WormUiComposeView view{};
+    view.scene_available = true;
+    view.chart_id = 7;
+    view.document_revision = 11;
+    view.selected_audio_asset_id = 19;
+    view.waveform_overview_total_frames = 48'000;
+    view.waveform_overview_sample_rate = 48'000;
+    const worm_ui_nuklear_overview_capture_t capture{7, 11, 19, 48'000, 48'000, 10.0, 100.0};
+    CHECK(worm_ui_nuklear_overview_capture_matches(capture, view, 10.0, 100.0, true, true));
+    check_overview_capture_host(capture, view);
+    check_overview_capture_identity(capture, view);
+}
+
+namespace {
+
+auto source_playhead_view() -> WormUiComposeView {
+    WormUiComposeView view{};
+    view.chart_id = 7;
+    view.document_revision = 11;
+    view.selected_audio_asset_id = 19;
+    view.waveform_overview_total_frames = 96'000;
+    view.waveform_overview_sample_rate = 48'000;
+    view.source_playhead_available = true;
+    view.source_playhead_asset_id = 19;
+    view.source_playhead_frame = 44'100;
+    view.source_playhead_sample_rate = 44'100;
+    view.source_playhead_chart_id = 7;
+    view.source_playhead_document_revision = 11;
+    return view;
+}
+
+void check_source_playhead_identity_mismatches() {
+    auto view = source_playhead_view();
+    ++view.source_playhead_asset_id;
+    CHECK_FALSE(worm_ui_nuklear_overview_source_fraction(view));
+    view = source_playhead_view();
+    ++view.source_playhead_chart_id;
+    CHECK_FALSE(worm_ui_nuklear_overview_source_fraction(view));
+    view = source_playhead_view();
+    ++view.source_playhead_document_revision;
+    CHECK_FALSE(worm_ui_nuklear_overview_source_fraction(view));
+}
+
+void check_source_playhead_missing_geometry() {
+    auto view = source_playhead_view();
+    view.source_playhead_sample_rate = 0;
+    CHECK_FALSE(worm_ui_nuklear_overview_source_fraction(view));
+    view = source_playhead_view();
+    view.waveform_overview_sample_rate = 0;
+    CHECK_FALSE(worm_ui_nuklear_overview_source_fraction(view));
+    view = source_playhead_view();
+    view.waveform_overview_total_frames = 0;
+    CHECK_FALSE(worm_ui_nuklear_overview_source_fraction(view));
+}
+
+} // namespace
+
+TEST_CASE("Minimap source playhead uses source seconds across sample rates",
+          "[frontend][compose][overview][source-playhead]") {
+    auto view = source_playhead_view();
+    CHECK(worm_ui_nuklear_overview_source_fraction(view) == 0.5);
+    view.source_playhead_frame = 0;
+    CHECK(worm_ui_nuklear_overview_source_fraction(view) == 0.0);
+    view.source_playhead_sample_rate = 48'000;
+    view.source_playhead_frame = 48'000;
+    CHECK(worm_ui_nuklear_overview_source_fraction(view) == 0.5);
+    view.source_playhead_frame = 95'999;
+    REQUIRE(worm_ui_nuklear_overview_source_fraction(view));
+    CHECK(*worm_ui_nuklear_overview_source_fraction(view) < 1.0);
+}
+
+TEST_CASE("Minimap source playhead hides unknown stale and out-of-range positions",
+          "[frontend][compose][overview][source-playhead]") {
+    check_source_playhead_identity_mismatches();
+    check_source_playhead_missing_geometry();
+    auto view = source_playhead_view();
+    view.source_playhead_available = false;
+    CHECK_FALSE(worm_ui_nuklear_overview_source_fraction(view));
+    view.source_playhead_available = true;
+    view.source_playhead_frame = 88'200;
+    CHECK_FALSE(worm_ui_nuklear_overview_source_fraction(view));
+    view.source_playhead_frame = std::numeric_limits<std::uint64_t>::max();
+    CHECK_FALSE(worm_ui_nuklear_overview_source_fraction(view));
+}
+
+TEST_CASE("Go to measure parses display labels within the BMS virtual range",
+          "[frontend][compose][measure-navigation]") {
+    WormUiComposeView view{};
+    view.bms_measure_labels = true;
+    CHECK(worm_ui_nuklear_compose_measure_number(view, "000") == 0);
+    CHECK(worm_ui_nuklear_compose_measure_number(view, "999") == 999);
+    CHECK_FALSE(worm_ui_nuklear_compose_measure_number(view, "1000"));
+    CHECK_FALSE(worm_ui_nuklear_compose_measure_number(view, "-1"));
+    CHECK_FALSE(worm_ui_nuklear_compose_measure_number(view, ""));
+}
+
+TEST_CASE("Go to measure validates authored display numbers and bounded input",
+          "[frontend][compose][measure-navigation]") {
+    WormUiComposeView view{};
+    view.compose_measure_count = 3;
+    CHECK(worm_ui_nuklear_compose_measure_number(view, "1") == 1);
+    CHECK(worm_ui_nuklear_compose_measure_number(view, "3") == 3);
+    CHECK_FALSE(worm_ui_nuklear_compose_measure_number(view, "0"));
+    CHECK_FALSE(worm_ui_nuklear_compose_measure_number(view, "4"));
+    CHECK_FALSE(worm_ui_nuklear_compose_measure_number(view, "18446744073709551616"));
 }

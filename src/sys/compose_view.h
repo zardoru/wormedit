@@ -57,6 +57,7 @@ struct compose_scene_cache_t {
     std::optional<wormedit::editor_field_scene_index_t> index;
     std::unordered_map<std::uint64_t, std::uint64_t> bgm_rows_by_id;
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
+    std::shared_ptr<const wormedit::editor_area_geometry_snapshot_t> area_object_geometry;
     std::optional<wormedit::timing_index_t> marker_timing_index;
     std::optional<wormedit::timing_index_t> proposed_offset_timing_index;
     std::optional<wormedit::signed_rational_t> proposed_offset_seconds;

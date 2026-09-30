@@ -3988,3 +3988,208 @@ TEST_CASE("duration resizing rejects an atomic selection that would cross a note
     CHECK(find_note(history, object_id_t{101})->kind == note_kind_t::hold);
     CHECK(find_note(history, object_id_t{102})->kind == note_kind_t::tap);
 }
+
+namespace {
+struct global_marquee_fixture_t {
+    document_history_t history;
+    editor_interaction_state_t state;
+};
+
+auto global_marquee_fixture() -> global_marquee_fixture_t {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
+        {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{2}},
+    };
+    auto history = make_document_history(std::move(song));
+    constexpr std::array snaps{std::uint64_t{4}};
+    auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                         {measure_id_t{1}, 0}, snaps, 4, 192.0);
+    REQUIRE(setup);
+    return {std::move(history), std::move(*setup.state)};
+}
+
+auto outside_field_marquee(editor_area_selection_mode_t mode, bool capture)
+    -> begin_editor_area_selection_action_t {
+    return {.x_pixels = 30.0, .y_pixels = 46.0, .field_left_pixels = 100.0,
+            .field_width_pixels = 200.0, .mode = mode, .pointer_captured = true,
+            .canvas_pointer_capture = capture};
+}
+
+void commit_global_first_note(global_marquee_fixture_t& fixture,
+                               editor_area_selection_mode_t mode) {
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                    outside_field_marquee(mode, true)));
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                    commit_editor_area_selection_action_t{190.0, 50.0, true}));
+}
+} // namespace
+
+TEST_CASE("global marquee explicitly permits starting in the rail while default capture stays strict",
+          "[unit][core][interaction][selection][area][global]") {
+    auto fixture = global_marquee_fixture();
+    const auto strict = dispatch_editor_action(
+        fixture.history, fixture.state,
+        outside_field_marquee(editor_area_selection_mode_t::replace, false));
+    CHECK_FALSE(strict);
+    CHECK_FALSE(fixture.state.pending_editor_area_selection);
+    commit_global_first_note(fixture, editor_area_selection_mode_t::replace);
+    CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
+    CHECK(fixture.history.document.revision == 1);
+    CHECK(fixture.history.undo.empty());
+}
+
+TEST_CASE("global marquee adds and toggles notes without changing the document",
+          "[unit][core][interaction][selection][area][global]") {
+    auto fixture = global_marquee_fixture();
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                    select_editor_notes_action_t{{object_id_t{102}}}));
+    commit_global_first_note(fixture, editor_area_selection_mode_t::add);
+    CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{102}, object_id_t{101}});
+    commit_global_first_note(fixture, editor_area_selection_mode_t::toggle);
+    CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{102}});
+    CHECK(fixture.history.document.revision == 1);
+    CHECK(fixture.history.undo.empty());
+}
+
+TEST_CASE("global marquee cancellation preserves the previous committed selection",
+          "[unit][core][interaction][selection][area][global][cancel]") {
+    auto fixture = global_marquee_fixture();
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                    select_editor_notes_action_t{{object_id_t{102}}}));
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                    outside_field_marquee(editor_area_selection_mode_t::replace, true)));
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                    cancel_editor_area_selection_action_t{}));
+    CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{102}});
+    CHECK_FALSE(fixture.state.pending_editor_area_selection);
+    CHECK(fixture.history.undo.empty());
+}
+
+namespace {
+auto typed_global_marquee_fixture() -> global_marquee_fixture_t {
+    auto fixture = global_marquee_fixture();
+    auto& chart = fixture.history.document.charts.front();
+    chart.bgm_source_lanes = {{.id = object_id_t{301}, .name = "BGM 1"},
+                              {.id = object_id_t{302}, .name = "BGM 2"}};
+    chart.measures.front().bgm_events = {
+        {.id = object_id_t{201}, .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{301}},
+        {.id = object_id_t{202}, .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{302}}};
+    chart.bpms = {{.id = object_id_t{203}, .position = {measure_id_t{1}, 240},
+                   .beats_per_minute = signed_rational_t{120, 1}}};
+    REQUIRE(validate_document(fixture.history.document).empty());
+    return fixture;
+}
+
+auto typed_global_geometry(const global_marquee_fixture_t& fixture)
+    -> std::shared_ptr<const editor_area_geometry_snapshot_t> {
+    auto snapshot = std::make_shared<editor_area_geometry_snapshot_t>();
+    snapshot->chart = fixture.state.chart;
+    snapshot->document_revision = fixture.history.document.revision;
+    snapshot->objects = {
+        {{editor_selection_object_kind_t::bgm_event, object_id_t{201}}, 330.0, 44.0, 350.0, 52.0},
+        {{editor_selection_object_kind_t::bgm_event, object_id_t{202}}, 365.0, 44.0, 385.0, 52.0},
+        {{editor_selection_object_kind_t::bpm_event, object_id_t{203}}, 20.0, 44.0, 40.0, 52.0}};
+    return snapshot;
+}
+
+auto begin_typed_global_marquee(const global_marquee_fixture_t& fixture, double x)
+    -> begin_editor_area_selection_action_t {
+    return {.x_pixels = x, .y_pixels = 45.0, .field_left_pixels = 100.0,
+            .field_width_pixels = 200.0, .mode = editor_area_selection_mode_t::replace,
+            .pointer_captured = true, .scope = {.notes = false, .bgm = true, .timing = true},
+            .canvas_pointer_capture = true, .object_geometry = typed_global_geometry(fixture)};
+}
+} // namespace
+
+TEST_CASE("global marquee selects only the intersected BGM lane using typed geometry",
+          "[unit][core][interaction][selection][area][global][geometry]") {
+    auto fixture = typed_global_marquee_fixture();
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                    begin_typed_global_marquee(fixture, 320.0)));
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                    commit_editor_area_selection_action_t{355.0, 55.0, true}));
+    CHECK((fixture.state.selected_objects == std::vector<editor_selection_object_t>{
+        {editor_selection_object_kind_t::bgm_event, object_id_t{201}}}));
+    CHECK(fixture.state.selected_notes.empty());
+    CHECK(fixture.history.undo.empty());
+}
+
+TEST_CASE("global marquee in the timing rail excludes same-row BGM and playable objects",
+          "[unit][core][interaction][selection][area][global][geometry]") {
+    auto fixture = typed_global_marquee_fixture();
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                    begin_typed_global_marquee(fixture, 10.0)));
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                    commit_editor_area_selection_action_t{45.0, 55.0, true}));
+    CHECK((fixture.state.selected_objects == std::vector<editor_selection_object_t>{
+        {editor_selection_object_kind_t::bpm_event, object_id_t{203}}}));
+    CHECK(fixture.state.selected_notes.empty());
+    CHECK(fixture.history.document.revision == 1);
+}
+
+TEST_CASE("stale global marquee geometry cannot alter the committed selection",
+          "[unit][core][interaction][selection][area][global][geometry][revision]") {
+    auto fixture = typed_global_marquee_fixture();
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                    select_editor_notes_action_t{{object_id_t{102}}}));
+    auto action = begin_typed_global_marquee(fixture, 320.0);
+    auto stale = std::make_shared<editor_area_geometry_snapshot_t>(*action.object_geometry);
+    stale->document_revision += 1;
+    action.object_geometry = std::move(stale);
+    CHECK_FALSE(dispatch_editor_action(fixture.history, fixture.state, action));
+    CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{102}});
+    CHECK_FALSE(fixture.state.pending_editor_area_selection);
+    CHECK(fixture.history.undo.empty());
+}
+
+namespace {
+auto projected_global_marquee(const global_marquee_fixture_t& fixture)
+    -> begin_editor_area_selection_action_t {
+    auto action = begin_typed_global_marquee(fixture, 320.0);
+    auto snapshot = std::make_shared<editor_area_geometry_snapshot_t>(*action.object_geometry);
+    snapshot->projection = editor_area_geometry_projection_t{
+        fixture.state.viewport_scroll_pixels, fixture.state.pixels_per_standard_measure,
+        fixture.state.viewport_height_pixels};
+    action.object_geometry = std::move(snapshot);
+    return action;
+}
+
+void check_global_projection_change_rejected(double editor_interaction_state_t::* field) {
+    auto fixture = typed_global_marquee_fixture();
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                    select_editor_notes_action_t{{object_id_t{102}}}));
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                    projected_global_marquee(fixture)));
+    fixture.state.*field *= 2.0;
+    CHECK_FALSE(dispatch_editor_action(fixture.history, fixture.state,
+                                        commit_editor_area_selection_action_t{355.0, 55.0, true}));
+    CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{102}});
+    CHECK(fixture.history.undo.empty());
+}
+} // namespace
+
+TEST_CASE("global marquee keeps the captured source anchor when viewport scroll changes",
+          "[unit][core][interaction][selection][area][global][geometry][scroll]") {
+    auto fixture = typed_global_marquee_fixture();
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                    projected_global_marquee(fixture)));
+    // Simulate updated frontend viewport geometry during the captured drag.
+    fixture.state.viewport_scroll_pixels = 24.0;
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+                                    commit_editor_area_selection_action_t{355.0, 31.0, true}));
+    CHECK((fixture.state.selected_objects == std::vector<editor_selection_object_t>{
+        {editor_selection_object_kind_t::bgm_event, object_id_t{201}}}));
+    CHECK(fixture.history.document.revision == 1);
+    CHECK(fixture.history.undo.empty());
+}
+
+TEST_CASE("global marquee rejects changed zoom without committing its pending selection",
+          "[unit][core][interaction][selection][area][global][geometry][zoom]") {
+    check_global_projection_change_rejected(&editor_interaction_state_t::pixels_per_standard_measure);
+}
+
+TEST_CASE("global marquee rejects changed viewport height without committing its pending selection",
+          "[unit][core][interaction][selection][area][global][geometry][resize]") {
+    check_global_projection_change_rejected(&editor_interaction_state_t::viewport_height_pixels);
+}

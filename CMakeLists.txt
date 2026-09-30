@@ -315,6 +315,9 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/bms_branch_panel.cpp
         src/ui/nuklear/compose_markers.cpp
         src/ui/nuklear/compose_canvas.cpp
+        src/ui/nuklear/compose_toolbar.cpp
+        src/ui/nuklear/compose_inspector.cpp
+        src/ui/nuklear/compose_input_panel.cpp
         src/ui/nuklear/compose_panel.cpp
         src/ui/nuklear/compose_resources.cpp
         src/ui/nuklear/compose_state.cpp

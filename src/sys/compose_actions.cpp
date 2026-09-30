@@ -72,6 +72,42 @@ struct compose_action_context_t {
     wormedit::editor_field_scroll_direction_t scroll_direction;
 };
 
+std::optional<std::string> dispatch_compose_measure_navigation(compose_action_context_t& context) {
+    using namespace wormedit;
+    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE)
+        return std::nullopt;
+    if (editor_interaction_has_pending_gesture(context.state))
+        return "Finish or cancel the active Compose gesture before going to a measure.";
+    const auto chart = std::ranges::find(context.history.document.charts, context.state.chart,
+                                         &chart_document_t::id);
+    if (chart == context.history.document.charts.end())
+        return "The selected difficulty is no longer available.";
+    const auto number = context.action.compose_measure_number;
+    editor_interaction_result_t result;
+    if (chart->source_family == format_family_t::bms) {
+        if (number >= bms_addressable_measure_count)
+            return "The requested BMS measure is outside #000-#999.";
+        // Reuse virtual-canvas navigation without changing the current selection.
+        auto candidate = context.state;
+        result = dispatch_editor_action(context.history, candidate,
+                                         select_bms_canvas_measure_action_t{
+                                             static_cast<std::size_t>(number)});
+        if (result.accepted) {
+            context.state.cursor = candidate.cursor;
+            context.state.virtual_bms_cursor_row = candidate.virtual_bms_cursor_row;
+            context.state.viewport_scroll_pixels = candidate.viewport_scroll_pixels;
+            context.state.active_lane = candidate.active_lane;
+        }
+    } else {
+        if (number == 0 || number > chart->measures.size())
+            return "The requested measure is outside this chart.";
+        result = dispatch_editor_action(context.history, context.state,
+            jump_edit_cursor_action_t{{chart->measures[static_cast<std::size_t>(number - 1)].id, 0},
+                                     context.history.document.revision});
+    }
+    return compose_result_status(result, "Compose cursor moved to the requested measure.");
+}
+
 std::optional<std::string> dispatch_compose_view_action_group(compose_action_context_t& context) {
     using namespace wormedit;
     auto& action = context.action;
@@ -656,6 +692,47 @@ std::optional<std::string> assign_bmson_selection(compose_action_context_t& cont
                    : "BMSON tap assigned to BGM.";
 }
 
+auto selected_bmson_source_event(const compose_action_context_t& context,
+                                 wormedit::object_id_t bgm_event)
+    -> std::optional<wormedit::object_id_t> {
+    const auto chart = std::ranges::find(context.history.document.charts, context.state.chart,
+                                         &wormedit::chart_document_t::id);
+    if (chart == context.history.document.charts.end() ||
+        chart->source_family != wormedit::format_family_t::bmson) return std::nullopt;
+    for (const auto& measure : chart->measures) {
+        const auto event = std::ranges::find(measure.bgm_events, bgm_event,
+                                             &wormedit::bgm_event_t::id);
+        if (event != measure.bgm_events.end()) return event->sound_channel_event;
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> set_bmson_selection_restart(compose_action_context_t& context) {
+    using namespace wormedit;
+    const object_id_t event{context.action.compose_bmson_bgm_event_id};
+    if (editor_interaction_has_pending_gesture(context.state))
+        return "Finish or cancel the active Compose gesture before changing a BMSON slice.";
+    if (!event || context.state.selected_objects.size() != 1 ||
+        context.state.selected_objects.front().kind != editor_selection_object_kind_t::bgm_event ||
+        context.state.selected_objects.front().id != event)
+        return "Select one BMSON BGM marker before changing its restart state.";
+    const auto source_event = selected_bmson_source_event(context, event);
+    if (!source_event)
+        return "The selected BGM marker has no BMSON sound-channel slice.";
+    const bool restart = context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART;
+    const auto applied = set_bmson_sound_channel_restart(
+        context.history, context.action.compose_input_document_revision, context.state.chart,
+        *source_event, restart);
+    if (!applied.diagnostics.empty()) return applied.diagnostics.front().message;
+    if (!applied.applied)
+        return restart ? "BMSON slice already restarts." : "BMSON slice already continues.";
+    const auto rebound = rebind_workspace(context.workspace, context.history);
+    if (!rebound)
+        return rebound.diagnostics.empty() ? "BMSON slice changed, but workspace rebinding failed."
+                                           : rebound.diagnostics.front().message;
+    return restart ? "BMSON slice set to restart." : "BMSON slice set to continue.";
+}
+
 std::optional<std::string> move_bmson_selection_to_cursor(compose_action_context_t& context) {
     using namespace wormedit;
     const object_id_t event{context.action.compose_bmson_bgm_event_id};
@@ -752,6 +829,9 @@ std::optional<std::string> delete_bmson_selected_marker(compose_action_context_t
 
 std::optional<std::string> dispatch_compose_bmson_action(compose_action_context_t& context) {
     switch (context.action.compose_action) {
+    case WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART:
+    case WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE:
+        return set_bmson_selection_restart(context);
     case WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE:
     case WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_NOTE_TO_BGM:
         return assign_bmson_selection(context);
@@ -1223,11 +1303,17 @@ std::optional<std::string> dispatch_semantic_layer_palette_action(
 std::optional<std::string> semantic_layer_edit_status(
     compose_action_context_t& context, wormedit::semantic_layer_edit_action_t edit,
     std::string_view success, std::string_view unchanged, std::string_view rebind_failure) {
+    const bool inserting = std::holds_alternative<wormedit::insert_semantic_layer_action_t>(edit);
     const auto applied = wormedit::apply_semantic_layer_edit(
         context.history, context.action.compose_input_document_revision, std::move(edit));
     if (!applied.applied)
         return applied.diagnostics.empty() ? std::string{unchanged}
                                            : applied.diagnostics.front().message;
+    if (inserting) {
+        const auto* chart = selected_chart(context.history, context.workspace);
+        if (chart && !chart->semantic_layers.empty())
+            context.application_state.semantic_layer_target = chart->semantic_layers.back().id;
+    }
     const auto rebound = wormedit::rebind_workspace(context.workspace, context.history);
     if (rebound) return std::string{success};
     return rebound.diagnostics.empty() ? std::string{rebind_failure}
@@ -1511,6 +1597,17 @@ std::optional<std::string> edit_semantic_layer_membership(compose_action_context
     auto& app = context.application_state;
     if (editor_interaction_has_pending_gesture(state))
         return "Finish or cancel the active Compose gesture before editing semantic layers.";
+    // Palette clicks can assign directly, carrying the clicked layer's stable ID.
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER &&
+        context.action.compose_semantic_layer_id != 0) {
+        const auto* chart = selected_chart(context.history, context.workspace);
+        const auto* layer = chart ? visible_semantic_layer_by_id(
+            *chart, layer_id_t{context.action.compose_semantic_layer_id}) : nullptr;
+        if (!layer) return "That semantic-layer palette entry is no longer visible.";
+        if (layer->locked)
+            return "Unlock the selected semantic layer before changing note membership.";
+        app.semantic_layer_target = layer->id;
+    }
     const auto [chart, layer] = selected_catalog_layer(context);
     if (!chart || !app.semantic_layer_target || state.selected_notes.empty())
         return "Choose a visible semantic layer and select playable notes first.";
@@ -1651,6 +1748,7 @@ auto dispatch_compose_view_action(
         action, history, workspace, state, viewport_height, application_state, asset_base,
         resource_copy_scheduler, resource_copy_runtime, export_runtime, metadata_import_busy,
         scroll_direction};
+    if (auto response = dispatch_compose_measure_navigation(context)) return *response;
     if (auto response = dispatch_compose_view_action_group(context)) return *response;
     if (auto response = dispatch_compose_resource_action(context)) return *response;
     if (auto response = dispatch_compose_bmson_action(context)) return *response;

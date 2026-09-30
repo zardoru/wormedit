@@ -1,5 +1,7 @@
 #include "ui/nuklear/compose_state.h"
 
+#include <algorithm>
+#include <cmath>
 #include <charconv>
 #include <cctype>
 #include <cstdio>
@@ -303,4 +305,67 @@ auto worm_ui_nuklear_inline_timing_confirm(const WormUiTimingView& view, const c
     }
     action = result;
     return true;
+}
+
+auto worm_ui_nuklear_overview_fraction(double x, double left, double width)
+    -> std::optional<double> {
+    if (!std::isfinite(x) || !std::isfinite(left) || !std::isfinite(width) || width <= 0.0)
+        return std::nullopt;
+    return std::clamp((x - left) / width, 0.0, 1.0);
+}
+
+auto worm_ui_nuklear_overview_frame_delta(double x, double anchor, double width,
+                                         std::uint64_t total_frames) -> std::int64_t {
+    if (!std::isfinite(x) || !std::isfinite(anchor) || !std::isfinite(width) || width <= 0.0)
+        return 0;
+    const auto frames = (static_cast<long double>(x) - anchor) / width * total_frames;
+    const auto minimum = static_cast<long double>(std::numeric_limits<std::int64_t>::min());
+    const auto maximum = static_cast<long double>(std::numeric_limits<std::int64_t>::max());
+    if (frames <= minimum) return std::numeric_limits<std::int64_t>::min();
+    if (frames >= maximum) return std::numeric_limits<std::int64_t>::max();
+    return static_cast<std::int64_t>(std::round(frames));
+}
+
+auto worm_ui_nuklear_overview_capture_matches(
+    const worm_ui_nuklear_overview_capture_t& capture, const WormUiComposeView& view,
+    double left, double width, bool available, bool window_focused) -> bool {
+    return available && window_focused && view.scene_available &&
+        view.chart_id == capture.chart_id && view.document_revision == capture.revision &&
+        view.selected_audio_asset_id == capture.asset_id &&
+        view.waveform_overview_total_frames == capture.total_frames &&
+        view.waveform_overview_sample_rate == capture.sample_rate &&
+        left == capture.left && width == capture.width && width > 0.0 &&
+        capture.total_frames != 0 && capture.sample_rate != 0;
+}
+
+auto worm_ui_nuklear_overview_source_fraction(const WormUiComposeView& view)
+    -> std::optional<double> {
+    if (!view.source_playhead_available || view.source_playhead_asset_id == 0 ||
+        view.source_playhead_asset_id != view.selected_audio_asset_id ||
+        view.source_playhead_chart_id != view.chart_id ||
+        view.source_playhead_document_revision != view.document_revision ||
+        view.source_playhead_sample_rate == 0 || view.waveform_overview_sample_rate == 0 ||
+        view.waveform_overview_total_frames == 0)
+        return std::nullopt;
+    const auto fraction = static_cast<long double>(view.source_playhead_frame) *
+        view.waveform_overview_sample_rate /
+        (static_cast<long double>(view.source_playhead_sample_rate) *
+            view.waveform_overview_total_frames);
+    if (fraction < 0.0L || fraction >= 1.0L) return std::nullopt;
+    return std::min(static_cast<double>(fraction), std::nextafter(1.0, 0.0));
+}
+
+auto worm_ui_nuklear_compose_measure_number(const WormUiComposeView& view, const char* text)
+    -> std::optional<std::uint64_t> {
+    if (!text || !text[0]) return std::nullopt;
+    std::size_t length = 0;
+    while (length < 32 && text[length] != '\0') ++length;
+    if (length >= 32) return std::nullopt;
+    std::uint64_t number{};
+    const auto parsed = std::from_chars(text, text + length, number);
+    if (parsed.ec != std::errc{} || parsed.ptr != text + length) return std::nullopt;
+    if (view.bms_measure_labels)
+        return number <= 999 ? std::optional{number} : std::nullopt;
+    return number != 0 && number <= view.compose_measure_count ? std::optional{number}
+                                                               : std::nullopt;
 }

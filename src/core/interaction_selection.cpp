@@ -467,12 +467,58 @@ auto append_note_area_selection(const chart_document_t& chart,
     return std::nullopt;
 }
 
+auto valid_area_object_geometry(const editor_area_object_geometry_t& item) -> bool {
+    return item.object.kind != editor_selection_object_kind_t::note && item.object.id.value != 0 &&
+        std::isfinite(item.left_pixels) && std::isfinite(item.right_pixels) &&
+        std::isfinite(item.top_pixels) && std::isfinite(item.bottom_pixels) &&
+        item.left_pixels <= item.right_pixels && item.top_pixels <= item.bottom_pixels;
+}
+
+auto valid_area_geometry_projection(const editor_area_geometry_snapshot_t& snapshot,
+                                    const editor_interaction_view_model_t& view) -> bool {
+    if (!snapshot.projection) return true;
+    const auto& projection = *snapshot.projection;
+    return std::isfinite(projection.viewport_scroll_pixels) &&
+        projection.pixels_per_standard_measure == view.pixels_per_standard_measure &&
+        projection.viewport_height_pixels == view.viewport_height_pixels;
+}
+
+auto append_projected_area_selection(const chart_document_t& chart,
+    const editor_interaction_view_model_t& view, const editor_area_selection_request_t& request,
+    std::vector<editor_selection_object_t>& selected) -> std::optional<diagnostic_list_t> {
+    const auto& snapshot = *request.object_geometry;
+    if (snapshot.chart != chart.id || snapshot.document_revision != view.document_revision ||
+        snapshot.objects.size() > 200000 || !valid_area_geometry_projection(snapshot, view) ||
+        !std::isfinite(request.start_x_pixels) || !std::isfinite(request.end_x_pixels) ||
+        !std::isfinite(request.start_y_pixels) || !std::isfinite(request.end_y_pixels))
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
+                                       "projected selection geometry is stale or invalid")};
+    const auto left = std::min(request.start_x_pixels, request.end_x_pixels);
+    const auto right = std::max(request.start_x_pixels, request.end_x_pixels);
+    const auto scroll_delta = snapshot.projection
+        ? view.viewport_scroll_pixels - snapshot.projection->viewport_scroll_pixels : 0.0;
+    const auto top = std::min(request.start_y_pixels, request.end_y_pixels) + scroll_delta;
+    const auto bottom = std::max(request.start_y_pixels, request.end_y_pixels) + scroll_delta;
+    for (const auto& item : snapshot.objects) {
+        if (!valid_area_object_geometry(item))
+            return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
+                                           "projected selection rectangle is invalid")};
+        if (scope_accepts(request.scope, item.object.kind) &&
+            item.left_pixels <= right && item.right_pixels >= left &&
+            item.top_pixels <= bottom && item.bottom_pixels >= top)
+            selected.push_back(item.object);
+    }
+    return std::nullopt;
+}
+
 auto append_non_note_area_selection(const chart_document_t& chart,
                                     const editor_hit_test_index_t& index,
                                     const editor_interaction_view_model_t& view,
                                     const editor_area_selection_request_t& request,
                                     std::vector<editor_selection_object_t>& selected)
     -> std::optional<diagnostic_list_t> {
+    if (request.object_geometry)
+        return append_projected_area_selection(chart, view, request, selected);
     if (!(request.scope.bgm || request.scope.timing || request.scope.bga)) return std::nullopt;
     const auto maximum_scroll = maximum_viewport_scroll(
         chart, index.measures, view.pixels_per_standard_measure, view.viewport_height_pixels);

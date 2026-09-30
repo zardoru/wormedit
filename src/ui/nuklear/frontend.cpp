@@ -702,6 +702,23 @@ static void render_workspace_tabs(const WormUiWorkspaceView* view,
     }
 }
 
+static bool status_minimap_available(const WormUiComposeView& view) {
+    return view.visible && view.scene_available && view.waveform_overview_row_count != 0 &&
+           worm_ui_nuklear_compose_view_valid(&view);
+}
+
+static void render_status_minimap(const WormUiWorkspaceView& view,
+                                  WormUiWorkspaceAction* action, bool available) {
+    struct nk_rect bounds{};
+    const auto widget = available ? nk_widget(&bounds, g_context) : NK_WIDGET_INVALID;
+    const bool interactive = widget == NK_WIDGET_VALID || widget == NK_WIDGET_ROM;
+    const bool readonly = (g_context->current->layout->flags & NK_WINDOW_ROM) != 0;
+    const bool focused = g_window_focused && interactive && !readonly &&
+        !g_new_project_wizard.open && !project_dialog_active() &&
+        (!view.pending_bms_encoding_path || !view.pending_bms_encoding_path[0]);
+    worm_ui_nuklear_render_compose_minimap(g_context, &view.compose, action, bounds, focused);
+}
+
 static auto workspace_status_line(const WormUiWorkspaceView& view) -> std::string {
     std::string status = !g_project_dialog_error.empty()
                              ? g_project_dialog_error : view.status_text;
@@ -716,9 +733,11 @@ static auto workspace_status_line(const WormUiWorkspaceView& view) -> std::strin
 
 static void render_status_bar(const WormUiWorkspaceView* view,
                               WormUiWorkspaceAction* action) {
+    const bool minimap_available = status_minimap_available(view->compose);
     nk_layout_row_template_begin(g_context, 30);
     wormedit::ui::chrome::IconButton::layout_columns(g_context, 3);
     nk_layout_row_template_push_dynamic(g_context);
+    if (minimap_available) nk_layout_row_template_push_variable(g_context, 120);
     nk_layout_row_template_push_static(g_context, 80);
     nk_layout_row_template_push_dynamic(g_context);
     nk_layout_row_template_end(g_context);
@@ -747,6 +766,7 @@ static void render_status_bar(const WormUiWorkspaceView* view,
         action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
     const auto status = workspace_status_line(*view);
     nk_label(g_context, status.c_str(), NK_TEXT_LEFT);
+    render_status_minimap(*view, action, minimap_available);
     const auto sample_rate = view->transport_sample_rate == 0 ? 1U : view->transport_sample_rate;
     const auto seconds = view->transport_frame / sample_rate;
     nk_labelf(g_context, NK_TEXT_RIGHT, "%llu:%02llu",

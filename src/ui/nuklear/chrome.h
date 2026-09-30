@@ -6,6 +6,9 @@
 
 namespace wormedit::ui::chrome {
 
+// Equal label/control shares keep property rows usable in narrow side panels.
+inline constexpr float property_label_ratio = 0.5f;
+
 using theme::UiColor;
 inline auto color(UiColor role) -> nk_color { return theme::ui(role); }
 

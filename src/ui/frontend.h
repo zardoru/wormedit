@@ -619,6 +619,7 @@ typedef struct WormUiComposeView {
     bool scene_available;
     bool downscroll;
     bool bms_measure_labels;
+    uint64_t compose_measure_count;
     uint32_t selected_bms_measure_number_plus_one;
     bool truncated;
     bool note_paint_mode_active;
@@ -741,6 +742,12 @@ typedef struct WormUiComposeView {
     double waveform_beat_zero_fraction;
     uint64_t waveform_overview_total_frames;
     uint32_t waveform_overview_sample_rate;
+    bool source_playhead_available;
+    uint64_t source_playhead_asset_id;
+    uint64_t source_playhead_frame;
+    uint32_t source_playhead_sample_rate;
+    uint64_t source_playhead_chart_id;
+    uint64_t source_playhead_document_revision;
     int64_t waveform_audio_offset_numerator;
     uint64_t waveform_audio_offset_denominator;
     bool waveform_offset_drag_active;
@@ -1191,6 +1198,7 @@ typedef struct WormUiWorkspaceView {
 
 typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_NONE = 0,
+    WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE,
     WORM_UI_COMPOSE_ACTION_ZOOM_IN,
     WORM_UI_COMPOSE_ACTION_ZOOM_OUT,
     WORM_UI_COMPOSE_ACTION_SCROLL_UP,
@@ -1258,6 +1266,8 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER,
     WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE,
     WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE,
+    WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART,
+    WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE,
 } WormUiComposeActionKind;
 
 typedef enum WormUiComposeInputKind {
@@ -1427,6 +1437,7 @@ typedef struct WormUiWorkspaceAction {
     size_t metadata_output_group_index;
     const char* metadata_output_path;
     WormUiComposeActionKind compose_action;
+    uint64_t compose_measure_number;
     uint64_t compose_input_chart_id;
     uint64_t compose_input_document_revision;
     double compose_input_viewport_width_pixels;

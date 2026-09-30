@@ -9,6 +9,26 @@
 
 using namespace wormedit::sys;
 
+TEST_CASE("Compose navigation cleanup preserves command results", "[unit][sys][commands]") {
+    std::string status = "Semantic layer added.";
+    // Focus loss can emit cleanup alongside a widget action or on later frames.
+    for (int frame = 0; frame < 3; ++frame) {
+        status = compose_input_status_with_precedence(status, "Compose navigation canceled.");
+        CHECK(status == "Semantic layer added.");
+    }
+    status = compose_input_status_with_precedence(status, "");
+    CHECK(status == "Semantic layer added.");
+
+    status = "Semantic layer was not added.";
+    status = compose_input_status_with_precedence(status, "Compose navigation canceled.");
+    CHECK(status == "Semantic layer was not added.");
+
+    status = compose_input_status_with_precedence(status, "Compose cursor moved.");
+    CHECK(status == "Compose cursor moved.");
+    CHECK(compose_input_status_with_precedence("", "Compose navigation canceled.") ==
+          "Compose navigation canceled.");
+}
+
 TEST_CASE("application command IDs parse into typed commands", "[unit][sys][commands]") {
     CHECK(parse_application_command("history.undo") ==
           application_command_t{.kind = application_command_kind_t::history_undo});

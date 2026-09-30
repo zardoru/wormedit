@@ -4,9 +4,12 @@
 
 ## Immediate work
 
-1. Continue the annotated Compose blueprint from the now-wired outer-right inspector, searchable indexed Samples/BGM/BGA catalog with typed find-uses, explicit armed-resource assignment to a typed selection, Sample/BGM creation from the selected waveform asset, exact cursor/pointer placement or typed pointer replacement of an armed Sample/BGM/BGA resource, linked external audio/image import with native file picking, and background project-relative copying/relinking for saved native projects, plus narrow bookmark/section forms, in-place timing pseudo-note editor/dragging, and compacting timing-lane visibility controls: adapt the remaining property widgets to the narrow inspector, then finish the independently scrolling BGM/BMSON slice/reset pane and virtual BMS `#000`–`#999` canvas. Keep the compact toolbar sticky and recovery absent when non-actionable. Then add ArrowVortex's dense DDReam-like waveform, song overview, and nearby non-destructive sync controls. Preserve profile-specific BMS-tile/dance-arrow glyphs, the shared mobile-head viewport contract, existing controller actions, and resize/high-DPI behavior while extracting the large Compose adapter into frontend-private inspector, toolbar, canvas, and input units.
-2. Capture BMSE/iBMSC clipboard samples with tool/version provenance; do not infer clipboard compatibility from the existing source audit.
-3. Much later, add the area-selection menu's deterministic player-preview video exporter over the exact selected interval.
+Work is executed as [task cards](../../docs/chart-editor-plan/tasks.md). Take the first card whose status is `ready`; do not start a blocked card.
+
+1. [Compose panel split](../../docs/chart-editor-plan/tasks/compose-split.md): T-01 canvas, then T-02 toolbar, T-03 inspector, T-04 input. Behavior-neutral moves out of `src/ui/nuklear/compose_panel.cpp`.
+2. [Compose features](../../docs/chart-editor-plan/tasks/compose-features.md): T-10 narrow inspector widgets, T-11 independent BGM scroll, T-12 BMSON slice reset, T-13 virtual `#000`–`#999` canvas, T-14 waveform overview (needs a user decision first). Preserve profile-specific BMS-tile/dance-arrow glyphs, the shared mobile-head viewport contract, existing controller actions, and resize/high-DPI behavior.
+3. [Interop evidence](../../docs/chart-editor-plan/tasks/interop-evidence.md): T-30 BMSE/iBMSC clipboard samples (needs the user to supply captures; do not infer from the source audit).
+4. Much later: the area-selection menu's deterministic player-preview video exporter over the exact selected interval. No card yet.
 
 ## Handoff rule
 

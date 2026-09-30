@@ -22,6 +22,8 @@
 
 Exit condition: the initial import/export capability table and expected semantic result for every fixture are checked in.
 
+Verified by: `ctest --test-dir build -R 'Stage 0'` plus `ctest --test-dir build -R '^audio\.'`; a fixture without a checked-in expected result is a failure.
+
 ## 1. Editor document and timing engine
 
 - Add stable IDs, a default-960 chart division count, layout/stage segments, custom channel maps, a lossless BMS control tree and branch membership, a semantic note-layer palette, tags, navigation markers/sections, rational local positions, measure chunks with editable lengths, typed timing/scroll/kiai/BGA events, timing anchors, ordered BGM source lanes, notes, audio/visual assets, clips, and a shared resource catalog with target provenance.
@@ -40,6 +42,8 @@ Exit condition: the initial import/export capability table and expected semantic
 
 Exit condition: fixtures import into an inspectable document without losing data required by their intended round trip.
 
+Verified by: `ctest --test-dir build -R 'round.?trip|reimport|^core\.'`; every fixture under `tests/fixtures/` must be named in a passing test.
+
 ## 2. Read-only chart view and streamed waveform
 
 - Replace the scaffold's direct Nuklear calls with backend-neutral workspace/tab view models and typed UI actions, then put Nuklear lifecycle, widget composition, styling, and third-party types entirely in its frontend adapter. Nuklear lifecycle, input, widgets, and responsive workspace-shell composition now live under `src/ui/nuklear`; `main` translates the real workspace controller view into a private scalar view/action contract and dispatches revision-checked tab changes. The Compose pane currently renders bounded scalar projections of the field scene with layout bands, lanes, exact grid lines, notes/holds, selection styling, and cursor geometry. It retains chart/revision-stamped cursor, selection, zoom, and scroll state; routes click, lane-key, Alt/Option-drag, deletion, undo/redo, page-scroll, zoom, reset, vertical coarse/smooth wheel scrolling, and pointer-anchored primary-modifier wheel zoom through the headless interaction controller; and cancels captured gestures on focus/capacity loss. Refactor that wide note-only surface into the compact hybrid Compose layout: content-sized active tabs and menus, centered bounded-width playable columns, square indexed default notes, shared full-width edit head, measure-number and toggleable timing rails, right-side BGM tracks, collapsible sound controls, mode-default up/downscroll, and compact conditional recovery/status chrome. A simulated frontend event-queue harness, reusable double-click-select-all text fields, horizontal BGM-pane routing, momentum/autoscroll wiring, and the remaining interaction modes are still pending.
@@ -57,3 +61,5 @@ Exit condition: fixtures import into an inspectable document without losing data
 - Display searchable sample/BGM/BGA resource lists, usage/missing state, audio audition, visual thumbnails, and timed BGA changes in chart-play preview.
 
 Exit condition: every fixture can be navigated with timing, effective scroll, notes, and waveform aligned at known checkpoints.
+
+Verified by: `ctest --test-dir build -R 'timing|waveform|^frontend-state\.'` plus `scripts/smoke-compose-virtual-x.sh /tmp/out.png compose` with the PNG inspected. Screenshot alignment is a manual check.

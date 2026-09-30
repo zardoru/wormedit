@@ -19,6 +19,10 @@ set(plan_slices
     docs/chart-editor-plan/stages/foundation.md
     docs/chart-editor-plan/stages/authoring-export.md
     docs/chart-editor-plan/stages/later.md
+    docs/chart-editor-plan/tasks.md
+    docs/chart-editor-plan/tasks/compose-split.md
+    docs/chart-editor-plan/tasks/compose-features.md
+    docs/chart-editor-plan/tasks/interop-evidence.md
     docs/chart-editor-plan/decisions.md
     docs/chart-editor-plan/decisions/open-questions.md
     docs/references/osu-mania-version-profiles.md
@@ -73,6 +77,7 @@ set(plan_index_slices
     docs/chart-editor-plan/formats-persistence.md
     docs/chart-editor-plan/testing.md
     docs/chart-editor-plan/stages.md
+    docs/chart-editor-plan/tasks.md
     docs/chart-editor-plan/decisions.md
 )
 foreach(slice IN LISTS plan_index_slices)
@@ -201,4 +206,37 @@ foreach(relative_file IN LISTS chart_editor_docs)
         math(EXPR next_offset "${link_offset} + ${link_length}")
         string(SUBSTRING "${remaining_contents}" "${next_offset}" -1 remaining_contents)
     endwhile()
+endforeach()
+
+set(task_card_index "${WORMEDIT_SOURCE_ROOT}/docs/chart-editor-plan/tasks.md")
+file(READ "${task_card_index}" task_card_index_text)
+set(task_card_files
+    docs/chart-editor-plan/tasks/compose-split.md
+    docs/chart-editor-plan/tasks/compose-features.md
+    docs/chart-editor-plan/tasks/interop-evidence.md
+)
+set(task_card_fields Status Outcome "Read first" "Files owned" Steps Invariants
+    "Reject/failure behavior" Verify "Out of scope")
+foreach(card_file IN LISTS task_card_files)
+    string(REGEX REPLACE "^docs/chart-editor-plan/" "" index_target "${card_file}")
+    string(FIND "${task_card_index_text}" "](${index_target})" link_offset)
+    if(link_offset EQUAL -1)
+        message(FATAL_ERROR "Task-card index does not link to ${card_file}")
+    endif()
+    file(READ "${WORMEDIT_SOURCE_ROOT}/${card_file}" card_text)
+    string(REPLACE ";" "@SEMI@" card_escaped "${card_text}")
+    string(REGEX REPLACE "\n## T-" "\n@CARD@## T-" card_marked "${card_escaped}")
+    string(REPLACE "@CARD@" ";" card_marked "${card_marked}")
+    string(REPLACE "[" "(" card_marked "${card_marked}")
+    string(REPLACE "]" ")" card_marked "${card_marked}")
+    list(POP_FRONT card_marked)
+    foreach(card IN LISTS card_marked)
+        string(REGEX MATCH "^## (T-[0-9]+)" card_id "${card}")
+        foreach(field IN LISTS task_card_fields)
+            string(FIND "${card}" "- **${field}:**" field_offset)
+            if(field_offset EQUAL -1)
+                message(FATAL_ERROR "${card_file} ${CMAKE_MATCH_1} lacks field: ${field}")
+            endif()
+        endforeach()
+    endforeach()
 endforeach()

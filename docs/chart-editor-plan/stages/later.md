@@ -37,3 +37,5 @@ Exit condition: supported storyboard fixtures edit, preview, export to OSB, and 
 - Add deterministic tests for edits, same-position timing order, preview seeking, side-by-side comparison, copy/paste, undo/redo, and semantic export/re-import of rolls and ticked holds.
 
 Exit condition: each promoted late adapter/gameplay profile has symmetric read/write coverage, deterministic preview semantics, and no unclassified loss.
+
+Verified by: not yet automatable. Add a named test per promoted adapter as part of promoting it.

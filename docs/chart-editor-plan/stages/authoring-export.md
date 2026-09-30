@@ -33,6 +33,8 @@ Viewport autoscroll status: the Compose frontend now captures a middle-click ins
 
 Exit condition: a chart can be authored and recovered after restart without exporting it.
 
+Verified by: `ctest --test-dir build -R 'autosave|recovery|^frontend-state\.'`. The restart-recovery path is only partly automated; note any manual step in the report.
+
 ## 4. Audio clips and BMSON authoring
 
 - Build an asset browser and sound-channel waveform view that displays specification-derived slice boundaries and provides audition controls. The headless path now carries revision-bound note/BGM activation intent through Compose, owns a bounded registry of real normalized decoders, resolves exact BMSON event links against authoritative decoded-source geometry, and prepares bounded transport clips without replacing a live audition on stale or resolution-failed requests. A generation-gated lookahead pump plans every distinct block before decoding, enforces fixed window/block ceilings, reuses cached blocks, and feeds the headless mixer across source-block boundaries without underrun. A session owner primes before activation, separates off-realtime refill from cache-only rendering, advances one monotonic output-frame cursor, preserves a live generation on pre-start validation failure, and guarantees hard Stop silence on the next render. The application resolves startup-project audio paths only against the explicit project directory and consumes each activation request once; SDL device/callback/stream-flush integration, dynamic registry reconciliation after document replacement, the browser, and waveform controls remain.
@@ -44,6 +46,8 @@ Exit condition: a chart can be authored and recovered after restart without expo
 - Let an exact area/Space-selected chart interval plus a caller-supplied duration generate a transactional `preview.ogg` through the shared preview mixer, with async progress, cancellation, deterministic duration/trim/fade-out behavior, and atomic file publication.
 
 Exit condition: the mixed-sound and continuation fixtures round-trip semantically, and a long source can be sliced into a newly authored BMSON chart without rendering separate audio files.
+
+Verified by: `ctest --test-dir build -R 'BMSON'`.
 
 ## 5. Format export passes
 
@@ -57,3 +61,5 @@ Exit condition: the mixed-sound and continuation fixtures round-trip semanticall
 - Add per-target preview, warnings, and round-trip regression tests.
 
 Exit condition: the supported feature matrix has no unclassified losses and exported fixtures reload to the expected semantic documents.
+
+Verified by: `ctest --test-dir build -R 'loss|round.?trip|reimport'`; an unclassified loss must fail a test, not just log.

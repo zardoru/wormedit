@@ -8,6 +8,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 struct worm_ui_nuklear_metadata_state_t {
@@ -23,10 +24,12 @@ struct worm_ui_nuklear_metadata_state_t {
     std::array<char, WORM_UI_METADATA_TITLE_BYTES + 1> artist{};
     std::array<char, WORM_UI_METADATA_CHART_TEXT_BYTES + 1> chart_name{};
     std::array<char, WORM_UI_METADATA_CHART_TEXT_BYTES + 1> chart_author{};
-    std::array<char, 64> chart_rating_numerator{};
-    std::array<char, 64> chart_rating_denominator{};
-    std::array<char, 64> audio_offset_numerator{};
-    std::array<char, 64> audio_offset_denominator{};
+    // Single-field exact rationals, parsed by worm_ui_nuklear_parse_metadata_rational().
+    std::array<char, 64> chart_rating_text{};
+    std::array<char, 64> audio_offset_text{};
+    // Scratch text for action payloads, which still carry numerator/denominator strings.
+    std::array<char, 32> action_numerator_text{};
+    std::array<char, 32> action_denominator_text{};
     std::vector<std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1>> search_tags;
     std::vector<const char*> search_tag_pointers;
     std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1> new_search_tag{};
@@ -37,6 +40,8 @@ struct worm_ui_nuklear_metadata_state_t {
     std::size_t format_target_index{};
     std::size_t format_target_field_count{};
     bool format_insert_mode{};
+    bool format_add_chart_scoped{};
+    std::uint8_t format_add_family{};
     bool format_buffers_valid{};
     std::vector<char> format_name;
     std::vector<char> format_value;
@@ -85,6 +90,27 @@ struct worm_ui_nuklear_metadata_file_dialog_result_t {
     std::string error;
     bool canceled{};
 };
+
+struct worm_ui_nuklear_metadata_rational_t {
+    std::int64_t numerator{};
+    std::uint64_t denominator{1};
+    friend auto operator==(const worm_ui_nuklear_metadata_rational_t&,
+                           const worm_ui_nuklear_metadata_rational_t&) -> bool = default;
+};
+
+// Parses "3", "-1/3", "+0.125", "1.50" (-> 150/100) exactly, without reducing.
+// With allow_milliseconds, a trailing "s" or "ms" unit is accepted ("-125 ms" -> -125/1000,
+// "12.5ms" -> 125/10000, "0.5 s" -> 5/10). Surrounding whitespace is ignored. Returns nullopt
+// for empty text, a zero denominator, malformed input, or int64/uint64 overflow.
+[[nodiscard]] auto worm_ui_nuklear_parse_metadata_rational(std::string_view text,
+                                                           bool allow_milliseconds)
+    -> std::optional<worm_ui_nuklear_metadata_rational_t>;
+
+// Formats so that parsing the result yields the same numerator and denominator:
+// denominator 1 -> "3"; a power-of-ten denominator -> decimal ("-0.125", "1.50");
+// anything else -> "n/d" ("2/4").
+[[nodiscard]] auto worm_ui_nuklear_format_metadata_rational(worm_ui_nuklear_metadata_rational_t value)
+    -> std::string;
 
 [[nodiscard]] auto worm_ui_nuklear_metadata_file_dialog_begin() -> std::optional<std::uint64_t>;
 void worm_ui_nuklear_metadata_file_dialog_complete(std::uint64_t generation, std::string path,

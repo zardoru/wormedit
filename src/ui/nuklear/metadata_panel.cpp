@@ -1,6 +1,8 @@
 #include "ui/nuklear/metadata_panel.h"
 #include "ui/nuklear/audio_panel.h"
+#include "ui/nuklear/chrome.h"
 #include "ui/nuklear/metadata_state.h"
+#include "ui/nuklear/theme.h"
 
 #include "wormedit/nuklear_config.h"
 
@@ -37,6 +39,25 @@ struct MetadataPanel {
     WormUiWorkspaceAction* action;
     bool window_focused;
 };
+
+static void style_metadata_footer_button(nk_style_button& style, bool enabled, bool accented) {
+    if (!accented || !enabled)
+        style.normal = nk_style_item_color(wormedit::ui::theme::ui(
+            enabled ? wormedit::ui::theme::UiColor::surface
+                    : wormedit::ui::theme::UiColor::background));
+    style.border_color = wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::border);
+    style.border = 1.0f;
+    style.text_normal = wormedit::ui::theme::ui(
+        enabled ? accented ? wormedit::ui::theme::UiColor::selected_text
+                           : wormedit::ui::theme::UiColor::text
+                : wormedit::ui::theme::UiColor::text_muted);
+}
+
+static void muted_label(nk_context* context, const char* text) {
+    nk_layout_row_dynamic(context, 19, 1);
+    nk_label_colored(context, text, NK_TEXT_LEFT,
+                     wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted));
+}
 
 static constexpr std::uint8_t bms_format_family = 1;
 static constexpr std::uint8_t bmson_format_family = 4;
@@ -289,31 +310,19 @@ static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
                            metadata->chart_name_bytes) &&
         copy_metadata_text(state.chart_author.data(), state.chart_author.size(),
                            metadata->chart_author, metadata->chart_author_bytes);
-    state.chart_rating_numerator.fill('\0');
-    state.chart_rating_denominator.fill('\0');
-    state.audio_offset_numerator.fill('\0');
-    state.audio_offset_denominator.fill('\0');
+    state.chart_rating_text.fill('\0');
+    state.audio_offset_text.fill('\0');
     if (metadata->has_chart) {
-        const auto numerator = metadata->has_chart_rating
-                                   ? std::to_string(metadata->chart_rating_numerator)
-                                   : std::string{};
-        const auto denominator = metadata->has_chart_rating
-                                     ? std::to_string(metadata->chart_rating_denominator)
-                                     : std::string{"1"};
-        (void)copy_metadata_text(state.chart_rating_numerator.data(),
-                                 state.chart_rating_numerator.size(), numerator.c_str(),
-                                 numerator.size());
-        (void)copy_metadata_text(state.chart_rating_denominator.data(),
-                                 state.chart_rating_denominator.size(), denominator.c_str(),
-                                 denominator.size());
-        const auto offset_numerator = std::to_string(metadata->audio_offset_numerator);
-        const auto offset_denominator = std::to_string(metadata->audio_offset_denominator);
-        (void)copy_metadata_text(state.audio_offset_numerator.data(),
-                                 state.audio_offset_numerator.size(), offset_numerator.c_str(),
-                                 offset_numerator.size());
-        (void)copy_metadata_text(state.audio_offset_denominator.data(),
-                                 state.audio_offset_denominator.size(), offset_denominator.c_str(),
-                                 offset_denominator.size());
+        if (metadata->has_chart_rating) {
+            const auto rating = worm_ui_nuklear_format_metadata_rational(
+                {metadata->chart_rating_numerator, metadata->chart_rating_denominator});
+            (void)copy_metadata_text(state.chart_rating_text.data(), state.chart_rating_text.size(),
+                                     rating.c_str(), rating.size());
+        }
+        const auto offset = worm_ui_nuklear_format_metadata_rational(
+            {metadata->audio_offset_numerator, metadata->audio_offset_denominator});
+        (void)copy_metadata_text(state.audio_offset_text.data(), state.audio_offset_text.size(),
+                                 offset.c_str(), offset.size());
     }
     state.tag_buffers_valid =
         metadata->search_tags_editable &&
@@ -384,81 +393,22 @@ struct metadata_rating_value_t {
 };
 
 static auto metadata_audio_offset_value() -> std::optional<metadata_rating_value_t> {
-    const std::string_view numerator{state.audio_offset_numerator.data()};
-    const std::string_view denominator{state.audio_offset_denominator.data()};
-    if (numerator.empty() || denominator.empty() || numerator.size() > 21 ||
-        denominator.size() > 21) {
-        return std::nullopt;
-    }
-    auto numerator_text = numerator;
-    if (numerator_text.front() == '+')
-        numerator_text.remove_prefix(1);
-    int64_t parsed_numerator{};
-    const auto numerator_result = std::from_chars(
-        numerator_text.data(), numerator_text.data() + numerator_text.size(), parsed_numerator, 10);
-    if (numerator_result.ec != std::errc{} ||
-        numerator_result.ptr != numerator_text.data() + numerator_text.size()) {
-        return std::nullopt;
-    }
-    auto denominator_text = denominator;
-    if (denominator_text.front() == '+')
-        denominator_text.remove_prefix(1);
-    uint64_t parsed_denominator{};
-    const auto denominator_result =
-        std::from_chars(denominator_text.data(), denominator_text.data() + denominator_text.size(),
-                        parsed_denominator, 10);
-    if (denominator_result.ec != std::errc{} ||
-        denominator_result.ptr != denominator_text.data() + denominator_text.size() ||
-        parsed_denominator == 0) {
-        return std::nullopt;
-    }
-    return metadata_rating_value_t{true, parsed_numerator, parsed_denominator};
+    const auto parsed = worm_ui_nuklear_parse_metadata_rational(state.audio_offset_text.data(), true);
+    if (!parsed) return std::nullopt;
+    return metadata_rating_value_t{true, parsed->numerator, parsed->denominator};
 }
 
 static auto metadata_chart_rating_value(const WormUiMetadataView* metadata)
     -> std::optional<metadata_rating_value_t> {
     if (!metadata)
         return std::nullopt;
-    const std::string_view numerator{state.chart_rating_numerator.data()};
-    const std::string_view denominator{state.chart_rating_denominator.data()};
-    if (numerator.empty() && !metadata->has_chart_rating && denominator == "1") {
+    const std::string_view text{state.chart_rating_text.data()};
+    if (text.empty()) {
         return metadata_rating_value_t{};
     }
-    if (numerator.empty() || denominator.empty() || numerator.size() > 21 ||
-        denominator.size() > 21) {
-        return std::nullopt;
-    }
-
-    const auto numerator_digits =
-        numerator.front() == '+' || numerator.front() == '-' ? numerator.substr(1) : numerator;
-    if (numerator_digits.empty() || numerator_digits.size() > 20)
-        return std::nullopt;
-    auto numerator_text = numerator;
-    if (numerator_text.front() == '+')
-        numerator_text.remove_prefix(1);
-    int64_t parsed_numerator{};
-    const auto numerator_result = std::from_chars(
-        numerator_text.data(), numerator_text.data() + numerator_text.size(), parsed_numerator, 10);
-    if (numerator_result.ec != std::errc{} ||
-        numerator_result.ptr != numerator_text.data() + numerator_text.size()) {
-        return std::nullopt;
-    }
-
-    auto denominator_text = denominator;
-    if (denominator_text.front() == '+')
-        denominator_text.remove_prefix(1);
-    if (denominator_text.empty() || denominator_text.size() > 20)
-        return std::nullopt;
-    uint64_t parsed_denominator{};
-    const auto denominator_result =
-        std::from_chars(denominator_text.data(), denominator_text.data() + denominator_text.size(),
-                        parsed_denominator, 10);
-    if (denominator_result.ec != std::errc{} ||
-        denominator_result.ptr != denominator_text.data() + denominator_text.size() ||
-        parsed_denominator == 0) {
-        return std::nullopt;
-    }
-    return metadata_rating_value_t{true, parsed_numerator, parsed_denominator};
+    const auto parsed = worm_ui_nuklear_parse_metadata_rational(text, false);
+    if (!parsed) return std::nullopt;
+    return metadata_rating_value_t{true, parsed->numerator, parsed->denominator};
 }
 
 static int metadata_chart_changed(const WormUiMetadataView* metadata) {
@@ -480,9 +430,9 @@ static int metadata_chart_changed(const WormUiMetadataView* metadata) {
 static void metadata_input_row(struct nk_context* context, const char* label, char* buffer,
                                size_t capacity, int enabled) {
     nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
-    nk_layout_row_push(context, 0.20f);
+    nk_layout_row_push(context, 0.28f);
     nk_label(context, label, NK_TEXT_LEFT);
-    nk_layout_row_push(context, 0.80f);
+    nk_layout_row_push(context, 0.72f);
     if (!enabled) {
         nk_widget_disable_begin(context);
     }
@@ -531,8 +481,12 @@ static void set_metadata_chart_action(WormUiWorkspaceAction* action,
     action->metadata_chart_author = state.chart_author.data();
     action->metadata_has_chart_rating = !unset_rating && rating->has_rating;
     if (action->metadata_has_chart_rating) {
-        action->metadata_chart_rating_numerator_text = state.chart_rating_numerator.data();
-        action->metadata_chart_rating_denominator_text = state.chart_rating_denominator.data();
+        std::snprintf(state.action_numerator_text.data(), state.action_numerator_text.size(), "%lld",
+                      static_cast<long long>(rating->numerator));
+        std::snprintf(state.action_denominator_text.data(), state.action_denominator_text.size(),
+                      "%llu", static_cast<unsigned long long>(rating->denominator));
+        action->metadata_chart_rating_numerator_text = state.action_numerator_text.data();
+        action->metadata_chart_rating_denominator_text = state.action_denominator_text.data();
     }
 }
 
@@ -546,8 +500,13 @@ static void set_metadata_audio_offset_action(WormUiWorkspaceAction* action,
     action->metadata_edit = WORM_UI_METADATA_EDIT_AUDIO_OFFSET;
     action->metadata_document_revision = metadata->document_revision;
     action->metadata_chart_id = metadata->chart_id;
-    action->metadata_audio_offset_numerator_text = state.audio_offset_numerator.data();
-    action->metadata_audio_offset_denominator_text = state.audio_offset_denominator.data();
+    const auto value = *metadata_audio_offset_value();
+    std::snprintf(state.action_numerator_text.data(), state.action_numerator_text.size(), "%lld",
+                  static_cast<long long>(value.numerator));
+    std::snprintf(state.action_denominator_text.data(), state.action_denominator_text.size(),
+                  "%llu", static_cast<unsigned long long>(value.denominator));
+    action->metadata_audio_offset_numerator_text = state.action_numerator_text.data();
+    action->metadata_audio_offset_denominator_text = state.action_denominator_text.data();
 }
 
 static const char* metadata_format_family_name(uint8_t family) {
@@ -692,15 +651,20 @@ static void render_bms_field_buttons(const MetadataPanel& panel,
 static void render_bms_field_hint(nk_context* context, size_t typed, bool editable,
                                   bool numeric_valid) {
     if (editable && numeric_valid && state.bms_field_occurrences[typed] <= 1) return;
-    nk_layout_row_dynamic(context, 18, 1);
-    if (!editable)
-        nk_label(context, "Source value exceeds the typed editor limit; use the ordered field editor.",
-                 NK_TEXT_LEFT);
-    else if (!numeric_valid)
-        nk_label(context, "Enter an unsigned number before applying this field.", NK_TEXT_LEFT);
-    else
-        nk_labelf(context, NK_TEXT_LEFT, "%zu ordered entries; this control edits the first.",
-                  state.bms_field_occurrences[typed]);
+    if (!editable) {
+        muted_label(context, "Source value exceeds the typed editor limit; use the ordered field editor.");
+    } else if (!numeric_valid) {
+        nk_layout_row_dynamic(context, 18, 1);
+        nk_label_colored(context, "Enter an unsigned number before applying this field.",
+                         NK_TEXT_LEFT,
+                         wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::status));
+    } else {
+        char hint[128];
+        (void)std::snprintf(hint, sizeof(hint),
+                            "%zu ordered entries; this control edits the first.",
+                            state.bms_field_occurrences[typed]);
+        muted_label(context, hint);
+    }
 }
 
 static void render_bms_field(const MetadataPanel& panel,
@@ -734,9 +698,7 @@ static void render_bms_fields(struct nk_context* context, const WormUiMetadataVi
     nk_layout_row_dynamic(context, 24, 1);
     nk_label(context, "BMS fields", NK_TEXT_LEFT);
     if (!target || metadata->format_fields_truncated) {
-        nk_layout_row_dynamic(context, 20, 1);
-        nk_label(context, "BMS fields are unavailable while metadata rows are truncated.",
-                 NK_TEXT_LEFT);
+        muted_label(context, "BMS fields are unavailable while metadata rows are truncated.");
         return;
     }
     bool additional_open = false;
@@ -805,11 +767,15 @@ static void render_bmson_field_actions(const MetadataPanel& panel, size_t typed,
 
 static void render_bmson_field_hint(const MetadataPanel& panel, bool editable, bool encoded) {
     if (editable && encoded) return;
+    if (!editable) {
+        muted_label(panel.context,
+                    "Retained JSON value cannot be shown in this editor; use the ordered field editor.");
+        return;
+    }
     nk_layout_row_dynamic(panel.context, 18, 1);
-    nk_label(panel.context, editable
-        ? "Enter a valid nonnegative number or text value."
-        : "Retained JSON value cannot be shown in this editor; use the ordered field editor.",
-        NK_TEXT_LEFT);
+    nk_label_colored(panel.context, "Enter a valid nonnegative number or text value.",
+                     NK_TEXT_LEFT,
+                     wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::status));
 }
 
 static void render_bmson_field(const MetadataPanel& panel,
@@ -838,9 +804,7 @@ static void render_bmson_fields(struct nk_context* context, const WormUiMetadata
     nk_layout_row_dynamic(context, 24, 1);
     nk_label(context, "BMSON info", NK_TEXT_LEFT);
     if (!target || metadata->format_fields_truncated) {
-        nk_layout_row_dynamic(context, 20, 1);
-        nk_label(context, "BMSON fields are unavailable while metadata rows are truncated.",
-                 NK_TEXT_LEFT);
+        muted_label(context, "BMSON fields are unavailable while metadata rows are truncated.");
         return;
     }
     for (size_t typed = 0; typed < bmson_field_names.size(); ++typed)
@@ -1031,11 +995,6 @@ metadata_external_copy_button(struct nk_context* context, const WormUiMetadataVi
     const bool export_copy = export_group != nullptr;
     const auto can_copy = external_copy_allowed(panel, source_path, export_group);
     render_external_copy_destination(panel, source, export_group);
-    nk_layout_row_dynamic(context, 19, 1);
-    nk_label(context,
-             export_copy ? "Export-copy: validate, stage, then link external BGM."
-                         : "Import-copy: validate, publish, then add one BGM resource.",
-             NK_TEXT_LEFT);
     const auto group_index = export_copy ? export_group->document_index : 0;
     request_external_copy_inspection(panel, source_path, export_copy, group_index, can_copy);
     render_external_copy_preview(panel, source, export_copy, group_index);
@@ -1080,23 +1039,34 @@ static void render_metadata_audio_picker(const MetadataPanel& panel) {
     auto* context = panel.context;
     consume_metadata_file_dialog_result();
     const auto dialog_open = worm_ui_nuklear_metadata_file_dialog_open();
-    nk_layout_row_dynamic(context, 25, 1);
+    const auto filename = state.external_music_path[0]
+        ? std::filesystem::path{state.external_music_path.data()}.filename().string()
+        : std::string{"None"};
+    nk_layout_row_begin(context, NK_DYNAMIC, 25, 3);
+    nk_layout_row_push(context, 0.28f);
+    nk_label(context, "Audio file", NK_TEXT_LEFT);
+    nk_layout_row_push(context, 0.13f);
     if (dialog_open) nk_widget_disable_begin(context);
-    const auto browse = nk_button_label(context, dialog_open ? "Choosing audio file"
-                                                             : "Choose external audio file");
+    const auto browse = nk_button_label(context, dialog_open ? "Choosing..." : "Choose...");
     if (dialog_open) nk_widget_disable_end(context);
     if (browse && !dialog_open) open_metadata_file_dialog();
+    nk_layout_row_push(context, 0.59f);
+    if (state.external_music_path[0])
+        nk_label(context, filename.c_str(), NK_TEXT_LEFT);
+    else
+        nk_label_colored(context, "None", NK_TEXT_LEFT,
+                         wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted));
+    nk_layout_row_end(context);
     if (state.external_music_error[0]) {
         nk_layout_row_dynamic(context, 19, 1);
         nk_label(context, state.external_music_error.data(), NK_TEXT_LEFT);
     }
     if (!state.external_music_path[0]) return;
     const auto& metadata = *panel.metadata;
-    metadata_read_only_path(context, "Chosen audio file", state.external_music_path.data());
     nk_layout_row_dynamic(context, 25, 1);
     const auto enabled = metadata.has_chart && !metadata.import_copy_pending;
     if (!enabled) nk_widget_disable_begin(context);
-    const auto link = nk_button_label(context, "Link chosen file as BGM");
+    const auto link = nk_button_label(context, "Link as BGM");
     if (!enabled) nk_widget_disable_end(context);
     if (link) set_metadata_music_import_action(panel.action, &metadata,
                                                state.external_music_path.data());
@@ -1123,20 +1093,16 @@ static void render_dropped_music_target_directory(
     auto* context = panel.context;
     const auto destination = metadata.dropped_music_target.destination;
     if (destination == WORM_UI_METADATA_DROP_PROJECT) {
-        nk_layout_row_dynamic(context, 19, 1);
-        nk_label(context, "Drop target: project assets; different files are preserved.", NK_TEXT_LEFT);
+        muted_label(context, "Drop target: project assets; different files are preserved.");
         if (!metadata.project_directory || !metadata.project_directory[0]) {
-            nk_layout_row_dynamic(context, 19, 1);
-            nk_label(context, "Open a saved native project before copying a drop.", NK_TEXT_LEFT);
+            muted_label(context, "Open a saved native project before copying a drop.");
         } else {
             metadata_read_only_path(context, "Drop target directory",
                 (std::filesystem::path{metadata.project_directory} / "assets").generic_string());
         }
     } else if (destination == WORM_UI_METADATA_DROP_EXPORT) {
-        nk_layout_row_dynamic(context, 19, 1);
-        nk_label(context, dropped_group ? "Drop target: selected export group assets."
-                                        : "The dropped export group is no longer available.",
-                 NK_TEXT_LEFT);
+        muted_label(context, dropped_group ? "Drop target: selected export group assets."
+                                            : "The dropped export group is no longer available.");
         if (dropped_group && metadata.project_directory && metadata.project_directory[0] &&
             dropped_group->relative_asset_directory[0])
             metadata_read_only_path(context, "Drop target directory",
@@ -1198,7 +1164,7 @@ static void render_dropped_music_link(const MetadataPanel& panel,
         std::strlen(metadata.dropped_music_path) <= WORM_UI_COMPOSE_IMPORT_PATH_BYTES;
     nk_layout_row_dynamic(panel.context, 25, 1);
     if (!can_link) nk_widget_disable_begin(panel.context);
-    const auto link = nk_button_label(panel.context, "Link dropped file as BGM");
+    const auto link = nk_button_label(panel.context, "Link as BGM");
     if (!can_link) nk_widget_disable_end(panel.context);
     if (link && can_link)
         set_metadata_music_import_action(panel.action, &metadata, metadata.dropped_music_path);
@@ -1237,7 +1203,10 @@ static auto render_output_group_combo(const MetadataPanel& panel)
         selected = &metadata.output_groups[0];
         state.selected_output_group_index = selected->document_index;
     }
-    nk_layout_row_dynamic(panel.context, 24, 1);
+    nk_layout_row_begin(panel.context, NK_DYNAMIC, 25, 2);
+    nk_layout_row_push(panel.context, 0.28f);
+    nk_label(panel.context, "Export format", NK_TEXT_LEFT);
+    nk_layout_row_push(panel.context, 0.72f);
     const auto* label = selected->name[0] ? selected->name : selected->relative_output_path;
     if (nk_combo_begin_label(panel.context, label,
                              nk_vec2(nk_widget_width(panel.context), 180.0f))) {
@@ -1251,6 +1220,7 @@ static auto render_output_group_combo(const MetadataPanel& panel)
         }
         nk_combo_end(panel.context);
     }
+    nk_layout_row_end(panel.context);
     return selected;
 }
 
@@ -1287,22 +1257,37 @@ static void render_output_path_editor(const MetadataPanel& panel,
                                      const WormUiComposeOutputGroupView& selected) {
     auto* context = panel.context;
     synchronize_output_path_buffer(*panel.metadata, selected);
-    nk_layout_row_dynamic(context, 19, 1);
-    nk_label(context, "Output path relative to project", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 25, 1);
+    nk_layout_row_begin(context, NK_DYNAMIC, 25, 2);
+    nk_layout_row_push(context, 0.28f);
+    nk_label(context, "Export folder", NK_TEXT_LEFT);
+    nk_layout_row_push(context, 0.72f);
     metadata_register_drop_target(context,
         {WORM_UI_METADATA_DROP_OUTPUT_PATH, selected.document_index});
     if (!state.output_path_buffer_valid) nk_widget_disable_begin(context);
     (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.output_path.data(),
                                          state.output_path.size(), nk_filter_default);
     if (!state.output_path_buffer_valid) nk_widget_disable_end(context);
+    nk_layout_row_end(context);
     const auto changed = state.output_path_buffer_valid &&
         std::strcmp(state.output_path.data(), selected.relative_output_path) != 0;
-    nk_layout_row_dynamic(context, 25, 1);
-    if (!changed || state.output_path[0] == '\0') nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, "Apply output path");
-    if (!changed || state.output_path[0] == '\0') nk_widget_disable_end(context);
-    if (apply) apply_output_path_action(panel, selected, changed);
+    const auto apply_enabled = changed && state.output_path[0] != '\0';
+    nk_layout_row_template_begin(context, 23);
+    nk_layout_row_template_push_dynamic(context);
+    nk_layout_row_template_push_static(context, 96);
+    nk_layout_row_template_push_static(context, 96);
+    nk_layout_row_template_end(context);
+    nk_spacing(context, 1);
+    auto revert_style = wormedit::ui::chrome::button_style(context, false);
+    style_metadata_footer_button(revert_style, changed, false);
+    const auto revert = nk_button_label_styled(context, &revert_style, "Revert");
+    auto apply_style = wormedit::ui::chrome::button_style(context, apply_enabled);
+    style_metadata_footer_button(apply_style, apply_enabled, true);
+    const auto apply = nk_button_label_styled(context, &apply_style, "Apply");
+    if (revert && changed)
+        (void)copy_metadata_text(state.output_path.data(), state.output_path.size(),
+                                 selected.relative_output_path,
+                                 std::strlen(selected.relative_output_path));
+    if (apply && apply_enabled) apply_output_path_action(panel, selected, changed);
 }
 
 static void render_dropped_output_path(const MetadataPanel& panel) {
@@ -1311,10 +1296,9 @@ static void render_dropped_output_path(const MetadataPanel& panel) {
     const auto* group = find_output_group(metadata, metadata.dropped_output_group_index);
     metadata_read_only_path(panel.context, "Dropped output path",
                             metadata.dropped_output_relative_path);
-    nk_layout_row_dynamic(panel.context, 19, 1);
-    nk_label(panel.context, group
+    muted_label(panel.context, group
         ? "Apply this path to the output group under the drop target."
-        : "The dropped output group is no longer available.", NK_TEXT_LEFT);
+        : "The dropped output group is no longer available.");
     nk_layout_row_dynamic(panel.context, 25, 1);
     if (!group) nk_widget_disable_begin(panel.context);
     const auto apply = nk_button_label(panel.context, "Apply dropped output path");
@@ -1337,7 +1321,8 @@ auto render_project_copy_info(const MetadataPanel& panel) -> std::optional<Music
     auto* context = panel.context;
     if (!metadata.project_directory || !metadata.project_directory[0]) {
         nk_layout_row_dynamic(context, 19, 1);
-        nk_label(context, "Save and reopen a native project to copy resource files.", NK_TEXT_LEFT);
+        nk_label_colored(context, "Save the project to copy audio files.", NK_TEXT_LEFT,
+                         wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted));
         return std::nullopt;
     }
     MusicCopyInfo info{.project = std::filesystem::path{metadata.project_directory},
@@ -1346,25 +1331,22 @@ auto render_project_copy_info(const MetadataPanel& panel) -> std::optional<Music
                             {WORM_UI_METADATA_DROP_PROJECT, 0});
     info.has_music = metadata.selected_music_asset_id && metadata.selected_music_source;
     if (!info.has_music) {
-        nk_layout_row_dynamic(context, 19, 1);
-        nk_label(context, "Select a music asset for project or export copies.", NK_TEXT_LEFT);
+        muted_label(context, "Select a music asset for project or export copies.");
         return info;
     }
     const std::filesystem::path source{metadata.selected_music_source};
     metadata_read_only_path(context, "Selected music source",
         source.is_absolute() ? source.generic_string()
                              : (info.project / source).lexically_normal().generic_string());
-    nk_layout_row_dynamic(context, 19, 1);
-    nk_labelf(context, NK_TEXT_LEFT, "Asset references: %zu catalog resources, %zu sound channels.",
-              metadata.selected_music_resource_count, metadata.selected_music_channel_count);
+    char references[128];
+    (void)std::snprintf(references, sizeof(references),
+                        "Asset references: %zu catalog resources, %zu sound channels.",
+                        metadata.selected_music_resource_count, metadata.selected_music_channel_count);
+    muted_label(context, references);
     info.destination_name = std::to_string(metadata.selected_music_asset_id) + "-" +
                             source.filename().string();
     metadata_read_only_path(context, "Project copy destination",
                             (info.project / "assets" / info.destination_name).generic_string());
-    nk_layout_row_dynamic(context, 19, 1);
-    nk_label(context,
-             "Project copy relinks this asset after publication; different files are preserved.",
-             NK_TEXT_LEFT);
     metadata_copy_inspection_button(context, &metadata, panel.action, false, 0);
     nk_layout_row_dynamic(context, 25, 1);
     if (nk_button_label(context, "Copy music into project assets") &&
@@ -1399,9 +1381,6 @@ static void render_export_copy_info(const MetadataPanel& panel,
     metadata_read_only_path(context, "Export copy destination",
         (info.project / selected.relative_asset_directory / info.destination_name)
             .lexically_normal().generic_string());
-    nk_layout_row_dynamic(context, 19, 1);
-    nk_label(context, "Export copy is verified at export; different files are preserved.",
-             NK_TEXT_LEFT);
     metadata_copy_inspection_button(context, &metadata, panel.action, true,
                                     selected.document_index);
     nk_layout_row_dynamic(context, 25, 1);
@@ -1421,100 +1400,110 @@ static void render_project_and_export_copies(const MetadataPanel& panel,
     const auto info = render_project_copy_info(panel);
     if (!info) return;
     if (!selected) {
-        nk_layout_row_dynamic(panel.context, 19, 1);
-        nk_label(panel.context, "No output group includes this difficulty.", NK_TEXT_LEFT);
+        muted_label(panel.context, "No output group includes this difficulty.");
         return;
     }
     render_export_copy_info(panel, *selected, *info);
 }
 
-static void render_metadata_paths(struct nk_context* context, const WormUiMetadataView* metadata,
-                                  WormUiWorkspaceAction* action) {
-    const MetadataPanel panel{context, metadata, action, false};
-    worm_ui_nuklear_clear_metadata_drop_targets();
-    nk_layout_row_dynamic(context, 24, 1);
-    nk_label(context, "Music and output paths", NK_TEXT_LEFT);
-    render_metadata_audio_picker(panel);
-    nk_layout_row_dynamic(context, 19, 1);
-    nk_label(context, "Drop audio here to link, or on a directory to stage a copy.", NK_TEXT_LEFT);
-    nk_layout_row_dynamic(context, 19, 1);
-    nk_label(context, "Drop a project file or directory on Output path to set it.", NK_TEXT_LEFT);
-    render_dropped_music(panel);
-    const auto* selected = render_output_group_combo(panel);
-    if (selected) render_output_path_editor(panel, *selected);
-    render_dropped_output_path(panel);
-    render_project_and_export_copies(panel, selected);
-    if (metadata->output_groups_truncated) {
-        nk_layout_row_dynamic(context, 19, 1);
-        nk_label(context, "Additional output groups exceed the visible limit.", NK_TEXT_LEFT);
-    }
-}
-
 namespace {
 
-void render_metadata_header(const MetadataPanel& panel) {
-    const auto& metadata = *panel.metadata;
-    auto* context = panel.context;
-    nk_layout_row_dynamic(context, 24, 1);
-    nk_label(context, "Song metadata", NK_TEXT_LEFT);
-    metadata_input_row(context, "Title", state.title.data(), state.title.size(),
-                       metadata.song_fields_editable && state.song_buffers_valid);
-    metadata_input_row(context, "Artist", state.artist.data(), state.artist.size(),
-                       metadata.song_fields_editable && state.song_buffers_valid);
-    render_bms_fields(context, &metadata, panel.action);
-    render_bmson_fields(context, &metadata, panel.action);
-    render_metadata_paths(context, &metadata, panel.action);
+void render_footer_buttons(nk_context* context, bool revert_enabled, bool apply_enabled,
+                           const char* revert_label, const char* apply_label,
+                           bool& revert, bool& apply) {
+    nk_layout_row_template_begin(context, 23);
+    nk_layout_row_template_push_dynamic(context);
+    nk_layout_row_template_push_static(context, 96);
+    nk_layout_row_template_push_static(context, 96);
+    nk_layout_row_template_end(context);
+    nk_spacing(context, 1);
+    auto revert_style = wormedit::ui::chrome::button_style(context, false);
+    style_metadata_footer_button(revert_style, revert_enabled, false);
+    revert = nk_button_label_styled(context, &revert_style, revert_label) && revert_enabled;
+    auto apply_style = wormedit::ui::chrome::button_style(context, apply_enabled);
+    style_metadata_footer_button(apply_style, apply_enabled, true);
+    apply = nk_button_label_styled(context, &apply_style, apply_label) && apply_enabled;
 }
 
+void reset_song_draft(const WormUiMetadataView& metadata) {
+    (void)copy_metadata_text(state.title.data(), state.title.size(), metadata.title,
+                             metadata.title_bytes);
+    (void)copy_metadata_text(state.artist.data(), state.artist.size(), metadata.artist,
+                             metadata.artist_bytes);
+    state.search_tags.clear();
+    for (size_t i = 0; i < metadata.search_tag_count; ++i) {
+        std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1> tag{};
+        if (!copy_metadata_text(tag.data(), tag.size(), metadata.search_tags[i],
+                                metadata.search_tag_bytes[i])) break;
+        state.search_tags.push_back(tag);
+    }
+    state.new_search_tag.fill('\0');
+}
+
+// Returns true when the row erased its tag; the caller must stop iterating.
 auto render_metadata_tag_row(nk_context* context, std::size_t index, bool editable) -> bool {
     char remove_label[32];
     (void)snprintf(remove_label, sizeof(remove_label), "Remove %zu", index + 1);
     nk_layout_row_begin(context, NK_DYNAMIC, 25, 5);
-    nk_layout_row_push(context, 0.07f);
+    nk_layout_row_push(context, 0.28f);
     nk_labelf(context, NK_TEXT_LEFT, "%zu", index + 1);
-    nk_layout_row_push(context, 0.57f);
+    nk_layout_row_push(context, 0.41f);
     if (!editable) nk_widget_disable_begin(context);
     (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.search_tags[index].data(),
                                          state.search_tags[index].size(), nk_filter_default);
     if (!editable) nk_widget_disable_end(context);
-    nk_layout_row_push(context, 0.09f);
-    const auto can_move_up = editable && index != 0;
-    if (!can_move_up) nk_widget_disable_begin(context);
-    const auto move_up = nk_button_label(context, "Up");
-    if (!can_move_up) nk_widget_disable_end(context);
-    nk_layout_row_push(context, 0.11f);
-    const auto can_move_down = editable && index + 1 < state.search_tags.size();
-    if (!can_move_down) nk_widget_disable_begin(context);
-    const auto move_down = nk_button_label(context, "Down");
-    if (!can_move_down) nk_widget_disable_end(context);
+    nk_layout_row_push(context, 0.07f);
+    const auto can_up = editable && index != 0;
+    if (!can_up) nk_widget_disable_begin(context);
+    const auto up = nk_button_label(context, "Up");
+    if (!can_up) nk_widget_disable_end(context);
+    nk_layout_row_push(context, 0.08f);
+    const auto can_down = editable && index + 1 < state.search_tags.size();
+    if (!can_down) nk_widget_disable_begin(context);
+    const auto down = nk_button_label(context, "Down");
+    if (!can_down) nk_widget_disable_end(context);
     nk_layout_row_push(context, 0.16f);
     if (!editable) nk_widget_disable_begin(context);
     const auto remove = nk_button_label(context, remove_label);
     if (!editable) nk_widget_disable_end(context);
-    if (move_up && can_move_up)
-        std::swap(state.search_tags[index], state.search_tags[index - 1]);
-    else if (move_down && can_move_down)
-        std::swap(state.search_tags[index], state.search_tags[index + 1]);
+    nk_layout_row_end(context);
+    if (up && can_up) std::swap(state.search_tags[index], state.search_tags[index - 1]);
+    else if (down && can_down) std::swap(state.search_tags[index], state.search_tags[index + 1]);
     else if (remove && editable) {
         state.search_tags.erase(state.search_tags.begin() + static_cast<std::ptrdiff_t>(index));
-        nk_layout_row_end(context);
         return true;
     }
-    nk_layout_row_end(context);
     return false;
 }
 
-void render_metadata_tag_add(nk_context* context, bool editable) {
-    nk_layout_row_begin(context, NK_DYNAMIC, 25, 2);
-    nk_layout_row_push(context, 0.82f);
+void render_metadata_tag_editor(const MetadataPanel& panel) {
+    auto* context = panel.context;
+    const auto& metadata = *panel.metadata;
+    const auto editable = metadata.song_fields_editable && state.song_buffers_valid &&
+                          state.tag_buffers_valid;
+    if (!state.tag_buffers_valid || !metadata.song_fields_editable) {
+        muted_label(context, "Tags are read-only because the song metadata exceeds an edit cap.");
+        return;
+    }
+    const auto visible = std::min(state.search_tags.size(),
+                                  worm_ui_nuklear_metadata_state_t::visible_tag_count);
+    for (std::size_t index = 0; index < visible; ++index) {
+        if (render_metadata_tag_row(context, index, editable))
+            break;
+    }
+    if (state.search_tags.size() > worm_ui_nuklear_metadata_state_t::visible_tag_count)
+        muted_label(context, "Some search tags are hidden by the row limit.");
+    nk_layout_row_begin(context, NK_DYNAMIC, 25, 3);
+    nk_layout_row_push(context, 0.28f);
+    nk_label(context, "Search tags", NK_TEXT_LEFT);
+    nk_layout_row_push(context, 0.52f);
     if (!editable) nk_widget_disable_begin(context);
     (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.new_search_tag.data(),
                                          state.new_search_tag.size(), nk_filter_default);
     if (!editable) nk_widget_disable_end(context);
-    nk_layout_row_push(context, 0.18f);
-    const auto can_add = editable &&
-        state.search_tags.size() < WORM_UI_METADATA_SEARCH_TAG_CAPACITY &&
-        state.new_search_tag[0] != '\0';
+    nk_layout_row_push(context, 0.20f);
+    const auto can_add = editable && state.search_tags.size() < WORM_UI_METADATA_SEARCH_TAG_CAPACITY &&
+                         state.new_search_tag[0] != '\0';
     if (!can_add) nk_widget_disable_begin(context);
     const auto add = nk_button_label(context, "Add tag");
     if (!can_add) nk_widget_disable_end(context);
@@ -1525,80 +1514,113 @@ void render_metadata_tag_add(nk_context* context, bool editable) {
     nk_layout_row_end(context);
 }
 
-void render_metadata_tags(const MetadataPanel& panel) {
+void render_song_section(const MetadataPanel& panel) {
     auto* context = panel.context;
     const auto& metadata = *panel.metadata;
-    nk_layout_row_dynamic(context, 24, 1);
-    nk_labelf(context, NK_TEXT_LEFT, "Ordered search tags (%zu; duplicates are preserved)",
-              metadata.search_tag_count);
-    const auto editable = metadata.song_fields_editable && state.song_buffers_valid &&
-                          state.tag_buffers_valid;
-    if (!state.tag_buffers_valid || !metadata.song_fields_editable) {
-        nk_layout_row_dynamic(context, 22, 1);
-        nk_label(context, "Tags are read-only because the song metadata exceeds an edit cap.",
-                 NK_TEXT_LEFT);
+    if (!nk_tree_push(context, NK_TREE_TAB, "Song", NK_MAXIMIZED)) return;
+    const auto editable = metadata.song_fields_editable && state.song_buffers_valid;
+    metadata_input_row(context, "Title", state.title.data(), state.title.size(), editable);
+    metadata_input_row(context, "Artist", state.artist.data(), state.artist.size(), editable);
+    render_metadata_tag_editor(panel);
+    const auto changed = metadata_song_changed(&metadata) != 0;
+    bool revert = false, apply = false;
+    const auto can_edit = editable && state.tag_buffers_valid;
+    render_footer_buttons(context, changed && can_edit, changed && can_edit, "Revert", "Apply",
+                          revert, apply);
+    if (revert) reset_song_draft(metadata);
+    if (apply) set_metadata_song_action(panel.action, &metadata);
+    nk_tree_pop(context);
+}
+
+void reset_difficulty_draft(const WormUiMetadataView& metadata) {
+    (void)copy_metadata_text(state.chart_name.data(), state.chart_name.size(), metadata.chart_name,
+                             metadata.chart_name_bytes);
+    (void)copy_metadata_text(state.chart_author.data(), state.chart_author.size(), metadata.chart_author,
+                             metadata.chart_author_bytes);
+    state.chart_rating_text.fill('\0');
+    if (metadata.has_chart_rating) {
+        const auto text = worm_ui_nuklear_format_metadata_rational(
+            {metadata.chart_rating_numerator, metadata.chart_rating_denominator});
+        (void)copy_metadata_text(state.chart_rating_text.data(), state.chart_rating_text.size(),
+                                 text.c_str(), text.size());
+    }
+}
+
+auto difficulty_draft_changed(const WormUiMetadataView& metadata,
+                              const std::optional<metadata_rating_value_t>& rating) -> bool {
+    const auto source_rating = metadata.has_chart_rating
+        ? worm_ui_nuklear_format_metadata_rational(
+              {metadata.chart_rating_numerator, metadata.chart_rating_denominator})
+        : std::string{};
+    const auto text_changed = !metadata.chart_name || !metadata.chart_author ||
+        std::strcmp(state.chart_name.data(), metadata.chart_name) != 0 ||
+        std::strcmp(state.chart_author.data(), metadata.chart_author) != 0;
+    if (!rating)
+        return text_changed ||
+               std::strcmp(state.chart_rating_text.data(), source_rating.c_str()) != 0;
+    const auto rating_changed = rating->has_rating != metadata.has_chart_rating ||
+        (rating->has_rating &&
+         (rating->numerator != metadata.chart_rating_numerator ||
+          rating->denominator != metadata.chart_rating_denominator));
+    return text_changed || rating_changed;
+}
+
+void render_difficulty_section(const MetadataPanel& panel) {
+    auto* context = panel.context;
+    const auto& metadata = *panel.metadata;
+    char heading[256];
+    if (metadata.has_chart)
+        std::snprintf(heading, sizeof(heading), "Difficulty - %s",
+                      metadata.chart_name ? metadata.chart_name : "");
+    else
+        std::snprintf(heading, sizeof(heading), "Difficulty");
+    if (!nk_tree_push(context, NK_TREE_TAB, heading, NK_MAXIMIZED)) return;
+    if (!metadata.has_chart) {
+        muted_label(context, "Select a difficulty to edit it.");
+        nk_tree_pop(context);
         return;
     }
-    const auto visible = std::min(state.search_tags.size(),
-                                  worm_ui_nuklear_metadata_state_t::visible_tag_count);
-    for (std::size_t index = 0; index < visible; ++index) {
-        if (render_metadata_tag_row(context, index, editable)) break;
+    const auto editable = metadata.chart_fields_editable && state.chart_buffers_valid;
+    metadata_input_row(context, "Name", state.chart_name.data(), state.chart_name.size(), editable);
+    metadata_input_row(context, "Mapper", state.chart_author.data(), state.chart_author.size(), editable);
+    const auto has_rating = metadata.has_chart_rating;
+    nk_layout_row_begin(context, NK_DYNAMIC, 26, has_rating ? 3 : 2);
+    nk_layout_row_push(context, 0.28f);
+    nk_label(context, "Rating", NK_TEXT_LEFT);
+    nk_layout_row_push(context, has_rating ? 0.57f : 0.72f);
+    if (!editable) nk_widget_disable_begin(context);
+    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.chart_rating_text.data(),
+                                         state.chart_rating_text.size(), nk_filter_default);
+    if (!editable) nk_widget_disable_end(context);
+    if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0)
+        nk_tooltip(context, "Number or fraction, e.g. 12, 12.5 or 25/2. Stored exactly.");
+    bool clear = false;
+    if (has_rating) {
+        nk_layout_row_push(context, 0.15f);
+        if (!editable) nk_widget_disable_begin(context);
+        clear = nk_button_label(context, "Clear") != 0 && editable;
+        if (!editable) nk_widget_disable_end(context);
     }
-    if (state.search_tags.size() > worm_ui_nuklear_metadata_state_t::visible_tag_count) {
-        nk_layout_row_dynamic(context, 20, 1);
-        nk_labelf(context, NK_TEXT_LEFT, "Showing first %zu tags; the rest stay unchanged.",
-                  worm_ui_nuklear_metadata_state_t::visible_tag_count);
+    nk_layout_row_end(context);
+    const auto rating = metadata_chart_rating_value(&metadata);
+    if (!rating) {
+        nk_layout_row_dynamic(context, 19, 1);
+        nk_label_colored(context, "Enter a number or fraction, e.g. 12 or 25/2.", NK_TEXT_LEFT,
+                         wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::status));
     }
-    render_metadata_tag_add(context, editable);
-}
-
-void render_song_apply(const MetadataPanel& panel) {
-    const auto& metadata = *panel.metadata;
-    const auto changed = metadata_song_changed(&metadata);
-    nk_layout_row_dynamic(panel.context, 26, 1);
-    if (!changed || !metadata.song_fields_editable) nk_widget_disable_begin(panel.context);
-    if (nk_button_label(panel.context, "Apply song metadata") && changed &&
-        metadata.song_fields_editable)
-        set_metadata_song_action(panel.action, &metadata);
-    if (!changed || !metadata.song_fields_editable) nk_widget_disable_end(panel.context);
-}
-
-void render_audio_offset_fields(const MetadataPanel& panel, bool editable) {
-    auto* context = panel.context;
-    const auto& metadata = *panel.metadata;
-    metadata_input_row(context, "Offset seconds numerator", state.audio_offset_numerator.data(),
-                       state.audio_offset_numerator.size(), editable);
-    metadata_input_row(context, "Offset seconds denominator", state.audio_offset_denominator.data(),
-                       state.audio_offset_denominator.size(), editable);
-    if (metadata.selected_chart_source_family == bms_format_family) {
-        nk_layout_row_dynamic(context, 20, 1);
-        nk_label(context, "BMS exports this offset as #OFFSET; player support varies.", NK_TEXT_LEFT);
-    } else if (metadata.selected_chart_source_family == bmson_format_family) {
-        nk_layout_row_dynamic(context, 20, 1);
-        nk_label(context, "BMSON 1.0 export requires a zero offset.", NK_TEXT_LEFT);
+    const auto changed = metadata_chart_changed(&metadata) != 0;
+    const auto dirty = difficulty_draft_changed(metadata, rating);
+    bool revert = false, apply = false;
+    render_footer_buttons(context, dirty && editable,
+                          changed && editable && rating.has_value(), "Revert", "Apply",
+                          revert, apply);
+    if (clear && metadata.has_chart_rating) {
+        state.chart_rating_text.fill('\0');
+        set_metadata_chart_action(panel.action, &metadata, 1);
     }
-}
-
-void render_audio_offset_validation(const MetadataPanel& panel, bool editable) {
-    const auto& metadata = *panel.metadata;
-    const auto parsed = metadata_audio_offset_value();
-    const auto changed = parsed && (parsed->numerator != metadata.audio_offset_numerator ||
-                                    parsed->denominator != metadata.audio_offset_denominator);
-    if (!parsed) {
-        nk_layout_row_dynamic(panel.context, 20, 1);
-        nk_label(panel.context, "Use a signed 64-bit numerator and positive 64-bit denominator.",
-                 NK_TEXT_LEFT);
-    } else if (metadata.timing_locked) {
-        nk_layout_row_dynamic(panel.context, 20, 1);
-        nk_label(panel.context, "Unlock timing to change audio synchronization.", NK_TEXT_LEFT);
-    }
-    const auto can_apply = editable && changed &&
-                           panel.action->metadata_edit == WORM_UI_METADATA_EDIT_NONE;
-    nk_layout_row_dynamic(panel.context, 26, 1);
-    if (!can_apply) nk_widget_disable_begin(panel.context);
-    const auto apply = nk_button_label(panel.context, "Apply exact audio offset");
-    if (!can_apply) nk_widget_disable_end(panel.context);
-    if (apply && can_apply) set_metadata_audio_offset_action(panel.action, &metadata);
+    if (revert) reset_difficulty_draft(metadata);
+    if (apply) set_metadata_chart_action(panel.action, &metadata, 0);
+    nk_tree_pop(context);
 }
 
 void render_audio_waveform(const MetadataPanel& panel) {
@@ -1622,117 +1644,110 @@ void render_audio_waveform(const MetadataPanel& panel) {
         .proposed_offset_numerator = metadata.proposed_audio_offset_numerator,
         .proposed_offset_denominator = metadata.proposed_audio_offset_denominator,
     };
+    const auto muted_empty_state = !metadata.audio_waveform_has_selected_asset;
+    if (muted_empty_state)
+        nk_style_push_color(panel.context, &panel.context->style.text.color,
+                            wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted));
     worm_ui_nuklear_render_audio_slices(panel.context, &waveform, panel.action, false,
                                         panel.window_focused);
+    if (muted_empty_state) nk_style_pop_color(panel.context);
 }
 
-void render_audio_sync(const MetadataPanel& panel) {
-    const auto& metadata = *panel.metadata;
+void render_audio_sync_section(const MetadataPanel& panel) {
     auto* context = panel.context;
-    nk_layout_row_dynamic(context, 24, 1);
-    nk_label(context, "Audio and synchronization", NK_TEXT_LEFT);
+    const auto& metadata = *panel.metadata;
+    if (!nk_tree_push(context, NK_TREE_TAB, "Audio sync", NK_MAXIMIZED)) return;
     if (!metadata.has_chart) {
-        nk_layout_row_dynamic(context, 20, 1);
-        nk_label(context, "Select a difficulty to edit its beat-zero audio offset.", NK_TEXT_LEFT);
+        muted_label(context, "Select a difficulty to edit it.");
+        nk_tree_pop(context);
         return;
     }
     const auto editable = metadata.audio_offset_editable && !metadata.timing_locked;
-    render_audio_offset_fields(panel, editable);
-    render_audio_offset_validation(panel, editable);
-    render_audio_waveform(panel);
-}
-
-void render_chart_rating_fields(const MetadataPanel& panel) {
-    const auto& metadata = *panel.metadata;
-    auto* context = panel.context;
-    metadata_input_row(context, "Difficulty", state.chart_name.data(), state.chart_name.size(),
-                       metadata.chart_fields_editable && state.chart_buffers_valid);
-    metadata_input_row(context, "Mapper", state.chart_author.data(), state.chart_author.size(),
-                       metadata.chart_fields_editable && state.chart_buffers_valid);
-    nk_layout_row_dynamic(context, 24, 1);
-    nk_label(context, "Exact signed rational rating (stored without reduction)", NK_TEXT_LEFT);
-    const auto editable = metadata.chart_fields_editable && state.chart_buffers_valid;
-    metadata_input_row(context, "Numerator", state.chart_rating_numerator.data(),
-                       state.chart_rating_numerator.size(), editable);
-    metadata_input_row(context, "Denominator", state.chart_rating_denominator.data(),
-                       state.chart_rating_denominator.size(), editable);
-    const auto parsed = metadata_chart_rating_value(&metadata);
-    const auto started = state.chart_rating_numerator[0] != '\0' ||
-                         strcmp(state.chart_rating_denominator.data(), "1") != 0;
-    if (!parsed && (metadata.has_chart_rating || started)) {
-        nk_layout_row_dynamic(context, 20, 1);
-        nk_label(context,
-                 "Use a signed 64-bit numerator and positive 64-bit denominator; values are "
-                 "not truncated or reduced.", NK_TEXT_LEFT);
-    }
-}
-
-void render_chart_rating_actions(const MetadataPanel& panel) {
-    const auto& metadata = *panel.metadata;
-    auto* context = panel.context;
-    auto* action = panel.action;
-    const auto parsed = metadata_chart_rating_value(&metadata);
-    const auto changed = metadata_chart_changed(&metadata);
-    const auto can_apply = changed && parsed.has_value() && metadata.chart_fields_editable &&
-                           state.chart_buffers_valid &&
-                           action->metadata_edit == WORM_UI_METADATA_EDIT_NONE;
-    const auto can_unset = metadata.has_chart_rating && metadata.chart_fields_editable &&
-                           state.chart_buffers_valid &&
-                           action->metadata_edit == WORM_UI_METADATA_EDIT_NONE;
-    nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
-    nk_layout_row_push(context, 0.5f);
-    if (!can_apply) nk_widget_disable_begin(context);
-    const auto apply = nk_button_label(context, "Apply difficulty metadata");
-    if (!can_apply) nk_widget_disable_end(context);
-    if (apply && can_apply) set_metadata_chart_action(action, &metadata, 0);
-    nk_layout_row_push(context, 0.5f);
-    if (!can_unset) nk_widget_disable_begin(context);
-    const auto unset = nk_button_label(context, "Unset rating");
-    if (!can_unset) nk_widget_disable_end(context);
-    if (unset && can_unset) set_metadata_chart_action(action, &metadata, 1);
+    nk_layout_row_begin(context, NK_DYNAMIC, 26, 3);
+    nk_layout_row_push(context, 0.28f);
+    nk_label(context, "Audio offset", NK_TEXT_LEFT);
+    nk_layout_row_push(context, 0.67f);
+    if (!editable) nk_widget_disable_begin(context);
+    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.audio_offset_text.data(),
+                                         state.audio_offset_text.size(), nk_filter_default);
+    if (!editable) nk_widget_disable_end(context);
+    if ((context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0)
+        nk_tooltip(context, "Seconds. Accepts 0.125, 1/8 or 125 ms.");
+    nk_layout_row_push(context, 0.05f);
+    nk_label_colored(context, "s", NK_TEXT_LEFT,
+                     wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::text_muted));
     nk_layout_row_end(context);
+    const auto parsed = metadata_audio_offset_value();
+    if (!parsed) {
+        nk_layout_row_dynamic(context, 19, 1);
+        nk_label_colored(context, "Enter a number or fraction, e.g. -0.125, 1/3 or -125 ms.",
+                         NK_TEXT_LEFT, wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::status));
+    }
+    if (metadata.timing_locked) muted_label(context, "Unlock timing to edit the offset.");
+    const auto projected = worm_ui_nuklear_format_metadata_rational(
+        {metadata.audio_offset_numerator, metadata.audio_offset_denominator});
+    const auto dirty = parsed
+        ? parsed->numerator != metadata.audio_offset_numerator ||
+              parsed->denominator != metadata.audio_offset_denominator
+        : std::strcmp(state.audio_offset_text.data(), projected.c_str()) != 0;
+    const auto changed = parsed && dirty;
+    bool revert = false, apply = false;
+    render_footer_buttons(context, dirty && metadata.audio_offset_editable,
+                          changed && editable && parsed.has_value(), "Revert", "Apply",
+                          revert, apply);
+    if (revert) {
+        const auto text = worm_ui_nuklear_format_metadata_rational(
+            {metadata.audio_offset_numerator, metadata.audio_offset_denominator});
+        (void)copy_metadata_text(state.audio_offset_text.data(), state.audio_offset_text.size(),
+                                 text.c_str(), text.size());
+    }
+    if (apply) set_metadata_audio_offset_action(panel.action, &metadata);
+    render_audio_waveform(panel);
+    nk_tree_pop(context);
 }
 
-void render_chart_metadata(const MetadataPanel& panel) {
+void render_metadata_paths(const MetadataPanel& panel) {
     const auto& metadata = *panel.metadata;
     auto* context = panel.context;
-    nk_layout_row_dynamic(context, 24, 1);
-    nk_label(context, metadata.has_chart ? "Selected difficulty metadata"
-                                         : "Select a difficulty to edit chart metadata",
-             NK_TEXT_LEFT);
-    if (!metadata.has_chart) return;
-    render_chart_rating_fields(panel);
-    render_chart_rating_actions(panel);
+    worm_ui_nuklear_clear_metadata_drop_targets();
+    if (!nk_tree_push(context, NK_TREE_TAB, "Audio and export", NK_MINIMIZED)) return;
+    render_metadata_audio_picker(panel);
+    muted_label(context, "Drop audio here to link it, or on a folder to copy it.");
+    render_dropped_music(panel);
+    const auto* selected = render_output_group_combo(panel);
+    if (selected) render_output_path_editor(panel, *selected);
+    render_dropped_output_path(panel);
+    render_project_and_export_copies(panel, selected);
+    if (metadata.output_groups_truncated)
+        muted_label(context, "Additional output groups exceed the visible limit.");
+    nk_tree_pop(context);
 }
 
 void render_format_field_rows(const MetadataPanel& panel) {
     auto* context = panel.context;
     const auto* metadata = panel.metadata;
-    nk_layout_row_dynamic(context, 24, 1);
-    nk_labelf(context, NK_TEXT_LEFT, "Format-specific fields (%zu; duplicates stay ordered)",
-              metadata->format_field_total_count);
     if (metadata->format_field_count != 0 && !metadata->format_fields) {
-        nk_layout_row_dynamic(context, 20, 1);
-        nk_label(context, "Format field list is unavailable.", NK_TEXT_LEFT);
+        muted_label(context, "Format field list is unavailable.");
         return;
     }
+    std::size_t rows = 0;
     for (size_t index = 0; index < metadata->format_field_count; ++index) {
         const auto* field = &metadata->format_fields[index];
+        if (!field->first_group_for_family) continue;
+        ++rows;
         char label[32];
         (void)snprintf(label, sizeof(label), "Edit %zu", index + 1);
         nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
         nk_layout_row_push(context, 0.78f);
-        nk_labelf(context, NK_TEXT_LEFT, "%s · %s · %s #%zu%s",
-                  field->chart_scoped ? "Chart" : "Song",
-                  metadata_format_family_name(field->family), field->name ? field->name : "(empty)",
-                  field->field_index + 1, field->has_source_order ? " (source)" : "");
+        nk_labelf(context, NK_TEXT_LEFT, "%s · %s · %s (%zu fields)",
+                  field->chart_scoped ? "Chart" : "Song", metadata_format_family_name(field->family),
+                  field->name ? field->name : "(empty)", field->group_field_count);
         nk_layout_row_push(context, 0.22f);
-        const auto editable = field->first_group_for_family && field->family <= 6 &&
-                              (!field->chart_scoped || metadata->has_chart);
+        const auto editable = field->family <= 6 && (!field->chart_scoped || metadata->has_chart);
         if (!editable) nk_widget_disable_begin(context);
         if (nk_button_label(context, label) && editable) {
             state.selected_format_field = index;
-            state.format_target_valid = 1;
+            state.format_target_valid = true;
             state.format_target_chart_scoped = field->chart_scoped;
             state.format_target_family = field->family;
             state.format_target_index = field->field_index;
@@ -1742,43 +1757,9 @@ void render_format_field_rows(const MetadataPanel& panel) {
         if (!editable) nk_widget_disable_end(context);
         nk_layout_row_end(context);
     }
-    if (metadata->format_fields_truncated) {
-        nk_layout_row_dynamic(context, 20, 1);
-        nk_label(context, "Additional format fields are hidden by the frontend row cap.",
-                 NK_TEXT_LEFT);
-    }
-}
-
-void render_format_target_rows(const MetadataPanel& panel) {
-    auto* context = panel.context;
-    const auto* metadata = panel.metadata;
-    nk_layout_row_dynamic(context, 24, 1);
-    nk_label(context, "Add a field to a format group", NK_TEXT_LEFT);
-    if (metadata->format_target_count != 0 && !metadata->format_targets) {
-        nk_layout_row_dynamic(context, 20, 1);
-        nk_label(context, "Format group targets are unavailable.", NK_TEXT_LEFT);
-        return;
-    }
-    for (size_t index = 0; index < metadata->format_target_count; ++index) {
-        const auto* target = &metadata->format_targets[index];
-        char label[32];
-        (void)snprintf(label, sizeof(label), "Add field %zu", index + 1);
-        nk_layout_row_begin(context, NK_DYNAMIC, 25, 2);
-        nk_layout_row_push(context, 0.76f);
-        nk_labelf(context, NK_TEXT_LEFT, "%s · %s · %s (%zu fields)",
-                  target->chart_scoped ? "Chart" : "Song",
-                  metadata_format_family_name(target->family),
-                  target->group_exists ? "existing group" : "new group", target->field_count);
-        nk_layout_row_push(context, 0.24f);
-        const auto editable = target->family <= 6 &&
-            (!target->chart_scoped || metadata->has_chart) &&
-            target->field_count < WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY;
-        if (!editable) nk_widget_disable_begin(context);
-        if (nk_button_label(context, label) && editable)
-            initialize_format_target_buffers(metadata, target);
-        if (!editable) nk_widget_disable_end(context);
-        nk_layout_row_end(context);
-    }
+    if (rows == 0) muted_label(context, "No format-specific fields.");
+    if (metadata->format_fields_truncated)
+        muted_label(context, "Additional format fields are hidden by the frontend row cap.");
 }
 
 auto selected_format_field(const WormUiMetadataView& metadata)
@@ -1788,8 +1769,48 @@ auto selected_format_field(const WormUiMetadataView& metadata)
     return &metadata.format_fields[state.selected_format_field];
 }
 
-void render_format_editor_title(nk_context* context, const WormUiMetadataFormatFieldView* field) {
-    nk_layout_row_dynamic(context, 24, 1);
+void render_format_target_selector(const MetadataPanel& panel) {
+    const auto& metadata = *panel.metadata;
+    auto* context = panel.context;
+    nk_layout_row_begin(context, NK_DYNAMIC, 25, 3);
+    nk_layout_row_push(context, 0.2f);
+    if (nk_combo_begin_label(context, state.format_add_chart_scoped ? "Chart" : "Song",
+                             nk_vec2(nk_widget_width(context), 70))) {
+        nk_layout_row_dynamic(context, 22, 1);
+        if (nk_combo_item_label(context, "Song", NK_TEXT_LEFT)) state.format_add_chart_scoped = false;
+        if (metadata.has_chart && nk_combo_item_label(context, "Chart", NK_TEXT_LEFT))
+            state.format_add_chart_scoped = true;
+        nk_combo_end(context);
+    }
+    nk_layout_row_push(context, 0.5f);
+    const auto family_label = metadata_format_family_name(state.format_add_family);
+    if (nk_combo_begin_label(context, family_label, nk_vec2(nk_widget_width(context), 180))) {
+        static constexpr const char* names[]{"Native", "BMS", "StepMania", "osu!mania",
+                                             "BMSON", "MIDI", "Quaver"};
+        nk_layout_row_dynamic(context, 22, 1);
+        for (std::uint8_t family = 0; family < 7; ++family)
+            if (nk_combo_item_label(context, names[family], NK_TEXT_LEFT))
+                state.format_add_family = family;
+        nk_combo_end(context);
+    }
+    nk_layout_row_push(context, 0.3f);
+    const WormUiMetadataFormatTargetView* target = nullptr;
+    for (size_t i = 0; i < metadata.format_target_count; ++i) {
+        const auto& item = metadata.format_targets[i];
+        if (item.chart_scoped == state.format_add_chart_scoped &&
+            item.family == state.format_add_family) { target = &item; break; }
+    }
+    const auto can_add = target && target->field_count < WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY;
+    if (!can_add) nk_widget_disable_begin(context);
+    const auto add = nk_button_label(context, "Add field");
+    if (!can_add) nk_widget_disable_end(context);
+    nk_layout_row_end(context);
+    if (add && can_add) initialize_format_target_buffers(&metadata, target);
+}
+
+void render_format_editor_title(nk_context* context,
+                                const WormUiMetadataFormatFieldView* field) {
+    nk_layout_row_dynamic(context, 22, 1);
     if (field && !state.format_insert_mode)
         nk_labelf(context, NK_TEXT_LEFT, "%s · %s field #%zu",
                   field->chart_scoped ? "Chart" : "Song",
@@ -1800,15 +1821,12 @@ void render_format_editor_title(nk_context* context, const WormUiMetadataFormatF
                   metadata_format_family_name(state.format_target_family));
 }
 
-void render_format_editor_repair(const MetadataPanel& panel,
-                                 const WormUiMetadataFormatFieldView* field) {
-    auto* context = panel.context;
-    nk_layout_row_dynamic(context, 20, 1);
-    nk_label(context, "Field is read-only because it exceeds the text cap or group scope.",
-             NK_TEXT_LEFT);
+void render_format_editor_unavailable(const MetadataPanel& panel,
+                                      const WormUiMetadataFormatFieldView* field) {
+    muted_label(panel.context, "Field is read-only because it exceeds the text cap or group scope.");
     if (!field || !field->first_group_for_family) return;
-    nk_layout_row_dynamic(context, 26, 1);
-    if (nk_button_label(context, "Delete field to repair metadata") &&
+    nk_layout_row_dynamic(panel.context, 25, 1);
+    if (nk_button_label(panel.context, "Delete field") &&
         panel.action->metadata_edit == WORM_UI_METADATA_EDIT_NONE)
         set_metadata_format_action(panel.action, panel.metadata,
                                    WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD);
@@ -1816,37 +1834,33 @@ void render_format_editor_repair(const MetadataPanel& panel,
 
 void render_format_editor_actions(const MetadataPanel& panel,
                                   const WormUiMetadataFormatFieldView* field) {
-    auto* context = panel.context;
-    auto* action = panel.action;
-    const auto* metadata = panel.metadata;
     if (state.format_insert_mode) {
-        nk_layout_row_dynamic(context, 26, 1);
-        const auto enabled = state.format_target_field_count <
-                             WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY;
-        if (!enabled) nk_widget_disable_begin(context);
-        if (nk_button_label(context, "Insert field at end of this format group") && enabled &&
-            action->metadata_edit == WORM_UI_METADATA_EDIT_NONE)
-            set_metadata_format_action(action, metadata,
+        nk_layout_row_dynamic(panel.context, 25, 1);
+        if (nk_button_label(panel.context, "Add field") &&
+            state.format_target_field_count < WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY &&
+            panel.action->metadata_edit == WORM_UI_METADATA_EDIT_NONE)
+            set_metadata_format_action(panel.action, panel.metadata,
                                        WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD);
-        if (!enabled) nk_widget_disable_end(context);
         return;
     }
-    nk_layout_row_begin(context, NK_DYNAMIC, 26, 3);
-    nk_layout_row_push(context, 0.34f);
-    if (nk_button_label(context, "Replace field") && field &&
-        action->metadata_edit == WORM_UI_METADATA_EDIT_NONE)
-        set_metadata_format_action(action, metadata, WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD);
-    nk_layout_row_push(context, 0.33f);
-    if (nk_button_label(context, "Delete field") && field &&
-        action->metadata_edit == WORM_UI_METADATA_EDIT_NONE)
-        set_metadata_format_action(action, metadata, WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD);
-    nk_layout_row_push(context, 0.33f);
-    if (nk_button_label(context, "Prepare new field") && field &&
-        action->metadata_edit == WORM_UI_METADATA_EDIT_NONE) {
+    nk_layout_row_begin(panel.context, NK_DYNAMIC, 25, 3);
+    nk_layout_row_push(panel.context, 0.34f);
+    if (nk_button_label(panel.context, "Replace field") && field &&
+        panel.action->metadata_edit == WORM_UI_METADATA_EDIT_NONE)
+        set_metadata_format_action(panel.action, panel.metadata,
+                                   WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD);
+    nk_layout_row_push(panel.context, 0.33f);
+    if (nk_button_label(panel.context, "Delete field") && field &&
+        panel.action->metadata_edit == WORM_UI_METADATA_EDIT_NONE)
+        set_metadata_format_action(panel.action, panel.metadata,
+                                   WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD);
+    nk_layout_row_push(panel.context, 0.33f);
+    if (nk_button_label(panel.context, "Prepare new field") && field &&
+        panel.action->metadata_edit == WORM_UI_METADATA_EDIT_NONE) {
         state.format_target_index = field->group_field_count;
         initialize_format_buffers(field, 1);
     }
-    nk_layout_row_end(context);
+    nk_layout_row_end(panel.context);
 }
 
 void render_format_editor(const MetadataPanel& panel) {
@@ -1854,19 +1868,23 @@ void render_format_editor(const MetadataPanel& panel) {
     const auto* field = selected_format_field(*panel.metadata);
     render_format_editor_title(panel.context, field);
     if (!state.format_buffers_valid) {
-        render_format_editor_repair(panel, field);
+        render_format_editor_unavailable(panel, field);
         return;
     }
     metadata_input_row(panel.context, "Name", state.format_name.data(), state.format_name.size(), 1);
-    metadata_input_row(panel.context, "Value", state.format_value.data(),
-                       state.format_value.size(), 1);
+    metadata_input_row(panel.context, "Value", state.format_value.data(), state.format_value.size(), 1);
     render_format_editor_actions(panel, field);
 }
 
-void render_format_fields(const MetadataPanel& panel) {
+void render_format_section(const MetadataPanel& panel) {
+    auto* context = panel.context;
+    if (!nk_tree_push(context, NK_TREE_TAB, "Format-specific fields", NK_MINIMIZED)) return;
+    render_bms_fields(context, panel.metadata, panel.action);
+    render_bmson_fields(context, panel.metadata, panel.action);
     render_format_field_rows(panel);
-    render_format_target_rows(panel);
+    render_format_target_selector(panel);
     render_format_editor(panel);
+    nk_tree_pop(context);
 }
 
 } // namespace
@@ -1874,15 +1892,16 @@ void render_format_fields(const MetadataPanel& panel) {
 void worm_ui_nuklear_render_metadata_panel(struct nk_context* context,
                                            const WormUiMetadataView* metadata,
                                            WormUiWorkspaceAction* action, bool window_focused) {
-    if (!context || !metadata || !action || !metadata->visible) {
-        return;
-    }
+    if (!context || !metadata || !action || !metadata->visible) return;
     if (metadata_buffer_key_changed(metadata)) initialize_metadata_buffers(metadata);
     const MetadataPanel panel{context, metadata, action, window_focused};
-    render_metadata_header(panel);
-    render_metadata_tags(panel);
-    render_song_apply(panel);
-    render_audio_sync(panel);
-    render_chart_metadata(panel);
-    render_format_fields(panel);
+    render_song_section(panel);
+    nk_layout_row_dynamic(context, 6, 1); nk_spacing(context, 1);
+    render_difficulty_section(panel);
+    nk_layout_row_dynamic(context, 6, 1); nk_spacing(context, 1);
+    render_audio_sync_section(panel);
+    nk_layout_row_dynamic(context, 6, 1); nk_spacing(context, 1);
+    render_metadata_paths(panel);
+    nk_layout_row_dynamic(context, 6, 1); nk_spacing(context, 1);
+    render_format_section(panel);
 }

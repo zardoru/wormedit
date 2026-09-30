@@ -688,7 +688,7 @@ static void render_workspace_tabs(const WormUiWorkspaceView* view,
         if (!item.enabled) nk_widget_disable_begin(g_context);
         const bool selected = tab == static_cast<int>(view->active_tab);
         const bool clicked = wormedit::ui::chrome::mode_button(
-            g_context, item.label, item.label, selected);
+            g_context, item.label, nullptr, selected);
         if (!item.enabled) nk_widget_disable_end(g_context);
         if (clicked && item.enabled && !selected &&
             action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {

@@ -1,5 +1,6 @@
 #include "sys/frame_timing.h"
 #include "sys/sdl_audition_output.h"
+#include "sys/sdl_audio_stream_lock.h"
 
 #include <SDL3/SDL_error.h>
 
@@ -49,6 +50,14 @@ void sdl_audition_output_t::close() noexcept {
     stream_ = nullptr;
 }
 
+auto sdl_audition_output_t::pause_device() noexcept -> bool {
+    return pause_audio_stream_device(stream_);
+}
+
+auto sdl_audition_output_t::resume_device() noexcept -> bool {
+    return resume_audio_stream_device(stream_);
+}
+
 auto sdl_audition_output_t::start(std::span<const audio::audition_clip_t> clips)
     -> sdl_audition_start_result_t {
     if (stream_ == nullptr) {
@@ -56,37 +65,36 @@ auto sdl_audition_output_t::start(std::span<const audio::audition_clip_t> clips)
                 .session = std::nullopt,
                 .message = "default audio output is unavailable"};
     }
-    if (!SDL_LockAudioStream(stream_)) {
+    if (!pause_device()) {
         return {.status = sdl_audition_start_status_t::device_failed,
                 .session = std::nullopt,
-                .message = sdl_error("could not lock the audio output stream")};
+                .message = sdl_error("could not reset and resume the audio output stream")};
     }
-
+    audio_stream_lock_t stream_lock{stream_};
+    if (!stream_lock) {
+        const auto message = sdl_error("could not lock the audio output stream");
+        if (session_.active()) static_cast<void>(resume_device());
+        return {.status = sdl_audition_start_status_t::device_failed,
+                .session = std::nullopt, .message = message};
+    }
     auto started = session_.start(clips);
     auto status = sdl_audition_start_status_t::session_failed;
     std::string message;
+    const bool preserved = !started && session_.active();
+    if (!preserved) callback_failure_.store(callback_failure_t::none, std::memory_order_release);
+    const auto cleared = preserved || SDL_ClearAudioStream(stream_);
     if (started) {
-        callback_failure_.store(callback_failure_t::none, std::memory_order_release);
-        const auto paused = SDL_PauseAudioStreamDevice(stream_);
-        const auto cleared = SDL_ClearAudioStream(stream_);
-        const auto resumed = paused && cleared && SDL_ResumeAudioStreamDevice(stream_);
-        if (resumed) {
-            status = sdl_audition_start_status_t::started;
-        } else {
-            status = sdl_audition_start_status_t::device_failed;
-            message = sdl_error("could not reset and resume the audio output stream");
-            static_cast<void>(session_.stop());
-            static_cast<void>(SDL_PauseAudioStreamDevice(stream_));
-            static_cast<void>(SDL_ClearAudioStream(stream_));
-        }
-    } else if (started.status == audio::audition_session_start_status_t::prime_failed) {
+        status = cleared ? sdl_audition_start_status_t::started : sdl_audition_start_status_t::device_failed;
+        if (!cleared) message = sdl_error("could not reset and resume the audio output stream");
+    } else if (started.status == audio::audition_session_start_status_t::prime_failed)
         message = "audio preview lookahead could not be decoded";
-        static_cast<void>(SDL_PauseAudioStreamDevice(stream_));
-        static_cast<void>(SDL_ClearAudioStream(stream_));
-    } else {
-        message = "audio preview transport rejected the prepared clips";
+    else message = "audio preview transport rejected the prepared clips";
+    stream_lock.unlock();
+    if ((status == sdl_audition_start_status_t::started || preserved) && !resume_device()) {
+        status = sdl_audition_start_status_t::device_failed;
+        message = sdl_error("could not reset and resume the audio output stream");
     }
-    static_cast<void>(SDL_UnlockAudioStream(stream_));
+    if (status == sdl_audition_start_status_t::device_failed) static_cast<void>(stop());
     return {.status = status, .session = std::move(started), .message = std::move(message)};
 }
 
@@ -123,18 +131,18 @@ auto sdl_audition_output_t::stop() noexcept -> audio::transport_stop_result_t {
         callback_failure_.store(callback_failure_t::none, std::memory_order_release);
         return session_.stop();
     }
-    if (!SDL_LockAudioStream(stream_)) {
-        static_cast<void>(SDL_PauseAudioStreamDevice(stream_));
+    static_cast<void>(pause_device());
+    audio_stream_lock_t stream_lock{stream_};
+    if (!stream_lock) {
         auto stopped = session_.stop();
         static_cast<void>(SDL_ClearAudioStream(stream_));
         callback_failure_.store(callback_failure_t::none, std::memory_order_release);
         return stopped;
     }
-    static_cast<void>(SDL_PauseAudioStreamDevice(stream_));
     auto stopped = session_.stop();
     static_cast<void>(SDL_ClearAudioStream(stream_));
     callback_failure_.store(callback_failure_t::none, std::memory_order_release);
-    static_cast<void>(SDL_UnlockAudioStream(stream_));
+    stream_lock.unlock();
     return stopped;
 }
 
@@ -144,6 +152,7 @@ void SDLCALL sdl_audition_output_t::stream_callback(void* userdata, SDL_AudioStr
     if (output == nullptr || stream == nullptr || additional_amount <= 0) {
         return;
     }
+    const audio_stream_callback_scope_t callback_lock;
     output->render_requested(stream, additional_amount);
 }
 

@@ -71,6 +71,8 @@ class sdl_audition_output_t {
     static void SDLCALL stream_callback(void* userdata, SDL_AudioStream* stream,
                                         int additional_amount, int total_amount);
     void render_requested(SDL_AudioStream* stream, int additional_amount) noexcept;
+    [[nodiscard]] auto pause_device() noexcept -> bool;
+    [[nodiscard]] auto resume_device() noexcept -> bool;
 
     static constexpr std::size_t callback_frames = 4'096;
     enum class callback_failure_t {

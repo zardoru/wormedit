@@ -8,6 +8,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
+#include <array>
+#include <algorithm>
 #include <string>
 
 namespace {
@@ -65,4 +67,80 @@ TEST_CASE("SDL dummy output drives and hard-stops a primed audition session",
     CHECK(stopped.scheduled_voices <= 1);
     CHECK_FALSE(session.active());
     output.close();
+}
+
+namespace {
+auto audition_lock_order_stress() -> bool {
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    const auto registered = sources.register_source({
+        .asset = wormedit::asset_id_t{1}, .path = fixture_path("keysound-c4.ogg"),
+        .source = {"fixture:keysound-c4.ogg", "lock-order-stress"}});
+    if (!registered) return false;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    audition_transport_bridge_t bridge{transport};
+    audition_session_t session{sources, transport, bridge};
+    wormedit::sys::sdl_audition_output_t output{session};
+    if (!output.open()) return false;
+    const audition_clip_t clip{registered.binding->source, 0, registered.binding->output_frame_count, 1.0F};
+    if (!output.start(std::span{&clip, 1})) return false;
+    const auto deadline = SDL_GetTicks() + 2'000;
+    while (session.timeline_frame() == 0 && SDL_GetTicks() < deadline) SDL_Delay(2);
+    if (session.timeline_frame() == 0) return false;
+    for (unsigned iteration = 0; iteration < 2'000; ++iteration) {
+        if (iteration % 2 == 0) {
+            if (!output.start(std::span{&clip, 1})) return false;
+            if (iteration % 16 == 0) SDL_Delay(2);
+        } else static_cast<void>(output.stop());
+    }
+    std::array<float, 64> samples;
+    samples.fill(1.0F);
+    static_cast<void>(session.render(samples));
+    return !session.active() && std::ranges::all_of(samples, [](float value) { return value == 0.0F; });
+}
+} // namespace
+
+TEST_CASE("SDL audition completes 2000 concurrent start and hard Stop transitions",
+          "[integration][audio][sdl][audition][lock-order]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const audio_subsystem_t audio_subsystem;
+    CHECK(audition_lock_order_stress());
+}
+
+namespace {
+auto rejected_audition_continues_previous_session() -> bool {
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    const auto registered = sources.register_source({
+        .asset = wormedit::asset_id_t{1}, .path = fixture_path("polyphonic-chord.ogg"),
+        .source = {"fixture:polyphonic-chord.ogg", "rejected-audition"}});
+    if (!registered) return false;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    audition_transport_bridge_t bridge{transport};
+    audition_session_t session{sources, transport, bridge};
+    wormedit::sys::sdl_audition_output_t output{session};
+    if (!output.open()) return false;
+    const audition_clip_t clip{registered.binding->source, 0, registered.binding->output_frame_count, 1.0F};
+    if (!output.start(std::span{&clip, 1})) return false;
+    const auto token = bridge.session_token();
+    const auto before = session.timeline_frame();
+    const auto rejected = output.start({});
+    if (rejected.status != wormedit::sys::sdl_audition_start_status_t::session_failed ||
+        !session.active() || bridge.session_token() != token) return false;
+    const auto deadline = SDL_GetTicks() + 2'000;
+    while (session.timeline_frame() <= before && session.active() && SDL_GetTicks() < deadline)
+        SDL_Delay(2);
+    return session.timeline_frame() > before;
+}
+} // namespace
+
+TEST_CASE("SDL audition rejection preserves and resumes the previous active session",
+          "[integration][audio][sdl][audition][failure]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const audio_subsystem_t audio_subsystem;
+    CHECK(rejected_audition_continues_previous_session());
 }

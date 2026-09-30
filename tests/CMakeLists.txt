@@ -173,7 +173,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         )
         catch_discover_tests(wormedit_sdl_audio_tests
             TEST_PREFIX "sdl-audio."
-            PROPERTIES LABELS "integration;audio;sdl"
+            PROPERTIES LABELS "integration;audio;sdl" TIMEOUT 30
             DISCOVERY_MODE PRE_TEST
         )
     endif()

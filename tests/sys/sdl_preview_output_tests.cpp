@@ -240,6 +240,19 @@ void exercise_failed_drain_seek(wormedit::sys::sdl_preview_output_t& output,
     binding.voices.front().frame_count = duration;
 }
 
+auto pitch_restart_budget_ms(wormedit::rational_t rate) -> std::uint64_t {
+    constexpr std::uint64_t source_frames = 11025;
+    // Each of two runs includes the source, a WSOLA lookahead, and one maximum
+    // 4096-source-frame callback block. The latter matches sdl_preview_output's
+    // bounded block and conservatively covers queued device work at slow rates.
+    const wormedit::audio::time_stretch_t stretcher{wormedit::audio::output_sample_rate};
+    const auto output_frames = wormedit::audio::output_frames_for(
+        source_frames + stretcher.lookahead_frames() + 4096, rate).value();
+    // One second additionally bounds device startup/control scheduling overhead.
+    return (2 * output_frames * 1000 + wormedit::audio::output_sample_rate - 1) /
+           wormedit::audio::output_sample_rate + 1000;
+}
+
 void exercise_pitch_output(wormedit::rational_t rate) {
     using namespace wormedit;
     using namespace wormedit::audio;
@@ -261,7 +274,7 @@ void exercise_pitch_output(wormedit::rational_t rate) {
     expect_pitch(output.set_playback_rate(rate));
     expect_pitch(output.set_keep_pitch(true));
     expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
-    const auto deadline = SDL_GetTicks() + 6000;
+    const auto deadline = SDL_GetTicks() + pitch_restart_budget_ms(rate);
     bool saw_drain{}, restarted{};
     while (output.playing() && SDL_GetTicks() < deadline) {
         const auto service = output.service();
@@ -521,4 +534,107 @@ TEST_CASE("SDL refill failure remains readable after its session has completed",
     REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
     const preview_audio_subsystem_t audio_subsystem;
     exercise_pending_refill_failure();
+}
+
+namespace {
+auto preview_stress_step(wormedit::sys::sdl_preview_output_t& output,
+    wormedit::audio::preview_session_t& session, const wormedit::preview_schedule_t& schedule,
+    const wormedit::audio::preview_object_source_binding_t& binding, unsigned iteration) -> bool {
+    switch (iteration % 4) {
+    case 0:
+        return static_cast<bool>(output.start(schedule, std::span{&binding, 1}));
+    case 1:
+        return static_cast<bool>(output.seek((iteration * 127U) % binding.voices.front().frame_count));
+    case 2: {
+        const auto rates = wormedit::audio::playback_rates;
+        const auto changed = output.set_playback_rate(rates[(iteration / 4) % rates.size()]) &&
+                             output.set_keep_pitch((iteration / 8) % 2 != 0);
+        SDL_Delay(2); // Allow real callbacks to overlap subsequent control operations.
+        return changed;
+    }
+    default: {
+        static_cast<void>(output.stop());
+        std::array<float, 64> samples;
+        samples.fill(1.0F);
+        static_cast<void>(session.render(samples));
+        return !session.active() && std::ranges::all_of(samples, [](float value) { return value == 0.0F; });
+    }
+    }
+}
+
+auto preview_lock_order_stress() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    const auto registered = sources.register_source({
+        .asset = asset_id_t{1}, .path = fixture_path("polyphonic-chord.ogg"),
+        .source = {"fixture:polyphonic-chord.ogg", "lock-order-stress"}});
+    if (!registered || registered.binding->output_frame_count == 0) return false;
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    wormedit::sys::sdl_preview_output_t output{session};
+    if (!output.open()) return false;
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.playable = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
+    const preview_object_source_binding_t binding{
+        .object = object_id_t{1}, .voices = {{.source = registered.binding->source,
+            .frame_count = registered.binding->output_frame_count}}};
+    if (!output.start(schedule, std::span{&binding, 1}) ||
+        !wait_for_silent_preview_frame(session, output)) return false;
+    for (unsigned iteration = 0; iteration < 2'000; ++iteration)
+        if (!preview_stress_step(output, session, schedule, binding, iteration)) return false;
+    return true;
+}
+} // namespace
+
+TEST_CASE("SDL preview completes 2000 concurrent seek start Stop and rate transitions",
+          "[integration][audio][sdl][preview][lock-order]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    CHECK(preview_lock_order_stress());
+}
+
+namespace {
+auto exercise_preview_worker_closes(wormedit::sys::sdl_preview_output_t& output,
+                                    wormedit::audio::preview_session_t& session,
+                                    const wormedit::preview_schedule_t& schedule,
+                                    const wormedit::audio::preview_object_source_binding_t& binding) -> bool {
+    for (unsigned iteration = 0; iteration < 64; ++iteration) {
+        if (!output.open()) return false;
+        output.close(); // Worker may be entering its initial idle wait.
+        if (!output.open() || !output.start(schedule, std::span{&binding, 1})) return false;
+        static_cast<void>(output.stop());
+        output.close(); // Worker may be entering its wait after Stop.
+        if (output.available() || session.active()) return false;
+    }
+    return true;
+}
+} // namespace
+
+TEST_CASE("SDL preview repeatedly closes idle and stopped refill workers",
+          "[integration][audio][sdl][preview][lock-order]") {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    decoded_source_registry_t sources;
+    const auto registered = sources.register_generated_source({
+        .source = {"generated:shutdown", "shutdown-v1"},
+        .interleaved_stereo = generated_sine(11025)});
+    REQUIRE(registered);
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    sys::sdl_preview_output_t output{session};
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.playable = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
+    const preview_object_source_binding_t binding{
+        .object = object_id_t{1},
+        .voices = {{.source = registered.binding->source, .frame_count = 11025}}};
+    CHECK(exercise_preview_worker_closes(output, session, schedule, binding));
 }

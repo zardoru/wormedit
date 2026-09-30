@@ -96,7 +96,9 @@ class sdl_preview_output_t {
     static void SDLCALL stream_callback(void* userdata, SDL_AudioStream* stream,
                                         int additional_amount, int total_amount);
     void render_requested(SDL_AudioStream* stream, int additional_amount) noexcept;
-    [[nodiscard]] auto activate_device() -> bool;
+    [[nodiscard]] auto pause_device() noexcept -> bool;
+    [[nodiscard]] auto resume_device() noexcept -> bool;
+    [[nodiscard]] auto finish_start(sdl_preview_start_result_t result) -> sdl_preview_start_result_t;
     void reset_output(std::uint64_t frame) noexcept;
     [[nodiscard]] auto apply_output_mode(SDL_AudioStream* stream) noexcept -> bool;
     [[nodiscard]] auto render_source(std::size_t frames) noexcept -> std::size_t;

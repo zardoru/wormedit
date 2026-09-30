@@ -155,6 +155,7 @@ auto chart_preview_t::compile_if_needed(
     schedule = std::move(*built_schedule.schedule);
     timing = std::move(*built_timing.index);
     bindings = std::move(resolved.bindings);
+    retained_metronome_bindings = metronome_bindings;
     chart = selected_chart.id;
     revision = document.revision;
     music_asset = selected_music_asset;
@@ -211,7 +212,7 @@ auto chart_preview_t::play_pause(
     const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings,
     sdl_audition_output_t& audition_output, audio::preview_session_t& preview_session,
     sdl_preview_output_t& preview_output, std::optional<local_position_t> start_cursor,
-    bool from_beginning) -> std::string {
+    bool from_beginning, std::optional<std::uint64_t> exact_start_frame) -> std::string {
     if (preview_session.active() && !from_beginning) {
         const auto frame = preview_session.timeline_frame();
         static_cast<void>(preview_output.stop());
@@ -229,6 +230,8 @@ auto chart_preview_t::play_pause(
         if (preview_session.active()) static_cast<void>(preview_output.stop());
         resume_frame = 0;
         paused = false;
+    } else if (!paused && exact_start_frame) {
+        resume_frame = std::min(*exact_start_frame, end_frame);
     } else if (!paused && start_cursor) {
         const auto frame = wormedit::sys::preview_cursor_frame(*selected_chart, *timing,
                                                                *start_cursor);
@@ -254,18 +257,34 @@ auto chart_preview_t::play_pause(
     return status;
 }
 
+namespace {
+auto restore_preview_after_seek_failure(const chart_preview_t& preview,
+    std::uint64_t previous_frame, audio::preview_session_t& session,
+    sdl_preview_output_t& output, std::string failure) -> std::string {
+    if (session.active()) return failure;
+    const auto restored = output.start(*preview.schedule, preview.bindings,
+        preview.retained_metronome_bindings, previous_frame, preview.end_frame);
+    if (restored) return failure + " Playback continues from its previous position.";
+    return failure + " Playback could not be restored: " +
+        (restored.message.empty() ? "audio output is unavailable." : restored.message);
+}
+} // namespace
+
 auto chart_preview_t::seek(std::uint64_t frame, const song_document_t& document,
                            const workspace_controller_t& workspace,
                            sdl_audition_output_t& audition_output,
                            audio::preview_session_t& preview_session,
                            sdl_preview_output_t& preview_output) -> std::string {
-    if (!schedule || !matches_selection(document, workspace) || frame > end_frame)
+    if (!schedule || !matches_selection(document, workspace))
         return "Chart preview seek is unavailable or outside the compiled timeline.";
+    frame = std::min(frame, end_frame);
     static_cast<void>(audition_output.stop());
     if (preview_session.active()) {
+        const auto previous_frame = preview_session.timeline_frame();
         const auto sought = preview_output.seek(frame);
         if (!sought)
-            return sought.message.empty() ? "Chart preview seek failed." : sought.message;
+            return restore_preview_after_seek_failure(*this, previous_frame, preview_session, preview_output,
+                sought.message.empty() ? "Chart preview seek failed." : sought.message);
         paused = false;
     } else {
         paused = true;
@@ -324,6 +343,7 @@ void chart_preview_t::invalidate() {
     schedule.reset();
     timing.reset();
     bindings.clear();
+    retained_metronome_bindings.clear();
     chart.reset();
     revision = 0;
     music_asset.reset();

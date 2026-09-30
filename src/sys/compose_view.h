@@ -157,6 +157,17 @@ struct application_command_state_t {
     std::function<bool(wormedit::rational_t)> transport_set_playback_rate;
     std::function<bool()> transport_active;
     std::function<bool()> transport_inline_active;
+    std::function<bool()> transport_preview_playing;
+    std::function<bool()> transport_preview_paused;
+    std::function<std::optional<std::uint64_t>()> transport_preview_end_frame;
+    bool minimap_click_moves_paused_playhead{};
+    struct minimap_start_frame_t {
+        wormedit::chart_id_t chart;
+        std::uint64_t revision{};
+        wormedit::local_position_t cursor;
+        std::uint64_t frame{};
+    };
+    std::optional<minimap_start_frame_t> minimap_start_frame;
     std::function<std::string()> transport_play_pause;
     std::function<std::string()> transport_play_from_start;
     std::function<std::string(std::uint64_t)> transport_seek;

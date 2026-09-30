@@ -736,6 +736,38 @@ static bool status_minimap_available(const WormUiComposeView& view) {
            worm_ui_nuklear_compose_view_valid(&view);
 }
 
+static void render_minimap_preferences(const WormUiWorkspaceView& view,
+                                      WormUiWorkspaceAction* action, struct nk_rect bounds) {
+    static bool open = false;
+    static struct nk_rect popup_bounds{};
+    if (nk_input_mouse_clicked(&g_context->input, NK_BUTTON_RIGHT, bounds)) {
+        const auto content = nk_window_get_content_region(g_context);
+        popup_bounds = nk_rect(
+            std::clamp(bounds.x - content.x, 0.0f, std::max(0.0f, content.w - 340.0f)),
+            std::max(0.0f, bounds.y - content.y - 70.0f), 340, 60);
+        open = true;
+    }
+    if (!open) return;
+    if (!nk_popup_begin(g_context, NK_POPUP_STATIC, "Minimap preferences",
+                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, popup_bounds)) {
+        open = false;
+        return;
+    }
+    nk_layout_row_dynamic(g_context, 30, 1);
+    const char* label = view.minimap_click_moves_paused_playhead
+        ? "[x] Plain click moves paused playhead" : "[ ] Plain click moves paused playhead";
+    if (nk_button_label(g_context, label) &&
+        action->compose_input_count < WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {
+        auto& input = action->compose_inputs[action->compose_input_count++];
+        input = {};
+        input.kind = WORM_UI_COMPOSE_INPUT_SET_MINIMAP_PAUSED_BEHAVIOR;
+        input.overview_primary = !view.minimap_click_moves_paused_playhead;
+        open = false;
+        nk_popup_close(g_context);
+    }
+    nk_popup_end(g_context);
+}
+
 static void render_status_minimap(const WormUiWorkspaceView& view,
                                   WormUiWorkspaceAction* action, bool available) {
     struct nk_rect bounds{};
@@ -746,6 +778,8 @@ static void render_status_minimap(const WormUiWorkspaceView& view,
         !g_new_project_wizard.open && !project_dialog_active() &&
         (!view.pending_bms_encoding_path || !view.pending_bms_encoding_path[0]);
     worm_ui_nuklear_render_compose_minimap(g_context, &view.compose, action, bounds, focused);
+    if (available && g_window_focused && !g_new_project_wizard.open && !project_dialog_active())
+        render_minimap_preferences(view, action, bounds);
 }
 
 static auto workspace_status_line(const WormUiWorkspaceView& view) -> std::string {

@@ -1224,6 +1224,7 @@ typedef struct WormUiWorkspaceView {
     bool transport_playing;
     bool transport_paused;
     uint8_t transport_rate_index;
+    bool minimap_click_moves_paused_playhead;
     bool transport_rate_available;
     bool transport_keep_pitch;
     bool transport_keep_pitch_available;
@@ -1383,6 +1384,8 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE,
     WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL,
     WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK,
+    WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK,
+    WORM_UI_COMPOSE_INPUT_SET_MINIMAP_PAUSED_BEHAVIOR,
     WORM_UI_COMPOSE_INPUT_BEAT_FIT_BEGIN,
     WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE,
     WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE,
@@ -1419,6 +1422,8 @@ typedef struct WormUiComposeInputAction {
     double x_pixels;
     double y_pixels;
     double audio_fraction;
+    bool overview_shift;
+    bool overview_primary;
     bool beat_fit_ctrl_held;
     int64_t beat_fit_snap_step_numerator;
     uint64_t beat_fit_snap_step_denominator;

@@ -15,6 +15,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_resource_presenter.cpp
     ../src/sys/compose_area_actions.cpp
     ../src/sys/application_commands.cpp
+    ../src/sys/compose_minimap_navigation.cpp
     ../src/sys/application_defaults.cpp
     ../src/sys/project_open.cpp
     ../src/sys/project_save_paths.cpp

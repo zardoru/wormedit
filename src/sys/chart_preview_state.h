@@ -21,6 +21,7 @@ struct chart_preview_t {
     std::optional<preview_schedule_t> schedule;
     std::optional<timing_index_t> timing;
     std::vector<audio::preview_object_source_binding_t> bindings;
+    std::vector<audio::preview_metronome_source_binding_t> retained_metronome_bindings;
     std::optional<chart_id_t> chart;
     std::uint64_t revision{};
     std::optional<asset_id_t> music_asset;
@@ -46,7 +47,7 @@ struct chart_preview_t {
         sdl_audition_output_t& audition_output,
         audio::preview_session_t& preview_session, sdl_preview_output_t& preview_output,
         std::optional<local_position_t> start_cursor = std::nullopt,
-        bool from_beginning = false)
+        bool from_beginning = false, std::optional<std::uint64_t> exact_start_frame = std::nullopt)
         -> std::string;
     [[nodiscard]] auto seek(
         std::uint64_t frame, const song_document_t& document,

@@ -1,5 +1,8 @@
 #include "sys/compose_input.h"
+#include "sys/compose_minimap_navigation.h"
+#include "sys/compose_scroll_geometry.h"
 
+#include <wormedit/audio/decoder.h>
 #include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/bpm_editor.h>
@@ -1781,6 +1784,33 @@ auto seek_compose_waveform(const WormUiComposeInputAction& input, compose_input_
     return std::nullopt;
 }
 
+auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input_context_t& context,
+                            wormedit::editor_interaction_result_t& result,
+                            std::string_view& accepted) -> std::optional<std::string> {
+    using namespace wormedit;
+    if (input.overview_shift) return seek_compose_waveform(input, context, result, accepted);
+    auto& cache = context.scene_cache;
+    if (!cache.marker_timing_index || !cache.index || !context.input_chart ||
+        editor_interaction_has_pending_gesture(context.state))
+        return "Waveform overview seek is unavailable during an active gesture.";
+    const auto end = context.application_state.transport_preview_end_frame
+        ? context.application_state.transport_preview_end_frame() : std::nullopt;
+    const auto target = compose_minimap_target(input.audio_fraction, cache.waveform_overview_total_frames,
+        cache.waveform_overview_sample_rate, audio::output_sample_rate, *cache.marker_timing_index,
+        context.state.active_snap_denominator, end);
+    if (!target) return "Waveform overview seek is unavailable.";
+    const auto status = navigate_compose_minimap_transport(context.application_state, target->frame,
+                                                          false, input.overview_primary);
+    result = move_compose_minimap_cursor(context.history, context.state, cache.index->measures,
+                                         *cache.marker_timing_index, *target);
+    if (!result.accepted) return compose_result_status(result, "Waveform cursor moved.");
+    retain_compose_minimap_start(context.application_state, context.history, context.state,
+                                 *target, *cache.marker_timing_index);
+    accepted = "Compose waveform position moved.";
+    if (!status.empty()) return status;
+    return std::nullopt;
+}
+
 auto focus_compose_note_label(const WormUiComposeInputAction& input,
                               compose_input_context_t& context,
                               wormedit::editor_interaction_result_t& result,
@@ -2379,6 +2409,9 @@ auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
             context.scene_cache, context.input_chart))
         return *status;
     switch (input.kind) {
+    case WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK:
+        if (const auto error = click_compose_waveform(input, context, result, accepted)) return *error;
+        return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK:
         if (const auto error = seek_compose_waveform(input, context, result, accepted))
             return *error;
@@ -2596,7 +2629,23 @@ void reset_compose_autoscroll_if_idle(compose_input_context_t& context) {
 
 } // namespace
 
-auto dispatch_compose_input_action(WormUiWorkspaceAction& ui_action,
+auto consume_minimap_preferences(WormUiWorkspaceAction& action,
+                                 application_command_state_t& application) -> bool {
+    if (action.compose_input_count > WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) return false;
+    bool changed = false;
+    std::size_t kept = 0;
+    for (std::size_t index = 0; index < action.compose_input_count; ++index) {
+        const auto& input = action.compose_inputs[index];
+        if (input.kind == WORM_UI_COMPOSE_INPUT_SET_MINIMAP_PAUSED_BEHAVIOR) {
+            application.minimap_click_moves_paused_playhead = input.overview_primary;
+            changed = true;
+        } else action.compose_inputs[kept++] = input;
+    }
+    action.compose_input_count = kept;
+    return changed;
+}
+
+auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
                                    wormedit::document_history_t& history,
                                    wormedit::workspace_controller_t& workspace,
                                    wormedit::editor_interaction_state_t& state,
@@ -2681,6 +2730,24 @@ auto dispatch_compose_input_action(WormUiWorkspaceAction& ui_action,
     return ui_action.compose_input_count != 0 || ui_action.compose_viewport_input_count != 0
                ? "Compose input handled."
                : std::string{};
+}
+
+auto dispatch_compose_input_action(WormUiWorkspaceAction& ui_action,
+                                   wormedit::document_history_t& history,
+                                   wormedit::workspace_controller_t& workspace,
+                                   wormedit::editor_interaction_state_t& state,
+                                   wormedit::viewport_input_controller_t& viewport_input,
+                                   wormedit::editor_navigation_input_controller_t& navigation_input,
+                                   application_command_state_t& application_state,
+                                   compose_scene_cache_t& scene_cache,
+                                   double viewport_delta_seconds) -> std::string {
+    const bool preference_changed = consume_minimap_preferences(ui_action, application_state);
+    if (preference_changed && ui_action.compose_input_count == 0)
+        return "Minimap paused-click preference changed for this session.";
+    const auto status = dispatch_compose_input_action_impl(ui_action, history, workspace, state, viewport_input,
+        navigation_input, application_state, scene_cache, viewport_delta_seconds);
+    (void)compose_minimap_start_frame(application_state, history, &state);
+    return status;
 }
 
 auto selected_chart(const wormedit::document_history_t& history,

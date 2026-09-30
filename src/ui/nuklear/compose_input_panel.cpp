@@ -1233,21 +1233,31 @@ static void update_waveform_overview_seek(const ComposeOverviewInput& input) {
             view.waveform_overview_total_frames, view.waveform_overview_sample_rate,
             input.overview.x, input.overview.w};
     }
-    if (!worm_ui_nuklear_overview_capture_matches(
+    const bool valid = worm_ui_nuklear_overview_capture_matches(
             state.waveform_overview_capture, view, input.overview.x, input.overview.w,
-            input.available, input.window_focused) || !left_button.down ||
-        input.action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE ||
-        view.waveform_offset_drag_active) {
-        state.waveform_overview_drag_active = false;
-    }
-    if (state.waveform_overview_drag_active && input.action->compose_input_count <
-                                                   WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY &&
-        (input.pressed || nk_input_is_mouse_moved(&input.context->input))) {
-        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK);
-        input.action->compose_inputs[input.action->compose_input_count - 1].audio_fraction =
-            worm_ui_nuklear_overview_fraction(input.context->input.mouse.pos.x,
-                                               input.overview.x, input.overview.w).value_or(0.0);
-    }
+            input.available, input.window_focused) &&
+        input.action->audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE &&
+        !view.waveform_offset_drag_active;
+    const auto event = worm_ui_nuklear_overview_gesture(state.waveform_overview_gesture,
+        input.context->input.mouse.pos.x, input.pressed && state.waveform_overview_drag_active,
+        left_button.down, valid);
+    state.waveform_overview_drag_active = state.waveform_overview_gesture.active;
+    if ((event == worm_ui_nuklear_overview_event_t::scroll &&
+         !nk_input_is_mouse_moved(&input.context->input)) ||
+        event == worm_ui_nuklear_overview_event_t::none ||
+        input.action->compose_input_count >= WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) return;
+    append_compose_input(input.action, event == worm_ui_nuklear_overview_event_t::click
+        ? WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK : WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK);
+    auto& emitted = input.action->compose_inputs[input.action->compose_input_count - 1];
+    emitted.audio_fraction = worm_ui_nuklear_overview_fraction(input.context->input.mouse.pos.x,
+        input.overview.x, input.overview.w).value_or(0.0);
+    const auto modifiers = SDL_GetModState();
+    emitted.overview_shift = (modifiers & SDL_KMOD_SHIFT) != 0;
+#ifdef __APPLE__
+    emitted.overview_primary = (modifiers & SDL_KMOD_GUI) != 0;
+#else
+    emitted.overview_primary = (modifiers & SDL_KMOD_CTRL) != 0;
+#endif
 }
 
 void process_compose_overview_input(const ComposeOverviewInput& input) {

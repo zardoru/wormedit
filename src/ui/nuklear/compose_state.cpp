@@ -369,3 +369,16 @@ auto worm_ui_nuklear_compose_measure_number(const WormUiComposeView& view, const
     return number != 0 && number <= view.compose_measure_count ? std::optional{number}
                                                                : std::nullopt;
 }
+
+// Crossing four pixels begins view scrubbing; release emits one transport click.
+auto worm_ui_nuklear_overview_gesture(worm_ui_nuklear_overview_gesture_t& gesture,
+                                     double x, bool pressed, bool down, bool valid)
+    -> worm_ui_nuklear_overview_event_t {
+    using event = worm_ui_nuklear_overview_event_t;
+    if (!valid || !std::isfinite(x)) { gesture = {}; return event::none; }
+    if (pressed) gesture = {.active = true, .anchor = x};
+    if (!gesture.active) return event::none;
+    if (!down) { gesture.active = false; return event::click; }
+    if (std::abs(x - gesture.anchor) >= 4.0) gesture.dragged = true;
+    return gesture.dragged ? event::scroll : event::none;
+}

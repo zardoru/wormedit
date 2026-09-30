@@ -526,3 +526,20 @@ TEST_CASE("Compose area shortcuts defer to other tabs unfocused windows text fie
     SECTION("dialog") { context.blocked = true; }
     CHECK_FALSE(compose_area_consumes_shortcut(context));
 }
+
+TEST_CASE("Minimap gestures distinguish clicks drags and focus cancellation", "[unit][frontend][compose]") {
+    worm_ui_nuklear_overview_gesture_t gesture;
+    using event = worm_ui_nuklear_overview_event_t;
+    CHECK(worm_ui_nuklear_overview_gesture(gesture, 10, true, true, true) == event::none);
+    CHECK(worm_ui_nuklear_overview_gesture(gesture, 13.9, false, true, true) == event::none);
+    CHECK(worm_ui_nuklear_overview_gesture(gesture, 13.9, false, false, true) == event::click);
+    CHECK(worm_ui_nuklear_overview_gesture(gesture, 13.9, false, false, true) == event::none);
+    CHECK(worm_ui_nuklear_overview_gesture(gesture, 10, true, true, true) == event::none);
+    CHECK(worm_ui_nuklear_overview_gesture(gesture, 14, false, true, true) == event::scroll);
+    CHECK(worm_ui_nuklear_overview_gesture(gesture, 40, false, true, true) == event::scroll);
+    CHECK(worm_ui_nuklear_overview_gesture(gesture, 40, false, false, true) == event::click);
+    CHECK(worm_ui_nuklear_overview_gesture(gesture, 40, false, false, true) == event::none);
+    CHECK(worm_ui_nuklear_overview_gesture(gesture, 10, true, true, true) == event::none);
+    CHECK(worm_ui_nuklear_overview_gesture(gesture, 15, false, true, false) == event::none);
+    CHECK(worm_ui_nuklear_overview_gesture(gesture, 15, false, false, true) == event::none);
+}

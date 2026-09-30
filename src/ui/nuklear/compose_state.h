@@ -9,6 +9,16 @@
 #include <optional>
 #include <string>
 
+enum class worm_ui_nuklear_overview_event_t { none, scroll, click };
+struct worm_ui_nuklear_overview_gesture_t {
+    bool active{};
+    bool dragged{};
+    double anchor{};
+};
+auto worm_ui_nuklear_overview_gesture(worm_ui_nuklear_overview_gesture_t& gesture,
+                                     double x, bool pressed, bool down, bool valid)
+    -> worm_ui_nuklear_overview_event_t;
+
 struct worm_ui_nuklear_overview_capture_t {
     std::uint64_t chart_id{};
     std::uint64_t revision{};
@@ -133,6 +143,7 @@ struct worm_ui_nuklear_compose_state_t {
     std::array<char, 32> go_to_measure_text{};
     std::array<char, 96> go_to_measure_error{};
     bool waveform_overview_drag_active{};
+    worm_ui_nuklear_overview_gesture_t waveform_overview_gesture{};
     worm_ui_nuklear_overview_capture_t waveform_overview_capture{};
     bool waveform_beat_zero_drag_active{};
     bool beat_fit_drag_active{};

@@ -29,6 +29,38 @@ auto any_nonzero(const std::vector<float>& samples) -> bool {
     return std::ranges::any_of(samples, [](float sample) { return sample != 0.0F; });
 }
 
+auto preview_session_survives_underrun_and_completes() -> bool {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    const auto source = register_fixture(sources);
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.playable = {
+        {.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
+    const preview_object_source_binding_t binding{
+        .object = object_id_t{1},
+        .voices = {{.source = source.source, .frame_count = 512}},
+    };
+    const auto started = session.start(schedule, std::span{&binding, 1}, {}, 0,
+                                       {.lookahead_frames = 512}, 64);
+    if (!started)
+        return false;
+    cache.clear_source(source.source);
+
+    std::vector<float> output(32U * output_channel_count);
+    const auto underrun = session.render(output);
+    const bool underrun_kept_session =
+        underrun.status == preview_session_render_status_t::underrun &&
+        underrun.mix.dropped_voices == 1 && session.active() && session.timeline_frame() == 32;
+    const auto completed = session.render(output);
+    return underrun_kept_session && completed.status == preview_session_render_status_t::complete &&
+           completed.first_timeline_frame == 32 && !session.active();
+}
+
 } // namespace
 
 TEST_CASE("preview session primes advances refills and completes one chart timeline",
@@ -183,4 +215,9 @@ TEST_CASE("preview session keeps the visual timeline moving through unavailable 
         final.status == preview_session_render_status_t::complete, !session.active(),
     };
     CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
+}
+
+TEST_CASE("preview session remains active after an underrun and completes on its timeline",
+          "[unit][audio][preview-session][underrun]") {
+    CHECK(preview_session_survives_underrun_and_completes());
 }

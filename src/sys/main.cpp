@@ -2618,7 +2618,8 @@ int main(int argc, char** argv) {
     wormedit::audio::audition_session_t audition_session{audition_sources, audition_transport,
                                                          audition_bridge};
     wormedit::sys::sdl_audition_output_t audition_output{audition_session};
-    wormedit::audio::decoded_block_cache_t preview_cache;
+    wormedit::audio::decoded_block_cache_t preview_cache{
+        wormedit::audio::preview_block_cache_limits()};
     wormedit::audio::transport_t preview_transport{preview_cache};
     wormedit::audio::preview_transport_bridge_t preview_bridge{preview_transport};
     wormedit::audio::preview_session_t preview_session{audition_sources, preview_transport,

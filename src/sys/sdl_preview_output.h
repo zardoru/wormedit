@@ -6,6 +6,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <string>
@@ -39,6 +40,7 @@ enum class sdl_preview_service_status_t {
 struct sdl_preview_service_result_t {
     sdl_preview_service_status_t status{sdl_preview_service_status_t::ready};
     std::optional<audio::preview_session_pump_result_t> pump;
+    std::uint64_t silenced_voices{};
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return status == sdl_preview_service_status_t::ready;
@@ -88,6 +90,7 @@ class sdl_preview_output_t {
     audio::preview_session_t& session_;
     SDL_AudioStream* stream_{};
     std::atomic<callback_failure_t> callback_failure_{callback_failure_t::none};
+    std::atomic<std::uint64_t> silenced_voices_{};
     std::array<float, callback_frames * audio::output_channel_count> scratch_{};
 };
 

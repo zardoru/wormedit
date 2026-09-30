@@ -43,14 +43,20 @@ void service_audition(sdl_audition_output_t& output, std::string& status) {
 void service_chart_preview(sdl_preview_output_t& output,
                            runtime::chart_preview_t& state, std::string& status) {
     const auto serviced = output.service();
-    if (!serviced || *serviced)
+    if (!serviced)
+        return;
+    if (serviced->silenced_voices > 0) {
+        status = "Silenced " + std::to_string(serviced->silenced_voices) +
+                 " keysound(s) that were not decoded in time.";
+    }
+    if (*serviced)
         return;
     static_cast<void>(output.stop());
     state.reset_transport();
     if (serviced->status == sdl_preview_service_status_t::device_failed)
         status = "Chart preview stopped after an output-device failure.";
     else if (serviced->status == sdl_preview_service_status_t::render_failed)
-        status = "Chart preview stopped after a realtime cache underrun.";
+        status = "Chart preview stopped after a realtime mix failure.";
     else if (serviced->pump && serviced->pump->decode &&
              serviced->pump->decode->status == audio::preview_pump_status_t::source_unavailable)
         status = "Chart preview stopped because a decoded source is unavailable.";

@@ -25,6 +25,53 @@ auto all_zero(const std::vector<float>& samples) -> bool {
     return std::ranges::all_of(samples, [](float sample) { return sample == 0.0F; });
 }
 
+auto transport_drops_missing_voice_without_affecting_other_voices() -> bool {
+    using namespace wormedit::audio;
+    decoded_block_cache_t blocks;
+    transport_t transport{blocks, 2};
+    const auto token = transport.start();
+    if (!token.has_value())
+        return false;
+
+    const auto dropped_source = source("drop-after-first-block.ogg");
+    const auto other_source = source("unaffected.ogg");
+    const audio_block_key_t dropped_first{.source = dropped_source, .block_index = 0};
+    const audio_block_key_t dropped_second{.source = dropped_source, .block_index = 1};
+    const audio_block_key_t other_first{.source = other_source, .block_index = 0};
+    const audio_block_key_t other_second{.source = other_source, .block_index = 1};
+    const audio_block_key_t other_third{.source = other_source, .block_index = 2};
+    const std::vector<float> first_samples(maximum_read_frames * output_channel_count, 0.125F);
+    const std::vector<float> other_samples(maximum_read_frames * output_channel_count, 0.25F);
+    if (blocks.store(dropped_first, maximum_read_frames, first_samples) != block_store_status_t::stored ||
+        blocks.store(other_first, maximum_read_frames, other_samples) != block_store_status_t::stored ||
+        blocks.store(other_second, maximum_read_frames, other_samples) != block_store_status_t::stored ||
+        blocks.store(other_third, maximum_read_frames, other_samples) != block_store_status_t::stored)
+        return false;
+    const std::array voices{
+        transport_voice_t{.id = 1,
+                          .source = dropped_source,
+                          .frame_count = 3U * maximum_read_frames},
+        transport_voice_t{.id = 2,
+                          .source = other_source,
+                          .frame_count = 3U * maximum_read_frames},
+    };
+    if (transport.schedule_voices(*token, voices) != voice_schedule_status_t::scheduled)
+        return false;
+
+    std::vector<float> output(2U * maximum_read_frames * output_channel_count);
+    const auto first_mix = transport.mix(*token, 0, output);
+    const bool first_mix_ok = first_mix.missing_blocks == 1 && first_mix.dropped_voices == 1 &&
+                              transport.scheduled_voice_count() == 1 && output[0] == 0.375F &&
+                              output[maximum_read_frames * output_channel_count] == 0.25F;
+    if (blocks.store(dropped_second, maximum_read_frames, first_samples) !=
+        block_store_status_t::stored)
+        return false;
+    std::vector<float> later_output(maximum_read_frames * output_channel_count);
+    const auto later_mix = transport.mix(*token, 2U * maximum_read_frames, later_output);
+    return first_mix_ok && later_mix.missing_blocks == 0 && later_mix.dropped_voices == 0 &&
+           transport.scheduled_voice_count() == 0 && later_output[0] == 0.25F;
+}
+
 } // namespace
 
 TEST_CASE("transport mixes same-frame keysound polyphony from decoded cache blocks",
@@ -173,6 +220,11 @@ TEST_CASE("transport reports missing source blocks without emitting garbage",
     CHECK(transport.mix(*token, 0, output).status ==
           wormedit::audio::transport_mix_status_t::non_monotonic_callback);
     CHECK(all_zero(output));
+}
+
+TEST_CASE("transport drops a voice at its first missing block without affecting other voices",
+          "[unit][audio][transport][underrun]") {
+    CHECK(transport_drops_missing_voice_without_affecting_other_voices());
 }
 
 TEST_CASE("transport publishes layered voice batches atomically",

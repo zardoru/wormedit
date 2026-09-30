@@ -68,6 +68,7 @@ auto sdl_preview_output_t::start(
                 .session = std::nullopt,
                 .message = sdl_error("could not lock the chart-preview audio stream")};
     }
+    silenced_voices_.store(0, std::memory_order_release);
     auto started = session_.start(schedule, objects, metronome, seek_frame, {}, minimum_end_frame);
     auto result = sdl_preview_start_result_t{};
     result.session = started;
@@ -98,6 +99,7 @@ auto sdl_preview_output_t::seek(std::uint64_t sample_frame) -> sdl_preview_start
                 .session = std::nullopt,
                 .message = sdl_error("could not lock the chart-preview audio stream")};
     }
+    silenced_voices_.store(0, std::memory_order_release);
     auto started = session_.seek(sample_frame);
     auto result = sdl_preview_start_result_t{};
     result.session = started;
@@ -118,6 +120,7 @@ auto sdl_preview_output_t::seek(std::uint64_t sample_frame) -> sdl_preview_start
 }
 
 auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result_t> {
+    const auto silenced_voices = silenced_voices_.exchange(0, std::memory_order_acq_rel);
     const auto callback_failure =
         callback_failure_.exchange(callback_failure_t::none, std::memory_order_acq_rel);
     if (callback_failure != callback_failure_t::none) {
@@ -126,6 +129,7 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
                           ? sdl_preview_service_status_t::device_failed
                           : sdl_preview_service_status_t::render_failed,
             .pump = std::nullopt,
+            .silenced_voices = silenced_voices,
         };
     }
     if (stream_ == nullptr || !session_.active())
@@ -139,12 +143,14 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
         .status = pumped ? sdl_preview_service_status_t::ready
                          : sdl_preview_service_status_t::pump_failed,
         .pump = std::move(pumped),
+        .silenced_voices = silenced_voices,
     };
 }
 
 auto sdl_preview_output_t::stop() noexcept -> audio::transport_stop_result_t {
     if (stream_ == nullptr) {
         callback_failure_.store(callback_failure_t::none, std::memory_order_release);
+        silenced_voices_.store(0, std::memory_order_release);
         return session_.stop();
     }
     if (!SDL_LockAudioStream(stream_)) {
@@ -152,12 +158,14 @@ auto sdl_preview_output_t::stop() noexcept -> audio::transport_stop_result_t {
         auto stopped = session_.stop();
         static_cast<void>(SDL_ClearAudioStream(stream_));
         callback_failure_.store(callback_failure_t::none, std::memory_order_release);
+        silenced_voices_.store(0, std::memory_order_release);
         return stopped;
     }
     static_cast<void>(SDL_PauseAudioStreamDevice(stream_));
     auto stopped = session_.stop();
     static_cast<void>(SDL_ClearAudioStream(stream_));
     callback_failure_.store(callback_failure_t::none, std::memory_order_release);
+    silenced_voices_.store(0, std::memory_order_release);
     static_cast<void>(SDL_UnlockAudioStream(stream_));
     return stopped;
 }
@@ -179,8 +187,10 @@ void sdl_preview_output_t::render_requested(SDL_AudioStream* stream,
         const auto samples = requested_frames * audio::output_channel_count;
         const auto bytes = samples * sizeof(float);
         const auto rendered = session_.render(std::span{scratch_.data(), samples});
-        if (rendered.status == audio::preview_session_render_status_t::underrun ||
-            rendered.status == audio::preview_session_render_status_t::transport_failed) {
+        if (rendered.status == audio::preview_session_render_status_t::underrun) {
+            silenced_voices_.fetch_add(rendered.mix.dropped_voices,
+                                      std::memory_order_relaxed);
+        } else if (rendered.status == audio::preview_session_render_status_t::transport_failed) {
             callback_failure_.store(callback_failure_t::render, std::memory_order_release);
             static_cast<void>(session_.stop());
             return;

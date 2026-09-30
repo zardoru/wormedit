@@ -61,12 +61,12 @@ auto mix_block_samples(std::span<float> output, const decoded_audio_block_t& blo
     return available;
 }
 
-auto mix_voice(transport_mix_context_t& context, const transport_voice_t& voice) -> void {
+auto mix_voice(transport_mix_context_t& context, const transport_voice_t& voice) -> bool {
     const auto voice_end = voice.timeline_start_frame + voice.frame_count;
     const auto overlap_start = std::max(context.first_timeline_frame, voice.timeline_start_frame);
     const auto overlap_end = std::min(context.callback_end, voice_end);
     if (overlap_start >= overlap_end) {
-        return;
+        return false;
     }
     ++context.result.voices_mixed;
     auto timeline_frame = overlap_start;
@@ -91,9 +91,12 @@ auto mix_voice(transport_mix_context_t& context, const transport_voice_t& voice)
             });
         if (!found || available != window.requested) {
             ++context.result.missing_blocks;
+            ++context.result.dropped_voices;
+            return true;
         }
         timeline_frame += window.requested;
     }
+    return false;
 }
 
 auto clip_mix_samples(transport_mix_context_t& context) -> void {
@@ -227,9 +230,12 @@ auto transport_t::mix(session_token_t token, std::uint64_t first_timeline_frame,
         result.status = transport_mix_status_t::mixed;
         transport_mix_context_t context{block_cache_, first_timeline_frame, callback_end,
                                         interleaved_stereo, result};
-        for (const auto& entry : scheduled_voices_) {
+        for (auto& entry : scheduled_voices_) {
             if (entry.active) {
-                mix_voice(context, entry.voice);
+                if (mix_voice(context, entry.voice)) {
+                    entry.active = false;
+                    --active_scheduled_voices_;
+                }
             }
         }
         clip_mix_samples(context);
@@ -247,6 +253,7 @@ auto transport_t::mix(session_token_t token, std::uint64_t first_timeline_frame,
         result.status = transport_mix_status_t::stale_generation;
         result.voices_mixed = 0;
         result.missing_blocks = 0;
+        result.dropped_voices = 0;
         result.clipped_samples = 0;
     }
     return result;
@@ -255,6 +262,10 @@ auto transport_t::mix(session_token_t token, std::uint64_t first_timeline_frame,
 auto transport_t::scheduled_voice_count() const -> std::size_t {
     const std::scoped_lock lock(mutex_);
     return active_scheduled_voices_;
+}
+
+auto transport_t::block_cache_limits() const noexcept -> block_cache_limits_t {
+    return block_cache_.limits();
 }
 
 auto transport_t::snapshot_active_voices(session_token_t token, std::size_t maximum_voices)

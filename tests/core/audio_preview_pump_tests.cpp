@@ -103,3 +103,95 @@ TEST_CASE("preview lookahead rejects bounds and stale generations before cache p
     CHECK_FALSE(stale);
     CHECK(stale.status == preview_pump_status_t::stale_generation);
 }
+
+namespace {
+
+using namespace wormedit::audio;
+
+constexpr std::size_t overlapping_source_count = 24;
+
+auto schedule_overlapping_generated_sources(decoded_source_registry_t& sources,
+                                             transport_t& transport, session_token_t token)
+    -> voice_schedule_status_t {
+    std::vector<transport_voice_t> voices;
+    voices.reserve(overlapping_source_count);
+    const std::vector<float> samples(maximum_read_frames * output_channel_count, 0.125F);
+    for (std::size_t index = 0; index < overlapping_source_count; ++index) {
+        const auto identity = "generated:preview-overlap:" + std::to_string(index);
+        const auto generated = sources.register_generated_source({
+            .source = {identity, "preview-overlap-v1"},
+            .interleaved_stereo = samples,
+        });
+        if (!generated) {
+            return voice_schedule_status_t::invalid_voice;
+        }
+        voices.push_back({
+            .id = index + 1U,
+            .source = generated.binding->source,
+            .frame_count = maximum_read_frames,
+        });
+    }
+    return transport.schedule_voices(token, voices);
+}
+
+} // namespace
+
+TEST_CASE("preview cache limits hold two maximum-size pump plans globally and per asset",
+          "[unit][audio][preview-pump][cache]") {
+    using namespace wormedit::audio;
+    constexpr auto maximum_plan_frames = maximum_preview_pump_blocks * maximum_read_frames;
+    constexpr auto two_plan_frames = 2U * maximum_plan_frames;
+    constexpr auto two_plan_bytes = two_plan_frames * output_channel_count * sizeof(float);
+    const auto limits = preview_block_cache_limits();
+
+    CHECK(limits.maximum_frames == two_plan_frames);
+    CHECK(limits.maximum_bytes == two_plan_bytes);
+    CHECK(limits.maximum_frames_per_asset == two_plan_frames);
+    CHECK(limits.maximum_bytes_per_asset == two_plan_bytes);
+}
+
+TEST_CASE("preview pump retains many overlapping sources through chunked transport rendering",
+          "[unit][audio][preview-pump][transport][cache]") {
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    decoded_block_cache_t cache{preview_block_cache_limits()};
+    transport_t transport{cache, overlapping_source_count};
+    const auto token = transport.start();
+    REQUIRE(token.has_value());
+    REQUIRE(schedule_overlapping_generated_sources(sources, transport, *token) ==
+            voice_schedule_status_t::scheduled);
+
+    const auto pumped = pump_preview_lookahead(
+        sources, transport, *token, 0, {.lookahead_frames = maximum_read_frames});
+    REQUIRE(pumped.status == preview_pump_status_t::ready);
+    CHECK(pumped.requested_blocks == overlapping_source_count);
+    CHECK(pumped.decoded_blocks == overlapping_source_count);
+
+    constexpr std::size_t render_chunk_frames = 4'096;
+    static_assert(maximum_read_frames % render_chunk_frames == 0);
+    std::vector<float> chunk(render_chunk_frames * output_channel_count);
+    for (std::size_t frame = 0; frame < maximum_read_frames; frame += render_chunk_frames) {
+        const auto mixed = transport.mix(*token, frame, chunk);
+        INFO("render chunk starts at frame " << frame);
+        CHECK(mixed.status == transport_mix_status_t::mixed);
+        CHECK(mixed.missing_blocks == 0);
+    }
+}
+
+TEST_CASE("default preview cache rejects a pump plan larger than its capacity",
+          "[unit][audio][preview-pump][transport][cache]") {
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    decoded_block_cache_t cache;
+    transport_t transport{cache, overlapping_source_count};
+    const auto token = transport.start();
+    REQUIRE(token.has_value());
+    REQUIRE(schedule_overlapping_generated_sources(sources, transport, *token) ==
+            voice_schedule_status_t::scheduled);
+
+    const auto pumped = pump_preview_lookahead(
+        sources, transport, *token, 0, {.lookahead_frames = maximum_read_frames});
+    CHECK(pumped.status == preview_pump_status_t::capacity_exceeded);
+    CHECK(pumped.requested_blocks == overlapping_source_count);
+    CHECK(cache.stats().entries == 0);
+}

@@ -154,7 +154,8 @@ auto preview_session_t::render(std::span<float> interleaved_stereo)
                 .mix = mixed};
     }
     timeline_frame_ += mixed.frames;
-    if (bridge_.exhausted() && transport_.scheduled_voice_count() == 0 &&
+    if (mixed.missing_blocks == 0 && bridge_.exhausted() &&
+        transport_.scheduled_voice_count() == 0 &&
         timeline_frame_ >= minimum_end_frame_) {
         static_cast<void>(bridge_.stop());
         clear_state();

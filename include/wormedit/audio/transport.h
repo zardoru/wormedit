@@ -68,6 +68,7 @@ struct transport_mix_result_t {
     std::size_t frames{};
     std::size_t voices_mixed{};
     std::size_t missing_blocks{};
+    std::size_t dropped_voices{};
     std::size_t clipped_samples{};
 };
 
@@ -109,6 +110,7 @@ class transport_t {
                                               std::size_t maximum_voices = 256)
         -> active_voice_snapshot_t;
 
+    [[nodiscard]] auto block_cache_limits() const noexcept -> block_cache_limits_t;
     [[nodiscard]] auto scheduled_voice_count() const -> std::size_t;
 
   private:

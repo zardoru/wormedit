@@ -104,6 +104,7 @@ catch_discover_tests(wormedit_core_tests
 
 if(WORMEDIT_ENABLE_AUDIO_DECODER)
     add_executable(wormedit_audio_tests
+        ../src/sys/project_open.cpp
         ../src/sys/application_defaults.cpp
         ../src/sys/audio_project_import.cpp
         ../src/sys/audio_source_registration.cpp
@@ -119,6 +120,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         core/audio_preview_bridge_tests.cpp
         core/audio_preview_pump_tests.cpp
         core/audio_preview_session_tests.cpp
+        core/audio_preview_repro_tests.cpp
         core/audio_source_registry_tests.cpp
         core/audio_transport_tests.cpp
         core/audio_waveform_tests.cpp

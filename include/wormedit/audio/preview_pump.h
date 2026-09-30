@@ -11,6 +11,19 @@ namespace wormedit::audio {
 inline constexpr std::size_t maximum_preview_pump_voices = 256;
 inline constexpr std::size_t maximum_preview_pump_blocks = 512;
 
+// Cache limits that hold two complete pump plans (the window being mixed and
+// the next one). These are ceilings, not reservations.
+[[nodiscard]] constexpr auto preview_block_cache_limits() noexcept -> block_cache_limits_t {
+    constexpr auto maximum_frames =
+        2U * maximum_preview_pump_blocks * maximum_read_frames;
+    constexpr auto maximum_bytes =
+        maximum_frames * output_channel_count * sizeof(float);
+    return {.maximum_bytes = maximum_bytes,
+            .maximum_frames = maximum_frames,
+            .maximum_bytes_per_asset = maximum_bytes,
+            .maximum_frames_per_asset = maximum_frames};
+}
+
 struct preview_pump_options_t {
     std::size_t lookahead_frames{maximum_read_frames};
     std::size_t maximum_voices{maximum_preview_pump_voices};

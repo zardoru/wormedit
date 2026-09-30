@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <limits>
 #include <ranges>
+#include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace wormedit::audio {
@@ -92,6 +94,33 @@ auto plan_preview_keys(std::span<const transport_voice_t> voices, std::uint64_t 
     return plan;
 }
 
+auto maximum_cached_plan_blocks(std::size_t maximum_frames, std::size_t maximum_bytes)
+    -> std::size_t {
+    constexpr auto bytes_per_frame =
+        static_cast<std::size_t>(output_channel_count) * sizeof(float);
+    const auto byte_frame_limit = maximum_bytes / bytes_per_frame;
+    return std::min(maximum_frames, byte_frame_limit) / maximum_read_frames;
+}
+
+auto plan_fits_cache(const preview_key_plan_t& plan, block_cache_limits_t limits) -> bool {
+    const auto global_block_limit =
+        maximum_cached_plan_blocks(limits.maximum_frames, limits.maximum_bytes);
+    if (plan.keys.size() > global_block_limit) {
+        return false;
+    }
+    const auto asset_block_limit = maximum_cached_plan_blocks(
+        limits.maximum_frames_per_asset, limits.maximum_bytes_per_asset);
+    std::unordered_map<std::string_view, std::size_t> blocks_by_asset;
+    for (const auto& key : plan.keys) {
+        auto& blocks = blocks_by_asset[key.source.asset_identity];
+        ++blocks;
+        if (blocks > asset_block_limit) {
+            return false;
+        }
+    }
+    return true;
+}
+
 auto decode_preview_plan(decoded_source_registry_t& sources, transport_t& transport,
                          session_token_t token, const preview_key_plan_t& plan,
                          preview_pump_result_t result) -> preview_pump_result_t {
@@ -145,6 +174,13 @@ auto pump_preview_lookahead(decoded_source_registry_t& sources, transport_t& tra
         if (plan.status == preview_pump_status_t::capacity_exceeded) {
             result.requested_blocks = options.maximum_blocks + 1U;
         }
+        return result;
+    }
+    if (!plan_fits_cache(plan, transport.block_cache_limits())) {
+        auto result = empty_result(preview_pump_status_t::capacity_exceeded);
+        result.active_voices = snapshot.voices.size();
+        result.overlapping_voices = plan.overlapping_voices;
+        result.requested_blocks = plan.keys.size();
         return result;
     }
     auto result = empty_result(preview_pump_status_t::ready);

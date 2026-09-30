@@ -1170,6 +1170,8 @@ typedef struct WormUiWorkspaceView {
     size_t undo_depth;
     size_t redo_depth;
     bool recovery_panel_visible;
+    // Computed from all controller rows before the UI row limit is applied.
+    bool recovery_has_actionable_candidate;
     const char* recovery_heading;
     const char* recovery_notice;
     bool recovery_rows_truncated;

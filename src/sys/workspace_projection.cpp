@@ -150,15 +150,75 @@ auto recovery_action_mask(const std::vector<wormedit::native_project_recovery_ac
     return mask;
 }
 
+void populate_recovery_candidate(
+    flattened_workspace_t& result,
+    const wormedit::native_project_recovery_controller_view_t& recovery,
+    std::size_t source_index, std::size_t index) {
+    const auto& row = recovery.rows[source_index];
+    result.recovery.path[index] = row.path_label;
+    auto& summary = result.recovery.summary[index];
+    summary = std::string(recovery_status_name(row.status)) + " · " +
+              std::string(recovery_comparison_name(row.comparison));
+    if (row.version) {
+        summary += " · revision " + std::to_string(row.version->revision);
+    }
+    if (row.recovery_session_sequence) {
+        summary += " · session " + std::to_string(*row.recovery_session_sequence);
+    }
+    if (recovery.preferred_recovery_row == source_index) {
+        summary += " · recommended recovery";
+    }
+    auto& disabled_reason = result.recovery.disabled_reason[index];
+    const auto action_mask = recovery_action_mask(row.available_actions);
+    constexpr auto all_recovery_actions =
+        WORM_UI_RECOVERY_ACTION_INSPECT | WORM_UI_RECOVERY_ACTION_RECOVER |
+        WORM_UI_RECOVERY_ACTION_SAVE_AS | WORM_UI_RECOVERY_ACTION_DISCARD |
+        WORM_UI_RECOVERY_ACTION_QUARANTINE;
+    if (row.available_actions.empty()) {
+        disabled_reason = "No safe action is available for this candidate.";
+    } else if (action_mask != all_recovery_actions) {
+        disabled_reason =
+            "Unavailable actions are disabled by the recovery controller's safety checks.";
+    }
+    result.view.recovery_candidates[index] = {
+        .path_label = result.recovery.path[index].c_str(),
+        .summary = summary.c_str(),
+        .disabled_reason = disabled_reason.empty() ? nullptr : disabled_reason.c_str(),
+        .action_mask = action_mask,
+        .scan_generation = row.target.scan_generation,
+        .row_index = row.target.row_index,
+        .candidate_index = row.target.candidate_index,
+    };
+}
+
+void populate_bounded_recovery_candidates(
+    flattened_workspace_t& result,
+    const wormedit::native_project_recovery_controller_view_t& recovery) {
+    std::size_t index{};
+    // Keep actionable rows ahead of inactive rows without changing action tokens.
+    for (const bool actionable : {true, false}) {
+        for (std::size_t source_index = 0; source_index < recovery.rows.size(); ++source_index) {
+            if (index == result.view.recovery_candidate_count) return;
+            const bool row_actionable = !recovery.rows[source_index].available_actions.empty();
+            if (row_actionable != actionable) continue;
+            populate_recovery_candidate(result, recovery, source_index, index++);
+        }
+    }
+}
+
 void populate_recovery_view(
     flattened_workspace_t& result,
     const wormedit::native_project_recovery_controller_view_t& recovery,
     bool recovery_scan_configured) {
-    result.view.recovery_panel_visible = false;
+    result.view.recovery_has_actionable_candidate =
+        std::any_of(recovery.rows.begin(), recovery.rows.end(), [](const auto& row) {
+            return !row.available_actions.empty();
+        });
+    result.view.recovery_panel_visible = result.view.recovery_has_actionable_candidate;
     result.view.recovery_heading = "Project recovery";
     result.view.recovery_rows_truncated = recovery.rows_truncated;
     if (recovery_scan_configured) {
-        result.view.recovery_notice = recovery.banner_visible
+        result.view.recovery_notice = result.view.recovery_has_actionable_candidate
                                           ? "Review candidates before choosing an action."
                                           : "No recovery candidates currently require action.";
     } else {
@@ -171,50 +231,11 @@ void populate_recovery_view(
     result.view.recovery_candidate_count = recovery_row_count;
     result.view.recovery_rows_truncated =
         result.view.recovery_rows_truncated || recovery_row_count < recovery.rows.size();
-    for (std::size_t index = 0; index < recovery_row_count; ++index) {
-        const auto& row = recovery.rows[index];
-        result.recovery.path[index] = row.path_label;
-        auto& summary = result.recovery.summary[index];
-        summary = std::string(recovery_status_name(row.status)) + " · " +
-                  std::string(recovery_comparison_name(row.comparison));
-        if (row.version) {
-            summary += " · revision " + std::to_string(row.version->revision);
-        }
-        if (row.recovery_session_sequence) {
-            summary += " · session " + std::to_string(*row.recovery_session_sequence);
-        }
-        if (recovery.preferred_recovery_row == index) {
-            summary += " · recommended recovery";
-        }
-        auto& disabled_reason = result.recovery.disabled_reason[index];
-        const auto action_mask = recovery_action_mask(row.available_actions);
-        constexpr auto all_recovery_actions =
-            WORM_UI_RECOVERY_ACTION_INSPECT | WORM_UI_RECOVERY_ACTION_RECOVER |
-            WORM_UI_RECOVERY_ACTION_SAVE_AS | WORM_UI_RECOVERY_ACTION_DISCARD |
-            WORM_UI_RECOVERY_ACTION_QUARANTINE;
-        if (row.available_actions.empty()) {
-            disabled_reason = "No safe action is available for this candidate.";
-        } else if (action_mask != all_recovery_actions) {
-            disabled_reason =
-                "Unavailable actions are disabled by the recovery controller's safety checks.";
-        }
-        result.view.recovery_candidates[index] = {
-            .path_label = result.recovery.path[index].c_str(),
-            .summary = summary.c_str(),
-            .disabled_reason = disabled_reason.empty() ? nullptr : disabled_reason.c_str(),
-            .action_mask = action_mask,
-            .scan_generation = row.target.scan_generation,
-            .row_index = row.target.row_index,
-            .candidate_index = row.target.candidate_index,
-        };
-    }
+    populate_bounded_recovery_candidates(result, recovery);
     const auto recovery_diagnostic_count =
         std::min(recovery.diagnostics.size(),
                  static_cast<std::size_t>(WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY));
     result.view.recovery_diagnostic_count = recovery_diagnostic_count;
-    result.view.recovery_panel_visible = recovery_row_count != 0 ||
-                                         recovery_diagnostic_count != 0 ||
-                                         result.view.recovery_rows_truncated;
     for (std::size_t index = 0; index < recovery_diagnostic_count; ++index) {
         auto& diagnostic = result.recovery.diagnostic[index];
         diagnostic = recovery.diagnostics[index].message;

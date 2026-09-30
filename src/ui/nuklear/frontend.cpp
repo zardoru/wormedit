@@ -698,6 +698,18 @@ static void render_workspace_tabs(const WormUiWorkspaceView* view,
     }
 }
 
+static auto workspace_status_line(const WormUiWorkspaceView& view) -> std::string {
+    std::string status = !g_project_dialog_error.empty()
+                             ? g_project_dialog_error : view.status_text;
+    if (!view.recovery_has_actionable_candidate && view.recovery_notice &&
+        view.recovery_notice[0]) {
+        if (!status.empty()) status += " · ";
+        status += "Recovery: ";
+        status += view.recovery_notice;
+    }
+    return status;
+}
+
 static void render_status_bar(const WormUiWorkspaceView* view,
                               WormUiWorkspaceAction* action) {
     nk_layout_row_template_begin(g_context, 30);
@@ -729,9 +741,8 @@ static void render_status_bar(const WormUiWorkspaceView* view,
                                          view->player_preview.visible}.render(g_context) &&
         action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
         action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
-    nk_label(g_context, !g_project_dialog_error.empty()
-                            ? g_project_dialog_error.c_str() : view->status_text,
-             NK_TEXT_LEFT);
+    const auto status = workspace_status_line(*view);
+    nk_label(g_context, status.c_str(), NK_TEXT_LEFT);
     const auto sample_rate = view->transport_sample_rate == 0 ? 1U : view->transport_sample_rate;
     const auto seconds = view->transport_frame / sample_rate;
     nk_labelf(g_context, NK_TEXT_RIGHT, "%llu:%02llu",
@@ -830,7 +841,7 @@ static void render_recovery_candidate(const WormUiRecoveryCandidateView* candida
 
 static auto render_recovery_panel(const WormUiWorkspaceView& view,
                                   WormUiWorkspaceAction& action) -> float {
-    if (!view.recovery_panel_visible) return 0.0f;
+    if (!view.recovery_panel_visible || !view.recovery_has_actionable_candidate) return 0.0f;
     const auto height = recovery_panel_height(view);
     nk_layout_row_dynamic(g_context, 24, 1);
     nk_label(g_context, view.recovery_heading ? view.recovery_heading : "Recovery", NK_TEXT_LEFT);

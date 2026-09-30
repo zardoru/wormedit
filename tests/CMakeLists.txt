@@ -282,6 +282,21 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         DISCOVERY_MODE PRE_TEST
     )
 
+    add_executable(wormedit_nuklear_sdl_backend_tests
+        ui/nuklear_sdl_backend_tests.cpp
+        ../src/ui/nuklear/sdl_backend.cpp
+        ../src/sys/frame_timing.cpp
+    )
+    target_include_directories(wormedit_nuklear_sdl_backend_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
+    target_link_libraries(wormedit_nuklear_sdl_backend_tests PRIVATE
+        wormedit::ui_frontend SDL3::SDL3 Catch2::Catch2WithMain)
+    catch_discover_tests(wormedit_nuklear_sdl_backend_tests
+        TEST_PREFIX "nuklear-sdl-backend."
+        PROPERTIES LABELS "unit;frontend;rendering"
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy"
+        DISCOVERY_MODE PRE_TEST)
+
     add_executable(wormedit_player_preview_texture_tests
         ui/nuklear_player_preview_texture_tests.cpp
         ../src/ui/nuklear/image_quad.cpp

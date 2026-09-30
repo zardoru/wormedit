@@ -1,6 +1,4 @@
 #include "ui/nuklear/external_player_panel.h"
-#define NK_IMPLEMENTATION
-#define NK_SDL3_RENDERER_IMPLEMENTATION
 
 #include "ui/frontend.h"
 #include "ui/nuklear/audio_panel.h"
@@ -19,7 +17,7 @@
 #include "ui/nuklear/timing_state.h"
 #include "ui/nuklear/theme.h"
 
-#include "wormedit/nuklear_config.h"
+#include "ui/nuklear/sdl_backend.h"
 
 #include <wormedit/formats/bms.h>
 
@@ -34,71 +32,6 @@ class RenderSubphaseScope {
   private:
     uint32_t previous_;
 };
-
-// Keep counters at the adapter boundary: converted buffers are shared by every
-// draw command, so their vertices and indices are counted once per frame.
-struct GpuSubmissionCounters {
-    WormUiFrameGpuWork work{};
-    SDL_Rect current_clip{};
-    SDL_Rect previous_clip{};
-    SDL_Texture* previous_texture{};
-    bool current_clip_enabled{};
-    bool previous_clip_enabled{};
-    bool submitted{};
-};
-static GpuSubmissionCounters g_gpu_submission;
-
-static nk_flags convert_nuklear_commands(nk_context* context, nk_buffer* commands,
-    nk_buffer* vertices, nk_buffer* indices, const nk_convert_config* config) {
-    const RenderSubphaseScope convert_phase{WORM_UI_FRAME_RENDER_CONVERT};
-    const auto result = nk_convert(context, commands, vertices, indices, config);
-    g_gpu_submission.work.vertices = config->vertex_size == 0 ? 0 : vertices->allocated / config->vertex_size;
-    g_gpu_submission.work.indices = indices->allocated / sizeof(nk_draw_index);
-    return result;
-}
-
-static bool set_nuklear_clip_rect(SDL_Renderer* renderer, const SDL_Rect* rect) {
-    const auto result = SDL_SetRenderClipRect(renderer, rect);
-    if (result) {
-        g_gpu_submission.current_clip_enabled = rect != nullptr;
-        g_gpu_submission.current_clip = rect ? *rect : SDL_Rect{};
-    }
-    return result;
-}
-
-static bool same_nuklear_clip() {
-    const auto& current = g_gpu_submission.current_clip;
-    const auto& previous = g_gpu_submission.previous_clip;
-    return g_gpu_submission.current_clip_enabled == g_gpu_submission.previous_clip_enabled &&
-        current.x == previous.x && current.y == previous.y && current.w == previous.w && current.h == previous.h;
-}
-
-// The bundled SDL adapter hardcodes 16-bit indices. Keep its conversion/render
-// implementation, but submit the configured Nuklear index width to SDL.
-static_assert(sizeof(nk_draw_index) == 4);
-static bool render_nuklear_geometry_raw(SDL_Renderer* renderer, SDL_Texture* texture,
-    const float* xy, int xy_stride, const SDL_FColor* colors, int color_stride,
-    const float* uv, int uv_stride, int vertex_count, const void* indices,
-    int index_count, int) {
-    ++g_gpu_submission.work.draw_calls;
-    if (g_gpu_submission.submitted) {
-        g_gpu_submission.work.clip_rect_changes += !same_nuklear_clip();
-        g_gpu_submission.work.texture_switches += texture != g_gpu_submission.previous_texture;
-    }
-    g_gpu_submission.previous_clip = g_gpu_submission.current_clip;
-    g_gpu_submission.previous_clip_enabled = g_gpu_submission.current_clip_enabled;
-    g_gpu_submission.previous_texture = texture;
-    g_gpu_submission.submitted = true;
-    return SDL_RenderGeometryRaw(renderer, texture, xy, xy_stride, colors, color_stride,
-        uv, uv_stride, vertex_count, indices, index_count, sizeof(nk_draw_index));
-}
-#define nk_convert convert_nuklear_commands
-#define SDL_SetRenderClipRect set_nuklear_clip_rect
-#define SDL_RenderGeometryRaw render_nuklear_geometry_raw
-#include <demo/sdl3_renderer/nuklear_sdl3_renderer.h>
-#undef SDL_RenderGeometryRaw
-#undef SDL_SetRenderClipRect
-#undef nk_convert
 
 #include <SDL3/SDL_keyboard.h>
 
@@ -285,34 +218,6 @@ static bool frontend_window_size(int* width, int* height) {
     *width = g_last_window_width;
     *height = g_last_window_height;
     return true;
-}
-
-void worm_ui_nuklear_append_image_quad(void* canvas, short, short, unsigned short, unsigned short,
-                                       nk_handle callback_data) {
-    auto* list = static_cast<struct nk_draw_list*>(canvas);
-    const auto* quad = static_cast<const WormUiNuklearImageQuad*>(callback_data.ptr);
-    if (!list || !quad) {
-        return;
-    }
-    nk_draw_list_push_image(list, quad->image.handle);
-    const auto base = static_cast<nk_draw_index>(list->vertex_count);
-    auto* vertices = nk_draw_list_alloc_vertices(list, 4);
-    auto* indices = nk_draw_list_alloc_elements(list, 6);
-    if (!vertices || !indices) {
-        return;
-    }
-    indices[0] = static_cast<nk_draw_index>(base + 0);
-    indices[1] = static_cast<nk_draw_index>(base + 1);
-    indices[2] = static_cast<nk_draw_index>(base + 2);
-    indices[3] = static_cast<nk_draw_index>(base + 0);
-    indices[4] = static_cast<nk_draw_index>(base + 2);
-    indices[5] = static_cast<nk_draw_index>(base + 3);
-    struct nk_colorf color{};
-    nk_color_fv(&color.r, quad->color);
-    for (std::size_t index = 0; index < 4; ++index) {
-        vertices =
-            nk_draw_vertex(vertices, &list->config, quad->points[index], quad->uvs[index], color);
-    }
 }
 
 static bool nuklear_text_entry_active(void);
@@ -1503,8 +1408,6 @@ void worm_ui_frontend_render(int window_width, int window_height) {
         }
         SDL_SetRenderDrawColor(g_renderer, 18, 20, 26, 255);
         SDL_RenderClear(g_renderer);
-        g_gpu_submission = {};
-        nk_sdl_render(g_context, NK_ANTI_ALIASING_ON);
-        worm_ui_frame_timing_record_gpu_work(g_gpu_submission.work);
+        wormedit::ui::nuklear::render_sdl_backend(g_context, NK_ANTI_ALIASING_ON);
     }
 }

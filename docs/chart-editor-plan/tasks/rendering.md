@@ -113,7 +113,7 @@ Verification: parent coordinated integrated build and full suite 913/913; focuse
 
 ## T-247 Own the Nuklear SDL3 render backend
 
-- **Status:** blocked-on T-246
+- **Status:** done
 - **Outcome:** a project-owned copy of the SDL3 backend replaces the demo header: vertex and index buffers persist across frames (cleared, not reallocated), colors are 8-bit where SDL accepts them, indices are 32-bit (with T-244), and consecutive commands with the same texture and clip are merged into one `SDL_RenderGeometryRaw` call.
 - **Read first:** the demo backend, `include/wormedit/nuklear_config.h`, `src/ui/nuklear/frontend.cpp`.
 - **Files owned:** new `src/ui/nuklear/sdl_backend.cpp/.h` (with the upstream license notice), `src/ui/nuklear/frontend.cpp`, `include/wormedit/nuklear_config.h`, `CMakeLists.txt`, new `tests/ui/nuklear_sdl_backend_tests.cpp`, `tests/CMakeLists.txt`.
@@ -122,6 +122,19 @@ Verification: parent coordinated integrated build and full suite 913/913; focuse
 - **Reject/failure behavior:** none.
 - **Verify:** standard build/test; T-246 draw-call count drops; smoke PNGs of every tab.
 - **Out of scope:** changing what the field draws.
+
+Verification (2026-09-30): the verbatim upstream implementation was copied with its full MIT notice (Micha Mettke, 2017), built, and compared before buffer or batching changes. All six available panels (Setup, Metadata, Timing, Compose, Audio / Slices, Compare / Validate) had zero differing RGB pixels. The same six panels remain pixel-identical after persistent buffers and merging. Storyboard is N/A: `workspace_tab_enabled` in `src/core/workspace.cpp:770–771` unconditionally disables it; its disabled tab chrome also matches. No feature was enabled for the test. All windows used isolated Xvfb and dummy audio.
+
+The local `SDL_RenderGeometryRaw` API requires `const SDL_FColor*` (`SDL_render.h:2499`), so float RGBA is retained; it cannot accept packed 8-bit vertex colors. AA remains on and indices remain 32-bit. Vertex/index buffers retain capacity until backend shutdown; the actual dense-frame allocator regression confirms no Nuklear allocations after warm-up. Batching preserves index order and effective clip/texture boundaries, skips empty commands, and prevents merged index counts exceeding SDL's signed limit.
+
+Steady hidden-overlay T-211 reports (240 samples at each zoom):
+
+| Zoom | Vertices | Indices | Draw calls before → after | Clip changes | Texture switches |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 192 px/measure | 33,013 | 84,384 | 44 → 42 | 10 | 34 |
+| 4096 px/measure | 31,608 | 70,581 | 44 → 42 | 10 | 34 |
+
+Application builds pass; coordinated full suite 919/919 and focused backend tests 3/3 pass. Exact staged production syntax checks pass 3/3. `clang-tidy` reports no cognitive-complexity violation in the new backend or tests; pre-existing Nuklear dependency warnings remain. Pixel comparisons, captures, allocator/test logs and steady reports are in `/tmp/wormedit-t247/`.
 
 ## T-248 Draw the Compose field with a wormedit renderer outside Nuklear
 

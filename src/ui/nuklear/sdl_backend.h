@@ -22,6 +22,7 @@
  */
 
 #pragma once
+#include "ui/field/field_renderer.h"
 #include "wormedit/nuklear_config.h"
 #include <SDL3/SDL.h>
 #include <cstddef>
@@ -108,4 +109,12 @@ class sdl_draw_batcher_t {
     std::size_t next_index_{};
 };
 void render_sdl_backend(nk_context* context, nk_anti_aliasing anti_aliasing);
+auto begin_compose_field(nk_context* context, SDL_FRect viewport)
+    -> wormedit::ui::field::renderer_t&;
+auto compose_field(nk_context* context) -> wormedit::ui::field::renderer_t&;
+auto compose_field_font(const nk_user_font* font) -> wormedit::ui::field::font_t;
+void draw_compose_field_text(nk_context* context, wormedit::ui::field::layer_t layer,
+                             struct nk_rect bounds, const char* text, int length,
+                             const nk_user_font* font, nk_color foreground);
+void insert_compose_field(nk_context* context, nk_command_buffer* canvas, struct nk_rect viewport);
 } // namespace wormedit::ui::nuklear

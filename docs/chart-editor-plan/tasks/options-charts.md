@@ -45,7 +45,7 @@ Apply the stale-plan check (rule 9) first.
 - **Status:** ready
 - **Outcome:** one versioned `preferences.json` in the SDL preference directory holds all per-user settings in sections (general, editor, audio, display, players, minimap, layout); it loads once at startup, saves atomically on change, and migrates the existing external-player file on first run. Shortcut profiles stay in their own file, referenced by path.
 - **Read first:** `src/sys/external_player.cpp` (`load_external_player_preferences`, `valid_preferences`), `src/core/shortcut_profile_storage.cpp` (atomic save pattern), `src/sys/platform_shortcut_profile.cpp` (`SDL_GetPrefPath`), `src/sys/compose_input.cpp` (`consume_minimap_preferences`).
-- **Files owned:** new `include/wormedit/core/preferences.h`, new `src/core/preferences.cpp`, new `tests/core/preferences_tests.cpp`, new `src/sys/preferences_runtime.cpp/.h`, `src/sys/external_player.cpp/.h`, `src/sys/main.cpp` (load/save wiring only), `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** new `include/wormedit/core/preferences.h`, new `src/core/preferences.cpp`, new `tests/core/preferences_tests.cpp`, new `src/sys/preferences_runtime.cpp/.h`, `src/sys/external_player.cpp/.h`, `src/sys/main.cpp` (load/save wiring only), `CMakeLists.txt`, `tests/CMakeLists.txt`; user-approved atomic-helper extensions: new `include/wormedit/core/atomic_file_storage.h`, new `src/core/atomic_file_storage.cpp`, `include/wormedit/core/shortcut_profile_storage.h`, `src/core/shortcut_profile_storage.cpp`.
 - **Steps:**
   1. Typed struct per section with defaults and ranges; bounded JSON read (size, depth), unknown keys ignored with one warning, invalid values replaced by defaults with a warning; version field and migration hook.
   2. Atomic save (same-directory temporary, flush, rename) reusing the shortcut-profile helper.
@@ -134,10 +134,10 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-260 Turn Setup into a Project tab with a chart manager
 
-- **Status:** blocked-on T-259
+- **Status:** ready
 - **Outcome:** project scope only. The Setup tab is renamed **Project** and shows a table of the song's charts: name, author, rating, mode/key count, output group, note count, length; row actions New (T-52), Duplicate, Delete (with confirmation), Up/Down, and Open in Compose; multi-select enables batch metadata (T-128). The recovery rows and StepMania export policy stay below the table.
 - **Read first:** `src/ui/nuklear/setup_panel.cpp/.h`, `src/ui/nuklear/setup_state.h`, `src/core/workspace.cpp` (tab list and selected difficulty), `include/wormedit/core/chart_editor.h`.
-- **Files owned:** `src/ui/nuklear/setup_panel.cpp/.h`, `src/ui/nuklear/setup_state.cpp/.h`, new `src/sys/project_view.cpp/.h`, `src/sys/main.cpp` (dispatch/view only), `src/core/workspace.cpp` (tab label only), `src/ui/frontend.h`, `CMakeLists.txt`, `tests/ui/nuklear_setup_state_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/setup_panel.cpp/.h`, `src/ui/nuklear/setup_state.cpp/.h`, new `src/sys/project_view.cpp/.h`, `src/sys/main.cpp` (dispatch/view only), `src/core/workspace.cpp` (tab label only), `src/ui/frontend.h`, `CMakeLists.txt`, `tests/ui/nuklear_setup_state_tests.cpp`; user-approved prerequisite/integration extensions: `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`, `tests/core/chart_editor_tests.cpp` (New chart), `include/wormedit/core/metadata_editor.h`, `src/core/metadata_editor.cpp`, `tests/core/metadata_editor_tests.cpp` (atomic batch metadata), `src/sys/workspace_projection.cpp`, `src/ui/nuklear/frontend.cpp` (Project labels and recovery placement), `tests/CMakeLists.txt`, new `tests/sys/project_view_tests.cpp`.
 - **Steps:** 1. Scalar table view (bounded to 256 charts). 2. Actions through the standard pattern. 3. Delete confirmation lists what will be removed (notes count, groups).
 - **Invariants:** the command id `workspace.open_setup` keeps working (alias to the Project tab).
 - **Reject/failure behavior:** core rejections shown per row.

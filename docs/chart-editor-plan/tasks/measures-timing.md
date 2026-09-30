@@ -220,10 +220,10 @@ stale-plan check (rule 9) first.
 
 ## T-238 Click on the estimated beat while tapping
 
-- **Status:** blocked-on T-237, T-235
+- **Status:** ready
 - **Outcome:** while the assistant is open, the metronome clicks on the **estimated** grid (not the chart's timing) so the user can hear whether the estimate matches the music; the accent click falls on the estimated downbeat; the T-235 toggle controls it.
 - **Read first:** `include/wormedit/audio/preview_bridge.h`, `src/audio/preview_bridge.cpp`, `src/sys/tap_timing_runtime.h`.
-- **Files owned:** `include/wormedit/audio/preview_bridge.h`, `src/audio/preview_bridge.cpp`, `tests/core/audio_preview_bridge_tests.cpp`, `src/sys/tap_timing_runtime.cpp`.
+- **Files owned:** `include/wormedit/audio/preview_bridge.h`, `src/audio/preview_bridge.cpp`, `tests/core/audio_preview_bridge_tests.cpp`, `src/sys/tap_timing_runtime.cpp`, `src/sys/tap_timing_runtime.h`, `include/wormedit/audio/preview_session.h`, `src/audio/preview_session.cpp`, `src/sys/main.cpp` (assistant publication only; these four extensions explicitly approved by the user).
 - **Steps:**
   1. Add a bounded "assist click" queue to the bridge that the control thread refills with the next few predicted beat frames (lookahead about 200 ms) from the current estimate.
   2. While it is active, chart metronome clicks are muted so the two grids never sound together.

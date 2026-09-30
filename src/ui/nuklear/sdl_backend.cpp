@@ -26,6 +26,7 @@
 #include "ui/frontend.h"
 #include "ui/nuklear/image_quad.h"
 #include <limits>
+#include <cmath>
 #include <utility>
 
 class RenderSubphaseScope {
@@ -122,7 +123,17 @@ struct nk_sdl_vertex {
     float col[4];
 };
 
+struct ComposeFieldMarker {
+    std::size_t first_index{}, index_count{};
+};
+struct ComposeFieldFrame {
+    wormedit::ui::field::renderer_t geometry;
+    std::array<ComposeFieldMarker, 32> markers{};
+    std::size_t marker_count{}, next_index{};
+};
+
 struct nk_sdl {
+    ComposeFieldFrame* field;
     SDL_Window* win;
     SDL_Renderer* renderer;
     struct nk_user_font* debug_font;
@@ -266,10 +277,32 @@ static void submit_sdl_batch(nk_sdl* sdl, const wormedit::ui::nuklear::sdl_draw_
         sizeof(nk_draw_index));
 }
 
+static const ComposeFieldMarker* field_marker(const nk_sdl* sdl, const nk_draw_command* command) {
+    for (std::size_t index = 0; index < sdl->field->marker_count; ++index)
+        if (command->userdata.ptr == &sdl->field->markers[index])
+            return &sdl->field->markers[index];
+    return nullptr;
+}
+static void submit_field_marker(nk_sdl* sdl, const ComposeFieldMarker& marker) {
+    const wormedit::ui::field::submission_t hooks{set_nuklear_clip_rect,
+                                                render_nuklear_geometry_raw};
+    sdl->field->geometry.submit_range(sdl->renderer, marker.first_index, marker.index_count, hooks);
+}
 static void submit_sdl_draw_list(nk_sdl* sdl) {
+    if (sdl->field->marker_count != 0) {
+        const auto work = sdl->field->geometry.workload();
+        g_gpu_submission.work.vertices += work.vertices;
+        g_gpu_submission.work.indices += work.indices;
+    }
     wormedit::ui::nuklear::sdl_draw_batcher_t batches;
     const nk_draw_command* command;
     nk_draw_foreach(command, &sdl->ctx, &sdl->ogl.cmds) {
+        if (const auto* marker = field_marker(sdl, command)) {
+            if (const auto pending = batches.finish())
+                submit_sdl_batch(sdl, *pending);
+            submit_field_marker(sdl, *marker);
+            continue;
+        }
         const SDL_Rect clip{
             static_cast<int>(command->clip_rect.x), static_cast<int>(command->clip_rect.y),
             static_cast<int>(command->clip_rect.w), static_cast<int>(command->clip_rect.h)};
@@ -334,6 +367,7 @@ NK_API void nk_sdl_render(struct nk_context* ctx, enum nk_anti_aliasing AA) {
             SDL_SetRenderClipRect(sdl->renderer, NULL);
         }
 
+        sdl->field->marker_count = 0;
         nk_clear(&sdl->ctx);
         nk_buffer_clear(&sdl->ogl.cmds);
     }
@@ -403,6 +437,7 @@ NK_API struct nk_context* nk_sdl_init(SDL_Window* win, SDL_Renderer* renderer,
     sdl = (struct nk_sdl*)allocator.alloc(allocator.userdata, 0, sizeof(*sdl));
     NK_ASSERT(sdl);
     SDL_zerop(sdl);
+    sdl->field = new ComposeFieldFrame;
     sdl->allocator.userdata = allocator.userdata;
     sdl->allocator.alloc = allocator.alloc;
     sdl->allocator.free = allocator.free;
@@ -682,6 +717,7 @@ void nk_sdl_shutdown(struct nk_context* ctx) {
         sdl->ogl.font_tex = NULL;
     }
 
+    delete sdl->field;
     nk_free(ctx);
     sdl->allocator.free(sdl->allocator.userdata, sdl->debug_font);
     sdl->allocator.free(sdl->allocator.userdata, sdl);
@@ -834,6 +870,73 @@ auto sdl_draw_batcher_t::finish() -> std::optional<sdl_draw_batch_t> {
     return std::exchange(pending_, std::nullopt);
 }
 
+static void convert_field_marker(void* canvas, short, short, unsigned short, unsigned short,
+                                 nk_handle marker) {
+    auto* list = static_cast<nk_draw_list*>(canvas);
+    const auto previous = list->userdata;
+    list->userdata = marker;
+    nk_draw_list_push_command(list, list->clip_rect, list->config.tex_null.texture);
+    list->userdata = previous;
+    // Reserve a separate ordinary command: later texture changes may rewrite
+    // empty commands, but must never overwrite the field's ordering barrier.
+    nk_draw_list_push_command(list, list->clip_rect, list->config.tex_null.texture);
+}
+auto compose_field(nk_context* context) -> wormedit::ui::field::renderer_t& {
+    return static_cast<nk_sdl*>(context->userdata.ptr)->field->geometry;
+}
+auto begin_compose_field(nk_context* context, SDL_FRect viewport)
+    -> wormedit::ui::field::renderer_t& {
+    const auto& backend = *static_cast<nk_sdl*>(context->userdata.ptr);
+    auto& frame = *backend.field;
+    frame.marker_count = 0;
+    frame.next_index = 0;
+    wormedit::ui::field::solid_texture_t solid{};
+    const auto& white = backend.ogl.tex_null;
+    if (context->style.font && context->style.font->texture.ptr == white.texture.ptr) {
+        solid = {static_cast<SDL_Texture*>(white.texture.ptr), {white.uv.x, white.uv.y}};
+    }
+    frame.geometry.begin(viewport, {1, 1}, solid);
+    return frame.geometry;
+}
+static auto query_field_glyph(void* userdata, float height, std::uint32_t unicode,
+                              std::uint32_t next) -> wormedit::ui::field::glyph_t {
+    const auto* font = static_cast<const nk_user_font*>(userdata);
+    nk_user_font_glyph glyph{};
+    font->query(font->userdata, height, &glyph, unicode, next);
+    return {{glyph.offset.x, glyph.offset.y}, {glyph.width, glyph.height},
+            {glyph.uv[0].x, glyph.uv[0].y}, {glyph.uv[1].x, glyph.uv[1].y}, glyph.xadvance};
+}
+auto compose_field_font(const nk_user_font* font) -> wormedit::ui::field::font_t {
+    if (!font || !font->query)
+        return {};
+    return {const_cast<nk_user_font*>(font), static_cast<SDL_Texture*>(font->texture.ptr),
+            font->height, query_field_glyph};
+}
+void draw_compose_field_text(nk_context* context, wormedit::ui::field::layer_t layer,
+                             struct nk_rect bounds, const char* text, int length,
+                             const nk_user_font* font, nk_color foreground) {
+    if (!font || !text || length <= 0 || bounds.w <= 0 || bounds.h <= 0)
+        return;
+    float width = font->width(font->userdata, font->height, text, length);
+    if (width > bounds.w) {
+        int glyphs{};
+        length = nk_text_clamp(font, text, length, bounds.w, &glyphs, &width, nullptr, 0);
+    }
+    compose_field(context).text(layer, {std::trunc(bounds.x), std::trunc(bounds.y)},
+                               {text, static_cast<std::size_t>(length)},
+                               {foreground.r, foreground.g, foreground.b, foreground.a},
+                               compose_field_font(font));
+}
+void insert_compose_field(nk_context* context, nk_command_buffer* canvas, struct nk_rect viewport) {
+    auto& frame = *static_cast<nk_sdl*>(context->userdata.ptr)->field;
+    const auto end = frame.geometry.indices().size();
+    if (end == frame.next_index || frame.marker_count == frame.markers.size())
+        return;
+    auto& marker = frame.markers[frame.marker_count++];
+    marker = {frame.next_index, end - frame.next_index};
+    frame.next_index = end;
+    nk_push_custom(canvas, viewport, convert_field_marker, nk_handle_ptr(&marker));
+}
 void render_sdl_backend(nk_context* context, nk_anti_aliasing anti_aliasing) {
     g_gpu_submission = {};
     nk_sdl_render(context, anti_aliasing);

@@ -301,6 +301,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_nuklear_sdl_backend_tests
         ui/nuklear_sdl_backend_tests.cpp
         ../src/ui/nuklear/sdl_backend.cpp
+        ../src/ui/field/field_renderer.cpp
+        ../src/ui/field/field_glyphs.cpp
         ../src/sys/frame_timing.cpp
     )
     target_include_directories(wormedit_nuklear_sdl_backend_tests PRIVATE
@@ -309,6 +311,23 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         wormedit::ui_frontend SDL3::SDL3 Catch2::Catch2WithMain)
     catch_discover_tests(wormedit_nuklear_sdl_backend_tests
         TEST_PREFIX "nuklear-sdl-backend."
+        PROPERTIES LABELS "unit;frontend;rendering"
+            ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy"
+        DISCOVERY_MODE PRE_TEST)
+
+    add_executable(wormedit_field_renderer_tests
+        ui/field_renderer_tests.cpp
+        ../src/ui/nuklear/arrow_glyph.cpp
+        ../src/ui/field/field_renderer.cpp
+        ../src/ui/field/field_glyphs.cpp
+        ../src/ui/nuklear/sdl_backend.cpp
+        ../src/sys/frame_timing.cpp)
+    target_include_directories(wormedit_field_renderer_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
+    target_link_libraries(wormedit_field_renderer_tests PRIVATE
+        wormedit::ui_frontend SDL3::SDL3 Catch2::Catch2WithMain)
+    catch_discover_tests(wormedit_field_renderer_tests
+        TEST_PREFIX "field-renderer."
         PROPERTIES LABELS "unit;frontend;rendering"
             ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy"
         DISCOVERY_MODE PRE_TEST)

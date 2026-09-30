@@ -10,16 +10,6 @@ bool menu_open{};
 std::uint64_t menu_chart{}, menu_revision{};
 struct nk_rect menu_bounds{};
 
-struct nk_rect band_rect(const WormUiComposeView& view, struct nk_rect viewport) {
-    const auto scale = viewport.h / static_cast<float>(view.viewport_height_pixels);
-    const auto a =
-        viewport.y + static_cast<float>(compose_area_y(view, view.area_range_begin_row)) * scale;
-    const auto b =
-        viewport.y + static_cast<float>(compose_area_y(view, view.area_range_end_row)) * scale;
-    const auto left =
-        viewport.x + 42.0f * viewport.w / static_cast<float>(view.viewport_width_pixels);
-    return nk_rect(left, std::min(a, b), viewport.x + viewport.w - left, std::abs(b - a));
-}
 
 void menu_entry(nk_context* context, const char* title, bool enabled, const char* reason,
                 WormUiComposeActionKind kind, WormUiWorkspaceAction& action) {
@@ -102,19 +92,17 @@ void update_capture(nk_context* context, const WormUiComposeView& view,
 }
 } // namespace
 
-void draw_compose_area_band(nk_context* context, const WormUiComposeView& view,
-                            nk_command_buffer* canvas, struct nk_rect viewport) {
-    if (!view.area_range_available || view.area_rows_per_measure == 0)
-        return;
-    const auto rect = band_rect(view, viewport);
-    nk_fill_rect(canvas, rect, 0, nk_rgba(75, 149, 215, 48));
-    for (const auto y : {rect.y, rect.y + rect.h}) {
-        const auto edge = nk_rect(rect.x, y - 4, rect.w, 8);
-        const auto hover = nk_input_is_mouse_hovering_rect(&context->input, edge);
-        nk_stroke_line(canvas, rect.x, y, rect.x + rect.w, y, hover ? 3.0f : 1.0f,
-                       hover ? nk_rgb(164, 218, 255) : nk_rgba(92, 176, 242, 180));
-    }
+struct nk_rect compose_area_band_rect(const WormUiComposeView& view, struct nk_rect viewport) {
+    const auto scale = viewport.h / static_cast<float>(view.viewport_height_pixels);
+    const auto a =
+        viewport.y + static_cast<float>(compose_area_y(view, view.area_range_begin_row)) * scale;
+    const auto b =
+        viewport.y + static_cast<float>(compose_area_y(view, view.area_range_end_row)) * scale;
+    const auto left =
+        viewport.x + 42.0f * viewport.w / static_cast<float>(view.viewport_width_pixels);
+    return nk_rect(left, std::min(a, b), viewport.x + viewport.w - left, std::abs(b - a));
 }
+
 
 auto compose_area_pointer_consumed() -> bool {
     return consumed;
@@ -164,7 +152,7 @@ void process_compose_area_menu(nk_context* context, const WormUiComposeView& vie
     }
     if (!focused || !view.area_range_available || view.area_canvas_rows == 0)
         return;
-    const auto rect = band_rect(view, viewport);
+    const auto rect = compose_area_band_rect(view, viewport);
     const auto& mouse = context->input.mouse;
     const bool inside =
         nk_input_is_mouse_hovering_rect(&context->input, rect) && mouse.pos.x < input_right;

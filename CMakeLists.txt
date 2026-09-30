@@ -334,6 +334,8 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/compose_state.cpp
         src/ui/nuklear/frontend.cpp
         src/ui/nuklear/sdl_backend.cpp
+        src/ui/field/field_renderer.cpp
+        src/ui/field/field_glyphs.cpp
         src/ui/nuklear/image_quad.cpp
         src/ui/nuklear/lucide_icons.cpp
         src/ui/nuklear/metadata_panel.cpp

@@ -3,6 +3,7 @@
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/theme.h"
+#include "ui/nuklear/sdl_backend.h"
 
 #include "wormedit/nuklear_config.h"
 
@@ -36,25 +37,61 @@ static struct nk_rect compose_screen_rect(const WormUiComposeRect* source,
                    std::max(0.0f, clipped_bottom - clipped_top));
 }
 
-static void compose_fill_rect(struct nk_command_buffer* canvas, const WormUiComposeRect* source,
-                              const WormUiComposeView* view, struct nk_rect viewport,
-                              struct nk_color color) {
-    const auto rect = compose_screen_rect(source, view, viewport);
-    if (rect.w > 0.0f && rect.h > 0.0f) {
-        nk_fill_rect(canvas, rect, 0.0f, color);
+static auto field_color(nk_color color) -> wormedit::ui::field::color_t {
+    return {color.r, color.g, color.b, color.a};
+}
+static void field_rect(const ComposePaintContext& paint, struct nk_rect bounds, float rounding,
+                       nk_color color, wormedit::ui::field::layer_t layer = 0) {
+    auto& field = wormedit::ui::nuklear::compose_field(paint.context);
+    if (rounding >= 1) {
+        const auto points = wormedit::ui::field::rounded_rectangle_points(
+            {std::trunc(bounds.x), std::trunc(bounds.y), std::trunc(bounds.w), std::trunc(bounds.h)},
+            std::trunc(rounding));
+        field.polygon(layer, points, field_color(color));
+    } else {
+        field.rect(layer, {bounds.x, bounds.y, bounds.w, bounds.h}, field_color(color));
     }
+}
+static void field_line(const ComposePaintContext& paint, float x0, float y0, float x1, float y1,
+                       float width, nk_color color, wormedit::ui::field::layer_t layer = 0) {
+    wormedit::ui::nuklear::compose_field(paint.context)
+        .line(layer, {x0, y0}, {x1, y1}, width, field_color(color));
+}
+static void field_stroke_rect(const ComposePaintContext& paint, struct nk_rect bounds, float rounding,
+                              float width, nk_color color,
+                              wormedit::ui::field::layer_t layer = 0) {
+    if (rounding >= 1) {
+        const auto rounded = wormedit::ui::field::rounded_rectangle_points(
+            {std::trunc(bounds.x), std::trunc(bounds.y), std::trunc(bounds.w), std::trunc(bounds.h)},
+            std::trunc(rounding));
+        wormedit::ui::nuklear::compose_field(paint.context).stroke_polygon(
+            layer, rounded, width, field_color(color));
+        return;
+    }
+    const std::array<SDL_FPoint, 4> points{{{bounds.x, bounds.y},
+                                            {bounds.x + bounds.w, bounds.y},
+                                            {bounds.x + bounds.w, bounds.y + bounds.h},
+                                            {bounds.x, bounds.y + bounds.h}}};
+    wormedit::ui::nuklear::compose_field(paint.context).stroke_polygon(layer, points, width,
+                                                                     field_color(color));
+}
+static void field_text(const ComposePaintContext& paint, struct nk_rect bounds, const char* text,
+                       int length, const nk_user_font* font, nk_color, nk_color foreground,
+                       wormedit::ui::field::layer_t layer = 0) {
+    wormedit::ui::nuklear::draw_compose_field_text(paint.context, layer, bounds, text, length, font,
+                                                 foreground);
 }
 
 static void draw_compose_grid_tick(const ComposePaintContext& paint,
                                    const WormUiComposeGridLineView& line, float y) {
     const auto& view = *paint.view;
+    auto& field = wormedit::ui::nuklear::compose_field(paint.context);
     if (view.waveform_row_count != 0 && !view.waveform_timing_locked && line.chart_row != 0 &&
         (line.kind == 1 || line.kind == 3)) {
-        nk_fill_rect(paint.canvas,
-                     nk_rect(paint.rail.x + paint.rail.w - 13.0f, y - 3.0f, 7.0f, 6.0f), 1.0f,
-                     line.chart_row == view.beat_fit_chart_row && view.beat_fit_drag_active
-                         ? nk_rgb(255, 207, 104)
-                         : nk_rgb(165, 177, 195));
+        const auto color = line.chart_row == view.beat_fit_chart_row && view.beat_fit_drag_active
+                               ? wormedit::ui::field::color_t{255, 207, 104}
+                               : wormedit::ui::field::color_t{165, 177, 195};
+        field.rect(1, {paint.rail.x + paint.rail.w - 13.0f, y - 3.0f, 7.0f, 6.0f}, color);
     }
     if (line.measure_number == 0 || y + 15.0f > paint.viewport.y + paint.viewport.h) {
         return;
@@ -69,15 +106,19 @@ static void draw_compose_grid_tick(const ComposePaintContext& paint,
     const auto label_bounds = nk_rect(paint.rail.x + 3.0f, y + 2.0f,
                                       std::max(1.0f, paint.rail.w - 6.0f), 14.0f);
     if (view.selected_bms_measure_number_plus_one == line.measure_number) {
-        nk_fill_rect(paint.canvas, label_bounds, 2.0f, nk_rgb(67, 93, 135));
+        field.rect(1, {label_bounds.x, label_bounds.y, label_bounds.w, label_bounds.h},
+                   {67, 93, 135});
     }
-    nk_draw_text(paint.canvas, label_bounds, label, static_cast<int>(strlen(label)),
-                 paint.context->style.font, nk_rgb(18, 21, 29), nk_rgb(174, 185, 203));
+    // Retain the serialized text origin used by the pinned canvas adapter.
+    field.text(1, {std::trunc(label_bounds.x), std::trunc(label_bounds.y)}, label,
+               {174, 185, 203},
+               wormedit::ui::nuklear::compose_field_font(paint.context->style.font));
 }
 
 static void draw_compose_grid_line(const ComposePaintContext& paint,
                                    const WormUiComposeGridLineView& line) {
     const auto& view = *paint.view;
+    auto& field = wormedit::ui::nuklear::compose_field(paint.context);
     if (!std::isfinite(line.y_pixels) || line.y_pixels < 0.0 ||
         line.y_pixels > view.viewport_height_pixels)
         return;
@@ -94,8 +135,8 @@ static void draw_compose_grid_line(const ComposePaintContext& paint,
     } else if (line.emphasis >= 2) {
         color = nk_rgb(52, 61, 78);
     }
-    nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
-                   thickness, color);
+    field.hline(1, paint.viewport.x, paint.viewport.x + paint.viewport.w, y, thickness,
+                {color.r, color.g, color.b, color.a});
     draw_compose_grid_tick(paint, line, y);
 }
 
@@ -116,38 +157,38 @@ static void draw_compose_beat_sections(const ComposePaintContext& paint) {
         if (section.proposed_span_projection_visible) {
             const auto top = compose_projected_y(paint, section.proposed_span_top_y_pixels);
             const auto bottom = compose_projected_y(paint, section.proposed_span_bottom_y_pixels);
-            nk_fill_rect(paint.canvas,
+            field_rect(paint,
                          nk_rect(paint.viewport.x, top, paint.viewport.w,
                                  std::max(1.0f, bottom - top)),
-                         0.0f, nk_rgba(255, 207, 104, 25));
+                         0.0f, nk_rgba(255, 207, 104, 25), 4);
         }
         if (section.span_projection_visible) {
             const auto top = compose_projected_y(paint, section.projected_span_top_y_pixels);
             const auto bottom = compose_projected_y(paint, section.projected_span_bottom_y_pixels);
-            nk_fill_rect(paint.canvas,
+            field_rect(paint,
                          nk_rect(paint.viewport.x, top, paint.viewport.w,
                                  std::max(1.0f, bottom - top)),
-                         0.0f, nk_rgba(87, 198, 177, 20));
+                         0.0f, nk_rgba(87, 198, 177, 20), 4);
         }
         if (section.begin_projection_visible) {
             const auto y = compose_projected_y(paint, section.projected_begin_y_pixels);
-            nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
-                           y, 1.0f, nk_rgba(98, 206, 185, 160));
+            field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
+                           y, 1.0f, nk_rgba(98, 206, 185, 160), 4);
         }
         if (section.end_projection_visible) {
             const auto y = compose_projected_y(paint, section.projected_end_y_pixels);
-            nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
-                           y, 1.0f, nk_rgba(98, 206, 185, 160));
+            field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
+                           y, 1.0f, nk_rgba(98, 206, 185, 160), 4);
         }
         if (section.proposed_begin_projection_visible) {
             const auto y = compose_projected_y(paint, section.proposed_begin_y_pixels);
-            nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
-                           y, 1.4f, nk_rgba(255, 207, 104, 185));
+            field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
+                           y, 1.4f, nk_rgba(255, 207, 104, 185), 4);
         }
         if (section.proposed_end_projection_visible) {
             const auto y = compose_projected_y(paint, section.proposed_end_y_pixels);
-            nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
-                           y, 1.4f, nk_rgba(255, 207, 104, 185));
+            field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
+                           y, 1.4f, nk_rgba(255, 207, 104, 185), 4);
         }
     }
 }
@@ -157,13 +198,13 @@ static void draw_compose_beat_bookmarks(const ComposePaintContext& paint) {
         const auto& bookmark = paint.view->beat_bookmarks[index];
         if (bookmark.projection_visible) {
             const auto y = compose_projected_y(paint, bookmark.projected_y_pixels);
-            nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
-                           y, 1.3f, nk_rgb(111, 224, 201));
+            field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
+                           y, 1.3f, nk_rgb(111, 224, 201), 4);
         }
         if (bookmark.proposed_projection_visible) {
             const auto y = compose_projected_y(paint, bookmark.proposed_y_pixels);
-            nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
-                           y, 1.6f, nk_rgb(255, 218, 139));
+            field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
+                           y, 1.6f, nk_rgb(255, 218, 139), 4);
         }
     }
 }
@@ -174,20 +215,20 @@ static void draw_compose_audio_sections(const ComposePaintContext& paint) {
         if (section.span_projection_visible) {
             const auto top = compose_projected_y(paint, section.projected_span_top_y_pixels);
             const auto bottom = compose_projected_y(paint, section.projected_span_bottom_y_pixels);
-            nk_fill_rect(paint.canvas,
+            field_rect(paint,
                          nk_rect(paint.viewport.x, top, paint.viewport.w,
                                  std::max(1.0f, bottom - top)),
-                         0.0f, nk_rgba(188, 111, 235, 24));
+                         0.0f, nk_rgba(188, 111, 235, 24), 4);
         }
         if (section.begin_projection_visible) {
             const auto y = compose_projected_y(paint, section.projected_begin_y_pixels);
-            nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
-                           y, 1.1f, nk_rgb(205, 139, 242));
+            field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
+                           y, 1.1f, nk_rgb(205, 139, 242), 4);
         }
         if (section.end_projection_visible) {
             const auto y = compose_projected_y(paint, section.projected_end_y_pixels);
-            nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
-                           y, 1.1f, nk_rgb(205, 139, 242));
+            field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
+                           y, 1.1f, nk_rgb(205, 139, 242), 4);
         }
     }
 }
@@ -199,8 +240,8 @@ static void draw_compose_audio_bookmarks(const ComposePaintContext& paint) {
             continue;
         }
         const auto y = compose_projected_y(paint, bookmark.projected_y_pixels);
-        nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
-                       1.4f, nk_rgb(232, 166, 255));
+        field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
+                       1.4f, nk_rgb(232, 166, 255), 4);
     }
 }
 
@@ -296,15 +337,15 @@ static void draw_compose_timing_lanes(const ComposePaintContext& paint,
         auto& lane = layout.lanes[index];
         lane = nk_rect(timing_left + lane_width * static_cast<float>(visible_lane++),
                        paint.viewport.y, lane_width, paint.viewport.h);
-        nk_fill_rect(paint.canvas, lane, 0.0f,
+        field_rect(paint, lane, 0.0f,
                      (index & 1U) != 0 ? nk_rgb(25, 29, 38) : nk_rgb(28, 32, 42));
-        nk_stroke_line(paint.canvas, lane.x, paint.viewport.y, lane.x,
+        field_line(paint, lane.x, paint.viewport.y, lane.x,
                        paint.viewport.y + paint.viewport.h, 1.0f,
                        wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::grid));
         if (lane_width >= 17.0f) {
             const auto title = nk_rect(lane.x + 2.0f, paint.viewport.y + 2.0f,
                                        std::max(1.0f, lane_width - 4.0f), 14.0f);
-            nk_draw_text(paint.canvas, title, labels[index], static_cast<int>(strlen(labels[index])),
+            field_text(paint, title, labels[index], static_cast<int>(strlen(labels[index])),
                          paint.context->style.font, nk_rgba(18, 21, 29, 215), layout.colors[index]);
         }
     }
@@ -313,13 +354,13 @@ static void draw_compose_timing_lanes(const ComposePaintContext& paint,
 static void draw_compose_bands(const ComposePaintContext& paint) {
     for (size_t index = 0; index < paint.view->band_count; ++index) {
         const auto& band = paint.view->bands[index];
-        compose_fill_rect(paint.canvas, &band.bounds, paint.view, paint.viewport,
-                          band.split_stage ? nk_rgb(27, 31, 43) : nk_rgb(25, 29, 39));
+        field_rect(paint, compose_screen_rect(&band.bounds, paint.view, paint.viewport), 0,
+                   band.split_stage ? nk_rgb(27, 31, 43) : nk_rgb(25, 29, 39));
         const auto top = compose_projected_y(paint, band.bounds.top);
         const auto bottom = compose_projected_y(paint, band.bounds.bottom);
-        nk_stroke_line(paint.canvas, paint.viewport.x, top, paint.viewport.x + paint.viewport.w,
+        field_line(paint, paint.viewport.x, top, paint.viewport.x + paint.viewport.w,
                        top, 1.0f, nk_rgb(80, 91, 112));
-        nk_stroke_line(paint.canvas, paint.viewport.x, bottom, paint.viewport.x + paint.viewport.w,
+        field_line(paint, paint.viewport.x, bottom, paint.viewport.x + paint.viewport.w,
                        bottom, 1.0f, nk_rgb(61, 70, 87));
     }
 }
@@ -331,8 +372,8 @@ static void draw_compose_play_lanes(const ComposePaintContext& paint) {
         if (rect.w <= 0.0f || rect.h <= 0.0f) {
             continue;
         }
-        nk_fill_rect(paint.canvas, rect, 0.0f, compose_lane_color(lane.role, lane.display_order));
-        nk_stroke_line(paint.canvas, rect.x, rect.y, rect.x, rect.y + rect.h, 1.0f,
+        field_rect(paint, rect, 0.0f, compose_lane_color(lane.role, lane.display_order));
+        field_line(paint, rect.x, rect.y, rect.x, rect.y + rect.h, 1.0f,
                        nk_rgb(62, 70, 86));
         if (rect.w >= 28.0f && rect.h >= 18.0f) {
             char label[16]{};
@@ -340,7 +381,7 @@ static void draw_compose_play_lanes(const ComposePaintContext& paint) {
             if (label_length > 0) {
                 const auto label_bounds = nk_rect(rect.x + 2.0f, rect.y + 2.0f,
                                                   std::min(28.0f, rect.w - 4.0f), 15.0f);
-                nk_draw_text(paint.canvas, label_bounds, label, static_cast<int>(strlen(label)),
+                field_text(paint, label_bounds, label, static_cast<int>(strlen(label)),
                              paint.context->style.font, nk_rgb(37, 43, 55), nk_rgb(122, 133, 153));
             }
         }
@@ -355,18 +396,18 @@ static void draw_compose_bgm_lanes(const ComposePaintContext& paint) {
             continue;
         }
         const auto alternate = (lane.source_order & 1U) != 0;
-        nk_fill_rect(paint.canvas, rect, 0.0f,
+        field_rect(paint, rect, 0.0f,
                      alternate ? nk_rgb(43, 38, 52) : nk_rgb(38, 34, 47));
-        nk_stroke_line(paint.canvas, rect.x, rect.y, rect.x, rect.y + rect.h, 1.0f,
+        field_line(paint, rect.x, rect.y, rect.x, rect.y + rect.h, 1.0f,
                        nk_rgb(79, 67, 91));
     }
 }
 
 static void draw_compose_scene_background(const ComposePaintContext& paint,
                                           ComposeTimingLaneLayout& layout) {
-    nk_fill_rect(paint.canvas, paint.rail, 0.0f,
+    field_rect(paint, paint.rail, 0.0f,
                  wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::rail));
-    nk_stroke_line(paint.canvas, paint.rail.x + paint.rail.w, paint.rail.y,
+    field_line(paint, paint.rail.x + paint.rail.w, paint.rail.y,
                    paint.rail.x + paint.rail.w, paint.rail.y + paint.rail.h, 1.0f,
                    nk_rgb(80, 91, 112));
     draw_compose_timing_lanes(paint, layout);
@@ -385,11 +426,11 @@ static void draw_compose_waveform_samples(const ComposePaintContext& paint,
         for (size_t channel = 0; channel < 2; ++channel) {
             const auto color = channel == 0 ? nk_rgba(114, 222, 239, 190)
                                             : nk_rgba(238, 160, 114, 190);
-            nk_stroke_line(paint.canvas,
+            field_line(paint,
                 center + std::clamp(before.samples[channel], -1.0f, 1.0f) * half_width,
                 compose_projected_y(paint, before.y_pixels),
                 center + std::clamp(after.samples[channel], -1.0f, 1.0f) * half_width,
-                compose_projected_y(paint, after.y_pixels), 1.0f, color);
+                compose_projected_y(paint, after.y_pixels), 1.0f, color, 6);
         }
     }
 }
@@ -411,14 +452,14 @@ static void draw_compose_waveform(const ComposePaintContext& paint) {
     for (size_t index = 0; index < view.waveform_row_count; ++index) {
         const auto& row = view.waveform_rows[index];
         const auto y = compose_projected_y(paint, row.y_pixels);
-        nk_stroke_line(paint.canvas, center - row.rms[0] * half_width, y, center, y, 2.0f,
-                       nk_rgba(57, 137, 167, 96));
-        nk_stroke_line(paint.canvas, center, y, center + row.rms[1] * half_width, y, 2.0f,
-                       nk_rgba(57, 137, 167, 96));
-        nk_stroke_line(paint.canvas, center - row.absolute_peak[0] * half_width, y, center, y,
-                       1.0f, nk_rgba(114, 222, 239, 142));
-        nk_stroke_line(paint.canvas, center, y, center + row.absolute_peak[1] * half_width, y,
-                       1.0f, nk_rgba(114, 222, 239, 142));
+        field_line(paint, center - row.rms[0] * half_width, y, center, y, 2.0f,
+                       nk_rgba(57, 137, 167, 96), 6);
+        field_line(paint, center, y, center + row.rms[1] * half_width, y, 2.0f,
+                       nk_rgba(57, 137, 167, 96), 6);
+        field_line(paint, center - row.absolute_peak[0] * half_width, y, center, y,
+                       1.0f, nk_rgba(114, 222, 239, 142), 6);
+        field_line(paint, center, y, center + row.absolute_peak[1] * half_width, y,
+                       1.0f, nk_rgba(114, 222, 239, 142), 6);
     }
 }
 
@@ -443,11 +484,11 @@ static void draw_compose_channel_waveform(const ComposePaintContext& paint) {
     for (size_t index = 0; index < view.channel_waveform_row_count; ++index) {
         const auto& row = view.channel_waveform_rows[index];
         const auto y = compose_projected_y(paint, row.y_pixels);
-        nk_stroke_line(paint.canvas, center - row.rms[0] * half_width, y,
-                       center + row.rms[1] * half_width, y, 2.0f, nk_rgba(87, 157, 196, 126));
-        nk_stroke_line(paint.canvas, center - row.absolute_peak[0] * half_width, y,
+        field_line(paint, center - row.rms[0] * half_width, y,
+                       center + row.rms[1] * half_width, y, 2.0f, nk_rgba(87, 157, 196, 126), 6);
+        field_line(paint, center - row.absolute_peak[0] * half_width, y,
                        center + row.absolute_peak[1] * half_width, y, 1.0f,
-                       nk_rgba(146, 230, 251, 224));
+                       nk_rgba(146, 230, 251, 224), 6);
     }
 }
 
@@ -467,15 +508,16 @@ static void draw_compose_beat_fit_region(const ComposePaintContext& paint,
     const auto right = paint.viewport.x +
                        static_cast<float>(view.playable_field_right_pixels) * paint.viewport.w /
                            static_cast<float>(view.viewport_width_pixels);
-    nk_fill_rect(paint.canvas,
+    field_rect(paint,
                  nk_rect(layout.field_left, top, right - layout.field_left, bottom - top), 0.0f,
-                 nk_rgba(255, 207, 104, 22));
+                 nk_rgba(255, 207, 104, 22), 6);
 }
 
 static void draw_compose_differences(const ComposePaintContext& paint) {
     for (size_t index = 0; index < paint.view->difference_count; ++index) {
-        compose_fill_rect(paint.canvas, &paint.view->differences[index].bounds, paint.view,
-                          paint.viewport, nk_rgba(229, 190, 58, 74));
+        field_rect(paint, compose_screen_rect(&paint.view->differences[index].bounds,
+                                              paint.view, paint.viewport),
+                   0.0f, nk_rgba(229, 190, 58, 74), 6);
     }
 }
 
@@ -494,8 +536,8 @@ static void draw_compose_proposed_grid(const ComposePaintContext& paint) {
         const auto color = line.kind == 3                     ? nk_rgba(255, 207, 104, 230)
                            : line.kind == 1 || line.kind == 2 ? nk_rgba(255, 207, 104, 155)
                                                               : nk_rgba(255, 207, 104, 75);
-        nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
-                       line.kind == 3 ? 1.6f : 1.0f, color);
+        field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
+                       line.kind == 3 ? 1.6f : 1.0f, color, 4);
     }
 }
 
@@ -514,8 +556,8 @@ static void draw_compose_beat_fit_overlay(const ComposePaintContext& paint) {
     }
     const auto y = compose_projected_y(paint, view.beat_fit_target_y_pixels);
     if (y >= paint.viewport.y && y <= paint.viewport.y + paint.viewport.h) {
-        nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
-                       1.3f, nk_rgba(110, 222, 236, 215));
+        field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
+                       1.3f, nk_rgba(110, 222, 236, 215), 4);
     }
     char label[140]{};
     const auto original = static_cast<double>(view.beat_fit_original_bpm_numerator) /
@@ -539,8 +581,8 @@ static void draw_compose_beat_fit_overlay(const ComposePaintContext& paint) {
         const auto bounds = nk_rect(paint.viewport.x + paint.rail.w + 4.0f,
                                     paint.viewport.y + 18.0f,
                                     std::min(310.0f, paint.viewport.w - paint.rail.w - 8.0f), 18.0f);
-        nk_draw_text(paint.canvas, bounds, label, static_cast<int>(strlen(label)),
-                     paint.context->style.font, nk_rgba(18, 21, 29, 235), nk_rgb(255, 219, 148));
+        field_text(paint, bounds, label, static_cast<int>(strlen(label)),
+                     paint.context->style.font, nk_rgba(18, 21, 29, 235), nk_rgb(255, 219, 148), 4);
     }
 }
 
@@ -549,8 +591,8 @@ static void draw_compose_offset_fit_overlay(const ComposePaintContext& paint) {
     if (!view.offset_fit_drag_active) return;
     const auto y = compose_projected_y(paint, view.offset_fit_target_y_pixels);
     if (y >= paint.viewport.y && y <= paint.viewport.y + paint.viewport.h) {
-        nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
-                       1.3f, nk_rgba(110, 222, 236, 215));
+        field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
+                       1.3f, nk_rgba(110, 222, 236, 215), 4);
     }
     const auto denominator = std::max<std::uint64_t>(1, view.waveform_audio_offset_denominator);
     const auto proposed_denominator =
@@ -565,8 +607,8 @@ static void draw_compose_offset_fit_overlay(const ComposePaintContext& paint) {
         const auto bounds = nk_rect(paint.viewport.x + paint.rail.w + 4.0f,
                                     paint.viewport.y + 18.0f,
                                     std::min(310.0f, paint.viewport.w - paint.rail.w - 8.0f), 18.0f);
-        nk_draw_text(paint.canvas, bounds, label, static_cast<int>(strlen(label)),
-                     paint.context->style.font, nk_rgba(18, 21, 29, 235), nk_rgb(148, 229, 238));
+        field_text(paint, bounds, label, static_cast<int>(strlen(label)),
+                     paint.context->style.font, nk_rgba(18, 21, 29, 235), nk_rgb(148, 229, 238), 4);
     }
 }
 
@@ -579,8 +621,8 @@ static void draw_compose_timing_preview_legend(const ComposePaintContext& paint)
     const auto top = paint.viewport.y + (fit_label ? 38.0f : 18.0f);
     const auto bounds = nk_rect(paint.viewport.x + paint.rail.w + 4.0f, top,
                                 std::min(380.0f, paint.viewport.w - paint.rail.w - 8.0f), 17.0f);
-    nk_draw_text(paint.canvas, bounds, legend, static_cast<int>(strlen(legend)),
-                 paint.context->style.font, nk_rgba(18, 21, 29, 220), nk_rgb(194, 227, 238));
+    field_text(paint, bounds, legend, static_cast<int>(strlen(legend)),
+                 paint.context->style.font, nk_rgba(18, 21, 29, 220), nk_rgb(194, 227, 238), 4);
 }
 
 static void draw_compose_timing_marker_drag_ghosts(const ComposePaintContext& paint) {
@@ -600,9 +642,9 @@ static void draw_compose_timing_marker_drag_ghosts(const ComposePaintContext& pa
         if (!marker.selected) continue;
         auto ghost = compose_timing_marker_screen_rect(paint, marker);
         ghost.y += delta;
-        nk_fill_rect(paint.canvas, ghost, 1.0f,
-                     selected_fixed ? nk_rgba(242, 111, 104, 45) : nk_rgba(255, 207, 99, 40));
-        nk_stroke_rect(paint.canvas, ghost, 1.0f, 2.0f, ghost_color);
+        field_rect(paint, ghost, 1.0f,
+                     selected_fixed ? nk_rgba(242, 111, 104, 45) : nk_rgba(255, 207, 99, 40), 4);
+        field_stroke_rect(paint, ghost, 1.0f, 2.0f, ghost_color, 4);
     }
 }
 
@@ -617,15 +659,15 @@ static void draw_compose_timing_markers(const ComposePaintContext& paint,
             continue;
         }
         const auto bounds = compose_timing_marker_screen_rect(paint, marker);
-        nk_fill_rect(paint.canvas, bounds, 1.0f, nk_rgb(18, 22, 31));
+        field_rect(paint, bounds, 1.0f, nk_rgb(18, 22, 31), 4);
         const auto selected = marker.selected ||
                               (marker.fixed_initial && marker.object_id == 0 &&
                                state.timing_missing_initial_selected);
         const auto outline = hovered == &marker ? nk_rgb(255, 220, 112)
                              : selected ? nk_rgb(116, 92, 49)
                                         : nk_rgb(55, 64, 79);
-        nk_stroke_rect(paint.canvas, bounds, 1.0f, hovered == &marker ? 2.0f : 1.5f,
-                       outline);
+        field_stroke_rect(paint, bounds, 1.0f, hovered == &marker ? 2.0f : 1.5f,
+                       outline, 4);
         if (!marker.short_label || !marker.short_label[0]) continue;
         const auto* font = paint.context->style.font;
         const auto length = static_cast<int>(strlen(marker.short_label));
@@ -633,8 +675,8 @@ static void draw_compose_timing_markers(const ComposePaintContext& paint,
                                             length);
         const auto text_bounds = nk_rect(bounds.x + 2.0f, bounds.y + (bounds.h - font->height) * 0.5f,
                                          std::max(bounds.w - 4.0f, text_width + 2.0f), font->height);
-        nk_draw_text(paint.canvas, text_bounds, marker.short_label, length, font,
-                     nk_rgba(18, 22, 31, 0), layout.colors[marker_lane_ordinal]);
+        field_text(paint, text_bounds, marker.short_label, length, font,
+                     nk_rgba(18, 22, 31, 0), layout.colors[marker_lane_ordinal], 4);
     }
     draw_compose_timing_marker_drag_ghosts(paint);
 }
@@ -650,8 +692,8 @@ static void draw_compose_timing_preview_markers(const ComposePaintContext& paint
         }
         const auto& lane = layout.lanes[marker_lane_ordinal];
         const auto y = compose_projected_y(paint, marker.marker_y_pixels);
-        nk_stroke_line(paint.canvas, lane.x + 2.0f, y, lane.x + lane.w - 2.0f, y, 2.0f,
-                       nk_rgba(255, 207, 104, 215));
+        field_line(paint, lane.x + 2.0f, y, lane.x + lane.w - 2.0f, y, 2.0f,
+                       nk_rgba(255, 207, 104, 215), 4);
     }
 }
 
@@ -670,8 +712,8 @@ static void draw_compose_timing_stage_marker(const ComposePaintContext& paint,
                                 std::max(1.0f, lane.w - 4.0f), 10.0f);
     const auto color = paint.view->timing_stage_valid ? nk_rgb(255, 221, 108)
                                                       : nk_rgb(238, 96, 88);
-    nk_fill_rect(paint.canvas, bounds, 1.0f, nk_rgba(color.r, color.g, color.b, 105));
-    nk_stroke_rect(paint.canvas, bounds, 1.0f, 2.0f, color);
+    field_rect(paint, bounds, 1.0f, nk_rgba(color.r, color.g, color.b, 105), 4);
+    field_stroke_rect(paint, bounds, 1.0f, 2.0f, color, 4);
 }
 
 static void draw_compose_unbound_lane_keys_hint(const ComposePaintContext& paint) {
@@ -679,8 +721,8 @@ static void draw_compose_unbound_lane_keys_hint(const ComposePaintContext& paint
     constexpr const char* label = "No lane keys are bound for this chart";
     const auto bounds = nk_rect(paint.viewport.x + paint.rail.w + 4.0f,
         paint.viewport.y + 22.0f, std::min(380.0f, paint.viewport.w - paint.rail.w - 8.0f), 17.0f);
-    nk_draw_text(paint.canvas, bounds, label, static_cast<int>(strlen(label)),
-        paint.context->style.font, nk_rgba(18, 21, 29, 255), nk_rgb(255, 221, 108));
+    field_text(paint, bounds, label, static_cast<int>(strlen(label)),
+        paint.context->style.font, nk_rgba(18, 21, 29, 255), nk_rgb(255, 221, 108), 4);
 }
 
 static void draw_compose_timing_layer(const ComposePaintContext& paint,
@@ -707,8 +749,8 @@ static void draw_compose_hold_bodies(const ComposePaintContext& paint) {
             continue;
         }
         if (hold.proposal_ghost) {
-            nk_fill_rect(paint.canvas, rect, 0.0f, nk_rgba(240, 171, 71, 74));
-            nk_stroke_rect(paint.canvas, rect, 0.0f, 1.4f, nk_rgb(255, 224, 156));
+            field_rect(paint, rect, 0.0f, nk_rgba(240, 171, 71, 74), 2);
+            field_stroke_rect(paint, rect, 0.0f, 1.4f, nk_rgb(255, 224, 156), 2);
             continue;
         }
         const auto color = hold.proposal_origin
@@ -718,12 +760,12 @@ static void draw_compose_hold_bodies(const ComposePaintContext& paint) {
                                                 hold.semantic_blue, hold.semantic_alpha)
                                       : (hold.selected ? nk_rgb(62, 170, 204)
                                                        : nk_rgb(48, 111, 151)));
-        nk_fill_rect(paint.canvas, rect, 0.0f, color);
+        field_rect(paint, rect, 0.0f, color, 2);
         if (hold.selected) {
-            nk_stroke_rect(paint.canvas, rect, 0.0f, 1.6f, nk_rgb(220, 247, 255));
+            field_stroke_rect(paint, rect, 0.0f, 1.6f, nk_rgb(220, 247, 255), 2);
         }
         if (paint.view->hover_note_visible && hold.note_id == paint.view->hover_note_id) {
-            nk_stroke_rect(paint.canvas, rect, 0.0f, 2.0f, nk_rgb(255, 235, 148));
+            field_stroke_rect(paint, rect, 0.0f, 2.0f, nk_rgb(255, 235, 148), 2);
         }
     }
 }
@@ -779,18 +821,19 @@ static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
 
 static void draw_compose_arrow_outline(const ComposePaintContext& paint,
                                         const WormUiComposeNoteView& note,
-                                        const float* points) {
+                                        const std::array<SDL_FPoint, 7>& points) {
     if (note.semantic_color_visible) {
-        nk_stroke_polygon(paint.canvas, points, 7, 4.0f,
-                          nk_rgba(note.semantic_red, note.semantic_green, note.semantic_blue,
-                                  note.semantic_alpha));
+        wormedit::ui::nuklear::compose_field(paint.context).stroke_polygon(
+            2, points, 4.0f,
+            {note.semantic_red, note.semantic_green, note.semantic_blue, note.semantic_alpha}, 1);
     }
     const auto style = compose_note_style(*paint.view, note);
     if (note.selected || note.proposal_ghost || note.paint_preview ||
         note.paint_erase_preview || note.paint_invalid_preview ||
         (paint.view->hover_note_visible && note.note_id == paint.view->hover_note_id)) {
         const auto border = note.selected ? nk_rgb(220, 247, 255) : style.border;
-        nk_stroke_polygon(paint.canvas, points, 7, 2.0f, border);
+        wormedit::ui::nuklear::compose_field(paint.context).stroke_polygon(
+            2, points, 2.0f, field_color(border), 1);
     }
 }
 
@@ -798,17 +841,16 @@ static bool draw_compose_note_glyph(const ComposePaintContext& paint,
                                     const WormUiComposeNoteView& note, struct nk_rect tile) {
     if (note.glyph < 2 || note.glyph > 5 || tile.w < 10.0f) return false;
     // Artwork alone becomes square; retained scene bounds still govern hit testing.
-    const auto polygon = wormedit::ui::arrow_polygon(
-        note.glyph, tile.x, tile.y + (tile.h - tile.w) * 0.5f, tile.w);
-    std::array<float, 14> points{};
-    for (std::size_t index = 0; index < polygon.size(); ++index) {
-        points[index * 2] = polygon[index].x;
-        points[index * 2 + 1] = polygon[index].y;
-    }
+    const auto authored = wormedit::ui::arrow_polygon(
+        note.glyph, tile.x, tile.y + (tile.h - tile.w) * .5f, tile.w);
+    std::array<SDL_FPoint, 7> points{};
+    for (std::size_t index = 0; index < authored.size(); ++index)
+        points[index] = {std::trunc(authored[index].x), std::trunc(authored[index].y)};
     const auto color = wormedit::ui::arrow_snap_color(note.snap_class);
-    nk_fill_polygon(paint.canvas, points.data(), 7, nk_rgb(color.red, color.green, color.blue));
-    nk_stroke_polygon(paint.canvas, points.data(), 7, 1.0f, nk_rgb(17, 24, 34));
-    draw_compose_arrow_outline(paint, note, points.data());
+    auto& field = wormedit::ui::nuklear::compose_field(paint.context);
+    field.polygon(2, points, {color.red, color.green, color.blue}, 1);
+    field.stroke_polygon(2, points, 1, {17, 24, 34}, 1);
+    draw_compose_arrow_outline(paint, note, points);
     return true;
 }
 
@@ -824,8 +866,8 @@ static void draw_compose_note_sound_label(const ComposePaintContext& paint,
     const auto text_bounds = nk_rect(tile.x + (tile.w - text_width) * 0.5f,
                                      tile.y + (tile.h - font->height) * 0.5f,
                                      text_width, font->height);
-    nk_draw_text(paint.canvas, text_bounds, note.sound_label, length, font,
-                 nk_rgba(13, 21, 31, 220), nk_rgb(248, 251, 255));
+    field_text(paint, text_bounds, note.sound_label, length, font,
+                 nk_rgba(13, 21, 31, 220), nk_rgb(248, 251, 255), 2);
 }
 
 static void draw_compose_note(const ComposePaintContext& paint,
@@ -838,11 +880,11 @@ static void draw_compose_note(const ComposePaintContext& paint,
     const auto tile = nk_rect(rect.x + 1.0f, rect.y, std::max(1.0f, rect.w - 2.0f),
                               std::max(2.0f, rect.h));
     if (draw_compose_note_glyph(paint, note, tile)) return;
-    nk_fill_rect(paint.canvas, tile, 0.0f, style.fill);
-    nk_stroke_rect(paint.canvas, tile, 0.0f, style.border_width, style.border);
-    nk_stroke_line(paint.canvas, tile.x + 1.0f, tile.y + 1.0f,
+    field_rect(paint, tile, 0.0f, style.fill, 2);
+    field_stroke_rect(paint, tile, 0.0f, style.border_width, style.border, 2);
+    field_line(paint, tile.x + 1.0f, tile.y + 1.0f,
                    tile.x + tile.w - 1.0f, tile.y + 1.0f, 1.0f,
-                   nk_rgba(255, 255, 255, 105));
+                   nk_rgba(255, 255, 255, 105), 2);
     draw_compose_note_sound_label(paint, note, tile);
 }
 
@@ -863,8 +905,8 @@ static void draw_compose_timing_preview_rects(const ComposePaintContext& paint) 
                                              : nk_rgba(110, 222, 236, 195);
         const auto fill = preview.kind == 1 ? nk_rgba(220, 164, 244, 38)
                                             : nk_rgba(110, 222, 236, 34);
-        nk_fill_rect(paint.canvas, rect, 0.0f, fill);
-        nk_stroke_rect(paint.canvas, rect, 0.0f, 1.5f, color);
+        field_rect(paint, rect, 0.0f, fill, 5);
+        field_stroke_rect(paint, rect, 0.0f, 1.5f, color, 5);
     }
 }
 
@@ -873,8 +915,8 @@ static void draw_compose_playhead(const ComposePaintContext& paint) {
         return;
     }
     const auto y = compose_projected_y(paint, paint.view->playhead_y_pixels);
-    nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y, 2.0f,
-                   nk_rgb(93, 231, 190));
+    field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y, 2.0f,
+                   nk_rgb(93, 231, 190), 5);
 }
 
 static void draw_compose_cursor(const ComposePaintContext& paint) {
@@ -890,13 +932,13 @@ static void draw_compose_cursor(const ComposePaintContext& paint) {
     const auto head_y = paint.view->playhead_visible
         ? compose_projected_y(paint, paint.view->playhead_y_pixels)
         : rect.y + rect.h * 0.5f;
-    nk_stroke_line(paint.canvas, paint.viewport.x, head_y, paint.viewport.x + paint.viewport.w,
-                   head_y, 1.4f, nk_rgb(255, 223, 108));
-    nk_fill_rect(paint.canvas, rect, 0.0f, nk_rgb(248, 226, 115));
-    nk_stroke_line(paint.canvas, rect.x, rect.y, rect.x + rect.w, rect.y, 1.0f,
-                   nk_rgb(255, 243, 174));
-    nk_stroke_line(paint.canvas, rect.x, rect.y + rect.h, rect.x + rect.w, rect.y + rect.h, 1.0f,
-                   nk_rgb(255, 243, 174));
+    field_line(paint, paint.viewport.x, head_y, paint.viewport.x + paint.viewport.w,
+                   head_y, 1.4f, nk_rgb(255, 223, 108), 5);
+    field_rect(paint, rect, 0.0f, nk_rgb(248, 226, 115), 5);
+    field_line(paint, rect.x, rect.y, rect.x + rect.w, rect.y, 1.0f,
+                   nk_rgb(255, 243, 174), 5);
+    field_line(paint, rect.x, rect.y + rect.h, rect.x + rect.w, rect.y + rect.h, 1.0f,
+                   nk_rgb(255, 243, 174), 5);
 }
 
 static void draw_compose_foreground_markers(const ComposePaintContext& paint) {
@@ -919,21 +961,21 @@ static void draw_compose_bgm_event(const ComposePaintContext& paint,
         return;
     }
     const auto fill = event.has_sound ? nk_rgb(177, 116, 207) : nk_rgb(102, 88, 113);
-    nk_fill_rect(paint.canvas, rect, 1.5f, fill);
-    nk_stroke_rect(paint.canvas, rect, 1.5f, event.selected ? 2.0f : 1.0f,
-                   event.selected ? nk_rgb(248, 224, 255) : nk_rgb(50, 35, 58));
+    field_rect(paint, rect, 1.5f, fill, 3);
+    field_stroke_rect(paint, rect, 1.5f, event.selected ? 2.0f : 1.0f,
+                   event.selected ? nk_rgb(248, 224, 255) : nk_rgb(50, 35, 58), 3);
     if (event.bmson_slice) {
         const auto color = event.bmson_restart ? nk_rgb(255, 188, 94) : nk_rgb(119, 231, 226);
-        nk_stroke_line(paint.canvas, rect.x + 3.0f, rect.y + 2.0f, rect.x + 3.0f,
-                       rect.y + rect.h - 2.0f, 2.0f, color);
+        field_line(paint, rect.x + 3.0f, rect.y + 2.0f, rect.x + 3.0f,
+                       rect.y + rect.h - 2.0f, 2.0f, color, 3);
     }
     if (event.sound_label && event.sound_label[0] && rect.w >= 18.0f && rect.h >= 13.0f) {
         const auto text_rect = nk_rect(rect.x + (event.bmson_slice ? 6.0f : 3.0f), rect.y + 2.0f,
                                        std::max(1.0f, rect.w - (event.bmson_slice ? 8.0f : 5.0f)),
                                        std::min(15.0f, rect.h - 3.0f));
-        nk_draw_text(paint.canvas, text_rect, event.sound_label,
+        field_text(paint, text_rect, event.sound_label,
                      static_cast<int>(strlen(event.sound_label)), paint.context->style.font, fill,
-                     nk_rgb(255, 245, 255));
+                     nk_rgb(255, 245, 255), 3);
     }
     if (event.sound_detail && nk_input_is_mouse_hovering_rect(&paint.context->input, rect)) {
         hovered = {event.sound_detail, event.bmson_restart, event.bmson_slice};
@@ -954,10 +996,10 @@ static void draw_compose_bmson_marker_drafts(const ComposePaintContext& paint) {
         if (rect.w <= 0.0f || rect.h <= 0.0f) {
             continue;
         }
-        nk_fill_rect(paint.canvas, rect, 1.5f,
-                     marker.playable ? nk_rgba(85, 184, 245, 106) : nk_rgba(240, 171, 71, 94));
-        nk_stroke_rect(paint.canvas, rect, 1.5f, 2.0f,
-                       marker.restart ? nk_rgb(255, 188, 94) : nk_rgb(119, 231, 226));
+        field_rect(paint, rect, 1.5f,
+                     marker.playable ? nk_rgba(85, 184, 245, 106) : nk_rgba(240, 171, 71, 94), 3);
+        field_stroke_rect(paint, rect, 1.5f, 2.0f,
+                       marker.restart ? nk_rgb(255, 188, 94) : nk_rgb(119, 231, 226), 3);
     }
 }
 
@@ -970,10 +1012,10 @@ static void draw_compose_bmson_move_preview(const ComposePaintContext& paint) {
     if (rect.w <= 0.0f || rect.h <= 0.0f) {
         return;
     }
-    nk_fill_rect(paint.canvas, rect, 1.5f,
-                 marker.valid ? nk_rgba(240, 171, 71, 112) : nk_rgba(239, 82, 96, 112));
-    nk_stroke_rect(paint.canvas, rect, 1.5f, 2.0f,
-                   marker.valid ? nk_rgb(255, 224, 156) : nk_rgb(255, 132, 144));
+    field_rect(paint, rect, 1.5f,
+                 marker.valid ? nk_rgba(240, 171, 71, 112) : nk_rgba(239, 82, 96, 112), 3);
+    field_stroke_rect(paint, rect, 1.5f, 2.0f,
+                   marker.valid ? nk_rgb(255, 224, 156) : nk_rgb(255, 132, 144), 3);
 }
 
 static void draw_compose_bgm_lane_labels(const ComposePaintContext& paint) {
@@ -988,9 +1030,9 @@ static void draw_compose_bgm_lane_labels(const ComposePaintContext& paint) {
         if (length > 0) {
             const auto title = nk_rect(rect.x + 2.0f, paint.viewport.y + 2.0f,
                                        std::max(1.0f, rect.w - 4.0f), 14.0f);
-            nk_draw_text(paint.canvas, title, label, static_cast<int>(strlen(label)),
+            field_text(paint, title, label, static_cast<int>(strlen(label)),
                          paint.context->style.font, nk_rgba(31, 25, 38, 215),
-                         nk_rgb(211, 175, 226));
+                         nk_rgb(211, 175, 226), 3);
         }
     }
 }
@@ -1002,6 +1044,19 @@ static ComposeHoveredBgm draw_compose_audio_markers(const ComposePaintContext& p
     draw_compose_bmson_move_preview(paint);
     draw_compose_bgm_lane_labels(paint);
     return hovered;
+}
+
+static void draw_compose_area_band(const ComposePaintContext& paint) {
+    const auto& view = *paint.view;
+    if (!view.area_range_available || view.area_rows_per_measure == 0) return;
+    const auto rect = compose_area_band_rect(view, paint.viewport);
+    field_rect(paint, rect, 0, nk_rgba(75, 149, 215, 48), 5);
+    for (const auto y : {rect.y, rect.y + rect.h}) {
+        const auto edge = nk_rect(rect.x, y - 4, rect.w, 8);
+        const auto hover = nk_input_is_mouse_hovering_rect(&paint.context->input, edge);
+        field_line(paint, rect.x, y, rect.x + rect.w, y, hover ? 3.0f : 1.0f,
+                   hover ? nk_rgb(164, 218, 255) : nk_rgba(92, 176, 242, 180), 5);
+    }
 }
 
 static void draw_compose_selection_preview(const ComposePaintContext& paint,
@@ -1017,8 +1072,8 @@ static void draw_compose_selection_preview(const ComposePaintContext& paint,
     const auto border = mode == WORM_UI_COMPOSE_SELECTION_ADD ? nk_rgb(113, 214, 164)
                         : mode == WORM_UI_COMPOSE_SELECTION_TOGGLE ? nk_rgb(197, 151, 245)
                                                                   : nk_rgb(101, 183, 242);
-    nk_fill_rect(paint.canvas, rect, 0.0f, fill);
-    nk_stroke_rect(paint.canvas, rect, 0.0f, 1.2f, border);
+    field_rect(paint, rect, 0.0f, fill, 5);
+    field_stroke_rect(paint, rect, 0.0f, 1.2f, border, 5);
 }
 
 static void draw_compose_space_range_preview(const ComposePaintContext& paint) {
@@ -1032,8 +1087,8 @@ static void draw_compose_space_range_preview(const ComposePaintContext& paint) {
     const auto anchor_color = anchor_bright ? nk_rgb(255, 224, 122) : nk_rgb(185, 142, 72);
     const auto draw_row = [&](double y_pixels, struct nk_color color) {
         const auto y = compose_projected_y(paint, y_pixels);
-        nk_stroke_line(paint.canvas, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
-                       2.4f, color);
+        field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
+                       2.4f, color, 5);
     };
     draw_row(view.space_range_anchor_y_pixels, anchor_color);
     if (std::abs(view.space_range_anchor_y_pixels - view.space_range_tail_y_pixels) >= 0.01) {
@@ -1055,17 +1110,17 @@ static void draw_compose_autoscroll_preview(const ComposePaintContext& paint) {
     const auto anchor_y = paint.viewport.y + static_cast<float>(
         std::clamp(view.viewport_autoscroll_anchor_y_pixels, 0.0, view.viewport_height_pixels) *
         paint.viewport.h / view.viewport_height_pixels);
-    nk_stroke_line(paint.canvas, anchor_x - 9.0f, anchor_y, anchor_x + 9.0f, anchor_y, 2.0f,
-                   nk_rgb(255, 211, 103));
-    nk_stroke_line(paint.canvas, anchor_x, anchor_y - 9.0f, anchor_x, anchor_y + 9.0f, 2.0f,
-                   nk_rgb(255, 211, 103));
+    field_line(paint, anchor_x - 9.0f, anchor_y, anchor_x + 9.0f, anchor_y, 2.0f,
+                   nk_rgb(255, 211, 103), 5);
+    field_line(paint, anchor_x, anchor_y - 9.0f, anchor_x, anchor_y + 9.0f, 2.0f,
+                   nk_rgb(255, 211, 103), 5);
     const auto indicator = nk_rect(paint.viewport.x + 8.0f, paint.viewport.y + paint.viewport.h - 26.0f,
                                    std::min(250.0f, std::max(150.0f, paint.viewport.w - 16.0f)),
                                    18.0f);
-    nk_fill_rect(paint.canvas, indicator, 3.0f, nk_rgba(12, 16, 24, 235));
+    field_rect(paint, indicator, 3.0f, nk_rgba(12, 16, 24, 235), 5);
     constexpr const char* text = "Auto-scroll latched - middle-click to cancel";
-    nk_draw_text(paint.canvas, indicator, text, static_cast<int>(strlen(text)),
-                 paint.context->style.font, nk_rgb(12, 16, 24), nk_rgb(255, 231, 157));
+    field_text(paint, indicator, text, static_cast<int>(strlen(text)),
+                 paint.context->style.font, nk_rgb(12, 16, 24), nk_rgb(255, 231, 157), 5);
 }
 
 static auto compose_pointer_tooltip_bounds(const ComposePaintContext& paint,
@@ -1139,16 +1194,16 @@ static void draw_compose_note_tooltip(const ComposePaintContext& paint) {
     }
     const auto bounds = compose_pointer_tooltip_bounds(
         paint, text_width, resource_detail ? 50.0f : 24.0f);
-    nk_fill_rect(paint.canvas, bounds, 3.0f, nk_rgba(12, 16, 24, 235));
-    nk_stroke_rect(paint.canvas, bounds, 3.0f, 1.0f, nk_rgb(255, 235, 148));
-    nk_draw_text(paint.canvas, nk_rect(bounds.x + 8.0f, bounds.y, bounds.w - 16.0f, 24.0f),
+    field_rect(paint, bounds, 3.0f, nk_rgba(12, 16, 24, 235), 5);
+    field_stroke_rect(paint, bounds, 3.0f, 1.0f, nk_rgb(255, 235, 148), 5);
+    field_text(paint, nk_rect(bounds.x + 8.0f, bounds.y, bounds.w - 16.0f, 24.0f),
                  title.c_str(), title_length, font,
-                 nk_rgb(12, 16, 24), nk_rgb(255, 244, 192));
+                 nk_rgb(12, 16, 24), nk_rgb(255, 244, 192), 5);
     if (resource_detail) {
-        nk_draw_text(paint.canvas, nk_rect(bounds.x + 8.0f, bounds.y + 26.0f,
+        field_text(paint, nk_rect(bounds.x + 8.0f, bounds.y + 26.0f,
                                            bounds.w - 16.0f, 24.0f),
                      resource_detail, static_cast<int>(strlen(resource_detail)), font,
-                     nk_rgb(12, 16, 24), nk_rgb(245, 227, 255));
+                     nk_rgb(12, 16, 24), nk_rgb(245, 227, 255), 5);
     }
 }
 
@@ -1168,10 +1223,10 @@ static void draw_compose_timing_tooltip(const ComposePaintContext& paint) {
                               std::max(paint.viewport.y + 8.0f,
                                        paint.viewport.y + paint.viewport.h - 28.0f));
     const auto bounds = nk_rect(x, y, width, 24.0f);
-    nk_fill_rect(paint.canvas, bounds, 3.0f, nk_rgba(12, 16, 24, 245));
-    nk_stroke_rect(paint.canvas, bounds, 3.0f, 1.0f, nk_rgb(255, 220, 112));
-    nk_draw_text(paint.canvas, bounds, marker->detail, length, font,
-                 nk_rgb(12, 16, 24), nk_rgb(255, 244, 192));
+    field_rect(paint, bounds, 3.0f, nk_rgba(12, 16, 24, 245), 5);
+    field_stroke_rect(paint, bounds, 3.0f, 1.0f, nk_rgb(255, 220, 112), 5);
+    field_text(paint, bounds, marker->detail, length, font,
+                 nk_rgb(12, 16, 24), nk_rgb(255, 244, 192), 5);
 }
 
 static void draw_compose_bgm_tooltip(const ComposePaintContext& paint,
@@ -1184,19 +1239,19 @@ static void draw_compose_bgm_tooltip(const ComposePaintContext& paint,
     const auto mode_width = hovered.slice ? 76.0f : 0.0f;
     const auto bounds = compose_pointer_tooltip_bounds(
         paint, detail_width + mode_width, 24.0f);
-    nk_fill_rect(paint.canvas, bounds, 3.0f, nk_rgba(12, 16, 24, 235));
-    nk_stroke_rect(paint.canvas, bounds, 3.0f, 1.0f, nk_rgb(232, 190, 247));
+    field_rect(paint, bounds, 3.0f, nk_rgba(12, 16, 24, 235), 5);
+    field_stroke_rect(paint, bounds, 3.0f, 1.0f, nk_rgb(232, 190, 247), 5);
     auto name_bounds = nk_rect(bounds.x + 8.0f, bounds.y, bounds.w - 16.0f, bounds.h);
     if (hovered.slice) {
         const auto* mode = hovered.restart ? "Restart" : "Continue";
-        nk_draw_text(paint.canvas, nk_rect(name_bounds.x, bounds.y, mode_width, bounds.h), mode,
+        field_text(paint, nk_rect(name_bounds.x, bounds.y, mode_width, bounds.h), mode,
                      static_cast<int>(strlen(mode)), font, nk_rgb(12, 16, 24),
-                     hovered.restart ? nk_rgb(255, 205, 138) : nk_rgb(155, 243, 237));
+                     hovered.restart ? nk_rgb(255, 205, 138) : nk_rgb(155, 243, 237), 5);
         name_bounds.x += mode_width;
         name_bounds.w = std::max(1.0f, name_bounds.w - mode_width);
     }
-    nk_draw_text(paint.canvas, name_bounds, hovered.detail, length, font,
-                 nk_rgb(12, 16, 24), nk_rgb(245, 227, 255));
+    field_text(paint, name_bounds, hovered.detail, length, font,
+                 nk_rgb(12, 16, 24), nk_rgb(245, 227, 255), 5);
 }
 
 static void draw_compose_editor_overlays(const ComposePaintContext& paint,
@@ -1246,13 +1301,16 @@ auto compose_editor_status_hint(const WormUiComposeView* view,
 
 void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* view,
                                       nk_command_buffer* canvas, struct nk_rect viewport) {
+    wormedit::ui::nuklear::begin_compose_field(context,
+                                              {viewport.x, viewport.y, viewport.w, viewport.h});
     const auto parent_clip = canvas->clip;
     nk_push_scissor(canvas, viewport);
-    nk_fill_rect(canvas, viewport, 0.0f,
+    const ComposePaintContext background{context, view, canvas, viewport, viewport};
+    field_rect(background, viewport, 0.0f,
                  wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::viewport));
     if (!view->scene_available) {
         const auto* status = view->status_text ? view->status_text : "Chart field is unavailable.";
-        nk_draw_text(canvas, viewport, status, static_cast<int>(strlen(status)),
+        field_text(background, viewport, status, static_cast<int>(strlen(status)),
                      context->style.font,
                      wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::viewport),
                      wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::label));
@@ -1268,7 +1326,7 @@ void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* vie
         draw_compose_scene_background(paint, timing_layout);
         draw_compose_waveform_layer(paint, timing_layout);
         draw_compose_grid_lines(paint);
-        draw_compose_area_band(context, *view, canvas, viewport);
+        draw_compose_area_band(paint);
         draw_compose_timing_layer(paint, timing_layout);
         draw_compose_hold_bodies(paint);
         const auto hovered_bgm = draw_compose_audio_markers(paint);
@@ -1276,5 +1334,6 @@ void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* vie
         draw_compose_foreground_markers(paint);
         draw_compose_editor_overlays(paint, hovered_bgm);
     }
+    wormedit::ui::nuklear::insert_compose_field(context, canvas, viewport);
     nk_push_scissor(canvas, parent_clip);
 }

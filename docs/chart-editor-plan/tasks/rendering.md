@@ -138,7 +138,7 @@ Application builds pass; coordinated full suite 919/919 and focused backend test
 
 ## T-248 Draw the Compose field with a wormedit renderer outside Nuklear
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** everything inside the Compose field rectangle is drawn by a new frontend-private field renderer that builds per-layer vertex batches directly from the scalar Compose view and submits them with `SDL_RenderGeometryRaw` (no Nuklear shapes, no `nk_convert`, no anti-aliasing for axis-aligned primitives), culled to the viewport; Nuklear keeps only the surrounding chrome.
 - **Read first:** `src/ui/nuklear/compose_canvas.cpp` (all `draw_compose_*` functions), `src/ui/nuklear/arrow_glyph.h`, `src/ui/nuklear/sdl_backend.h` (T-247), `docs/references/ui-backend-boundary.md`, the file-header decision above.
 - **Files owned:** new `src/ui/field/field_renderer.cpp/.h` (SDL-only, no Nuklear includes), new `src/ui/field/field_glyphs.cpp/.h` (arrow polygons and a small glyph-atlas text path reusing the Nuklear font atlas texture), `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/sdl_backend.cpp/.h` (header extension approved by user), `src/ui/nuklear/compose_area_menu.cpp/.h` (user-approved migration of the existing field band drawing helper), `CMakeLists.txt`, `cmake/check_ui_boundary.cmake` (allow `src/ui/field` to include SDL but not Nuklear), new `tests/ui/field_renderer_tests.cpp`, `tests/CMakeLists.txt`.
@@ -150,12 +150,28 @@ Application builds pass; coordinated full suite 919/919 and focused backend test
   5. Tests: vertex/batch counts for a known scene; culling; layer order; no allocation after warm-up.
 - **Invariants:** hit-testing stays in the existing headless/controller code (it never depended on Nuklear shapes); colors, draw order, and z-order relative to menus and popups unchanged; the architecture boundary test passes.
 - **Reject/failure behavior:** none at runtime; if a layer cannot be matched visually, STOP and report with screenshots.
-- **Verify:** standard build/test; T-246 counts on the T-211 fixture (target: field vertices down by at least 5× and draw calls to a handful); smoke PNGs of `compose` at normal and maximum zoom.
+- **Verify:** standard build/test; T-246 counts on the T-211 fixture; smoke PNGs of `compose` at normal and maximum zoom. The user accepted functional closure with the measured 5–6 field draw calls and the smaller vertex reduction below; the original 5× vertex target remains a performance goal carried forward to T-249/T-250, not a result of this card.
 - **Out of scope:** waveform meshes (T-249), tile caching (T-250), replacing chrome widgets (T-252).
+
+Verification (2026-09-30): migrated grid, lane backgrounds, notes/holds, BGM, timing tiles, overlays, and the existing waveform primitives in that order, comparing isolated Xvfb/dummy screenshots after each layer. Existing projection, hit-testing, semantic colors, rounded tile silhouettes, labels and canonical arrow geometry remain. Arrow fill/outline alone retain a centered 1-pixel AA fringe; other field primitives are crisp. Actual note/timing/BGM tooltips, Space preview, retained band, autoscroll and a Shift selection rectangle were captured before/after. A context-menu attempt did not open the menu and is not counted as visual verification; the backend regression verifies legacy → field → legacy submission order.
+
+The field API contains SDL/plain types only. Persistent vertices, 32-bit indices and adjacent layer/texture batches reuse capacity. Text samples the existing font atlas; solid vertices sample its existing white pixel, retaining insertion order while avoiding texture alternation with labels. Atlas batching changes zero RGB pixels in original and PCM sample-mode normal/maximum captures. All field drawing, including viewport/status fallback and existing per-column waveform lines, now uses one final custom marker. `nk_convert` records the marker barrier; SDL submission flushes surrounding Nuklear work and draws the field in stream order. Waveform algorithms and meshes remain deferred to T-249.
+
+The T-211 fixture contains 50,000 notes in 1,042 measures. `dense-compact.wormedit` is parsed-identical to `dense.wormedit`; both resolve `/tmp/wormedit-t211/tone.wav`. The BPM 6,000 derivative uses the same PCM and reaches sample mode at maximum zoom. T-246 counters include field and chrome; the final field-only sizes below were read from the actual renderer in isolated GDB, without using debugger timing as performance evidence.
+
+| Fixture / zoom | Final total vertices | Final total indices | Final total draws | Final field vertices | Final field indices | Final field draws |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| T-211 / 192 px per measure | 24,929 | 59,418 | 48 | 16,475 | 39,177 | 6 |
+| T-211 / 4096 px per measure | 21,972 | 41,553 | 47 | 13,347 | 20,817 | 6 |
+| PCM sample derivative / 4096 px per measure | 12,024 | 26,631 | 47 | 3,414 | 6,006 | 5 |
+
+The handful-of-field-draws target is met. The 5× vertex target is not met: total vertices fall 33,013 → 24,929 at normal zoom and 31,608 → 21,972 at maximum zoom, respectively 1.32× and 1.44×. These total comparisons do not establish an exact original field-only ratio because T-235 changed footer chrome between runs. The user explicitly accepted closing this functional migration and continuing T-249/T-250 with the original 5× goal still pending; waveform meshes were not brought into this cut.
+
+Coordinated full build and integrated tests pass 965/965 (47.42 seconds), including all 9 field tests. Regressions cover culling, snapped subpixel lines, UTF-8/UV clipping, known geometry counts, layer/submission order, canonical arrows in all four directions, rounded shared outlines, no allocation after warm-up, and interleaved solid/text atlas batching. Owned production/test functions pass cognitive-complexity checks; vendored Nuklear implementation warnings remain unchanged. Captures, diffs, counts, build/test/tidy logs and the pre-migration binaries are in `/tmp/wormedit-t248/`.
 
 ## T-249 Draw the waveform as meshes
 
-- **Status:** blocked-on T-248
+- **Status:** ready
 - **Outcome:** the envelope waveform is four triangle strips (RMS and peak, left and right) with two vertices per row and no AA; sample mode is two line strips (one per channel) drawn as thin quads, one quad per segment; worst case drops from ~130,000 to under 35,000 vertices.
 - **Read first:** `src/ui/nuklear/compose_canvas.cpp` (`draw_compose_waveform`, `draw_compose_waveform_samples`, `draw_compose_channel_waveform`), `src/ui/field/field_renderer.h`.
 - **Files owned:** `src/ui/nuklear/compose_canvas.cpp`, `src/ui/field/field_renderer.cpp/.h`, `tests/ui/field_renderer_tests.cpp`.

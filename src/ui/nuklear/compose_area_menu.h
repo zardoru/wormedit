@@ -44,8 +44,7 @@ struct ComposeAreaCapture {
     }
 };
 
-void draw_compose_area_band(nk_context*, const WormUiComposeView&, nk_command_buffer*,
-                            struct nk_rect);
+auto compose_area_band_rect(const WormUiComposeView&, struct nk_rect) -> struct nk_rect;
 void process_compose_area_menu(nk_context*, const WormUiComposeView&, WormUiWorkspaceAction&,
                                struct nk_rect, double input_right, bool focused);
 auto compose_area_pointer_consumed() -> bool;

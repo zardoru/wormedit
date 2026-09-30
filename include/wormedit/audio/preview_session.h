@@ -86,6 +86,8 @@ class preview_session_t {
         -> preview_session_render_result_t;
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
 
+    void set_metronome_enabled(bool enabled);
+    [[nodiscard]] auto metronome_enabled() const -> bool;
     [[nodiscard]] auto active() const -> bool;
     // Audible source-frame estimate; scheduling continues on the unadjusted
     // internal source clock. Headless sessions have zero output latency.

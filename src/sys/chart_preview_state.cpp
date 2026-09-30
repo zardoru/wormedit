@@ -117,7 +117,7 @@ auto chart_preview_t::compile_if_needed(
     auto built_schedule = build_preview_schedule(
         selected_chart, *built_timing.index,
         {.sample_rate = audio::output_sample_rate,
-         .include_metronome = !metronome_bindings.empty()});
+         .include_metronome = true});
     if (!built_schedule)
         return built_schedule.diagnostics.empty() ? "Chart preview could not be compiled."
                                                   : built_schedule.diagnostics.front().message;

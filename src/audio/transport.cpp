@@ -120,6 +120,18 @@ transport_t::transport_t(decoded_block_cache_t& block_cache, std::size_t maximum
     scheduled_voices_.reserve(maximum_scheduled_voices_);
 }
 
+void transport_t::set_clicks_enabled(bool enabled) {
+    clicks_enabled_.store(enabled, std::memory_order_release);
+    if (enabled) return;
+    const std::scoped_lock lock(mutex_);
+    for (auto& entry : scheduled_voices_) {
+        if (entry.active && entry.voice.kind == voice_kind_t::click_preview) {
+            entry.active = false;
+            --active_scheduled_voices_;
+        }
+    }
+}
+
 auto transport_t::start() -> std::optional<session_token_t> {
     const auto token = decode_session_.start();
     if (!token.has_value()) {
@@ -232,8 +244,10 @@ auto transport_t::mix(session_token_t token, std::uint64_t first_timeline_frame,
         result.status = transport_mix_status_t::mixed;
         transport_mix_context_t context{block_cache_, first_timeline_frame, callback_end,
                                         interleaved_stereo, result};
+        const auto clicks_enabled = clicks_enabled_.load(std::memory_order_acquire);
         for (auto& entry : scheduled_voices_) {
-            if (entry.active) {
+            if (entry.active && (entry.voice.kind != voice_kind_t::click_preview ||
+                                 clicks_enabled)) {
                 if (mix_voice(context, entry.voice)) {
                     entry.active = false;
                     --active_scheduled_voices_;

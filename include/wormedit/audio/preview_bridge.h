@@ -3,6 +3,7 @@
 #include <wormedit/audio/transport.h>
 #include <wormedit/core/timing.h>
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -90,6 +91,11 @@ class preview_transport_bridge_t {
         return seek(0);
     }
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
+    // Control-thread setter: re-enable from the current scheduling cursor, never missed beats.
+    void set_metronome_enabled(bool enabled, std::uint64_t current_frame);
+    [[nodiscard]] auto metronome_enabled() const noexcept -> bool {
+        return metronome_enabled_.load(std::memory_order_acquire);
+    }
 
     // Queues events with sample_frame < exclusive_end_frame. This method may
     // allocate while preparing voices, so it belongs on a control thread.
@@ -115,6 +121,7 @@ class preview_transport_bridge_t {
     preview_queue_head_t bgm_head_;
     preview_queue_head_t metronome_head_;
     bool music_pending_{};
+    std::atomic<bool> metronome_enabled_{true};
     std::uint64_t music_timeline_frame_{};
     std::uint64_t music_source_frame_{};
     std::uint64_t music_frame_count_{};

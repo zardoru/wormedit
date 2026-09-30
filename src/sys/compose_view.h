@@ -187,10 +187,20 @@ struct application_command_state_t {
     std::function<std::optional<std::int64_t>()> transport_audio_milliseconds;
     std::function<std::string(std::int64_t)> transport_seek_audio_milliseconds;
     std::function<void()> transport_stop;
+    bool transport_metronome_enabled{};
+    bool transport_metronome_available{};
+    std::function<void(bool)> transport_set_metronome;
     std::function<std::string(external_player_action_t)> external_player;
     std::function<std::string()> transport_cancel_restore;
     std::optional<double> preview_playhead_absolute_row;
 };
+
+inline auto toggle_transport_metronome(application_command_state_t& state) -> bool {
+    if (!state.transport_metronome_available || !state.transport_set_metronome) return false;
+    state.transport_metronome_enabled = !state.transport_metronome_enabled;
+    state.transport_set_metronome(state.transport_metronome_enabled);
+    return true;
+}
 
 struct compose_horizontal_layout_t {
     double field_left_pixels{};

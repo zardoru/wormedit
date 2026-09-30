@@ -832,11 +832,22 @@ static void render_transport_rate(const WormUiWorkspaceView& view, WormUiWorkspa
     if (!view.transport_keep_pitch_available) nk_widget_disable_end(g_context);
 }
 
+static void render_metronome_toggle(const WormUiWorkspaceView& view,
+                                    WormUiWorkspaceAction& action) {
+    if (!view.transport_metronome_available) nk_widget_disable_begin(g_context);
+    const auto hint = view.transport_metronome_enabled ? "Disable metronome" : "Enable metronome";
+    if (wormedit::ui::chrome::IconButton{Glyph::audio_lines, hint,
+                                        view.transport_metronome_enabled}.render(g_context) &&
+        view.transport_metronome_available && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
+        action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_TOGGLE_METRONOME;
+    if (!view.transport_metronome_available) nk_widget_disable_end(g_context);
+}
+
 static void render_status_bar(const WormUiWorkspaceView* view,
                               WormUiWorkspaceAction* action) {
     const bool minimap_available = status_minimap_available(view->compose);
     nk_layout_row_template_begin(g_context, 30);
-    wormedit::ui::chrome::IconButton::layout_columns(g_context, 3);
+    wormedit::ui::chrome::IconButton::layout_columns(g_context, 4);
     nk_layout_row_template_push_static(g_context, 80);
     nk_layout_row_template_push_static(g_context, 100);
     nk_layout_row_template_push_dynamic(g_context);
@@ -867,6 +878,7 @@ static void render_status_bar(const WormUiWorkspaceView* view,
                                          view->player_preview.visible}.render(g_context) &&
         action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
         action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
+    render_metronome_toggle(*view, *action);
     render_transport_rate(*view, action);
     const auto status = workspace_status_line(*view);
     nk_label(g_context, status.c_str(), NK_TEXT_LEFT);

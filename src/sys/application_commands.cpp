@@ -20,6 +20,7 @@ constexpr command_name_t command_names[]{
     {"transport.play_pause", application_command_kind_t::transport_play_pause},
     {"transport.play_from_start", application_command_kind_t::transport_play_from_start},
     {"transport.stop", application_command_kind_t::transport_stop},
+    {"transport.toggle_metronome", application_command_kind_t::transport_toggle_metronome},
     {"transport.external_play_start", application_command_kind_t::transport_external_play_start},
     {"transport.external_play_here", application_command_kind_t::transport_external_play_here},
     {"transport.external_stop", application_command_kind_t::transport_external_stop},

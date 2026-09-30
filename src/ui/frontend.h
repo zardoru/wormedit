@@ -100,6 +100,7 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_QUIT,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP,
+    WORM_UI_WORKSPACE_ACTION_TRANSPORT_TOGGLE_METRONOME,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE,
     WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH,
@@ -1251,6 +1252,8 @@ typedef struct WormUiWorkspaceView {
     bool transport_available;
     bool transport_playing;
     bool transport_paused;
+    bool transport_metronome_enabled;
+    bool transport_metronome_available;
     uint8_t transport_rate_index;
     bool minimap_click_moves_paused_playhead;
     bool transport_rate_available;

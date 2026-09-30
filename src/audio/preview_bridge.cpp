@@ -294,6 +294,15 @@ auto preview_transport_bridge_t::stop() noexcept -> transport_stop_result_t {
     return result;
 }
 
+void preview_transport_bridge_t::set_metronome_enabled(bool enabled, std::uint64_t current_frame) {
+    transport_.set_clicks_enabled(enabled);
+    const auto previous = metronome_enabled_.exchange(enabled, std::memory_order_acq_rel);
+    if (enabled && !previous && schedule_) {
+        seek_preview_queue(std::span<const preview_metronome_event_t>{schedule_->metronome},
+                           metronome_head_, current_frame);
+    }
+}
+
 auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_frame)
     -> preview_bridge_pump_result_t {
     if (schedule_ == nullptr || !token_.has_value()) {
@@ -312,6 +321,8 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
     const auto playable = std::span<const preview_audio_event_t>{schedule_->playable};
     const auto bgm = std::span<const preview_audio_event_t>{schedule_->bgm};
     const auto clicks = std::span<const preview_metronome_event_t>{schedule_->metronome};
+    if (!metronome_enabled())
+        seek_preview_queue(clicks, metronome_head_, exclusive_end_frame);
 
     while (true) {
         const auto candidate = next_candidate(

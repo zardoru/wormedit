@@ -24,6 +24,10 @@ auto project_application_frame(application_frame_projection_context_t context)
                               context.recovery_controller.view(), context.recovery_scan_configured,
                               context.stepmania_export_policy);
         flattened.rebind_view_pointers();
+        flattened.view.transport_metronome_enabled =
+            context.application_command_state.transport_metronome_enabled;
+        flattened.view.transport_metronome_available =
+            context.application_command_state.transport_metronome_available;
     }
 
     {

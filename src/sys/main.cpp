@@ -1412,6 +1412,9 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
                                  auto& audition_session, auto& preview_session, auto& preview_state,
                                  auto& audition_sources, auto& preview_metronome_bindings,
                                  auto& audition_output, auto& preview_output) {
+    state.transport_metronome_available = preview_output.available() && !preview_metronome_bindings.empty();
+    state.transport_set_metronome = [&](bool enabled) { preview_session.set_metronome_enabled(enabled); };
+    preview_session.set_metronome_enabled(state.transport_metronome_enabled);
     state.transport_keep_pitch_available = preview_output.available();
     state.transport_set_keep_pitch = [&](bool enabled) { return preview_output.set_keep_pitch(enabled); };
     state.transport_set_playback_rate = [&](wormedit::rational_t rate) {
@@ -1477,6 +1480,9 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
 
 void refresh_transport_rate_commands(wormedit::command_registry_t& registry,
                                      const application_command_state_t& state) {
+    (void)wormedit::update_command_state(registry, {"transport.toggle_metronome"},
+                                       state.transport_metronome_available,
+                                       state.transport_metronome_enabled);
     const bool available = static_cast<bool>(state.transport_set_playback_rate);
     (void)wormedit::update_command_state(registry, {"transport.rate_slower"},
                                        available && state.transport_rate_index > 0, std::nullopt);
@@ -2286,6 +2292,9 @@ void reset_project_edit_state(application_command_state_t& current) {
     next.transport_audio_milliseconds = std::move(current.transport_audio_milliseconds);
     next.transport_seek_audio_milliseconds = std::move(current.transport_seek_audio_milliseconds);
     next.transport_stop = std::move(current.transport_stop);
+    next.transport_metronome_enabled = current.transport_metronome_enabled;
+    next.transport_metronome_available = current.transport_metronome_available;
+    next.transport_set_metronome = std::move(current.transport_set_metronome);
     next.external_player = std::move(current.external_player);
     next.transport_cancel_restore = std::move(current.transport_cancel_restore);
     current = std::move(next);

@@ -171,7 +171,7 @@ stale-plan check (rule 9) first.
 
 ## T-235 Toggle the metronome on and off
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** a metronome toggle (status-bar icon button, command `transport.toggle_metronome`, default off) enables or silences metronome clicks immediately, including during playback, without rebuilding the preview schedule.
 - **Read first:** `src/sys/chart_preview_state.cpp` (`include_metronome = !metronome_bindings.empty()`), `include/wormedit/audio/preview_bridge.h` (`metronome_head_`), `src/sys/audio_source_registration.cpp` (internal metronome sources), `src/ui/nuklear/frontend.cpp` (`render_status_bar`).
 - **Files owned:** `include/wormedit/audio/preview_bridge.h`, `src/audio/preview_bridge.cpp`, `tests/core/audio_preview_bridge_tests.cpp`, `src/sys/chart_preview_state.cpp/.h`, `src/sys/main.cpp` (state and dispatch only), `src/core/command_registry.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`; user-approved immediate-silence and wiring extensions: `include/wormedit/audio/transport.h`, `src/audio/transport.cpp`, `include/wormedit/audio/preview_session.h`, `src/audio/preview_session.cpp`, `src/sys/application_commands.h`, `src/sys/application_commands.cpp`, `src/sys/application_frame_projection.cpp`, `src/sys/compose_view.h`, `src/sys/application_command_dispatch.cpp`, `src/sys/transport_player_actions.cpp`.
@@ -181,7 +181,7 @@ stale-plan check (rule 9) first.
   3. Status-bar button (Lucide `audio-lines` or a metronome-like glyph from the vendored subset) and registry command; the state persists for the session. T-51's Timing Settings panel reuses the same flag.
 - **Invariants:** music, keysound, and BGM scheduling unchanged; Stop semantics unchanged.
 - **Reject/failure behavior:** none.
-- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual toggle during playback.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual toggle during playback. Integrated build and full suite 957/957 passed (50.71s, `/tmp/wormedit-t235-t248-integrated-ctest.log`); literal core/audio prefix 849/849 passed (21.21s, `/tmp/wormedit-t235/core-audio-prefix.log`). Real isolated Xvfb/SDL-dummy UI confirmed default off, toggle on/off during playback, selected icon retained after Stop, and the corrected one-row Compose footer/minimap (`/tmp/wormedit-t235/ui-corrected-compose.png`). Actual parser/registry/command and icon dispatcher harness passed unavailable rejection, checked state and exactly two callbacks (`/tmp/wormedit-t235/commands`). Actual SDL postmix capture passed at 1x, 0.1x and 0.1x with keep pitch: disable tails were zero frames within measured device/stretcher buffer budgets; disabled music stayed at approximately 0.1 amplitude and re-enable restored clicks. Logs `/tmp/wormedit-t235/postmix.log`, `/tmp/wormedit-t235/postmix-slow-final.log`, `/tmp/wormedit-t235/postmix-slow-pitch.log`; raw resampling has measured finite-sinc ringing at rectangular click edges, with no music silence. User-authorized isolated PCM verification replaces physical listening; physical listening remains unperformed. Production/new-test clang-tidy checks passed; old test complexity warnings are unchanged.
 - **Out of scope:** metronome volume and accent patterns (T-51).
 
 ## T-236 Estimate BPM and phase from taps

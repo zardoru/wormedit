@@ -141,7 +141,17 @@ auto external_player_command(command_context_t& context) -> std::optional<comman
     return command_result_t{.accepted = true};
 }
 
+auto metronome_command(command_context_t& context) -> std::optional<command_result_t> {
+    if (context.command.kind != command_kind_t::transport_toggle_metronome) return std::nullopt;
+    if (!toggle_transport_metronome(context.application_state))
+        return reject_application_command(context.status, "Metronome is unavailable.");
+    context.status = context.application_state.transport_metronome_enabled
+                         ? "Metronome enabled." : "Metronome disabled.";
+    return command_result_t{.accepted = true};
+}
+
 auto transport_command(command_context_t& context) -> std::optional<command_result_t> {
+    if (const auto result = metronome_command(context)) return result;
     const auto kind = context.command.kind;
     auto& app = context.application_state;
     if (kind == command_kind_t::transport_rate_slower || kind == command_kind_t::transport_rate_faster) {

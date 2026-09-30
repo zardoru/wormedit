@@ -50,6 +50,11 @@ auto stepmania_policy_from_ui(const WormUiWorkspaceAction& action)
     return policy;
 }
 
+auto toggle_metronome_status(application_command_state_t& state) -> std::string {
+    if (!toggle_transport_metronome(state)) return "Metronome is unavailable.";
+    return state.transport_metronome_enabled ? "Metronome enabled." : "Metronome disabled.";
+}
+
 } // namespace
 
 auto dispatch_transport_player_action(
@@ -57,6 +62,8 @@ auto dispatch_transport_player_action(
     wormedit::stepmania_export_policy_t& stepmania_export_policy)
     -> std::optional<std::string> {
     switch (action.kind) {
+    case WORM_UI_WORKSPACE_ACTION_TRANSPORT_TOGGLE_METRONOME:
+        return toggle_metronome_status(application_state);
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE:
         return set_transport_rate(application_state, action.transport_rate_index)
                    ? "Playback rate changed." : "Playback rate unchanged.";

@@ -810,6 +810,9 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
     add_builtin(registry, invoker, "transport.stop", "Stop", command_category_t::transport,
                 workspace, {});
 
+    add_builtin(registry, invoker, "transport.toggle_metronome", "Toggle Metronome",
+                command_category_t::transport, workspace, {});
+
     add_builtin(registry, invoker, "transport.external_play_start", "External Play from Start",
                 command_category_t::transport, workspace, {});
     add_builtin(registry, invoker, "transport.external_play_here", "External Play from Here",

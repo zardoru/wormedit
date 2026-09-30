@@ -271,3 +271,76 @@ TEST_CASE("preview bridge rejects duplicate and unbounded object-layer bindings"
           preview_bridge_start_status_t::source_binding_capacity_exceeded);
     CHECK(transport.scheduled_voice_count() == 0);
 }
+
+namespace {
+void require_metronome(bool condition) {
+    REQUIRE(condition);
+}
+
+auto four_measure_clicks() -> preview_schedule_t {
+    auto chart = schedule();
+    for (std::uint64_t beat = 0; beat < 16; ++beat) {
+        chart.metronome.push_back({.sample_frame = beat * 100,
+                                  .measure = measure_id_t{beat / 4 + 1},
+                                  .pulse = static_cast<std::uint32_t>(beat % 4),
+                                  .accent = metronome_accent_t::regular});
+    }
+    return chart;
+}
+}
+
+TEST_CASE("preview bridge disabled metronome skips four measures and enables at next beat",
+          "[unit][audio][preview-bridge][metronome]") {
+    decoded_block_cache_t cache;
+    auto transport = transport_for(cache);
+    preview_transport_bridge_t bridge{transport};
+    auto chart = four_measure_clicks();
+    const std::array clicks{click_binding(metronome_accent_t::regular)};
+    bridge.set_metronome_enabled(false, 0);
+    const auto started = bridge.start(chart, {}, clicks);
+    require_metronome(static_cast<bool>(started));
+    require_metronome(bridge.materialize_until(1'600).scheduled_events == 0);
+    require_metronome(transport.scheduled_voice_count() == 0);
+    bridge.set_metronome_enabled(true, 450);
+    require_metronome(bridge.materialize_until(1'600).scheduled_events == 11);
+    const auto voices = transport.snapshot_active_voices(*started.token);
+    require_metronome(static_cast<bool>(voices));
+    require_metronome(voices.voices.front().timeline_start_frame == 500);
+    require_metronome(voices.voices.back().timeline_start_frame == 1'500);
+}
+
+TEST_CASE("preview bridge disabling retires queued clicks while preserving music",
+          "[unit][audio][preview-bridge][metronome]") {
+    decoded_block_cache_t cache;
+    const auto pcm = std::vector<float>(64 * output_channel_count, 0.25F);
+    require_metronome(cache.store({.source = {"asset:key", "revision:1"}}, 64, pcm) ==
+                       block_store_status_t::stored);
+    auto transport = transport_for(cache);
+    preview_transport_bridge_t bridge{transport};
+    auto chart = four_measure_clicks();
+    const std::array clicks{click_binding(metronome_accent_t::regular)};
+    const auto started = bridge.start(chart, {}, clicks);
+    require_metronome(static_cast<bool>(started));
+    require_metronome(bridge.materialize_until(128).scheduled_events == 2);
+    require_metronome(transport.schedule_voice(*started.token,
+        {.id = 999, .kind = voice_kind_t::music,
+         .source = {"asset:key", "revision:1"}, .frame_count = 64}) ==
+        voice_schedule_status_t::scheduled);
+    bridge.set_metronome_enabled(false, 0);
+    const auto voices = transport.snapshot_active_voices(*started.token);
+    require_metronome(static_cast<bool>(voices));
+    require_metronome(voices.voices.size() == 1);
+    require_metronome(voices.voices.front().kind == voice_kind_t::music);
+    std::array<float, 32 * output_channel_count> output{};
+    const auto mixed = transport.mix(*started.token, 0, output);
+    require_metronome(mixed.status == transport_mix_status_t::mixed);
+    require_metronome(mixed.voices_mixed == 1 && mixed.missing_blocks == 0);
+    require_metronome(output.front() == 0.25F);
+    bridge.set_metronome_enabled(true, 32);
+    require_metronome(bridge.materialize_until(128).scheduled_events == 1);
+    const auto resumed = transport.snapshot_active_voices(*started.token);
+    require_metronome(resumed.voices.size() == 2);
+    require_metronome(std::any_of(resumed.voices.begin(), resumed.voices.end(), [](const auto& voice) {
+        return voice.kind == voice_kind_t::click_preview && voice.timeline_start_frame == 100;
+    }));
+}

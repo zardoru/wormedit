@@ -178,6 +178,15 @@ auto preview_session_t::stop() noexcept -> transport_stop_result_t {
     return stopped;
 }
 
+void preview_session_t::set_metronome_enabled(bool enabled) {
+    const std::scoped_lock lock(mutex_);
+    bridge_.set_metronome_enabled(enabled, timeline_frame_);
+}
+
+auto preview_session_t::metronome_enabled() const -> bool {
+    return bridge_.metronome_enabled();
+}
+
 auto preview_session_t::active() const -> bool {
     const std::scoped_lock lock(mutex_);
     return token_.has_value();

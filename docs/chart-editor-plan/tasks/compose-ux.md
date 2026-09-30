@@ -217,14 +217,15 @@ conditional optimization remains unproven.
 
 ## T-212 Move preview decode refill off the frame thread
 
-- **Status:** blocked-on T-243
+- **Status:** done
+- **Profiling evidence:** T-243 final isolated 240-frame playback trace reports decode-pump p99 1.312390 ms, satisfying the greater-than-1-ms gate (`/tmp/wormedit-t243/after-retained-report.log`).
 - **Outcome:** only if T-243's split timers show the decode pump alone costs more than 1 ms at p99 (T-211 measured 1.451 ms p99 for service + pump together): the preview session's refill runs on a worker; the frame thread only publishes positions and reads status.
 - **Read first:** `src/sys/sdl_preview_output.cpp`, `include/wormedit/audio/preview_session.h` (control-thread contract), `docs/async-task-scheduling.md`.
 - **Files owned:** `src/sys/sdl_preview_output.cpp/.h`, `src/audio/preview_session.cpp`, `tests/sys/sdl_preview_output_tests.cpp`.
 - **Steps:** 1. Dedicated refill thread with the existing generation guards. 2. Hard Stop still silent on the next render (existing test must pass).
 - **Invariants:** `render()` stays allocation-free; Stop semantics unchanged.
 - **Reject/failure behavior:** refill failure reports through the existing status path.
-- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.|sdl_preview'`; T-211 overlay before/after numbers.
+- **Verify:** application and SDL test targets built successfully; final full suite passed 919/919 (32.06 s). The continuous-music seek stress passed 30/30 repetitions; its initial one-shot fixture legitimately completed after seeks beyond the sole note and was corrected to keep audio across all seek positions. Frozen staged syntax checks passed 2/2. Required `ctest --test-dir build --output-on-failure -R '^audio\.|sdl_preview'` passed 101/101; the actual SDL namespace `-R '^sdl-audio\.'` passed 9/9, including playback beyond prime windows without frame service, silent next render after hard Stop, repeated seek/Stop/reopen, and an unread refill failure delivered after session completion. New C++ functions pass the complexity gate; the original first SDL test's existing complexity violation is unchanged. Same isolated Xvfb/SDL-dummy T-211 fixture, final 240-frame playing blocks: main-thread pump average/p99 0.141201/1.312390 ms before, result delivery 0.000775/0.001420 ms after; total main audio average/p99 0.163309/1.338880 → 0.022827/0.040530 ms. AFTER measures only main-thread worker-result delivery, not worker decode cost or total decode speed. Dense Compose PNG inspected. Raw tables, report, PNG and summary: `/tmp/wormedit-t212/`; test logs: `/tmp/wormedit-t212-worker-{build,tests,sdl-tests}.log`.
 - **Out of scope:** audition output.
 
 ## T-213 Reuse the Compose scene while only the scroll changes

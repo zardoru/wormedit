@@ -5,8 +5,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <limits>
 #include <unordered_map>
+#include <utility>
 
 namespace wormedit::sys {
 namespace {
@@ -59,6 +61,14 @@ auto sdl_preview_output_t::open(std::string* error_message) -> bool {
             *error_message = sdl_error("could not open the default chart-preview audio output");
         return false;
     }
+    try {
+        refill_worker_ = std::jthread([this](std::stop_token stop) { refill_loop(stop); });
+    } catch (...) {
+        if (error_message) *error_message = "could not start the chart-preview refill worker";
+        SDL_DestroyAudioStream(stream_);
+        stream_ = nullptr;
+        return false;
+    }
     return true;
 }
 
@@ -66,8 +76,53 @@ void sdl_preview_output_t::close() noexcept {
     if (stream_ == nullptr)
         return;
     static_cast<void>(stop());
+    refill_worker_.request_stop();
+    refill_ready_.notify_all();
+    if (refill_worker_.joinable()) refill_worker_.join();
     SDL_DestroyAudioStream(stream_);
     stream_ = nullptr;
+}
+
+void sdl_preview_output_t::set_refill_enabled(bool enabled) noexcept {
+    {
+        const std::scoped_lock lock(refill_mutex_);
+        ++refill_generation_;
+        refill_enabled_ = enabled;
+        refill_result_.reset();
+    }
+    refill_ready_.notify_all();
+}
+
+auto sdl_preview_output_t::take_refill_result()
+    -> std::optional<audio::preview_session_pump_result_t> {
+    const std::scoped_lock lock(refill_mutex_);
+    return std::exchange(refill_result_, std::nullopt);
+}
+
+void sdl_preview_output_t::refill_loop(std::stop_token stop) {
+    std::unique_lock lock(refill_mutex_);
+    while (!stop.stop_requested()) {
+        refill_ready_.wait(lock, [&] { return stop.stop_requested() || refill_enabled_; });
+        if (stop.stop_requested()) return;
+        const auto generation = refill_generation_;
+        lock.unlock();
+        audio::preview_session_pump_result_t result;
+        try {
+            result = session_.pump();
+        } catch (...) {
+            result.status = audio::preview_session_pump_status_t::decode_failed;
+        }
+        lock.lock();
+        if (generation == refill_generation_ && refill_enabled_ &&
+            (!refill_result_ || static_cast<bool>(*refill_result_))) {
+            if (result.status == audio::preview_session_pump_status_t::not_started)
+                refill_enabled_ = false;
+            refill_result_ = std::move(result);
+        }
+        refill_ready_.wait_for(lock, std::chrono::milliseconds(10), [&] {
+            return stop.stop_requested() || generation != refill_generation_ || !refill_enabled_;
+        });
+    }
 }
 
 auto sdl_preview_output_t::activate_device() -> bool {
@@ -93,6 +148,7 @@ auto sdl_preview_output_t::start(
                 .session = std::nullopt,
                 .message = sdl_error("could not lock the chart-preview audio stream")};
     }
+    set_refill_enabled(false);
     silenced_voices_.store(0, std::memory_order_release);
     silenced_music_voices_.store(0, std::memory_order_release);
     retained_schedule_ = &schedule;
@@ -116,6 +172,7 @@ auto sdl_preview_output_t::start(
         output_playing_.store(true, std::memory_order_release);
         result.status = sdl_preview_start_status_t::started;
     }
+    set_refill_enabled(playing());
     static_cast<void>(SDL_UnlockAudioStream(stream_));
     return result;
 }
@@ -131,6 +188,7 @@ auto sdl_preview_output_t::seek(std::uint64_t sample_frame) -> sdl_preview_start
                 .session = std::nullopt,
                 .message = sdl_error("could not lock the chart-preview audio stream")};
     }
+    set_refill_enabled(false);
     silenced_voices_.store(0, std::memory_order_release);
     silenced_music_voices_.store(0, std::memory_order_release);
     auto started = !session_.active() && playing() && retained_schedule_
@@ -152,6 +210,7 @@ auto sdl_preview_output_t::seek(std::uint64_t sample_frame) -> sdl_preview_start
         output_playing_.store(true, std::memory_order_release);
         result.status = sdl_preview_start_status_t::started;
     }
+    set_refill_enabled(playing());
     static_cast<void>(SDL_UnlockAudioStream(stream_));
     return result;
 }
@@ -180,20 +239,20 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
         output_playing_.store(false, std::memory_order_release);
         if (session_.active()) static_cast<void>(session_.stop());
     }
-    if (stream_ == nullptr || !session_.active()) {
-        if (rate_unavailable) return sdl_preview_service_result_t{.rate_unavailable = true};
+    frame_phase_scope_t pump(frame_phase_t::audio_pump);
+    auto pumped = take_refill_result();
+    if (pumped && pumped->status == audio::preview_session_pump_status_t::not_started)
+        pumped.reset();
+    if (!pumped) {
+        if (rate_unavailable || silenced_voices || silenced_music_voices)
+            return sdl_preview_service_result_t{.rate_unavailable = rate_unavailable,
+                .silenced_voices = silenced_voices, .silenced_music_voices = silenced_music_voices};
         return std::nullopt;
     }
-    auto pumped = [&] {
-        frame_phase_scope_t pump(frame_phase_t::audio_pump);
-        return session_.pump();
-    }();
-    if (pumped.decode.has_value() &&
-        pumped.decode->status == audio::preview_pump_status_t::stale_generation) {
+    if (pumped->decode && pumped->decode->status == audio::preview_pump_status_t::stale_generation)
         return std::nullopt;
-    }
     return sdl_preview_service_result_t{
-        .status = pumped ? sdl_preview_service_status_t::ready
+        .status = *pumped ? sdl_preview_service_status_t::ready
                          : sdl_preview_service_status_t::pump_failed,
         .pump = std::move(pumped),
         .rate_unavailable = rate_unavailable,
@@ -203,6 +262,7 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
 }
 
 auto sdl_preview_output_t::stop() noexcept -> audio::transport_stop_result_t {
+    set_refill_enabled(false);
     output_playing_.store(false, std::memory_order_release);
     buffered_source_frames_.store(0, std::memory_order_release);
     rendered_source_frame_.store(0, std::memory_order_release);

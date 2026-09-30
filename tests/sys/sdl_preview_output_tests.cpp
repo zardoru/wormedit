@@ -9,6 +9,10 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
+#include <limits>
+#include <algorithm>
+#include <array>
+#include <ranges>
 #include <atomic>
 #include <cmath>
 #include <vector>
@@ -374,4 +378,147 @@ TEST_CASE("SDL pitch mode changes fade and mid-play Stop clears buffered clocks"
     REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
     const preview_audio_subsystem_t audio_subsystem;
     exercise_mode_transition();
+}
+
+namespace {
+void exercise_background_refill() {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    const auto registered = sources.register_generated_source({
+        .source = {"generated:worker440Hz", "refill-test-v1"},
+        .interleaved_stereo = generated_sine(44100 * 2)});
+    expect_pitch(static_cast<bool>(registered));
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    sys::sdl_preview_output_t output{session};
+    expect_pitch(output.open());
+    device_capture_t capture{output.audio_device_id()};
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.playable = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
+    const preview_object_source_binding_t binding{.object = object_id_t{1},
+        .voices = {{.source = registered.binding->source, .frame_count = 44100 * 2}}};
+    expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
+    // No frame-thread service: callback playback must cross several prime windows.
+    SDL_Delay(1000);
+    capture.detach();
+    const auto count = capture.count.load();
+    expect_pitch(count >= 30000);
+    const auto samples = std::span(capture.samples).first(count).last(4096);
+    const auto maximum = *std::ranges::max_element(samples, {}, [](float value) { return std::abs(value); });
+    expect_pitch(std::abs(maximum) > 0.9);
+    const auto service = output.service();
+    expect_pitch(service && static_cast<bool>(*service));
+    expect_pitch(service->silenced_voices == 0);
+    static_cast<void>(output.stop());
+    std::array<float, 256> silence;
+    silence.fill(1.0F);
+    const auto rendered = session.render(silence);
+    expect_pitch(rendered.status == preview_session_render_status_t::stopped);
+    expect_pitch(std::ranges::all_of(silence, [](float value) { return value == 0.0F; }));
+}
+void exercise_refill_generations() {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    const auto registered = sources.register_generated_source({
+        .source = {"generated:seek440Hz", "refill-test-v1"},
+        .interleaved_stereo = generated_sine(44100)});
+    expect_pitch(static_cast<bool>(registered));
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    sys::sdl_preview_output_t output{session};
+    expect_pitch(output.open());
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.music = preview_schedule_t::music_event_t{
+        .resource = resource_id_t{1}, .frame_count = 44100};
+    const preview_object_source_binding_t binding{
+        .object = object_id_t{std::numeric_limits<std::uint64_t>::max()},
+        .voices = {{.source = registered.binding->source, .frame_count = 44100}}};
+    expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
+    for (std::uint64_t seek = 0; seek < 20; ++seek) {
+        const auto sought = output.seek((seek % 4) * 4096);
+        INFO("seek iteration " << seek << " status " << static_cast<int>(sought.status)
+             << " message " << sought.message);
+        INFO("session status " << (sought.session ? static_cast<int>(sought.session->status) : -1));
+        INFO("bridge status " << (sought.session && sought.session->bridge
+             ? static_cast<int>(sought.session->bridge->status) : -1));
+        expect_pitch(static_cast<bool>(sought));
+        SDL_Delay(2);
+        const auto service = output.service();
+        expect_pitch(!service || static_cast<bool>(*service));
+    }
+    static_cast<void>(output.stop());
+    expect_pitch(!session.active() && !output.playing());
+    SDL_Delay(20);
+    expect_pitch(!output.service());
+    expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
+    SDL_Delay(20);
+    const auto service = output.service();
+    expect_pitch(!service || static_cast<bool>(*service));
+    static_cast<void>(output.stop());
+    output.close();
+    expect_pitch(output.open());
+    expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
+    static_cast<void>(output.stop());
+}
+void exercise_pending_refill_failure() {
+    using namespace wormedit;
+    using namespace wormedit::audio;
+    decoded_source_registry_t sources;
+    const auto registered = sources.register_generated_source({
+        .source = {"generated:failure440Hz", "refill-test-v1"},
+        .interleaved_stereo = generated_sine(44100 * 2)});
+    expect_pitch(static_cast<bool>(registered));
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    preview_transport_bridge_t bridge{transport};
+    preview_session_t session{sources, transport, bridge};
+    sys::sdl_preview_output_t output{session};
+    expect_pitch(output.open());
+    preview_schedule_t schedule{.sample_rate = output_sample_rate};
+    schedule.playable = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
+    const preview_object_source_binding_t binding{.object = object_id_t{1},
+        .voices = {{.source = registered.binding->source, .frame_count = 44100 * 2}}};
+    expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
+    expect_pitch(sources.remove(registered.binding->asset));
+    // The missing next block drops the voice and completes the session; the
+    // unread worker failure must survive that completion until the frame reads it.
+    SDL_Delay(800);
+    expect_pitch(!session.active());
+    const auto failed = output.service();
+    expect_pitch(failed && failed->status == sys::sdl_preview_service_status_t::pump_failed);
+    expect_pitch(failed->pump && failed->pump->status == preview_session_pump_status_t::decode_failed);
+    static_cast<void>(output.stop());
+}
+
+}
+TEST_CASE("SDL refill worker advances through prime windows without frame service and hard Stop stays silent",
+          "[integration][audio][sdl][preview][refill]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_FREQUENCY, "44100"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    exercise_background_refill();
+}
+TEST_CASE("SDL refill worker discards obsolete seek Stop and reopen generations",
+          "[integration][audio][sdl][preview][refill]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_FREQUENCY, "44100"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    exercise_refill_generations();
+}
+
+TEST_CASE("SDL refill failure remains readable after its session has completed",
+          "[integration][audio][sdl][preview][refill][failure]") {
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
+    REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_FREQUENCY, "44100"));
+    REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
+    const preview_audio_subsystem_t audio_subsystem;
+    exercise_pending_refill_failure();
 }

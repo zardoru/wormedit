@@ -9,6 +9,9 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
 #include <optional>
 #include <span>
 #include <string>
@@ -53,7 +56,7 @@ struct sdl_preview_service_result_t {
 
 // SDL3 output for an owned chart-preview timeline. The stream lock serializes
 // callback rendering with start/seek/Stop, while decoder/materialization work
-// remains on the control thread through service().
+// runs on one bounded refill worker; service() reads its latest generation result.
 class sdl_preview_output_t {
   public:
     explicit sdl_preview_output_t(audio::preview_session_t& session) : session_(session) {}
@@ -101,6 +104,10 @@ class sdl_preview_output_t {
     void fade_block(std::size_t frames) noexcept;
     void begin_fade(bool preserve, rational_t rate) noexcept;
 
+    void refill_loop(std::stop_token stop);
+    void set_refill_enabled(bool enabled) noexcept;
+    [[nodiscard]] auto take_refill_result() -> std::optional<audio::preview_session_pump_result_t>;
+
     static constexpr std::size_t callback_frames = 4'096;
     enum class callback_failure_t {
         none,
@@ -109,6 +116,12 @@ class sdl_preview_output_t {
     };
 
     audio::preview_session_t& session_;
+    std::mutex refill_mutex_;
+    std::condition_variable refill_ready_;
+    std::jthread refill_worker_;
+    std::uint64_t refill_generation_{};
+    bool refill_enabled_{};
+    std::optional<audio::preview_session_pump_result_t> refill_result_;
     SDL_AudioStream* stream_{};
     std::atomic<callback_failure_t> callback_failure_{callback_failure_t::none};
     std::atomic<std::uint64_t> silenced_voices_{};

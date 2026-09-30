@@ -165,6 +165,7 @@ struct application_command_state_t {
     bool transport_keep_pitch{};
     bool transport_keep_pitch_available{};
     std::function<bool(wormedit::rational_t)> transport_set_playback_rate;
+    std::function<bool(bool)> transport_set_keep_pitch;
     std::function<bool()> transport_active;
     std::function<bool()> transport_inline_active;
     std::function<bool()> transport_preview_playing;

@@ -529,3 +529,24 @@ TEST_CASE("Minimap view scrolling preserves floor snap and authored BMS tail cur
         CHECK(compose_minimap_start_frame(application, fixture.history, &fixture.state) == 441000);
     }
 }
+
+namespace { void expect_keep_pitch(bool value) { CHECK(value); } }
+
+TEST_CASE("Keep pitch dispatch accepts backend preferences without changing documents", "[unit][sys][commands][keep-pitch]") {
+    application_command_state_t state;
+    wormedit::stepmania_export_policy_t policy;
+    WormUiWorkspaceAction action{};
+    action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH;
+    action.transport_keep_pitch = true;
+    expect_keep_pitch(dispatch_transport_player_action(action, state, policy) == "Keep pitch is unavailable.");
+    state.transport_keep_pitch_available = true;
+    bool requested{};
+    state.transport_set_keep_pitch = [&](bool value) { requested = value; return true; };
+    expect_keep_pitch(dispatch_transport_player_action(action, state, policy) == "Keep pitch enabled.");
+    expect_keep_pitch(requested);
+    expect_keep_pitch(state.transport_keep_pitch);
+    state.transport_set_keep_pitch = [](bool) { return false; };
+    action.transport_keep_pitch = false;
+    expect_keep_pitch(dispatch_transport_player_action(action, state, policy) == "Keep pitch is unavailable.");
+    expect_keep_pitch(state.transport_keep_pitch);
+}

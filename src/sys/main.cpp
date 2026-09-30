@@ -1388,17 +1388,17 @@ void configure_transport_play_pause(auto& state, auto& history, auto& workspace,
                                             compose_interaction_state->chart == *workspace.selected_chart
                                         ? &*compose_interaction_state
                                         : nullptr;
-        if (!preview_session.active() && !preview_state.paused && compose_cursor &&
+        if (!preview_output.playing() && !preview_state.paused && compose_cursor &&
             compose_cursor->virtual_bms_cursor_row)
             return "Materialize the cursor measure before starting chart preview.";
-        const bool starting = !preview_session.active() && !preview_state.paused;
+        const bool starting = !preview_output.playing() && !preview_state.paused;
         const auto exact_start = starting ? wormedit::sys::compose_minimap_start_frame(state, history, compose_cursor) : std::nullopt;
         const auto result = preview_state.play_pause(
             selected_chart(history, workspace), history.document, audition_sources,
             preview_metronome_bindings, audition_output,
             preview_session, preview_output,
             compose_cursor ? std::optional{compose_cursor->cursor} : std::nullopt, false, exact_start);
-        if (starting && preview_session.active()) {
+        if (starting && preview_output.playing()) {
             state.minimap_start_frame.reset();
             inline_preview_cursor.capture(compose_cursor);
         }
@@ -1411,27 +1411,29 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
                                  auto& audition_session, auto& preview_session, auto& preview_state,
                                  auto& audition_sources, auto& preview_metronome_bindings,
                                  auto& audition_output, auto& preview_output) {
+    state.transport_keep_pitch_available = preview_output.available();
+    state.transport_set_keep_pitch = [&](bool enabled) { return preview_output.set_keep_pitch(enabled); };
     state.transport_set_playback_rate = [&](wormedit::rational_t rate) {
         return preview_output.set_playback_rate(rate);
     };
     state.transport_active = [&] {
-        return audition_session.active() || preview_session.active() || preview_state.paused;
+        return audition_session.active() || preview_output.playing() || preview_state.paused;
     };
-    state.transport_preview_playing = [&] { return preview_session.active(); };
+    state.transport_preview_playing = [&] { return preview_output.playing(); };
     state.transport_preview_paused = [&] { return preview_state.paused; };
     state.transport_preview_end_frame = [&]() -> std::optional<std::uint64_t> {
         return preview_state.matches_selection(history.document, workspace)
             ? std::optional{preview_state.end_frame} : std::nullopt;
     };
     state.transport_inline_active = [&] {
-        return preview_session.active() || preview_state.paused;
+        return preview_output.playing() || preview_state.paused;
     };
     configure_transport_play_pause(state, history, workspace, compose_interaction_state,
         inline_preview_cursor, audition_session, preview_session, preview_state,
         audition_sources, preview_metronome_bindings, audition_output, preview_output);
     state.transport_play_from_start = [&]() -> std::string {
         state.minimap_start_frame.reset();
-        const bool starting = !preview_session.active() && !preview_state.paused;
+        const bool starting = !preview_output.playing() && !preview_state.paused;
         const auto* compose_cursor = workspace.active_tab == wormedit::workspace_tab_t::compose &&
                                              compose_interaction_state && workspace.selected_chart &&
                                              compose_interaction_state->chart == *workspace.selected_chart
@@ -1442,7 +1444,7 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
             preview_metronome_bindings, audition_output,
             preview_session, preview_output,
             std::nullopt, true);
-        if (starting && preview_session.active()) inline_preview_cursor.capture(compose_cursor);
+        if (starting && preview_output.playing()) inline_preview_cursor.capture(compose_cursor);
         return result;
     };
     state.transport_seek = [&](std::uint64_t frame) -> std::string {
@@ -2260,6 +2262,7 @@ void reset_project_edit_state(application_command_state_t& current) {
     next.transport_keep_pitch = current.transport_keep_pitch;
     next.transport_keep_pitch_available = current.transport_keep_pitch_available;
     next.transport_set_playback_rate = std::move(current.transport_set_playback_rate);
+    next.transport_set_keep_pitch = std::move(current.transport_set_keep_pitch);
     next.transport_active = std::move(current.transport_active);
     next.transport_inline_active = std::move(current.transport_inline_active);
     next.transport_preview_playing = std::move(current.transport_preview_playing);
@@ -3066,11 +3069,11 @@ int main(int argc, char** argv) {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         if (workspace.active_tab == wormedit::workspace_tab_t::compose &&
             compose_interaction_state && application_command_state.preview_playhead_absolute_row &&
-            (preview_session.active() || preview_state.paused)) {
+            (preview_output.playing() || preview_state.paused)) {
             (void)wormedit::sys::follow_compose_playhead(
                 history, *compose_interaction_state,
                 *application_command_state.preview_playhead_absolute_row,
-                preview_session.active());
+                preview_output.playing());
         }
 #endif
 

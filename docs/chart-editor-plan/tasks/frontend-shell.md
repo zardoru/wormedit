@@ -102,18 +102,19 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 
 ## T-233 Preserve pitch at reduced playback rates
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** a "Keep pitch" option plays the same rates without pitch change, using an in-house WSOLA time-stretcher on the mixed stereo output; the clock and playhead behave exactly as in T-45.
 - **Read first:** `include/wormedit/audio/playback_rate.h`, `src/sys/sdl_preview_output.cpp`, `include/wormedit/audio/preview_session.h`.
-- **Files owned:** new `include/wormedit/audio/time_stretch.h`, new `src/audio/time_stretch.cpp`, new `tests/core/audio_time_stretch_tests.cpp`, `src/sys/sdl_preview_output.cpp/.h`, `src/sys/audio_transport_frame.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** new `include/wormedit/audio/time_stretch.h`, new `src/audio/time_stretch.cpp`, new `tests/core/audio_time_stretch_tests.cpp`, `src/sys/sdl_preview_output.cpp/.h`, `src/sys/audio_transport_frame.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`; user-approved integration extensions (2026-09-30): `src/sys/compose_view.h`, `src/sys/main.cpp`, `src/sys/transport_player_actions.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/sys/sdl_preview_output_tests.cpp`, `src/sys/chart_preview_state.cpp/.h`, `src/sys/application_frame_projection.cpp` (EOF playing/frame and source-playhead projection).
 - **Steps:**
   1. WSOLA with fixed parameters (window 20 ms, overlap 50 %, search ±8 ms by normalized cross-correlation on the mid channel), preallocated buffers sized at construction for the lowest rate, `process(input, output)` allocation-free.
   2. In keep-pitch mode the SDL stream ratio stays 1.0; the output stage asks the session for `ceil(output × rate) + lookahead` source frames and stretches them.
   3. Report the stretcher's fixed latency so the playhead subtracts it (in source frames).
   4. Tests: a 440 Hz sine at rate 1/2 keeps its dominant frequency within ±2 Hz and doubles in length within one window; silence stays silent; output is deterministic; switching modes mid-play flushes without clicks larger than one window fade.
+- **Algorithm credit:** Werner Verhelst and Marc Roelands, “An overlap-add technique based on waveform similarity (WSOLA) for high quality time-scale modification of speech,” ICASSP 1993, volume 2, pp. 554–557, [DOI](https://doi.org/10.1109/ICASSP.1993.319366).
 - **Invariants:** same as T-45; the stretcher never runs in the scheduling path.
 - **Reject/failure behavior:** if a callback cannot get enough source frames, output silence for that block and report an underrun, as today.
-- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual listening at 0.5 and 0.1.
+- **Verify:** coordinated application build passed; full suite 893/893 passed. Core sine checks preserve 440 Hz within ±2 Hz and exact rational duration at 1×, 0.5×, and 0.1×; actual SDL dummy capture covers 0.5×/0.1×, rejected/successful EOF-drain seeks, mode/rate transitions, and mid-play Stop. Maximum measured transition sample step fell from 0.950985 to 0.0626853 after fading the old stage to zero and recomputing the new SDL callback budget. Isolated Xvfb controls inspected at `/tmp/wormedit-t233/keep-pitch-on.png` and `/tmp/wormedit-t233/keep-pitch-off.png`. Changed functions pass clang-tidy complexity checks. User approved isolated measurements instead of physical audio listening (2026-09-30).
 - **Out of scope:** formant preservation, third-party libraries (Rubber Band/SoundTouch) unless the user asks.
 
 ## T-234 Add rate and pitch controls to the transport UI

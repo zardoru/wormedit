@@ -4,7 +4,9 @@
 #include <SDL3/SDL_error.h>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
+#include <unordered_map>
 
 namespace wormedit::sys {
 namespace {
@@ -12,6 +14,28 @@ namespace {
 auto sdl_error(std::string fallback) -> std::string {
     const auto* message = SDL_GetError();
     return message != nullptr && message[0] != '\0' ? std::string(message) : std::move(fallback);
+}
+
+auto schedule_end(const preview_schedule_t& schedule,
+                  std::span<const audio::preview_object_source_binding_t> objects,
+                  std::span<const audio::preview_metronome_source_binding_t> metronome,
+                  std::uint64_t minimum) -> std::uint64_t {
+    std::unordered_map<std::uint64_t, std::uint64_t> durations;
+    for (const auto& object : objects)
+        for (const auto& voice : object.voices)
+            durations[object.object.value] = std::max(durations[object.object.value], voice.frame_count);
+    auto end = minimum;
+    const auto extend = [&](std::uint64_t frame, std::uint64_t duration) {
+        if (duration <= std::numeric_limits<std::uint64_t>::max() - frame)
+            end = std::max(end, frame + duration);
+    };
+    for (const auto& event : schedule.playable) extend(event.sample_frame, durations[event.object.value]);
+    for (const auto& event : schedule.bgm) extend(event.sample_frame, durations[event.object.value]);
+    for (const auto& event : schedule.metronome)
+        for (const auto& binding : metronome)
+            if (event.accent == binding.accent) extend(event.sample_frame, binding.voice.frame_count);
+    if (schedule.music) extend(schedule.music->sample_frame, schedule.music->frame_count);
+    return end;
 }
 
 } // namespace
@@ -71,6 +95,11 @@ auto sdl_preview_output_t::start(
     }
     silenced_voices_.store(0, std::memory_order_release);
     silenced_music_voices_.store(0, std::memory_order_release);
+    retained_schedule_ = &schedule;
+    retained_objects_ = objects;
+    retained_metronome_ = metronome;
+    source_end_frame_ = schedule_end(schedule, objects, metronome, minimum_end_frame);
+    reset_output(seek_frame);
     auto started = session_.start(schedule, objects, metronome, seek_frame, {}, minimum_end_frame);
     auto result = sdl_preview_start_result_t{};
     result.session = started;
@@ -84,6 +113,7 @@ auto sdl_preview_output_t::start(
         static_cast<void>(SDL_PauseAudioStreamDevice(stream_));
         static_cast<void>(SDL_ClearAudioStream(stream_));
     } else {
+        output_playing_.store(true, std::memory_order_release);
         result.status = sdl_preview_start_status_t::started;
     }
     static_cast<void>(SDL_UnlockAudioStream(stream_));
@@ -103,7 +133,10 @@ auto sdl_preview_output_t::seek(std::uint64_t sample_frame) -> sdl_preview_start
     }
     silenced_voices_.store(0, std::memory_order_release);
     silenced_music_voices_.store(0, std::memory_order_release);
-    auto started = session_.seek(sample_frame);
+    auto started = !session_.active() && playing() && retained_schedule_
+        ? session_.start(*retained_schedule_, retained_objects_, retained_metronome_, sample_frame, {}, source_end_frame_)
+        : session_.seek(sample_frame);
+    if (started) reset_output(sample_frame);
     auto result = sdl_preview_start_result_t{};
     result.session = started;
     if (!started) {
@@ -116,6 +149,7 @@ auto sdl_preview_output_t::seek(std::uint64_t sample_frame) -> sdl_preview_start
         static_cast<void>(SDL_PauseAudioStreamDevice(stream_));
         static_cast<void>(SDL_ClearAudioStream(stream_));
     } else {
+        output_playing_.store(true, std::memory_order_release);
         result.status = sdl_preview_start_status_t::started;
     }
     static_cast<void>(SDL_UnlockAudioStream(stream_));
@@ -141,6 +175,11 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
         };
     }
     session_.set_output_latency_frames(source_latency_frames());
+    if (stream_ != nullptr && output_drained_.load(std::memory_order_acquire) && SDL_GetAudioStreamQueued(stream_) == 0)
+    {
+        output_playing_.store(false, std::memory_order_release);
+        if (session_.active()) static_cast<void>(session_.stop());
+    }
     if (stream_ == nullptr || !session_.active()) {
         if (rate_unavailable) return sdl_preview_service_result_t{.rate_unavailable = true};
         return std::nullopt;
@@ -164,6 +203,10 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
 }
 
 auto sdl_preview_output_t::stop() noexcept -> audio::transport_stop_result_t {
+    output_playing_.store(false, std::memory_order_release);
+    buffered_source_frames_.store(0, std::memory_order_release);
+    rendered_source_frame_.store(0, std::memory_order_release);
+    output_start_frame_.store(0, std::memory_order_release);
     if (stream_ == nullptr) {
         callback_failure_.store(callback_failure_t::none, std::memory_order_release);
         silenced_voices_.store(0, std::memory_order_release);
@@ -185,6 +228,9 @@ auto sdl_preview_output_t::stop() noexcept -> audio::transport_stop_result_t {
     callback_failure_.store(callback_failure_t::none, std::memory_order_release);
     silenced_voices_.store(0, std::memory_order_release);
     silenced_music_voices_.store(0, std::memory_order_release);
+    buffered_source_frames_.store(0, std::memory_order_release);
+    rendered_source_frame_.store(0, std::memory_order_release);
+    output_start_frame_.store(0, std::memory_order_release);
     static_cast<void>(SDL_UnlockAudioStream(stream_));
     return stopped;
 }
@@ -200,34 +246,179 @@ auto sdl_preview_output_t::playback_rate() const noexcept -> rational_t {
     return audio::playback_rates[active_rate_index_.load(std::memory_order_acquire)];
 }
 
+auto sdl_preview_output_t::set_keep_pitch(bool enabled) noexcept -> bool {
+    requested_keep_pitch_.store(enabled, std::memory_order_release);
+    return true;
+}
+
+auto sdl_preview_output_t::keep_pitch() const noexcept -> bool {
+    return active_keep_pitch_.load(std::memory_order_acquire);
+}
+
+auto sdl_preview_output_t::playing() const noexcept -> bool {
+    return output_playing_.load(std::memory_order_acquire);
+}
+
+auto sdl_preview_output_t::timeline_frame() const noexcept -> std::uint64_t {
+    const auto rendered = rendered_source_frame_.load(std::memory_order_acquire);
+    const auto latency = source_latency_frames();
+    const auto start = output_start_frame_.load(std::memory_order_acquire);
+    return rendered > latency ? std::max(start, rendered - latency) : start;
+}
+
 auto sdl_preview_output_t::source_latency_frames() const noexcept -> std::uint64_t {
     if (stream_ == nullptr) return 0;
-    // SDL_GetAudioStreamQueued counts unconverted INPUT bytes. These are already
-    // source-clock frames; scaling them by the playback ratio would scale twice.
-    const auto queued = SDL_GetAudioStreamQueued(stream_);
-    return queued > 0 ? static_cast<std::uint64_t>(queued) /
+    const auto queued_bytes = SDL_GetAudioStreamQueued(stream_);
+    const auto queued = queued_bytes > 0 ? static_cast<std::uint64_t>(queued_bytes) /
                            (sizeof(float) * audio::output_channel_count) : 0;
+    // SDL input is source-clock data in resampling mode, but output-clock data
+    // after WSOLA. Only the latter needs the rational rate conversion.
+    const auto source_queue = keep_pitch() ? audio::source_frames_for(queued, playback_rate()).value_or(0) : queued;
+    return source_queue + buffered_source_frames_.load(std::memory_order_acquire);
+}
+
+void sdl_preview_output_t::reset_output(std::uint64_t frame) noexcept {
+    output_playing_.store(false, std::memory_order_release);
+    source_finished_ = false;
+    have_output_ = fading_out_ = switch_ready_ = false;
+    output_drained_.store(false, std::memory_order_release);
+    rendered_source_frame_.store(frame, std::memory_order_release);
+    output_start_frame_.store(frame, std::memory_order_release);
+    buffered_source_frames_.store(0, std::memory_order_release);
+    static_cast<void>(stretcher_.reset(audio::playback_rates[requested_rate_index_.load()]));
+    begin_fade(requested_keep_pitch_.load(), audio::playback_rates[requested_rate_index_.load()]);
+}
+
+auto sdl_preview_output_t::apply_output_mode(SDL_AudioStream* stream) noexcept -> bool {
+    if (source_finished_) return false;
+    const auto requested = requested_rate_index_.load(std::memory_order_acquire);
+    const auto preserve = requested_keep_pitch_.load(std::memory_order_acquire);
+    const auto rate = audio::playback_rates[requested];
+    const bool changed = requested != active_rate_index_.load(std::memory_order_acquire) || preserve != keep_pitch();
+    if (fading_out_ || (!changed && !switch_ready_)) return false;
+    if (have_output_ && !switch_ready_) {
+        fading_out_ = true;
+        begin_fade(keep_pitch(), playback_rate());
+        return false;
+    }
+    switch_ready_ = false;
+    if (!changed) {
+        begin_fade(preserve, rate);
+        return false;
+    }
+    const auto ratio = preserve ? 1.0F : static_cast<float>(rate.numerator) / static_cast<float>(rate.denominator);
+    if (!SDL_SetAudioStreamFrequencyRatio(stream, ratio)) {
+        rate_unavailable_.store(true, std::memory_order_release);
+        requested_rate_index_.store(active_rate_index_.load(), std::memory_order_release);
+        requested_keep_pitch_.store(keep_pitch(), std::memory_order_release);
+        begin_fade(keep_pitch(), playback_rate());
+        return false;
+    }
+    // The old stage ended at zero before its queued conversion is discarded.
+    static_cast<void>(SDL_ClearAudioStream(stream));
+    active_rate_index_.store(requested, std::memory_order_release);
+    active_keep_pitch_.store(preserve, std::memory_order_release);
+    static_cast<void>(stretcher_.reset(rate));
+    buffered_source_frames_.store(0, std::memory_order_release);
+    begin_fade(preserve, rate);
+    return true;
 }
 
 void SDLCALL sdl_preview_output_t::stream_callback(void* userdata, SDL_AudioStream* stream,
-                                                   int additional_amount, int) {
+                                                   int additional_amount, int total_amount) {
     auto* output = static_cast<sdl_preview_output_t*>(userdata);
     if (output == nullptr || stream == nullptr) return;
-    const auto requested = output->requested_rate_index_.load(std::memory_order_acquire);
-    if (requested != output->active_rate_index_.load(std::memory_order_acquire)) {
-        const auto rate = audio::playback_rates[requested];
-        const auto ratio = static_cast<float>(rate.numerator) / static_cast<float>(rate.denominator);
-        if (SDL_SetAudioStreamFrequencyRatio(stream, ratio))
-            output->active_rate_index_.store(requested, std::memory_order_release);
-        else {
-            output->rate_unavailable_.store(true, std::memory_order_release);
-            output->requested_rate_index_.store(8, std::memory_order_release);
-            static_cast<void>(SDL_SetAudioStreamFrequencyRatio(stream, 1.0F));
-            output->active_rate_index_.store(8, std::memory_order_release);
+    const auto old_ratio = output->keep_pitch() ? 1.0L :
+        static_cast<long double>(output->playback_rate().numerator) / output->playback_rate().denominator;
+    if (output->apply_output_mode(stream)) {
+        const auto new_ratio = output->keep_pitch() ? 1.0L :
+            static_cast<long double>(output->playback_rate().numerator) / output->playback_rate().denominator;
+        // SDL computed this callback's byte budget before the ratio changed.
+        // Refill the whole request on the new input clock, including a window
+        // of headroom for the freshly reset converter's lookahead.
+        const auto bytes = std::ceil(static_cast<long double>(total_amount) * new_ratio / old_ratio) +
+            output->fade_total_ * sizeof(float) * audio::output_channel_count;
+        additional_amount = static_cast<int>(std::min<long double>(bytes, std::numeric_limits<int>::max()));
+    }
+    if (additional_amount > 0 && output->playing()) output->render_requested(stream, additional_amount);
+    output->session_.set_output_latency_frames(output->source_latency_frames());
+}
+
+auto sdl_preview_output_t::render_source(std::size_t frames) noexcept -> std::size_t {
+    const auto cursor = rendered_source_frame_.load(std::memory_order_acquire);
+    const auto count = static_cast<std::size_t>(std::min<std::uint64_t>(frames,
+        source_end_frame_ > cursor ? source_end_frame_ - cursor : 0));
+    if (count == 0) {
+        source_finished_ = true;
+        stretcher_.finish();
+        return 0;
+    }
+    const auto rendered = session_.render(std::span{source_scratch_.data(), count * 2});
+    if (rendered.status == audio::preview_session_render_status_t::underrun) {
+        silenced_voices_.fetch_add(rendered.mix.dropped_voices, std::memory_order_relaxed);
+        silenced_music_voices_.fetch_add(rendered.mix.dropped_music_voices, std::memory_order_relaxed);
+    }
+    if (rendered.status == audio::preview_session_render_status_t::transport_failed ||
+        rendered.status == audio::preview_session_render_status_t::stale_generation ||
+        rendered.status == audio::preview_session_render_status_t::stopped) {
+        callback_failure_.store(callback_failure_t::render, std::memory_order_release);
+        output_playing_.store(false, std::memory_order_release);
+        static_cast<void>(session_.stop());
+        return 0;
+    }
+    rendered_source_frame_.store(cursor + count, std::memory_order_release);
+    if (rendered.status == audio::preview_session_render_status_t::complete || cursor + count == source_end_frame_)
+        source_finished_ = true;
+    return count;
+}
+
+auto sdl_preview_output_t::render_block(std::size_t frames) noexcept -> std::size_t {
+    if (!keep_pitch()) {
+        const auto count = source_finished_ ? 0 : render_source(frames);
+        std::copy_n(source_scratch_.data(), count * 2, scratch_.data());
+        output_drained_.store(source_finished_, std::memory_order_release);
+        return count;
+    }
+    std::size_t written{};
+    while (written < frames) {
+        const auto need = std::min(callback_frames, stretcher_.input_frames_needed(frames - written));
+        const auto supplied = !source_finished_ && need != 0 ? render_source(need) : 0;
+        const auto result = stretcher_.process(std::span{source_scratch_.data(), supplied * 2},
+            std::span{scratch_.data() + written * 2, (frames - written) * 2});
+        if (source_finished_) stretcher_.finish();
+        written += result.produced_frames;
+        if (result.produced_frames == 0 && supplied == 0) break;
+    }
+    buffered_source_frames_.store(stretcher_.buffered_source_frames(), std::memory_order_release);
+    output_drained_.store(stretcher_.complete(), std::memory_order_release);
+    return written;
+}
+
+void sdl_preview_output_t::begin_fade(bool preserve, rational_t rate) noexcept {
+    // The interpolation window is always 20ms on the audible output clock.
+    // Raw resampling input advances more slowly at reduced playback rates.
+    fade_total_ = preserve ? stretcher_.fade_frames() : std::max<std::uint64_t>(1,
+        audio::source_frames_for(stretcher_.fade_frames(), rate).value_or(1));
+    fade_remaining_ = fade_total_;
+}
+
+void sdl_preview_output_t::fade_block(std::size_t frames) noexcept {
+    for (std::size_t frame = 0; frame < frames; ++frame) {
+        if (fading_out_) {
+            const auto weight = static_cast<float>(fade_remaining_ - 1) / static_cast<float>(fade_total_);
+            scratch_[frame * 2] *= weight;
+            scratch_[frame * 2 + 1] *= weight;
+            if (--fade_remaining_ == 0) { fading_out_ = false; switch_ready_ = true; }
+        } else if (switch_ready_) {
+            scratch_[frame * 2] = scratch_[frame * 2 + 1] = 0.0F;
+        } else {
+            const auto weight = fade_remaining_ == 0 ? 1.0F :
+                1.0F - static_cast<float>(fade_remaining_) / static_cast<float>(fade_total_);
+            for (unsigned channel = 0; channel < 2; ++channel)
+                scratch_[frame * 2 + channel] *= weight;
+            if (fade_remaining_ != 0) --fade_remaining_;
         }
     }
-    if (additional_amount > 0) output->render_requested(stream, additional_amount);
-    output->session_.set_output_latency_frames(output->source_latency_frames());
 }
 
 void sdl_preview_output_t::render_requested(SDL_AudioStream* stream,
@@ -237,26 +428,31 @@ void sdl_preview_output_t::render_requested(SDL_AudioStream* stream,
     while (remaining != 0) {
         const auto requested_frames =
             std::min(callback_frames, (remaining + bytes_per_frame - 1) / bytes_per_frame);
-        const auto samples = requested_frames * audio::output_channel_count;
-        const auto bytes = samples * sizeof(float);
-        const auto rendered = session_.render(std::span{scratch_.data(), samples});
-        if (rendered.status == audio::preview_session_render_status_t::underrun) {
-            silenced_voices_.fetch_add(rendered.mix.dropped_voices,
-                                      std::memory_order_relaxed);
-            silenced_music_voices_.fetch_add(rendered.mix.dropped_music_voices,
-                                             std::memory_order_relaxed);
-        } else if (rendered.status == audio::preview_session_render_status_t::transport_failed) {
-            callback_failure_.store(callback_failure_t::render, std::memory_order_release);
-            static_cast<void>(session_.stop());
-            return;
+        const auto render_frames = fading_out_ ? std::min(requested_frames, fade_remaining_) : requested_frames;
+        auto rendered_frames = switch_ready_ ? requested_frames : render_block(render_frames);
+        if (switch_ready_)
+            std::fill_n(scratch_.data(), requested_frames * 2, 0.0F);
+        if (fading_out_ && rendered_frames == render_frames) {
+            std::fill(scratch_.begin() + rendered_frames * 2, scratch_.begin() + requested_frames * 2, 0.0F);
+            rendered_frames = requested_frames;
         }
-        if (bytes > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
-            !SDL_PutAudioStreamData(stream, scratch_.data(), static_cast<int>(bytes))) {
+        if (!playing()) return;
+        if (rendered_frames == 0) break;
+        fade_block(rendered_frames);
+        have_output_ = true;
+        const auto rendered_bytes = rendered_frames * bytes_per_frame;
+        if (rendered_bytes > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+            !SDL_PutAudioStreamData(stream, scratch_.data(), static_cast<int>(rendered_bytes))) {
             callback_failure_.store(callback_failure_t::device, std::memory_order_release);
+            output_playing_.store(false, std::memory_order_release);
             static_cast<void>(session_.stop());
             return;
         }
-        remaining = remaining > bytes ? remaining - bytes : 0;
+        remaining = remaining > rendered_bytes ? remaining - rendered_bytes : 0;
+        if (output_drained_.load(std::memory_order_acquire)) {
+            static_cast<void>(SDL_FlushAudioStream(stream));
+            break;
+        }
     }
 }
 

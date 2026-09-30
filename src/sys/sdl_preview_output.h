@@ -2,6 +2,7 @@
 
 #include <wormedit/audio/preview_session.h>
 #include <wormedit/audio/playback_rate.h>
+#include <wormedit/audio/time_stretch.h>
 
 #include <SDL3/SDL_audio.h>
 
@@ -76,7 +77,14 @@ class sdl_preview_output_t {
     // The requested rate is applied at the next SDL callback, without restarting.
     [[nodiscard]] auto set_playback_rate(rational_t rate) noexcept -> bool;
     [[nodiscard]] auto playback_rate() const noexcept -> rational_t;
+    [[nodiscard]] auto set_keep_pitch(bool enabled) noexcept -> bool;
+    [[nodiscard]] auto keep_pitch() const noexcept -> bool;
+    [[nodiscard]] auto playing() const noexcept -> bool;
+    [[nodiscard]] auto timeline_frame() const noexcept -> std::uint64_t;
     [[nodiscard]] auto source_latency_frames() const noexcept -> std::uint64_t;
+    [[nodiscard]] auto audio_device_id() const noexcept -> SDL_AudioDeviceID {
+        return stream_ ? SDL_GetAudioStreamDevice(stream_) : 0;
+    }
     [[nodiscard]] auto available() const noexcept -> bool {
         return stream_ != nullptr;
     }
@@ -86,6 +94,12 @@ class sdl_preview_output_t {
                                         int additional_amount, int total_amount);
     void render_requested(SDL_AudioStream* stream, int additional_amount) noexcept;
     [[nodiscard]] auto activate_device() -> bool;
+    void reset_output(std::uint64_t frame) noexcept;
+    [[nodiscard]] auto apply_output_mode(SDL_AudioStream* stream) noexcept -> bool;
+    [[nodiscard]] auto render_source(std::size_t frames) noexcept -> std::size_t;
+    [[nodiscard]] auto render_block(std::size_t frames) noexcept -> std::size_t;
+    void fade_block(std::size_t frames) noexcept;
+    void begin_fade(bool preserve, rational_t rate) noexcept;
 
     static constexpr std::size_t callback_frames = 4'096;
     enum class callback_failure_t {
@@ -102,6 +116,25 @@ class sdl_preview_output_t {
     std::atomic<bool> rate_unavailable_{};
     std::atomic<std::size_t> requested_rate_index_{8};
     std::atomic<std::size_t> active_rate_index_{8};
+    std::atomic<bool> requested_keep_pitch_{};
+    std::atomic<bool> active_keep_pitch_{};
+    std::atomic<bool> output_playing_{};
+    std::atomic<std::uint64_t> rendered_source_frame_{};
+    std::atomic<std::uint64_t> buffered_source_frames_{};
+    std::uint64_t source_end_frame_{};
+    const preview_schedule_t* retained_schedule_{};
+    std::span<const audio::preview_object_source_binding_t> retained_objects_;
+    std::span<const audio::preview_metronome_source_binding_t> retained_metronome_;
+    std::atomic<std::uint64_t> output_start_frame_{};
+    bool source_finished_{};
+    std::atomic<bool> output_drained_{};
+    std::size_t fade_remaining_{};
+    std::size_t fade_total_{};
+    bool have_output_{};
+    bool fading_out_{};
+    bool switch_ready_{};
+    audio::time_stretch_t stretcher_;
+    std::array<float, callback_frames * audio::output_channel_count> source_scratch_{};
     std::array<float, callback_frames * audio::output_channel_count> scratch_{};
 };
 

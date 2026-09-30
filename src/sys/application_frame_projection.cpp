@@ -32,10 +32,11 @@ auto project_application_frame(application_frame_projection_context_t context)
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         frame_transport.available =
             context.workspace.selected_chart.has_value() && context.preview_output_available;
-        frame_transport.playing = context.preview_session.active() || context.audition_session.active();
+        frame_transport.playing =
+            context.preview_state.playing(context.preview_session) || context.audition_session.active();
         frame_transport.paused = context.preview_state.paused;
         frame_transport.frame =
-            context.preview_session.active()    ? context.preview_session.timeline_frame()
+            context.preview_state.playing(context.preview_session) ? context.preview_state.current_frame(context.preview_session)
             : context.audition_session.active() ? context.audition_session.timeline_frame()
                                                 : context.preview_state.resume_frame;
         frame_transport.end_frame = context.preview_state.end_frame;

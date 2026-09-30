@@ -29,6 +29,7 @@ struct chart_preview_t {
     std::uint64_t end_frame{};
     std::size_t skipped_unavailable_audio_objects{};
     bool paused{};
+    const sdl_preview_output_t* output_observer{};
 
     [[nodiscard]] bool reusable(chart_id_t chart_id, std::uint64_t document_revision,
                                 std::optional<asset_id_t> selected_music_asset) const;
@@ -39,6 +40,7 @@ struct chart_preview_t {
         const audio::decoded_source_registry_t& sources,
         const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings)
         -> std::optional<std::string>;
+    [[nodiscard]] bool playing(const audio::preview_session_t& session) const;
     [[nodiscard]] std::uint64_t current_frame(const audio::preview_session_t& session) const;
     [[nodiscard]] auto play_pause(
         const chart_document_t* selected_chart, const song_document_t& document,

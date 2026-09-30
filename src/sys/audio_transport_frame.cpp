@@ -12,12 +12,11 @@ namespace {
 void validate_preview_binding(const song_document_t& document,
                               const workspace_controller_t& workspace,
                               runtime::chart_preview_t& state,
-                              audio::preview_session_t& session,
                               sdl_preview_output_t& output, std::string& status) {
     if (!state.chart || state.matches_selection(document, workspace))
         return;
-    const bool interrupted = session.active() || state.paused;
-    if (session.active())
+    const bool interrupted = output.playing() || state.paused;
+    if (output.playing())
         static_cast<void>(output.stop());
     state.invalidate();
     if (interrupted)
@@ -46,7 +45,7 @@ void service_chart_preview(sdl_preview_output_t& output,
     if (!serviced)
         return;
     if (serviced->rate_unavailable)
-        status = "Reduced playback rate is unavailable; preview continues at 1×.";
+        status = "Playback mode change is unavailable; preview keeps its previous mode.";
     if (serviced->silenced_voices > 0) {
         status = "Silenced " + std::to_string(serviced->silenced_voices) +
                  (serviced->silenced_music_voices > 0
@@ -70,7 +69,7 @@ void service_chart_preview(sdl_preview_output_t& output,
 
 auto preview_playhead_row(const runtime::chart_preview_t& state,
                           const audio::preview_session_t& session) -> std::optional<double> {
-    if (!state.timing || (!session.active() && !state.paused))
+    if (!state.timing || (!state.playing(session) && !state.paused))
         return std::nullopt;
     const auto frame = state.current_frame(session);
     if (frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
@@ -91,11 +90,11 @@ void service_audio_transport_frame(
     runtime::chart_preview_t& preview_state, audio::preview_session_t& preview_session,
     sdl_audition_output_t& audition_output, sdl_preview_output_t& preview_output,
     std::optional<double>& preview_playhead_absolute_row, std::string& status) {
-    validate_preview_binding(document, workspace, preview_state, preview_session,
+    validate_preview_binding(document, workspace, preview_state,
                              preview_output, status);
     service_audition(audition_output, status);
     service_chart_preview(preview_output, preview_state, status);
-    if (!preview_session.active() && !preview_state.paused)
+    if (!preview_output.playing() && !preview_state.paused)
         preview_state.resume_frame = 0;
     preview_playhead_absolute_row = preview_playhead_row(preview_state, preview_session);
 }

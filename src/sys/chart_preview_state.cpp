@@ -165,9 +165,14 @@ auto chart_preview_t::compile_if_needed(
     return std::nullopt;
 }
 
+bool chart_preview_t::playing(const audio::preview_session_t& session) const {
+    return output_observer ? output_observer->playing() : session.active();
+}
+
 std::uint64_t chart_preview_t::current_frame(
     const audio::preview_session_t& session) const {
-    return session.active() ? session.timeline_frame() : resume_frame;
+    if (output_observer && output_observer->playing()) return output_observer->timeline_frame();
+    return playing(session) ? session.timeline_frame() : resume_frame;
 }
 
 namespace {
@@ -210,11 +215,12 @@ auto chart_preview_t::play_pause(
     const chart_document_t* selected_chart, const song_document_t& document,
     const audio::decoded_source_registry_t& sources,
     const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings,
-    sdl_audition_output_t& audition_output, audio::preview_session_t& preview_session,
+    sdl_audition_output_t& audition_output, audio::preview_session_t&,
     sdl_preview_output_t& preview_output, std::optional<local_position_t> start_cursor,
     bool from_beginning, std::optional<std::uint64_t> exact_start_frame) -> std::string {
-    if (preview_session.active() && !from_beginning) {
-        const auto frame = preview_session.timeline_frame();
+    output_observer = &preview_output;
+    if (preview_output.playing() && !from_beginning) {
+        const auto frame = preview_output.timeline_frame();
         static_cast<void>(preview_output.stop());
         pause_at(frame);
         return "Chart preview paused.";
@@ -227,7 +233,7 @@ auto chart_preview_t::play_pause(
 
     const auto was_paused = paused;
     if (from_beginning) {
-        if (preview_session.active()) static_cast<void>(preview_output.stop());
+        if (preview_output.playing()) static_cast<void>(preview_output.stop());
         resume_frame = 0;
         paused = false;
     } else if (!paused && exact_start_frame) {
@@ -279,8 +285,9 @@ auto chart_preview_t::seek(std::uint64_t frame, const song_document_t& document,
         return "Chart preview seek is unavailable or outside the compiled timeline.";
     frame = std::min(frame, end_frame);
     static_cast<void>(audition_output.stop());
-    if (preview_session.active()) {
-        const auto previous_frame = preview_session.timeline_frame();
+    output_observer = &preview_output;
+    if (preview_output.playing()) {
+        const auto previous_frame = preview_output.timeline_frame();
         const auto sought = preview_output.seek(frame);
         if (!sought)
             return restore_preview_after_seek_failure(*this, previous_frame, preview_session, preview_output,

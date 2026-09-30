@@ -61,7 +61,12 @@ auto dispatch_transport_player_action(
         return set_transport_rate(application_state, action.transport_rate_index)
                    ? "Playback rate changed." : "Playback rate unchanged.";
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH:
-        return "Keep pitch is unavailable.";
+        if (!application_state.transport_keep_pitch_available ||
+            !application_state.transport_set_keep_pitch ||
+            !application_state.transport_set_keep_pitch(action.transport_keep_pitch))
+            return "Keep pitch is unavailable.";
+        application_state.transport_keep_pitch = action.transport_keep_pitch;
+        return action.transport_keep_pitch ? "Keep pitch enabled." : "Keep pitch disabled.";
     case WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE:
         return application_state.transport_play_pause
                    ? application_state.transport_play_pause()

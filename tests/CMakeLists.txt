@@ -15,6 +15,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_resource_presenter.cpp
     ../src/sys/compose_area_actions.cpp
     ../src/sys/application_commands.cpp
+    ../src/sys/transport_player_actions.cpp
     ../src/sys/compose_minimap_navigation.cpp
     ../src/sys/application_defaults.cpp
     ../src/sys/project_open.cpp
@@ -124,6 +125,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         core/audio_preview_pump_tests.cpp
         core/audio_preview_session_tests.cpp
         core/audio_playback_rate_tests.cpp
+        core/audio_time_stretch_tests.cpp
         core/audio_preview_repro_tests.cpp
         core/audio_source_registry_tests.cpp
         core/audio_transport_tests.cpp

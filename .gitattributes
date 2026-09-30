@@ -16,6 +16,8 @@ CMakeLists.txt text eol=lf
 *.bme -text
 *.bml -text
 *.pms -text
+# Editor clipboard payloads keep their exact CRLF bytes.
+*.clip -text whitespace=cr-at-eol
 *.sm text eol=lf
 *.ssc text eol=lf
 *.osu text eol=lf

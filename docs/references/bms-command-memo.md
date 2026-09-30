@@ -46,9 +46,10 @@ Historical MGQ uses extended channel members and defines an obsolete `#LNTYPE 2`
 ## Wormedit consequences
 
 - Import must retain the ordered source identity of repeated BGM lines and their subdivisions. It must not flatten them into one time-keyed event map.
-- The BGM editor presents those lines as distinct lanes. Empty slots remain structural positions so an event following `00` cells stays on its original lane and row.
+- The BGM editor presents BGM as **per-measure columns**, as iBMSC and BMSE do. Within each measure, the k-th `#mmm01` line (in active source order) belongs to column k; the next measure starts again at column 1. The chart shows as many columns as the busiest measure needs, not one column per source line. (iBMSC 3.5.5.16 `ChartIO.vb` keeps a per-measure counter `mColumn(xMeasure)`; BMSE 3.0 `modInput.vb` takes the first free `m_blnBGM(measure * 128 + j)` slot.)
+- `00` is positional padding, not an object. Import creates no BGM event for it. An event's row comes from its slot index and the line's slot count; source provenance keeps the original line and slot for in-place byte-preserving edits.
 - New BGM events use a stable lane allocator. A collision advances to the next BGM lane rather than overwriting or merging an existing event.
-- Export reconstructs every retained/allocated BGM line with the required `00` cells and original or explicitly normalized subdivision.
+- Export writes, per measure, one `#mmm01` line for each non-empty column in column order, filling gaps with `00` at the line's original or explicitly normalized subdivision. Empty columns emit nothing. Unedited source lines keep their original bytes.
 - STOP events need a format-specific value/unit representation in addition to normalized playback duration.
 - Tests must be parameterized by BMS compatibility profile where surveyed applications disagree.
 - Built-in lane profiles must retain the exact raw channel for every semantic lane and define a separate display order/stage/scratch/free-zone role.

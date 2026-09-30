@@ -1056,6 +1056,35 @@ static auto compose_pointer_tooltip_bounds(const ComposePaintContext& paint,
     return nk_rect(x, y, width, height);
 }
 
+static auto compose_hover_display_lane_number(const WormUiComposeView& view) -> uint32_t {
+    for (size_t index = 0; index < view.note_endpoint_count; ++index) {
+        const auto& note = view.note_endpoints[index];
+        if (note.note_id == view.hover_note_id && note.display_lane_number != 0) {
+            return note.display_lane_number;
+        }
+    }
+    for (size_t index = 0; index < view.hold_body_count; ++index) {
+        const auto& hold = view.hold_bodies[index];
+        if (hold.note_id == view.hover_note_id && hold.display_lane_number != 0) {
+            return hold.display_lane_number;
+        }
+    }
+    return 0;
+}
+
+static auto compose_note_tooltip_title(const WormUiComposeView& view) -> std::string {
+    std::string title = view.hover_tooltip;
+    const auto display_lane_number = compose_hover_display_lane_number(view);
+    const auto lane = title.find("lane ");
+    if (display_lane_number != 0 && lane != std::string::npos) {
+        const auto begin = lane + 5;
+        const auto end = title.find_first_not_of("0123456789", begin);
+        title.replace(begin, end == std::string::npos ? title.size() - begin : end - begin,
+                      std::to_string(display_lane_number));
+    }
+    return title;
+}
+
 static void draw_compose_note_tooltip(const ComposePaintContext& paint) {
     const auto& view = *paint.view;
     if (!view.hover_note_visible || !view.hover_tooltip || view.hover_tooltip[0] == '\0') {
@@ -1070,9 +1099,10 @@ static void draw_compose_note_tooltip(const ComposePaintContext& paint) {
         }
     }
     const auto* font = paint.context->style.font;
-    const auto title_length = static_cast<int>(strlen(view.hover_tooltip));
+    const auto title = compose_note_tooltip_title(view);
+    const auto title_length = static_cast<int>(title.size());
     auto text_width = font->width(font->userdata, font->height,
-                                  view.hover_tooltip, title_length);
+                                  title.c_str(), title_length);
     if (resource_detail) {
         const auto detail_length = static_cast<int>(strlen(resource_detail));
         text_width = std::max(text_width, font->width(font->userdata, font->height,
@@ -1083,7 +1113,7 @@ static void draw_compose_note_tooltip(const ComposePaintContext& paint) {
     nk_fill_rect(paint.canvas, bounds, 3.0f, nk_rgba(12, 16, 24, 235));
     nk_stroke_rect(paint.canvas, bounds, 3.0f, 1.0f, nk_rgb(255, 235, 148));
     nk_draw_text(paint.canvas, nk_rect(bounds.x + 8.0f, bounds.y, bounds.w - 16.0f, 24.0f),
-                 view.hover_tooltip, title_length, font,
+                 title.c_str(), title_length, font,
                  nk_rgb(12, 16, 24), nk_rgb(255, 244, 192));
     if (resource_detail) {
         nk_draw_text(paint.canvas, nk_rect(bounds.x + 8.0f, bounds.y + 26.0f,

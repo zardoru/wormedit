@@ -364,6 +364,19 @@ void project_compose_grid_lines(const compose_scene_projection_context_t& projec
 
 }
 
+auto compose_note_display_lane_number(const wormedit::editor_field_scene_t& scene,
+                                      const auto& endpoint) -> std::uint32_t {
+    const auto x = (endpoint.bounds.left + endpoint.bounds.right) * 0.5;
+    const auto y = (endpoint.bounds.top + endpoint.bounds.bottom) * 0.5;
+    for (const auto& lane : scene.lanes) {
+        if (lane.lane == endpoint.lane && x >= lane.bounds.left && x < lane.bounds.right &&
+            y >= lane.bounds.top && y < lane.bounds.bottom) {
+            return lane.display_order + 1U;
+        }
+    }
+    return 0;
+}
+
 void project_compose_scene_objects(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.flattened;
     const auto& scene = projection.scene;
@@ -389,6 +402,7 @@ void project_compose_scene_objects(const compose_scene_projection_context_t& pro
             {.bounds = convert_rect(hold.bounds),
              .note_id = hold.note.value,
              .lane_id = hold.lane.value,
+             .display_lane_number = compose_note_display_lane_number(scene, hold),
              .selected = hold.selected,
              .proposal_origin = hold.proposal_origin,
              .proposal_ghost = hold.proposal_ghost,
@@ -414,6 +428,7 @@ void project_compose_scene_objects(const compose_scene_projection_context_t& pro
             {.bounds = convert_rect(endpoint.bounds),
              .note_id = endpoint.note.value,
              .lane_id = endpoint.lane.value,
+             .display_lane_number = compose_note_display_lane_number(scene, endpoint),
              .sound_label = sound.label,
              .sound_detail = sound.detail,
              .glyph = static_cast<std::uint8_t>(endpoint.glyph),

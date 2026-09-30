@@ -1,6 +1,7 @@
 # OSBX Lua DSL draft specification
 
 Status: design draft 0.1. Syntax and names may change before implementation.
+Implementation plan: [OSBX task cards](chart-editor-plan/tasks/osbx.md) (T-180–T-192); the open questions at the end are proposed for answers in T-180.
 
 OSBX is wormedit's extended osu!-style storyboard source format. It uses a Premake-style Lua DSL to declare or generate storyboards with stable IDs, keyframes, parent/child groups, ordered compound transformations, and 2D affine matrices. The same project DSL may declare chart notes, but storyboard modules and note/difficulty modules can remain separate files and export independently.
 

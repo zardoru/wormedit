@@ -346,6 +346,7 @@ typedef struct WormUiComposeHoldView {
     WormUiComposeRect bounds;
     uint64_t note_id;
     uint64_t lane_id;
+    uint32_t display_lane_number; // 1-based chart layout order; 0 when unavailable.
     bool selected;
     bool proposal_origin;
     bool proposal_ghost;
@@ -360,6 +361,7 @@ typedef struct WormUiComposeNoteView {
     WormUiComposeRect bounds;
     uint64_t note_id;
     uint64_t lane_id;
+    uint32_t display_lane_number; // 1-based chart layout order; 0 when unavailable.
     const char* sound_label;
     const char* sound_detail;
     uint8_t glyph;

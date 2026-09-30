@@ -12,6 +12,23 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Compose panel split: behavior-neutral extraction of `compose_panel.cpp`](tasks/compose-split.md)
 - [Compose features: inspector, BGM pane, virtual canvas, sync controls](tasks/compose-features.md)
 - [Interop evidence: clipboard capture](tasks/interop-evidence.md)
+- [Frontend shell: input plumbing, panel splits, transport, Compare/Validate](tasks/frontend-shell.md)
+- [Editing commands: disabled registry commands, movement, quantize, clipboard, shortcuts](tasks/editing-commands.md)
+- [Measures and timing: measure/layout editing, timing navigation, beat fitting](tasks/measures-timing.md)
+- [BMS branches, channel maps, and BGM columns](tasks/bms-branches.md)
+- [Resources and audio: catalog safety, usage, slices, preview audio export](tasks/resources-audio.md)
+- [Export and conversion: preview/publish UI, loss gates, blocked profiles](tasks/export.md)
+- [Persistence and metadata: recovery journal, migrations, metadata forms](tasks/persistence-metadata.md)
+- [Editing depth and performance (stage 6)](tasks/editing-depth.md)
+- [Storyboard, Lua, MIDI, SV recipes, video (stage 7)](tasks/scripting-storyboard.md)
+- [Late compatibility: Quaver, rolls, ticked holds (stage 8)](tasks/late-compat.md)
+- [OSBX Lua DSL and Lua SV curves](tasks/osbx.md)
+- [Compose UX, rendering, and performance (2026-09-30 review)](tasks/compose-ux.md)
+- [Global notifications: warnings and errors](tasks/notifications.md)
+- [Design system, left menu bar, and dockable list panels](tasks/panels-menus.md)
+
+Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
+every number above T-232.
 
 ## Rules for whoever executes a card
 
@@ -23,6 +40,20 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 6. If a step says **STOP**, or an **Open question** is linked and unanswered, stop and ask the user. Do not pick a default unless the card names one.
 7. Follow [`AGENTS.md`](../../AGENTS.md): no new function above cognitive complexity 25, no `NOLINT` to silence it.
 8. When finished, edit `resume.md` only to remove or advance the finished card's line, and report what you changed.
+9. **Stale-plan check first.** The stage roadmap lags the code. Before step 1, search for the behavior the **Outcome** describes (the card names a symbol or string to grep when it can). If it already works, set **Status** to `done (already implemented: <file:line>)`, change nothing else, and stop.
+10. A card whose status is `blocked-on-user` starts with a **STOP** step naming the [open question](decisions/open-questions.md) or missing input. Do not implement the provisional default unless the user says so.
+
+## Standard wiring pattern for a new UI action
+
+Most frontend cards follow the same four-hop path; cards say "wire it through
+the standard pattern" instead of repeating it.
+
+1. **Core:** a revision-checked command in `include/wormedit/core/<area>.h` / `src/core/<area>.cpp` that takes `document_history_t&` and an expected revision, and rejects atomically. Test it in `tests/core/<area>_tests.cpp`.
+2. **Contract:** a new enumerator in `src/ui/frontend.h` (for Compose, next to `WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL`) plus any scalar view fields. Only plain C types cross this boundary.
+3. **Application:** a `case` in the matching dispatcher (`src/sys/compose_actions.cpp`, `src/sys/metadata_actions.cpp`, or `src/sys/timing_edit_runtime.cpp`) that calls the core command, and view projection in `src/sys/compose_view.cpp`, `src/sys/metadata_view_projection.cpp`, or `src/sys/timing_view.cpp`.
+4. **Frontend:** a widget in the owning Nuklear unit (`src/ui/nuklear/compose_inspector.cpp`, `compose_toolbar.cpp`, `metadata_panel.cpp`, `timing_panel.cpp`, …) that sets the action. Frontend-local state goes in the matching `*_state.cpp` and is tested in `tests/ui/`.
+
+New `.cpp` files go in the source list in `CMakeLists.txt`; new test files go in `tests/CMakeLists.txt` beside a sibling in the same directory.
 
 ## Card template
 

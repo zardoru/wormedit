@@ -14,7 +14,10 @@
 - Visual check of the real window: `scripts/smoke-compose-virtual-x.sh /tmp/out.png compose`, then open the PNG.
 - Never report a test as passing without running it and reading its output.
 
-## Delegating to Codex implementers
+## Delegating from Claude to Codex implementers
+
+These command-line instructions apply only when Claude delegates to Codex.
+Codex should use its native sub-agent tools when delegating.
 
 - Launch with `codex exec --skip-git-repo-check -m <model> --config model_reasoning_effort="<effort>" --sandbox workspace-write -C <repo> -o <report.txt> "<prompt>" </dev/null >stdout.txt 2>stderr.txt`, in the background.
 - `</dev/null` is required: `codex exec` reads stdin and hangs forever if it stays open. `-o` saves only the final report; nothing appears until it finishes.

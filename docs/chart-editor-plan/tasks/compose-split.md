@@ -35,7 +35,7 @@ Shared rules for every card in this file:
 
 ## T-02 Extract the Compose toolbar
 
-- **Status:** ready
+- **Status:** done (2026-09-30; toolbar and exclusive helpers moved without behavior changes)
 - **Outcome:** `render_compose_toolbar`, `render_compose_view_controls`, and `render_compose_bgm_scroll_controls` live in `compose_toolbar.cpp`.
 - **Read first:** `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_panel_internal.h`, `src/ui/nuklear/chrome.h`.
 - **Files owned:** `src/ui/nuklear/compose_panel.cpp`, new `compose_toolbar.cpp`, new `compose_toolbar.h`, `compose_panel_internal.h`, `CMakeLists.txt`.
@@ -50,7 +50,7 @@ Shared rules for every card in this file:
 
 ## T-03 Extract the Compose inspector
 
-- **Status:** blocked on T-02
+- **Status:** done (2026-09-30; inspector functions moved without behavior changes)
 - **Outcome:** every `render_*` inspector function (BPM, timing-lane visibility, BMSON regions, marker/section, note label, semantic layer palette) lives in `compose_inspector.cpp`.
 - **Read first:** `src/ui/nuklear/compose_panel.cpp`, `compose_panel_internal.h`, `compose_resources.h`.
 - **Files owned:** `compose_panel.cpp`, new `compose_inspector.cpp`, new `compose_inspector.h`, `compose_panel_internal.h`, `CMakeLists.txt`.
@@ -65,7 +65,7 @@ Shared rules for every card in this file:
 
 ## T-04 Extract Compose pointer and keyboard input
 
-- **Status:** blocked on T-03
+- **Status:** done (2026-09-30; input and gesture helpers moved with identical bodies; user authorized moving the snap-step constant)
 - **Outcome:** `append_compose_input`, key/wheel/pointer processing, beat-fit drag, and overview input live in `compose_input_panel.cpp`; `compose_panel.cpp` keeps only `worm_ui_nuklear_*` entry points and view validation.
 - **Read first:** `compose_panel.cpp`, `compose_panel_internal.h`, `src/sys/compose_input.h` (do not edit; only avoid a name clash).
 - **Files owned:** `compose_panel.cpp`, new `compose_input_panel.cpp`, new `compose_input_panel.h`, `compose_panel_internal.h`, `CMakeLists.txt`.

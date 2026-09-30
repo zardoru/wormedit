@@ -23,6 +23,20 @@ set(plan_slices
     docs/chart-editor-plan/tasks/compose-split.md
     docs/chart-editor-plan/tasks/compose-features.md
     docs/chart-editor-plan/tasks/interop-evidence.md
+    docs/chart-editor-plan/tasks/frontend-shell.md
+    docs/chart-editor-plan/tasks/editing-commands.md
+    docs/chart-editor-plan/tasks/measures-timing.md
+    docs/chart-editor-plan/tasks/bms-branches.md
+    docs/chart-editor-plan/tasks/resources-audio.md
+    docs/chart-editor-plan/tasks/export.md
+    docs/chart-editor-plan/tasks/persistence-metadata.md
+    docs/chart-editor-plan/tasks/editing-depth.md
+    docs/chart-editor-plan/tasks/scripting-storyboard.md
+    docs/chart-editor-plan/tasks/late-compat.md
+    docs/chart-editor-plan/tasks/osbx.md
+    docs/chart-editor-plan/tasks/compose-ux.md
+    docs/chart-editor-plan/tasks/notifications.md
+    docs/chart-editor-plan/tasks/panels-menus.md
     docs/chart-editor-plan/decisions.md
     docs/chart-editor-plan/decisions/open-questions.md
     docs/references/osu-mania-version-profiles.md
@@ -214,6 +228,20 @@ set(task_card_files
     docs/chart-editor-plan/tasks/compose-split.md
     docs/chart-editor-plan/tasks/compose-features.md
     docs/chart-editor-plan/tasks/interop-evidence.md
+    docs/chart-editor-plan/tasks/frontend-shell.md
+    docs/chart-editor-plan/tasks/editing-commands.md
+    docs/chart-editor-plan/tasks/measures-timing.md
+    docs/chart-editor-plan/tasks/bms-branches.md
+    docs/chart-editor-plan/tasks/resources-audio.md
+    docs/chart-editor-plan/tasks/export.md
+    docs/chart-editor-plan/tasks/persistence-metadata.md
+    docs/chart-editor-plan/tasks/editing-depth.md
+    docs/chart-editor-plan/tasks/scripting-storyboard.md
+    docs/chart-editor-plan/tasks/late-compat.md
+    docs/chart-editor-plan/tasks/osbx.md
+    docs/chart-editor-plan/tasks/compose-ux.md
+    docs/chart-editor-plan/tasks/notifications.md
+    docs/chart-editor-plan/tasks/panels-menus.md
 )
 set(task_card_fields Status Outcome "Read first" "Files owned" Steps Invariants
     "Reject/failure behavior" Verify "Out of scope")

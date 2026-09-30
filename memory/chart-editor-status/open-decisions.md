@@ -20,7 +20,7 @@
 - Finalize the first structured MIDI/Lua API surface beyond core notes, timing, tracks, channels, velocities, controllers, and markers.
 - Complete the finer straight/tuplet note-snap color table beyond the initial red, blue, and yellow classes.
 - Choose BMS detector candidates/aliases, confidence threshold, and whether to package GNU libiconv on every platform or normalize system implementations behind one wrapper.
-- Select BMSE/iBMSC versions for clipboard compatibility fixtures and settle behavior for data their clipboard formats cannot carry.
+- Settle behavior for data the BMSE/iBMSC clipboard formats cannot carry, and identify the iBMSC variant whose column layout BMSE 3.0's `modIBMSC.vb` targets. Fixture versions are pinned: BMSE `26826aff6d51`, iBMSC 3.5.5.16 `06aaf7438dbc`.
 - Finalize the ordered common snap palette after the required `1/4`, `1/8`, and `1/6` entries.
 - Decide the default tap duration, PPQ cap, track grouping, and loss policy for Standard MIDI export.
 - Choose default curve sampling tolerance/point caps and per-target finite-pulse policy for Dirac impulses.

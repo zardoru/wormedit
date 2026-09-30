@@ -14,7 +14,7 @@
 - Add BMS command-memo fixtures for repeated BGM lines, measure ratios, BPM/STOP collisions, STOP units, and selected compatibility-profile differences.
 - Add BMS control-flow fixtures for selected and fixed random values, IF/ELSEIF/ELSE groups, SWITCH/CASE/DEF fallthrough and SKIP, mixed nesting, common/orphan content, and malformed recovery profiles.
 - Add encoded BMS fixtures for UTF-8, CP932/Shift-JIS, EUC-KR/CP949, and Windows-1252, including ambiguous and invalid inputs.
-- Capture and document native clipboard samples from BMSE and iBMSC versions in scope, including their behavior for BGM, long notes, BPM, STOP, and free-grid positions.
+- Capture and document native clipboard samples from BMSE and iBMSC versions in scope, including their behavior for BGM, long notes, BPM, STOP, and free-grid positions. Source-derived payloads for BMSE 3.0/legacy and iBMSC 3.5.5.16 normal/xNT are checked in; runtime captures remain optional confirmation.
 - Add matched SM/SSC fixtures for every timing feature both formats may express, so support is based on observed parse/write behavior rather than an assumed format hierarchy.
 - Add short and long MP3/Ogg fixtures and verify bounded-memory sequential decode, seeking, waveform completion, cache reuse, and click-preview on Windows, macOS, and Linux.
 - Document the exact data currently exposed or discarded by `libotoworm` for each fixture as reference evidence.

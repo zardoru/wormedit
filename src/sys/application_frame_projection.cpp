@@ -116,14 +116,6 @@ auto project_application_frame(application_frame_projection_context_t context)
                           context.compose_scene_cache, compose_window_width, compose_window_height,
                           context.compose_interaction_state, context.application_command_state,
                           context.timing_edit.stage_view());
-    if (context.workspace.selected_chart) {
-        for (const auto& chart : context.history.document.charts) {
-            if (chart.id == *context.workspace.selected_chart) {
-                flattened.view.compose.downscroll = compose_field_downscroll(chart);
-                break;
-            }
-        }
-    }
     }
     context.compose_scene_cache.waveform_overview_total_frames = 0;
     context.compose_scene_cache.waveform_overview_sample_rate = 0;

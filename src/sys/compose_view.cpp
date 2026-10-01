@@ -2452,6 +2452,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     }
     const auto& chart = *chart_it;
     const auto downscroll = compose_field_downscroll(chart, application_state.editor_preferences);
+    view.downscroll = downscroll;
     const auto measure_data = prepare_compose_chart_view(flattened, chart, history, cache,
                                                          application_state);
     if (!measure_data) return;

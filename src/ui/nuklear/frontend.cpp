@@ -1248,10 +1248,12 @@ static void render_notification_landing_status(const WormUiWorkspaceView& view,
 static void render_status_bar(const WormUiWorkspaceView* view,
                               WormUiWorkspaceAction* action) {
     const bool minimap_available = status_minimap_available(view->compose);
+    const bool snap_label_visible = view->compose.visible && view->compose.area_snap_denominator != 0;
     nk_layout_row_template_begin(g_context, 30);
     wormedit::ui::chrome::IconButton::layout_columns(g_context, 4);
     nk_layout_row_template_push_static(g_context, 80);
     nk_layout_row_template_push_static(g_context, 100);
+    if (snap_label_visible) nk_layout_row_template_push_static(g_context, 64);
     nk_layout_row_template_push_dynamic(g_context);
     if (notification_badge_visible(view->notifications))
         nk_layout_row_template_push_static(g_context, 180);
@@ -1284,6 +1286,9 @@ static void render_status_bar(const WormUiWorkspaceView* view,
         action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
     render_metronome_toggle(*view, *action);
     render_transport_rate(*view, action);
+    if (snap_label_visible)
+        nk_labelf(g_context, NK_TEXT_CENTERED, "Snap 1/%llu",
+                  static_cast<unsigned long long>(view->compose.area_snap_denominator));
     const auto status = workspace_status_line(*view);
     nk_label_colored(g_context, status.c_str(), NK_TEXT_LEFT,
                       notification_status_color(view->notifications));

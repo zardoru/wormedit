@@ -456,3 +456,80 @@ TEST_CASE("pump-single and dance-solo profiles carry arrow glyphs and number-row
     CHECK(static_cast<int>(lane_glyph_t::arrow_right) == 5);
     CHECK(static_cast<int>(lane_glyph_t::arrow_up_left) == 6);
 }
+
+namespace {
+
+auto key_color_sequence(const lane_layout_t& layout, stage_group_t stage) -> std::vector<lane_key_color_t> {
+    std::vector<const lane_definition_t*> lanes;
+    for (const auto& lane : layout.lanes) {
+        if (lane.stage == stage) lanes.push_back(&lane);
+    }
+    std::ranges::sort(lanes, {}, &lane_definition_t::display_order);
+    std::vector<lane_key_color_t> colors;
+    for (const auto* lane : lanes) colors.push_back(lane->key_color);
+    return colors;
+}
+
+} // namespace
+
+TEST_CASE("BME 7K key colors follow the instrument wherever the scratch sits",
+          "[unit][core][lane-profile][key-color]") {
+    using color = lane_key_color_t;
+    const std::vector<color> keys{color::white, color::black, color::white, color::black,
+                                  color::white, color::black, color::white};
+
+    auto outside = key_color_sequence(make_bme_7k_profile(scratch_placement_t::outside).layout,
+                                      stage_group_t::left);
+    REQUIRE(outside.size() == 8);
+    CHECK(outside.front() == color::scratch);
+    CHECK(std::vector<color>(outside.begin() + 1, outside.end()) == keys);
+
+    auto inside = key_color_sequence(make_bme_7k_profile(scratch_placement_t::inside).layout,
+                                     stage_group_t::left);
+    REQUIRE(inside.size() == 8);
+    CHECK(inside.back() == color::scratch);
+    CHECK(std::vector<color>(inside.begin(), inside.end() - 1) == keys);
+}
+
+TEST_CASE("pedals free zones PMS buttons and piano banks get their own classes",
+          "[unit][core][lane-profile][key-color]") {
+    using color = lane_key_color_t;
+    const auto pedal = key_color_sequence(make_bme_7k_foot_pedal_profile().layout, stage_group_t::left);
+    CHECK(std::ranges::count(pedal, color::foot_pedal) == 1);
+    const auto free_zone = key_color_sequence(make_bms_5k_free_zone_profile().layout, stage_group_t::left);
+    CHECK(std::ranges::count(free_zone, color::free_zone) == 1);
+
+    const auto pms = key_color_sequence(make_pms_9k_profile().layout, stage_group_t::left);
+    CHECK(pms == std::vector<color>{color::pms_white, color::pms_yellow, color::pms_green,
+                                    color::pms_blue, color::pms_red, color::pms_blue,
+                                    color::pms_green, color::pms_yellow, color::pms_white});
+    CHECK(std::ranges::all_of(key_color_sequence(make_pms_5k_profile().layout, stage_group_t::left),
+                              [](auto value) { return value == color::generic; }));
+
+    const auto piano = key_color_sequence(make_bmson_generic_24k_profile().layout, stage_group_t::none);
+    REQUIRE(piano.size() == 24);
+    CHECK(piano[0] == color::white);
+    CHECK(piano[1] == color::black);
+    CHECK(piano[4] == color::white);
+    CHECK(piano[5] == color::white);
+    CHECK(piano[6] == color::black);
+    CHECK(piano[12] == color::white);
+    CHECK(piano[13] == color::black);
+
+    const auto dance = make_stepmania_pump_single_profile().layout;
+    CHECK(std::ranges::all_of(dance.lanes, [](const auto& lane) { return lane.key_color == color::generic; }));
+}
+
+TEST_CASE("layouts without stored colors derive them and unknown profiles stay generic",
+          "[unit][core][lane-profile][key-color]") {
+    auto layout = make_bme_7k_profile().layout;
+    for (auto& lane : layout.lanes) lane.key_color = lane_key_color_t::generic;
+    assign_lane_key_colors(layout);
+    CHECK(std::ranges::count(layout.lanes, lane_key_color_t::white, &lane_definition_t::key_color) == 4);
+    CHECK(std::ranges::count(layout.lanes, lane_key_color_t::black, &lane_definition_t::key_color) == 3);
+
+    layout.profile_id = "custom-layout";
+    assign_lane_key_colors(layout);
+    CHECK(std::ranges::count(layout.lanes, lane_key_color_t::scratch, &lane_definition_t::key_color) == 1);
+    CHECK(std::ranges::count(layout.lanes, lane_key_color_t::generic, &lane_definition_t::key_color) == 7);
+}

@@ -116,6 +116,7 @@ was recently reorganized into collapsible sections; apply the stale-plan check
 ## T-128 Apply one metadata edit to several difficulties
 
 - **Status:** ready
+- **Implementation notes (2026-10-01):** the core batch command already exists as `apply_batch_chart_metadata_edit` in `metadata_editor.h` (added with T-260); only the Metadata multi-select UI (step 2) is open.
 - **Outcome:** Metadata offers a multi-select of difficulties; applying author or rating edits writes all selected charts in one command.
 - **Read first:** `include/wormedit/core/metadata_editor.h`, `src/sys/metadata_actions.cpp`, `src/ui/nuklear/metadata_panel.cpp`.
 - **Files owned:** `include/wormedit/core/metadata_editor.h`, `src/core/metadata_editor.cpp`, `tests/core/metadata_editor_tests.cpp`, `src/sys/metadata_actions.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp`.
@@ -128,6 +129,7 @@ was recently reorganized into collapsible sections; apply the stale-plan check
 ## T-129 Add typed per-format metadata forms
 
 - **Status:** ready
+- **Implementation notes (2026-10-01):** steps 1 and 2 are done: `format_field_schema.h` has the typed table (`format_field_schemas`, `find_format_field_schema`) and `validate_format_field_value` with plain-ASCII integer/decimal parsing, case-insensitive choices (StepMania `DIFFICULTY`) and single-line text. Stored names are the exact `ordered_fields` spellings: BMS tokens without `#`, StepMania tags, osu! `Difficulty.HPDrainRate`/`Difficulty.OverallDifficulty`/`Metadata.Version`, BMSON `info.level`/`info.judge_rank`/`info.total`. Tests in `tests/core/format_field_schema_tests.cpp`. Step 3 (the typed widgets) remains.
 - **Outcome:** Metadata's format section shows named typed fields for BMS (`#PLAYER`, `#RANK`, `#TOTAL`, `#PLAYLEVEL`, `#DIFFICULTY`), StepMania (`#CREDIT`, `#DIFFICULTY`, `#METER`), osu! (`HPDrainRate`, `OverallDifficulty`, `Version`), and BMSON (`level`, `judge_rank`, `total`) that read/write the existing ordered format fields.
 - **Read first:** `docs/chart-editor-plan/formats-persistence.md` (Metadata tab paragraph), `include/wormedit/core/metadata_editor.h`, `src/ui/nuklear/metadata_panel.cpp`.
 - **Files owned:** new `include/wormedit/core/format_field_schema.h`, new `src/core/format_field_schema.cpp`, new `tests/core/format_field_schema_tests.cpp`, `src/sys/metadata_view_projection.cpp`, `src/ui/nuklear/metadata_panel.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`.

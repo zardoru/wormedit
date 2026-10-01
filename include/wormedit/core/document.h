@@ -175,6 +175,22 @@ struct bms_channel_map_t {
     std::optional<std::string> mine;
 };
 
+// Instrument color class of a lane. Appended-only: the integer value is stored
+// in native projects.
+enum class lane_key_color_t {
+    generic,
+    white,
+    black,
+    scratch,
+    foot_pedal,
+    free_zone,
+    pms_white,
+    pms_yellow,
+    pms_green,
+    pms_blue,
+    pms_red,
+};
+
 struct lane_definition_t {
     lane_id_t id;
     std::string name;
@@ -184,6 +200,7 @@ struct lane_definition_t {
     lane_glyph_t glyph{lane_glyph_t::bar};
     bms_channel_map_t bms_channels;
     std::optional<midi_destination_t> midi_destination;
+    lane_key_color_t key_color{lane_key_color_t::generic};
 };
 
 struct lane_layout_t {

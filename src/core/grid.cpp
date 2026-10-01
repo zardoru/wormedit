@@ -697,7 +697,7 @@ auto make_editor_grid_lines(const chart_document_t& chart, const editor_grid_req
     }
     const auto& measure_index = std::get<measure_index_t>(built_index);
     std::optional<virtual_canvas_t> virtual_canvas;
-    if (request.include_virtual_bms_tail && chart.source_family == format_family_t::bms) {
+    if (request.include_virtual_bms_tail && chart_has_virtual_tail(chart)) {
         auto built_canvas = build_virtual_canvas(chart);
         if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas)) {
             result.diagnostics = *diagnostics;

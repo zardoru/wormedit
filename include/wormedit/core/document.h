@@ -691,6 +691,9 @@ struct chart_document_t {
     std::vector<bms_pause_projection_t> bms_pause_projections;
     std::optional<bms_control_node_t> bms_control_tree;
     std::vector<branch_selection_t> active_branch_selection;
+    // Derived, never serialized: number of addressable measures the virtual canvas
+    // exposes for non-BMS charts. Kept in sync by sync_virtual_tails().
+    std::uint64_t virtual_tail_measures{};
 };
 
 struct midi_event_t {

@@ -560,6 +560,14 @@ auto compose_note_display_lane_number(const wormedit::editor_field_scene_t& scen
     return 0;
 }
 
+auto compose_note_key_color(const wormedit::editor_field_scene_t& scene, const auto& endpoint)
+    -> std::uint8_t {
+    for (const auto& lane : scene.lanes) {
+        if (lane.lane == endpoint.lane) return static_cast<std::uint8_t>(lane.key_color);
+    }
+    return 0;
+}
+
 auto compose_endpoint_snap_class(const compose_scene_projection_context_t& projection,
                                  const wormedit::editor_field_note_endpoint_geometry_t& endpoint)
     -> std::uint8_t {
@@ -615,6 +623,7 @@ void project_compose_scene_objects(const compose_scene_projection_context_t& pro
              .note_id = hold.note.value,
              .lane_id = hold.lane.value,
              .display_lane_number = compose_note_display_lane_number(scene, hold),
+             .key_color = compose_note_key_color(scene, hold),
              .selected = hold.selected,
              .proposal_origin = hold.proposal_origin,
              .proposal_ghost = hold.proposal_ghost,
@@ -644,6 +653,7 @@ void project_compose_scene_objects(const compose_scene_projection_context_t& pro
              .note_id = endpoint.note.value,
              .lane_id = endpoint.lane.value,
              .display_lane_number = compose_note_display_lane_number(scene, endpoint),
+             .key_color = compose_note_key_color(scene, endpoint),
              .sound_label = sound.label,
              .sound_detail = sound.detail,
              .glyph = static_cast<std::uint8_t>(endpoint.glyph),
@@ -710,7 +720,8 @@ void project_compose_layout_and_notes(const compose_scene_projection_context_t& 
                                                   .display_order = lane.display_order,
                                                   .role = static_cast<std::uint8_t>(lane.role),
                                                   .stage = static_cast<std::uint8_t>(lane.stage),
-                                                  .glyph = static_cast<std::uint8_t>(lane.glyph)}, view.truncated);
+                                                  .glyph = static_cast<std::uint8_t>(lane.glyph),
+                                                  .key_color = static_cast<std::uint8_t>(lane.key_color)}, view.truncated);
     }
     project_compose_grid_lines(projection);
     project_compose_scene_objects(projection);

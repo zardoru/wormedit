@@ -753,7 +753,10 @@ static void draw_compose_play_lanes(const ComposePaintContext& paint) {
         if (rect.w <= 0.0f || rect.h <= 0.0f) {
             continue;
         }
-        field_rect(paint, rect, 0.0f, compose_lane_color(lane.role, lane.display_order));
+        const auto key = wormedit::ui::theme::compose_key_color(lane.key_color,
+                                                                (lane.display_order & 1U) != 0);
+        field_rect(paint, rect, 0.0f,
+                   key.has_color ? key.lane : compose_lane_color(lane.role, lane.display_order));
         field_line(paint, rect.x, rect.y, rect.x, rect.y + rect.h, 1.0f,
                        nk_rgb(62, 70, 86));
 
@@ -1186,6 +1189,12 @@ static void draw_compose_timing_layer(const ComposePaintContext& paint,
     draw_compose_audio_bookmarks(paint);
 }
 
+static struct nk_color compose_key_hold_fill(std::uint8_t key_color) {
+    const auto key = wormedit::ui::theme::compose_key_color(key_color, false);
+    if (!key.has_color) return nk_rgb(48, 111, 151);
+    return nk_rgb(key.note.r * 3 / 4, key.note.g * 3 / 4, key.note.b * 3 / 4);
+}
+
 static void draw_compose_hold_bodies(const ComposePaintContext& paint) {
     for (size_t index = 0; index < paint.view->hold_body_count; ++index) {
         const auto& hold = paint.view->hold_bodies[index];
@@ -1204,7 +1213,7 @@ static void draw_compose_hold_bodies(const ComposePaintContext& paint) {
                                       ? nk_rgba(hold.semantic_red, hold.semantic_green,
                                                 hold.semantic_blue, hold.semantic_alpha)
                                       : (hold.selected ? nk_rgb(62, 170, 204)
-                                                       : nk_rgb(48, 111, 151)));
+                                                       : compose_key_hold_fill(hold.key_color)));
         field_rect(paint, rect, 0.0f, color, 2);
         if (hold.selected) {
             field_stroke_rect(paint, rect, 0.0f, 1.6f, nk_rgb(220, 247, 255), 2);
@@ -1213,6 +1222,11 @@ static void draw_compose_hold_bodies(const ComposePaintContext& paint) {
             field_stroke_rect(paint, rect, 0.0f, 2.0f, nk_rgb(255, 235, 148), 2);
         }
     }
+}
+
+static struct nk_color compose_key_note_fill(std::uint8_t key_color) {
+    const auto key = wormedit::ui::theme::compose_key_color(key_color, false);
+    return key.has_color ? key.note : nk_rgb(133, 182, 222);
 }
 
 struct ComposeNoteStyle {
@@ -1228,7 +1242,7 @@ static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
                     : (note.semantic_color_visible
                            ? nk_rgba(note.semantic_red, note.semantic_green, note.semantic_blue,
                                      note.semantic_alpha)
-                           : (note.selected ? nk_rgb(111, 221, 236) : nk_rgb(133, 182, 222)));
+                           : (note.selected ? nk_rgb(111, 221, 236) : compose_key_note_fill(note.key_color)));
     auto border = nk_rgb(17, 24, 34);
     auto border_width = 1.0f;
     if (note.proposal_ghost) {

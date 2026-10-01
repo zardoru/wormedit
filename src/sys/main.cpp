@@ -1,4 +1,5 @@
 #include "sys/frame_timing.h"
+#include "sys/thread_priority.h"
 #include "wormedit/audio.h"
 #include "wormedit/window.h"
 
@@ -3384,7 +3385,7 @@ int main(int argc, char** argv) {
     auto workspace = std::move(*binding.workspace);
     const auto initial_autosave_sequence = wormedit::native_project_recovery_session_sequence(
         startup.recovery_scan, history.document.id);
-    wormedit::task_scheduler_t autosave_scheduler(1, 1);
+    wormedit::task_scheduler_t autosave_scheduler(1, 1, wormedit::background_scheduler_options());
     wormedit::native_project_autosave_loop_t autosave_loop(
         wormedit::native_project_autosave_loop_t::clock_t::now(), autosave_scheduler,
         startup.primary_version, initial_autosave_sequence);
@@ -3408,20 +3409,20 @@ int main(int argc, char** argv) {
     auto asset_base =
         startup.loaded_primary ? std::filesystem::absolute(requested_primary_path).parent_path()
                                : std::filesystem::path{};
-    wormedit::task_scheduler_t resource_copy_scheduler(1, 1);
+    wormedit::task_scheduler_t resource_copy_scheduler(1, 1, wormedit::background_scheduler_options());
     resource_copy_t resource_copy_runtime;
     wormedit::sys::runtime::metadata_asset_t metadata_asset_runtime;
     output_group_export_t export_runtime;
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
     wormedit::visual::image_cache_t player_image_cache;
-    wormedit::task_scheduler_t player_image_scheduler(1, 4);
+    wormedit::task_scheduler_t player_image_scheduler(1, 4, wormedit::background_scheduler_options());
     wormedit::visual::image_job_t player_image_job{player_image_cache, player_image_scheduler,
                                                    WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY +
                                                        WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY};
 #endif
 #if defined(WORMEDIT_HAS_VIDEO_DECODER)
     wormedit::visual::video_frame_cache_t player_video_cache;
-    wormedit::task_scheduler_t player_video_scheduler(1, 2);
+    wormedit::task_scheduler_t player_video_scheduler(1, 2, wormedit::background_scheduler_options());
     wormedit::visual::video_frame_job_t player_video_job{player_video_cache,
                                                          player_video_scheduler};
 #endif
@@ -3447,6 +3448,7 @@ int main(int argc, char** argv) {
     std::optional<wormedit::song_id_t> audition_source_project;
     std::vector<wormedit::sys::audition_asset_entry_t> audition_asset_inventory;
     std::uint64_t audition_source_generation{};
+    wormedit::task_scheduler_t audition_probe_scheduler(2, 4, wormedit::background_scheduler_options());
     const wormedit::sys::audition_source_reconciliation_context_t audition_reconciliation{
         history.document,
         asset_base,
@@ -3461,6 +3463,7 @@ int main(int argc, char** argv) {
         },
         [&] { waveform_runtime.reset_sources(); },
         [&] { preview_state.invalidate(); },
+        &audition_probe_scheduler,
     };
     const auto initial_unavailable_audio_assets = wormedit::sys::reconcile_audition_sources(audition_reconciliation, false).value_or(0);
     if (initial_unavailable_audio_assets != 0) {
@@ -3693,6 +3696,9 @@ int main(int argc, char** argv) {
         wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::audio_service);
+        if (const auto failed = wormedit::sys::drain_audition_probe_failures(audition_sources)) {
+            status = *failed;
+        }
         wormedit::sys::service_audio_transport_frame(
             history.document, workspace, preview_state, preview_session,
             audition_output, preview_output,

@@ -532,13 +532,13 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 
 - **Result:** Full cached BGM presence chooses a stable upper bar without BGM or a lower minimap with BGM; missing audio displays a disabled lower diagnostic. Isolated Xvfb/SDL-dummy captures verified empty, populated, offscreen and horizontally hidden BGM, playback/navigation and 47/49-second audio-tail seeks. Configured tidy on all three changed C++ files passed without owned warnings; coordinated app build passed, focused tests 15/15 and full suite 1188/1188 passed (55.79 s). The separate 35-percent anchor scene-validation gap is tracked by T-306.
 
-## T-300 Repeat Tab navigation every 200 milliseconds while held
+## T-300 Add Tab-modified measure navigation and double-speed wheel scrolling
 
 - **Status:** ready
-- **Outcome:** Holding Tab repeats its existing cursor displacement at a 200 ms interval after the initial action; releasing it, focus loss or an input-owning dialog stops repetition.
+- **Outcome:** Tab plus arrows or Page Up/Down moves the cursor one measure and repeats every 200 ms; Tab plus wheel doubles ordinary scrolling. Tab alone does not navigate.
 - **Read first:** `src/ui/nuklear/frontend.cpp`, `src/sys/compose_input.cpp`.
 - **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/sys/compose_input.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`.
-- **Steps:** 1. Retain the current Tab action and direction. 2. Use monotonic repeat timing independent of OS key-repeat rate. 3. Verify deterministic held/released/focus-loss traces, including Shift range navigation.
+- **Steps:** 1. Add Tab-modified one-measure keyboard navigation and apply the user-confirmed double-speed wheel modifier once per event. 2. Use monotonic 200 ms keyboard repeat timing independent of OS key-repeat rate. 3. Verify deterministic held/released/focus-loss traces, both modifier press orders, fractional wheel deltas and Shift range navigation.
 - **Invariants:** Text widgets retain Tab ownership; no queued repeat survives focus loss or a chart change.
 - **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; isolated Xvfb/SDL-dummy checks for UI/audio behavior.

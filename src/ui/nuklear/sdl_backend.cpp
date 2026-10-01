@@ -29,6 +29,7 @@
 #include <cmath>
 #include <utility>
 #include <algorithm>
+#include <array>
 #include <vector>
 #include <chrono>
 #include <span>
@@ -50,7 +51,9 @@ class RenderSubphaseScope {
 };
 
 // Keep counters at the adapter boundary: converted buffers are shared by every
-// draw command, so their vertices and indices are counted once per frame.
+// draw command, so their vertices and indices are counted once per pass. The
+// application and the diagnostic windows each own a set, so neither's
+// clip-rect and texture-switch tracking sees the other's draws.
 struct GpuSubmissionCounters {
     WormUiFrameGpuWork work{};
     SDL_Rect current_clip{};
@@ -60,32 +63,36 @@ struct GpuSubmissionCounters {
     bool previous_clip_enabled{};
     bool submitted{};
 };
-static GpuSubmissionCounters g_gpu_submission;
+static GpuSubmissionCounters g_application_submission;
+static GpuSubmissionCounters g_diagnostic_submission;
+static GpuSubmissionCounters* g_gpu_submission = &g_application_submission;
+// Command-buffer user data of windows begun inside diagnostic_window_scope_t.
+static char g_diagnostic_window_tag;
 
 static nk_flags convert_nuklear_commands(nk_context* context, nk_buffer* commands,
                                          nk_buffer* vertices, nk_buffer* indices,
                                          const nk_convert_config* config) {
     const RenderSubphaseScope convert_phase{WORM_UI_FRAME_RENDER_CONVERT};
     const auto result = nk_convert(context, commands, vertices, indices, config);
-    g_gpu_submission.work.vertices +=
+    g_gpu_submission->work.vertices +=
         config->vertex_size == 0 ? 0 : vertices->allocated / config->vertex_size;
-    g_gpu_submission.work.indices += indices->allocated / sizeof(nk_draw_index);
+    g_gpu_submission->work.indices += indices->allocated / sizeof(nk_draw_index);
     return result;
 }
 
 static bool set_nuklear_clip_rect(SDL_Renderer* renderer, const SDL_Rect* rect) {
     const auto result = SDL_SetRenderClipRect(renderer, rect);
     if (result) {
-        g_gpu_submission.current_clip_enabled = rect != nullptr;
-        g_gpu_submission.current_clip = rect ? *rect : SDL_Rect{};
+        g_gpu_submission->current_clip_enabled = rect != nullptr;
+        g_gpu_submission->current_clip = rect ? *rect : SDL_Rect{};
     }
     return result;
 }
 
 static bool same_nuklear_clip() {
-    const auto& current = g_gpu_submission.current_clip;
-    const auto& previous = g_gpu_submission.previous_clip;
-    return g_gpu_submission.current_clip_enabled == g_gpu_submission.previous_clip_enabled &&
+    const auto& current = g_gpu_submission->current_clip;
+    const auto& previous = g_gpu_submission->previous_clip;
+    return g_gpu_submission->current_clip_enabled == g_gpu_submission->previous_clip_enabled &&
            current.x == previous.x && current.y == previous.y && current.w == previous.w &&
            current.h == previous.h;
 }
@@ -98,15 +105,15 @@ static bool render_nuklear_geometry_raw(SDL_Renderer* renderer, SDL_Texture* tex
                                         int color_stride, const float* uv, int uv_stride,
                                         int vertex_count, const void* indices, int index_count,
                                         int) {
-    ++g_gpu_submission.work.draw_calls;
-    if (g_gpu_submission.submitted) {
-        g_gpu_submission.work.clip_rect_changes += !same_nuklear_clip();
-        g_gpu_submission.work.texture_switches += texture != g_gpu_submission.previous_texture;
+    ++g_gpu_submission->work.draw_calls;
+    if (g_gpu_submission->submitted) {
+        g_gpu_submission->work.clip_rect_changes += !same_nuklear_clip();
+        g_gpu_submission->work.texture_switches += texture != g_gpu_submission->previous_texture;
     }
-    g_gpu_submission.previous_clip = g_gpu_submission.current_clip;
-    g_gpu_submission.previous_clip_enabled = g_gpu_submission.current_clip_enabled;
-    g_gpu_submission.previous_texture = texture;
-    g_gpu_submission.submitted = true;
+    g_gpu_submission->previous_clip = g_gpu_submission->current_clip;
+    g_gpu_submission->previous_clip_enabled = g_gpu_submission->current_clip_enabled;
+    g_gpu_submission->previous_texture = texture;
+    g_gpu_submission->submitted = true;
     return SDL_RenderGeometryRaw(renderer, texture, xy, xy_stride, colors, color_stride, uv,
                                  uv_stride, vertex_count, indices, index_count,
                                  sizeof(nk_draw_index));
@@ -466,7 +473,7 @@ static void submit_overview_edge_clip(nk_sdl* sdl, SDL_Rect clip) {
     clip = overview_intersection(clip, cache.clip);
     if (clip.w <= 0 || clip.h <= 0 || cache.outside_indices.empty()) return;
     set_nuklear_clip_rect(sdl->renderer, &clip);
-    g_gpu_submission.work.indices += cache.outside_indices.size();
+    g_gpu_submission->work.indices += cache.outside_indices.size();
     cache.work.warm_vertices += cache.vertices.size();
     cache.work.warm_indices += cache.outside_indices.size();
     const auto& first = cache.vertices.front();
@@ -480,7 +487,7 @@ static void submit_cached_overview(nk_sdl* sdl) {
     if (!cache.valid) return;
     cache.work.warm_vertices = 4;
     cache.work.warm_indices = 6;
-    const auto calls_before = g_gpu_submission.work.draw_calls;
+    const auto calls_before = g_gpu_submission->work.draw_calls;
     SDL_Rect viewport{}, previous_clip{};
     SDL_GetRenderViewport(sdl->renderer, &viewport);
     const bool clipped = SDL_RenderClipEnabled(sdl->renderer);
@@ -501,8 +508,8 @@ static void submit_cached_overview(nk_sdl* sdl) {
     render_nuklear_geometry_raw(sdl->renderer, cache.texture, &quad[0].position.x, sizeof(SDL_Vertex),
         &quad[0].color, sizeof(SDL_Vertex), &quad[0].tex_coord.x, sizeof(SDL_Vertex),
         4, quad_indices, 6, sizeof(nk_draw_index));
-    g_gpu_submission.work.vertices += 4;
-    g_gpu_submission.work.indices += 6;
+    g_gpu_submission->work.vertices += 4;
+    g_gpu_submission->work.indices += 6;
     const auto& clip = cache.clip;
     submit_overview_edge_clip(sdl, {clip.x, clip.y, rect.x - clip.x, clip.h});
     submit_overview_edge_clip(sdl, {rect.x + rect.w, clip.y,
@@ -510,14 +517,14 @@ static void submit_cached_overview(nk_sdl* sdl) {
     submit_overview_edge_clip(sdl, {rect.x, clip.y, rect.w, rect.y - clip.y});
     submit_overview_edge_clip(sdl, {rect.x, rect.y + rect.h, rect.w,
         clip.y + clip.h - rect.y - rect.h});
-    g_gpu_submission.work.vertices += cache.vertices.size();
+    g_gpu_submission->work.vertices += cache.vertices.size();
     SDL_SetRenderLogicalPresentation(sdl->renderer, cache.key.logical_width, cache.key.logical_height,
         cache.key.logical_mode);
     SDL_SetRenderScale(sdl->renderer, cache.key.nominal_scale_x, cache.key.nominal_scale_y);
     SDL_SetRenderViewport(sdl->renderer, nullptr);
     set_nuklear_clip_rect(sdl->renderer, clipped ? &previous_clip : nullptr);
     ++cache.work.reused_frames;
-    cache.work.warm_draw_calls = g_gpu_submission.work.draw_calls - calls_before;
+    cache.work.warm_draw_calls = g_gpu_submission->work.draw_calls - calls_before;
 }
 static bool submit_overview_marker(nk_sdl* sdl, const nk_draw_command* command,
                                     std::size_t offset) {
@@ -529,10 +536,11 @@ static bool submit_overview_marker(nk_sdl* sdl, const nk_draw_command* command,
 }
 
 static void submit_sdl_draw_list(nk_context* context, nk_sdl* sdl) {
-    if (sdl->field->marker_count != 0) {
+    // Field markers stay set until the frame ends; only the application pass draws them.
+    if (sdl->field->marker_count != 0 && g_gpu_submission == &g_application_submission) {
         const auto work = sdl->field->geometry.workload();
-        g_gpu_submission.work.vertices += work.vertices;
-        g_gpu_submission.work.indices += work.indices;
+        g_gpu_submission->work.vertices += work.vertices;
+        g_gpu_submission->work.indices += work.indices;
     }
     wormedit::ui::nuklear::sdl_draw_batcher_t batches;
     const nk_draw_command* command;
@@ -564,13 +572,8 @@ static void submit_sdl_draw_list(nk_context* context, nk_sdl* sdl) {
         submit_sdl_batch(sdl, *last);
 }
 
-NK_API void nk_sdl_render(struct nk_context* ctx, enum nk_anti_aliasing AA) {
-    /* setup global state */
-    struct nk_sdl* sdl;
-    NK_ASSERT(ctx);
-    sdl = (struct nk_sdl*)ctx->userdata.ptr;
-    NK_ASSERT(sdl);
-
+// Converts and submits the context's visible windows without ending its frame.
+static void render_nuklear_pass(struct nk_context* ctx, struct nk_sdl* sdl, enum nk_anti_aliasing AA) {
     {
         SDL_Rect saved_clip;
         bool clipping_enabled;
@@ -597,6 +600,7 @@ NK_API void nk_sdl_render(struct nk_context* ctx, enum nk_anti_aliasing AA) {
         config.line_AA = AA;
 
         /* convert shapes into vertices */
+        nk_buffer_clear(&sdl->ogl.cmds);
         nk_buffer_clear(&vbuf);
         nk_buffer_clear(&ebuf);
         nk_convert(ctx, &sdl->ogl.cmds, &vbuf, &ebuf, &config);
@@ -609,11 +613,83 @@ NK_API void nk_sdl_render(struct nk_context* ctx, enum nk_anti_aliasing AA) {
         if (!clipping_enabled) {
             SDL_SetRenderClipRect(sdl->renderer, NULL);
         }
-
-        sdl->field->marker_count = 0;
-        nk_clear(ctx);
-        nk_buffer_clear(&sdl->ogl.cmds);
     }
+}
+
+static void finish_nuklear_frame(struct nk_context* ctx, struct nk_sdl* sdl) {
+    sdl->field->marker_count = 0;
+    nk_clear(ctx);
+    nk_buffer_clear(&sdl->ogl.cmds);
+}
+
+NK_API void nk_sdl_render(struct nk_context* ctx, enum nk_anti_aliasing AA) {
+    NK_ASSERT(ctx);
+    auto* sdl = static_cast<struct nk_sdl*>(ctx->userdata.ptr);
+    NK_ASSERT(sdl);
+    render_nuklear_pass(ctx, sdl, AA);
+    finish_nuklear_frame(ctx, sdl);
+}
+
+namespace {
+// Windows hidden for one render pass: Nuklear's command list skips hidden
+// windows, so a pass converts only the windows of one counting group.
+class hidden_windows_t {
+  public:
+    static auto diagnostic(const nk_window& window) -> bool {
+        return window.buffer.userdata.ptr == &g_diagnostic_window_tag;
+    }
+    static auto drawn(const nk_context& ctx, const nk_window& window) -> bool {
+        return !(window.flags & NK_WINDOW_HIDDEN) && window.seq == ctx.seq;
+    }
+    static auto count(const nk_context& ctx, bool diagnostic_group) -> std::size_t {
+        std::size_t result = 0;
+        for (const auto* window = ctx.begin; window; window = window->next)
+            result += drawn(ctx, *window) && diagnostic(*window) == diagnostic_group;
+        return result;
+    }
+    static auto fits(std::size_t windows) -> bool { return windows <= capacity; }
+    void hide(nk_context& ctx, bool diagnostic_group) {
+        for (auto* window = ctx.begin; window && count_ < capacity; window = window->next) {
+            if (!drawn(ctx, *window) || diagnostic(*window) != diagnostic_group) continue;
+            window->flags |= NK_WINDOW_HIDDEN;
+            windows_[count_++] = window;
+        }
+    }
+    void restore() {
+        for (std::size_t index = 0; index < count_; ++index)
+            windows_[index]->flags &= ~static_cast<nk_flags>(NK_WINDOW_HIDDEN);
+        count_ = 0;
+    }
+
+  private:
+    static constexpr std::size_t capacity = 64;
+    std::array<nk_window*, capacity> windows_{};
+    std::size_t count_{};
+};
+} // namespace
+
+// Application windows (and every popup) render first; diagnostic windows
+// follow on top in a pass whose GPU work is accumulated separately.
+// Returns whether a diagnostic pass ran.
+static auto render_application_then_diagnostics(nk_context* ctx, nk_sdl* sdl,
+                                                nk_anti_aliasing AA) -> bool {
+    const auto diagnostics = hidden_windows_t::count(*ctx, true);
+    if (diagnostics == 0 || !hidden_windows_t::fits(diagnostics) ||
+        !hidden_windows_t::fits(hidden_windows_t::count(*ctx, false))) {
+        render_nuklear_pass(ctx, sdl, AA);
+        return false;
+    }
+    hidden_windows_t hidden;
+    hidden.hide(*ctx, true);
+    render_nuklear_pass(ctx, sdl, AA);
+    hidden.restore();
+    hidden.hide(*ctx, false);
+    ctx->build = nk_false; // relink the command list without the application windows
+    g_gpu_submission = &g_diagnostic_submission;
+    render_nuklear_pass(ctx, sdl, AA);
+    g_gpu_submission = &g_application_submission;
+    hidden.restore();
+    return true;
 }
 
 NK_INTERN void nk_sdl_clipboard_paste(nk_handle usr, struct nk_text_edit* edit) {
@@ -1302,16 +1378,29 @@ void insert_compose_field(nk_context* context, nk_command_buffer* canvas, struct
     frame.next_index = end;
     nk_push_custom(canvas, viewport, convert_field_marker, nk_handle_ptr(&marker));
 }
+diagnostic_window_scope_t::diagnostic_window_scope_t(nk_context* context)
+    : context_(context), previous_(context->userdata) {
+    // nk_begin copies the context user data into the window's command buffer,
+    // which is how the render pass recognizes the window.
+    nk_set_user_data(context_, nk_handle_ptr(&g_diagnostic_window_tag));
+}
+diagnostic_window_scope_t::~diagnostic_window_scope_t() {
+    nk_set_user_data(context_, previous_);
+}
 void render_sdl_backend(nk_context* context, nk_anti_aliasing anti_aliasing, nk_context* overlay) {
-    g_gpu_submission = {};
+    g_application_submission = {};
+    g_diagnostic_submission = {};
+    g_gpu_submission = &g_application_submission;
     auto* sdl = static_cast<nk_sdl*>(context->userdata.ptr);
     const auto ticks = SDL_GetTicks();
     context->delta_time_seconds = static_cast<float>(ticks - sdl->last_render) / 1000.0f;
     sdl->last_render = ticks;
     if (overlay) overlay->delta_time_seconds = context->delta_time_seconds;
-    nk_sdl_render(context, anti_aliasing);
+    const bool diagnostics = render_application_then_diagnostics(context, sdl, anti_aliasing);
+    finish_nuklear_frame(context, sdl);
     if (overlay) nk_sdl_render(overlay, anti_aliasing);
-    worm_ui_frame_timing_record_gpu_work(g_gpu_submission.work);
+    worm_ui_frame_timing_record_gpu_work(g_application_submission.work);
+    if (diagnostics) worm_ui_frame_timing_record_diagnostic_gpu_work(g_diagnostic_submission.work);
 }
 } // namespace wormedit::ui::nuklear
 

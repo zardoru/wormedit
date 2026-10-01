@@ -808,7 +808,7 @@ auto append_virtual_hold(scene_geometry_context_t& context, hold_proposals_t& ho
                          const editor_interaction_view_model_t::virtual_hold_preview_t& pending,
                          Operate&& operate) -> bool {
     if (pending.document_revision != context.index.document_revision ||
-        context.chart.source_family != format_family_t::bms ||
+        !chart_has_virtual_tail(context.chart) ||
         !context.request.include_virtual_bms_tail || pending.anchor_row >= context.canvas_rows ||
         pending.end_row >= context.canvas_rows || context.index.layouts.empty() ||
         !has_lane(&context.index.layouts.back(), pending.lane)) {
@@ -1765,7 +1765,7 @@ auto compose_bgm_pane(scene_geometry_context_t& context, Operate&& operate, Cons
 auto scene_canvas_rows(const chart_document_t& chart, const editor_field_scene_index_t& index,
                        const editor_field_scene_request_t& request, diagnostic_list_t& diagnostics)
     -> std::optional<std::uint64_t> {
-    if (!request.include_virtual_bms_tail || chart.source_family != format_family_t::bms) {
+    if (!request.include_virtual_bms_tail || !chart_has_virtual_tail(chart)) {
         return index.measures.total_rows;
     }
     auto built = build_virtual_canvas(chart);

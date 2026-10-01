@@ -85,14 +85,20 @@ std::optional<std::string> dispatch_compose_measure_navigation(compose_action_co
         return "The selected difficulty is no longer available.";
     const auto number = context.action.compose_measure_number;
     editor_interaction_result_t result;
-    if (chart->source_family == format_family_t::bms) {
-        if (number >= bms_addressable_measure_count)
-            return "The requested BMS measure is outside #000-#999.";
+    if (chart_has_virtual_tail(*chart)) {
+        // BMS measures are numbered from #000; other charts count from 1.
+        const auto is_bms = chart->source_family == format_family_t::bms;
+        if (!is_bms && number == 0)
+            return "The requested measure is outside this chart.";
+        const auto canvas_number = is_bms ? number : number - 1;
+        if (canvas_number >= virtual_tail_measure_limit(*chart))
+            return is_bms ? "The requested BMS measure is outside #000-#999."
+                          : "The requested measure is outside this chart.";
         // Reuse virtual-canvas navigation without changing the current selection.
         auto candidate = context.state;
         result = dispatch_editor_action(context.history, candidate,
                                          select_bms_canvas_measure_action_t{
-                                             static_cast<std::size_t>(number)});
+                                             static_cast<std::size_t>(canvas_number)});
         if (result.accepted) {
             context.state.cursor = candidate.cursor;
             context.state.virtual_bms_cursor_row = candidate.virtual_bms_cursor_row;

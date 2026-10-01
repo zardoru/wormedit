@@ -2148,7 +2148,7 @@ std::uint64_t prepare_compose_projection_state(const compose_final_projection_co
     populate_compose_selected_objects_and_drafts(flattened, chart, history,
                                                  application_state, retained_state, view);
     auto canvas_rows = cache.index->measures.total_rows;
-    if (chart.source_family == wormedit::format_family_t::bms) {
+    if (wormedit::chart_has_virtual_tail(chart)) {
         const auto built_canvas = wormedit::build_virtual_canvas(chart);
         if (const auto* canvas = std::get_if<wormedit::virtual_canvas_t>(&built_canvas))
             canvas_rows = canvas->total_rows;
@@ -2755,8 +2755,7 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
         .bgm_pane_width_pixels = bgm_pane_width,
         .bgm_lane_width_pixels = compose_bgm_lane_width_pixels,
         .bgm_horizontal_scroll_pixels = bgm_horizontal_scroll,
-        .include_virtual_bms_tail =
-            chart.source_family == wormedit::format_family_t::bms,
+        .include_virtual_bms_tail = wormedit::chart_has_virtual_tail(chart),
         .solo_semantic_layer = application_state.semantic_layer_solo_active
                                    ? application_state.semantic_layer_target
                                    : std::nullopt,

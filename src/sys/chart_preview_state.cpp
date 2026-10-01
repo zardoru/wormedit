@@ -103,6 +103,7 @@ auto chart_preview_t::compile_if_needed(
     const audio::decoded_source_registry_t& sources,
     const std::vector<audio::preview_metronome_source_binding_t>& metronome_bindings)
     -> std::optional<std::string> {
+    sources.await_pending();
     const auto selected_music = registered_music_asset(document, sources);
     const auto selected_music_asset = selected_music
                                           ? std::optional<asset_id_t>{selected_music->second}

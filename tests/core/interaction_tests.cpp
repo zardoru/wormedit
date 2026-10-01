@@ -1,4 +1,5 @@
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/virtual_canvas.h>
 #include <wormedit/formats/bmson.h>
 #include "sys/compose_scroll_geometry.h"
 #include "sys/compose_playhead_cursor.h"
@@ -187,6 +188,39 @@ TEST_CASE("first tap in virtual BMS #999 commits geometry and note as one undo s
     CHECK(history.document.charts.front().measures.size() == 2);
     CHECK(redo_document_command(history));
     CHECK(history.document.charts.front().measures.size() == 1'000);
+}
+
+namespace {
+void check_native_tail_commit(document_history_t& history, std::size_t authored) {
+    const auto& chart = history.document.charts.front();
+    REQUIRE(chart.measures.size() == native_unanchored_virtual_measure_count);
+    CHECK(chart.measures.back().notes.size() == 1);
+    CHECK(history.undo.size() == 1);
+    CHECK(undo_document_command(history));
+    CHECK(history.document.charts.front().measures.size() == authored);
+
+}
+} // namespace
+
+TEST_CASE("native chart without BGM places taps in its virtual tail as one undo step",
+          "[unit][core][interaction][virtual-canvas]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    const auto built = build_virtual_canvas(history.document.charts.front());
+    REQUIRE(std::holds_alternative<virtual_canvas_t>(built));
+    const auto& canvas = std::get<virtual_canvas_t>(built);
+    REQUIRE(canvas.measure_count == native_unanchored_virtual_measure_count);
+    const auto last = canvas.measure_at(canvas.measure_count - 1);
+    REQUIRE(last);
+    const auto authored = history.document.charts.front().measures.size();
+    const auto placed = dispatch_editor_action(
+        history, state, place_virtual_bms_tap_action_t{last->begin_row, lane_id_t{1}});
+    REQUIRE(placed);
+    const auto& chart = history.document.charts.front();
+    check_native_tail_commit(history, authored);
+
+    CHECK_FALSE(dispatch_editor_action(
+        history, state, place_virtual_bms_tap_action_t{canvas.total_rows, lane_id_t{1}}));
 }
 
 TEST_CASE("invalid virtual BMS taps leave document and cursor untouched",
@@ -2460,7 +2494,14 @@ TEST_CASE("exact cursor jumps reject stale and out-of-chart targets without chan
 
 TEST_CASE("pointer zoom anchors chart rows and viewport scrolling clamps to content",
           "[unit][core][interaction][viewport]") {
-    auto history = make_document_history(make_song());
+    auto song = make_song();
+    // A timed BGM bounds the chart; without one the native chart has a virtual tail.
+    song.audio_assets.push_back({.id = asset_id_t{9001},
+                                 .stream = {.sample_rate = 48'000, .channels = 2,
+                                            .frame_count = 48'000}});
+    song.resources.push_back({.id = resource_id_t{9001}, .asset = asset_id_t{9001},
+                              .roles = {resource_role_t::bgm}});
+    auto history = make_document_history(std::move(song));
     constexpr std::array snaps{std::uint64_t{4}, std::uint64_t{8}, std::uint64_t{6}};
     auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1}, {measure_id_t{1}, 0},
                                          snaps, 4, 400.0);
@@ -4378,4 +4419,29 @@ TEST_CASE("configured follow publishes its validated margins to scene consumers"
         expect_configured_follow(visible.viewport_scroll_pixels == -400 * anchor);
         expect_configured_follow(history.undo.empty());
     }
+}
+
+namespace {
+auto native_hundred_measure_song() -> song_document_t {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    while (chart.measures.size() < 100) {
+        auto measure = chart.measures.back();
+        measure.id = measure_id_t{chart.measures.size() + 1};
+        measure.notes.clear();
+        chart.measures.push_back(std::move(measure));
+    }
+    return song;
+}
+}
+
+TEST_CASE("native canvas navigation preserves authored measures beyond the virtual minimum",
+          "[unit][core][interaction][integration-fix]") {
+    auto history = make_document_history(native_hundred_measure_song());
+    auto state = make_state(history);
+    CHECK(virtual_tail_measure_limit(history.document.charts.front()) == 100);
+    const auto selected = dispatch_editor_action(history, state, select_bms_canvas_measure_action_t{64});
+    REQUIRE(selected);
+    CHECK(state.cursor.measure == measure_id_t{65});
+    CHECK_FALSE(dispatch_editor_action(history, state, select_bms_canvas_measure_action_t{100}));
 }

@@ -91,6 +91,14 @@ auto plan_preview_keys(std::span<const transport_voice_t> voices, std::uint64_t 
             return plan;
         }
     }
+    // Voice slots are reused, so scheduling order is arbitrary. Compressed
+    // sources seek in time proportional to the stream position, so decode each
+    // source in ascending block order and let its cursor continue forward.
+    std::ranges::sort(plan.keys, [](const auto& left, const auto& right) {
+        if (left.source.source_identity != right.source.source_identity)
+            return left.source.source_identity < right.source.source_identity;
+        return left.block_index < right.block_index;
+    });
     return plan;
 }
 

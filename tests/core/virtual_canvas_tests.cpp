@@ -66,6 +66,48 @@ TEST_CASE("non-BMS virtual canvas stops at authored measure geometry",
     CHECK_FALSE(canvas.measure_containing(1'440));
 }
 
+namespace {
+void check_unanchored_canvas(const wormedit::chart_document_t& chart, const wormedit::virtual_canvas_t& canvas) {
+    CHECK(canvas.measure_count == wormedit::native_unanchored_virtual_measure_count);
+    CHECK(canvas.authored_index.entries.size() == 2);
+    CHECK_FALSE(canvas.measure_at(2)->authored);
+    CHECK(chart.measures.size() == 2);
+
+}
+} // namespace
+
+TEST_CASE("native chart without timed BGM exposes a virtual tail that BGM removes",
+          "[unit][core][virtual-canvas]") {
+    wormedit::song_document_t document;
+    document.charts.push_back(chart_with_two_measures(wormedit::format_family_t::native_project));
+    wormedit::sync_virtual_tails(document);
+    const auto& chart = document.charts.front();
+    CHECK(wormedit::chart_has_virtual_tail(chart));
+    const auto built = wormedit::build_virtual_canvas(chart);
+    REQUIRE(std::holds_alternative<wormedit::virtual_canvas_t>(built));
+    const auto& canvas = std::get<wormedit::virtual_canvas_t>(built);
+    check_unanchored_canvas(chart, canvas);
+
+    document.audio_assets.push_back({.id = wormedit::asset_id_t{1},
+                                     .stream = {.sample_rate = 48'000, .channels = 2,
+                                                .frame_count = 48'000 * 60}});
+    document.resources.push_back({.id = wormedit::resource_id_t{1}, .asset = wormedit::asset_id_t{1},
+                                  .roles = {wormedit::resource_role_t::bgm}});
+    wormedit::sync_virtual_tails(document);
+    CHECK_FALSE(wormedit::chart_has_virtual_tail(document.charts.front()));
+}
+
+TEST_CASE("BGM without a known length does not anchor a native chart",
+          "[unit][core][virtual-canvas]") {
+    wormedit::song_document_t document;
+    document.charts.push_back(chart_with_two_measures(wormedit::format_family_t::native_project));
+    document.audio_assets.push_back({.id = wormedit::asset_id_t{1}});
+    document.resources.push_back({.id = wormedit::resource_id_t{1}, .asset = wormedit::asset_id_t{1},
+                                  .roles = {wormedit::resource_role_t::music}});
+    wormedit::sync_virtual_tails(document);
+    CHECK(wormedit::chart_has_virtual_tail(document.charts.front()));
+}
+
 TEST_CASE("virtual BMS tail rejects row overflow without changing the chart",
           "[unit][core][virtual-canvas]") {
     auto chart = chart_with_two_measures(wormedit::format_family_t::bms);

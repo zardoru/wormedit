@@ -3,6 +3,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <atomic>
+#include <barrier>
+#include <thread>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -183,4 +186,162 @@ TEST_CASE("decoded source registry retains project decoders for waveform analysi
           waveform_analysis_status_t::decoder_unavailable);
     CHECK(registry.analyze_waveform({}, blocks, waveforms, 128).status ==
           waveform_analysis_status_t::invalid_request);
+}
+
+namespace {
+
+auto pending_registration(std::uint64_t asset, std::string_view name = "keysound-c4.ogg")
+    -> wormedit::audio::decoded_source_registration_t {
+    return {.asset = wormedit::asset_id_t{asset},
+            .path = fixture_path(name),
+            .source = {"fixture:asset:" + std::to_string(asset), "pending-v1:" + std::to_string(asset)}};
+}
+
+} // namespace
+
+namespace {
+void check_pending_inventory(wormedit::audio::decoded_source_registry_t& registry) {
+    using namespace wormedit::audio;
+    CHECK(registry.size() == 1'000);
+    CHECK(registry.pending_count() == 1'000);
+    CHECK(registry.open_decoder_count() == 0);
+    CHECK(registry.bindings().empty());
+    CHECK_FALSE(registry.binding(wormedit::asset_id_t{1}));
+
+    CHECK(registry.register_source_pending(pending_registration(1)).status ==
+          source_registration_status_t::duplicate_asset);
+
+}
+} // namespace
+
+namespace {
+void check_probed_inventory(wormedit::audio::decoded_source_registry_t& registry, std::size_t probed) {
+    CHECK(probed == 1'000);
+    CHECK(registry.pending_count() == 0);
+    CHECK(registry.bindings().size() == 1'000);
+    CHECK(registry.binding(wormedit::asset_id_t{500})->output_frame_count > 0);
+    CHECK(registry.take_probe_failures().empty());
+}
+} // namespace
+
+TEST_CASE("pending registration opens no decoder until a probe runs",
+          "[unit][audio][source-registry][lazy]") {
+    using namespace wormedit::audio;
+    decoded_source_registry_t registry{2'048};
+    for (std::uint64_t asset = 1; asset <= 1'000; ++asset) {
+        const auto added = registry.register_source_pending(pending_registration(asset));
+        REQUIRE(added.status == source_registration_status_t::pending);
+        CHECK_FALSE(added.binding.has_value());
+    }
+    check_pending_inventory(registry);
+
+    std::size_t probed = 0;
+    while (registry.probe_next_pending()) {
+        ++probed;
+        CHECK(registry.open_decoder_count() == 0);
+    }
+    check_probed_inventory(registry, probed);
+}
+
+namespace {
+void check_failure_is_reported_once(wormedit::audio::decoded_source_registry_t& registry) {
+    using namespace wormedit::audio;
+    CHECK(registry.take_probe_failures().empty());
+    CHECK(registry.probe(wormedit::asset_id_t{2}).status == source_registration_status_t::open_failed);
+    CHECK(registry.take_probe_failures().empty());
+}
+void check_failure_queue(wormedit::audio::decoded_source_registry_t& registry) {
+    using namespace wormedit::audio;
+    const auto failures = registry.take_probe_failures();
+    REQUIRE(failures.size() == 1);
+    CHECK(failures.front().asset == wormedit::asset_id_t{2});
+    CHECK_FALSE(failures.front().message.empty());
+
+}
+void check_failed_inventory(wormedit::audio::decoded_source_registry_t& registry) {
+    using namespace wormedit::audio;
+    CHECK(registry.binding(wormedit::asset_id_t{1}).has_value());
+    CHECK_FALSE(registry.binding(wormedit::asset_id_t{2}).has_value());
+    CHECK(registry.bindings().size() == 1);
+    check_failure_queue(registry);
+    check_failure_is_reported_once(registry);
+}
+} // namespace
+
+TEST_CASE("probe failures are reported once and keep the source out of bindings",
+          "[unit][audio][source-registry][lazy]") {
+    using namespace wormedit::audio;
+    decoded_source_registry_t registry;
+    REQUIRE(registry.register_source_pending(pending_registration(1)).status ==
+            source_registration_status_t::pending);
+    REQUIRE(registry.register_source_pending(pending_registration(2, "missing-file.ogg")).status ==
+            source_registration_status_t::pending);
+    registry.await_pending();
+
+    check_failed_inventory(registry);
+}
+
+namespace {
+void check_pending_decode(wormedit::audio::decoded_source_registry_t& registry, wormedit::audio::transport_t& transport, wormedit::audio::session_token_t token, std::uint64_t asset) {
+    using namespace wormedit::audio;
+        const audio_block_key_t key{{"fixture:asset:" + std::to_string(asset),
+                                     "pending-v1:" + std::to_string(asset)},
+                                    0};
+        const auto decoded = registry.decode_block(transport, token, key);
+        CHECK(decoded.status == block_decode_status_t::decoded);
+        CHECK(registry.binding(wormedit::asset_id_t{asset}).has_value());
+        CHECK(registry.open_decoder_count() <= 4);
+}
+} // namespace
+
+TEST_CASE("decoding a pending source probes it on demand and bounds idle open decoders",
+          "[unit][audio][source-registry][lazy]") {
+    using namespace wormedit::audio;
+    decoded_source_registry_t registry{64, 4};
+    for (std::uint64_t asset = 1; asset <= 12; ++asset) {
+        REQUIRE(registry.register_source_pending(pending_registration(asset)).status ==
+                source_registration_status_t::pending);
+    }
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    const auto token = transport.start();
+    REQUIRE(token.has_value());
+    for (std::uint64_t asset = 1; asset <= 12; ++asset) {
+        check_pending_decode(registry, transport, *token, asset);
+    }
+    CHECK(registry.open_decoder_count() == 4);
+    registry.clear();
+    CHECK(registry.open_decoder_count() == 0);
+}
+
+namespace {
+void race_removed_probe(wormedit::audio::decoded_source_registry_t& registry, std::uint64_t asset) {
+    REQUIRE(registry.register_source_pending(pending_registration(asset, "missing-file.ogg")).status ==
+            wormedit::audio::source_registration_status_t::pending);
+    std::barrier start{2};
+    std::thread worker([&] { start.arrive_and_wait(); registry.probe_next_pending(); });
+    start.arrive_and_wait();
+    registry.clear();
+    worker.join();
+    CHECK(registry.take_probe_failures().empty());
+    CHECK(registry.size() == 0);
+}
+}
+TEST_CASE("cleared pending probes cannot report failures into the replacement inventory",
+          "[unit][audio][source-registry][integration-fix]") {
+    wormedit::audio::decoded_source_registry_t registry;
+    for (std::uint64_t asset = 1; asset <= 200; ++asset) race_removed_probe(registry, asset);
+}
+TEST_CASE("synchronous source registration tolerates concurrent registry clearing",
+          "[unit][audio][source-registry][integration-fix]") {
+    wormedit::audio::decoded_source_registry_t registry;
+    std::atomic<bool> done{};
+    std::thread clearing([&] { while (!done.load()) registry.clear(); });
+    for (std::uint64_t asset = 1; asset <= 500; ++asset)
+        static_cast<void>(registry.register_source(pending_registration(asset)));
+    done = true;
+    clearing.join();
+    registry.clear();
+    CHECK(registry.size() == 0);
+    CHECK(registry.open_decoder_count() == 0);
 }

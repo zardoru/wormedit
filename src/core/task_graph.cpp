@@ -222,7 +222,18 @@ void complete_locked(scheduler_state_t& scheduler, const std::shared_ptr<graph_s
     scheduler.changed.notify_all();
 }
 
-void worker_loop(const std::shared_ptr<scheduler_state_t>& scheduler, std::stop_token worker_stop) {
+void run_worker_start_hook(const std::function<void()>& on_start) noexcept {
+    if (!on_start) return;
+    try {
+        on_start();
+    } catch (...) {
+        // Keep running at the default priority.
+    }
+}
+
+void worker_loop(const std::shared_ptr<scheduler_state_t>& scheduler, std::stop_token worker_stop,
+                 const std::function<void()>& on_start) {
+    run_worker_start_hook(on_start);
     while (true) {
         work_item_t work;
         {
@@ -376,12 +387,15 @@ task_graph_handle_t::operator bool() const noexcept {
 }
 
 struct task_scheduler_t::impl_t {
-    explicit impl_t(std::size_t worker_count, std::size_t capacity)
+    explicit impl_t(std::size_t worker_count, std::size_t capacity,
+                    task_scheduler_options_t options)
         : state(std::make_shared<scheduler_state_t>(std::max<std::size_t>(1, capacity))) {
-        workers.reserve(std::max<std::size_t>(1, worker_count));
-        for (auto index = std::size_t{}; index < std::max<std::size_t>(1, worker_count); ++index) {
-            workers.emplace_back(
-                [shared = state](std::stop_token stop) { worker_loop(shared, stop); });
+        const auto count =
+            clamp_worker_count(worker_count, std::thread::hardware_concurrency());
+        workers.reserve(count);
+        for (auto index = std::size_t{}; index < count; ++index) {
+            workers.emplace_back([shared = state, hook = options.on_worker_start](
+                                     std::stop_token stop) { worker_loop(shared, stop, hook); });
         }
     }
 
@@ -390,8 +404,22 @@ struct task_scheduler_t::impl_t {
     bool joined{};
 };
 
-task_scheduler_t::task_scheduler_t(std::size_t worker_count, std::size_t maximum_outstanding_tasks)
-    : impl_(std::make_unique<impl_t>(worker_count, maximum_outstanding_tasks)) {}
+auto clamp_worker_count(std::size_t requested, std::size_t hardware_threads) noexcept
+    -> std::size_t {
+    requested = std::max<std::size_t>(1, requested);
+    if (hardware_threads == 0) return requested;
+    const auto limit = hardware_threads > 2 ? hardware_threads - 2 : std::size_t{1};
+    return std::min(requested, limit);
+}
+
+task_scheduler_t::task_scheduler_t(std::size_t worker_count, std::size_t maximum_outstanding_tasks,
+                                   task_scheduler_options_t options)
+    : impl_(std::make_unique<impl_t>(worker_count, maximum_outstanding_tasks,
+                                     std::move(options))) {}
+
+auto task_scheduler_t::worker_count() const noexcept -> std::size_t {
+    return impl_->workers.size();
+}
 
 task_scheduler_t::~task_scheduler_t() {
     shutdown();

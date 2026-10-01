@@ -1,5 +1,6 @@
 #pragma once
 #include "ui/field/field_glyphs.h"
+#include "ui/field/field_tile_cache.h"
 #include <array>
 #include <span>
 #include <vector>
@@ -15,6 +16,7 @@ struct batch_t {
     SDL_Texture* texture{};
     std::size_t index_offset{};
     std::size_t index_count{};
+    SDL_FRect clip{};
 };
 struct workload_t {
     std::size_t vertices{}, indices{}, draw_calls{};
@@ -83,6 +85,23 @@ class renderer_t {
                   SDL_FRect bounds, double world_origin, std::uint64_t generation,
                   envelope_style_t style, float y_scale = 1) -> bool;
     auto envelope_work() const noexcept -> envelope_work_t;
+    void limit_geometry(std::size_t bytes) noexcept;
+    auto geometry_overflow() const noexcept -> bool { return geometry_overflow_; }
+    auto geometry_bytes() const noexcept -> std::size_t;
+    auto push_clip(SDL_FRect clip) -> SDL_FRect;
+    void pop_clip(SDL_FRect clip);
+    auto composite_tiles(const tile_request_t& request,
+                         std::span<const SDL_FRect> holes = {}) -> bool;
+    auto missing_tiles(const tile_request_t& request) -> std::vector<SDL_FRect>;
+    void capture_tiles(const tile_request_t& request, std::size_t first_index);
+    auto tile_work() const noexcept -> tile_work_t;
+    void account_tile_source(std::size_t bytes);
+    void prepare_tiles(const tile_request_t& request, double covered_begin, double covered_end,
+                       std::size_t source_bytes,
+                       const std::function<void(renderer_t&, double)>& paint);
+    // Cache compositing stays at the caller's original pass insertion point.
+    void cached_quad(layer_t layer, SDL_FRect bounds, SDL_Texture* texture,
+                     SDL_FPoint uv_min, SDL_FPoint uv_max);
     void rect(layer_t layer, SDL_FRect bounds, color_t color);
     void hline(layer_t layer, float x0, float x1, float y, float width, color_t color);
     void vline(layer_t layer, float x, float y0, float y1, float width, color_t color);
@@ -115,7 +134,11 @@ class renderer_t {
     std::vector<std::uint32_t> indices_;
     std::vector<batch_t> batches_;
     SDL_Renderer* device_{};
+    std::size_t geometry_limit_{};
+    bool geometry_overflow_{};
+    auto reserve_geometry(std::size_t vertices, std::size_t indices) -> bool;
     std::array<std::unique_ptr<envelope_cache_t>, 2> envelopes_;
+    std::unique_ptr<field_tile_cache_t> tiles_;
     auto submit_envelope_fallback(SDL_Renderer* renderer, SDL_Texture* texture,
                                    submission_t hooks, bool& fallback) const -> bool;
     void envelope_quad(layer_t layer, const envelope_cache_t& cache,

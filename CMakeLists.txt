@@ -280,6 +280,7 @@ if(WORMEDIT_BUILD_APP)
 
     add_executable(wormedit
         src/common/chart.cpp
+        src/common/static_interval_index.cpp
         src/editor/field.cpp
         src/sys/audio.cpp
         src/sys/application_defaults.cpp
@@ -347,6 +348,7 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/frontend.cpp
         src/ui/nuklear/sdl_backend.cpp
         src/ui/field/field_renderer.cpp
+        src/ui/field/field_tile_cache.cpp
         src/ui/field/field_glyphs.cpp
         src/ui/nuklear/image_quad.cpp
         src/ui/nuklear/lucide_icons.cpp

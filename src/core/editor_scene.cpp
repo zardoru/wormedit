@@ -2086,13 +2086,14 @@ auto window_contains_view(const editor_field_scene_window_t& window,
     return low_margin >= std::min(height * 0.25, view.viewport_scroll_pixels) &&
            high_margin >= height * 0.25;
 }
-auto scene_y_for_row(const chart_document_t& chart,
-                     const editor_interaction_view_model_t& view,
+auto scene_y_for_row(const chart_document_t& chart, const editor_interaction_view_model_t& view,
                      editor_field_scroll_direction_t direction, long double row) -> double {
     const auto offset = row * static_cast<long double>(view.pixels_per_standard_measure) /
-        chart.divisions_per_standard_measure - static_cast<long double>(view.viewport_scroll_pixels);
+                            chart.divisions_per_standard_measure -
+                        static_cast<long double>(view.viewport_scroll_pixels);
     return static_cast<double>(direction == editor_field_scroll_direction_t::down
-        ? static_cast<long double>(view.viewport_height_pixels) - offset : offset);
+                                   ? static_cast<long double>(view.viewport_height_pixels) - offset
+                                   : offset);
 }
 auto translated_window_rect(editor_field_rect_t rect, double shift) -> editor_field_rect_t {
     rect.top += shift;
@@ -2133,16 +2134,49 @@ void project_window_grid(const editor_field_scene_t& source, editor_field_scene_
         target.grid_lines.push_back(std::move(translated));
     }
 }
-auto project_scene_window(const chart_document_t& chart, const editor_field_scene_index_t& index,
+auto valid_window_request(const chart_document_t& chart, const editor_field_scene_index_t& index,
                           const editor_interaction_view_model_t& view,
-                          const editor_field_scene_request_t& request,
-                          const editor_field_scene_window_t& window)
-    -> editor_field_scene_result_t {
-    editor_field_scene_result_t result;
+                          const editor_field_scene_request_t& request) -> bool {
+    return !window_has_edit_preview(view) && request.authored_groupings.empty() &&
+           request.comparison_difference_rows.empty() && valid_scene_index(chart, index, view) &&
+           valid_scene_view(view) &&
+           valid_scene_request_geometry(request, view.viewport_height_pixels);
+}
+auto reusable_window_matches(const editor_field_scene_window_t& window,
+                             const editor_interaction_view_model_t& view,
+                             const editor_field_scene_request_t& request) -> bool {
+    return window_key_matches(window, view, request) && window_contains_view(window, view);
+}
+auto window_scroll_valid(const chart_document_t& chart, const editor_interaction_view_model_t& view,
+                         const editor_field_scene_window_t& window) -> bool {
+    const auto content_height = static_cast<double>(window.canvas_rows) *
+                                view.pixels_per_standard_measure /
+                                static_cast<double>(chart.divisions_per_standard_measure);
+    return viewport_scroll_in_range(
+        view.viewport_scroll_pixels, view.viewport_height_pixels,
+        editor_maximum_viewport_scroll(content_height, view.viewport_height_pixels,
+                                       view.viewport_end_margin_fraction),
+        view.viewport_minimum_margin_fraction);
+}
+auto project_scene_window_metadata_unchecked(const chart_document_t& chart,
+                                             const editor_field_scene_index_t& index,
+                                             const editor_interaction_view_model_t& view,
+                                             const editor_field_scene_request_t& request,
+                                             const editor_field_scene_window_t& window)
+    -> editor_field_scene_window_metadata_t {
+    editor_field_scene_window_metadata_t metadata;
+    auto& result = metadata.projection;
     const auto visible = visible_scene_rows(chart, view, request, window.canvas_rows);
     editor_field_scene_t scene{.visible_begin_row = visible.begin, .visible_end_row = visible.end};
-    scene_geometry_context_t geometry{chart, index, view, request, scene, result.diagnostics,
-        visible.query_low, visible.query_high, visible.canvas_rows};
+    scene_geometry_context_t geometry{chart,
+                                      index,
+                                      view,
+                                      request,
+                                      scene,
+                                      result.diagnostics,
+                                      visible.query_low,
+                                      visible.query_high,
+                                      visible.canvas_rows};
     const auto y_for_row = [&](long double row) {
         return scene_y_for_row(chart, view, request.scroll_direction, row);
     };
@@ -2150,38 +2184,54 @@ auto project_scene_window(const chart_document_t& chart, const editor_field_scen
     const auto operate = [] { return true; };
     std::vector<visible_band_t> bands;
     if (!compose_visible_layouts(geometry, operate, consume, y_for_row, bands))
-        return result;
-    const auto shift = request.scroll_direction == editor_field_scroll_direction_t::down
-        ? view.viewport_height_pixels - window.view.viewport_height_pixels +
-            view.viewport_scroll_pixels - window.view.viewport_scroll_pixels
-        : window.view.viewport_scroll_pixels - view.viewport_scroll_pixels;
-    project_window_grid(*window.scene, scene, shift);
-    project_window_rects(window.scene->note_endpoints, scene.note_endpoints, shift,
-                          view.viewport_height_pixels);
-    const auto [clip_top, clip_bottom] = ordered_vertical_bounds(
-        y_for_row(visible.query_low), y_for_row(visible.query_high));
-    project_window_holds(*window.scene, scene, shift, clip_top, clip_bottom);
-    project_window_rects(window.scene->bgm_events, scene.bgm_events, shift,
-                          view.viewport_height_pixels);
+        return metadata;
+    const auto [clip_top, clip_bottom] =
+        ordered_vertical_bounds(y_for_row(visible.query_low), y_for_row(visible.query_high));
+    metadata.hold_clip_top = clip_top;
+    metadata.hold_clip_bottom = clip_bottom;
     visible_bgm_lanes_t bgm_lanes;
     if (request.bgm_pane_width_pixels > 0 &&
         !append_visible_bgm_lanes(geometry, operate, consume, bgm_lanes))
-        return result;
+        return metadata;
     const auto band_for_row = [&](std::uint64_t row) { return visible_band_at_row(bands, row); };
     if (!compose_scene_cursor(geometry, consume, y_for_row, band_for_row))
-        return result;
+        return metadata;
     result.scene = std::move(scene);
+    return metadata;
+}
+auto project_scene_window(const chart_document_t& chart, const editor_field_scene_index_t& index,
+                          const editor_interaction_view_model_t& view,
+                          const editor_field_scene_request_t& request,
+                          const editor_field_scene_window_t& window)
+    -> editor_field_scene_result_t {
+    auto metadata = project_scene_window_metadata_unchecked(chart, index, view, request, window);
+    auto result = std::move(metadata.projection);
+    if (!result)
+        return result;
+    auto& scene = *result.scene;
+    const auto shift = request.scroll_direction == editor_field_scroll_direction_t::down
+                           ? view.viewport_height_pixels - window.view.viewport_height_pixels +
+                                 view.viewport_scroll_pixels - window.view.viewport_scroll_pixels
+                           : window.view.viewport_scroll_pixels - view.viewport_scroll_pixels;
+    project_window_grid(*window.scene, scene, shift);
+    project_window_rects(window.scene->note_endpoints, scene.note_endpoints, shift,
+                         view.viewport_height_pixels);
+    project_window_holds(*window.scene, scene, shift, metadata.hold_clip_top,
+                         metadata.hold_clip_bottom);
+    project_window_rects(window.scene->bgm_events, scene.bgm_events, shift,
+                         view.viewport_height_pixels);
     return result;
 }
 auto projected_window_fits_limit(const editor_field_scene_result_t& result,
-                                  const editor_field_scene_request_t& request) -> bool {
-    if (!result) return false;
+                                 const editor_field_scene_request_t& request) -> bool {
+    if (!result)
+        return false;
     const auto& scene = *result.scene;
     const auto count = scene.layout_bands.size() + scene.lanes.size() +
-        scene.comparison_differences.size() + scene.grid_lines.size() +
-        scene.hold_bodies.size() + scene.note_endpoints.size() +
-        scene.bgm_lanes.size() + scene.bgm_events.size() +
-        static_cast<std::size_t>(scene.cursor.has_value());
+                       scene.comparison_differences.size() + scene.grid_lines.size() +
+                       scene.hold_bodies.size() + scene.note_endpoints.size() +
+                       scene.bgm_lanes.size() + scene.bgm_events.size() +
+                       static_cast<std::size_t>(scene.cursor.has_value());
     return count <= request.maximum_scene_primitives;
 }
 auto rebuild_scene_window(const chart_document_t& chart, const editor_field_scene_index_t& index,
@@ -2190,20 +2240,23 @@ auto rebuild_scene_window(const chart_document_t& chart, const editor_field_scen
                           editor_field_scene_window_t& window) -> bool {
     auto expanded = view;
     expanded.viewport_height_pixels *= 3.0;
-    expanded.viewport_scroll_pixels = std::max(0.0,
-        view.viewport_scroll_pixels - view.viewport_height_pixels);
+    expanded.viewport_scroll_pixels =
+        std::max(0.0, view.viewport_scroll_pixels - view.viewport_height_pixels);
     // A tall window at the end may exceed the allowed viewport scroll. Keep its
     // beginning in the content, while preserving coverage of the original view.
     diagnostic_list_t diagnostics;
     const auto canvas = scene_canvas_rows(chart, index, request, diagnostics);
-    if (!canvas) return false;
+    if (!canvas)
+        return false;
     const auto content_height = static_cast<double>(*canvas) * view.pixels_per_standard_measure /
-        static_cast<double>(chart.divisions_per_standard_measure);
-    expanded.viewport_scroll_pixels = std::min(expanded.viewport_scroll_pixels,
-        editor_maximum_viewport_scroll(content_height, expanded.viewport_height_pixels,
+                                static_cast<double>(chart.divisions_per_standard_measure);
+    expanded.viewport_scroll_pixels =
+        std::min(expanded.viewport_scroll_pixels,
+                 editor_maximum_viewport_scroll(content_height, expanded.viewport_height_pixels,
                                                 expanded.viewport_end_margin_fraction));
     auto composed = make_editor_field_scene(chart, index, expanded, request);
-    if (!composed) return false;
+    if (!composed)
+        return false;
     window.scene = std::move(composed.scene);
     window.view = std::move(expanded);
     window.request = request;
@@ -2213,29 +2266,47 @@ auto rebuild_scene_window(const chart_document_t& chart, const editor_field_scen
 }
 } // namespace
 
+auto can_reuse_editor_field_scene_window(const chart_document_t& chart,
+                                         const editor_field_scene_index_t& index,
+                                         const editor_interaction_view_model_t& view,
+                                         const editor_field_scene_request_t& request,
+                                         const editor_field_scene_window_t& window) -> bool {
+    return valid_window_request(chart, index, view, request) &&
+           reusable_window_matches(window, view, request) &&
+           window_scroll_valid(chart, view, window);
+}
+auto project_editor_field_scene_window_metadata(const chart_document_t& chart,
+                                                const editor_field_scene_index_t& index,
+                                                const editor_interaction_view_model_t& view,
+                                                const editor_field_scene_request_t& request,
+                                                const editor_field_scene_window_t& window)
+    -> editor_field_scene_window_metadata_t {
+    if (!can_reuse_editor_field_scene_window(chart, index, view, request, window))
+        return {};
+    auto metadata = project_scene_window_metadata_unchecked(chart, index, view, request, window);
+    if (!projected_window_fits_limit(metadata.projection, request))
+        return {};
+    return metadata;
+}
+
 auto make_editor_field_scene_reusing_window(const chart_document_t& chart,
-    const editor_field_scene_index_t& index, const editor_interaction_view_model_t& view,
-    const editor_field_scene_request_t& request, editor_field_scene_window_t& window)
+                                            const editor_field_scene_index_t& index,
+                                            const editor_interaction_view_model_t& view,
+                                            const editor_field_scene_request_t& request,
+                                            editor_field_scene_window_t& window)
     -> editor_field_scene_result_t {
     // Complex transient previews and authored grouping/comparison overlays keep
     // their existing validation and composition path.
-    if (window_has_edit_preview(view) || !request.authored_groupings.empty() ||
-        !request.comparison_difference_rows.empty() || !valid_scene_index(chart, index, view) ||
-        !valid_scene_view(view) || !valid_scene_request_geometry(request, view.viewport_height_pixels)) {
+    if (!valid_window_request(chart, index, view, request)) {
         window.scene.reset();
         return make_editor_field_scene(chart, index, view, request);
     }
-    const auto matched = window_key_matches(window, view, request) && window_contains_view(window, view);
+    const auto matched = reusable_window_matches(window, view, request);
     if (!matched && !rebuild_scene_window(chart, index, view, request, window)) {
         window.scene.reset();
         return make_editor_field_scene(chart, index, view, request);
     }
-    const auto content_height = static_cast<double>(window.canvas_rows) * view.pixels_per_standard_measure /
-        static_cast<double>(chart.divisions_per_standard_measure);
-    if (!viewport_scroll_in_range(view.viewport_scroll_pixels, view.viewport_height_pixels,
-        editor_maximum_viewport_scroll(content_height, view.viewport_height_pixels,
-                                       view.viewport_end_margin_fraction),
-        view.viewport_minimum_margin_fraction))
+    if (!window_scroll_valid(chart, view, window))
         return make_editor_field_scene(chart, index, view, request);
     auto result = project_scene_window(chart, index, view, request, window);
     if (!projected_window_fits_limit(result, request)) {

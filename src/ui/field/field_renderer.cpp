@@ -286,6 +286,7 @@ renderer_t::renderer_t() = default;
 renderer_t::~renderer_t() = default;
 void renderer_t::invalidate_envelopes() noexcept {
     for (auto& cache : envelopes_) cache.reset();
+    tiles_.reset();
 }
 auto renderer_t::envelope(std::size_t slot, layer_t layer, std::span<const envelope_row_t> rows,
                           SDL_FRect bounds, double origin, std::uint64_t generation,
@@ -377,26 +378,116 @@ auto renderer_t::envelope_work() const noexcept -> envelope_work_t {
 
 void renderer_t::begin(SDL_FRect viewport, SDL_FPoint scale, solid_texture_t solid, SDL_Renderer* device) {
     device_ = device;
+    if (!tiles_) tiles_ = std::make_unique<field_tile_cache_t>();
+    tiles_->begin(device);
     for (auto& cache : envelopes_) if (cache) cache->active = false;
     solid_ = solid;
     viewport_ = viewport;
     scale_ = {std::max(.001f, scale.x), std::max(.001f, scale.y)};
+    geometry_overflow_=false;
     vertices_.clear();
     indices_.clear();
     batches_.clear();
+}
+auto renderer_t::push_clip(SDL_FRect clip) -> SDL_FRect {
+    const auto previous = viewport_;
+    viewport_ = intersection(viewport_, clip);
+    return previous;
+}
+void renderer_t::pop_clip(SDL_FRect clip) { viewport_ = clip; }
+auto renderer_t::composite_tiles(const tile_request_t& request,
+                                 std::span<const SDL_FRect> holes) -> bool {
+    return tiles_ && tiles_->composite(*this, request, holes);
+}
+auto renderer_t::missing_tiles(const tile_request_t& request) -> std::vector<SDL_FRect> {
+    return tiles_ ? tiles_->missing(request) : std::vector<SDL_FRect>{request.viewport};
+}
+void renderer_t::capture_tiles(const tile_request_t& request, std::size_t first_index) {
+    if (tiles_) tiles_->capture(*this, request, first_index);
+}
+void renderer_t::prepare_tiles(const tile_request_t& request, double covered_begin,
+                               double covered_end, std::size_t source_bytes,
+                               const std::function<void(renderer_t&, double)>& paint) {
+    if (!tiles_) return;
+    renderer_t scratch;
+    scratch.limit_geometry(4*1024*1024);
+    const auto initialize=[&](renderer_t& target, double origin) {
+        target.begin({0,0,request.viewport.w,512}, {1,1}, solid_);
+        paint(target,origin);
+    };
+    tiles_->prepare(scratch,request,covered_begin,covered_end,source_bytes,initialize);
+}
+void renderer_t::account_tile_source(std::size_t bytes) {
+    if (tiles_) tiles_->account_source(bytes);
+}
+auto renderer_t::tile_work() const noexcept -> tile_work_t {
+    return tiles_ ? tiles_->work() : tile_work_t{};
+}
+void renderer_t::cached_quad(layer_t layer, SDL_FRect bounds, SDL_Texture* texture,
+                              SDL_FPoint uv_min, SDL_FPoint uv_max) {
+    const std::array<SDL_FPoint,4> points{{{bounds.x,bounds.y}, {bounds.x+bounds.w,bounds.y},
+        {bounds.x+bounds.w,bounds.y+bounds.h}, {bounds.x,bounds.y+bounds.h}}};
+    quad(layer, points, {255,255,255,255}, texture, uv_min, uv_max);
 }
 void renderer_t::append_batch(layer_t layer, SDL_Texture* texture, std::size_t count) {
     const auto offset = indices_.size() - count;
     const auto maximum = static_cast<std::size_t>(std::numeric_limits<int>::max());
     if (!batches_.empty() && batches_.back().layer == layer && batches_.back().texture == texture &&
-        batches_.back().index_count <= maximum - count) {
+        batches_.back().index_count <= maximum - count &&
+        batches_.back().clip.x == viewport_.x && batches_.back().clip.y == viewport_.y &&
+        batches_.back().clip.w == viewport_.w && batches_.back().clip.h == viewport_.h) {
         batches_.back().index_count += count;
     } else {
-        batches_.push_back({layer, texture, offset, count});
+        batches_.push_back({layer, texture, offset, count, viewport_});
     }
+}
+void renderer_t::limit_geometry(std::size_t bytes) noexcept {
+    geometry_limit_ = bytes;
+    geometry_overflow_ = bytes && geometry_bytes() > bytes;
+}
+auto renderer_t::geometry_bytes() const noexcept -> std::size_t {
+    return vertices_.capacity() * sizeof(SDL_Vertex) + indices_.capacity() * sizeof(std::uint32_t) +
+           batches_.capacity() * sizeof(batch_t);
+}
+auto renderer_t::reserve_geometry(std::size_t vertices, std::size_t indices) -> bool {
+    if (!geometry_limit_)
+        return true;
+    if (geometry_overflow_ || vertices > geometry_limit_ / sizeof(SDL_Vertex) ||
+        indices > geometry_limit_ / sizeof(std::uint32_t)) {
+        geometry_overflow_ = true;
+        return false;
+    }
+    const auto vertex_count = vertices_.size() + vertices;
+    const auto index_count = indices_.size() + indices;
+    const auto batch_count = batches_.size() + 2;
+    const auto vertex_capacity = vertex_count > vertices_.capacity()
+                                     ? std::max(vertex_count, vertices_.capacity() * 2)
+                                     : vertices_.capacity();
+    const auto index_capacity = index_count > indices_.capacity()
+                                    ? std::max(index_count, indices_.capacity() * 2)
+                                    : indices_.capacity();
+    const auto batch_capacity = batch_count > batches_.capacity()
+                                    ? std::max(batch_count, batches_.capacity() * 2)
+                                    : batches_.capacity();
+    // Reserve retains old storage until each replacement completes. Count all
+    // replacements against the limit, conservatively including simultaneous ones.
+    const auto replacement =
+        (vertex_capacity != vertices_.capacity() ? vertex_capacity * sizeof(SDL_Vertex) : 0) +
+        (index_capacity != indices_.capacity() ? index_capacity * sizeof(std::uint32_t) : 0) +
+        (batch_capacity != batches_.capacity() ? batch_capacity * sizeof(batch_t) : 0);
+    if (geometry_bytes() > geometry_limit_ || replacement > geometry_limit_ - geometry_bytes()) {
+        geometry_overflow_ = true;
+        return false;
+    }
+    vertices_.reserve(vertex_capacity);
+    indices_.reserve(index_capacity);
+    batches_.reserve(batch_capacity);
+    return true;
 }
 void renderer_t::quad(layer_t layer, std::span<const SDL_FPoint, 4> points, color_t color,
                       SDL_Texture* texture, SDL_FPoint uv_min, SDL_FPoint uv_max) {
+    if (!reserve_geometry(4, 6))
+        return;
     if (!texture) {
         texture = solid_.texture;
         uv_min = solid_.white_uv;
@@ -477,6 +568,8 @@ void renderer_t::polygon(layer_t layer, std::span<const SDL_FPoint> points, colo
     const auto clipped = intersection(bounds_of(points), viewport_);
     if (clipped.w <= 0 || clipped.h <= 0)
         return;
+    if (!reserve_geometry(points.size()*(aa_fringe>0 ? 2 : 1),
+        (points.size()-2)*3+(aa_fringe>0 ? points.size()*6 : 0))) return;
     const auto base = static_cast<std::uint32_t>(vertices_.size());
     for (std::size_t index = 0; index < points.size(); ++index) {
         const auto point = aa_fringe > 0 ? outward_corner(points, index, -aa_fringe * .5f)
@@ -494,6 +587,7 @@ void renderer_t::polygon(layer_t layer, std::span<const SDL_FPoint> points, colo
 }
 void renderer_t::stroke_joined(layer_t layer, std::span<const SDL_FPoint> points, float width,
                                color_t color) {
+    if (!reserve_geometry(points.size()*2,points.size()*6)) return;
     const auto base = static_cast<std::uint32_t>(vertices_.size());
     for (std::size_t index = 0; index < points.size(); ++index) {
         vertices_.push_back({outward_corner(points, index, width * .5f), rgba(color), solid_.white_uv});
@@ -512,6 +606,7 @@ void renderer_t::stroke_fringe(layer_t layer, std::span<const SDL_FPoint> points
     const auto base = static_cast<std::uint32_t>(vertices_.size());
     const bool thin = width <= aa_fringe;
     const std::uint32_t rings = thin ? 3 : 4;
+    if (!reserve_geometry(points.size()*rings,points.size()*(rings-1)*6)) return;
     const auto inner = std::max(0.0f, (width - aa_fringe) * .5f);
     const std::array<float, 4> offsets{inner + aa_fringe, inner, -inner, -inner - aa_fringe};
     auto transparent = color;
@@ -586,6 +681,10 @@ void renderer_t::text(layer_t layer, SDL_FPoint pen, std::string_view utf8, colo
 }
 auto renderer_t::workload() const noexcept -> workload_t {
     workload_t result{vertices_.size(), indices_.size(), batches_.size()};
+    const auto tiles=tile_work();
+    result.vertices+=tiles.raster_vertices;
+    result.indices+=tiles.raster_indices;
+    result.draw_calls+=tiles.raster_draws;
     for (const auto& cache : envelopes_) {
         if (!cache || !cache->active || !cache->pending || !cache->raster) continue;
         const auto work = cache->raster->workload();
@@ -643,6 +742,12 @@ auto renderer_t::submit_range(SDL_Renderer* renderer, std::size_t first_index,
         const auto batch_end = std::min(end, batch.index_offset + batch.index_count);
         if (begin >= batch_end)
             continue;
+        const auto region = intersection(batch.clip, viewport_);
+        const SDL_Rect batch_clip{static_cast<int>(std::floor(region.x)),
+            static_cast<int>(std::floor(region.y)),
+            static_cast<int>(std::ceil(region.x+region.w)-std::floor(region.x)),
+            static_cast<int>(std::ceil(region.y+region.h)-std::floor(region.y))};
+        success = clip(renderer, &batch_clip) && success;
         bool fallback = false;
         success = submit_envelope_fallback(renderer, batch.texture, hooks, fallback) && success;
         if (fallback) continue;

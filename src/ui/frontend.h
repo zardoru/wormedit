@@ -747,6 +747,15 @@ typedef struct WormUiComposeView {
     uint64_t project_id;
     uint64_t chart_id;
     uint64_t document_revision;
+    // Exact semantic filter changes invalidate retained static field pixels.
+    uint64_t static_scene_style_generation;
+    // Immutable expanded scalar scene; unavailable on truncated/transient windows.
+    const struct WormUiComposeView* static_scene;
+    uint64_t static_scene_source_generation;
+    double static_scene_world_origin_pixels;
+    double static_scene_covered_begin_pixels;
+    double static_scene_covered_end_pixels;
+    size_t static_scene_accounted_bytes;
     double viewport_width_pixels;
     double viewport_height_pixels;
     double bgm_horizontal_scroll_pixels;

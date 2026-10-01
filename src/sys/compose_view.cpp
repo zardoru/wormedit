@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <bit>
 #include <charconv>
 #include <cmath>
@@ -473,6 +474,7 @@ void project_compose_grid_lines(const compose_scene_projection_context_t& projec
     const auto& scene = projection.scene;
     auto& view = projection.view;
     const auto& lines = scene.grid_lines;
+    if (lines.empty()) return;
     const auto line_count =
         std::min(lines.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_GRID_CAPACITY));
     std::unordered_map<std::uint64_t, std::uint32_t> measure_numbers;
@@ -2192,6 +2194,360 @@ void populate_compose_pending_previews(const compose_final_projection_context_t&
 
 }
 
+template<class T>
+auto compose_vector_bytes(const std::vector<T>& values) -> std::size_t {
+    return values.capacity() * sizeof(T);
+}
+auto compose_static_storage_bytes(const flattened_workspace_t& storage) -> std::size_t {
+    const auto& data = storage.compose;
+    std::size_t bytes = sizeof(storage) + compose_vector_bytes(data.band) +
+        compose_vector_bytes(data.lane) + compose_vector_bytes(data.grid.line) +
+        compose_vector_bytes(data.grid.row) + compose_vector_bytes(data.hold) +
+        compose_vector_bytes(data.note) + compose_vector_bytes(data.bgm.lane) +
+        compose_vector_bytes(data.bgm.event) + compose_vector_bytes(data.timing_marker) +
+        compose_vector_bytes(data.timing_marker_labels) + compose_vector_bytes(data.difference);
+    for (const auto& label : data.timing_marker_labels)
+        bytes += label.first.capacity() + label.second.capacity() + 2;
+    // Include hash buckets, nodes, and owned labels conservatively.
+    bytes += data.sound_labels.bucket_count() * sizeof(void*);
+    for (const auto& [id, labels] : data.sound_labels)
+        bytes += sizeof(id) + sizeof(labels) + 4 * sizeof(void*) +
+                 labels.first.capacity() + labels.second.capacity() + 2;
+    return bytes;
+}
+void publish_compose_static_source(compose_scene_cache_t& cache, WormUiComposeView& view) {
+    if (!cache.static_scene_storage) return;
+    const auto& source = cache.static_scene_storage->view.compose;
+    const auto origin = view.downscroll
+        ? -cache.scene_window.view.viewport_scroll_pixels - source.viewport_height_pixels
+        : cache.scene_window.view.viewport_scroll_pixels;
+    view.static_scene = &source;
+    view.static_scene_source_generation = cache.static_scene_source_generation;
+    view.static_scene_world_origin_pixels = origin;
+    // Source-window clipped objects cannot define complete tiles at its edges.
+    double guard=96;
+    for (std::size_t index=0; index<source.lane_count; ++index)
+        guard=std::max(guard,(source.lanes[index].bounds.right-source.lanes[index].bounds.left)*.5+20);
+    const bool chart_begin=cache.scene_window.view.viewport_scroll_pixels==0;
+    view.static_scene_covered_begin_pixels = origin + (chart_begin && !view.downscroll ? 0 : guard);
+    view.static_scene_covered_end_pixels = origin + source.viewport_height_pixels -
+        (chart_begin && view.downscroll ? 0 : guard);
+    view.static_scene_accounted_bytes = cache.static_scene_accounted_bytes +
+        cache.static_projection_index_bytes;
+}
+auto compose_static_source_layout_matches(const WormUiComposeView& source,
+                                         const WormUiComposeView& view) -> bool {
+    return source.project_id==view.project_id && source.chart_id==view.chart_id &&
+        source.document_revision==view.document_revision &&
+        source.viewport_width_pixels==view.viewport_width_pixels &&
+        source.pixels_per_standard_measure==view.pixels_per_standard_measure &&
+        source.playable_field_left_pixels==view.playable_field_left_pixels &&
+        source.playable_field_right_pixels==view.playable_field_right_pixels &&
+        source.bgm_horizontal_scroll_pixels==view.bgm_horizontal_scroll_pixels &&
+        source.timing_lane_visibility_mask==view.timing_lane_visibility_mask &&
+        source.downscroll==view.downscroll && source.lane_key_legend_visible==view.lane_key_legend_visible;
+}
+void clear_static_source_selection(flattened_workspace_t& storage) {
+    for (auto& note:storage.compose.note) note.selected=false;
+    for (auto& hold:storage.compose.hold) hold.selected=false;
+    for (auto& event:storage.compose.bgm.event) event.selected=false;
+    for (auto& marker:storage.compose.timing_marker) marker.selected=false;
+}
+auto compose_static_labels_fit(const wormedit::document_history_t& history) -> bool {
+    std::size_t bytes{};
+    for (const auto& resource:history.document.resources) {
+        bytes+=resource.name.size()*2+64;
+        for (const auto& identity:resource.target_identities) bytes+=identity.identifier.size();
+        if (bytes>8*1024*1024) return false;
+    }
+    return true;
+}
+void discard_compose_static_source(compose_scene_cache_t& cache) {
+    cache.static_scene_storage.reset();
+    cache.static_projection_indices = {};
+    cache.static_projection_scratch = {};
+    cache.static_projection_source_generation = 0;
+    cache.static_projection_index_bytes = 0;
+}
+void refresh_compose_static_source(const compose_scene_projection_context_t& projection,
+                                  compose_scene_cache_t& cache, std::uint64_t canvas_rows) {
+    auto& view = projection.view;
+    view.static_scene = nullptr;
+    if (!cache.scene_window.scene || view.truncated) {
+        discard_compose_static_source(cache);
+        return;
+    }
+    if (cache.static_scene_storage &&
+        cache.static_scene_rebuild_count == cache.scene_window.rebuild_count &&
+        cache.static_scene_source_style == cache.static_scene_style_generation &&
+        compose_static_source_layout_matches(cache.static_scene_storage->view.compose,view)) {
+        publish_compose_static_source(cache, view);
+        return;
+    }
+    if (!compose_static_labels_fit(projection.history)) {
+        discard_compose_static_source(cache);
+        return;
+    }
+    discard_compose_static_source(cache);
+    auto storage = std::make_shared<flattened_workspace_t>();
+    auto& retained = storage->view.compose;
+    retained = view;
+    retained.static_scene = nullptr;
+    retained.viewport_height_pixels = cache.scene_window.view.viewport_height_pixels;
+    retained.area_scroll_pixels = cache.scene_window.view.viewport_scroll_pixels;
+    const compose_scene_projection_context_t expanded{
+        *storage, projection.chart, projection.index, *cache.scene_window.scene,
+        projection.history, projection.application_state, cache.scene_window.view, retained,
+        projection.field_left_pixels, projection.playable_field_width,
+        projection.pixels_per_row, projection.downscroll, false};
+    populate_compose_sound_labels(expanded);
+    project_compose_layout_and_notes(expanded);
+    project_compose_bgm(expanded);
+    populate_compose_timing_markers(*storage, projection.chart, cache, cache.scene_window.view,
+        retained, projection.downscroll, projection.pixels_per_row, canvas_rows, nullptr);
+    clear_static_source_selection(*storage);
+    publish_compose_scene(expanded);
+    const auto count = retained.band_count + retained.lane_count + retained.grid_line_count +
+        retained.hold_body_count + retained.note_endpoint_count + retained.bgm_lane_count +
+        retained.bgm_event_count + retained.timing_marker_count;
+    const auto bytes = compose_static_storage_bytes(*storage);
+    if (retained.truncated || count > WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY ||
+        bytes > 16 * 1024 * 1024) {
+        discard_compose_static_source(cache);
+        return;
+    }
+    cache.static_scene_storage = std::move(storage);
+    cache.static_scene_accounted_bytes = bytes;
+    cache.static_scene_rebuild_count = cache.scene_window.rebuild_count;
+    cache.static_scene_source_style = cache.static_scene_style_generation;
+    ++cache.static_scene_source_generation;
+    publish_compose_static_source(cache, view);
+}
+
+void refresh_compose_static_scene_style(compose_scene_cache_t& cache,WormUiComposeView& view) {
+    const auto& previous_style=cache.scene_window.request;
+    const auto& current_style=cache.preview_scene_request;
+    if (!cache.scene_window.scene ||
+        cache.static_scene_lane_legend != view.lane_key_legend_visible ||
+        previous_style.solo_semantic_layer!=current_style.solo_semantic_layer ||
+        previous_style.required_semantic_layers!=current_style.required_semantic_layers ||
+        previous_style.excluded_semantic_layers!=current_style.excluded_semantic_layers)
+    {
+        // A reload can recreate the cache while retaining native chart IDs and
+        // revision. Epochs distinguish that new source from retained GPU tiles.
+        static std::atomic<std::uint64_t> next_generation{1};
+        cache.static_scene_style_generation=next_generation.fetch_add(1,std::memory_order_relaxed);
+    }
+    cache.static_scene_lane_legend=view.lane_key_legend_visible;
+    view.static_scene_style_generation=cache.static_scene_style_generation;
+}
+
+template <class Records, class Bounds>
+void rebuild_scalar_intervals(wormedit::common::static_interval_index_t& index,
+                              const Records& records, Bounds bounds) {
+    std::vector<wormedit::common::static_interval_t> intervals;
+    intervals.reserve(records.size());
+    for (std::size_t record = 0; record < records.size(); ++record) {
+        const auto [begin, end] = bounds(records[record]);
+        intervals.push_back({begin, end, record});
+    }
+    index.rebuild(intervals);
+}
+void refresh_scalar_projection_indices(compose_scene_cache_t& cache) {
+    if (cache.static_projection_source_generation == cache.static_scene_source_generation)
+        return;
+    const auto& source = cache.static_scene_storage->compose;
+    const auto bounds = [](const auto& record) {
+        return std::pair{record.bounds.top, record.bounds.bottom};
+    };
+    rebuild_scalar_intervals(cache.static_projection_indices[0], source.note, bounds);
+    rebuild_scalar_intervals(cache.static_projection_indices[1], source.hold, bounds);
+    rebuild_scalar_intervals(cache.static_projection_indices[2], source.bgm.event, bounds);
+    rebuild_scalar_intervals(
+        cache.static_projection_indices[3], source.grid.row,
+        [](const auto& row) { return std::pair{double(row.whole_rows), double(row.whole_rows)}; });
+    cache.static_projection_scratch.resize(std::max(
+        {source.note.size(), source.hold.size(), source.bgm.event.size(), source.grid.row.size()}));
+    cache.static_projection_index_bytes =
+        cache.static_projection_scratch.capacity() * sizeof(std::size_t);
+    for (const auto& index : cache.static_projection_indices)
+        cache.static_projection_index_bytes += index.accounted_bytes();
+    cache.static_projection_source_generation = cache.static_scene_source_generation;
+}
+auto scalar_projection_query(compose_scene_cache_t& cache, unsigned pass, double begin, double end)
+    -> std::optional<std::span<const std::size_t>> {
+    const auto query = cache.static_projection_indices[pass].query_into(
+        begin, end, cache.static_projection_scratch);
+    cache.static_projection_scanned += query.scanned;
+    if (query.overflow)
+        return std::nullopt;
+    cache.static_projection_extracted += query.count;
+    return std::span<const std::size_t>(cache.static_projection_scratch).first(query.count);
+}
+auto scalar_display_lane_number(const auto& record, const wormedit::editor_field_scene_t& scene)
+    -> std::uint32_t {
+    const auto x = (record.bounds.left + record.bounds.right) * .5;
+    const auto y = (record.bounds.top + record.bounds.bottom) * .5;
+    for (const auto& lane : scene.lanes)
+        if (lane.lane.value == record.lane_id && x >= lane.bounds.left && x < lane.bounds.right &&
+            y >= lane.bounds.top && y < lane.bounds.bottom)
+            return lane.display_order + 1;
+    return 0;
+}
+template <class Records, class Transform>
+auto extract_scalar_rectangles(compose_scene_cache_t& cache, unsigned pass, const Records& source,
+                               Records& output, double begin, double end, double shift,
+                               Transform transform) -> bool {
+    const auto indices = scalar_projection_query(cache, pass, begin - shift, end - shift);
+    if (!indices)
+        return false;
+    output.reserve(indices->size());
+    for (const auto index : *indices) {
+        auto record = source[index];
+        record.bounds.top += shift;
+        record.bounds.bottom += shift;
+        if (transform(record, index))
+            output.push_back(record);
+    }
+    return true;
+}
+auto extract_scalar_grid(compose_scene_cache_t& cache, const wormedit::editor_field_scene_t& scene,
+                         flattened_workspace_t& flattened, double shift) -> bool {
+    const auto indices = scalar_projection_query(cache, 3, double(scene.visible_begin_row),
+                                                 double(scene.visible_end_row));
+    if (!indices)
+        return false;
+    const auto& source = cache.static_scene_storage->compose.grid;
+    for (const auto index : *indices) {
+        if (source.row[index].whole_rows < scene.visible_begin_row ||
+            source.row[index].whole_rows >= scene.visible_end_row)
+            continue;
+        auto line = source.line[index];
+        line.y_pixels += shift;
+        flattened.compose.grid.line.push_back(line);
+        flattened.compose.grid.row.push_back(source.row[index]);
+    }
+    return true;
+}
+auto extract_scalar_objects(compose_scene_cache_t& cache,
+                            const wormedit::editor_field_scene_window_metadata_t& metadata,
+                            flattened_workspace_t& flattened, double shift, double height) -> bool {
+    const auto& source = cache.static_scene_storage->compose;
+    const auto& scene = *metadata.projection.scene;
+    const auto& retained = *cache.scene_window.scene;
+    const auto note = [&](auto& record, std::size_t index) {
+        record.selected = retained.note_endpoints[index].selected;
+        record.display_lane_number = scalar_display_lane_number(record, scene);
+        return record.bounds.bottom >= 0 && record.bounds.top <= height;
+    };
+    const auto hold = [&](auto& record, std::size_t index) {
+        record.bounds.top = std::max(record.bounds.top, metadata.hold_clip_top);
+        record.bounds.bottom = std::min(record.bounds.bottom, metadata.hold_clip_bottom);
+        record.selected = retained.hold_bodies[index].selected;
+        record.display_lane_number = scalar_display_lane_number(record, scene);
+        return record.bounds.top < record.bounds.bottom;
+    };
+    const auto bgm = [&](auto& record, std::size_t index) {
+        record.selected = retained.bgm_events[index].selected;
+        return record.bounds.bottom >= 0 && record.bounds.top <= height;
+    };
+    return extract_scalar_rectangles(cache, 0, source.note, flattened.compose.note, 0, height,
+                                     shift, note) &&
+           extract_scalar_rectangles(cache, 1, source.hold, flattened.compose.hold,
+                                     metadata.hold_clip_top, metadata.hold_clip_bottom, shift,
+                                     hold) &&
+           extract_scalar_rectangles(cache, 2, source.bgm.event, flattened.compose.bgm.event, 0,
+                                     height, shift, bgm) &&
+           extract_scalar_grid(cache, scene, flattened, shift);
+}
+auto scalar_projection_fits_budget(const compose_scene_projection_context_t& projection,
+                                   const wormedit::editor_field_scene_request_t& request) -> bool {
+    const auto& scene = projection.scene;
+    const auto& scalar = projection.flattened.compose;
+    const auto count = scene.layout_bands.size() + scene.lanes.size() + scene.bgm_lanes.size() +
+                       std::size_t(scene.cursor.has_value()) + scalar.note.size() +
+                       scalar.hold.size() + scalar.bgm.event.size() + scalar.grid.line.size();
+    return count <= request.maximum_scene_primitives &&
+           scalar.note.size() <= WORM_UI_COMPOSE_NOTE_CAPACITY &&
+           scalar.hold.size() <= WORM_UI_COMPOSE_HOLD_CAPACITY &&
+           scalar.bgm.event.size() <= WORM_UI_COMPOSE_BGM_EVENT_CAPACITY &&
+           scalar.grid.line.size() <= WORM_UI_COMPOSE_GRID_CAPACITY;
+}
+void discard_scalar_projection(flattened_workspace_t& flattened) {
+    flattened.compose.band.clear();
+    flattened.compose.lane.clear();
+    flattened.compose.note.clear();
+    flattened.compose.hold.clear();
+    flattened.compose.bgm.lane.clear();
+    flattened.compose.bgm.event.clear();
+    flattened.compose.grid.line.clear();
+    flattened.compose.grid.row.clear();
+    flattened.compose.cursor.reset();
+}
+auto reusable_scalar_source(const compose_scene_cache_t& cache, const WormUiComposeView& view)
+    -> bool {
+    if (!cache.static_scene_storage || !cache.scene_window.scene ||
+        cache.static_scene_source_style != cache.static_scene_style_generation ||
+        !compose_static_source_layout_matches(cache.static_scene_storage->view.compose, view))
+        return false;
+    const auto& source = cache.static_scene_storage->compose;
+    const auto& retained = *cache.scene_window.scene;
+    return source.note.size() == retained.note_endpoints.size() &&
+           source.hold.size() == retained.hold_bodies.size() &&
+           source.bgm.event.size() == retained.bgm_events.size() &&
+           source.grid.row.size() == retained.grid_lines.size();
+}
+auto project_reused_scalar_scene(const compose_final_projection_context_t& input, double field_left,
+                                 double field_width, double pixels_per_row, bool downscroll,
+                                 bool bindings_truncated) -> bool {
+    auto& cache = input.cache;
+    auto& flattened = input.flattened;
+    auto& view = flattened.view.compose;
+    cache.static_projection_scanned = cache.static_projection_extracted = 0;
+    if (!reusable_scalar_source(cache, view))
+        return false;
+    const auto metadata = wormedit::project_editor_field_scene_window_metadata(
+        input.chart, *cache.index, input.interaction_view, cache.preview_scene_request,
+        cache.scene_window);
+    if (!metadata.projection)
+        return false;
+    refresh_scalar_projection_indices(cache);
+    const auto shift = downscroll ? view.viewport_height_pixels -
+                                        cache.scene_window.view.viewport_height_pixels +
+                                        input.interaction_view.viewport_scroll_pixels -
+                                        cache.scene_window.view.viewport_scroll_pixels
+                                  : cache.scene_window.view.viewport_scroll_pixels -
+                                        input.interaction_view.viewport_scroll_pixels;
+    const compose_scene_projection_context_t projection{flattened,
+                                                        input.chart,
+                                                        *cache.index,
+                                                        *metadata.projection.scene,
+                                                        input.history,
+                                                        input.application_state,
+                                                        input.interaction_view,
+                                                        view,
+                                                        field_left,
+                                                        field_width,
+                                                        pixels_per_row,
+                                                        downscroll,
+                                                        bindings_truncated};
+    // Metadata contains no grid/objects; their immutable scalar records are extracted below.
+    project_compose_layout_and_notes(projection);
+    project_compose_bgm(projection);
+    if (!extract_scalar_objects(cache, metadata, flattened, shift, view.viewport_height_pixels) ||
+        !scalar_projection_fits_budget(projection, cache.preview_scene_request) || view.truncated) {
+        discard_scalar_projection(flattened);
+        return false;
+    }
+    project_compose_marker_previews(projection);
+    publish_compose_scene(projection);
+    publish_compose_static_source(cache, view);
+    view.scene_available = true;
+    ++cache.scene_window.reuse_count;
+    ++cache.static_projection_reused_frames;
+    return true;
+}
+
 bool compose_project_scene(const compose_final_projection_context_t& input,
                            std::uint64_t canvas_rows) {
     auto& flattened = input.flattened;
@@ -2283,7 +2639,14 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
         .excluded_semantic_layers = application_state.excluded_semantic_layer_filters,
         .maximum_grid_lines = WORM_UI_COMPOSE_GRID_CAPACITY,
         .maximum_scene_primitives = WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY};
+    refresh_compose_static_scene_style(cache,view);
     const auto frame_scene_previous = frame_timing().enter(frame_phase_t::scene);
+    if (project_reused_scalar_scene(input, field_left_pixels, playable_field_width, pixels_per_row,
+                                    downscroll, lane_key_bindings_truncated)) {
+        frame_timing().restore(frame_scene_previous);
+        return true;
+    }
+    const auto prior_window_work=cache.scene_window.rebuild_count+cache.scene_window.reuse_count;
     const auto composed = wormedit::make_editor_field_scene_reusing_window(chart, *cache.index, interaction_view,
                                                             cache.preview_scene_request, cache.scene_window);
     frame_timing().restore(frame_scene_previous);
@@ -2305,6 +2668,12 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     project_compose_bgm(projection);
     project_compose_marker_previews(projection);
     publish_compose_scene(projection);
+    if (cache.scene_window.rebuild_count+cache.scene_window.reuse_count != prior_window_work)
+        refresh_compose_static_source(projection, cache, canvas_rows);
+    else {
+        view.static_scene=nullptr;
+        discard_compose_static_source(cache);
+    }
     return true;
 }
 

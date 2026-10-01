@@ -323,6 +323,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ui/nuklear_sdl_backend_tests.cpp
         ../src/ui/nuklear/sdl_backend.cpp
         ../src/ui/field/field_renderer.cpp
+        ../src/ui/field/field_tile_cache.cpp
+        ../src/common/static_interval_index.cpp
         ../src/ui/field/field_glyphs.cpp
         ../src/sys/frame_timing.cpp
     )
@@ -338,8 +340,11 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
 
     add_executable(wormedit_field_renderer_tests
         ui/field_renderer_tests.cpp
+        ui/field_tile_cache_tests.cpp
         ../src/ui/nuklear/arrow_glyph.cpp
         ../src/ui/field/field_renderer.cpp
+        ../src/ui/field/field_tile_cache.cpp
+        ../src/common/static_interval_index.cpp
         ../src/ui/field/field_glyphs.cpp
         ../src/ui/nuklear/sdl_backend.cpp
         ../src/sys/frame_timing.cpp)
@@ -405,6 +410,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/frame_timing.cpp
         ../src/sys/compose_area_actions.cpp
         ../src/sys/compose_view.cpp
+        ../src/common/static_interval_index.cpp
         ../src/ui/nuklear/arrow_glyph.cpp
         ../src/sys/compose_resource_presenter.cpp
         ../src/sys/timing_view.cpp

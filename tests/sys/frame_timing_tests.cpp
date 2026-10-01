@@ -970,6 +970,103 @@ TEST_CASE("Retained playhead geometry rejects stale provenance and active gestur
     compare_follow_state(state, before);
 }
 
+namespace {
+void expect_static_style(bool condition,
+                         std::source_location source=std::source_location::current()) {
+    INFO("static style expectation at " << source.line());
+    REQUIRE(condition);
+}
+auto static_style_song() -> song_document_t {
+    auto song=dense_song();
+    auto& chart=song.charts.front();
+    chart.measures.resize(1);
+    chart.measures.front().notes.resize(8);
+    chart.semantic_layers={
+        {.id=layer_id_t{101},.name="First",.color={99,120,140,255}},
+        {.id=layer_id_t{102},.name="Second",.color={150,100,130,255}}};
+    for (std::size_t index=0; index<chart.measures.front().notes.size(); ++index)
+        chart.measures.front().notes[index].semantic_layers={layer_id_t{101+index%2}};
+    return song;
+}
+struct static_style_fixture_t {
+    document_history_t history=make_document_history(static_style_song());
+    decltype(make_workspace_controller(history)) binding;
+    compose_scene_cache_t cache;
+    application_command_state_t application;
+    std::optional<editor_interaction_state_t> interaction;
+    flattened_workspace_t flattened;
+    static_style_fixture_t(song_document_t song=static_style_song())
+        : history(make_document_history(std::move(song))), binding(make_workspace_controller(history)) {
+        expect_static_style(binding.workspace.has_value());
+        binding.workspace->active_tab=workspace_tab_t::compose;
+        binding.workspace->selected_chart=chart_id_t{1};
+    }
+    auto project() -> std::uint64_t {
+        // The application creates a fresh flattened frame; source vectors are
+        // appended during projection and must not retain the previous frame.
+        flattened={};
+        flattened.view.compose.visible=true;
+        populate_compose_view(flattened,history,*binding.workspace,cache,1280,980,
+                              interaction,application,nullptr);
+        expect_static_style(flattened.view.compose.scene_available);
+        return flattened.view.compose.static_scene_style_generation;
+    }
+    auto first_note() const -> std::uint64_t {
+        expect_static_style(flattened.view.compose.note_endpoint_count!=0);
+        return flattened.view.compose.note_endpoints[0].note_id;
+    }
+};
+}
+TEST_CASE("Compose static style generation follows exact semantic filters without invalidating scroll",
+          "[sys][field-tile-style]") {
+    static_style_fixture_t fixture;
+    const auto initial=fixture.project();
+    expect_static_style(fixture.project()==initial);
+    fixture.application.semantic_layer_target=layer_id_t{101};
+    fixture.application.semantic_layer_solo_active=true;
+    const auto first=fixture.project();
+    const auto first_note=fixture.first_note();
+    expect_static_style(first>initial);
+    fixture.application.semantic_layer_target=layer_id_t{102};
+    const auto second=fixture.project();
+    expect_static_style(second>first);
+    expect_static_style(fixture.first_note()!=first_note);
+    fixture.application.semantic_layer_solo_active=false;
+    fixture.application.required_semantic_layer_filters={layer_id_t{101}};
+    const auto required=fixture.project();
+    expect_static_style(required>second);
+    expect_static_style(fixture.first_note()==first_note);
+    fixture.application.required_semantic_layer_filters={layer_id_t{102}};
+    const auto replacement=fixture.project();
+    expect_static_style(replacement>required);
+    expect_static_style(fixture.first_note()!=first_note);
+    fixture.application.excluded_semantic_layer_filters={layer_id_t{101}};
+    const auto excluded=fixture.project();
+    expect_static_style(excluded>replacement);
+    expect_static_style(fixture.project()==excluded);
+    fixture.interaction->viewport_scroll_pixels=65.3;
+    expect_static_style(fixture.project()==excluded);
+}
+
+TEST_CASE("Compose static tile epoch distinguishes reloaded content with identical native IDs",
+          "[sys][field-tile-style]") {
+    static_style_fixture_t fixture;
+    const auto initial=fixture.project();
+    const auto first_note=fixture.first_note();
+    const auto project=fixture.flattened.view.compose.project_id;
+    const auto chart=fixture.flattened.view.compose.chart_id;
+    const auto revision=fixture.flattened.view.compose.document_revision;
+    fixture.history.document.charts.front().measures.front().notes.front().position.row=60;
+    fixture.cache={}; // Match main's real project-open cache replacement boundary.
+    const auto replacement=fixture.project();
+    expect_static_style(replacement!=initial);
+    expect_static_style(fixture.flattened.view.compose.project_id==project);
+    expect_static_style(fixture.flattened.view.compose.chart_id==chart);
+    expect_static_style(fixture.flattened.view.compose.document_revision==revision);
+    expect_static_style(fixture.first_note()!=first_note);
+    expect_static_style(fixture.project()==replacement);
+}
+
 TEST_CASE("configured playing anchor preserves paused comfort scrolling", "[frame-timing]") {
     editor_interaction_state_t state;
     state.viewport_height_pixels = 600;
@@ -1006,6 +1103,28 @@ TEST_CASE("scroll overrides follow mode identity across native and imported char
     layout.bmson_generic_keys_only = true;
     CHECK(compose_mode_family(layout) == editor_mode_family_t::keyboard);
 }
+TEST_CASE("Retained static scalar source reuses storage while fractional scrolling", "[sys][field-tile-style]") {
+    static_style_fixture_t fixture(dense_song());
+    fixture.project();
+    auto& view=fixture.flattened.view.compose;
+    expect_static_style(view.static_scene!=nullptr);
+    const auto generation=view.static_scene_source_generation;
+    const auto storage=fixture.cache.static_scene_storage;
+    const auto style=view.static_scene_style_generation;
+    fixture.interaction->viewport_scroll_pixels=65.3;
+    fixture.project();
+    expect_static_style(view.static_scene!=nullptr);
+    expect_static_style(view.static_scene_source_generation==generation);
+    expect_static_style(fixture.cache.static_scene_storage==storage);
+    expect_static_style(view.static_scene_style_generation==style);
+    expect_static_style(view.static_scene_accounted_bytes<=16*1024*1024);
+    expect_static_style(view.static_scene->note_endpoint_count>view.note_endpoint_count);
+    fixture.application.compose_timing_lane_visibility_mask^=1;
+    fixture.project();
+    expect_static_style(view.static_scene!=nullptr);
+    expect_static_style(view.static_scene_source_generation!=generation);
+    expect_static_style(view.static_scene->timing_lane_visibility_mask==view.timing_lane_visibility_mask);
+}
 
 TEST_CASE("new-chart requested custom snap is admitted without replacing existing chart preferences", "[frame-timing]") {
     application_command_state_t state;
@@ -1021,6 +1140,99 @@ TEST_CASE("new-chart requested custom snap is admitted without replacing existin
     const auto incompatible = filter_snap_denominators(384, preferences, 5);
     CHECK(incompatible.active_was_fallback);
     CHECK(incompatible.active_denominator != 5);
+}
+
+namespace {
+auto scalar_reuse_song() -> song_document_t {
+    auto song = dense_song();
+    auto& chart = song.charts.front();
+    chart.lane_layouts.front().layout.profile_id = "stepmania:dance-single";
+    auto& hold = chart.measures.front().notes.front();
+    hold.kind = note_kind_t::hold;
+    hold.end = local_position_t{measure_id_t{8}, 240};
+    chart.bgm_source_lanes = {{.id = object_id_t{70000}, .name = "Retained BGM"}};
+    chart.measures.front().bgm_events = {{.id = object_id_t{70001},
+        .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{70000}}};
+    return song;
+}
+void compare_scalar_bounds(WormUiComposeRect actual, WormUiComposeRect expected) {
+    expect_static_style(std::abs(actual.left - expected.left) < 1e-8);
+    expect_static_style(std::abs(actual.top - expected.top) < 1e-8);
+    expect_static_style(std::abs(actual.right - expected.right) < 1e-8);
+    expect_static_style(std::abs(actual.bottom - expected.bottom) < 1e-8);
+}
+void compare_scalar_notes(const WormUiComposeView& actual, const WormUiComposeView& expected) {
+    expect_static_style(actual.note_endpoint_count == expected.note_endpoint_count);
+    for (std::size_t index = 0; index < actual.note_endpoint_count; ++index) {
+        const auto& note = actual.note_endpoints[index];
+        const auto& fresh = expected.note_endpoints[index];
+        compare_scalar_bounds(note.bounds, fresh.bounds);
+        expect_static_style(std::tie(note.note_id, note.lane_id, note.display_lane_number,
+                                     note.glyph, note.snap_class, note.kind, note.tail,
+                                     note.selected, note.semantic_color_visible) ==
+                            std::tie(fresh.note_id, fresh.lane_id, fresh.display_lane_number,
+                                     fresh.glyph, fresh.snap_class, fresh.kind, fresh.tail,
+                                     fresh.selected, fresh.semantic_color_visible));
+        expect_static_style(std::string_view(note.sound_label) ==
+                            std::string_view(fresh.sound_label));
+        expect_static_style(std::string_view(note.sound_detail) ==
+                            std::string_view(fresh.sound_detail));
+    }
+}
+void compare_scalar_holds_bgm(const WormUiComposeView& actual, const WormUiComposeView& expected) {
+    expect_static_style(actual.hold_body_count == expected.hold_body_count);
+    for (std::size_t index = 0; index < actual.hold_body_count; ++index) {
+        compare_scalar_bounds(actual.hold_bodies[index].bounds, expected.hold_bodies[index].bounds);
+        expect_static_style(actual.hold_bodies[index].note_id ==
+                            expected.hold_bodies[index].note_id);
+        expect_static_style(actual.hold_bodies[index].selected ==
+                            expected.hold_bodies[index].selected);
+    }
+    expect_static_style(actual.bgm_event_count == expected.bgm_event_count);
+    for (std::size_t index = 0; index < actual.bgm_event_count; ++index) {
+        compare_scalar_bounds(actual.bgm_events[index].bounds, expected.bgm_events[index].bounds);
+        expect_static_style(actual.bgm_events[index].event_id ==
+                            expected.bgm_events[index].event_id);
+    }
+}
+void compare_scalar_grid(const WormUiComposeView& actual, const WormUiComposeView& expected) {
+    expect_static_style(actual.grid_line_count == expected.grid_line_count);
+    for (std::size_t index = 0; index < actual.grid_line_count; ++index) {
+        const auto& line = actual.grid_lines[index];
+        const auto& fresh = expected.grid_lines[index];
+        expect_static_style(std::abs(line.y_pixels - fresh.y_pixels) < 1e-8);
+        expect_static_style(
+            std::tie(line.kind, line.emphasis, line.measure_number, line.chart_row) ==
+            std::tie(fresh.kind, fresh.emphasis, fresh.measure_number, fresh.chart_row));
+    }
+}
+void compare_scalar_reuse_frame(static_style_fixture_t& retained, static_style_fixture_t& fresh,
+                                double scroll) {
+    retained.interaction->viewport_scroll_pixels = scroll;
+    retained.project();
+    fresh.interaction = retained.interaction;
+    fresh.cache = {}; // Independent full-composition reference, not retained scalar extraction.
+    fresh.project();
+    compare_scalar_notes(retained.flattened.view.compose, fresh.flattened.view.compose);
+    compare_scalar_holds_bgm(retained.flattened.view.compose, fresh.flattened.view.compose);
+    compare_scalar_grid(retained.flattened.view.compose, fresh.flattened.view.compose);
+    expect_static_style(retained.cache.static_projection_reused_frames != 0);
+    expect_static_style(retained.cache.static_projection_scanned <
+                        retained.cache.static_scene_storage->view.compose.note_endpoint_count);
+}
+} // namespace
+TEST_CASE(
+    "Indexed retained scalar publication matches full composition while following and reversing",
+    "[sys][field-tile-style][scalar-reuse]") {
+    for (const auto direction : {std::uint8_t{0}, std::uint8_t{1}}) {
+        static_style_fixture_t retained(scalar_reuse_song()), fresh(scalar_reuse_song());
+        retained.application.editor_preferences.scroll_directions.fill(direction);
+        fresh.application.editor_preferences = retained.application.editor_preferences;
+        retained.project();
+        fresh.project();
+        for (const auto scroll : {0.0, 19.75, 65.3, 120.5, 65.3, 0.0})
+            compare_scalar_reuse_frame(retained, fresh, scroll);
+    }
 }
 
 namespace {

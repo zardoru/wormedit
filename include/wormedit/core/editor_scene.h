@@ -242,6 +242,28 @@ struct editor_field_scene_window_t {
     std::size_t reuse_count{};
 };
 
+// Read-only eligibility shares the exact retained-window policy with composition.
+[[nodiscard]] auto can_reuse_editor_field_scene_window(const chart_document_t& chart,
+                                                       const editor_field_scene_index_t& index,
+                                                       const editor_interaction_view_model_t& view,
+                                                       const editor_field_scene_request_t& request,
+                                                       const editor_field_scene_window_t& window)
+    -> bool;
+
+struct editor_field_scene_window_metadata_t {
+    editor_field_scene_result_t projection;
+    double hold_clip_top{}, hold_clip_bottom{};
+};
+// Projects current layout/cursor and row/hold clipping bounds without copying
+// retained notes/holds/BGM objects. Unusable windows return an empty projection;
+// callers retain the existing full-composition fallback. This validates only
+// metadata primitives: consumers MUST enforce maximum_scene_primitives again
+// after extracting retained objects, using full composition on overflow.
+[[nodiscard]] auto project_editor_field_scene_window_metadata(
+    const chart_document_t& chart, const editor_field_scene_index_t& index,
+    const editor_interaction_view_model_t& view, const editor_field_scene_request_t& request,
+    const editor_field_scene_window_t& window) -> editor_field_scene_window_metadata_t;
+
 [[nodiscard]] auto make_editor_field_scene_reusing_window(
     const chart_document_t& chart, const editor_field_scene_index_t& index,
     const editor_interaction_view_model_t& view, const editor_field_scene_request_t& request,

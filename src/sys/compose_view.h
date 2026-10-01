@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sys/workspace_projection.h"
+#include "common/static_interval_index.h"
 #include "sys/compose_scroll_geometry.h"
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/editor_scene.h>
@@ -83,6 +84,18 @@ struct compose_scene_cache_t {
     bool attempted{};
     std::optional<wormedit::editor_field_scene_index_t> index;
     wormedit::editor_field_scene_window_t scene_window;
+    std::uint64_t static_scene_style_generation{};
+    std::shared_ptr<flattened_workspace_t> static_scene_storage;
+    std::size_t static_scene_rebuild_count{};
+    std::uint64_t static_scene_source_generation{}, static_scene_source_style{};
+    std::size_t static_scene_accounted_bytes{};
+    std::optional<bool> static_scene_lane_legend;
+    std::array<wormedit::common::static_interval_index_t, 4> static_projection_indices;
+    std::vector<std::size_t> static_projection_scratch;
+    std::uint64_t static_projection_source_generation{};
+    std::size_t static_projection_index_bytes{}, static_projection_scanned{},
+        static_projection_extracted{}, static_projection_reused_frames{};
+
     std::optional<wormedit::measure_index_t> cached_measure_index;
     std::unordered_map<std::uint64_t, std::uint64_t> bgm_rows_by_id;
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;

@@ -118,6 +118,19 @@ target_link_libraries(wormedit_core PRIVATE nlohmann_json::nlohmann_json)
 find_package(Threads REQUIRED)
 target_link_libraries(wormedit_core PUBLIC Threads::Threads)
 
+# Headless converter: the editor's conversion service behind a JSON request.
+add_executable(wormedit-convert
+    src/tools/wormedit_convert.cpp
+    src/sys/project_open.cpp
+)
+target_include_directories(wormedit-convert PRIVATE "${CMAKE_SOURCE_DIR}/src")
+target_link_libraries(wormedit-convert PRIVATE wormedit::core nlohmann_json::nlohmann_json)
+if(MSVC)
+    target_compile_options(wormedit-convert PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(wormedit-convert PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 find_package(Iconv QUIET)
 if(Iconv_FOUND)
     target_link_libraries(wormedit_core PRIVATE Iconv::Iconv)

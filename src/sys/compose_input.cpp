@@ -471,6 +471,7 @@ auto dispatch_compose_keyboard_input(
             static_cast<wormedit::note_kind_t>(input.note_kind));
         accepted = "Note kind armed.";
         return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP:
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS:
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE:
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL:
@@ -496,6 +497,16 @@ auto dispatch_compose_navigation_input(
     -> compose_input_family_result_t {
     using namespace wormedit;
     switch (input.kind) {
+    case WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP: {
+        const auto navigation = compose_navigation_action(input.navigation_action);
+        if (!navigation || (*navigation != editor_navigation_action_t::page_backward &&
+                            *navigation != editor_navigation_action_t::page_forward))
+            return "Compose measure navigation step used an unknown action.";
+        editor_navigation_action_batch_t batch;
+        batch.actions[batch.count++] = *navigation;
+        return compose_input_family_result_t::continue_batch(
+            dispatch_compose_navigation_actions(batch, history, state));
+    }
     case WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS: {
         const auto navigation = compose_navigation_action(input.navigation_action);
         if (!navigation) {
@@ -2626,6 +2637,22 @@ void apply_compose_viewport_actions(const wormedit::viewport_action_batch_t& act
     }
 }
 
+void apply_compose_pinch_zoom(const WormUiComposeViewportInput& input,
+                              compose_input_context_t& context, std::string& status) {
+    if (!std::isfinite(input.zoom_factor) || input.zoom_factor <= 0 ||
+        !std::isfinite(input.cursor_y_pixels) || input.cursor_y_pixels < 0 ||
+        input.cursor_y_pixels > context.state.viewport_height_pixels) {
+        status = "Compose pinch zoom used an invalid scale or anchor.";
+        return;
+    }
+    (void)context.viewport_input.normal_edit_press();
+    const auto result = wormedit::dispatch_editor_action(
+        context.history, context.state,
+        wormedit::adjust_editor_zoom_action_t{
+            .factor = input.zoom_factor, .anchor_screen_y_pixels = input.cursor_y_pixels});
+    status = compose_result_status(result, "Compose field zoomed at the pinch focus.");
+}
+
 auto dispatch_compose_viewport_batch(compose_input_context_t& context,
                                      double viewport_delta_seconds, std::string status)
     -> std::string {
@@ -2635,6 +2662,10 @@ auto dispatch_compose_viewport_batch(compose_input_context_t& context,
             return "Remaining Compose viewport input was discarded after the chart or document "
                    "changed.";
         const auto& input = context.ui_action.compose_viewport_inputs[index];
+        if (input.kind == WORM_UI_COMPOSE_VIEWPORT_INPUT_PINCH_ZOOM) {
+            apply_compose_pinch_zoom(input, context, status);
+            continue;
+        }
         const auto bgm_pane =
             context.bgm_pane_width > 0.0 && std::isfinite(input.cursor_x_pixels) &&
             input.cursor_x_pixels >= context.field_left_pixels + context.field_width_pixels &&

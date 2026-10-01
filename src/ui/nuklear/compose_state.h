@@ -23,6 +23,26 @@ auto worm_ui_nuklear_overview_gesture(worm_ui_nuklear_overview_gesture_t& gestur
                                      double x, bool pressed, bool down, bool valid)
     -> worm_ui_nuklear_overview_event_t;
 
+enum class worm_ui_nuklear_pinch_phase_t { begin, update, end, cancel };
+struct worm_ui_nuklear_pinch_update_t {
+    double factor{};
+    double mouse_x{};
+    double mouse_y{};
+};
+struct worm_ui_nuklear_pinch_gesture_t {
+    bool active{};
+    double mouse_x{};
+    double mouse_y{};
+    std::uint64_t project_id{};
+    std::uint64_t chart_id{};
+    std::array<worm_ui_nuklear_pinch_update_t,
+        WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY> pending{};
+    std::size_t count{};
+};
+void worm_ui_nuklear_pinch_input(worm_ui_nuklear_pinch_gesture_t& gesture,
+    worm_ui_nuklear_pinch_phase_t phase, double factor, double mouse_x,
+    double mouse_y, std::uint64_t project_id, std::uint64_t chart_id);
+
 struct worm_ui_nuklear_overview_capture_t {
     std::uint64_t chart_id{};
     std::uint64_t revision{};
@@ -41,6 +61,53 @@ auto worm_ui_nuklear_overview_capture_matches(
     const worm_ui_nuklear_overview_capture_t& capture, const WormUiComposeView& view,
     double left, double width, bool available, bool window_focused) -> bool;
 
+// A canvas-owned Tab chord has its own cadence; ordinary navigation is unchanged.
+struct worm_ui_nuklear_tab_navigation_t {
+    bool tab_down{};
+    std::uint32_t direction_scancode{};
+    std::optional<WormUiComposeNavigationAction> direction{};
+    std::uint64_t next_repeat_ms{};
+
+    void schedule(std::uint64_t now) noexcept {
+        constexpr auto maximum = std::numeric_limits<std::uint64_t>::max();
+        next_repeat_ms = now > maximum - 200 ? maximum : now + 200;
+    }
+    auto press_tab(std::uint64_t now) noexcept
+        -> std::optional<WormUiComposeNavigationAction> {
+        if (tab_down) return std::nullopt;
+        tab_down = true;
+        if (direction) schedule(now);
+        return direction;
+    }
+    auto press_direction(WormUiComposeNavigationAction action,
+                         std::uint32_t scancode, std::uint64_t now) noexcept
+        -> std::optional<WormUiComposeNavigationAction> {
+        if (direction && direction_scancode == scancode) return std::nullopt;
+        direction = action;
+        direction_scancode = scancode;
+        if (!tab_down) return std::nullopt;
+        schedule(now);
+        return direction;
+    }
+    void release_direction(std::uint32_t scancode) noexcept {
+        if (scancode != direction_scancode) return;
+        direction.reset();
+        direction_scancode = 0;
+        next_repeat_ms = 0;
+    }
+    void cancel() noexcept { *this = {}; }
+    auto advance(std::uint64_t now, bool canvas_available) noexcept
+        -> std::optional<WormUiComposeNavigationAction> {
+        if (!canvas_available) { cancel(); return std::nullopt; }
+        if (!tab_down || !direction || now < next_repeat_ms ||
+            next_repeat_ms == std::numeric_limits<std::uint64_t>::max())
+            return std::nullopt;
+        // Delayed frames emit once and discard debt, never replay a burst of moves.
+        schedule(now);
+        return direction;
+    }
+};
+
 struct worm_ui_nuklear_compose_key_event_t {
     std::uint32_t keycode{};
     std::uint32_t scancode{};
@@ -56,7 +123,22 @@ struct worm_ui_nuklear_compose_wheel_event_t {
     double mouse_y{};
     std::uint16_t modifiers{};
     bool coarse_steps{};
+    bool tab_speed_modifier{};
 };
+
+// SDL wheel x/y are fractional wheel units, not native pixel coordinates.
+// Preserve their magnitude and normalize the flipped-device convention once.
+auto worm_ui_nuklear_normalize_compose_wheel(double x, double y, double mouse_x,
+    double mouse_y, std::uint16_t modifiers, bool flipped)
+    -> std::optional<worm_ui_nuklear_compose_wheel_event_t>;
+
+inline auto worm_ui_nuklear_compose_wheel_speed(double delta, bool tab_modifier) noexcept
+    -> double { return delta * (tab_modifier ? 2.0 : 1.0); }
+
+inline auto worm_ui_nuklear_compose_zoom_anchor(double visual_y, double height,
+                                               bool downscroll) noexcept -> double {
+    return downscroll ? height - visual_y : visual_y;
+}
 
 struct worm_ui_nuklear_compose_color_t {
     float r{};
@@ -193,6 +275,8 @@ struct worm_ui_nuklear_compose_state_t {
     WormUiComposeSelectionMode area_selection_mode{WORM_UI_COMPOSE_SELECTION_REPLACE};
     std::array<worm_ui_nuklear_lane_hold_t, 64> lane_holds{};
     std::size_t lane_hold_count{};
+    worm_ui_nuklear_tab_navigation_t tab_navigation{};
+    bool raw_tab_down{};
     bool navigation_key_active{};
     std::uint32_t navigation_keycode{};
     WormUiComposeNavigationAction navigation_action{WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD};
@@ -231,6 +315,7 @@ struct worm_ui_nuklear_compose_state_t {
         worm_ui_nuklear_compose_resource_pointer_mode_t::off};
     worm_ui_nuklear_bmson_razor_mode_t bmson_razor_mode{
         worm_ui_nuklear_bmson_razor_mode_t::off};
+    worm_ui_nuklear_pinch_gesture_t pinch{};
 };
 
 // Keep press/release pairs ordered, including pairs received within one SDL frame.

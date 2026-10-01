@@ -11,6 +11,9 @@ void queue_compose_wheel_input(double delta_x, double delta_y, double mouse_x,
                                          double mouse_y, std::uint16_t modifiers,
                                          bool coarse_steps);
 
+void queue_compose_pinch_input(worm_ui_nuklear_pinch_phase_t phase,
+    double factor, double mouse_x, double mouse_y);
+
 void queue_compose_middle_click_input(float x, float y);
 
 void process_compose_key_events(struct nk_context* context, const WormUiComposeView* view,

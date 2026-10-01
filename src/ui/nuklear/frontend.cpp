@@ -8,6 +8,7 @@
 #include "ui/nuklear/compose_panel.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_input_panel.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/image_quad.h"
 #include "ui/nuklear/metadata_panel.h"
@@ -346,15 +347,12 @@ static void queue_compose_wheel_event(const SDL_MouseWheelEvent* event) {
         !std::isfinite(event->mouse_y)) {
         return;
     }
-    const auto whole_steps = std::trunc(event->x) == event->x && std::trunc(event->y) == event->y &&
-                             (event->x != 0.0f || event->y != 0.0f);
-    // Convert SDL's positive-away wheel convention into content-offset deltas.
-    // FLIPPED sources already report the opposite sign, so they need no negation.
-    const auto direction_sign = event->direction == SDL_MOUSEWHEEL_FLIPPED ? 1.0 : -1.0;
-    worm_ui_nuklear_queue_compose_wheel(static_cast<double>(event->x) * direction_sign,
-                                        static_cast<double>(event->y) * direction_sign,
-                                        event->mouse_x, event->mouse_y,
-                                        static_cast<std::uint16_t>(SDL_GetModState()), whole_steps);
+    const auto wheel = worm_ui_nuklear_normalize_compose_wheel(event->x, event->y,
+        event->mouse_x, event->mouse_y, static_cast<std::uint16_t>(SDL_GetModState()),
+        event->direction == SDL_MOUSEWHEEL_FLIPPED);
+    if (!wheel) return;
+    worm_ui_nuklear_queue_compose_wheel(wheel->delta_x, wheel->delta_y,
+        wheel->mouse_x, wheel->mouse_y, wheel->modifiers, wheel->coarse_steps);
 }
 
 static int recovery_action_offered(const WormUiRecoveryCandidateView* candidate, size_t action) {
@@ -743,14 +741,39 @@ static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
                                           static_cast<std::uint32_t>(event.scancode),
                                           static_cast<std::uint16_t>(event.mod), down,
                                           event.repeat);
-        queue_shortcut_key_event(&event);
+        const bool tab_horizontal = worm_ui_nuklear_compose_state().raw_tab_down &&
+            (event.key == SDLK_LEFT || event.key == SDLK_RIGHT);
+        if (!tab_horizontal) queue_shortcut_key_event(&event);
         return false;
+}
+
+static bool queue_compose_pinch_event(const SDL_Event& event) {
+#if SDL_VERSION_ATLEAST(3, 4, 0)
+    using phase = worm_ui_nuklear_pinch_phase_t;
+    if (event.type != SDL_EVENT_PINCH_BEGIN && event.type != SDL_EVENT_PINCH_UPDATE &&
+        event.type != SDL_EVENT_PINCH_END) return false;
+    if (!g_window || !g_window_focused ||
+        (event.pinch.windowID != 0 && event.pinch.windowID != SDL_GetWindowID(g_window))) {
+        queue_compose_pinch_input(phase::cancel, 0.0, 0.0, 0.0);
+        return true;
+    }
+    float x{}, y{};
+    SDL_GetMouseState(&x, &y);
+    const auto input_phase = event.type == SDL_EVENT_PINCH_BEGIN ? phase::begin :
+        event.type == SDL_EVENT_PINCH_END ? phase::end : phase::update;
+    queue_compose_pinch_input(input_phase, event.pinch.scale, x, y);
+    return true;
+#else
+    (void)event;
+    return false;
+#endif
 }
 
 static bool handle_workspace_frontend_event(const SDL_Event* event) {
     if (!g_context || !event) {
         return false;
     }
+    if (queue_compose_pinch_event(*event)) return true;
     if (event->type == SDL_EVENT_WINDOW_FOCUS_LOST) {
         g_window_focused = false;
         g_tap_key_captured = false;

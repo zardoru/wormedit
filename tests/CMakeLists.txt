@@ -395,7 +395,11 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_frame_timing_tests
         sys/frame_timing_tests.cpp
         ui/nuklear_notification_state_tests.cpp
+        ui/nuklear_notification_panel_tests.cpp
+        sys/notification_history_runtime_tests.cpp
         ../src/ui/nuklear/notification_toasts.cpp
+        ../src/ui/nuklear/notification_panel.cpp
+        ../src/sys/notification_history_runtime.cpp
         ../src/ui/nuklear/theme.cpp
         ../src/sys/frame_timing.cpp
         ../src/sys/compose_area_actions.cpp

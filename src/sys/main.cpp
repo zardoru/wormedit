@@ -29,6 +29,8 @@
 #include "sys/external_player.h"
 #include "sys/preferences_runtime.h"
 #include "sys/options_runtime.h"
+#include "sys/notification_history_runtime.h"
+#include <SDL3/SDL_clipboard.h>
 #include "sys/project_view.h"
 #include <wormedit/core/chart_editor.h>
 #include "sys/tap_timing_runtime.h"
@@ -1848,12 +1850,14 @@ auto application_command_focus(const WormUiWorkspaceAction& action,
         .text_entry_active = action.shortcut_text_entry_active,
         .ime_composition_active = action.shortcut_ime_composition_active,
         .workspace_active = action.shortcut_window_focused,
-        .active_tab = workspace.active_tab,
+        .active_tab = action.shortcut_notification_history_focused
+            ? std::optional<workspace_tab_t>{} : std::optional{workspace.active_tab},
         .visible_tabs = {workspace_tab_t::setup, workspace_tab_t::metadata, workspace_tab_t::timing,
                          workspace_tab_t::compose, workspace_tab_t::storyboard,
                          workspace_tab_t::audio_slices, workspace_tab_t::compare_validate},
     };
-    if (action.shortcut_compose_lane_focused && action.shortcut_focused_lane_id != 0) {
+    if (!action.shortcut_notification_history_focused &&
+        action.shortcut_compose_lane_focused && action.shortcut_focused_lane_id != 0) {
         focus.focused_lane = lane_id_t{action.shortcut_focused_lane_id};
     }
     return focus;
@@ -1897,7 +1901,8 @@ auto dispatch_application_shortcuts(
             application_command_focus(action, workspace), application_primary_modifier());
         tap_event_ns.reset();
         if (!dispatched.command || (dispatched.command->value != "timing.tap" &&
-            dispatched.command->value != "workspace.options")) preserves_editor_gesture = false;
+            dispatched.command->value != "workspace.options" &&
+            dispatched.command->value != "view.notifications")) preserves_editor_gesture = false;
         if (dispatched.status == command_dispatch_status_t::invoked) {
             handled = true;
         } else if (dispatched.status == command_dispatch_status_t::disabled) {
@@ -2900,9 +2905,13 @@ auto notification_frame_time() -> wormedit::notification_time_t {
 
 auto project_application_notifications(const wormedit::notification_center_t& center,
     wormedit::notification_time_t now,
-    const std::optional<wormedit::editor_interaction_state_t>& interaction)
+    const std::optional<wormedit::editor_interaction_state_t>& interaction,
+    wormedit::sys::notification_history_runtime_t& runtime,
+    const wormedit::song_document_t& document, std::uint64_t document_generation)
     -> WormUiNotificationView {
     auto view = wormedit::sys::project_notification_view(center, now);
+    view.history_available = true;
+    view.history = runtime.project(center, document, now, document_generation);
     view.edit_gesture_active = interaction && editor_interaction_has_pending_gesture(*interaction);
     return view;
 }
@@ -2920,11 +2929,85 @@ void seed_notification_smoke(wormedit::notification_center_t& center) {
                 wormedit::notification_source_t::system, error_message);
 }
 
-void begin_notification_frame(wormedit::notification_center_t& center,
+auto notification_history_smoke_detail() -> std::string {
+    std::string detail{"Detalles de notificación: café · música 🎵\n"};
+    constexpr std::string_view line{"Línea visible de detalle para comprobar el desplazamiento y el portapapeles.\n"};
+    constexpr std::string_view ending{"\nÚltima línea: fin del detalle.\n"};
+    while (detail.size() + line.size() + ending.size() <= wormedit::notification_detail_max_bytes)
+        detail += line;
+    detail.append(wormedit::notification_detail_max_bytes - ending.size() - detail.size(), ' ');
+    detail += ending;
+    return detail;
+}
+
+void seed_notification_history_smoke(wormedit::notification_center_t& center,
+                                    const wormedit::song_document_t& document) {
+    const auto* enabled = std::getenv("WORMEDIT_NOTIFICATION_HISTORY_SMOKE");
+    if (!enabled || std::strcmp(enabled, "1") != 0) return;
+    const auto detail = notification_history_smoke_detail();
+    for (int repeat = 0; repeat < 3; ++repeat)
+        center.post({wormedit::notification_severity_t::info, wormedit::notification_source_t::system,
+                     "Unicode detail example", detail, {}});
+    center.post(wormedit::notification_severity_t::hint, wormedit::notification_source_t::input, "History hint");
+    center.post(wormedit::notification_severity_t::success, wormedit::notification_source_t::edit, "History success");
+    for (std::size_t index = 0; index < std::min<std::size_t>(document.charts.size(), 2); ++index) {
+        const auto& chart = document.charts[index];
+        if (chart.measures.empty()) continue;
+        const auto& measure = chart.measures.front();
+        const wormedit::notification_target_t target = measure.notes.empty()
+            ? wormedit::notification_target_t{wormedit::notification_chart_position_t{chart.id, {measure.id, 0}}}
+            : wormedit::notification_target_t{measure.notes.front().id};
+        center.post({wormedit::notification_severity_t::info, wormedit::notification_source_t::document,
+            index == 0 ? "First chart target" : "Second chart target", "Exact chart destination", target});
+    }
+}
+
+struct notification_frame_context_t {
+    wormedit::notification_center_t& center;
+    wormedit::sys::notification_history_runtime_t& runtime;
+    wormedit::document_history_t& history;
+    wormedit::workspace_controller_t& workspace;
+    std::optional<wormedit::editor_interaction_state_t>& interaction;
+    std::string& status;
+};
+
+void copy_notification_details(notification_frame_context_t& context, std::uint64_t id) {
+    const auto* entry = wormedit::sys::find_notification(context.center, id);
+    if (!entry) {
+        context.status = "Notification no longer exists";
+        context.center.post(wormedit::notification_severity_t::error,
+            wormedit::notification_source_t::input, context.status);
+        return;
+    }
+    const auto& text = entry->detail.empty() ? entry->message : entry->detail;
+    const bool copied = SDL_SetClipboardText(text.c_str());
+    context.status = copied ? "Notification details copied."
+                            : "Could not copy notification details to the clipboard.";
+    context.center.post(copied ? wormedit::notification_severity_t::success
+                              : wormedit::notification_severity_t::error,
+        wormedit::notification_source_t::input, context.status);
+}
+
+void apply_notification_action(notification_frame_context_t& context,
+                                const WormUiNotificationAction& action) {
+    if (context.runtime.apply(action, context.center)) return;
+    if (action.kind == WORM_UI_NOTIFICATION_ACTION_COPY_DETAILS)
+        copy_notification_details(context, action.id);
+    else if (action.kind == WORM_UI_NOTIFICATION_ACTION_GO_TO) {
+        const auto error = wormedit::sys::go_to_notification(context.center, action.id,
+            context.history, context.workspace, context.interaction);
+        context.status = error ? *error : "Moved to notification target.";
+        context.center.post(error ? wormedit::notification_severity_t::error
+                                 : wormedit::notification_severity_t::success,
+            wormedit::notification_source_t::document, context.status);
+    }
+}
+
+void begin_notification_frame(notification_frame_context_t& context,
                               WormUiNotificationAction& pending, wormedit::notification_time_t now) {
-    if (pending.kind == WORM_UI_NOTIFICATION_ACTION_DISMISS) (void)center.dismiss(pending.id);
+    apply_notification_action(context, pending);
     pending = {};
-    center.drain_inbox(now);
+    context.center.drain_inbox(now);
 }
 
 auto close_confirmation_view(const pending_close_t& pending, bool has_native_path, const std::string& status)
@@ -3143,8 +3226,14 @@ auto read_tap_clock(tap_clock_context_t& context) -> wormedit::sys::tap_timing_c
 template<class InvokeEditor>
 auto dispatch_options_or_editor_command(const wormedit::command_invocation_context_t& invocation,
     wormedit::sys::options_runtime_t& options, const wormedit::program_preferences_t& preferences,
-    InvokeEditor&& invoke_editor) -> wormedit::command_invocation_result_t {
+    wormedit::sys::notification_history_runtime_t& notifications,
+    wormedit::notification_center_t& center, InvokeEditor&& invoke_editor) -> wormedit::command_invocation_result_t {
     const auto command = parse_application_command(invocation.command.value);
+    if (command) {
+        const auto notification = wormedit::sys::invoke_notification_history_command(
+            *command, invocation.auto_repeat, notifications, center);
+        if (notification) return *notification;
+    }
     if (command && command->kind == wormedit::sys::application_command_kind_t::workspace_options) {
         wormedit::sys::open_options(options, preferences);
         return {.accepted = true};
@@ -3259,8 +3348,10 @@ int main(int argc, char** argv) {
     std::string status = wormedit::sys::select_initial_application_status(
         startup.loaded_primary, requested_primary_path, platform_recovery);
     wormedit::notification_center_t notifications;
+    wormedit::sys::notification_history_runtime_t notification_history;
     WormUiNotificationAction pending_notification{};
     seed_notification_smoke(notifications);
+    seed_notification_history_smoke(notifications, history.document);
     bool session_loaded = startup.loaded_primary;
     bool native_project_loaded = startup.loaded_primary;
     bool fresh_blank_project = false;
@@ -3397,7 +3488,7 @@ int main(int argc, char** argv) {
     auto command_registry = wormedit::make_default_editor_command_registry(
         [&](const wormedit::command_invocation_context_t& invocation) {
             return dispatch_options_or_editor_command(invocation, options_runtime,
-                program_preferences.preferences, [&] {
+                program_preferences.preferences, notification_history, notifications, [&] {
                     return dispatch_registered_application_command(
                         invocation, history, workspace, compose_interaction_state, timing_edit.stage,
                         application_command_state, status, tap_runtime, tap_clock, tap_event_ns);
@@ -3530,9 +3621,11 @@ int main(int argc, char** argv) {
         audition_reconciliation,
 #endif
     };
+    notification_frame_context_t notification_context{notifications, notification_history,
+        history, workspace, compose_interaction_state, status};
     while (running) {
         const auto notification_now = notification_frame_time();
-        begin_notification_frame(notifications, pending_notification, notification_now);
+        begin_notification_frame(notification_context, pending_notification, notification_now);
         wormedit::sys::frame_timing().begin_frame();
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::events);
         if (!wormedit::sys::poll_frontend_events(
@@ -3591,7 +3684,8 @@ int main(int argc, char** argv) {
         }
         timing_edit.cancel_if_stale(history, workspace, application_command_state);
         const auto notification_view = project_application_notifications(
-            notifications, notification_now, compose_interaction_state);
+            notifications, notification_now, compose_interaction_state, notification_history,
+            history.document, project_chart_runtime.session_generation);
         if (!handle_workspace_view_error(model, workspace_frame_action_context, notification_view,
                 pending_notification, pending_close, program_preferences.preferences.general.confirm_unsaved_close)) {
             prepare_bound_workspace_frame(history, workspace, application_command_state,

@@ -559,3 +559,9 @@ TEST_CASE("Tap timing commands parse independently of document editing", "[unit]
     CHECK(parse_application_command("timing.tap") ==
           application_command_t{.kind = application_command_kind_t::timing_tap});
 }
+
+TEST_CASE("notification history has a stable typed application command", "[unit][sys][notifications]") {
+    CHECK(parse_application_command("view.notifications") ==
+          application_command_t{.kind = application_command_kind_t::view_notifications});
+    CHECK_FALSE(parse_application_command("view.notifications.extra"));
+}

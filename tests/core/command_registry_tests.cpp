@@ -460,3 +460,41 @@ TEST_CASE("Tap timing dispatch accepts workspace taps and rejects text entry", "
         shortcut_primary_modifier_t::control).status != command_dispatch_status_t::invoked);
     CHECK(calls->size() == 1);
 }
+namespace {
+void check_notification_chord(const command_registry_t& registry,
+                              shortcut_primary_modifier_t primary_mode,
+                              shortcut_modifier_t primary_key) {
+    CHECK(diagnose_shortcut_conflicts(registry, primary_mode).empty());
+    const auto dispatched = dispatch_shortcut(registry,
+        {.chord = {.key = shortcut_key_t::m,
+                   .modifiers = primary_key | shortcut_modifier_t::shift}},
+        {.workspace_active = true}, primary_mode);
+    CHECK(dispatched.command == command_id_t{"view.notifications"});
+    CHECK(dispatched.status == command_dispatch_status_t::invoked);
+}
+}
+
+TEST_CASE("notification history default chord opens without a chart and has no conflicts",
+          "[unit][core][command_registry][notifications]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    check_notification_chord(registry, shortcut_primary_modifier_t::control,
+                             shortcut_modifier_t::control);
+    check_notification_chord(registry, shortcut_primary_modifier_t::meta,
+                             shortcut_modifier_t::meta);
+}
+
+TEST_CASE("notification history shortcut respects text and IME guards",
+          "[unit][core][command_registry][notifications]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    const shortcut_chord_t chord{shortcut_key_t::m,
+        shortcut_modifier_t::control | shortcut_modifier_t::shift};
+    const auto text = dispatch_shortcut(registry, {.chord = chord},
+        {.text_entry_active = true}, shortcut_primary_modifier_t::control);
+    const auto ime = dispatch_shortcut(registry, {.chord = chord},
+        {.ime_composition_active = true}, shortcut_primary_modifier_t::control);
+    CHECK(text.status == command_dispatch_status_t::focus_consumed);
+    CHECK(ime.status == command_dispatch_status_t::focus_consumed);
+    CHECK(calls->empty());
+}

@@ -32,6 +32,7 @@ enum class application_command_kind_t {
     navigation_next_snap,
     navigation_previous_marker,
     navigation_next_marker,
+    view_notifications,
     workspace_options,
     workspace_open_setup,
     workspace_open_metadata,

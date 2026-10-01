@@ -12,7 +12,15 @@
 #include <string>
 #include <string_view>
 
+namespace wormedit { class notification_center_t; }
+
 namespace wormedit::sys {
+struct notification_history_runtime_t;
+
+auto invoke_notification_history_command(application_command_t command, bool auto_repeat,
+    notification_history_runtime_t& runtime, notification_center_t& center)
+    -> std::optional<wormedit::command_invocation_result_t>;
+
 
 auto reject_application_command(
     std::string& status, std::string message,

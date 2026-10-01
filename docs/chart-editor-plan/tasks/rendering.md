@@ -271,3 +271,15 @@ Decision (user, 2026-09-30): permit at most one pixel of static-layer raster var
 - **Reject/failure behavior:** if native Wayland initialization fails, fall back to x11 automatically with one warning.
 - **Verify:** standard build/test; manual on niri: run without `SDL_VIDEODRIVER`, confirm `wayland` is used, resize repeatedly, move the window between workspaces/columns, play with Ctrl+Space for several minutes; no freeze. With `SDL_VIDEODRIVER=x11`, a stall (if it recurs) is reported by the watchdog and input still works after the compositor releases images.
 - **Out of scope:** the field renderer (T-248), frame-time work (live-transport group).
+
+## T-305 Cache the audio minimap waveform in a bounded GPU texture
+
+- **Status:** ready
+- **Outcome:** the whole-source minimap waveform is drawn from a retained texture instead of rebuilding hundreds of stroke vertices each frame; playhead, viewport thumb and offset markers remain exact dynamic overlays.
+- **Read first:** `src/ui/nuklear/compose_panel.cpp`, `src/sys/waveform_view_projection.cpp`, `src/ui/nuklear/sdl_backend.h`, `src/ui/frontend.h`.
+- **Files owned:** `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/sdl_backend.cpp/.h`, `src/ui/frontend.h`, `src/sys/waveform_view_projection.cpp/.h`, `src/sys/compose_view.h`, `tests/ui/nuklear_sdl_backend_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/CMakeLists.txt`.
+- **Steps:** 1. Attribute minimap-only vertices, conversion time and uploads with an isolated baseline. 2. Publish immutable overview generation and cache the entire waveform texture by source/detail/style/size/renderer generation, independently of the queued main-field geometry. 3. Verify direct-versus-texture pixels, resize/reset/source replacement and unchanged exact seek/drag markers, then report measured workload differences.
+- **Invariants:** the whole-source overview needs no scrolling ring; normal playback performs no waveform texture upload; CPU/GPU storage is bounded and accounted; T-299 conditional placement and existing navigation remain intact.
+- **Reject/failure behavior:** unsupported sizes or allocation failures use the original bounded stroke drawing without changing interaction or displaying stale source data.
+- **Verify:** standard build/test; configured clang-tidy; isolated Xvfb pixel and workload checks using generated audio.
+- **Out of scope:** flattened workspace allocation (T-272), PCM detail, changing minimap navigation.

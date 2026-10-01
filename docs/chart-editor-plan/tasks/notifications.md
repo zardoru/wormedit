@@ -60,7 +60,7 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 ## T-220 Add the notification history panel
 
-- **Status:** ready
+- **Status:** done (bounded modeless history, exact navigation, complete UTF-8 detail/OS clipboard, isolated focus and geometry; full 1162/1162 and actual Xvfb gates passed)
 - **Outcome:** View → Notifications (and command `view.notifications`) opens a modeless panel listing entries newest-first with severity filter, repeat counts, relative time, expandable detail, Copy details (to the OS clipboard), Go to (for targets), Dismiss, and Clear all; opening it marks entries read.
 - **Read first:** `include/wormedit/core/notifications.h`, `src/core/command_registry.cpp`, `src/ui/nuklear/frontend.cpp`.
 - **Files owned:** new `src/ui/nuklear/notification_panel.cpp/.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `src/core/command_registry.cpp`, `src/sys/main.cpp` (history ownership, projection, and dispatch), `src/sys/application_commands.h/.cpp`, `src/sys/application_command_dispatch.cpp/.h`, new `src/sys/notification_history_runtime.cpp/.h`, new `tests/sys/notification_history_runtime_tests.cpp`, new `tests/ui/nuklear_notification_panel_tests.cpp`, `tests/core/command_registry_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.

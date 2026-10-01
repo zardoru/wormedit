@@ -19,6 +19,7 @@
 #include "ui/nuklear/timing_state.h"
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/notification_toasts.h"
+#include "ui/nuklear/notification_panel.h"
 
 #include "ui/nuklear/sdl_backend.h"
 
@@ -65,6 +66,8 @@ static std::array<worm_ui_nuklear_pointer_click_t, 16> g_double_clicks{};
 static size_t g_double_click_count{};
 static bool g_window_focused{true};
 static wormedit::ui::nuklear::notification_toast_state_t g_notification_state;
+static wormedit::ui::nuklear::notification_panel_state_t g_notification_history_state;
+static bool g_notification_history_close_pending;
 static WormUiNotificationView g_notification_view{};
 static nk_context g_notification_context{};
 static bool g_notification_context_initialized{};
@@ -238,6 +241,7 @@ static bool frontend_window_size(int* width, int* height) {
 }
 
 static bool nuklear_text_entry_active(void);
+static bool notification_history_focused();
 
 static void queue_shortcut_key_event(const SDL_KeyboardEvent* event, bool tap_capture = false) {
     if (!event || !g_window || !g_window_focused || event->type != SDL_EVENT_KEY_DOWN ||
@@ -319,6 +323,7 @@ static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_la
     }
     action->shortcut_overflowed = g_shortcut_events_overflowed;
     action->shortcut_window_focused = g_window_focused;
+    action->shortcut_notification_history_focused = notification_history_focused();
     auto& compose_state = worm_ui_nuklear_compose_state();
     action->shortcut_text_entry_active = nuklear_text_entry_active() ||
                                          compose_state.inline_timing_input_consumed;
@@ -426,6 +431,8 @@ bool worm_ui_frontend_init(SDL_Window* window, SDL_Renderer* renderer) {
     initialize_notification_context();
     g_window_focused = true;
     g_notification_state = {};
+    g_notification_history_state = {};
+    g_notification_history_close_pending = false;
     g_notification_view = {};
     g_notification_modal = false;
     g_notification_project_modal = false;
@@ -479,6 +486,7 @@ void worm_ui_frontend_shutdown(void) {
 void worm_ui_frontend_begin_input(void) {
     if (g_context) {
         nk_input_begin(g_context);
+        g_notification_history_state.pointer_owned_this_frame = false;
         g_shortcut_event_count = 0;
         g_shortcut_events_overflowed = false;
         g_double_click_count = 0;
@@ -516,7 +524,7 @@ WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_i
     return worm_ui_nuklear_metadata_drop_target(x, y);
 }
 
-static bool notification_editor_gesture_active() {
+static bool notification_document_gesture_active() {
     const auto& compose = worm_ui_nuklear_compose_state();
     const auto& timing = worm_ui_nuklear_timing_state();
     return g_notification_view.edit_gesture_active || g_audio.offset_drag_active ||
@@ -526,9 +534,59 @@ static bool notification_editor_gesture_active() {
         compose.note_move_candidate_active || compose.note_move_active ||
         compose.timing_stage_drag_active || compose.timing_marker_candidate_active ||
         compose.timing_marker_drag_active || timing.recipe_range_drag_active ||
-        timing.marker_drag_active || compose_area_capture_active() ||
+        timing.marker_drag_active || compose_area_capture_active();
+}
+
+static bool notification_editor_gesture_active() {
+    return notification_document_gesture_active() ||
         std::ranges::any_of(g_context->input.mouse.buttons,
                             [](const auto& button) { return button.down; });
+}
+
+static bool notification_history_contains(struct nk_rect bounds, float x, float y) {
+    return std::isfinite(x) && std::isfinite(y) && x >= bounds.x && y >= bounds.y &&
+           x < bounds.x + bounds.w && y < bounds.y + bounds.h;
+}
+
+static struct nk_rect notification_history_bounds(bool overlay) {
+    auto* context = overlay ? &g_notification_context : g_context;
+    const auto* window = context ? nk_window_find(context, "Notifications") : nullptr;
+    if (window) return window->bounds;
+    return nk_rect(12, 40, std::max(1.0f, std::min(760.0f, float(g_last_window_width) - 24)),
+                   std::max(1.0f, std::min(560.0f, float(g_last_window_height) - 60)));
+}
+
+static bool notification_editor_text_owned() {
+    const auto& compose = worm_ui_nuklear_compose_state();
+    return (nuklear_text_entry_active() && !nk_window_is_active(g_context, "Notifications")) ||
+        g_ime_composition_active || compose.inline_timing_open || compose.go_to_measure_open;
+}
+
+static bool notification_external_pointer_active() {
+    const auto bounds = notification_history_bounds(false);
+    return std::ranges::any_of(g_context->input.mouse.buttons, [&](const auto& button) {
+        return button.down && !notification_history_contains(bounds, button.clicked_pos.x,
+                                                               button.clicked_pos.y);
+    });
+}
+
+static bool notification_history_locked() {
+    return notification_editor_text_owned() || notification_document_gesture_active() ||
+           notification_external_pointer_active();
+}
+
+static bool notification_history_focused() {
+    return g_context && g_notification_view.history.visible && !g_notification_project_modal &&
+        !g_notification_history_close_pending && !nk_window_is_closed(g_context, "Notifications") &&
+        nk_window_is_active(g_context, "Notifications") && !notification_history_locked() &&
+        (nuklear_text_entry_active() || notification_history_contains(notification_history_bounds(false),
+            g_context->input.mouse.pos.x, g_context->input.mouse.pos.y));
+}
+
+static void close_notification_history_windows() {
+    nk_window_close(g_context, "Notifications");
+    if (g_notification_context_initialized)
+        nk_window_close(&g_notification_context, "Notifications");
 }
 
 static bool notification_owns_pointer(float x, float y) {
@@ -544,8 +602,14 @@ static bool capture_notification_key(const SDL_KeyboardEvent& event) {
         if (event.type == SDL_EVENT_KEY_UP) g_notification_escape_captured = false;
         return true;
     }
-    if (event.type != SDL_EVENT_KEY_DOWN || event.repeat || g_notification_state.count == 0)
-        return false;
+    if (event.type != SDL_EVENT_KEY_DOWN || event.repeat) return false;
+    if (g_window_focused && notification_history_focused()) {
+        g_notification_history_close_pending = true;
+        close_notification_history_windows();
+        g_notification_escape_captured = true;
+        return true;
+    }
+    if (g_notification_state.count == 0) return false;
     const auto& compose = worm_ui_nuklear_compose_state();
     const auto target = wormedit::ui::nuklear::notification_escape_target(
         g_notification_view, g_window_focused,
@@ -573,6 +637,8 @@ static bool capture_notification_button(const SDL_MouseButtonEvent& event) {
 static bool capture_notification_event(const SDL_Event& event) {
     if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
         wormedit::ui::nuklear::notification_focus_lost(g_notification_state);
+        g_notification_history_state.pointer_routes.fill(
+            wormedit::ui::nuklear::notification_history_pointer_route_t::none);
         g_notification_escape_captured = false;
         return false;
     }
@@ -588,6 +654,63 @@ static bool capture_notification_event(const SDL_Event& event) {
     }
     return event.type == SDL_EVENT_MOUSE_WHEEL &&
         notification_owns_pointer(event.wheel.mouse_x, event.wheel.mouse_y);
+}
+
+static bool feed_history_event(const SDL_Event& event, bool interactive) {
+    if (interactive) {
+        SDL_Event copy = event;
+        (void)nk_sdl_handle_event(g_context, &copy);
+    }
+    return true;
+}
+
+static bool history_pointer_capture_active() {
+    using route_t = wormedit::ui::nuklear::notification_history_pointer_route_t;
+    return std::ranges::any_of(g_notification_history_state.pointer_routes,
+                               [](route_t route) { return route != route_t::none; });
+}
+
+static bool capture_history_button(const SDL_Event& event, bool available, bool interactive) {
+    using route_t = wormedit::ui::nuklear::notification_history_pointer_route_t;
+    const auto route = wormedit::ui::nuklear::notification_history_pointer_edge(
+        g_notification_history_state, notification_history_bounds(!interactive),
+        event.button.x, event.button.y, event.button.button, event.button.down,
+        available && !notification_document_gesture_active() && !notification_external_pointer_active(),
+        interactive);
+    if (route == route_t::none) return false;
+    return feed_history_event(event, route == route_t::interactive);
+}
+
+static bool capture_notification_history_event(const SDL_Event& event) {
+    const bool locked = notification_history_locked();
+    const bool available = g_notification_view.history.visible && !g_notification_project_modal &&
+        !g_notification_history_close_pending && g_window_focused &&
+        (!locked || g_notification_context_initialized);
+    const bool interactive = available && !locked;
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP)
+        return capture_history_button(event, available, interactive);
+    if (!available) return false;
+    if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
+        if (!notification_history_focused()) return false;
+        queue_shortcut_key_event(&event.key);
+        return feed_history_event(event, true);
+    }
+    if (event.type == SDL_EVENT_TEXT_INPUT && notification_history_focused())
+        return feed_history_event(event, true);
+    const auto bounds = notification_history_bounds(!interactive);
+    if (event.type == SDL_EVENT_MOUSE_MOTION && (history_pointer_capture_active() ||
+        notification_history_contains(bounds, event.motion.x, event.motion.y))) {
+        if (notification_document_gesture_active() || notification_external_pointer_active()) return false;
+        g_notification_history_state.pointer_owned_this_frame = true;
+        return feed_history_event(event, interactive);
+    }
+    if (event.type == SDL_EVENT_MOUSE_WHEEL &&
+        notification_history_contains(bounds, event.wheel.mouse_x, event.wheel.mouse_y) &&
+        !notification_document_gesture_active() && !notification_external_pointer_active()) {
+        g_notification_history_state.pointer_owned_this_frame = true;
+        return feed_history_event(event, interactive);
+    }
+    return false;
 }
 
 static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
@@ -658,6 +781,7 @@ static bool handle_workspace_frontend_event(const SDL_Event* event) {
 bool worm_ui_frontend_handle_event(const SDL_Event* event) {
     if (!g_context || !event) return false;
     if (capture_notification_event(*event)) return true;
+    if (capture_notification_history_event(*event)) return true;
     return handle_workspace_frontend_event(event);
 }
 
@@ -835,7 +959,7 @@ static void render_view_menu(const WormUiWorkspaceView* view,
                              WormUiWorkspaceAction* action) {
     if (!nk_menu_begin_label(g_context, "View", NK_TEXT_LEFT, nk_vec2(230, 160))) return;
     nk_layout_row_dynamic(g_context, 25, 1);
-    if (nk_menu_item_label(g_context, view->player_preview.visible ? "Hide preview"
+    if (view->project_loaded && nk_menu_item_label(g_context, view->player_preview.visible ? "Hide preview"
                                                                  : "Show preview", NK_TEXT_LEFT) &&
         action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
         action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
@@ -851,6 +975,9 @@ static void render_view_menu(const WormUiWorkspaceView* view,
     nk_layout_row_dynamic(g_context, 25, 1);
     if (nk_menu_item_label(g_context, view->tap_timing.visible ? "Hide tap timing" : "Tap timing", NK_TEXT_LEFT))
         action->tap_timing.toggle = true;
+    nk_layout_row_dynamic(g_context, 25, 1);
+    if (nk_menu_item_label(g_context, "Notifications", NK_TEXT_LEFT) && view->notifications.history_available)
+        action->notifications = {WORM_UI_NOTIFICATION_ACTION_OPEN_HISTORY, 0};
     nk_menu_end(g_context);
 }
 
@@ -867,8 +994,7 @@ static void render_title_bar(const WormUiWorkspaceView* view,
     nk_labelf(g_context, NK_TEXT_LEFT, "  %s%s", view->project_title,
               view->dirty ? " *" : "");
     render_project_menu(view, action);
-    if (view->project_loaded) render_view_menu(view, action);
-    else nk_label(g_context, "", NK_TEXT_LEFT);
+    render_view_menu(view, action);
     if (custom_controls) {
         if (wormedit::ui::chrome::IconButton{Glyph::minus, "Minimize window"}.render(g_context))
             SDL_MinimizeWindow(g_window);
@@ -1205,8 +1331,17 @@ static auto render_recovery_above_content(const WormUiWorkspaceView& view,
     return render_recovery_panel(view, action);
 }
 
+static bool history_owns_content_input(const WormUiWorkspaceView& view) {
+    if (!g_context || g_notification_project_modal || notification_editor_text_owned() ||
+        notification_document_gesture_active() || notification_external_pointer_active()) return false;
+    if (g_notification_history_state.pointer_owned_this_frame || history_pointer_capture_active()) return true;
+    return view.notifications.history.visible && notification_history_contains(
+        notification_history_bounds(false), g_context->input.mouse.pos.x, g_context->input.mouse.pos.y);
+}
+
 static bool options_owns_content_input(const WormUiWorkspaceView& view) {
     if (view.close_confirmation.visible) return true;
+    if (history_owns_content_input(view)) return true;
     const auto& compose = worm_ui_nuklear_compose_state();
     const bool text_active = nuklear_text_entry_active() || g_ime_composition_active ||
                              compose.inline_timing_open || compose.go_to_measure_open;
@@ -1626,15 +1761,33 @@ static void remember_notification_frame(const WormUiWorkspaceView* view) {
     g_notification_modal = g_notification_project_modal || (view && view->options.visible);
 }
 
+static void render_notification_history(const WormUiNotificationView& view,
+    WormUiWorkspaceAction& action, int width, int height, bool project_modal) {
+    if (g_notification_history_close_pending) {
+        action.notifications = {WORM_UI_NOTIFICATION_ACTION_CLOSE_HISTORY, 0};
+        g_notification_history_close_pending = false;
+        return;
+    }
+    if (project_modal || !view.history.visible) return;
+    const bool locked = notification_history_locked();
+    if (locked && !g_notification_context_initialized) return;
+    auto* context = locked ? &g_notification_context : g_context;
+    if (locked) context->style = g_context->style;
+    wormedit::ui::nuklear::render_notification_panel(context, view.history,
+        g_notification_history_state, action.notifications, width, height, !locked);
+}
+
 static void render_notification_frame(const WormUiNotificationView& view,
     WormUiWorkspaceAction& action, int width, int height, bool project_modal) {
+    render_notification_history(view, action, width, height, project_modal);
     const bool valid_count = view.toast_count <= WORM_UI_NOTIFICATION_TOAST_CAPACITY;
     const auto visible = project_modal || !valid_count ? WormUiNotificationView{} : view;
     wormedit::ui::nuklear::render_notification_overlay(g_context,
         g_notification_context_initialized ? &g_notification_context : nullptr,
         visible, g_notification_state, width, height);
     const auto pending = wormedit::ui::nuklear::notification_take_action(g_notification_state);
-    if (pending.kind != WORM_UI_NOTIFICATION_ACTION_NONE) action.notifications = pending;
+    if (pending.kind != WORM_UI_NOTIFICATION_ACTION_NONE &&
+        action.notifications.kind == WORM_UI_NOTIFICATION_ACTION_NONE) action.notifications = pending;
 }
 
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {

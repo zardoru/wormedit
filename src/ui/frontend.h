@@ -1368,9 +1368,37 @@ typedef struct WormUiNotificationToastView {
     uint32_t repeat_count;
 } WormUiNotificationToastView;
 
+#define WORM_UI_NOTIFICATION_HISTORY_CAPACITY 256
+
+typedef enum WormUiNotificationTargetAvailability {
+    WORM_UI_NOTIFICATION_NO_TARGET = 0,
+    WORM_UI_NOTIFICATION_TARGET_POSITION,
+    WORM_UI_NOTIFICATION_TARGET_NONPOSITIONAL,
+    WORM_UI_NOTIFICATION_TARGET_MISSING
+} WormUiNotificationTargetAvailability;
+
+typedef struct WormUiNotificationHistoryRow {
+    uint64_t id;
+    WormUiNotificationSeverity severity;
+    uint32_t source;
+    const char* message;
+    const char* detail;
+    uint32_t repeat_count;
+    uint64_t age_seconds;
+    bool read;
+    WormUiNotificationTargetAvailability target;
+} WormUiNotificationHistoryRow;
+
+typedef struct WormUiNotificationHistoryView {
+    bool visible;
+    size_t row_count;
+    const WormUiNotificationHistoryRow* rows;
+} WormUiNotificationHistoryView;
+
 typedef struct WormUiNotificationView {
     bool edit_gesture_active;
     bool history_available;
+    WormUiNotificationHistoryView history;
     const char* current_text;
     WormUiNotificationSeverity current_severity;
     size_t unread_warnings;
@@ -1382,7 +1410,11 @@ typedef struct WormUiNotificationView {
 typedef enum WormUiNotificationActionKind {
     WORM_UI_NOTIFICATION_ACTION_NONE = 0,
     WORM_UI_NOTIFICATION_ACTION_DISMISS,
-    WORM_UI_NOTIFICATION_ACTION_OPEN_HISTORY
+    WORM_UI_NOTIFICATION_ACTION_OPEN_HISTORY,
+    WORM_UI_NOTIFICATION_ACTION_CLOSE_HISTORY,
+    WORM_UI_NOTIFICATION_ACTION_COPY_DETAILS,
+    WORM_UI_NOTIFICATION_ACTION_GO_TO,
+    WORM_UI_NOTIFICATION_ACTION_DISMISS_ALL
 } WormUiNotificationActionKind;
 
 typedef struct WormUiNotificationAction {
@@ -1795,6 +1827,7 @@ typedef struct WormUiWorkspaceAction {
     size_t shortcut_event_count;
     bool shortcut_overflowed;
     bool shortcut_window_focused;
+    bool shortcut_notification_history_focused;
     bool shortcut_text_entry_active;
     bool shortcut_ime_composition_active;
     bool shortcut_compose_lane_focused;

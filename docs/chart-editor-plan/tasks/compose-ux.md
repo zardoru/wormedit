@@ -577,3 +577,15 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 - **Reject/failure behavior:** blocked or invalid gestures leave the document and selection unchanged; focus/capture loss retires held inputs.
 - **Verify:** standard build/test; configured clang-tidy; isolated real-window checks after focusing inspector and toolbar, plus text/Options/history occlusion regressions.
 - **Out of scope:** changing note-editing command semantics.
+
+## T-306 Honor the configured playhead anchor in scene validation
+
+- **Status:** ready
+- **Outcome:** A valid configured playhead anchor such as 35 percent renders a valid Compose scene during playback, Stop and audio-tail seeking instead of reporting viewport scroll outside chart content.
+- **Read first:** `src/core/editor_scene.cpp`, `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/compose_playhead_cursor.h`, `src/sys/compose_view.cpp`.
+- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `include/wormedit/core/editor_scene.h`, `src/core/editor_scene.cpp`, `src/sys/compose_playhead_cursor.h`, `src/sys/compose_view.cpp/.h`, `tests/core/interaction_tests.cpp`, `tests/core/editor_scene_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
+- **Steps:** 1. Reproduce configured-anchor following against fresh and cached scene validation, including a short chart with a longer audio tail. 2. Share the validated viewport margin contract between following and scene consumers, retaining default 20 percent behavior and rejecting invalid parameters. 3. Verify exact cursor/scroll and fresh-versus-cached primitives during Play, Stop, seeking and resize in upscroll/downscroll.
+- **Invariants:** Existing chart/document data and selection stay unchanged; scene validation remains bounded and rejects invalid scroll; default callers remain compatible.
+- **Reject/failure behavior:** Invalid parameters reject without mutation; cached and fresh scene paths agree on valid bounds.
+- **Verify:** standard build/test; configured clang-tidy; isolated Xvfb/SDL-dummy short-chart audio-tail playback and Stop checks with 35 percent anchor.
+- **Out of scope:** T-272 measure-index borrowing, overview placement, unrelated rendering optimizations.

@@ -167,10 +167,7 @@ struct flattened_workspace_t {
             std::array<std::string, WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY> diagnostic;
         } branch;
         struct {
-            std::array<WormUiComposeResourceView, WORM_UI_COMPOSE_RESOURCE_CAPACITY> view{};
-            std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> index;
-            std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> name;
-            std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> path;
+            frame_span<WormUiComposeResourceView> view;
         } resource;
         struct {
             frame_span<WormUiComposeOutputGroupView> view;

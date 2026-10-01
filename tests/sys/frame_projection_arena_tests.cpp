@@ -1038,3 +1038,162 @@ TEST_CASE("Compose output group external arena reset republishes current documen
                                    "Updated second frame group") == 0);
     check_frame_storage(!current.view.compose.output_groups_truncated);
 }
+
+namespace {
+auto compose_resource_document(std::size_t count) -> wormedit::song_document_t {
+    wormedit::song_document_t document;
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto id = index + 1;
+        document.audio_assets.push_back({.id = wormedit::asset_id_t{id},
+            .source_path = std::string(80, 'p') + "/" + std::string(80, 'f') + ".wav"});
+        document.resources.push_back({.id = wormedit::resource_id_t{id},
+            .name = std::string(80, 'n') + std::to_string(id),
+            .asset = wormedit::asset_id_t{id},
+            .roles = {wormedit::resource_role_t::sample, wormedit::resource_role_t::bgm},
+            .target_identities = {{.family = wormedit::format_family_t::bms,
+                .identifier = "01", .namespace_name = "WAV"}}});
+    }
+    return document;
+}
+auto project_resource_rows(const wormedit::song_document_t& document,
+                           frame_arena_t* arena = nullptr) -> flattened_workspace_t {
+    wormedit::workspace_view_t model;
+    model.active_tab = wormedit::workspace_tab_t::compose;
+    model.tab_view = wormedit::workspace_compose_view_t{.chart = wormedit::chart_id_t{1}};
+    model.transport.audio_asset = wormedit::asset_id_t{1};
+    model.selected_visual_asset = wormedit::asset_id_t{7};
+    return flatten_workspace(model, document, "ready", {}, false, {}, arena);
+}
+}
+TEST_CASE("Compose resource arena owns complete rows after source mutation and move",
+          "[sys][frame-arena][compose-resource]") {
+    auto document = compose_resource_document(2);
+    document.resources.push_back({.id = wormedit::resource_id_t{9},
+        .roles = {wormedit::resource_role_t::preview}});
+    auto frame = project_resource_rows(document);
+    REQUIRE(frame.view.compose.resource_count == 2);
+    check_frame_storage(frame.view.compose.resource_total_count == 2);
+    document.resources.clear();
+    document.audio_assets.clear();
+    auto moved = std::move(frame);
+    moved.rebind_view_pointers();
+    const auto& row = moved.view.compose.resources[0];
+    check_frame_storage(row.resource_id == 1 && row.asset_id == 1);
+    check_frame_storage(row.audio_asset && row.selected_audio_asset && !row.missing);
+    check_frame_storage(row.roles == (WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE | WORM_UI_COMPOSE_RESOURCE_ROLE_BGM));
+    check_frame_storage(std::strcmp(row.target_index, "#WAV01") == 0);
+    check_frame_storage(std::strlen(row.name) == 81);
+    check_frame_storage(std::strlen(row.source_name) == 84);
+}
+TEST_CASE("Compose resource arena preserves capacity and degrades storage exhaustion",
+          "[sys][frame-arena][compose-resource]") {
+    auto document = compose_resource_document(129);
+    auto frame = project_resource_rows(document);
+    REQUIRE(frame.view.compose.resource_count == 128);
+    check_frame_storage(frame.view.compose.resource_total_count == 129);
+    check_frame_storage(frame.view.compose.resources_truncated);
+    check_frame_storage(frame.view.compose.resources[127].resource_id == 128);
+    frame_arena_t tiny({.chunk_bytes = 64, .maximum_bytes = 64});
+    auto failed = project_resource_rows(document, &tiny);
+    check_frame_storage(failed.view.compose.resource_count == 0);
+    check_frame_storage(failed.view.compose.resource_total_count == 129);
+    check_frame_storage(failed.view.compose.resources_truncated);
+    check_frame_storage(failed.view.compose.resources == nullptr);
+}
+TEST_CASE("Compose resource arena warmed dense projections retain stable storage",
+          "[sys][frame-arena][compose-resource]") {
+    const auto document = compose_resource_document(128);
+    frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 1024 * 1024});
+    (void)project_resource_rows(document, &arena);
+    const auto used = arena.used_bytes();
+    const auto committed = arena.committed_bytes();
+    bool stable = true;
+    std::uint64_t allocations{};
+    for (int iteration = 0; iteration < 1000; ++iteration) {
+        arena.reset();
+        const auto before = frame_heap_allocation_snapshot();
+        const auto frame = project_resource_rows(document, &arena);
+        const auto after = frame_heap_allocation_snapshot();
+        allocations = after.count - before.count;
+        stable = stable && frame.view.compose.resource_count == 128 &&
+            !frame.view.compose.resources_truncated && arena.used_bytes() == used &&
+            arena.committed_bytes() == committed;
+    }
+    INFO("Remaining temporary catalog/path allocations per projection: " << allocations);
+    check_frame_storage(stable);
+}
+TEST_CASE("Compose resource arena preserves fallback labels visual flags and missing assets",
+          "[sys][frame-arena][compose-resource]") {
+    wormedit::song_document_t document;
+    document.visual_assets.push_back({.id = wormedit::asset_id_t{7},
+        .kind = wormedit::asset_kind_t::image, .source_path = "images/banner.png"});
+    document.resources.push_back({.id = wormedit::resource_id_t{17},
+        .asset = wormedit::asset_id_t{7}, .roles = {wormedit::resource_role_t::bga}});
+    document.resources.push_back({.id = wormedit::resource_id_t{18},
+        .asset = wormedit::asset_id_t{8}, .roles = {wormedit::resource_role_t::sample}});
+    auto frame = project_resource_rows(document);
+    REQUIRE(frame.view.compose.resource_count == 2);
+    const auto& visual = frame.view.compose.resources[0];
+    check_frame_storage(visual.image_asset && visual.selected_visual_asset && !visual.audio_asset && !visual.missing);
+    check_frame_storage(std::strcmp(visual.target_index, "#17") == 0);
+    check_frame_storage(std::strcmp(visual.name, "Resource 17") == 0);
+    check_frame_storage(std::strcmp(visual.source_name, "banner.png") == 0);
+    const auto& missing = frame.view.compose.resources[1];
+    check_frame_storage(missing.missing && !missing.image_asset && !missing.audio_asset);
+    check_frame_storage(std::strcmp(missing.source_name, "") == 0);
+}
+TEST_CASE("Compose resource arena exhaustion publishes only complete string prefixes",
+          "[sys][frame-arena][compose-resource]") {
+    const auto document = compose_resource_document(2);
+    bool found_prefix = false;
+    for (std::size_t limit = 128; limit <= 1024; ++limit) {
+        frame_arena_t arena({.chunk_bytes = limit, .maximum_bytes = limit});
+        const auto frame = project_resource_rows(document, &arena);
+        if (frame.view.compose.resource_count != 1) continue;
+        REQUIRE(frame.view.compose.resources_truncated);
+        check_frame_storage(frame.view.compose.resource_total_count == 2);
+        const auto& first = frame.view.compose.resources[0];
+        check_frame_storage(first.resource_id == 1 && std::strlen(first.name) == 81);
+        check_frame_storage(std::strcmp(first.target_index, "#WAV01") == 0);
+        check_frame_storage(std::strlen(first.source_name) == 84);
+        found_prefix = true;
+        break;
+    }
+    check_frame_storage(found_prefix);
+}
+TEST_CASE("Compose resource arena empty catalogs do not report truncation",
+          "[sys][frame-arena][compose-resource]") {
+    wormedit::song_document_t document;
+    auto empty = project_resource_rows(document);
+    check_frame_storage(empty.view.compose.resource_count == 0);
+    check_frame_storage(empty.view.compose.resource_total_count == 0);
+    check_frame_storage(!empty.view.compose.resources_truncated);
+    document.resources.push_back({.id = wormedit::resource_id_t{9},
+        .roles = {wormedit::resource_role_t::preview}});
+    auto hidden = project_resource_rows(document);
+    check_frame_storage(hidden.view.compose.resource_count == 0);
+    check_frame_storage(hidden.view.compose.resource_total_count == 0);
+    check_frame_storage(!hidden.view.compose.resources_truncated);
+}
+TEST_CASE("Compose resource external arena reset republishes updated text",
+          "[sys][frame-arena][compose-resource]") {
+    auto document = compose_resource_document(1);
+    frame_arena_t arena({.chunk_bytes = 4096, .maximum_bytes = 4096});
+    {
+        auto first = project_resource_rows(document, &arena);
+        auto moved = std::move(first);
+        moved.rebind_view_pointers();
+        REQUIRE(moved.view.compose.resource_count == 1);
+        check_frame_storage(std::strlen(moved.view.compose.resources[0].name) == 81);
+    }
+    arena.reset();
+    document.resources[0].name = "Updated second frame resource label";
+    document.audio_assets[0].source_path = "new/path/updated.wav";
+    auto second = project_resource_rows(document, &arena);
+    REQUIRE(second.view.compose.resource_count == 1);
+    check_frame_storage(std::strcmp(second.view.compose.resources[0].name,
+        "Updated second frame resource label") == 0);
+    check_frame_storage(std::strcmp(second.view.compose.resources[0].source_name,
+        "updated.wav") == 0);
+    check_frame_storage(!second.view.compose.resources_truncated);
+}

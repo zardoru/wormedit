@@ -640,6 +640,50 @@ void populate_compose_output_groups(const workspace_projection_context_t& projec
     }
 }
 
+auto append_compose_resource(flattened_workspace_t& result, frame_arena_t& arena,
+                             const compose_resource_entry_t& resource) -> bool {
+    const auto* target = arena_string(arena, resource.target_index);
+    const auto* name = arena_string(arena, resource.name);
+    const auto* source = arena_string(arena, resource.source_name);
+    if (!target || !name || !source) return false;
+    std::uint8_t roles{};
+    roles |= resource.sample ? WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE : 0;
+    roles |= resource.bgm ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGM : 0;
+    roles |= resource.bga ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGA : 0;
+    return result.compose.resource.view.push_back({
+        .resource_id = resource.resource.value, .asset_id = resource.asset.value,
+        .roles = roles, .audio_asset = resource.audio_asset,
+        .selected_audio_asset = resource.selected_audio_asset,
+        .image_asset = resource.image_asset, .selected_visual_asset = resource.selected_visual_asset,
+        .missing = resource.missing, .target_index = target, .name = name, .source_name = source});
+}
+void populate_compose_resources(const workspace_projection_context_t& projection) {
+    auto& result = projection.result;
+    auto& view = result.view.compose;
+    const auto catalog = make_compose_resource_catalog(projection.document,
+        projection.source.transport.audio_asset, WORM_UI_COMPOSE_RESOURCE_CAPACITY,
+        projection.source.selected_visual_asset);
+    auto* arena = result.arena();
+    result.compose.resource.view = arena
+        ? arena_array<WormUiComposeResourceView>(*arena, catalog.entries.size())
+        : frame_span<WormUiComposeResourceView>{};
+    view.resources = result.compose.resource.view.data();
+    view.resource_count = 0;
+    view.resource_total_count = catalog.total_count;
+    view.resources_truncated = catalog.truncated;
+    if (result.compose.resource.view.capacity() != catalog.entries.size()) {
+        view.resources_truncated = true;
+        return;
+    }
+    for (const auto& resource : catalog.entries) {
+        if (!append_compose_resource(result, *arena, resource)) {
+            view.resources_truncated = true;
+            break;
+        }
+        view.resource_count = result.compose.resource.view.size();
+    }
+}
+
 void populate_compose_tab(const workspace_projection_context_t& projection, const wormedit::workspace_compose_view_t& tab) {
     auto& result = projection.result;
     const auto& source = projection.source;
@@ -651,40 +695,8 @@ void populate_compose_tab(const workspace_projection_context_t& projection, cons
                     source.transport.audio_asset.value_or(wormedit::asset_id_t{}).value;
                 compose.selected_visual_asset_id =
                     source.selected_visual_asset.value_or(wormedit::asset_id_t{}).value;
-                const auto resource_catalog = wormedit::sys::make_compose_resource_catalog(
-                    document, source.transport.audio_asset, WORM_UI_COMPOSE_RESOURCE_CAPACITY,
-                    source.selected_visual_asset);
-                compose.resources = result.compose.resource.view.data();
-                compose.resource_count = resource_catalog.entries.size();
-                compose.resource_total_count = resource_catalog.total_count;
-                compose.resources_truncated = resource_catalog.truncated;
+                populate_compose_resources(projection);
                 populate_compose_output_groups(projection, tab.chart);
-                for (std::size_t index = 0; index < resource_catalog.entries.size(); ++index) {
-                    const auto& resource = resource_catalog.entries[index];
-                    std::uint8_t roles{};
-                    roles |= resource.sample ? WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE : 0;
-                    roles |= resource.bgm ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGM : 0;
-                    roles |= resource.bga ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGA : 0;
-                    auto& target_index = result.compose.resource.index[index];
-                    target_index = resource.target_index;
-                    auto& name = result.compose.resource.name[index];
-                    name = resource.name;
-                    auto& source_name = result.compose.resource.path[index];
-                    source_name = resource.source_name;
-                    result.compose.resource.view[index] = {
-                        .resource_id = resource.resource.value,
-                        .asset_id = resource.asset.value,
-                        .roles = roles,
-                        .audio_asset = resource.audio_asset,
-                        .selected_audio_asset = resource.selected_audio_asset,
-                        .image_asset = resource.image_asset,
-                        .selected_visual_asset = resource.selected_visual_asset,
-                        .missing = resource.missing,
-                        .target_index = target_index.c_str(),
-                        .name = name.c_str(),
-                        .source_name = source_name.c_str(),
-                    };
-                }
                 compose.branch_outline_available = outline.available;
                 compose.branch_rows_truncated = outline.rows_truncated;
                 compose.branch_choices_truncated = outline.choices_truncated;
@@ -848,12 +860,6 @@ void flattened_workspace_t::rebind_view_pointers() {
 
     auto& compose_view = view.compose;
     compose_view.resources = compose.resource.view.data();
-    for (std::size_t index = 0; index < compose_view.resource_count; ++index) {
-        auto& resource = compose.resource.view[index];
-        resource.target_index = compose.resource.index[index].c_str();
-        resource.name = compose.resource.name[index].c_str();
-        resource.source_name = compose.resource.path[index].c_str();
-    }
     compose_view.output_groups = compose.output_group.view.data();
     compose_view.branch_rows = compose.branch.row.data();
     for (std::size_t index = 0; index < compose_view.branch_row_count; ++index) {

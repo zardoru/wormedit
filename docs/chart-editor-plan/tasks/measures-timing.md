@@ -276,3 +276,17 @@ Verification (2026-09-30): seven bridge regressions pass (62 assertions), includ
 - **Reject/failure behavior:** positions that cannot be represented exactly are reported and the edit is rejected unless the user allows quantization.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`.
 - **Out of scope:** per-object anchoring flags.
+
+## T-294 Keep imported cross-measure holds in their start measure
+
+- **Status:** done
+- **Outcome:** SM/SSC holds and rolls crossing a measure boundary belong to their head measure; editing audio offset, including Shift-drag, commits without a spurious note-container validation error.
+- **Read first:** `src/formats/stepmania.cpp` (`pending_hold_t`, `append_hold_tail`), `src/core/audio_offset_editor.cpp`, `src/core/document.cpp` (`validate_chart_note`), `tests/formats/stepmania_tests.cpp`.
+- **Files owned:** `src/formats/stepmania.cpp`, `tests/formats/stepmania_tests.cpp`.
+- **Steps:** 1. Reproduce parsing and offset rejection with the user's `1998.sm`. 2. Retain the head measure index while parsing a hold and append the completed note there. 3. Verify SM/SSC hold and roll containment, offset undo, round-trip validation, and isolated Shift-drag with the actual file.
+- **Invariants:** head/end timing and lane identities remain unchanged; offset editing remains one exact undoable command; the document validator remains strict.
+- **Reject/failure behavior:** malformed unmatched hold heads/tails keep their existing parse diagnostics.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^core\..*StepMania'`; affected-file clang-tidy; actual `1998.sm` Shift-drag in Xvfb with SDL dummy.
+- **Out of scope:** repairing previously saved invalid native projects; changing offset semantics or the drag gesture.
+
+- **Verification result:** Full application build passed and all 1,017 tests passed (46.32 s), including SM/SSC cross-measure hold/roll offset, undo and round-trip regressions. Parsing the actual `1998.sm` now accepts the exact offset command. An isolated Xvfb/SDL-dummy Shift-drag changed the displayed offset from +0.000 s to +0.626 s and showed the successful waveform-drag status; the original song file was not modified. Affected-file clang-tidy was checked for new cognitive-complexity violations.

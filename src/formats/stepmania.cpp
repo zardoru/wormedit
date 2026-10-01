@@ -892,6 +892,7 @@ void parse_timing_fields(const std::vector<field_t>& song_fields,
 struct pending_hold_t {
     note_kind_t kind;
     local_position_t position;
+    std::size_t measure_index;
 };
 
 auto note_kind_for_symbol(char symbol) -> note_kind_t {
@@ -909,14 +910,14 @@ auto note_provenance(stepmania_profile_t profile, std::string spelling,
 }
 
 void append_hold_tail(chart_document_t& chart, const lane_layout_t& layout,
-                      std::size_t measure_index, std::uint32_t lane_index,
+                      std::uint32_t lane_index,
                       local_position_t position, std::map<std::uint32_t, pending_hold_t>& open_holds,
                       id_source_t& ids, stepmania_profile_t profile, const field_t& field) {
     const auto found = open_holds.find(lane_index);
     if (found == open_holds.end())
         fail(stepmania_parse_diagnostic_code_t::invalid_hold,
              "Hold tail has no matching head in its lane", field.order, field.offset);
-    chart.measures[measure_index].notes.push_back({
+    chart.measures[found->second.measure_index].notes.push_back({
         .id=ids.take<object_id_t>(), .position=found->second.position,
         .lane=layout.lanes[lane_index].id, .kind=found->second.kind, .end=position,
         .provenance=note_provenance(profile, "hold", field)});
@@ -934,11 +935,11 @@ void append_note_symbol(chart_document_t& chart, const lane_layout_t& layout,
             fail(stepmania_parse_diagnostic_code_t::invalid_hold,
                  "A hold head appears before the previous hold tail", field.order, field.offset);
         open_holds.emplace(lane_index, pending_hold_t{
-            symbol == '4' ? note_kind_t::roll : note_kind_t::hold, position});
+            symbol == '4' ? note_kind_t::roll : note_kind_t::hold, position, measure_index});
         return;
     }
     if (symbol == '3') {
-        append_hold_tail(chart, layout, measure_index, lane_index, position, open_holds,
+        append_hold_tail(chart, layout, lane_index, position, open_holds,
                          ids, profile, field);
         return;
     }

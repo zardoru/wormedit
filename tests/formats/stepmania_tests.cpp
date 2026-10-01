@@ -1,4 +1,5 @@
 #include <wormedit/core/bpm_editor.h>
+#include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/stepmania.h>
@@ -17,6 +18,40 @@
 #include <vector>
 
 namespace {
+
+auto cross_measure_hold_song(wormedit::stepmania_profile_t profile)
+    -> wormedit::song_document_t {
+    const std::string header = profile == wormedit::stepmania_profile_t::sm
+        ? "#NOTES:dance-single::Hard:1:0,0,0,0,0:"
+        : "#VERSION:0.83;#NOTEDATA:;#STEPSTYPE:dance-single;#DIFFICULTY:Hard;#METER:1;#NOTES:";
+    const std::string source = "#TITLE:Cross measure holds;#BPMS:0=120;" + header +
+        "\n2400\n0000\n0000\n0000\n,\n0000\n0000\n3300\n0000\n;";
+    auto parsed = wormedit::parse_stepmania_bytes(
+        std::as_bytes(std::span{source.data(), source.size()}), {.profile = profile});
+    REQUIRE_FALSE(parsed.has_errors());
+    REQUIRE(parsed.song.has_value());
+    return std::move(*parsed.song);
+}
+
+void check_cross_measure_hold(const wormedit::note_t& note,
+                              wormedit::measure_id_t head, wormedit::measure_id_t tail) {
+    CHECK(note.position.measure == head);
+    REQUIRE(note.end.has_value());
+    CHECK(note.end->measure == tail);
+}
+
+void check_cross_measure_holds(const wormedit::song_document_t& song) {
+    REQUIRE(wormedit::validate_document(song).empty());
+    const auto& chart = song.charts.front();
+    REQUIRE(chart.measures.size() == 2);
+    REQUIRE(chart.measures.front().notes.size() == 2);
+    CHECK(chart.measures.back().notes.empty());
+    const auto& notes = chart.measures.front().notes;
+    CHECK(notes[0].kind == wormedit::note_kind_t::hold);
+    CHECK(notes[1].kind == wormedit::note_kind_t::roll);
+    for (const auto& note : notes)
+        check_cross_measure_hold(note, chart.measures.front().id, chart.measures.back().id);
+}
 
 auto read_binary(const std::filesystem::path& path) -> std::vector<std::byte> {
     std::ifstream stream(path, std::ios::binary);
@@ -949,4 +984,35 @@ TEST_CASE("StepMania imports bind lanes without changing exported chart bytes", 
     parsed.song->charts.front().input_profile = {};
     const auto unbound = wormedit::write_stepmania(*parsed.song);
     CHECK(bound.text == unbound.text);
+}
+
+namespace {
+void check_offset_roundtrip(const wormedit::song_document_t& song,
+                           wormedit::stepmania_profile_t profile) {
+    auto parsed = roundtrip(song, profile);
+    REQUIRE_FALSE(parsed.has_errors());
+    REQUIRE(parsed.song.has_value());
+    check_cross_measure_holds(*parsed.song);
+}
+
+void check_cross_measure_offset_edit(wormedit::stepmania_profile_t profile) {
+    auto history = wormedit::make_document_history(cross_measure_hold_song(profile));
+    check_cross_measure_holds(history.document);
+    const auto chart = history.document.charts.front().id;
+    const auto edited = wormedit::apply_audio_offset_edit(history, history.document.revision, chart, {1, 4});
+    REQUIRE(edited.applied);
+    const wormedit::signed_rational_t expected{1, 4};
+    CHECK(history.document.charts.front().beat_zero_audio_offset_seconds == expected);
+    check_cross_measure_holds(history.document);
+    check_offset_roundtrip(history.document, profile);
+    REQUIRE(wormedit::undo_document_command(history));
+    CHECK(history.document.charts.front().beat_zero_audio_offset_seconds.numerator == 0);
+    check_cross_measure_holds(history.document);
+}
+}
+
+TEST_CASE("StepMania cross-measure holds remain editable through exact audio offset changes",
+          "[formats][stepmania][audio-offset]") {
+    for (const auto profile : {wormedit::stepmania_profile_t::sm, wormedit::stepmania_profile_t::ssc})
+        check_cross_measure_offset_edit(profile);
 }

@@ -88,6 +88,8 @@ class preview_session_t {
 
     void set_metronome_enabled(bool enabled);
     [[nodiscard]] auto metronome_enabled() const -> bool;
+    [[nodiscard]] auto set_assist_grid(bool active,
+        std::optional<preview_assist_click_grid_t> grid) -> bool;
     [[nodiscard]] auto active() const -> bool;
     // Audible source-frame estimate; scheduling continues on the unadjusted
     // internal source clock. Headless sessions have zero output latency.

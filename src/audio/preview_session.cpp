@@ -63,7 +63,7 @@ auto preview_session_t::prime_started(preview_bridge_start_result_t started,
         result.status = preview_session_start_status_t::materialize_failed;
         return result;
     }
-    const auto materialized = bridge_.materialize_until(*window_end);
+    const auto materialized = bridge_.materialize_until(*window_end, timeline_frame);
     result.materialize = materialized;
     if (!materialize_succeeded(materialized.status)) {
         static_cast<void>(bridge_.stop());
@@ -104,7 +104,7 @@ auto preview_session_t::pump(preview_pump_options_t options) -> preview_session_
             result.status = preview_session_pump_status_t::invalid_timeline;
             return result;
         }
-        result.materialize = bridge_.materialize_until(*window_end);
+        result.materialize = bridge_.materialize_until(*window_end, timeline_frame);
         if (!materialize_succeeded(result.materialize->status)) {
             result.status = preview_session_pump_status_t::materialize_failed;
             return result;
@@ -185,6 +185,12 @@ void preview_session_t::set_metronome_enabled(bool enabled) {
 
 auto preview_session_t::metronome_enabled() const -> bool {
     return bridge_.metronome_enabled();
+}
+
+auto preview_session_t::set_assist_grid(bool active,
+    std::optional<preview_assist_click_grid_t> grid) -> bool {
+    const std::scoped_lock lock(mutex_);
+    return bridge_.set_assist_grid(active, grid, timeline_frame_);
 }
 
 auto preview_session_t::active() const -> bool {

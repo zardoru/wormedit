@@ -2802,6 +2802,14 @@ void project_tap_timing(wormedit::sys::tap_timing_runtime_t& runtime,
 }
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+void publish_tap_assist_grid(const wormedit::sys::tap_timing_runtime_t& runtime,
+                            wormedit::audio::preview_session_t& session,
+                            std::optional<wormedit::sys::tap_timing_assist_publication_t>& published) {
+    const auto publication = runtime.assist_publication();
+    if (published == publication) return;
+    if (session.set_assist_grid(publication.active, publication.grid)) published = publication;
+}
+
 auto tap_meter_at(const wormedit::song_document_t& document,
                   const wormedit::sys::runtime::chart_preview_t& preview,
                   std::uint64_t frame) -> std::uint16_t {
@@ -3070,6 +3078,12 @@ int main(int argc, char** argv) {
                                  preview_metronome_bindings, audition_output, preview_output);
 #endif
     wormedit::sys::tap_timing_runtime_t tap_runtime;
+    std::optional<wormedit::sys::tap_timing_assist_publication_t> published_assist;
+    const auto publish_tap_assist = [&] {
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        publish_tap_assist_grid(tap_runtime, preview_session, published_assist);
+#endif
+    };
     std::optional<std::uint64_t> tap_event_ns;
     std::uint64_t tap_epoch{};
     std::uint64_t tap_epoch_begin_ns{};
@@ -3318,6 +3332,7 @@ int main(int argc, char** argv) {
             flattened.view.transport_keep_pitch_available = application_command_state.transport_keep_pitch_available;
             project_external_player_view(external_player_runtime, flattened.view);
             project_tap_timing(tap_runtime, tap_clock, command_registry, flattened.view);
+            publish_tap_assist();
             flattened.view.project_loaded = session_loaded;
             flattened.view.project_has_native_path = native_project_loaded;
             flattened.view.pending_new_project_audio_path = pending_audio_project_path.c_str();
@@ -3341,6 +3356,7 @@ int main(int argc, char** argv) {
                 }
 #endif
                 dispatch_tap_panel_action(tap_runtime, action.tap_timing);
+                publish_tap_assist();
                 const bool shortcut_handled = process_compose_frame_action(
                     compose_frame_action_context, action, compose_viewport_delta_seconds);
                 const bool external_handled =

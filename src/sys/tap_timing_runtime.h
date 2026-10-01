@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/tap_tempo.h>
+#include <wormedit/audio/preview_bridge.h>
 
 #include <cstdint>
 #include <optional>
@@ -47,6 +48,13 @@ struct tap_timing_state_t {
     const char* status{};
 };
 
+struct tap_timing_assist_publication_t {
+    bool active{};
+    std::uint64_t epoch{};
+    std::optional<audio::preview_assist_click_grid_t> grid;
+    auto operator==(const tap_timing_assist_publication_t&) const -> bool = default;
+};
+
 class tap_timing_runtime_t {
   public:
     void set_visible(bool visible) { visible_ = visible; }
@@ -57,6 +65,7 @@ class tap_timing_runtime_t {
     void reset();
     auto tap(std::uint64_t event_ns, const tap_timing_clock_t& clock) -> tap_timing_result_t;
     [[nodiscard]] auto state() const -> tap_timing_state_t;
+    [[nodiscard]] auto assist_publication() const -> tap_timing_assist_publication_t;
 
   private:
     void bind(const tap_timing_clock_t& clock, bool changed);

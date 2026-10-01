@@ -14,6 +14,7 @@ enum class queue_kind_t : std::uint8_t {
     playable,
     bgm,
     metronome,
+    assist,
     music,
 };
 
@@ -37,6 +38,8 @@ struct preview_queue_cursor_t {
     std::uint64_t music_timeline_frame{};
     std::uint64_t music_source_frame{};
     std::uint64_t music_frame_count{};
+    std::span<const preview_metronome_event_t> assist_clicks;
+    std::size_t assist_index{};
 };
 
 auto next_candidate(const preview_queue_cursor_t& queues) -> std::optional<event_candidate_t> {
@@ -65,6 +68,11 @@ auto next_candidate(const preview_queue_cursor_t& queues) -> std::optional<event
                   .object = {},
                   .accent = event.accent});
     }
+    if (queues.assist_index < queues.assist_clicks.size()) {
+        const auto& event = queues.assist_clicks[queues.assist_index];
+        consider({.sample_frame = event.sample_frame, .queue = queue_kind_t::assist,
+                  .accent = event.accent});
+    }
     if (queues.music_pending)
         consider({.sample_frame = queues.music_timeline_frame,
                   .queue = queue_kind_t::music,
@@ -83,7 +91,7 @@ auto sources_for_candidate(const event_candidate_t& candidate,
                            const std::vector<preview_object_source_binding_t>& objects,
                            const std::vector<preview_metronome_source_binding_t>& metronome)
     -> candidate_sources_t {
-    if (candidate.queue == queue_kind_t::metronome) {
+    if (candidate.queue == queue_kind_t::metronome || candidate.queue == queue_kind_t::assist) {
         const auto binding = std::ranges::lower_bound(metronome, candidate.accent, {},
                                                       &preview_metronome_source_binding_t::accent);
         if (binding != metronome.end() && binding->accent == candidate.accent) {
@@ -105,11 +113,12 @@ auto sources_for_candidate(const event_candidate_t& candidate,
 
 void advance_candidate(const event_candidate_t& candidate, preview_queue_head_t& playable,
                        preview_queue_head_t& bgm, preview_queue_head_t& metronome,
-                       bool& music_pending) {
+                       bool& music_pending, std::size_t& assist_head) {
     switch (candidate.queue) {
     case queue_kind_t::playable: ++playable.index; break;
     case queue_kind_t::bgm: ++bgm.index; break;
     case queue_kind_t::metronome: ++metronome.index; break;
+    case queue_kind_t::assist: ++assist_head; break;
     case queue_kind_t::music: music_pending = false; break;
     }
 }
@@ -170,6 +179,64 @@ auto sorted_events(const auto& events) -> bool {
 
 auto sorted_metronome_events(const auto& events) -> bool {
     return std::ranges::is_sorted(events, {}, &preview_metronome_event_t::sample_frame);
+}
+
+auto valid_assist_grid(const preview_assist_click_grid_t& grid) -> bool {
+    return std::isfinite(grid.bpm) && grid.bpm > 0 &&
+        static_cast<long double>(grid.sample_rate) * 60 / grid.bpm >= 1 &&
+        std::isfinite(grid.phase_source_frame) && grid.sample_rate == output_sample_rate &&
+        grid.beats_per_measure > 0 && grid.beats_per_measure <= 32 &&
+        grid.playback_rate.numerator != 0 && grid.playback_rate.denominator != 0;
+}
+
+auto assist_timeline_offset(const preview_schedule_t& schedule) -> long double {
+    if (!schedule.music) return 0;
+    return static_cast<long double>(schedule.music->sample_frame) - schedule.music->source_start_frame;
+}
+
+auto assist_first_beat(const preview_assist_click_grid_t& grid, long double offset,
+                       std::uint64_t minimum) -> std::optional<std::int64_t> {
+    const auto period = static_cast<long double>(grid.sample_rate) * 60 / grid.bpm;
+    const auto beat = std::ceil((static_cast<long double>(minimum) - offset -
+                                grid.phase_source_frame - 0.5L) / period);
+    if (!std::isfinite(beat) || beat < std::numeric_limits<std::int64_t>::min() ||
+        beat > std::numeric_limits<std::int64_t>::max()) return std::nullopt;
+    return static_cast<std::int64_t>(beat);
+}
+
+auto assist_beat_frame(const preview_assist_click_grid_t& grid, long double offset,
+                       std::int64_t beat) -> std::optional<std::uint64_t> {
+    const auto period = static_cast<long double>(grid.sample_rate) * 60 / grid.bpm;
+    const auto frame = std::floor(offset + grid.phase_source_frame + beat * period + 0.5L);
+    if (!std::isfinite(frame) || frame < 0 ||
+        frame > std::numeric_limits<std::uint64_t>::max()) return std::nullopt;
+    return static_cast<std::uint64_t>(frame);
+}
+
+auto fill_assist_clicks(const preview_assist_click_grid_t& grid,
+                        const preview_schedule_t& schedule, std::uint64_t minimum,
+                        std::uint64_t end,
+                        std::array<preview_metronome_event_t, maximum_assist_clicks>& clicks)
+    -> std::size_t {
+    const auto offset = assist_timeline_offset(schedule);
+    const auto first = assist_first_beat(grid, offset, minimum);
+    if (!first) return 0;
+    std::size_t count{};
+    auto beat = *first;
+    while (count < clicks.size()) {
+        const auto frame = assist_beat_frame(grid, offset, beat);
+        if (!frame || *frame >= end) break;
+        if (*frame >= minimum) {
+            const auto meter = static_cast<std::int64_t>(grid.beats_per_measure);
+            const auto pulse = (beat % meter + meter) % meter;
+            clicks[count++] = {.sample_frame = *frame, .measure = {},
+                .pulse = static_cast<std::uint32_t>(pulse),
+                .accent = pulse == 0 ? metronome_accent_t::measure : metronome_accent_t::regular};
+        }
+        if (beat == std::numeric_limits<std::int64_t>::max()) break;
+        ++beat;
+    }
+    return count;
 }
 
 } // namespace
@@ -268,6 +335,10 @@ auto preview_transport_bridge_t::begin_session(std::uint64_t seek_frame)
             }
         }
     }
+    assist_grid_.reset();
+    assist_count_ = assist_head_ = 0;
+    last_assist_handed_frame_.reset();
+    assist_begin_frame_ = seek_frame;
     next_voice_id_ = 1;
     last_materialized_end_ = seek_frame;
     return {.status = preview_bridge_start_status_t::started, .token = token};
@@ -289,6 +360,10 @@ auto preview_transport_bridge_t::stop() noexcept -> transport_stop_result_t {
     music_timeline_frame_ = 0;
     music_source_frame_ = 0;
     music_frame_count_ = 0;
+    assist_grid_.reset();
+    assist_count_ = assist_head_ = 0;
+    last_assist_handed_frame_.reset();
+    assist_begin_frame_ = 0;
     next_voice_id_ = 1;
     last_materialized_end_ = 0;
     return result;
@@ -297,13 +372,59 @@ auto preview_transport_bridge_t::stop() noexcept -> transport_stop_result_t {
 void preview_transport_bridge_t::set_metronome_enabled(bool enabled, std::uint64_t current_frame) {
     transport_.set_clicks_enabled(enabled);
     const auto previous = metronome_enabled_.exchange(enabled, std::memory_order_acq_rel);
+    if (!enabled) last_assist_handed_frame_.reset();
     if (enabled && !previous && schedule_) {
         seek_preview_queue(std::span<const preview_metronome_event_t>{schedule_->metronome},
                            metronome_head_, current_frame);
     }
 }
 
-auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_frame)
+auto preview_transport_bridge_t::set_assist_grid(bool active,
+    std::optional<preview_assist_click_grid_t> grid, std::uint64_t current_frame) -> bool {
+    if (grid && !valid_assist_grid(*grid)) return false;
+    const bool reset_voices = active != assist_active_ || (assist_grid_ && !grid);
+    if (reset_voices) {
+        transport_.set_clicks_enabled(false);
+        transport_.set_clicks_enabled(metronome_enabled());
+        last_assist_handed_frame_.reset();
+        if (!active && schedule_)
+            seek_preview_queue(std::span<const preview_metronome_event_t>{schedule_->metronome},
+                               metronome_head_, current_frame);
+    }
+    assist_active_ = active;
+    assist_grid_ = active ? grid : std::nullopt;
+    assist_begin_frame_ = current_frame;
+    assist_count_ = assist_head_ = 0;
+    return true;
+}
+
+void preview_transport_bridge_t::record_assist_handoff(bool assist, std::uint64_t frame) {
+    if (assist) last_assist_handed_frame_ = frame;
+}
+
+void preview_transport_bridge_t::refill_assist_clicks(std::uint64_t end, std::uint64_t current_frame) {
+    assist_count_ = assist_head_ = 0;
+    assist_begin_frame_ = std::max(assist_begin_frame_, current_frame);
+    if (!assist_active_ || !assist_grid_ || !metronome_enabled()) return;
+    if (last_assist_handed_frame_ == std::numeric_limits<std::uint64_t>::max()) return;
+    const auto minimum = last_assist_handed_frame_
+        ? std::max(assist_begin_frame_, *last_assist_handed_frame_ + 1) : assist_begin_frame_;
+    const auto& grid = *assist_grid_;
+    const auto horizon = std::max(1.0L, std::floor(static_cast<long double>(grid.sample_rate) *
+        grid.playback_rate.numerator / grid.playback_rate.denominator / 5));
+    auto bounded_end = std::min(static_cast<long double>(end),
+                               static_cast<long double>(assist_begin_frame_) + horizon);
+    if (schedule_->music) {
+        const auto& music = *schedule_->music;
+        bounded_end = std::min(bounded_end, static_cast<long double>(music.sample_frame) +
+                                           music.frame_count);
+    }
+    assist_count_ = fill_assist_clicks(grid, *schedule_, minimum,
+                                      static_cast<std::uint64_t>(bounded_end), assist_clicks_);
+}
+
+auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_frame,
+                                                        std::uint64_t current_frame)
     -> preview_bridge_pump_result_t {
     if (schedule_ == nullptr || !token_.has_value()) {
         return {.status = preview_bridge_pump_status_t::not_started};
@@ -315,20 +436,21 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
         return {.status = preview_bridge_pump_status_t::non_monotonic_window};
     }
 
+    refill_assist_clicks(exclusive_end_frame, current_frame);
     auto result = preview_bridge_pump_result_t{
         .status = preview_bridge_pump_status_t::ready,
     };
     const auto playable = std::span<const preview_audio_event_t>{schedule_->playable};
     const auto bgm = std::span<const preview_audio_event_t>{schedule_->bgm};
     const auto clicks = std::span<const preview_metronome_event_t>{schedule_->metronome};
-    if (!metronome_enabled())
+    if (!metronome_enabled() || assist_active_)
         seek_preview_queue(clicks, metronome_head_, exclusive_end_frame);
 
     while (true) {
         const auto candidate = next_candidate(
             {playable, bgm, clicks, playable_head_.index, bgm_head_.index,
              metronome_head_.index, music_pending_, music_timeline_frame_, music_source_frame_,
-             music_frame_count_});
+             music_frame_count_, std::span{assist_clicks_.data(), assist_count_}, assist_head_});
         if (!candidate.has_value() || candidate->sample_frame >= exclusive_end_frame) {
             break;
         }
@@ -338,7 +460,7 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
         const auto voice_kind = selected_sources.kind;
         if (sources.empty()) {
             ++result.missing_sources;
-            advance_candidate(*candidate, playable_head_, bgm_head_, metronome_head_, music_pending_);
+            advance_candidate(*candidate, playable_head_, bgm_head_, metronome_head_, music_pending_, assist_head_);
             continue;
         }
         if (next_voice_id_ == 0 ||
@@ -363,13 +485,14 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
         }
 
         ++result.scheduled_events;
+        record_assist_handoff(candidate->queue == queue_kind_t::assist, candidate->sample_frame);
         if (candidate->queue == queue_kind_t::music) {
             music_timeline_frame_ += music_segment;
             music_source_frame_ += music_segment;
             music_frame_count_ -= music_segment;
             music_pending_ = music_frame_count_ != 0;
         } else {
-            advance_candidate(*candidate, playable_head_, bgm_head_, metronome_head_, music_pending_);
+            advance_candidate(*candidate, playable_head_, bgm_head_, metronome_head_, music_pending_, assist_head_);
         }
         const auto last_voice_id = next_voice_id_ + sources.size() - 1;
         if (last_voice_id == std::numeric_limits<std::uint64_t>::max()) {
@@ -385,7 +508,8 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
 auto preview_transport_bridge_t::exhausted() const noexcept -> bool {
     return schedule_ != nullptr && playable_head_.index == schedule_->playable.size() &&
            bgm_head_.index == schedule_->bgm.size() &&
-           metronome_head_.index == schedule_->metronome.size() && !music_pending_;
+           metronome_head_.index == schedule_->metronome.size() && !music_pending_ &&
+           assist_head_ == assist_count_;
 }
 
 } // namespace wormedit::audio

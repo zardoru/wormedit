@@ -139,4 +139,20 @@ auto tap_timing_runtime_t::state() const -> tap_timing_state_t {
     return result;
 }
 
+auto tap_timing_runtime_t::assist_publication() const -> tap_timing_assist_publication_t {
+    tap_timing_assist_publication_t result{.active = visible_};
+    if (!clock_) return result;
+    result.epoch = clock_->epoch;
+    const auto estimate = estimator_.estimate();
+    if (!visible_ || !clock_->playing || !clock_->source_frame ||
+        !clock_configuration_valid(*clock_) || !estimate) return result;
+    result.grid = audio::preview_assist_click_grid_t{
+        .bpm = estimate->bpm,
+        .phase_source_frame = estimate->phase_frame,
+        .sample_rate = clock_->sample_rate,
+        .beats_per_measure = clock_->beats_per_measure,
+        .playback_rate = clock_->playback_rate};
+    return result;
+}
+
 } // namespace wormedit::sys

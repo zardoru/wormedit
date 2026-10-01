@@ -220,7 +220,7 @@ stale-plan check (rule 9) first.
 
 ## T-238 Click on the estimated beat while tapping
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** while the assistant is open, the metronome clicks on the **estimated** grid (not the chart's timing) so the user can hear whether the estimate matches the music; the accent click falls on the estimated downbeat; the T-235 toggle controls it.
 - **Read first:** `include/wormedit/audio/preview_bridge.h`, `src/audio/preview_bridge.cpp`, `src/sys/tap_timing_runtime.h`.
 - **Files owned:** `include/wormedit/audio/preview_bridge.h`, `src/audio/preview_bridge.cpp`, `tests/core/audio_preview_bridge_tests.cpp`, `src/sys/tap_timing_runtime.cpp`, `src/sys/tap_timing_runtime.h`, `include/wormedit/audio/preview_session.h`, `src/audio/preview_session.cpp`, `src/sys/main.cpp` (assistant publication only; these four extensions explicitly approved by the user).
@@ -230,8 +230,10 @@ stale-plan check (rule 9) first.
   3. Test: with a 120 BPM estimate, clicks land exactly on the predicted frames; changing the estimate replaces only clicks not yet scheduled.
 - **Invariants:** voices are scheduled on the control thread only; `render()` unchanged.
 - **Reject/failure behavior:** no estimate → no assist clicks.
-- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual listen.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; user-authorized isolated generated-audio PCM and Xvfb checks substitute for physical listening.
 - **Out of scope:** count-in.
+
+Verification (2026-09-30): seven bridge regressions pass (62 assertions), including exact 120 BPM frames and meter accents, retained handed voices, replacement of unscheduled predictions, the 0.1x exclusive lookahead boundary, invalid-grid rejection, and no clicks beyond music EOF. The actual audio-prefix command passes 110/110; the integrated suite passes 984/984. The session publishes on the control thread under its mutex; main caches unchanged publications and republishes on playback epochs. Real runtime/session/SDL dummy postmix checks show no clicks without an estimate or after Reset/toggle-off, an accented estimated downbeat, chart-grid restoration when hidden, and uninterrupted generated music in every phase. Isolated current-app Xvfb checks cover no estimate, tapping, Reset and closing. Physical listening remains unperformed under the approved substitution. Evidence is in `/tmp/wormedit-t238/`.
 
 ## T-239 Apply the tapped BPM and offset to the chart
 

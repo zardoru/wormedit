@@ -3,6 +3,7 @@
 #include <wormedit/audio/transport.h>
 #include <wormedit/core/timing.h>
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -29,6 +30,17 @@ struct preview_object_source_binding_t {
 struct preview_metronome_source_binding_t {
     metronome_accent_t accent{metronome_accent_t::regular};
     preview_voice_source_t voice;
+};
+
+inline constexpr std::size_t maximum_assist_clicks = 32;
+// Estimate on the normalized music source clock; the bridge maps it onto its timeline.
+struct preview_assist_click_grid_t {
+    double bpm{};
+    double phase_source_frame{};
+    std::uint32_t sample_rate{44'100};
+    std::uint16_t beats_per_measure{4};
+    rational_t playback_rate{1, 1};
+    auto operator==(const preview_assist_click_grid_t&) const -> bool = default;
 };
 
 enum class preview_bridge_start_status_t : std::uint8_t {
@@ -97,9 +109,15 @@ class preview_transport_bridge_t {
         return metronome_enabled_.load(std::memory_order_acquire);
     }
 
+    // Replaces predictions still held by the bridge. Already handed voices survive
+    // estimate updates; new predictions begin after the last handed frame.
+    [[nodiscard]] auto set_assist_grid(bool active,
+        std::optional<preview_assist_click_grid_t> grid, std::uint64_t current_frame) -> bool;
+
     // Queues events with sample_frame < exclusive_end_frame. This method may
     // allocate while preparing voices, so it belongs on a control thread.
-    [[nodiscard]] auto materialize_until(std::uint64_t exclusive_end_frame)
+    [[nodiscard]] auto materialize_until(std::uint64_t exclusive_end_frame,
+                                         std::uint64_t current_frame = 0)
         -> preview_bridge_pump_result_t;
 
     [[nodiscard]] auto session_token() const noexcept -> std::optional<session_token_t> {
@@ -110,6 +128,8 @@ class preview_transport_bridge_t {
   private:
     [[nodiscard]] auto begin_session(std::uint64_t seek_frame) -> preview_bridge_start_result_t;
 
+    void record_assist_handoff(bool assist, std::uint64_t frame);
+    void refill_assist_clicks(std::uint64_t exclusive_end_frame, std::uint64_t current_frame);
     transport_t& transport_;
     std::size_t maximum_object_bindings_{};
     std::size_t maximum_total_voices_{};
@@ -122,6 +142,13 @@ class preview_transport_bridge_t {
     preview_queue_head_t metronome_head_;
     bool music_pending_{};
     std::atomic<bool> metronome_enabled_{true};
+    bool assist_active_{};
+    std::optional<preview_assist_click_grid_t> assist_grid_;
+    std::array<preview_metronome_event_t, maximum_assist_clicks> assist_clicks_{};
+    std::size_t assist_count_{};
+    std::size_t assist_head_{};
+    std::uint64_t assist_begin_frame_{};
+    std::optional<std::uint64_t> last_assist_handed_frame_;
     std::uint64_t music_timeline_frame_{};
     std::uint64_t music_source_frame_{};
     std::uint64_t music_frame_count_{};

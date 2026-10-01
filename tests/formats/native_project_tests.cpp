@@ -623,3 +623,38 @@ TEST_CASE("native project migrations: a failing step publishes no document",
           internal::migration_status_t::failed);
     CHECK(document == before);
 }
+
+TEST_CASE("native projects store lane key colors, derive them for older files, and reject unknown values",
+          "[unit][format][native-project][key-color]") {
+    auto song = rich_bmson_song();
+    auto& layout = song.charts.front().lane_layouts.front().layout;
+    layout.profile_id = "bme-7k-outside-scratch";
+    layout.lanes.front().key_color = wormedit::lane_key_color_t::black;
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.bytes.has_value());
+    const auto serialized = nlohmann::json::parse(*written.bytes);
+    const auto& lanes_json =
+        serialized["document"]["charts"][0]["lane_layouts"][0]["layout"]["lanes"];
+    CHECK(lanes_json[0]["key_color"] == static_cast<int>(wormedit::lane_key_color_t::black));
+
+    const auto round_trip = wormedit::parse_native_project(*written.bytes);
+    REQUIRE(round_trip.song.has_value());
+    CHECK(round_trip.song->charts.front().lane_layouts.front().layout.lanes.front().key_color ==
+          wormedit::lane_key_color_t::black);
+
+    auto legacy = serialized;
+    for (auto& lane : legacy["document"]["charts"][0]["lane_layouts"][0]["layout"]["lanes"]) {
+        lane.erase("key_color");
+    }
+    const auto parsed_legacy = wormedit::parse_native_project(legacy.dump());
+    REQUIRE(parsed_legacy.song.has_value());
+    const auto& derived = parsed_legacy.song->charts.front().lane_layouts.front().layout;
+    CHECK(std::ranges::all_of(derived.lanes, [](const auto& lane) {
+        return lane.key_color != wormedit::lane_key_color_t::pms_red;
+    }));
+
+    auto invalid = serialized;
+    invalid["document"]["charts"][0]["lane_layouts"][0]["layout"]["lanes"][0]["key_color"] = 99;
+    const auto rejected = wormedit::parse_native_project(invalid.dump());
+    CHECK_FALSE(rejected.song.has_value());
+}

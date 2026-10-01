@@ -5,6 +5,7 @@
 #include <cctype>
 #include <cstdint>
 #include <iterator>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <string>
@@ -253,7 +254,7 @@ auto make_profile(std::string profile_id, std::string display_name,
                   std::vector<lane_definition_t> lanes, input_profile_t input,
                   bool split_stage = false, std::optional<std::uint32_t> split_after = {})
     -> lane_input_profile_t {
-    return {
+    lane_input_profile_t profile{
         .layout =
             {
                 .profile_id = std::move(profile_id),
@@ -264,6 +265,8 @@ auto make_profile(std::string profile_id, std::string display_name,
             },
         .input = std::move(input),
     };
+    assign_lane_key_colors(profile.layout);
+    return profile;
 }
 
 auto placement_name(scratch_placement_t placement) -> std::string_view {
@@ -783,6 +786,7 @@ auto make_bmson_generic_24k_profile() -> lane_input_profile_t {
         result.layout.lanes.push_back(lane);
         result.input.bindings.push_back({.key = bmson_piano_keys[index], .lane = lane.id});
     }
+    assign_lane_key_colors(result.layout);
     return result;
 }
 
@@ -818,7 +822,80 @@ auto make_bmson_generic_48k_profile() -> lane_input_profile_t {
             .focused_stage = stage,
         });
     }
+    assign_lane_key_colors(result.layout);
     return result;
+}
+
+namespace {
+
+constexpr std::array pms_button_colors{
+    lane_key_color_t::pms_white, lane_key_color_t::pms_yellow, lane_key_color_t::pms_green,
+    lane_key_color_t::pms_blue,  lane_key_color_t::pms_red,    lane_key_color_t::pms_blue,
+    lane_key_color_t::pms_green, lane_key_color_t::pms_yellow, lane_key_color_t::pms_white,
+};
+
+auto role_key_color(lane_role_t role) -> std::optional<lane_key_color_t> {
+    switch (role) {
+    case lane_role_t::scratch:
+        return lane_key_color_t::scratch;
+    case lane_role_t::foot_pedal:
+        return lane_key_color_t::foot_pedal;
+    case lane_role_t::free_zone:
+        return lane_key_color_t::free_zone;
+    default:
+        return std::nullopt;
+    }
+}
+
+auto piano_key_color(std::uint32_t display_order) -> lane_key_color_t {
+    switch (display_order % 12) {
+    case 1:
+    case 3:
+    case 6:
+    case 8:
+    case 10:
+        return lane_key_color_t::black;
+    default:
+        return lane_key_color_t::white;
+    }
+}
+
+// Playable lanes of one stage in display order.
+auto playable_lanes_of_stage(lane_layout_t& layout, stage_group_t stage)
+    -> std::vector<lane_definition_t*> {
+    std::vector<lane_definition_t*> lanes;
+    for (auto& lane : layout.lanes) {
+        if (lane.stage == stage && lane.role == lane_role_t::playable) lanes.push_back(&lane);
+    }
+    std::ranges::stable_sort(lanes, {}, &lane_definition_t::display_order);
+    return lanes;
+}
+
+void color_stage(lane_layout_t& layout, stage_group_t stage, std::string_view profile) {
+    const auto lanes = playable_lanes_of_stage(layout, stage);
+    const auto popn = profile.starts_with("pms-");
+    const auto popn_nine = popn && lanes.size() == pms_button_colors.size();
+    for (std::size_t index = 0; index < lanes.size(); ++index) {
+        if (profile.starts_with("bmson-generic-")) {
+            lanes[index]->key_color = piano_key_color(lanes[index]->display_order);
+        } else if (popn_nine) {
+            lanes[index]->key_color = pms_button_colors[index];
+        } else if (profile.starts_with("bms-") || profile.starts_with("bme-")) {
+            lanes[index]->key_color =
+                index % 2 == 0 ? lane_key_color_t::white : lane_key_color_t::black;
+        }
+    }
+}
+
+} // namespace
+
+void assign_lane_key_colors(lane_layout_t& layout) {
+    for (auto& lane : layout.lanes) {
+        lane.key_color = role_key_color(lane.role).value_or(lane_key_color_t::generic);
+    }
+    for (const auto stage : {stage_group_t::none, stage_group_t::left, stage_group_t::right}) {
+        color_stage(layout, stage, layout.profile_id);
+    }
 }
 
 } // namespace wormedit

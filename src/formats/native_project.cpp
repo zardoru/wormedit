@@ -1,5 +1,7 @@
 #include <wormedit/formats/native_project.h>
 
+#include <wormedit/core/lane_profiles.h>
+
 #include "native_project_migrations.h"
 
 #include <nlohmann/json.hpp>
@@ -152,10 +154,56 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(local_position_t, measure, row)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(position_span_t, begin, end)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(midi_destination_t, channel, note)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bms_channel_map_t, visible, invisible, long_note, mine)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(lane_definition_t, id, name, role, stage, display_order, glyph,
-                                   bms_channels, midi_destination)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(lane_layout_t, profile_id, display_name, lanes, split_stage,
-                                   split_after_column, bmson_generic_keys_only)
+void to_json(json& value, const lane_definition_t& lane) {
+    value = json{{"id", lane.id},
+                 {"name", lane.name},
+                 {"role", lane.role},
+                 {"stage", lane.stage},
+                 {"display_order", lane.display_order},
+                 {"glyph", lane.glyph},
+                 {"bms_channels", lane.bms_channels},
+                 {"midi_destination", lane.midi_destination},
+                 {"key_color", lane.key_color}};
+}
+
+// `key_color` is optional so projects saved before it existed still load.
+void from_json(const json& value, lane_definition_t& lane) {
+    value.at("id").get_to(lane.id);
+    value.at("name").get_to(lane.name);
+    value.at("role").get_to(lane.role);
+    value.at("stage").get_to(lane.stage);
+    value.at("display_order").get_to(lane.display_order);
+    value.at("glyph").get_to(lane.glyph);
+    value.at("bms_channels").get_to(lane.bms_channels);
+    value.at("midi_destination").get_to(lane.midi_destination);
+    if (value.contains("key_color")) {
+        value.at("key_color").get_to(lane.key_color);
+    }
+}
+
+void to_json(json& value, const lane_layout_t& layout) {
+    value = json{{"profile_id", layout.profile_id},
+                 {"display_name", layout.display_name},
+                 {"lanes", layout.lanes},
+                 {"split_stage", layout.split_stage},
+                 {"split_after_column", layout.split_after_column},
+                 {"bmson_generic_keys_only", layout.bmson_generic_keys_only}};
+}
+
+void from_json(const json& value, lane_layout_t& layout) {
+    value.at("profile_id").get_to(layout.profile_id);
+    value.at("display_name").get_to(layout.display_name);
+    value.at("lanes").get_to(layout.lanes);
+    value.at("split_stage").get_to(layout.split_stage);
+    value.at("split_after_column").get_to(layout.split_after_column);
+    value.at("bmson_generic_keys_only").get_to(layout.bmson_generic_keys_only);
+    const auto& lanes = value.at("lanes");
+    const auto missing_color = std::ranges::any_of(
+        lanes, [](const json& lane) { return !lane.contains("key_color"); });
+    if (missing_color) {
+        assign_lane_key_colors(layout);
+    }
+}
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(lane_layout_segment_t, id, position, layout)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(lane_binding_t, key, lane, focused_stage)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(input_profile_t, profile_id, bindings, stage_count,
@@ -651,7 +699,8 @@ auto valid_chart_layout_domains(const chart_document_t& chart) -> bool {
         for (const auto& lane : segment.layout.lanes) {
             if (!enum_at_most(lane.role, lane_role_t::foot_pedal) ||
                 !enum_at_most(lane.stage, stage_group_t::right) ||
-                !enum_at_most(lane.glyph, lane_glyph_t::arrow_center)) {
+                !enum_at_most(lane.glyph, lane_glyph_t::arrow_center) ||
+                !enum_at_most(lane.key_color, lane_key_color_t::pms_red)) {
                 return false;
             }
         }
@@ -977,7 +1026,8 @@ auto allows_legacy_object_shape(const json& input, const json& canonical,
         return !input.contains("sv_recipes") && canonical.contains("sv_recipes") &&
                canonical.at("sv_recipes").empty();
     }
-    return false;
+    // Lane definitions saved before key colors existed; derived on load.
+    return !input.contains("key_color") && canonical.contains("key_color");
 }
 
 auto object_child_context(std::string_view key) -> schema_shape_context_t {

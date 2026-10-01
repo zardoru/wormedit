@@ -73,6 +73,13 @@ make_bms_10k_foot_pedal_profile(scratch_placement_t left_scratch = scratch_place
 // Ten playable keys (5 per player, channels 11-15 and 21-25) with no scratch or
 // auxiliary lane, for osu!mania-style charts. Lane ids match the other 10K
 // profiles. It is a special profile: detection never selects it on its own.
+// Derives each lane's key color from the layout's profile id and lane roles:
+// BMS/BME keys alternate white/black per stage (scratch lanes excluded), PMS
+// nine-button stages use the button colors, generic piano banks follow note
+// names, and everything else stays generic. Pedal, free-zone and scratch roles
+// always map to their own class.
+void assign_lane_key_colors(lane_layout_t& layout);
+
 [[nodiscard]] auto make_bms_10k_scratchless_profile() -> lane_input_profile_t;
 
 // BMS "10K" is beatmania double play with five keys per side (DP5), and "14K"

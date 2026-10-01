@@ -54,6 +54,7 @@ add_library(wormedit_core
     src/core/editor_scene.cpp
     src/core/bms_profile_detection.cpp
     src/core/bga_preview.cpp
+    src/core/format_field_schema.cpp
     src/core/grid.cpp
     src/core/interaction.cpp
     src/core/interaction_cursor.cpp

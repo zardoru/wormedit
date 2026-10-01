@@ -118,11 +118,11 @@ struct flattened_workspace_t {
     struct {
         std::string status;
         std::string recipe_status;
-        std::vector<WormUiTimingSpeedView> speed;
-        std::vector<WormUiTimingMarkerView> marker;
-        std::vector<WormUiTimingGridLineView> grid;
-        std::vector<WormUiTimingRecipePoint> recipe_candidate;
-        std::vector<WormUiTimingRecipePoint> recipe_composed;
+        frame_span<WormUiTimingSpeedView> speed;
+        frame_span<WormUiTimingMarkerView> marker;
+        frame_span<WormUiTimingGridLineView> grid;
+        frame_span<WormUiTimingRecipePoint> recipe_candidate;
+        frame_span<WormUiTimingRecipePoint> recipe_composed;
     } timing;
     struct {
         std::string status;

@@ -19,6 +19,18 @@
 namespace wormedit::sys {
 namespace {
 
+template<class T>
+auto allocate_timing_rows(flattened_workspace_t& flattened, frame_span<T>& rows,
+                          std::size_t count, std::size_t limit) -> bool {
+    auto* arena = flattened.arena();
+    rows = arena ? arena_array<T>(*arena, std::min(count, limit)) : frame_span<T>{};
+    if (count > limit || rows.capacity() != std::min(count, limit)) {
+        flattened.view.timing.truncated = true;
+        return false;
+    }
+    return true;
+}
+
 auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) -> double {
     float recovery_height = 0.0f;
     if (view.recovery_panel_visible) {
@@ -147,23 +159,22 @@ auto recipe_bucket_for(const Points& points, std::size_t index,
 
 template <typename Points>
 void append_recipe_point(const Points& points, std::size_t index,
-                         std::vector<WormUiTimingRecipePoint>& destination,
+                         frame_span<WormUiTimingRecipePoint>& destination,
                          const recipe_point_projection_t& projection) {
     const auto& point = points[index];
     const auto row_fraction = static_cast<long double>(point.absolute_row) /
                               static_cast<long double>(projection.total_rows);
     const auto value_fraction =
         (static_cast<long double>(point.value) - projection.minimum) / projection.scale;
-    destination.push_back({
+    (void)destination.push_back({
         .row_fraction = static_cast<double>(std::clamp(row_fraction, 0.0L, 1.0L)),
         .value_fraction = static_cast<double>(std::clamp(value_fraction, 0.0L, 1.0L)),
     });
 }
 
 template <typename Points>
-void append_recipe_points(const Points& source, std::vector<WormUiTimingRecipePoint>& destination,
+void append_recipe_points(const Points& source, frame_span<WormUiTimingRecipePoint>& destination,
                           const recipe_point_projection_t& projection) {
-    destination.reserve(std::min<std::size_t>(source.size(), WORM_UI_TIMING_RECIPE_POINT_CAPACITY));
     if (source.size() <= WORM_UI_TIMING_RECIPE_POINT_CAPACITY) {
         for (std::size_t index = 0; index < source.size(); ++index) {
             append_recipe_point(source, index, destination, projection);
@@ -292,6 +303,15 @@ void populate_timing_recipe_view(flattened_workspace_t& flattened,
     include_values(preview->effective_output.points);
     const auto scale = maximum > minimum ? maximum - minimum : 1.0L;
     const recipe_point_projection_t projection{measures->total_rows, minimum, scale};
+    if (!allocate_timing_rows(flattened, flattened.timing.recipe_candidate,
+                              std::min<std::size_t>(preview->candidate_points.points.size(), WORM_UI_TIMING_RECIPE_POINT_CAPACITY),
+                              WORM_UI_TIMING_RECIPE_POINT_CAPACITY) ||
+        !allocate_timing_rows(flattened, flattened.timing.recipe_composed,
+                              std::min<std::size_t>(preview->effective_output.points.size(), WORM_UI_TIMING_RECIPE_POINT_CAPACITY),
+                              WORM_UI_TIMING_RECIPE_POINT_CAPACITY)) {
+        view.status_text = "Timing recipe display truncated (frame storage limit).";
+        return;
+    }
     append_recipe_points(preview->candidate_points.points, flattened.timing.recipe_candidate,
                          projection);
     append_recipe_points(preview->effective_output.points, flattened.timing.recipe_composed,
@@ -502,19 +522,24 @@ auto populate_timing_grid_and_speeds(flattened_workspace_t& flattened,
         view.status_text = flattened.timing.status.c_str();
         return false;
     }
-    flattened.timing.grid.reserve(grid.lines.size());
+    if (!allocate_timing_rows(flattened, flattened.timing.grid, grid.lines.size(),
+                              WORM_UI_TIMING_GRID_CAPACITY) ||
+        !allocate_timing_rows(flattened, flattened.timing.speed, cache.speeds.size(),
+                              WORM_UI_TIMING_SPEED_CAPACITY)) {
+        view.status_text = "Timing scene truncated (frame storage limit).";
+        return false;
+    }
     for (const auto& line : grid.lines) {
         const auto row = static_cast<long double>(line.chart_row.whole_rows) +
                          static_cast<long double>(line.chart_row.fractional_rows.numerator) /
                              line.chart_row.fractional_rows.denominator;
-        flattened.timing.grid.push_back(
+        (void)flattened.timing.grid.push_back(
             {.y_pixels = row_to_pixels(row),
              .kind = static_cast<std::uint8_t>(line.kind),
              .emphasis = static_cast<std::uint8_t>(line.emphasis)});
     }
-    flattened.timing.speed.reserve(cache.speeds.size());
     for (const auto& speed : cache.speeds) {
-        flattened.timing.speed.push_back({
+        (void)flattened.timing.speed.push_back({
             .object_id = speed.object_id,
             .source_order = speed.source_order,
             .storage_order = speed.storage_order,
@@ -556,7 +581,7 @@ auto populate_timing_grid_and_speeds(flattened_workspace_t& flattened,
     return true;
 }
 
-void sort_and_spread_timing_markers(std::vector<WormUiTimingMarkerView>& markers) {
+void sort_and_spread_timing_markers(frame_span<WormUiTimingMarkerView>& markers) {
     std::ranges::sort(markers, [](const auto& left, const auto& right) {
         if (left.lane != right.lane) {
             return left.lane < right.lane;
@@ -597,7 +622,11 @@ void populate_timing_markers(flattened_workspace_t& flattened,
         marker_reserve +=
             std::min<std::size_t>(count, WORM_UI_TIMING_MARKER_CAPACITY - marker_reserve);
     }
-    flattened.timing.marker.reserve(marker_reserve);
+    if (!allocate_timing_rows(flattened, flattened.timing.marker, marker_reserve,
+                              WORM_UI_TIMING_MARKER_CAPACITY)) {
+        view.status_text = "Timing markers truncated (frame storage limit).";
+        return;
+    }
     if (measures != nullptr) {
         const auto append_marker = [&](wormedit::local_position_t position, std::uint64_t id,
                                        std::size_t source_order, std::size_t storage_order,
@@ -610,7 +639,7 @@ void populate_timing_markers(flattened_workspace_t& flattened,
             if (!row) {
                 return;
             }
-            flattened.timing.marker.push_back({
+            (void)flattened.timing.marker.push_back({
                 .object_id = id,
                 .source_order = source_order,
                 .storage_order = storage_order,

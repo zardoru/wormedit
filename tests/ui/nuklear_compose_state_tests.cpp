@@ -662,3 +662,76 @@ TEST_CASE("Shift navigation range capture starts once and commits on the final S
     expect_inline(worm_ui_nuklear_begin_shift_range(state, 2));
     expect_inline(!state.space_range_hold_moved);
 }
+
+namespace {
+auto inline_offset_view() -> WormUiComposeView {
+    WormUiComposeView view{};
+    view.audio_offset_editable = true;
+    view.chart_id = 7;
+    view.document_revision = 11;
+    view.waveform_audio_offset_numerator = 1;
+    view.waveform_audio_offset_denominator = 3;
+    return view;
+}
+}
+
+TEST_CASE("inline audio offset focuses exact text and emits one signed edit", "[frontend][offset]") {
+    worm_ui_nuklear_compose_state_t state;
+    const auto view = inline_offset_view();
+    expect_inline(worm_ui_nuklear_begin_inline_offset(state, view));
+    expect_inline(state.inline_offset_focus_pending);
+    expect_inline(std::strcmp(state.inline_offset_text.data(), "1/3") == 0);
+    std::strcpy(state.inline_offset_text.data(), "-0.125");
+    WormUiWorkspaceAction action{};
+    worm_ui_nuklear_update_inline_offset(state, view, action, true, false);
+    expect_inline(!state.inline_offset_open);
+    expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET);
+    expect_inline(action.compose_audio_offset_numerator == -1);
+    expect_inline(action.compose_audio_offset_denominator == 8);
+    expect_inline(action.compose_input_chart_id == 7 && action.compose_input_document_revision == 11);
+    action = {};
+    worm_ui_nuklear_update_inline_offset(state, view, action, true, false);
+    expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+}
+
+TEST_CASE("inline audio offset invalid Enter retains text and blur cancels", "[frontend][offset]") {
+    worm_ui_nuklear_compose_state_t state;
+    const auto view = inline_offset_view();
+    expect_inline(worm_ui_nuklear_begin_inline_offset(state, view));
+    std::strcpy(state.inline_offset_text.data(), "-1/0");
+    WormUiWorkspaceAction action{};
+    worm_ui_nuklear_update_inline_offset(state, view, action, true, false);
+    expect_inline(state.inline_offset_open && state.inline_offset_focus_pending);
+    expect_inline(std::strcmp(state.inline_offset_text.data(), "-1/0") == 0);
+    expect_inline(state.inline_offset_error[0] != 0);
+    expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+    worm_ui_nuklear_update_inline_offset(state, view, action, false, true);
+    expect_inline(!state.inline_offset_open);
+    expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+}
+
+TEST_CASE("inline audio offset cancels on chart revision lock and explicit Escape", "[frontend][offset]") {
+    worm_ui_nuklear_compose_state_t state;
+    auto view = inline_offset_view();
+    expect_inline(worm_ui_nuklear_begin_inline_offset(state, view));
+    const int change = GENERATE(0, 1, 2, 3);
+    if (change == 0) ++view.chart_id;
+    if (change == 1) ++view.document_revision;
+    if (change == 2) view.audio_offset_editable = false;
+    if (change == 3) state.inline_offset_cancel_pending = true;
+    WormUiWorkspaceAction action{};
+    worm_ui_nuklear_update_inline_offset(state, view, action, true, false);
+    expect_inline(!state.inline_offset_open);
+    expect_inline(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+}
+
+TEST_CASE("occluded offset readout cannot steal another panel's input", "[frontend][offset]") {
+    worm_ui_nuklear_compose_state_t state;
+    auto view = inline_offset_view();
+    view.input_occluded = true;
+    expect_inline(!worm_ui_nuklear_begin_inline_offset(state, view));
+    expect_inline(!state.inline_offset_open && !state.inline_offset_focus_pending);
+    expect_inline(!state.inline_offset_input_consumed);
+    view.input_occluded = false;
+    expect_inline(worm_ui_nuklear_begin_inline_offset(state, view));
+}

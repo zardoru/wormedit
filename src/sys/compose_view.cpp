@@ -777,6 +777,7 @@ bool initialize_compose_view_state(
     view.waveform_beat_zero_fraction = 0.0;
     view.waveform_overview_total_frames = 0;
     view.waveform_overview_sample_rate = 0;
+    view.audio_offset_editable = false;
     view.waveform_audio_offset_numerator = 0;
     view.waveform_audio_offset_denominator = 1;
     view.waveform_offset_drag_active = false;
@@ -2316,6 +2317,8 @@ void populate_compose_view(flattened_workspace_t& flattened,
     const auto measure_data = prepare_compose_chart_view(flattened, chart, history, cache,
                                                          application_state);
     if (!measure_data) return;
+    view.audio_offset_editable = !application_state.timing_locked &&
+        (!retained_state || !editor_interaction_has_pending_gesture(*retained_state));
     const auto& measures = *measure_data;
     const compose_interaction_population_context_t interaction_context{
         flattened, history, chart, measures, retained_state, application_state, view, downscroll};

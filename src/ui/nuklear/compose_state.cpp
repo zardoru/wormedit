@@ -257,6 +257,58 @@ void worm_ui_nuklear_reset_compose_state() {
     worm_ui_nuklear_compose_state() = {};
 }
 
+auto worm_ui_nuklear_begin_inline_offset(worm_ui_nuklear_compose_state_t& state,
+                                         const WormUiComposeView& view) -> bool {
+    if (!view.audio_offset_editable || view.input_occluded || !view.chart_id ||
+        !view.waveform_audio_offset_denominator ||
+        state.inline_timing_open || state.go_to_measure_open) return false;
+    state.inline_offset_open = true;
+    state.inline_offset_focus_pending = true;
+    state.inline_offset_cancel_pending = false;
+    state.inline_offset_input_consumed = true;
+    state.inline_offset_chart_id = view.chart_id;
+    state.inline_offset_revision = view.document_revision;
+    state.inline_offset_error.fill(0);
+    std::snprintf(state.inline_offset_text.data(), state.inline_offset_text.size(), "%lld/%llu",
+        static_cast<long long>(view.waveform_audio_offset_numerator),
+        static_cast<unsigned long long>(view.waveform_audio_offset_denominator));
+    return true;
+}
+
+void worm_ui_nuklear_cancel_inline_offset(worm_ui_nuklear_compose_state_t& state) {
+    state.inline_offset_input_consumed = true;
+    state.inline_offset_open = false;
+    state.inline_offset_focus_pending = false;
+    state.inline_offset_cancel_pending = false;
+}
+
+void worm_ui_nuklear_update_inline_offset(worm_ui_nuklear_compose_state_t& state,
+    const WormUiComposeView& view, WormUiWorkspaceAction& action, bool committed, bool deactivated) {
+    if (!state.inline_offset_open) return;
+    state.inline_offset_input_consumed = true;
+    if (state.inline_offset_cancel_pending || !view.audio_offset_editable ||
+        state.inline_offset_chart_id != view.chart_id || state.inline_offset_revision != view.document_revision) {
+        worm_ui_nuklear_cancel_inline_offset(state);
+        return;
+    }
+    if (committed) {
+        const auto value = parse_timing_scalar(state.inline_offset_text.data());
+        if (!value) {
+            std::snprintf(state.inline_offset_error.data(), state.inline_offset_error.size(),
+                          "Enter valid offset seconds (signed decimal or fraction)");
+            state.inline_offset_focus_pending = true;
+            return;
+        }
+        if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+        action.compose_action = WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET;
+        action.compose_input_chart_id = state.inline_offset_chart_id;
+        action.compose_input_document_revision = state.inline_offset_revision;
+        action.compose_audio_offset_numerator = value->numerator;
+        action.compose_audio_offset_denominator = value->denominator;
+        worm_ui_nuklear_cancel_inline_offset(state);
+    } else if (deactivated) worm_ui_nuklear_cancel_inline_offset(state);
+}
+
 void worm_ui_nuklear_inline_timing_initial_text(const WormUiTimingView& view, char* destination,
                                                 std::size_t capacity) {
     if (!destination || capacity == 0) return;

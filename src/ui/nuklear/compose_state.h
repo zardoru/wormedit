@@ -130,6 +130,14 @@ struct worm_ui_nuklear_compose_state_t {
     double timing_marker_current_y_pixels{};
     std::uint64_t timing_marker_chart_id{};
     std::uint64_t timing_marker_revision{};
+    bool inline_offset_open{};
+    bool inline_offset_focus_pending{};
+    bool inline_offset_cancel_pending{};
+    bool inline_offset_input_consumed{};
+    std::uint64_t inline_offset_chart_id{};
+    std::uint64_t inline_offset_revision{};
+    std::array<char, 64> inline_offset_text{};
+    std::array<char, 128> inline_offset_error{};
     bool inline_timing_open{};
     bool inline_timing_focus_pending{};
     bool inline_timing_popup_close_pending{};
@@ -243,6 +251,13 @@ void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
                                               std::uint64_t next_resource_id);
 
 void worm_ui_nuklear_reset_compose_state();
+
+[[nodiscard]] auto worm_ui_nuklear_begin_inline_offset(worm_ui_nuklear_compose_state_t& state,
+                                                        const WormUiComposeView& view) -> bool;
+void worm_ui_nuklear_cancel_inline_offset(worm_ui_nuklear_compose_state_t& state);
+void worm_ui_nuklear_update_inline_offset(worm_ui_nuklear_compose_state_t& state,
+                                          const WormUiComposeView& view, WormUiWorkspaceAction& action,
+                                          bool committed, bool deactivated);
 
 void worm_ui_nuklear_inline_timing_initial_text(const WormUiTimingView& view, char* destination,
                                                 std::size_t capacity);

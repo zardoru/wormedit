@@ -818,6 +818,7 @@ typedef struct WormUiComposeView {
     uint32_t source_playhead_sample_rate;
     uint64_t source_playhead_chart_id;
     uint64_t source_playhead_document_revision;
+    bool audio_offset_editable;
     int64_t waveform_audio_offset_numerator;
     uint64_t waveform_audio_offset_denominator;
     bool waveform_offset_drag_active;
@@ -1521,6 +1522,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_NOTE_TO_BGM,
     WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE,
     WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL,
+    WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET,
     WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK,
     WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK,
@@ -1754,6 +1756,8 @@ typedef struct WormUiWorkspaceAction {
     bool compose_area_begin_edge;
     bool compose_area_clear_requested;
     uint64_t compose_measure_number;
+    int64_t compose_audio_offset_numerator;
+    uint64_t compose_audio_offset_denominator;
     uint64_t compose_input_chart_id;
     uint64_t compose_input_document_revision;
     double compose_input_viewport_width_pixels;

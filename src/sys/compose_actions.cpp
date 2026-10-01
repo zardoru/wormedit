@@ -109,6 +109,24 @@ std::optional<std::string> dispatch_compose_measure_navigation(compose_action_co
     return compose_result_status(result, "Compose cursor moved to the requested measure.");
 }
 
+std::optional<std::string> dispatch_compose_audio_offset(compose_action_context_t& context) {
+    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET)
+        return std::nullopt;
+    if (editor_interaction_has_pending_gesture(context.state))
+        return "Finish or cancel the active Compose gesture before editing audio offset.";
+    const auto applied = wormedit::apply_audio_offset_edit(context.history,
+        context.action.compose_input_document_revision, context.state.chart,
+        {context.action.compose_audio_offset_numerator, context.action.compose_audio_offset_denominator},
+        context.application_state.timing_locked);
+    if (!applied.applied)
+        return applied.diagnostics.empty() ? "Audio offset unchanged." : applied.diagnostics.front().message;
+    const auto rebound = wormedit::rebind_workspace(context.workspace, context.history);
+    if (!rebound)
+        return rebound.diagnostics.empty() ? "Audio offset changed, but workspace rebinding failed."
+                                          : rebound.diagnostics.front().message;
+    return "Audio offset changed.";
+}
+
 std::optional<std::string> dispatch_compose_view_action_group(compose_action_context_t& context) {
     using namespace wormedit;
     auto& action = context.action;
@@ -1751,6 +1769,7 @@ auto dispatch_compose_view_action(
         action, history, workspace, state, viewport_height, application_state, asset_base,
         resource_copy_scheduler, resource_copy_runtime, export_runtime, metadata_import_busy,
         scroll_direction};
+    if (auto response = dispatch_compose_audio_offset(context)) return *response;
     if (auto response = dispatch_compose_measure_navigation(context)) return *response;
     if (auto response = dispatch_compose_view_action_group(context)) return *response;
     if (auto response = dispatch_compose_resource_action(context)) return *response;

@@ -494,7 +494,7 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 
 ## T-297 Edit the audio offset inline on double click
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** Double-clicking the displayed audio offset opens a focused inline numeric editor; Enter commits one exact undoable offset edit, Escape cancels, and losing focus closes it.
 - **Read first:** `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `include/wormedit/core/audio_offset_editor.h`.
 - **Files owned:** `src/sys/compose_view.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/compose_actions.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`.
@@ -503,6 +503,7 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 - **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; isolated Xvfb/SDL-dummy checks for UI/audio behavior.
 - **Out of scope:** unrelated rendering and preferences work.
+- **Evidence:** Authoritative application build passed; full suite 1175/1175 and frontend-state 61/61 passed. Configured clang-tidy passed for all six changed C++ files with no new complexity violations. Actual isolated Xvfb/SDL-dummy checks verified immediate selected-text focus, signed exact edits (-1/8 and 11/4), one undo to 1/3, invalid fraction retention/correction, Escape, ordinary/native blur and unchanged chart payload apart from offset. Final covered-control gate, typing/Escape and clean title-bar shutdown passed; literal Compose smoke passed and its PNG was inspected (`/tmp/wormedit-t297/final-smoke.png`).
 
 ## T-298 Lock audio offset changes beside its tools
 

@@ -111,34 +111,59 @@ static void request_toolbar_offset_nudge(WormUiWorkspaceAction* action,
     action->audio_offset_drag_delta_frames = frames;
 }
 
+static void render_offset_value(nk_context* context, const WormUiComposeView& view) {
+    nk_labelf(context, NK_TEXT_CENTERED, "%+.3f s%s",
+        static_cast<double>(view.waveform_offset_drag_active
+            ? view.waveform_proposed_audio_offset_numerator : view.waveform_audio_offset_numerator) /
+        static_cast<double>(view.waveform_offset_drag_active
+            ? view.waveform_proposed_audio_offset_denominator : view.waveform_audio_offset_denominator),
+        view.waveform_timing_locked ? " · locked" : view.waveform_offset_drag_active ? " · preview" : "");
+}
+
+static void render_inline_offset(const ComposeToolbarContext& toolbar) {
+    auto* context = toolbar.context;
+    const auto& view = *toolbar.view;
+    const auto bounds = nk_widget_bounds(context);
+    if (!state.inline_offset_open && nk_input_is_mouse_click_in_rect(&context->input, NK_BUTTON_DOUBLE, bounds))
+        (void)worm_ui_nuklear_begin_inline_offset(state, view);
+    if (!state.inline_offset_open) {
+        render_offset_value(context, view);
+        return;
+    }
+    worm_ui_nuklear_update_inline_offset(state, view, *toolbar.action, false, false);
+    if (!state.inline_offset_open) {
+        nk_edit_unfocus(context);
+        render_offset_value(context, view);
+        return;
+    }
+    const auto flags = wormedit::ui::chrome::autofocus_text_field(context,
+        NK_EDIT_FIELD | NK_EDIT_SIG_ENTER | NK_EDIT_AUTO_SELECT,
+        state.inline_offset_text.data(), static_cast<int>(state.inline_offset_text.size()),
+        nk_filter_default, state.inline_offset_focus_pending);
+    worm_ui_nuklear_update_inline_offset(state, view, *toolbar.action,
+        (flags & NK_EDIT_COMMITED) != 0, (flags & NK_EDIT_DEACTIVATED) != 0);
+    if (!state.inline_offset_open) nk_edit_unfocus(context);
+    if (state.inline_offset_error[0] && nk_input_is_mouse_hovering_rect(&context->input, bounds))
+        nk_tooltip(context, state.inline_offset_error.data());
+}
+
 static void render_compose_audio_offset(const ComposeToolbarContext& toolbar, bool show_offset) {
     auto* context = toolbar.context;
     const auto& view = *toolbar.view;
-    const bool disabled = view.waveform_timing_locked || view.waveform_offset_drag_active;
-    const auto ten_ms = static_cast<std::int64_t>(
-        std::max(1U, view.waveform_overview_sample_rate / 100U));
+    const bool disabled = view.waveform_timing_locked || view.waveform_offset_drag_active ||
+                          !view.waveform_overview_row_count || state.inline_offset_open;
+    const auto ten_ms = static_cast<std::int64_t>(std::max(1U, view.waveform_overview_sample_rate / 100U));
     if (disabled) nk_widget_disable_begin(context);
-    if (wormedit::ui::chrome::IconButton{Glyph::chevrons_left,
-            "Nudge audio offset -10 ms"}.render(context))
+    if (wormedit::ui::chrome::IconButton{Glyph::chevrons_left, "Nudge audio offset -10 ms"}.render(context))
         request_toolbar_offset_nudge(toolbar.action, &view, -ten_ms);
-    if (wormedit::ui::chrome::IconButton{Glyph::chevron_left,
-            "Nudge audio offset -1 frame"}.render(context))
+    if (wormedit::ui::chrome::IconButton{Glyph::chevron_left, "Nudge audio offset -1 frame"}.render(context))
         request_toolbar_offset_nudge(toolbar.action, &view, -1);
-    if (show_offset)
-        nk_labelf(context, NK_TEXT_CENTERED, "%+.3f s%s",
-            static_cast<double>(view.waveform_offset_drag_active
-                ? view.waveform_proposed_audio_offset_numerator
-                : view.waveform_audio_offset_numerator) /
-                static_cast<double>(view.waveform_offset_drag_active
-                    ? view.waveform_proposed_audio_offset_denominator
-                    : view.waveform_audio_offset_denominator),
-            view.waveform_timing_locked ? " · locked"
-            : view.waveform_offset_drag_active ? " · preview" : "");
-    if (wormedit::ui::chrome::IconButton{Glyph::chevron_right,
-            "Nudge audio offset +1 frame"}.render(context))
+    if (disabled) nk_widget_disable_end(context);
+    if (show_offset) render_inline_offset(toolbar);
+    if (disabled) nk_widget_disable_begin(context);
+    if (wormedit::ui::chrome::IconButton{Glyph::chevron_right, "Nudge audio offset +1 frame"}.render(context))
         request_toolbar_offset_nudge(toolbar.action, &view, 1);
-    if (wormedit::ui::chrome::IconButton{Glyph::chevrons_right,
-            "Nudge audio offset +10 ms"}.render(context))
+    if (wormedit::ui::chrome::IconButton{Glyph::chevrons_right, "Nudge audio offset +10 ms"}.render(context))
         request_toolbar_offset_nudge(toolbar.action, &view, ten_ms);
     if (disabled) nk_widget_disable_end(context);
 }
@@ -167,17 +192,7 @@ static void render_compose_offset_toolbar(const ComposeToolbarContext& toolbar) 
     const auto* view = toolbar.view;
     const bool show_offset = nk_window_get_bounds(toolbar.context).w >= 900.0f;
     nk_label(toolbar.context, "", NK_TEXT_LEFT);
-    if (view->waveform_overview_row_count == 0) {
-        nk_widget_disable_begin(toolbar.context);
-        for (int slot = 0; slot < 2; ++slot)
-            (void)wormedit::ui::chrome::IconButton{Glyph::chevron_left, ""}.render(toolbar.context);
-        if (show_offset) nk_label(toolbar.context, "", NK_TEXT_LEFT);
-        for (int slot = 0; slot < 2; ++slot)
-            (void)wormedit::ui::chrome::IconButton{Glyph::chevron_right, ""}.render(toolbar.context);
-        nk_widget_disable_end(toolbar.context);
-    } else {
-        render_compose_audio_offset(toolbar, show_offset);
-    }
+    render_compose_audio_offset(toolbar, show_offset);
     nk_label(toolbar.context, "", NK_TEXT_LEFT);
     render_compose_snap_controls(toolbar.context);
     nk_label(toolbar.context, "", NK_TEXT_LEFT);

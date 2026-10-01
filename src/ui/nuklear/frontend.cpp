@@ -241,6 +241,7 @@ static bool frontend_window_size(int* width, int* height) {
 }
 
 static bool nuklear_text_entry_active(void);
+static bool project_modal_active(const WormUiWorkspaceView& view);
 static bool notification_history_focused();
 
 static void queue_shortcut_key_event(const SDL_KeyboardEvent* event, bool tap_capture = false) {
@@ -326,8 +327,10 @@ static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_la
     action->shortcut_notification_history_focused = notification_history_focused();
     auto& compose_state = worm_ui_nuklear_compose_state();
     action->shortcut_text_entry_active = nuklear_text_entry_active() ||
-                                         compose_state.inline_timing_input_consumed;
+                                         compose_state.inline_timing_input_consumed ||
+                                         compose_state.inline_offset_input_consumed;
     compose_state.inline_timing_input_consumed = false;
+    compose_state.inline_offset_input_consumed = false;
     action->shortcut_ime_composition_active = g_ime_composition_active;
     action->shortcut_compose_lane_focused = compose_lane_focused && g_window_focused;
     action->shortcut_focused_lane_id = action->shortcut_compose_lane_focused ? focused_lane_id : 0;
@@ -558,7 +561,8 @@ static struct nk_rect notification_history_bounds(bool overlay) {
 static bool notification_editor_text_owned() {
     const auto& compose = worm_ui_nuklear_compose_state();
     return (nuklear_text_entry_active() && !nk_window_is_active(g_context, "Notifications")) ||
-        g_ime_composition_active || compose.inline_timing_open || compose.go_to_measure_open;
+        g_ime_composition_active || compose.inline_timing_open || compose.inline_offset_open ||
+        compose.go_to_measure_open;
 }
 
 static bool notification_external_pointer_active() {
@@ -612,7 +616,8 @@ static bool capture_notification_key(const SDL_KeyboardEvent& event) {
     const auto& compose = worm_ui_nuklear_compose_state();
     const auto target = wormedit::ui::nuklear::notification_escape_target(
         g_notification_view, g_window_focused,
-        nuklear_text_entry_active() || compose.inline_timing_open || compose.go_to_measure_open,
+        nuklear_text_entry_active() || compose.inline_timing_open || compose.inline_offset_open ||
+            compose.go_to_measure_open,
         g_ime_composition_active,
         notification_editor_gesture_active() || compose.key_event_count != 0,
         g_notification_modal || g_new_project_wizard.open || project_dialog_active());
@@ -712,7 +717,23 @@ static bool capture_notification_history_event(const SDL_Event& event) {
     return false;
 }
 
+static bool capture_inline_offset_key(const SDL_KeyboardEvent& event) {
+    auto& compose = worm_ui_nuklear_compose_state();
+    if (!compose.inline_offset_open) return false;
+    compose.inline_offset_input_consumed = true;
+    if (event.key == SDLK_ESCAPE) {
+        if (event.down) compose.inline_offset_cancel_pending = true;
+        return true;
+    }
+    SDL_Event copy{};
+    copy.type = event.type;
+    copy.key = event;
+    (void)nk_sdl_handle_event(g_context, &copy);
+    return true;
+}
+
 static bool handle_frontend_keyboard_event(const SDL_KeyboardEvent& event) {
+        if (capture_inline_offset_key(event)) return true;
         if (capture_tap_timing_key(event)) return true;
         const bool down = event.type == SDL_EVENT_KEY_DOWN;
         if (down && !event.repeat && event.key == SDLK_ESCAPE) {
@@ -735,6 +756,7 @@ static bool handle_workspace_frontend_event(const SDL_Event* event) {
         g_tap_key_captured = false;
         g_tap_space_captured = false;
         g_audio.offset_cancel_pending = true;
+        worm_ui_nuklear_compose_state().inline_offset_cancel_pending = true;
         g_shortcut_event_count = 0;
         g_double_click_count = 0;
         worm_ui_nuklear_compose_handle_focus_lost();
@@ -980,8 +1002,23 @@ static void render_view_menu(const WormUiWorkspaceView* view,
     nk_menu_end(g_context);
 }
 
+static void close_unavailable_inline_offset(const WormUiWorkspaceView& view) {
+    auto& compose = worm_ui_nuklear_compose_state();
+    if (!compose.inline_offset_open) return;
+    const bool available = g_window_focused && view.project_loaded &&
+        view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && view.compose.visible &&
+        view.compose.audio_offset_editable && !view.options.visible && !project_modal_active(view) &&
+        compose.inline_offset_chart_id == view.compose.chart_id &&
+        compose.inline_offset_revision == view.compose.document_revision;
+    if (!available || compose.inline_offset_cancel_pending) {
+        worm_ui_nuklear_cancel_inline_offset(compose);
+        nk_edit_unfocus(g_context);
+    }
+}
+
 static void render_title_bar(const WormUiWorkspaceView* view,
                              WormUiWorkspaceAction* action) {
+    close_unavailable_inline_offset(*view);
     const bool custom_controls = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_BORDERLESS) != 0;
     nk_menubar_begin(g_context);
     nk_layout_row_template_begin(g_context, 32);

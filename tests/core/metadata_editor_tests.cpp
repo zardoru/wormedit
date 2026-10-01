@@ -228,7 +228,7 @@ TEST_CASE("format metadata keeps duplicate occurrences and source identities ali
         history, 4,
         replace_format_metadata_field_action_t{song_bms, 1, "SUBARTIST", "second guest"}));
     const auto& replaced = history.document.metadata.format_groups.front();
-    CHECK(replaced.ordered_fields[1] == std::pair{"SUBARTIST", "second guest"});
+    CHECK(replaced.ordered_fields[1] == std::pair<std::string, std::string>{"SUBARTIST", "second guest"});
     CHECK(replaced.ordered_field_source_orders == std::vector<std::size_t>{10, 11, 12});
 
     REQUIRE(apply_metadata_edit(
@@ -237,7 +237,7 @@ TEST_CASE("format metadata keeps duplicate occurrences and source identities ali
     const auto& inserted = history.document.metadata.format_groups.front();
     REQUIRE(inserted.ordered_fields.size() == 4);
     CHECK(inserted.ordered_fields[1].first == "SUBARTIST");
-    CHECK(inserted.ordered_fields[3] == std::pair{"SUBARTIST", "third guest"});
+    CHECK(inserted.ordered_fields[3] == std::pair<std::string, std::string>{"SUBARTIST", "third guest"});
     CHECK(inserted.ordered_field_source_orders == std::vector<std::size_t>{10, 11, 12});
 
     REQUIRE(apply_metadata_edit(history, 6, erase_format_metadata_field_action_t{song_bms, 0}));

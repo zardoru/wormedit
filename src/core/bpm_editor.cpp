@@ -3,6 +3,8 @@
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/timing.h>
 
+#include "wide_math.h"
+
 #include <algorithm>
 #include <charconv>
 #include <limits>
@@ -512,17 +514,21 @@ auto quantize_bpm(signed_rational_t bpm, signed_rational_t step)
     -> std::optional<signed_rational_t> {
     if (bpm.numerator <= 0 || bpm.denominator == 0 || step.numerator <= 0 ||
         step.denominator == 0) return std::nullopt;
-    using wide_t = __int128_t;
-    const auto numerator = static_cast<wide_t>(bpm.numerator) * step.denominator;
-    const auto denominator = static_cast<wide_t>(bpm.denominator) * step.numerator;
-    auto multiples = numerator / denominator;
-    const auto remainder = numerator % denominator;
-    if (remainder >= denominator - remainder) ++multiples;
-    constexpr auto wide_max = static_cast<wide_t>((~static_cast<__uint128_t>(0)) >> 1);
-    if (multiples > wide_max / step.numerator) return std::nullopt;
-    const auto result_numerator = multiples * step.numerator;
-    if (result_numerator <= 0 || result_numerator > std::numeric_limits<std::int64_t>::max())
+    const auto numerator = wide_math::multiply(static_cast<std::uint64_t>(bpm.numerator),
+                                               step.denominator);
+    const auto denominator = wide_math::multiply(bpm.denominator,
+                                                 static_cast<std::uint64_t>(step.numerator));
+    const auto division = wide_math::divide(numerator, denominator);
+    auto multiples = division.quotient;
+    if (!wide_math::less(division.remainder,
+                         wide_math::subtract(denominator, division.remainder)))
+        multiples = wide_math::add(multiples, 1);
+    const auto step_numerator = static_cast<std::uint64_t>(step.numerator);
+    constexpr auto int64_max = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
+    if (!wide_math::fits_u64(multiples) || multiples.low > int64_max / step_numerator ||
+        multiples.low == 0)
         return std::nullopt;
+    const auto result_numerator = multiples.low * step_numerator;
     const auto value = static_cast<std::int64_t>(result_numerator);
     const auto divisor = std::gcd(static_cast<std::uint64_t>(value), step.denominator);
     return signed_rational_t{value / static_cast<std::int64_t>(divisor),

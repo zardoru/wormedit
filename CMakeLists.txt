@@ -80,6 +80,7 @@ add_library(wormedit_core
     src/core/preferences.cpp
     src/core/shortcut_profile_startup.cpp
     src/core/sound_slice.cpp
+    src/core/arena.cpp
     src/core/storyboard.cpp
     src/core/storyboard_preview.cpp
     src/core/sv_recipe.cpp

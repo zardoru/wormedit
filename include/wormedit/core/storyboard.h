@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/core/arena.h>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -13,53 +15,12 @@
 namespace wormedit {
 
 // Frame storage for transient storyboard draw data. Allocations are stable
-// until reset(); reset keeps committed chunks for reuse on the next frame.
-enum class storyboard_arena_error_t : std::uint8_t {
-    none,
-    invalid_alignment,
-    byte_limit,
-    object_limit,
-    out_of_memory,
-};
-
-struct storyboard_arena_allocation_t {
-    void* data{};
-    storyboard_arena_error_t error{storyboard_arena_error_t::none};
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return data != nullptr;
-    }
-};
-
-struct storyboard_arena_options_t {
-    std::size_t chunk_bytes{64 * 1024};
-    std::size_t maximum_bytes{16 * 1024 * 1024};
-    std::size_t maximum_objects{250'000};
-};
-
-class storyboard_frame_arena_t {
-  public:
-    explicit storyboard_frame_arena_t(storyboard_arena_options_t options = {});
-    ~storyboard_frame_arena_t();
-
-    storyboard_frame_arena_t(storyboard_frame_arena_t&&) noexcept;
-    auto operator=(storyboard_frame_arena_t&&) noexcept -> storyboard_frame_arena_t&;
-    storyboard_frame_arena_t(const storyboard_frame_arena_t&) = delete;
-    auto operator=(const storyboard_frame_arena_t&) -> storyboard_frame_arena_t& = delete;
-
-    [[nodiscard]] auto allocate_bytes(std::size_t size,
-                                      std::size_t alignment = alignof(void*)) noexcept
-        -> storyboard_arena_allocation_t;
-    void reset() noexcept;
-
-    [[nodiscard]] auto object_count() const noexcept -> std::size_t;
-    [[nodiscard]] auto committed_bytes() const noexcept -> std::size_t;
-    [[nodiscard]] auto used_bytes() const noexcept -> std::size_t;
-
-  private:
-    struct impl_t;
-    std::unique_ptr<impl_t> impl_;
-};
+// until reset(); reset keeps committed chunks for reuse on the next frame. The
+// implementation is the generic frame arena in <wormedit/core/arena.h>.
+using storyboard_arena_error_t = arena_error_t;
+using storyboard_arena_allocation_t = arena_allocation_t;
+using storyboard_arena_options_t = arena_options_t;
+using storyboard_frame_arena_t = frame_arena_t;
 
 enum class storyboard_opcode_t : std::uint8_t {
     fade,

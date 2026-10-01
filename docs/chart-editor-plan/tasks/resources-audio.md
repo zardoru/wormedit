@@ -150,7 +150,7 @@ stale-plan check (rule 9) first.
 
 ## T-271 Generalize the chunked arena into a core library
 
-- **Status:** ready
+- **Status:** done (2026-09-30; CMake integrated; application build and 801 arena/storyboard/core tests passed)
 - **Outcome:** one core arena library provides a shared chunked, aligned bump allocator with byte/object limits and statistics, plus two lifetime policies on top of it: a **frame** arena (reset keeps chunks; today's storyboard behavior) and an **append** arena (append-only, stale-byte accounting, compaction into a fresh arena, chunks kept alive by reference-counted snapshots; T-267's behavior). The storyboard preview moves onto the frame policy with no behavior change.
 - **Why:** the storyboard already has `storyboard_frame_arena_t` (`include/wormedit/core/storyboard.h`, implementation in `src/core/storyboard.cpp`, used by `src/core/storyboard_preview.cpp` and `src/sys/player_preview_presenter.cpp`), T-267 needs the same chunk layer with a different lifetime, and planned per-frame scratch (the field renderer batches in T-248, flattened view vectors in T-243) would otherwise grow a third copy.
 - **Read first:** `include/wormedit/core/storyboard.h` (`storyboard_frame_arena_t`, `storyboard_arena_options_t`, `storyboard_arena_error_t`), `src/core/storyboard.cpp` (arena implementation), `tests/core/storyboard_tests.cpp` (arena tests), T-267 above.
@@ -160,8 +160,10 @@ stale-plan check (rule 9) first.
   2. `frame_arena_t`: core + `reset()` that rewinds and keeps committed chunks. Make `storyboard_frame_arena_t` and its option/error types aliases of the generic ones (keep the old names compiling), then move the implementation out of `storyboard.cpp` (pure move; storyboard tests must pass unchanged).
   3. `append_arena_t`: core whose chunks are `std::shared_ptr`-owned blocks; `append` returns a span plus a chunk handle; `mark_stale(bytes)`; `stale_ratio()`; `compact(live_spans, order) -> append_arena_t` that copies live spans into a new arena and returns the remap. Snapshots hold chunk handles, so old chunks die with the last snapshot.
   4. Tests for both policies: alignment, limits, reset reuse without new allocations (allocation-counting allocator), append stability of returned spans, stale accounting, compaction remap correctness, chunk lifetime with outstanding snapshots.
-  5. Note in T-248 and T-243 that per-frame scratch should use `frame_arena_t`.
+  5. Keep the existing `frame_arena_t` guidance in T-248 and T-272, which now owns the per-frame work formerly tracked by T-243.
 - **Invariants:** storyboard preview output bit-identical; no allocation on the realtime audio path from either policy after warm-up.
 - **Reject/failure behavior:** allocation failures return typed errors, never throw.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'arena|storyboard|^core\.'`.
 - **Out of scope:** resident samples themselves (T-267), GPU texture pools.
+
+- **T-271 verification evidence (2026-09-30):** integrated application build passed; `ctest --test-dir build --output-on-failure -R 'arena|storyboard|^core\.'` reported `100% tests passed out of 801` (14.22 s). Configured clang-tidy passed for the arena implementation and tests. The old and new preview implementations matched bitwise across 98 frame results (easing, loops, arena limits); canonical output SHA-256 `d8d2a58bbc3c7532f90dbb3cedbfc325e0f798a859882bed23bafa75119d611e`. Forced allocation failures return typed errors; append stale accounting excludes alignment padding. Shared chunk ownership adds one control-block allocation when a chunk is created.

@@ -68,6 +68,7 @@ add_executable(wormedit_core_tests
     core/preferences_tests.cpp
     core/shortcut_profile_storage_tests.cpp
     core/shortcut_profile_startup_tests.cpp
+    core/arena_tests.cpp
     core/storyboard_tests.cpp
     core/sv_recipe_tests.cpp
     core/startup_session_tests.cpp

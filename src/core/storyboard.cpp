@@ -16,12 +16,6 @@
 namespace wormedit {
 namespace {
 
-constexpr auto max_default_alignment = alignof(std::max_align_t);
-
-auto is_power_of_two(std::size_t value) noexcept -> bool {
-    return value != 0 && (value & (value - 1)) == 0;
-}
-
 auto checked_add_i64(std::int64_t left, std::int64_t right, std::int64_t& output) noexcept -> bool {
     if ((right > 0 && left > std::numeric_limits<std::int64_t>::max() - right) ||
         (right < 0 && left < std::numeric_limits<std::int64_t>::min() - right)) {
@@ -792,122 +786,6 @@ auto semantic_top_lines_equal(const std::vector<storyboard_top_level_line_t>& le
         ++right_index;
     }
 }
-
-} // namespace
-
-struct storyboard_frame_arena_t::impl_t {
-    struct chunk_t {
-        std::unique_ptr<std::byte[]> storage;
-        std::size_t capacity{};
-        std::size_t used{};
-    };
-
-    explicit impl_t(storyboard_arena_options_t supplied_options) : options(supplied_options) {
-        if (options.chunk_bytes == 0)
-            options.chunk_bytes = 1;
-        if (options.maximum_bytes == 0)
-            options.chunk_bytes = 0;
-        options.chunk_bytes = std::min(options.chunk_bytes, options.maximum_bytes);
-    }
-
-    storyboard_arena_options_t options;
-    std::vector<chunk_t> chunks;
-    std::size_t committed_bytes{};
-    std::size_t used_bytes{};
-    std::size_t object_count{};
-    std::size_t chunk_index{};
-};
-
-storyboard_frame_arena_t::storyboard_frame_arena_t(storyboard_arena_options_t options)
-    : impl_(std::make_unique<impl_t>(options)) {}
-
-storyboard_frame_arena_t::~storyboard_frame_arena_t() = default;
-storyboard_frame_arena_t::storyboard_frame_arena_t(storyboard_frame_arena_t&&) noexcept = default;
-auto storyboard_frame_arena_t::operator=(storyboard_frame_arena_t&&) noexcept
-    -> storyboard_frame_arena_t& = default;
-
-auto storyboard_frame_arena_t::allocate_bytes(std::size_t size, std::size_t alignment) noexcept
-    -> storyboard_arena_allocation_t {
-    if (!impl_)
-        return {.error = storyboard_arena_error_t::out_of_memory};
-    if (!is_power_of_two(alignment) || alignment > max_default_alignment) {
-        return {.error = storyboard_arena_error_t::invalid_alignment};
-    }
-    if (impl_->object_count >= impl_->options.maximum_objects) {
-        return {.error = storyboard_arena_error_t::object_limit};
-    }
-    const auto find_space = [&](impl_t::chunk_t& chunk) -> std::optional<std::size_t> {
-        const auto remainder = chunk.used % alignment;
-        const auto padding = remainder == 0 ? 0 : alignment - remainder;
-        if (chunk.used > std::numeric_limits<std::size_t>::max() - padding)
-            return std::nullopt;
-        const auto begin = chunk.used + padding;
-        if (begin > chunk.capacity || size > chunk.capacity - begin)
-            return std::nullopt;
-        return begin;
-    };
-    const auto commit = [&](impl_t::chunk_t& chunk, std::size_t begin) {
-        const auto consumed = begin + size - chunk.used;
-        auto* address = chunk.storage.get() + begin;
-        chunk.used = begin + size;
-        impl_->used_bytes += consumed;
-        ++impl_->object_count;
-        return storyboard_arena_allocation_t{.data = address};
-    };
-
-    for (std::size_t offset = 0; offset < impl_->chunks.size(); ++offset) {
-        const auto index = (impl_->chunk_index + offset) % impl_->chunks.size();
-        if (const auto begin = find_space(impl_->chunks[index]); begin.has_value()) {
-            impl_->chunk_index = index;
-            return commit(impl_->chunks[index], *begin);
-        }
-    }
-    const auto available = impl_->options.maximum_bytes - impl_->committed_bytes;
-    if (available == 0 || size > available || alignment - 1 > available - size) {
-        return {.error = storyboard_arena_error_t::byte_limit};
-    }
-    const auto required = size + alignment - 1;
-    const auto capacity = std::min(available, std::max(impl_->options.chunk_bytes, required));
-    try {
-        auto storage = std::make_unique<std::byte[]>(capacity);
-        impl_t::chunk_t new_chunk{.storage = std::move(storage), .capacity = capacity};
-        impl_->chunks.push_back(std::move(new_chunk));
-    } catch (const std::bad_alloc&) {
-        return {.error = storyboard_arena_error_t::out_of_memory};
-    } catch (...) {
-        return {.error = storyboard_arena_error_t::out_of_memory};
-    }
-    impl_->committed_bytes += capacity;
-    impl_->chunk_index = impl_->chunks.size() - 1;
-    const auto begin = find_space(impl_->chunks.back());
-    if (!begin.has_value())
-        return {.error = storyboard_arena_error_t::byte_limit};
-    return commit(impl_->chunks.back(), *begin);
-}
-
-void storyboard_frame_arena_t::reset() noexcept {
-    if (!impl_)
-        return;
-    for (auto& chunk : impl_->chunks)
-        chunk.used = 0;
-    impl_->used_bytes = 0;
-    impl_->object_count = 0;
-    impl_->chunk_index = 0;
-}
-
-auto storyboard_frame_arena_t::object_count() const noexcept -> std::size_t {
-    return impl_ ? impl_->object_count : 0;
-}
-
-auto storyboard_frame_arena_t::committed_bytes() const noexcept -> std::size_t {
-    return impl_ ? impl_->committed_bytes : 0;
-}
-
-auto storyboard_frame_arena_t::used_bytes() const noexcept -> std::size_t {
-    return impl_ ? impl_->used_bytes : 0;
-}
-
-namespace {
 
 class osb_parser_t {
   public:

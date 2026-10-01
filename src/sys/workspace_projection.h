@@ -75,12 +75,18 @@ template<class T>
     -> const char*;
 
 struct flattened_workspace_t {
+    flattened_workspace_t() noexcept = default;
+    explicit flattened_workspace_t(frame_arena_t* arena) noexcept : arena_(arena) {}
+    // Application frames borrow the resettable arena. Standalone/persistent
+    // projections lazily own a separate arena whose lifetime follows copies.
+    [[nodiscard]] auto arena() noexcept -> frame_arena_t*;
     WormUiWorkspaceView view{};
     // Refresh pointers into inline storage after flatten_workspace returns or this object moves.
     void rebind_view_pointers();
 
     struct {
-        std::array<std::string, WORM_UI_WORKSPACE_SUMMARY_CAPACITY> lines;
+        std::array<const char*, WORM_UI_WORKSPACE_SUMMARY_CAPACITY> lines{};
+        bool truncated{};
     } summary;
     struct {
         std::array<std::string, WORM_UI_RECOVERY_ROW_CAPACITY> path;
@@ -192,16 +198,20 @@ struct flattened_workspace_t {
         std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
     } compose;
     struct {
-        std::vector<std::uint64_t> asset;
+        frame_span<std::uint64_t> asset;
         std::vector<WormUiAudioWaveformColumnView> waveform;
     } audio;
+  private:
+    frame_arena_t* arena_{};
+    std::shared_ptr<frame_arena_t> owned_arena_;
 };
 
 [[nodiscard]] auto flatten_workspace(const workspace_view_t& source,
                                      const song_document_t& document, const std::string& status,
                                      const native_project_recovery_controller_view_t& recovery,
                                      bool recovery_scan_configured,
-                                     const stepmania_export_policy_t& stepmania_policy)
+                                     const stepmania_export_policy_t& stepmania_policy,
+                                     frame_arena_t* arena = nullptr)
     -> flattened_workspace_t;
 
 // Borrowed notification strings remain valid until the center's next frame-

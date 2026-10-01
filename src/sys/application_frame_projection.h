@@ -33,6 +33,7 @@ struct application_frame_projection_context_t {
     document_history_t& history;
     workspace_controller_t& workspace;
     std::string& status;
+    frame_arena_t* frame_arena{};
     const native_project_recovery_controller_t& recovery_controller;
     bool recovery_scan_configured{};
     const stepmania_export_policy_t& stepmania_export_policy;

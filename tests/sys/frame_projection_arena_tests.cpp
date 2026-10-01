@@ -94,3 +94,78 @@ TEST_CASE("Warmed frame storage reuses chunks with stable bytes and no heap allo
     check_frame_storage(stable);
     check_frame_storage(after.count == before.count);
 }
+
+namespace {
+auto frame_summary_model() -> wormedit::workspace_view_t {
+    wormedit::workspace_view_t model;
+    model.active_tab = wormedit::workspace_tab_t::compose;
+    model.tab_view = wormedit::workspace_compose_view_t{
+        .chart = wormedit::chart_id_t{1}, .measure_count = 1042, .note_count = 50000,
+        .layout_segment_count = 1, .lane_count = 4, .layer_count = 0};
+    return model;
+}
+}
+
+TEST_CASE("Workspace summary uses the application arena with stable contents and zero warmed new",
+          "[sys][frame-arena][projection]") {
+    frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    const auto model = frame_summary_model();
+    const wormedit::song_document_t document;
+    const std::string status = "ready";
+    auto fill = [&] {
+        arena.reset();
+        return flatten_workspace(model, document, status, {}, false, {}, &arena);
+    };
+    const auto first = fill();
+    const auto used = arena.used_bytes();
+    const auto before = frame_heap_allocation_snapshot();
+    auto second = fill();
+    second.rebind_view_pointers();
+    const auto after = frame_heap_allocation_snapshot();
+    check_frame_storage(after.count == before.count);
+    check_frame_storage(arena.used_bytes() == used);
+    check_frame_storage(second.view.summary_line_count == 5);
+    check_frame_storage(std::strcmp(second.view.summary_lines[0], "Measures: 1042") == 0);
+    check_frame_storage(std::strcmp(second.view.summary_lines[1], "Notes: 50000") == 0);
+    check_frame_storage(std::strcmp(second.view.summary_lines[3], "Visible lane definitions: 4") == 0);
+    check_frame_storage(first.summary.lines[0] == second.summary.lines[0]);
+}
+
+TEST_CASE("Standalone workspace summary owns persistent arena storage after a move",
+          "[sys][frame-arena][projection]") {
+    const auto model = frame_summary_model();
+    const wormedit::song_document_t document;
+    const std::string status = "ready";
+    auto projection = flatten_workspace(model, document, status, {}, false, {});
+    auto retained = std::move(projection);
+    retained.rebind_view_pointers();
+    check_frame_storage(std::strcmp(retained.view.summary_lines[1], "Notes: 50000") == 0);
+    frame_arena_t frame({.chunk_bytes = 64, .maximum_bytes = 64});
+    const auto limited = flatten_workspace(model, document, status, {}, false, {}, &frame);
+    check_frame_storage(limited.summary.truncated);
+    check_frame_storage(limited.view.summary_line_count < 5);
+    check_frame_storage(std::strcmp(retained.view.summary_lines[1], "Notes: 50000") == 0);
+}
+
+TEST_CASE("Audio asset view publishes arena IDs and truncates only its exhausted unit",
+          "[sys][frame-arena][projection]") {
+    wormedit::workspace_view_t model;
+    model.active_tab = wormedit::workspace_tab_t::audio_slices;
+    model.tab_view = wormedit::workspace_audio_slices_view_t{
+        .audio_assets = {wormedit::asset_id_t{7}, wormedit::asset_id_t{9}}};
+    const wormedit::song_document_t document;
+    const std::string status = "ready";
+    frame_arena_t arena({.chunk_bytes = 1024, .maximum_bytes = 4096});
+    auto projection = flatten_workspace(model, document, status, {}, false, {}, &arena);
+    projection.rebind_view_pointers();
+    REQUIRE(projection.view.audio_slices.asset_ids);
+    check_frame_storage(projection.view.audio_slices.asset_count == 2);
+    check_frame_storage(projection.view.audio_slices.asset_ids[0] == 7);
+    check_frame_storage(projection.view.audio_slices.asset_ids[1] == 9);
+    frame_arena_t exhausted({.chunk_bytes = 8, .maximum_bytes = 8});
+    const auto limited = flatten_workspace(model, document, status, {}, false, {}, &exhausted);
+    check_frame_storage(limited.view.audio_slices.assets_truncated);
+    check_frame_storage(limited.view.audio_slices.asset_count == 0);
+    check_frame_storage(limited.view.audio_slices.asset_ids == nullptr);
+    check_frame_storage(limited.view.audio_slices.visible);
+}

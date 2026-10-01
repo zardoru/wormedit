@@ -22,7 +22,7 @@ auto project_application_frame(application_frame_projection_context_t context)
         flattened =
             flatten_workspace(context.model, context.history.document, context.status,
                               context.recovery_controller.view(), context.recovery_scan_configured,
-                              context.stepmania_export_policy);
+                              context.stepmania_export_policy, context.frame_arena);
         flattened.rebind_view_pointers();
         flattened.view.transport_metronome_enabled =
             context.application_command_state.transport_metronome_enabled;

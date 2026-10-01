@@ -3457,6 +3457,8 @@ int main(int argc, char** argv) {
     timing_scene_cache_t timing_scene_cache;
     timing_edit_t timing_edit;
     compose_scene_cache_t compose_scene_cache;
+    wormedit::frame_arena_t frame_projection_arena({
+        .chunk_bytes = 1024 * 1024, .maximum_bytes = 16 * 1024 * 1024});
     wormedit::sys::player_preview_presenter_t player_preview_presenter;
     std::optional<wormedit::editor_interaction_state_t> compose_interaction_state;
     wormedit::viewport_input_controller_t compose_viewport_input;
@@ -3643,6 +3645,7 @@ int main(int argc, char** argv) {
         const auto notification_now = notification_frame_time();
         begin_notification_frame(notification_context, pending_notification, notification_now);
         wormedit::sys::frame_timing().begin_frame();
+        frame_projection_arena.reset();
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::events);
         if (!wormedit::sys::poll_frontend_events(
                 window, metadata_drop, workspace, history, asset_base,
@@ -3712,6 +3715,7 @@ int main(int argc, char** argv) {
                  .history = history,
                  .workspace = workspace,
                  .status = status,
+                 .frame_arena = &frame_projection_arena,
                  .recovery_controller = recovery_controller,
                  .recovery_scan_configured = recovery_scan_configured,
                  .stepmania_export_policy = stepmania_export_policy,

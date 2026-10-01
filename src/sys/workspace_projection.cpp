@@ -21,6 +21,19 @@
 #include <vector>
 
 namespace wormedit::sys {
+auto flattened_workspace_t::arena() noexcept -> frame_arena_t* {
+    if (arena_) return arena_;
+    if (!owned_arena_) {
+        try {
+            owned_arena_ = std::make_shared<frame_arena_t>(arena_options_t{
+                .chunk_bytes = 1024 * 1024, .maximum_bytes = 16 * 1024 * 1024});
+        } catch (const std::bad_alloc&) {
+            return nullptr;
+        }
+    }
+    return owned_arena_.get();
+}
+
 
 auto arena_string(frame_arena_t& arena, std::string_view value) noexcept -> const char* {
     if (value.size() == std::numeric_limits<std::size_t>::max()) return nullptr;
@@ -287,12 +300,34 @@ struct workspace_projection_context_t {
     const wormedit::stepmania_export_policy_t& stepmania_policy;
 };
 
-void append_workspace_summary(const workspace_projection_context_t& projection,
-                              std::string line) {
-    auto& result = projection.result;
-    if (result.view.summary_line_count >= result.summary.lines.size()) return;
+void publish_workspace_summary(flattened_workspace_t& result, const char* text) {
+    if (result.summary.truncated || result.view.summary_line_count >= result.summary.lines.size())
+        return;
+    if (!text) {
+        text = "Workspace summary truncated (frame storage limit).";
+        result.summary.truncated = true;
+    }
     const auto index = result.view.summary_line_count++;
-    result.summary.lines[index] = std::move(line);
+    result.summary.lines[index] = text;
+    result.view.summary_lines[index] = text;
+}
+void append_workspace_summary(const workspace_projection_context_t& projection,
+                              std::string_view line) {
+    const auto& result = projection.result;
+    if (result.summary.truncated || result.view.summary_line_count >= result.summary.lines.size())
+        return;
+    auto* arena = projection.result.arena();
+    publish_workspace_summary(projection.result, arena ? arena_string(*arena, line) : nullptr);
+}
+template<class... Args>
+void append_workspace_format(const workspace_projection_context_t& projection,
+                             const char* format, Args... arguments) {
+    const auto& result = projection.result;
+    if (result.summary.truncated || result.view.summary_line_count >= result.summary.lines.size())
+        return;
+    auto* arena = projection.result.arena();
+    publish_workspace_summary(projection.result,
+        arena ? arena_format(*arena, format, arguments...) : nullptr);
 }
 
 void populate_setup_tab(const workspace_projection_context_t& projection, const wormedit::workspace_setup_view_t& tab) {
@@ -497,7 +532,6 @@ void populate_compose_tab(const workspace_projection_context_t& projection, cons
     auto& result = projection.result;
     const auto& source = projection.source;
     const auto& document = projection.document;
-    const auto append = [&](std::string line) { append_workspace_summary(projection, std::move(line)); };
                 result.view.compose.visible = true;
                 const auto& outline = tab.bms_branch_outline;
                 auto& compose = result.view.compose;
@@ -630,11 +664,11 @@ void populate_compose_tab(const workspace_projection_context_t& projection, cons
                     diagnostic = outline.diagnostics[diagnostic_index].message;
                     compose.branch_diagnostics[diagnostic_index] = diagnostic.c_str();
                 }
-                append("Measures: " + std::to_string(tab.measure_count));
-                append("Notes: " + std::to_string(tab.note_count));
-                append("Layout segments: " + std::to_string(tab.layout_segment_count));
-                append("Visible lane definitions: " + std::to_string(tab.lane_count));
-                append("Semantic layers: " + std::to_string(tab.layer_count));
+                append_workspace_format(projection, "Measures: %zu", static_cast<std::size_t>(tab.measure_count));
+                append_workspace_format(projection, "Notes: %zu", static_cast<std::size_t>(tab.note_count));
+                append_workspace_format(projection, "Layout segments: %zu", static_cast<std::size_t>(tab.layout_segment_count));
+                append_workspace_format(projection, "Visible lane definitions: %zu", static_cast<std::size_t>(tab.lane_count));
+                append_workspace_format(projection, "Semantic layers: %zu", static_cast<std::size_t>(tab.layer_count));
 
 }
 void populate_storyboard_tab(const workspace_projection_context_t& projection, const wormedit::workspace_storyboard_view_t& tab) {
@@ -652,9 +686,16 @@ void populate_audio_slices_tab(const workspace_projection_context_t& projection,
                 audio.asset_count =
                     std::min(tab.audio_assets.size(),
                              static_cast<std::size_t>(WORM_UI_AUDIO_ASSET_CAPACITY));
-                result.audio.asset.reserve(audio.asset_count);
+                auto* arena = result.arena();
+                result.audio.asset = arena
+                    ? arena_array<std::uint64_t>(*arena, audio.asset_count)
+                    : frame_span<std::uint64_t>{};
+                if (result.audio.asset.capacity() < audio.asset_count) {
+                    audio.assets_truncated = true;
+                    audio.asset_count = 0;
+                }
                 for (std::size_t index = 0; index < audio.asset_count; ++index)
-                    result.audio.asset.push_back(tab.audio_assets[index].value);
+                    (void)result.audio.asset.push_back(tab.audio_assets[index].value);
                 audio.asset_ids = result.audio.asset.data();
                 audio.has_selected_asset = tab.transport.audio_asset.has_value();
                 audio.selected_asset_id =
@@ -705,7 +746,7 @@ struct workspace_tab_visitor {
 
 void flattened_workspace_t::rebind_view_pointers() {
     for (std::size_t index = 0; index < view.summary_line_count; ++index) {
-        view.summary_lines[index] = summary.lines[index].c_str();
+        view.summary_lines[index] = summary.lines[index];
     }
 
     for (std::size_t index = 0; index < view.recovery_candidate_count; ++index) {
@@ -790,9 +831,10 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                        const wormedit::song_document_t& document, const std::string& status,
                        const wormedit::native_project_recovery_controller_view_t& recovery,
                        bool recovery_scan_configured,
-                       const wormedit::stepmania_export_policy_t& stepmania_policy)
+                       const wormedit::stepmania_export_policy_t& stepmania_policy,
+                       frame_arena_t* arena)
     -> flattened_workspace_t {
-    flattened_workspace_t result;
+    flattened_workspace_t result(arena);
     result.view.project_title = document.metadata.title.c_str();
     result.view.artist = document.metadata.artist.c_str();
     result.view.selected_difficulty = source.selected_difficulty.has_value()

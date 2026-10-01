@@ -1,5 +1,7 @@
 #include <wormedit/core/command.h>
 
+#include <wormedit/core/virtual_canvas.h>
+
 #include <algorithm>
 #include <limits>
 #include <ranges>
@@ -43,6 +45,7 @@ auto make_document_history(song_document_t document, std::size_t maximum_undo_en
     if (document.revision == 0) {
         document.revision = 1;
     }
+    sync_virtual_tails(document);
     const auto current_revision = document.revision;
     const auto next_revision = current_revision == std::numeric_limits<std::uint64_t>::max()
                                    ? current_revision
@@ -76,6 +79,7 @@ auto commit_document_command(document_history_t& history, song_document_t propos
 
     proposed.revision = history.next_revision;
     mark_retained_sources_changed(proposed);
+    sync_virtual_tails(proposed);
     result.diagnostics = validate_document(proposed);
     if (std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
             return diagnostic.severity == diagnostic_severity_t::error;

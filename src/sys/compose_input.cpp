@@ -1084,7 +1084,7 @@ struct compose_input_context_t {
                             const wormedit::editor_interaction_view_model_t& view,
                             double y_pixels) const -> std::optional<std::uint64_t> {
         using namespace wormedit;
-        if (chart.source_family != format_family_t::bms || !std::isfinite(y_pixels) ||
+        if (!chart_has_virtual_tail(chart) || !std::isfinite(y_pixels) ||
             y_pixels < 0.0 || y_pixels >= view.viewport_height_pixels)
             return std::nullopt;
         const auto built = build_virtual_canvas(chart);

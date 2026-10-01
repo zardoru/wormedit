@@ -31,6 +31,15 @@ struct virtual_canvas_t {
         -> std::optional<virtual_canvas_measure_t>;
 };
 
+inline constexpr std::size_t native_unanchored_virtual_measure_count = 64;
+
+// A chart exposes a virtual tail when its format fixes an addressable range (BMS)
+// or when it has no time anchor to bound it (native chart without timed BGM).
+[[nodiscard]] auto virtual_tail_measure_limit(const chart_document_t& chart) -> std::size_t;
+[[nodiscard]] auto chart_has_virtual_tail(const chart_document_t& chart) -> bool;
+// Recomputes chart.virtual_tail_measures for every chart from the document's BGM.
+void sync_virtual_tails(song_document_t& document);
+
 [[nodiscard]] auto build_virtual_canvas(const chart_document_t& chart)
     -> std::variant<virtual_canvas_t, diagnostic_list_t>;
 

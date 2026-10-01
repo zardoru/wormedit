@@ -179,7 +179,7 @@ auto canvas_keyboard_hold_previews(const chart_document_t& chart, const measure_
                                 ? hold.anchor_canvas_row
                                 : absolute_row(index, hold.position);
         const auto end = hold.preview_canvas_row ? hold.preview_canvas_row : anchor;
-        if (chart.source_family != format_family_t::bms ||
+        if (!chart_has_virtual_tail(chart) ||
             hold.document_revision != revision || !anchor || !end ||
             *anchor >= canvas_rows || *end >= canvas_rows) {
             return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
@@ -216,7 +216,7 @@ auto virtual_lane_key_preview(const chart_document_t& chart, const measure_index
     if (!state.pending_virtual_lane_key)
         return std::optional<editor_interaction_view_model_t::virtual_hold_preview_t>{};
     const auto& pending = *state.pending_virtual_lane_key;
-    if (pending.document_revision != revision || chart.source_family != format_family_t::bms ||
+    if (pending.document_revision != revision || !chart_has_virtual_tail(chart) ||
         pending.canvas_row < index.total_rows || pending.canvas_row >= canvas_rows ||
         !find_active_lane(chart, index, lane_position, pending.lane)) {
         return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
@@ -358,7 +358,7 @@ auto maximum_viewport_scroll(const chart_document_t& chart, const measure_index_
                              double scale, double viewport_height,
                              double end_fraction = editor_cursor_edge_margin_fraction) -> std::optional<double> {
     auto total_rows = index.total_rows;
-    if (chart.source_family == format_family_t::bms) {
+    if (chart_has_virtual_tail(chart)) {
         const auto canvas = build_virtual_canvas(chart);
         if (!std::holds_alternative<virtual_canvas_t>(canvas)) {
             return std::nullopt;
@@ -385,7 +385,7 @@ auto absolute_row_at_y_pixels(const chart_document_t& chart, const measure_index
                               bool include_virtual_bms_tail = false)
     -> std::optional<std::uint64_t> {
     auto total_rows = index.total_rows;
-    if (include_virtual_bms_tail && chart.source_family == format_family_t::bms) {
+    if (include_virtual_bms_tail && chart_has_virtual_tail(chart)) {
         const auto built_canvas = build_virtual_canvas(chart);
         if (const auto* canvas = std::get_if<virtual_canvas_t>(&built_canvas))
             total_rows = canvas->total_rows;
@@ -445,7 +445,7 @@ auto resolve_canvas_cursor(const chart_document_t& chart, const measure_index_t&
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "editor cursor lies outside chart geometry")};
     auto rows = index.total_rows;
-    if (chart.source_family == format_family_t::bms) {
+    if (chart_has_virtual_tail(chart)) {
         const auto canvas = build_virtual_canvas(chart);
         if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&canvas)) return *diagnostics;
         const auto& built = std::get<virtual_canvas_t>(canvas);
@@ -515,8 +515,8 @@ auto resolve_view_geometry(const document_history_t& history,
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&canvas)) return *diagnostics;
     const auto cursor = std::get<canvas_cursor_t>(canvas);
     if (state.selected_canvas_measure &&
-        (chart->source_family != format_family_t::bms ||
-         *state.selected_canvas_measure >= bms_addressable_measure_count))
+        (!chart_has_virtual_tail(*chart) ||
+         *state.selected_canvas_measure >= virtual_tail_measure_limit(*chart)))
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "selected BMS measure is outside #000-#999")};
     const auto lane_position = state.virtual_bms_cursor_row && !index.entries.empty()
@@ -2628,7 +2628,7 @@ auto update_fixed_scroll_cursor(editor_scroll_context_t& context,
     proposed.fixed_cursor_screen_y_pixels = anchor_y;
     proposed.scroll_direction = action.direction;
     auto canvas_rows = context.index.total_rows;
-    if (context.chart.source_family == format_family_t::bms) {
+    if (chart_has_virtual_tail(context.chart)) {
         const auto built_canvas = build_virtual_canvas(context.chart);
         if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_canvas))
             return *diagnostics;
@@ -3060,7 +3060,7 @@ auto update_canvas_keyboard_holds(hold_gesture_context_t& context, std::uint64_t
     -> editor_interaction_result_t {
     auto& state = context.state;
     const auto before = state;
-    if (!state.pending_hold || context.chart.source_family != format_family_t::bms)
+    if (!state.pending_hold || !chart_has_virtual_tail(context.chart))
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "canvas hold movement requires a BMS lane key")});
@@ -3346,7 +3346,7 @@ struct virtual_note_context_t {
 auto validate_virtual_note_target(const virtual_note_context_t& context, lane_id_t lane,
                                   std::string_view description)
     -> std::optional<editor_interaction_result_t> {
-    if (context.chart.source_family == format_family_t::bms && lane &&
+    if (chart_has_virtual_tail(context.chart) && lane &&
         context.state.active_snap_denominator != 0 &&
         context.chart.divisions_per_standard_measure %
                 context.state.active_snap_denominator ==
@@ -3412,8 +3412,8 @@ auto resolve_virtual_hold_rows(const virtual_note_context_t& context,
     const auto anchor_measure = anchor ? canvas.measure_containing(*anchor) : std::nullopt;
     const auto end_measure = end ? canvas.measure_containing(*end) : std::nullopt;
     if (!anchor_measure || !end_measure ||
-        anchor_measure->number >= bms_addressable_measure_count ||
-        end_measure->number >= bms_addressable_measure_count) {
+        anchor_measure->number >= virtual_tail_measure_limit(context.chart) ||
+        end_measure->number >= virtual_tail_measure_limit(context.chart)) {
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "virtual hold endpoints are unavailable")};
     }
@@ -3527,7 +3527,7 @@ auto resolve_virtual_tap_target(const virtual_note_context_t& context,
     }
     const auto destination = canvas.measure_containing(row);
     if (!destination || destination->authored ||
-        destination->number >= bms_addressable_measure_count || context.index.entries.empty() ||
+        destination->number >= virtual_tail_measure_limit(context.chart) || context.index.entries.empty() ||
         find_active_lane(context.chart, context.index,
                          {context.index.entries.back().id,
                           context.index.entries.back().row_capacity - 1},

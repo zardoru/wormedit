@@ -100,7 +100,7 @@ auto absolute_row_at_y_pixels(const chart_document_t& chart, const measure_index
                               bool include_virtual_bms_tail = false)
     -> std::optional<std::uint64_t> {
     auto total_rows = index.total_rows;
-    if (include_virtual_bms_tail && chart.source_family == format_family_t::bms) {
+    if (include_virtual_bms_tail && chart_has_virtual_tail(chart)) {
         const auto built = build_virtual_canvas(chart);
         const auto* canvas = std::get_if<virtual_canvas_t>(&built);
         if (canvas == nullptr)

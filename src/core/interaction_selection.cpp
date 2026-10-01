@@ -86,7 +86,7 @@ auto scope_accepts(editor_selection_scope_t scope, editor_selection_object_kind_
 auto maximum_viewport_scroll(const chart_document_t& chart, const measure_index_t& index,
                              double scale, double viewport_height) -> std::optional<double> {
     auto total_rows = index.total_rows;
-    if (chart.source_family == format_family_t::bms) {
+    if (chart_has_virtual_tail(chart)) {
         const auto canvas = build_virtual_canvas(chart);
         const auto* built = std::get_if<virtual_canvas_t>(&canvas);
         if (!built)
@@ -343,7 +343,7 @@ auto valid_row_selection_index(const chart_document_t& chart,
 
 auto validate_row_canvas(const chart_document_t& chart, std::uint64_t last_row)
     -> std::optional<diagnostic_list_t> {
-    if (chart.source_family != format_family_t::bms)
+    if (!chart_has_virtual_tail(chart))
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "selection row interval is outside the chart")};
     const auto canvas = build_virtual_canvas(chart);

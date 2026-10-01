@@ -103,7 +103,7 @@ auto diagnostic_result(const document_history_t& history,
 auto maximum_viewport_scroll(const chart_document_t& chart, const measure_index_t& index,
                              double scale, double viewport_height) -> std::optional<double> {
     auto total_rows = index.total_rows;
-    if (chart.source_family == format_family_t::bms) {
+    if (chart_has_virtual_tail(chart)) {
         const auto canvas = build_virtual_canvas(chart);
         const auto* virtual_canvas = std::get_if<virtual_canvas_t>(&canvas);
         if (!virtual_canvas) return std::nullopt;
@@ -170,7 +170,7 @@ auto move_edit_cursor(cursor_navigation_context_t& context,
                       context.state.active_snap_denominator;
     const auto remainder = context.absolute % step;
     auto canvas_rows = context.index.total_rows;
-    if (context.chart.source_family == format_family_t::bms) {
+    if (chart_has_virtual_tail(context.chart)) {
         const auto canvas = build_virtual_canvas(context.chart);
         const auto* value = std::get_if<virtual_canvas_t>(&canvas);
         if (!value) return diagnostic_result(context.history, context.state,
@@ -312,8 +312,8 @@ auto select_bms_canvas_measure(cursor_navigation_context_t& context,
     -> editor_interaction_result_t {
     auto& state = context.state;
     const auto& chart = context.chart;
-    if (chart.source_family != format_family_t::bms ||
-        action.number >= bms_addressable_measure_count)
+    if (!chart_has_virtual_tail(chart) ||
+        action.number >= virtual_tail_measure_limit(chart))
         return diagnostic_result(context.history, state,
             {error(diagnostic_code_t::row_out_of_range,
                    "BMS measure selection is outside #000-#999")});

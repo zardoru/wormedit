@@ -574,13 +574,13 @@ TEST_CASE("BMS writer round trips holds, repeated BGM lanes, structural zeros, a
     CHECK(chart.measures.front().notes.front().end->row ==
           original_chart.measures.front().notes.front().end->row);
     REQUIRE(chart.bgm_source_lanes.size() == 2);
-    REQUIRE(chart.measures.front().bgm_events.size() == 4);
+    // `00` padding is not an event, but the written lines keep their `00` slots.
+    REQUIRE(chart.measures.front().bgm_events.size() == 2);
     CHECK(chart.measures.front().bgm_events[0].structural_slot == 0);
     CHECK(chart.measures.front().bgm_events[1].structural_slot == 1);
-    CHECK(chart.measures.front().bgm_events[2].structural_slot == 0);
-    CHECK(chart.measures.front().bgm_events[3].structural_slot == 1);
-    CHECK(chart.measures.front().bgm_events[1].sound == std::nullopt);
-    CHECK(chart.measures.front().bgm_events[2].sound == std::nullopt);
+    CHECK(chart.measures.front().bgm_events[0].source_lane !=
+          chart.measures.front().bgm_events[1].source_lane);
+    CHECK(chart.measures.front().bgm_events[1].sound.has_value());
     REQUIRE(chart.bga_events.size() == 4);
     CHECK(std::ranges::count_if(chart.bga_events, [](const auto& event) {
               return event.kind == wormedit::visual_event_kind_t::background;
@@ -671,7 +671,9 @@ TEST_CASE("BMS writer supports authored BGM lanes across measures", "[unit][form
     REQUIRE(reparsed.song.has_value());
     CHECK_FALSE(reparsed.has_errors());
     CHECK(reparsed.song->charts.front().measures[0].bgm_events.size() == 1);
-    CHECK(reparsed.song->charts.front().measures[1].bgm_events.size() == 2);
+    // The `00` padding of `#00101:0001` is not an event.
+    REQUIRE(reparsed.song->charts.front().measures[1].bgm_events.size() == 1);
+    CHECK(reparsed.song->charts.front().measures[1].bgm_events.front().structural_slot == 1);
 }
 
 TEST_CASE("BMS writer reports unrepresentable hold and visual-event semantics",
@@ -2095,7 +2097,7 @@ TEST_CASE("BMS writer patches active branch channel events and uniquely bound ti
     auto& note = chart.measures.front().notes.front();
     note.position.row = half_measure;
     note.sound = replacement_wav->id;
-    REQUIRE(chart.measures.front().bgm_events.size() == 2);
+    REQUIRE(chart.measures.front().bgm_events.size() == 1);
     auto& bgm = chart.measures.front().bgm_events.front();
     bgm.sound = replacement_wav->id;
     REQUIRE(chart.bga_events.size() == 1);
@@ -2154,7 +2156,7 @@ TEST_CASE("BMS writer patches active branch channel events and uniquely bound ti
                             *reparsed_chart.measures.front().notes.front().sound,
                             &wormedit::resource_entry_t::id)
               ->name == "edited.wav");
-    REQUIRE(reparsed_chart.measures.front().bgm_events.size() == 2);
+    REQUIRE(reparsed_chart.measures.front().bgm_events.size() == 1);
     const auto edited_bgm =
         std::ranges::find_if(reparsed_chart.measures.front().bgm_events, [](const auto& event) {
             return event.position.row == 0 && event.sound.has_value();
@@ -2541,4 +2543,114 @@ TEST_CASE("BMS normalized output transcodes retained comments and unknown header
                .output_encoding = wormedit::text_encoding_t::cp932});
     REQUIRE(legacy.bytes);
     CHECK(legacy.bytes->find("#X-MEMO \x83\x65\x83\x58\x83\x67\n") != std::string::npos);
+}
+
+namespace {
+
+struct bgm_cell_t {
+    std::size_t measure{};
+    std::size_t column{};
+    std::uint64_t row{};
+    std::string sound;
+    auto operator==(const bgm_cell_t&) const -> bool = default;
+};
+
+// Id-independent view of every BGM event: measure, column index, row and sound.
+auto bgm_cells(const wormedit::song_document_t& song) -> std::vector<bgm_cell_t> {
+    const auto& chart = song.charts.front();
+    std::vector<bgm_cell_t> cells;
+    for (std::size_t measure = 0; measure < chart.measures.size(); ++measure) {
+        for (const auto& event : chart.measures[measure].bgm_events) {
+            const auto lane = std::ranges::find(chart.bgm_source_lanes, event.source_lane,
+                                                &wormedit::bgm_source_lane_t::id);
+            REQUIRE(lane != chart.bgm_source_lanes.end());
+            std::string sound;
+            if (event.sound) {
+                sound = std::ranges::find(song.resources, *event.sound,
+                                          &wormedit::resource_entry_t::id)->name;
+            }
+            cells.push_back({measure,
+                             static_cast<std::size_t>(lane - chart.bgm_source_lanes.begin()),
+                             event.position.row, sound});
+        }
+    }
+    return cells;
+}
+
+} // namespace
+
+TEST_CASE("BMS BGM lines share per-measure columns and `00` slots create no events",
+          "[unit][format][bms][bgm-columns]") {
+    const auto source = read_fixture_text("bms/bgm-columns-per-measure.bms");
+    const auto imported = parse(source, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(imported.song);
+    REQUIRE_FALSE(imported.has_errors());
+    const auto& chart = imported.song->charts.front();
+    REQUIRE(chart.measures.size() == 200);
+    REQUIRE(chart.bgm_source_lanes.size() == 5);
+    for (std::size_t column = 0; column < 5; ++column)
+        CHECK(chart.bgm_source_lanes[column].name == "BGM " + std::to_string(column + 1));
+
+    const auto cells = bgm_cells(*imported.song);
+    CHECK(cells.size() == 602);
+    // Even measure 000: three lines, one object each at their first slot.
+    CHECK(cells[0] == bgm_cell_t{0, 0, 0, "bgm-a.wav"});
+    CHECK(cells[1] == bgm_cell_t{0, 1, 0, "bgm-b.wav"});
+    CHECK(cells[2] == bgm_cell_t{0, 2, 0, "bgm-c.wav"});
+    // Odd measure 001 starts again at column 1; `0003` puts its object in slot 1 of 2.
+    CHECK(cells[3] == bgm_cell_t{1, 0, 0, "bgm-a.wav"});
+    CHECK(cells[4] == bgm_cell_t{1, 1, 0, "bgm-b.wav"});
+    const auto half = chart.divisions_per_standard_measure / 2;
+    CHECK(cells[5] == bgm_cell_t{1, 2, half, "bgm-c.wav"});
+
+    const auto busiest = std::ranges::count(cells, std::size_t{100}, &bgm_cell_t::measure);
+    CHECK(busiest == 5);
+    for (const auto& cell : cells) CHECK(cell.column < 5);
+}
+
+TEST_CASE("BMS BGM columns export byte-identically unedited and keep each line's grid when edited",
+          "[unit][format][bms][writer][bgm-columns]") {
+    const auto source = read_fixture_text("bms/bgm-columns-per-measure.bms");
+    const auto imported = parse(source, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(imported.song);
+
+    const auto unedited =
+        wormedit::write_bms(*imported.song, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(unedited.bytes);
+    CHECK(*unedited.bytes == source);
+
+    const auto normalized = wormedit::write_bms(
+        *imported.song,
+        {.lane_profile_id = "bme-7k-outside-scratch", .preserve_unchanged_source = false});
+    REQUIRE(normalized.bytes);
+    CHECK_FALSE(normalized.has_errors());
+    const auto find = [&](std::string_view text) { return normalized.bytes->find(text); };
+    // Each line keeps its original subdivision, in column order within the measure.
+    REQUIRE(find("#00101:01\n") != std::string::npos);
+    REQUIRE(find("#00101:0200\n") != std::string::npos);
+    REQUIRE(find("#00101:0003\n") != std::string::npos);
+    CHECK(find("#00101:01\n") < find("#00101:0200\n"));
+    CHECK(find("#00101:0200\n") < find("#00101:0003\n"));
+    CHECK(find("#10001:0001\n") != std::string::npos);
+
+    const auto reparsed =
+        parse(*normalized.bytes, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(reparsed.song);
+    CHECK_FALSE(reparsed.has_errors());
+    CHECK(reparsed.song->charts.front().bgm_source_lanes.size() == 5);
+    CHECK(bgm_cells(*reparsed.song) == bgm_cells(*imported.song));
+}
+
+TEST_CASE("BMS warns when a measure has more BGM lines than BMSE allows",
+          "[unit][format][bms][bgm-columns][negative]") {
+    std::string source = "#PLAYER 1\n#TITLE Crowded\n#BPM 120\n#WAV01 a.wav\n";
+    for (int line = 0; line < 130; ++line) source += "#00001:01\n";
+    const auto imported = parse(source, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(imported.song);
+    CHECK_FALSE(imported.has_errors());
+    CHECK(imported.song->charts.front().bgm_source_lanes.size() == 130);
+    CHECK(std::ranges::any_of(imported.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.severity == wormedit::diagnostic_severity_t::warning &&
+               diagnostic.message.find("128 BGM lines") != std::string::npos;
+    }));
 }

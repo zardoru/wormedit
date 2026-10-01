@@ -1307,6 +1307,7 @@ auto parse_native_project_with_migrations(std::string_view bytes, native_project
                  "native project contains an enum value outside the schema", "$.document"});
             return result;
         }
+        (void)normalize_legacy_bms_bgm(song);
         const auto validation = validate_document(song);
         for (const auto& diagnostic : validation) {
             if (diagnostic.severity == diagnostic_severity_t::error) {

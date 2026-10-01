@@ -134,17 +134,23 @@ TEST_CASE("BMS reader imports metadata, source bytes, measures and resource decl
     CHECK(song.resources[0].name == "bgm-a.wav");
     CHECK(song.audio_assets[0].source_path == std::filesystem::path("bgm-a.wav"));
     CHECK(song.resources[0].target_identities[0].identifier == "01");
-    REQUIRE(chart.bgm_source_lanes.size() == 3);
-    REQUIRE(chart.measures[0].bgm_events.size() == 10);
-    REQUIRE(chart.measures[1].bgm_events.size() == 2);
+    // Two BGM columns: the busiest measure has two `#mmm01` lines.
+    REQUIRE(chart.bgm_source_lanes.size() == 2);
+    // `00` slots are padding, not events: only the three non-empty slots remain.
+    REQUIRE(chart.measures[0].bgm_events.size() == 3);
+    REQUIRE(chart.measures[1].bgm_events.size() == 1);
     CHECK(chart.measures[0].bgm_events[0].sound == song.resources[0].id);
-    CHECK_FALSE(chart.measures[0].bgm_events[1].sound.has_value());
-    CHECK_FALSE(chart.measures[0].bgm_events[2].sound.has_value());
-    CHECK(chart.measures[0].bgm_events[1].structural_slot == 1);
-    CHECK(chart.measures[0].bgm_events[5].structural_slot == 0);
-    CHECK(chart.measures[0].bgm_events[5].source_lane !=
+    CHECK(chart.measures[0].bgm_events[0].structural_slot == 0);
+    CHECK(chart.measures[0].bgm_events[1].sound == song.resources[1].id);
+    CHECK(chart.measures[0].bgm_events[1].structural_slot == 3);
+    CHECK(chart.measures[0].bgm_events[2].sound == song.resources[2].id);
+    CHECK(chart.measures[0].bgm_events[2].structural_slot == 2);
+    CHECK(chart.measures[0].bgm_events[2].source_lane !=
           chart.measures[0].bgm_events[0].source_lane);
-    CHECK(chart.measures[0].bgm_events[5].sound.has_value() == false);
+    CHECK(chart.measures[1].bgm_events[0].source_lane ==
+          chart.measures[0].bgm_events[0].source_lane);
+    CHECK(std::ranges::all_of(chart.measures[0].bgm_events,
+                              [](const auto& event) { return event.sound.has_value(); }));
     REQUIRE(chart.bpms.size() == 3);
     CHECK((chart.bpms[0].beats_per_minute == wormedit::signed_rational_t{120, 1}));
     CHECK((chart.bpms[1].beats_per_minute == wormedit::signed_rational_t{120, 1}));

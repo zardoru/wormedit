@@ -1,5 +1,6 @@
 #pragma once
 
+#include <wormedit/audio/playhead_snapshot.h>
 #include <wormedit/audio/preview_bridge.h>
 #include <wormedit/audio/preview_pump.h>
 
@@ -90,6 +91,8 @@ class preview_session_t {
     [[nodiscard]] auto metronome_enabled() const -> bool;
     [[nodiscard]] auto set_assist_grid(bool active,
         std::optional<preview_assist_click_grid_t> grid) -> bool;
+    // active() and timeline_frame() read a lock-free snapshot published by the control
+    // and render sides; they never wait on the session mutex.
     [[nodiscard]] auto active() const -> bool;
     // Audible source-frame estimate; scheduling continues on the unadjusted
     // internal source clock. Headless sessions have zero output latency.
@@ -103,10 +106,13 @@ class preview_session_t {
                                      std::uint64_t timeline_frame, preview_pump_options_t options)
         -> preview_session_start_result_t;
     void clear_state() noexcept;
+    void publish_playhead() noexcept;
 
     decoded_source_registry_t& sources_;
     transport_t& transport_;
     preview_transport_bridge_t& bridge_;
+    playhead_snapshot_t playhead_;
+    std::uint64_t generation_{};
     mutable std::mutex mutex_;
     std::optional<session_token_t> token_;
     std::uint64_t timeline_frame_{};

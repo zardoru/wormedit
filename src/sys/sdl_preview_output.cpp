@@ -1,4 +1,5 @@
 #include "sys/frame_timing.h"
+#include "sys/thread_priority.h"
 #include "sys/sdl_preview_output.h"
 #include "sys/sdl_audio_stream_lock.h"
 
@@ -106,6 +107,7 @@ auto sdl_preview_output_t::take_refill_result()
 }
 
 void sdl_preview_output_t::refill_loop(std::stop_token stop) {
+    apply_current_thread_priority(SDL_THREAD_PRIORITY_HIGH);
     std::unique_lock lock(refill_mutex_);
     while (!stop.stop_requested()) {
         refill_ready_.wait(lock, [&] { return stop.stop_requested() || refill_enabled_; });

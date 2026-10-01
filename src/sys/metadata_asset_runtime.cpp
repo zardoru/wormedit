@@ -1,4 +1,5 @@
 #include "sys/metadata_asset_runtime.h"
+#include "sys/thread_priority.h"
 
 #include "ui/frontend.h"
 
@@ -46,7 +47,7 @@ struct pending_metadata_copy_preview_t {
 };
 
 struct metadata_copy_preview_t {
-    wormedit::task_scheduler_t scheduler{1, 1};
+    wormedit::task_scheduler_t scheduler{1, 1, wormedit::background_scheduler_options()};
     std::optional<pending_metadata_copy_preview_t> pending;
     std::optional<metadata_copy_preview_key_t> key;
     std::string message;

@@ -30,6 +30,8 @@ auto audition_session_t::start(std::span<const audition_clip_t> clips)
     clips_.assign(clips.begin(), clips.end());
     timeline_frame_ = 0;
     duration_frames_ = std::ranges::max(clips_, {}, &audition_clip_t::frame_count).frame_count;
+    ++generation_;
+    publish_playhead();
     return {.status = audition_session_start_status_t::started,
             .token = token_,
             .transport = transport,
@@ -95,6 +97,7 @@ auto audition_session_t::render(std::span<float> interleaved_stereo)
                 .mix = mixed};
     }
     timeline_frame_ += mixed.frames;
+    publish_playhead();
     if (timeline_frame_ >= duration_frames_) {
         static_cast<void>(bridge_.stop());
         clear_state();
@@ -116,13 +119,18 @@ auto audition_session_t::stop() noexcept -> transport_stop_result_t {
 }
 
 auto audition_session_t::active() const -> bool {
-    const std::scoped_lock lock(mutex_);
-    return token_.has_value();
+    return playhead_.read().active;
 }
 
 auto audition_session_t::timeline_frame() const -> std::uint64_t {
-    const std::scoped_lock lock(mutex_);
-    return timeline_frame_;
+    return playhead_.read().timeline_frame;
+}
+
+void audition_session_t::publish_playhead() noexcept {
+    playhead_.publish({.active = token_.has_value(),
+                       .timeline_frame = timeline_frame_,
+                       .start_frame = 0,
+                       .generation = generation_});
 }
 
 void audition_session_t::clear_state() noexcept {
@@ -130,6 +138,8 @@ void audition_session_t::clear_state() noexcept {
     clips_.clear();
     timeline_frame_ = 0;
     duration_frames_ = 0;
+    ++generation_;
+    publish_playhead();
 }
 
 } // namespace wormedit::audio

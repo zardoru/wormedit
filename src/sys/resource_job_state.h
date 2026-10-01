@@ -3,6 +3,8 @@
 #include <wormedit/core/task_graph.h>
 #include <wormedit/core/workspace.h>
 
+#include "sys/thread_priority.h"
+
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -49,7 +51,7 @@ private:
 };
 
 struct output_group_export_t {
-    wormedit::task_scheduler_t scheduler{1, 1};
+    wormedit::task_scheduler_t scheduler{1, 1, wormedit::background_scheduler_options()};
     std::optional<pending_output_group_export_t> pending;
 
     [[nodiscard]] auto busy() const noexcept -> bool { return pending.has_value(); }

@@ -184,3 +184,92 @@ TEST_CASE("decoded source registry retains project decoders for waveform analysi
     CHECK(registry.analyze_waveform({}, blocks, waveforms, 128).status ==
           waveform_analysis_status_t::invalid_request);
 }
+
+namespace {
+
+auto pending_registration(std::uint64_t asset, std::string_view name = "keysound-c4.ogg")
+    -> wormedit::audio::decoded_source_registration_t {
+    return {.asset = wormedit::asset_id_t{asset},
+            .path = fixture_path(name),
+            .source = {"fixture:asset:" + std::to_string(asset), "pending-v1:" + std::to_string(asset)}};
+}
+
+} // namespace
+
+TEST_CASE("pending registration opens no decoder until a probe runs",
+          "[unit][audio][source-registry][lazy]") {
+    using namespace wormedit::audio;
+    decoded_source_registry_t registry{2'048};
+    for (std::uint64_t asset = 1; asset <= 1'000; ++asset) {
+        const auto added = registry.register_source_pending(pending_registration(asset));
+        REQUIRE(added.status == source_registration_status_t::pending);
+        CHECK_FALSE(added.binding.has_value());
+    }
+    CHECK(registry.size() == 1'000);
+    CHECK(registry.pending_count() == 1'000);
+    CHECK(registry.open_decoder_count() == 0);
+    CHECK(registry.bindings().empty());
+    CHECK_FALSE(registry.binding(wormedit::asset_id_t{1}));
+
+    CHECK(registry.register_source_pending(pending_registration(1)).status ==
+          source_registration_status_t::duplicate_asset);
+
+    std::size_t probed = 0;
+    while (registry.probe_next_pending()) {
+        ++probed;
+        CHECK(registry.open_decoder_count() == 0);
+    }
+    CHECK(probed == 1'000);
+    CHECK(registry.pending_count() == 0);
+    CHECK(registry.bindings().size() == 1'000);
+    CHECK(registry.binding(wormedit::asset_id_t{500})->output_frame_count > 0);
+    CHECK(registry.take_probe_failures().empty());
+}
+
+TEST_CASE("probe failures are reported once and keep the source out of bindings",
+          "[unit][audio][source-registry][lazy]") {
+    using namespace wormedit::audio;
+    decoded_source_registry_t registry;
+    REQUIRE(registry.register_source_pending(pending_registration(1)).status ==
+            source_registration_status_t::pending);
+    REQUIRE(registry.register_source_pending(pending_registration(2, "missing-file.ogg")).status ==
+            source_registration_status_t::pending);
+    registry.await_pending();
+
+    CHECK(registry.binding(wormedit::asset_id_t{1}).has_value());
+    CHECK_FALSE(registry.binding(wormedit::asset_id_t{2}).has_value());
+    CHECK(registry.bindings().size() == 1);
+    const auto failures = registry.take_probe_failures();
+    REQUIRE(failures.size() == 1);
+    CHECK(failures.front().asset == wormedit::asset_id_t{2});
+    CHECK_FALSE(failures.front().message.empty());
+    CHECK(registry.take_probe_failures().empty());
+    CHECK(registry.probe(wormedit::asset_id_t{2}).status == source_registration_status_t::open_failed);
+    CHECK(registry.take_probe_failures().empty());
+}
+
+TEST_CASE("decoding a pending source probes it on demand and bounds idle open decoders",
+          "[unit][audio][source-registry][lazy]") {
+    using namespace wormedit::audio;
+    decoded_source_registry_t registry{64, 4};
+    for (std::uint64_t asset = 1; asset <= 12; ++asset) {
+        REQUIRE(registry.register_source_pending(pending_registration(asset)).status ==
+                source_registration_status_t::pending);
+    }
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    const auto token = transport.start();
+    REQUIRE(token.has_value());
+    for (std::uint64_t asset = 1; asset <= 12; ++asset) {
+        const audio_block_key_t key{{"fixture:asset:" + std::to_string(asset),
+                                     "pending-v1:" + std::to_string(asset)},
+                                    0};
+        const auto decoded = registry.decode_block(transport, *token, key);
+        CHECK(decoded.status == block_decode_status_t::decoded);
+        CHECK(registry.binding(wormedit::asset_id_t{asset}).has_value());
+        CHECK(registry.open_decoder_count() <= 4);
+    }
+    CHECK(registry.open_decoder_count() == 4);
+    registry.clear();
+    CHECK(registry.open_decoder_count() == 0);
+}

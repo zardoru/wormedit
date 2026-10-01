@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/audio/audition_pump.h>
+#include <wormedit/audio/playhead_snapshot.h>
 
 #include <mutex>
 #include <optional>
@@ -59,15 +60,19 @@ class audition_session_t {
         -> audition_session_render_result_t;
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
 
+    // Lock-free reads of a snapshot published by start/render/stop.
     [[nodiscard]] auto active() const -> bool;
     [[nodiscard]] auto timeline_frame() const -> std::uint64_t;
 
   private:
     void clear_state() noexcept;
+    void publish_playhead() noexcept;
 
     decoded_source_registry_t& sources_;
     transport_t& transport_;
     audition_transport_bridge_t& bridge_;
+    playhead_snapshot_t playhead_;
+    std::uint64_t generation_{};
     mutable std::mutex mutex_;
     std::optional<session_token_t> token_;
     std::vector<audition_clip_t> clips_;

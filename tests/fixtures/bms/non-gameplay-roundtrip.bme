@@ -1,0 +1,41 @@
+; Wormedit fixture: every non-gameplay BMS construct that must survive import, edit, and export.
+// A second comment style, kept in source order.
+#PLAYER 1
+#GENRE Fixture Genre
+#TITLE Non-gameplay Round Trip
+#SUBTITLE -first subtitle-
+#ARTIST Wormedit fixture authors
+#SUBARTIST sub artist one
+#SUBARTIST sub artist two
+#BPM 150
+#PLAYLEVEL 7
+#RANK 2
+#DEFEXRANK 85
+#TOTAL 320
+#DIFFICULTY 4
+#COMMENT a comment line
+#VOLWAV 90
+#STAGEFILE stage.png
+#BANNER banner.png
+#BACKBMP back.png
+#PREVIEW preview.ogg
+#LNTYPE 1
+#LNOBJ ZZ
+#LNMODE 2
+#X-WORMEDIT-UNKNOWN keep this unknown header
+#WAV01 kick.wav
+#WAV02 snare.wav
+#WAVZZ release.wav
+#BMP01 bga-base.bmp
+#BMP02 bga-layer.bmp
+#BMP03 bga-layer2.bmp
+#BMP04 bga-poor.bmp
+#BGA05 01 0 0 63 63 10 10
+#00004:01
+#00006:04
+#00007:02
+#0000A:03
+#00011:01000100
+#00101:01
+#04011:0100
+#04012:02000200

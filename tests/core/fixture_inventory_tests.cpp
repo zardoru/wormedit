@@ -18,6 +18,7 @@ constexpr std::array fixture_paths{
     "bms/negative-malformed-pairs.bms",
     "bms/negative-orphan-control.bms",
     "bms/negative-undefined-resource.bms",
+    "bms/non-gameplay-roundtrip.bme",
     "bms/pms-nine-button.pms",
     "bms/repeated-bgm-ratio-stop-collision.bms",
     "stepmania/legacy-negative-bpm.sm",

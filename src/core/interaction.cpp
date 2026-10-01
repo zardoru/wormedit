@@ -1535,7 +1535,7 @@ auto follow_editor_playhead(document_history_t& history, editor_interaction_stat
     if (!chart || !geometry.index || geometry.chart != state.chart ||
         geometry.document_revision != history.document.revision ||
         !std::isfinite(target_scroll) || !std::isfinite(following_anchor_fraction) ||
-        !std::isfinite(cursor_subrow) || cursor_subrow < 0.0 ||
+        !std::isfinite(cursor_subrow) ||
         following_anchor_fraction < 0.0 || following_anchor_fraction > 1.0 || playhead_gesture_active(state))
         return {.diagnostics = {error(diagnostic_code_t::invalid_id,
                                      "playhead geometry is stale or playback editing is blocked")}};
@@ -2661,6 +2661,8 @@ auto update_fixed_scroll_cursor(editor_scroll_context_t& context,
         cursor_row += step;
     const auto position = position_at(context.index, cursor_row);
     proposed.virtual_bms_cursor_row = position ? std::nullopt : std::optional{cursor_row};
+    // Draw the cursor at the anchored field position, not the snapped row beside it.
+    proposed.cursor_subrow = static_cast<double>(bounded_row - static_cast<long double>(cursor_row));
     if (position) {
         proposed.cursor = *position;
         const auto replacement = transition_lane(context.chart, context.index,
@@ -4483,9 +4485,12 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                             const editor_ui_action_t& action) -> editor_interaction_result_t {
     const auto cursor = state.cursor;
     const auto virtual_row = state.virtual_bms_cursor_row;
+    const auto subrow = state.cursor_subrow;
     auto result = dispatch_editor_action_impl(history, state, action);
-    // The sub-row offset only describes the audio position the cursor followed to.
-    if (state.cursor != cursor || state.virtual_bms_cursor_row != virtual_row) {
+    // The sub-row offset only describes the position the cursor was last placed at;
+    // an action that moves the cursor without recomputing it drops the stale offset.
+    if ((state.cursor != cursor || state.virtual_bms_cursor_row != virtual_row) &&
+        state.cursor_subrow == subrow) {
         state.cursor_subrow = 0.0;
         if (result.view) result.view->cursor_subrow = 0.0;
     }

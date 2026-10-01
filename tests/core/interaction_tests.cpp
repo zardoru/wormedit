@@ -2582,6 +2582,28 @@ TEST_CASE("Compose wheel direction and first-measure anchor follow field orienta
     }
 }
 
+TEST_CASE("fractional fixed-cursor scrolling keeps the drawn cursor on its screen line",
+          "[unit][core][interaction][viewport][fixed-cursor]") {
+    auto history = make_document_history(make_song());
+    constexpr std::array snaps{std::uint64_t{4}};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                               {measure_id_t{1}, 0}, snaps, 4, 192.0);
+    REQUIRE(setup);
+    auto state = *setup.state;
+    const auto& chart = history.document.charts.front();
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto pixels_per_row = state.pixels_per_standard_measure / chart.divisions_per_standard_measure;
+    for (const double pixels : {48.0, 7.3, 0.4, 13.9, 5.55}) {
+        const auto scrolled = dispatch_editor_action(
+            history, state,
+            scroll_editor_view_action_t{pixels, 48.0, editor_field_scroll_direction_t::up});
+        REQUIRE(scrolled);
+        const auto drawn_row = static_cast<double>(*absolute_row(index, state.cursor)) + state.cursor_subrow;
+        CHECK(drawn_row * pixels_per_row - state.viewport_scroll_pixels == Catch::Approx(48.0).margin(0.01));
+        CHECK(scrolled.view->cursor_subrow == state.cursor_subrow);
+    }
+}
+
 TEST_CASE("fixed cursor scrolling follows the snap beneath a stationary viewport line",
           "[unit][core][interaction][viewport][fixed-cursor]") {
     auto history = make_document_history(make_song());

@@ -3,6 +3,7 @@
 #include "ui/frontend.h"
 
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/arena.h>
 #include <wormedit/core/notifications.h>
 #include <wormedit/core/grid.h>
 #include <wormedit/core/recovery_controller.h>
@@ -13,12 +14,65 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <limits>
+#include <memory>
+#include <span>
+#include <string_view>
+#include <type_traits>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 namespace wormedit::sys {
+
+// Per-unit storage is allocated once in fill order. Callers publish only size(),
+// never capacity(), and set the existing unit truncation flag on failure.
+template<class T>
+class frame_span {
+    static_assert(std::is_trivially_copyable_v<T>);
+  public:
+    frame_span() = default;
+    explicit frame_span(std::span<T> storage) : storage_(storage) {}
+    auto data() noexcept -> T* { return storage_.data(); }
+    auto data() const noexcept -> const T* { return storage_.data(); }
+    auto size() const noexcept -> std::size_t { return count_; }
+    auto capacity() const noexcept -> std::size_t { return storage_.size(); }
+    auto empty() const noexcept -> bool { return count_ == 0; }
+    auto begin() noexcept -> T* { return data(); }
+    auto end() noexcept -> T* { return count_ == 0 ? data() : data() + count_; }
+    auto begin() const noexcept -> const T* { return data(); }
+    auto end() const noexcept -> const T* { return count_ == 0 ? data() : data() + count_; }
+    auto operator[](std::size_t index) noexcept -> T& { return storage_[index]; }
+    auto operator[](std::size_t index) const noexcept -> const T& { return storage_[index]; }
+    void clear() noexcept { count_ = 0; }
+    [[nodiscard]] auto push_back(const T& value) noexcept -> bool {
+        if (count_ == capacity()) return false;
+        std::construct_at(data() + count_, value);
+        ++count_;
+        return true;
+    }
+  private:
+    std::span<T> storage_;
+    std::size_t count_{};
+};
+
+template<class T>
+[[nodiscard]] auto arena_array(frame_arena_t& arena, std::size_t capacity) noexcept
+    -> frame_span<T> {
+    static_assert(std::is_trivially_copyable_v<T>);
+    if (capacity == 0 || capacity > std::numeric_limits<std::size_t>::max() / sizeof(T))
+        return {};
+    const auto allocation = arena.allocate_bytes(capacity * sizeof(T), alignof(T));
+    if (!allocation) return {};
+    return frame_span<T>{std::span<T>{static_cast<T*>(allocation.data), capacity}};
+}
+// Returns null on arena exhaustion; the publishing unit sets its existing
+// truncation flag instead of exposing an unterminated or partial label.
+[[nodiscard]] auto arena_string(frame_arena_t& arena, std::string_view value) noexcept
+    -> const char*;
+[[nodiscard]] auto arena_format(frame_arena_t& arena, const char* format, ...) noexcept
+    -> const char*;
 
 struct flattened_workspace_t {
     WormUiWorkspaceView view{};

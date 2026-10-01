@@ -1,4 +1,7 @@
 #include "sys/workspace_projection.h"
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
 
 #include "sys/compose_resource_presenter.h"
 #include "wormedit/config.h"
@@ -18,6 +21,37 @@
 #include <vector>
 
 namespace wormedit::sys {
+
+auto arena_string(frame_arena_t& arena, std::string_view value) noexcept -> const char* {
+    if (value.size() == std::numeric_limits<std::size_t>::max()) return nullptr;
+    const auto allocation = arena.allocate_bytes(value.size() + 1, alignof(char));
+    if (!allocation) return nullptr;
+    auto* text = static_cast<char*>(allocation.data);
+    if (!value.empty()) std::memcpy(text, value.data(), value.size());
+    text[value.size()] = '\0';
+    return text;
+}
+
+auto arena_format(frame_arena_t& arena, const char* format, ...) noexcept -> const char* {
+    if (!format) return nullptr;
+    std::va_list arguments;
+    va_start(arguments, format);
+    std::va_list sizing;
+    va_copy(sizing, arguments);
+    const auto length = std::vsnprintf(nullptr, 0, format, sizing);
+    va_end(sizing);
+    const auto allocation = length < 0 ? arena_allocation_t{}
+        : arena.allocate_bytes(static_cast<std::size_t>(length) + 1, alignof(char));
+    if (!allocation) {
+        va_end(arguments);
+        return nullptr;
+    }
+    auto* text = static_cast<char*>(allocation.data);
+    const auto written = std::vsnprintf(text, static_cast<std::size_t>(length) + 1,
+                                         format, arguments);
+    va_end(arguments);
+    return written == length ? text : nullptr;
+}
 namespace {
 
 constexpr std::array<const char*, WORM_UI_WORKSPACE_TAB_COUNT> tab_labels{

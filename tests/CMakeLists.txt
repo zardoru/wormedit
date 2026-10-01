@@ -435,13 +435,15 @@ endif()
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_frame_projection_arena_tests
         sys/frame_projection_arena_tests.cpp
-        ../src/sys/frame_timing.cpp)
+        ../src/sys/frame_timing.cpp
+        ../src/sys/workspace_projection.cpp
+        ../src/sys/compose_resource_presenter.cpp)
     target_include_directories(wormedit_frame_projection_arena_tests PRIVATE
-        "${CMAKE_SOURCE_DIR}/src")
+        "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/generated")
     target_compile_definitions(wormedit_frame_projection_arena_tests PRIVATE
         $<$<CONFIG:Debug>:WORMEDIT_FRAME_ALLOCATION_HOOK=1>)
     target_link_libraries(wormedit_frame_projection_arena_tests PRIVATE
-        SDL3::SDL3 Catch2::Catch2WithMain)
+        wormedit::core SDL3::SDL3 Catch2::Catch2WithMain)
     catch_discover_tests(wormedit_frame_projection_arena_tests TEST_PREFIX "frame-arena."
         PROPERTIES LABELS "unit;sys;performance" DISCOVERY_MODE PRE_TEST)
 endif()

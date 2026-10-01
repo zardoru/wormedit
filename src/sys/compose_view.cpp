@@ -2269,6 +2269,32 @@ void discard_compose_static_source(compose_scene_cache_t& cache) {
     cache.static_projection_source_generation = 0;
     cache.static_projection_index_bytes = 0;
 }
+auto make_compose_static_view(const WormUiComposeView& view,
+                              const wormedit::editor_interaction_view_model_t& expanded)
+    -> WormUiComposeView {
+    // Persistent scene storage retains scalar geometry/style identity only.
+    // Every pointer is published from independently owned static projection data.
+    WormUiComposeView retained{};
+    retained.visible = view.visible;
+    retained.scene_available = view.scene_available;
+    retained.bms_measure_labels = view.bms_measure_labels;
+    retained.downscroll = view.downscroll;
+    retained.lane_key_legend_visible = view.lane_key_legend_visible;
+    retained.project_id = view.project_id;
+    retained.chart_id = view.chart_id;
+    retained.document_revision = view.document_revision;
+    retained.static_scene_style_generation = view.static_scene_style_generation;
+    retained.viewport_width_pixels = view.viewport_width_pixels;
+    retained.bgm_horizontal_scroll_pixels = view.bgm_horizontal_scroll_pixels;
+    retained.playable_field_left_pixels = view.playable_field_left_pixels;
+    retained.playable_field_right_pixels = view.playable_field_right_pixels;
+    retained.timing_lane_visibility_mask = view.timing_lane_visibility_mask;
+    retained.pixels_per_standard_measure = view.pixels_per_standard_measure;
+    retained.viewport_height_pixels = expanded.viewport_height_pixels;
+    retained.area_scroll_pixels = expanded.viewport_scroll_pixels;
+    return retained;
+}
+
 void refresh_compose_static_source(const compose_scene_projection_context_t& projection,
                                   compose_scene_cache_t& cache, std::uint64_t canvas_rows) {
     auto& view = projection.view;
@@ -2291,10 +2317,7 @@ void refresh_compose_static_source(const compose_scene_projection_context_t& pro
     discard_compose_static_source(cache);
     auto storage = std::make_shared<flattened_workspace_t>();
     auto& retained = storage->view.compose;
-    retained = view;
-    retained.static_scene = nullptr;
-    retained.viewport_height_pixels = cache.scene_window.view.viewport_height_pixels;
-    retained.area_scroll_pixels = cache.scene_window.view.viewport_scroll_pixels;
+    retained = make_compose_static_view(view, cache.scene_window.view);
     const compose_scene_projection_context_t expanded{
         *storage, projection.chart, projection.index, *cache.scene_window.scene,
         projection.history, projection.application_state, cache.scene_window.view, retained,

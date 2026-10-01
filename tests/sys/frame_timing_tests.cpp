@@ -14,6 +14,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include <cstdio>
+#include <cstring>
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -1687,4 +1688,109 @@ TEST_CASE("Compose overview detail identity and cleared cache publish unique gen
     const auto cleared = fixture.project(fixture.flattened, &replacement);
     expect_compose_test(cleared > identity);
     expect_compose_test(fixture.project(fixture.flattened, &replacement) == cleared);
+}
+
+namespace {
+void check_static_source_has_no_frame_overlays(const WormUiComposeView& source) {
+    expect_compose_test(!source.status_text && !source.selected_note_label && !source.hover_tooltip);
+    expect_compose_test(!source.paste_ghosts && source.paste_ghost_count == 0 && !source.paste_diagnostic);
+    expect_compose_test(!source.resources && source.resource_count == 0);
+    expect_compose_test(!source.output_groups && source.output_group_count == 0);
+    expect_compose_test(!source.branch_rows && source.branch_row_count == 0);
+    expect_compose_test(!source.branch_choices && source.branch_choice_count == 0);
+    expect_compose_test(source.branch_diagnostic_count == 0);
+    for (const auto* diagnostic : source.branch_diagnostics) expect_compose_test(!diagnostic);
+}
+void check_static_source_has_no_frame_markers(const WormUiComposeView& source) {
+    expect_compose_test(!source.beat_bookmarks && source.beat_bookmark_count == 0);
+    expect_compose_test(!source.beat_sections && source.beat_section_count == 0);
+    expect_compose_test(!source.audio_bookmarks && source.audio_bookmark_count == 0);
+    expect_compose_test(!source.audio_sections && source.audio_section_count == 0);
+    expect_compose_test(!source.semantic_layers && source.semantic_layer_count == 0);
+    expect_compose_test(!source.staged_bmson_marker_playable_lanes && !source.staged_bmson_marker_restarts &&
+        source.staged_bmson_marker_count == 0);
+    expect_compose_test(!source.lane_key_bindings && source.lane_key_binding_count == 0);
+}
+void check_static_source_has_no_frame_previews(const WormUiComposeView& source) {
+    expect_compose_test(!source.proposed_grid_lines && source.proposed_grid_line_count == 0);
+    expect_compose_test(!source.timing_preview_rects && source.timing_preview_rect_count == 0);
+    expect_compose_test(!source.timing_preview_markers && source.timing_preview_marker_count == 0);
+    expect_compose_test(!source.waveform_rows && source.waveform_row_count == 0);
+    expect_compose_test(!source.channel_waveform_rows && source.channel_waveform_row_count == 0);
+    expect_compose_test(!source.waveform_overview_rows && source.waveform_overview_row_count == 0);
+    expect_compose_test(!source.bmson_marker_drafts && source.bmson_marker_draft_count == 0);
+    expect_compose_test(!source.bmson_marker_move_preview && !source.cursor && !source.static_scene);
+}
+void project_static_source_arena_frame(compose_test_fixture_t& fixture, wormedit::frame_arena_t& arena) {
+    workspace_view_t model;
+    model.active_tab = workspace_tab_t::compose;
+    model.tab_view = workspace_compose_view_t{.chart = chart_id_t{1}};
+    fixture.flattened = flatten_workspace(model, fixture.history.document, "ready", {}, false, {}, &arena);
+    populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.workspace,
+        fixture.cache, 1280, 980, fixture.interaction, fixture.application, nullptr);
+    expect_compose_test(fixture.flattened.view.compose.scene_available);
+    expect_compose_test(fixture.flattened.view.compose.resource_count == 1);
+    expect_compose_test(fixture.flattened.view.compose.output_group_count == 1);
+    expect_compose_test(fixture.flattened.view.compose.static_scene != nullptr);
+}
+void check_static_source_owned_geometry(const flattened_workspace_t& storage) {
+    const auto& source = storage.view.compose;
+    expect_compose_test(source.bands == storage.compose.band.data());
+    expect_compose_test(source.lanes == storage.compose.lane.data());
+    expect_compose_test(source.grid_lines == storage.compose.grid.line.data());
+    expect_compose_test(source.differences == storage.compose.difference.data());
+    expect_compose_test(source.note_endpoints == storage.compose.note.data());
+    expect_compose_test(source.hold_bodies == storage.compose.hold.data());
+    expect_compose_test(source.bgm_lanes == storage.compose.bgm.lane.data());
+    expect_compose_test(source.bgm_events == storage.compose.bgm.event.data());
+    expect_compose_test(source.timing_markers == storage.compose.timing_marker.data());
+    check_static_source_has_no_frame_overlays(source);
+    check_static_source_has_no_frame_markers(source);
+    check_static_source_has_no_frame_previews(source);
+}
+}
+TEST_CASE("Persistent Compose static source owns geometry across frame arena reset",
+          "[sys][frame-arena][static-source-lifetime]") {
+    auto song = compose_test_song();
+    song.audio_assets.push_back({.id = asset_id_t{9}, .source_path = "sample.wav"});
+    song.resources.push_back({.id = resource_id_t{9}, .name = "Long independently owned sound label",
+        .asset = asset_id_t{9}, .roles = {resource_role_t::sample}});
+    song.output_groups.push_back({.name = "Disposable frame output group",
+        .charts = {chart_id_t{1}}, .relative_output_path = "exports/chart.bms"});
+    song.charts.front().measures.front().notes.front().sound = resource_id_t{9};
+    compose_test_fixture_t fixture(std::move(song));
+    wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    project_static_source_arena_frame(fixture, arena);
+    const auto stored = fixture.cache.static_scene_storage;
+    const auto generation = fixture.cache.static_scene_source_generation;
+    check_static_source_owned_geometry(*stored);
+    expect_compose_test(!stored->compose.note.empty());
+    const auto before = stored->compose.note.front();
+    const std::string label = before.sound_label;
+    const std::string detail = before.sound_detail;
+    expect_compose_test(!stored->compose.timing_marker.empty());
+    const auto timing = stored->compose.timing_marker.front();
+    const std::string timing_label = timing.short_label;
+    const std::string timing_detail = timing.detail;
+    fixture.flattened = {};
+    arena.reset();
+    const auto overwritten = arena.allocate_bytes(4096, alignof(char));
+    expect_compose_test(static_cast<bool>(overwritten));
+    std::memset(overwritten.data, 0xA5, 4096);
+    expect_compose_test(stored->compose.note.front().note_id == before.note_id);
+    expect_compose_test(stored->compose.note.front().bounds.top == before.bounds.top);
+    expect_compose_test(std::strcmp(stored->compose.note.front().sound_label, label.c_str()) == 0);
+    expect_compose_test(std::strcmp(stored->compose.note.front().sound_detail, detail.c_str()) == 0);
+    expect_compose_test(std::strcmp(stored->compose.timing_marker.front().short_label, timing_label.c_str()) == 0);
+    expect_compose_test(std::strcmp(stored->compose.timing_marker.front().detail, timing_detail.c_str()) == 0);
+    fixture.interaction->viewport_scroll_pixels = 0.5;
+    project_static_source_arena_frame(fixture, arena);
+    expect_compose_test(fixture.cache.static_scene_storage == stored);
+    expect_compose_test(fixture.cache.static_scene_source_generation == generation);
+    check_static_source_owned_geometry(*fixture.cache.static_scene_storage);
+    ++fixture.history.document.revision;
+    project_static_source_arena_frame(fixture, arena);
+    expect_compose_test(fixture.cache.static_scene_storage != stored);
+    expect_compose_test(fixture.cache.static_scene_source_generation > generation);
+    check_static_source_owned_geometry(*fixture.cache.static_scene_storage);
 }

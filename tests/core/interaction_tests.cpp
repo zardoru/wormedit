@@ -4361,3 +4361,21 @@ TEST_CASE("configured playback anchors reach both chart ends at zero and one hun
         expect_configured_follow(std::holds_alternative<editor_interaction_view_model_t>(inspect_editor_interaction(history, state)));
     }
 }
+
+TEST_CASE("configured follow publishes its validated margins to scene consumers",
+          "[unit][core][interaction][anchor-scene]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.viewport_height_pixels = 400;
+    state.pixels_per_standard_measure = 400;
+    for (const double anchor : {0.2, 0.35, 0.1}) {
+        require_configured_follow(sys::follow_compose_playhead(history, state, 0, true, {}, anchor));
+        const auto inspected = inspect_editor_interaction(history, state);
+        require_configured_follow(std::holds_alternative<editor_interaction_view_model_t>(inspected));
+        const auto& visible = std::get<editor_interaction_view_model_t>(inspected);
+        expect_configured_follow(visible.viewport_minimum_margin_fraction == std::max(0.2, anchor));
+        expect_configured_follow(visible.viewport_end_margin_fraction == std::min(0.2, anchor));
+        expect_configured_follow(visible.viewport_scroll_pixels == -400 * anchor);
+        expect_configured_follow(history.undo.empty());
+    }
+}

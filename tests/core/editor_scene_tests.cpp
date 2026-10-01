@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <limits>
 #include <ranges>
 #include <variant>
 #include <tuple>
@@ -1289,4 +1290,95 @@ TEST_CASE("Compose scene window preserves primitive rejection when cursor enters
     check_window_rejection(reused, fresh);
     CHECK_FALSE(window.scene);
     CHECK(window.reuse_count == 0);
+}
+
+namespace {
+void expect_rejected_anchor_scene(const wormedit::chart_document_t& chart,
+    const wormedit::editor_field_scene_index_t& index,
+    const wormedit::editor_interaction_view_model_t& current,
+    const wormedit::editor_field_scene_request_t& request,
+    wormedit::editor_field_scene_window_t& window) {
+    CHECK_FALSE(wormedit::make_editor_field_scene(chart, index, current, request));
+    CHECK_FALSE(wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window));
+}
+void check_configured_scene_window(const wormedit::chart_document_t& chart,
+    const wormedit::editor_field_scene_index_t& index,
+    wormedit::editor_field_scroll_direction_t direction, double anchor, double height) {
+    auto current = view();
+    current.viewport_height_pixels = height;
+    current.viewport_minimum_margin_fraction = std::max(0.2, anchor);
+    current.viewport_end_margin_fraction = std::min(0.2, anchor);
+    wormedit::editor_field_scene_request_t request{
+        .field_left_pixels = 10, .field_width_pixels = 200, .scroll_direction = direction};
+    wormedit::editor_field_scene_window_t window;
+    const double minimum = -height * current.viewport_minimum_margin_fraction;
+    const double maximum = wormedit::editor_maximum_viewport_scroll(384.0, height,
+        current.viewport_end_margin_fraction);
+    for (const double scroll : {0.0, minimum, minimum + 0.5, maximum - 0.5, maximum}) {
+        current.viewport_scroll_pixels = scroll;
+        check_reused_frame(chart, index, current, request, window);
+    }
+    REQUIRE(window.reuse_count > 0);
+    for (const double scroll : {minimum - 0.01, maximum + 0.01}) {
+        current.viewport_scroll_pixels = scroll;
+        expect_rejected_anchor_scene(chart, index, current, request, window);
+    }
+}
+}
+TEST_CASE("configured margins keep fresh and cached scene primitives bounded in both directions",
+          "[editor-scene][anchor-scene]") {
+    const auto chart = scene_chart();
+    const auto index = std::get<wormedit::editor_field_scene_index_t>(
+        wormedit::build_editor_field_scene_index(chart, 7));
+    for (const auto direction : {wormedit::editor_field_scroll_direction_t::up,
+                                 wormedit::editor_field_scroll_direction_t::down})
+        for (const double anchor : {0.2, 0.35, 0.1})
+            for (const double height : {192.0, 600.0})
+                check_configured_scene_window(chart, index, direction, anchor, height);
+}
+TEST_CASE("scene margin validation rejects invalid values and retains default twenty percent",
+          "[editor-scene][anchor-scene]") {
+    const auto chart = scene_chart();
+    const auto index = std::get<wormedit::editor_field_scene_index_t>(
+        wormedit::build_editor_field_scene_index(chart, 7));
+    auto current = view();
+    const wormedit::editor_field_scene_request_t request{.field_left_pixels = 10, .field_width_pixels = 200};
+    wormedit::editor_field_scene_window_t window;
+    REQUIRE(wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window));
+    current.viewport_scroll_pixels = -current.viewport_height_pixels * 0.35;
+    CHECK_FALSE(wormedit::make_editor_field_scene(chart, index, current, request));
+    CHECK_FALSE(wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window));
+    current.viewport_scroll_pixels = 0;
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double infinity = std::numeric_limits<double>::infinity();
+    for (const auto [minimum, end] : {std::pair{0.19, 0.2}, std::pair{1.01, 0.2},
+                                    std::pair{0.2, -0.01}, std::pair{0.2, 0.21},
+                                    std::pair{nan, 0.2}, std::pair{0.2, nan}, std::pair{infinity, 0.2}}) {
+        current.viewport_minimum_margin_fraction = minimum;
+        current.viewport_end_margin_fraction = end;
+        CHECK_FALSE(wormedit::make_editor_field_scene(chart, index, current, request));
+        CHECK_FALSE(wormedit::make_editor_field_scene_reusing_window(chart, index, current, request, window));
+    }
+}
+
+TEST_CASE("cached scene validates changed margins instead of retaining its old allowance",
+          "[editor-scene][anchor-scene]") {
+    const auto chart = scene_chart();
+    const auto index = std::get<wormedit::editor_field_scene_index_t>(
+        wormedit::build_editor_field_scene_index(chart, 7));
+    auto current = view();
+    const wormedit::editor_field_scene_request_t request{.field_left_pixels = 10, .field_width_pixels = 200};
+    wormedit::editor_field_scene_window_t window;
+    check_reused_frame(chart, index, current, request, window);
+    current.viewport_minimum_margin_fraction = 0.35;
+    current.viewport_scroll_pixels = -current.viewport_height_pixels * 0.35;
+    check_reused_frame(chart, index, current, request, window);
+    REQUIRE(window.reuse_count > 0);
+    const auto reused = window.reuse_count;
+    current.viewport_minimum_margin_fraction = 0.2;
+    expect_rejected_anchor_scene(chart, index, current, request, window);
+    CHECK(window.reuse_count == reused);
+    current.viewport_scroll_pixels = 0;
+    current.viewport_end_margin_fraction = 0.1;
+    check_reused_frame(chart, index, current, request, window);
 }

@@ -371,9 +371,9 @@ auto maximum_viewport_scroll(const chart_document_t& chart, const measure_index_
         viewport_height <= 0.0) {
         return std::nullopt;
     }
-    if (!std::isfinite(end_fraction) || end_fraction < 0.0 || end_fraction > editor_cursor_edge_margin_fraction)
+    if (!editor_viewport_margins_valid(editor_cursor_edge_margin_fraction, end_fraction))
         return std::nullopt;
-    return std::max(0.0, content_height - viewport_height * end_fraction);
+    return editor_maximum_viewport_scroll(content_height, viewport_height, end_fraction);
 }
 
 auto minimum_viewport_scroll(double viewport_height) -> double {
@@ -472,9 +472,6 @@ auto valid_view_snap(const chart_document_t& chart,
         chart.divisions_per_standard_measure % state.active_snap_denominator == 0;
 }
 
-auto valid_viewport_margin(double fraction) -> bool {
-    return std::isfinite(fraction) && fraction >= editor_cursor_edge_margin_fraction && fraction <= 1.0;
-}
 auto valid_viewport(const chart_document_t& chart, const measure_index_t& index,
                     const editor_interaction_state_t& state) -> bool {
     const auto maximum = maximum_viewport_scroll(
@@ -483,7 +480,8 @@ auto valid_viewport(const chart_document_t& chart, const measure_index_t& index,
         state.pixels_per_standard_measure < minimum_pixels_per_standard_measure ||
         state.pixels_per_standard_measure > maximum_pixels_per_standard_measure ||
         !maximum || !std::isfinite(state.viewport_scroll_pixels) ||
-        !valid_viewport_margin(state.viewport_minimum_margin_fraction) ||
+        !editor_viewport_margins_valid(state.viewport_minimum_margin_fraction,
+                                       state.viewport_end_margin_fraction) ||
         state.viewport_scroll_pixels < -state.viewport_height_pixels * state.viewport_minimum_margin_fraction ||
         state.viewport_scroll_pixels > *maximum) return false;
     if (state.fixed_cursor_screen_y_pixels &&
@@ -624,6 +622,8 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .pixels_per_standard_measure = state.pixels_per_standard_measure,
         .viewport_scroll_pixels = state.viewport_scroll_pixels,
         .viewport_height_pixels = state.viewport_height_pixels,
+        .viewport_minimum_margin_fraction = state.viewport_minimum_margin_fraction,
+        .viewport_end_margin_fraction = state.viewport_end_margin_fraction,
         .fixed_cursor_screen_y_pixels = state.fixed_cursor_screen_y_pixels,
         .scroll_direction = state.scroll_direction, .pending_hold = state.pending_hold,
         .additional_keyboard_holds = state.additional_keyboard_holds,
@@ -1507,9 +1507,8 @@ namespace {
 auto prepare_follow_view_state(const document_history_t& history, const chart_document_t& chart,
     const measure_index_t& index, const editor_interaction_state_t& state, double fraction)
     -> std::variant<editor_interaction_state_t, diagnostic_list_t> {
-    if (!valid_viewport_margin(state.viewport_minimum_margin_fraction) ||
-        !std::isfinite(state.viewport_end_margin_fraction) || state.viewport_end_margin_fraction < 0.0 ||
-        state.viewport_end_margin_fraction > editor_cursor_edge_margin_fraction)
+    if (!editor_viewport_margins_valid(state.viewport_minimum_margin_fraction,
+                                       state.viewport_end_margin_fraction))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution, "playhead viewport margin is invalid")};
     auto proposed = state;
     proposed.viewport_minimum_margin_fraction = std::max(editor_cursor_edge_margin_fraction, fraction);

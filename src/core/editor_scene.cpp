@@ -46,8 +46,9 @@ auto finite_nonnegative(double value) -> bool {
     return std::isfinite(value) && value >= 0.0;
 }
 
-auto viewport_scroll_in_range(double scroll, double height, long double maximum) -> bool {
-    return std::isfinite(scroll) && scroll >= -height * 0.2 &&
+auto viewport_scroll_in_range(double scroll, double height, long double maximum,
+                              double minimum_fraction) -> bool {
+    return std::isfinite(scroll) && scroll >= -height * minimum_fraction &&
            static_cast<long double>(scroll) <= maximum;
 }
 
@@ -487,7 +488,9 @@ auto valid_scene_view(const editor_interaction_view_model_t& view) -> bool {
            view.pixels_per_standard_measure >= minimum_pixels_per_standard_measure &&
            view.pixels_per_standard_measure <= maximum_pixels_per_standard_measure &&
            std::isfinite(view.viewport_scroll_pixels) &&
-           std::isfinite(view.viewport_height_pixels) && view.viewport_height_pixels > 0.0;
+           std::isfinite(view.viewport_height_pixels) && view.viewport_height_pixels > 0.0 &&
+           editor_viewport_margins_valid(view.viewport_minimum_margin_fraction,
+                                         view.viewport_end_margin_fraction);
 }
 
 struct scene_geometry_context_t {
@@ -1871,9 +1874,10 @@ auto prepare_scene_visible_rows(const chart_document_t& chart,
     const auto content_height = static_cast<double>(*canvas_rows) * view.pixels_per_standard_measure /
                                 static_cast<double>(chart.divisions_per_standard_measure);
     const auto maximum_scroll =
-        editor_maximum_viewport_scroll(content_height, view.viewport_height_pixels);
+        editor_maximum_viewport_scroll(content_height, view.viewport_height_pixels,
+                                       view.viewport_end_margin_fraction);
     if (!viewport_scroll_in_range(view.viewport_scroll_pixels, view.viewport_height_pixels,
-                                  maximum_scroll)) {
+                                  maximum_scroll, view.viewport_minimum_margin_fraction)) {
         diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
                                     "field-scene viewport scroll exceeds chart content"));
         return std::nullopt;
@@ -2196,7 +2200,8 @@ auto rebuild_scene_window(const chart_document_t& chart, const editor_field_scen
     const auto content_height = static_cast<double>(*canvas) * view.pixels_per_standard_measure /
         static_cast<double>(chart.divisions_per_standard_measure);
     expanded.viewport_scroll_pixels = std::min(expanded.viewport_scroll_pixels,
-        editor_maximum_viewport_scroll(content_height, expanded.viewport_height_pixels));
+        editor_maximum_viewport_scroll(content_height, expanded.viewport_height_pixels,
+                                                expanded.viewport_end_margin_fraction));
     auto composed = make_editor_field_scene(chart, index, expanded, request);
     if (!composed) return false;
     window.scene = std::move(composed.scene);
@@ -2228,7 +2233,9 @@ auto make_editor_field_scene_reusing_window(const chart_document_t& chart,
     const auto content_height = static_cast<double>(window.canvas_rows) * view.pixels_per_standard_measure /
         static_cast<double>(chart.divisions_per_standard_measure);
     if (!viewport_scroll_in_range(view.viewport_scroll_pixels, view.viewport_height_pixels,
-        editor_maximum_viewport_scroll(content_height, view.viewport_height_pixels)))
+        editor_maximum_viewport_scroll(content_height, view.viewport_height_pixels,
+                                       view.viewport_end_margin_fraction),
+        view.viewport_minimum_margin_fraction))
         return make_editor_field_scene(chart, index, view, request);
     auto result = project_scene_window(chart, index, view, request, window);
     if (!projected_window_fits_limit(result, request)) {

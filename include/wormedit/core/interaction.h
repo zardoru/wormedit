@@ -3,6 +3,7 @@
 #include <wormedit/core/command.h>
 
 #include <compare>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -23,11 +24,21 @@ inline constexpr double editor_cursor_edge_margin_fraction = 0.2;
 // Scrolling may run past either end of the chart by the edge margin, so the playback
 // anchor (edge margin from the chart-start side) reaches both the first and last rows.
 template <typename T>
-[[nodiscard]] constexpr auto editor_maximum_viewport_scroll(T content_height, T viewport_height)
+[[nodiscard]] constexpr auto editor_maximum_viewport_scroll(T content_height, T viewport_height,
+    T end_margin_fraction = static_cast<T>(editor_cursor_edge_margin_fraction))
     -> T {
     const auto maximum =
-        content_height - viewport_height * static_cast<T>(editor_cursor_edge_margin_fraction);
+        content_height - viewport_height * end_margin_fraction;
     return maximum > T{} ? maximum : T{};
+}
+
+// Following may extend the chart-start margin to its validated anchor. The chart-end
+// margin may shrink to that anchor; ordinary callers retain the original 20 percent.
+[[nodiscard]] inline auto editor_viewport_margins_valid(double minimum_fraction,
+                                                       double end_fraction) noexcept -> bool {
+    return std::isfinite(minimum_fraction) && minimum_fraction >= editor_cursor_edge_margin_fraction &&
+           minimum_fraction <= 1.0 && std::isfinite(end_fraction) && end_fraction >= 0.0 &&
+           end_fraction <= editor_cursor_edge_margin_fraction;
 }
 
 enum class interaction_direction_t {
@@ -616,6 +627,8 @@ struct editor_interaction_view_model_t {
     double pixels_per_standard_measure{default_pixels_per_standard_measure};
     double viewport_scroll_pixels{};
     double viewport_height_pixels{1.0};
+    double viewport_minimum_margin_fraction{editor_cursor_edge_margin_fraction};
+    double viewport_end_margin_fraction{editor_cursor_edge_margin_fraction};
     std::optional<double> fixed_cursor_screen_y_pixels;
     editor_field_scroll_direction_t scroll_direction{editor_field_scroll_direction_t::up};
     std::optional<pending_hold_t> pending_hold;

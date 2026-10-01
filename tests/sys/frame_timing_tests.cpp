@@ -1356,3 +1356,39 @@ TEST_CASE("Compose overview BGM presence follows the full cached chart index",
     fixture.project();
     expect_compose_test(!fixture.flattened.view.compose.has_bgm_events);
 }
+
+namespace {
+void project_anchor_scene(compose_test_fixture_t& fixture, int height) {
+    fixture.flattened = {};
+    fixture.flattened.view.compose.visible = true;
+    populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.workspace,
+        fixture.cache, 1280, height, fixture.interaction, fixture.application, nullptr);
+    INFO(fixture.flattened.compose.status);
+    expect_compose_test(fixture.flattened.view.compose.scene_available);
+}
+void check_short_chart_anchor_frame(compose_test_fixture_t& fixture, int height,
+                                     double row, bool playing) {
+    project_anchor_scene(fixture, height);
+    expect_compose_test(follow_compose_playhead(fixture.history, *fixture.interaction,
+                                                row, playing, {}, 0.35));
+    project_anchor_scene(fixture, height);
+    expect_compose_test(fixture.interaction->cursor.row == (row == 0 ? 0 : 720));
+    if (playing && row == 0)
+        expect_compose_test(fixture.interaction->viewport_scroll_pixels ==
+                           -fixture.interaction->viewport_height_pixels * 0.35);
+    expect_compose_test(fixture.history.undo.empty());
+}
+}
+TEST_CASE("Configured anchor projects a short chart through audio-tail rows stop and resize",
+          "[sys][anchor-scene]") {
+    for (const std::uint32_t direction : {1U, 2U}) {
+        compose_test_fixture_t fixture;
+        fixture.application.editor_preferences.scroll_directions.fill(direction);
+        for (const int height : {980, 640, 1100}) {
+            check_short_chart_anchor_frame(fixture, height, 0, true);
+            check_short_chart_anchor_frame(fixture, height, 9600, true);
+            check_short_chart_anchor_frame(fixture, height, 9600, false);
+            check_short_chart_anchor_frame(fixture, height, 0, false);
+        }
+    }
+}

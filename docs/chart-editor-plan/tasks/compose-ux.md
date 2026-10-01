@@ -582,7 +582,7 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 
 ## T-306 Honor the configured playhead anchor in scene validation
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** A valid configured playhead anchor such as 35 percent renders a valid Compose scene during playback, Stop and audio-tail seeking instead of reporting viewport scroll outside chart content.
 - **Read first:** `src/core/editor_scene.cpp`, `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/compose_playhead_cursor.h`, `src/sys/compose_view.cpp`.
 - **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `include/wormedit/core/editor_scene.h`, `src/core/editor_scene.cpp`, `src/sys/compose_playhead_cursor.h`, `src/sys/compose_view.cpp/.h`, `tests/core/interaction_tests.cpp`, `tests/core/editor_scene_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
@@ -590,4 +590,5 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 - **Invariants:** Existing chart/document data and selection stay unchanged; scene validation remains bounded and rejects invalid scroll; default callers remain compatible.
 - **Reject/failure behavior:** Invalid parameters reject without mutation; cached and fresh scene paths agree on valid bounds.
 - **Verify:** standard build/test; configured clang-tidy; isolated Xvfb/SDL-dummy short-chart audio-tail playback and Stop checks with 35 percent anchor.
+- **Evidence:** Authoritative application build passed; full suite passed 1207/1207 (54.63 s), and focused checkpoint passed 49/49, including same-window margin changes. Configured clang-tidy found no new complexity violations. Fresh and cached scenes agree at default 20 percent, configured 35 percent and 10 percent end margins in both directions; invalid margins and out-of-bounds scroll reject. Real isolated Xvfb/SDL-dummy checks at 35 percent verified Play, short-chart audio-tail seeking, Stop and resize in upscroll/downscroll without chart mutation. Literal Compose smoke passed and its PNG was inspected. Reproduction, logs, scripts and inspected PNGs: `/tmp/wormedit-t306/`; final smoke: `/tmp/wormedit-t306/final-smoke.png`.
 - **Out of scope:** T-272 measure-index borrowing, overview placement, unrelated rendering optimizations.

@@ -381,7 +381,7 @@ void counted_window(nk_context* context, const char* name, struct nk_rect bounds
     nk_end(context);
 }
 void diagnostic_window(nk_context* context) {
-    const uncounted_window_scope_t uncounted{context};
+    const diagnostic_window_scope_t diagnostic{context};
     if (nk_begin(context, "diagnostics", nk_rect(64, 0, 64, 128),
                  NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
         nk_layout_row_dynamic(context, 18, 1);
@@ -393,7 +393,12 @@ void diagnostic_window(nk_context* context) {
     }
     nk_end(context);
 }
-auto measured_frame(backend_fixture_t& backend, bool diagnostics) -> WormUiFrameGpuWork {
+struct measured_work_t {
+    WormUiFrameGpuWork application{};
+    WormUiFrameGpuWork diagnostic{};
+    bool diagnostic_available{};
+};
+auto measured_frame(backend_fixture_t& backend, bool diagnostics) -> measured_work_t {
     SDL_SetRenderDrawColor(backend.renderer, 0, 0, 0, 255);
     SDL_RenderClear(backend.renderer);
     nk_input_begin(backend.context);
@@ -407,7 +412,8 @@ auto measured_frame(backend_fixture_t& backend, bool diagnostics) -> WormUiFrame
     timer.end_frame();
     const auto view = worm_ui_frame_timing_view();
     expect_backend(view.gpu_work_available);
-    return view.gpu_work_latest;
+    return {view.gpu_work_latest, view.diagnostic_gpu_work_latest,
+            view.diagnostic_gpu_work_available != 0};
 }
 auto red_pixels(const std::vector<unsigned char>& pixels) -> std::size_t {
     std::size_t count = 0;
@@ -424,19 +430,30 @@ void expect_same_geometry(const WormUiFrameGpuWork& left, const WormUiFrameGpuWo
 }
 } // namespace
 
-TEST_CASE("SDL backend draws uncounted windows without recording their GPU work",
+TEST_CASE("SDL backend records diagnostic window GPU work apart from the application",
           "[ui][sdl-backend]") {
     backend_fixture_t backend;
-    // First frame: the diagnostic window sits between the counted ones in z-order.
+    // First frame: the diagnostic window sits between the application ones in z-order.
     const auto between = measured_frame(backend, true);
     expect_backend(red_pixels(backend_pixels(backend)) > 0);
     measured_frame(backend, false);
     const auto plain = measured_frame(backend, false);
-    expect_backend(plain.vertices > 0 && plain.draw_calls > 0);
+    expect_backend(plain.application.vertices > 0 && plain.application.draw_calls > 0);
+    expect_backend(!plain.diagnostic_available);
     expect_backend(red_pixels(backend_pixels(backend)) == 0);
-    // Reopened, it is last in z-order; both orders must leave the counts unchanged.
+    // Reopened, it is last in z-order; both orders leave the application counts unchanged.
     const auto last = measured_frame(backend, true);
     expect_backend(red_pixels(backend_pixels(backend)) > 0);
-    expect_same_geometry(between, plain);
-    expect_same_geometry(last, plain);
+    expect_same_geometry(between.application, plain.application);
+    expect_same_geometry(last.application, plain.application);
+    for (const auto& frame : {between, last}) {
+        expect_backend(frame.diagnostic_available);
+        expect_backend(frame.diagnostic.vertices > 0 && frame.diagnostic.indices > 0);
+        expect_backend(frame.diagnostic.draw_calls > 0);
+    }
+    expect_same_geometry(between.diagnostic, last.diagnostic);
+    // Each pass tracks its own clip and texture state from its own first draw.
+    expect_backend(last.diagnostic.clip_rect_changes < last.diagnostic.draw_calls);
+    expect_backend(last.application.clip_rect_changes == plain.application.clip_rect_changes);
+    expect_backend(last.application.texture_switches == plain.application.texture_switches);
 }

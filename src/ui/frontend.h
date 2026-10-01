@@ -1925,14 +1925,20 @@ typedef struct WormUiFrameTimingView {
     uint64_t projection_heap_bytes_latest;
     WormUiFrameGpuWorkStats projection_heap_allocations;
     WormUiFrameGpuWorkStats projection_heap_bytes;
+    // Application GPU work excludes diagnostic windows (the frame-timing panel),
+    // whose own submission is reported separately in the diagnostic_* fields.
     uint32_t gpu_work_available;
     WormUiFrameGpuWork gpu_work_latest;
     const char* gpu_work_names[WORM_UI_FRAME_GPU_WORK_COUNT];
     WormUiFrameGpuWorkStats gpu_work[WORM_UI_FRAME_GPU_WORK_COUNT];
+    uint32_t diagnostic_gpu_work_available;
+    WormUiFrameGpuWork diagnostic_gpu_work_latest;
+    WormUiFrameGpuWorkStats diagnostic_gpu_work[WORM_UI_FRAME_GPU_WORK_COUNT];
 } WormUiFrameTimingView;
 // Called only while the frontend's diagnostic overlay is visible.
 WormUiFrameTimingView worm_ui_frame_timing_view(void);
 void worm_ui_frame_timing_record_gpu_work(WormUiFrameGpuWork work);
+void worm_ui_frame_timing_record_diagnostic_gpu_work(WormUiFrameGpuWork work);
 typedef enum WormUiFrameRenderPhase {
     WORM_UI_FRAME_RENDER_CONVERT,
     WORM_UI_FRAME_RENDER_SUBMIT,

@@ -1733,20 +1733,40 @@ static void render_empty_project_window(const WorkspaceRenderContext& frame) {
     render_project_modals(frame);
 }
 
-static void render_gpu_work_summary(const WormUiFrameTimingView& timer) {
-    const uint64_t latest[WORM_UI_FRAME_GPU_WORK_COUNT]{timer.gpu_work_latest.vertices,
-        timer.gpu_work_latest.indices, timer.gpu_work_latest.draw_calls,
-        timer.gpu_work_latest.clip_rect_changes, timer.gpu_work_latest.texture_switches};
+struct GpuWorkSection {
+    const char* heading;
+    uint32_t available;
+    WormUiFrameGpuWork latest;
+    const WormUiFrameGpuWorkStats* stats;
+};
+
+static void render_gpu_work_section(const WormUiFrameTimingView& timer,
+                                    const GpuWorkSection& section) {
+    nk_layout_row_dynamic(g_context, 22, 1);
+    nk_label(g_context, section.heading, NK_TEXT_LEFT);
+    const uint64_t latest[WORM_UI_FRAME_GPU_WORK_COUNT]{section.latest.vertices,
+        section.latest.indices, section.latest.draw_calls, section.latest.clip_rect_changes,
+        section.latest.texture_switches};
     for (std::size_t metric = 0; metric < WORM_UI_FRAME_GPU_WORK_COUNT; ++metric) {
-        const auto summary = timer.gpu_work[metric];
+        const auto summary = section.stats[metric];
         nk_layout_row_dynamic(g_context, 22, 1);
-        if (!timer.gpu_work_available || summary.count == 0)
-            nk_labelf(g_context, NK_TEXT_LEFT, "%s: N/A", timer.gpu_work_names[metric]);
+        if (!section.available || summary.count == 0)
+            nk_labelf(g_context, NK_TEXT_LEFT, "  %s: N/A", timer.gpu_work_names[metric]);
         else
-            nk_labelf(g_context, NK_TEXT_LEFT, "%s: last %llu, avg %.0f, p99 %.0f",
+            nk_labelf(g_context, NK_TEXT_LEFT, "  %s: last %llu, avg %.0f, p99 %.0f",
                 timer.gpu_work_names[metric], static_cast<unsigned long long>(latest[metric]),
                 summary.average, summary.p99);
     }
+}
+
+// The panel draws in its own pass, so its GPU work is reported on its own and
+// never folded into the application's numbers.
+static void render_gpu_work_summary(const WormUiFrameTimingView& timer) {
+    render_gpu_work_section(timer, {"GPU work - application (excludes this panel):",
+        timer.gpu_work_available, timer.gpu_work_latest, timer.gpu_work});
+    render_gpu_work_section(timer, {"GPU work - this panel only:",
+        timer.diagnostic_gpu_work_available, timer.diagnostic_gpu_work_latest,
+        timer.diagnostic_gpu_work});
 }
 
 // nk_chart_begin keeps the themed background and plot bounds; one polyline
@@ -1777,8 +1797,8 @@ static void render_frame_timing_overlay(int width, int height) {
     const auto timer = worm_ui_frame_timing_view();
     const float panel_width = std::min(480.0f, static_cast<float>(width));
     const float panel_height = std::min(720.0f, static_cast<float>(height) - 42.0f);
-    // The panel reports the application's GPU work, not its own.
-    const wormedit::ui::nuklear::uncounted_window_scope_t uncounted{g_context};
+    // Drawn in a diagnostic pass so its GPU work is reported apart from the application's.
+    const wormedit::ui::nuklear::diagnostic_window_scope_t diagnostic{g_context};
     if (nk_begin(g_context, "Frame timing",
                  nk_rect(static_cast<float>(width) - panel_width, 42, panel_width, panel_height),
                  NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_TITLE)) {

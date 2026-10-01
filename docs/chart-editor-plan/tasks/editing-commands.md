@@ -261,3 +261,15 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 - **Reject/failure behavior:** none.
 - **Verify:** standard build/test; smoke PNG of an SM chart with mixed snaps.
 - **Out of scope:** BMS tile colors (T-270).
+
+## T-304 Connect the internal chart clipboard to Compose commands
+
+- **Status:** ready
+- **Outcome:** Primary+C/X invoke the exact T-61 clipboard through typed application commands; the retained snippet survives selection changes, failures preserve it, and the T-62 paste preview is connected to Primary+V and the Edit menu.
+- **Read first:** `include/wormedit/core/chart_clipboard.h`, `src/sys/application_command_dispatch.cpp`, `src/sys/compose_view.h`, `src/ui/nuklear/frontend.cpp`.
+- **Files owned:** `src/sys/application_commands.h/.cpp`, `src/sys/application_command_dispatch.cpp/.h`, `src/sys/compose_view.h/.cpp`, `src/sys/compose_input.cpp/.h`, `src/sys/main.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/core/command_registry_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/CMakeLists.txt`.
+- **Steps:** 1. Add typed copy/cut commands and one retained internal clipboard, calling the T-61 core implementation; verify rejection and one-command cut/undo. 2. After T-62's core proposal exists, wire typed paste, ghost projection and commit/cancel input. 3. Verify actual copy/cut/paste and undo in isolated Xvfb using saved exact chart objects.
+- **Invariants:** text/IME/modal owners retain standard text clipboard shortcuts; chart cut and paste are atomic; no partial copy silently loses selected data; resource references are never guessed across projects.
+- **Reject/failure behavior:** empty/unsupported/stale selections preserve the prior clipboard and document; invalid paste retains a diagnostic preview and cannot commit.
+- **Verify:** standard build/test; configured clang-tidy; isolated real-window saved-document copy/cut/paste and undo checks.
+- **Out of scope:** OS text clipboard interoperability (T-63), resource remapping dialogs.

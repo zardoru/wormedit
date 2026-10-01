@@ -32,7 +32,7 @@ measurements. Apply the stale-plan check (rule 9) first.
 
 ## T-272 Arena-allocate the flattened workspace in fill order
 
-- **Status:** blocked-on T-271
+- **Status:** ready
 - **Outcome:** each frame's `flattened_workspace_t` lives in a `frame_arena_t` (T-271) that is reset at the start of the frame: every array and string the C view points to is carved from the arena in the order the projection fills it, so steady-state playback makes **zero** heap allocations in projection and the data the frontend walks is contiguous and in draw order.
 - **Why this shape:** the frontend boundary (`src/ui/frontend.h`) already consumes plain C views (pointer + count pairs), every array has a fixed capacity (`WORM_UI_*_CAPACITY`), and the view is consumed within the same frame before the next projection. Today `project_application_frame` builds a fresh `flattened_workspace_t` per frame whose 29 `std::vector`/`std::string` members reallocate every frame, and `rebind_view_pointers` then patches pointers into them.
 - **Read first:** `src/sys/workspace_projection.h/.cpp` (`flattened_workspace_t`, `flatten_workspace`, `rebind_view_pointers`), `src/sys/application_frame_projection.cpp` (fill order), `src/sys/compose_view.cpp`, `src/sys/timing_view.cpp`, `src/sys/waveform_view_projection.cpp`, `include/wormedit/core/arena.h` (T-271).

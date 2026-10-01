@@ -48,6 +48,7 @@ add_executable(wormedit_core_tests
     core/format_field_schema_tests.cpp
     core/grid_tests.cpp
     core/interaction_tests.cpp
+    core/cursor_write_guard_tests.cpp
     core/chart_clipboard_tests.cpp
     core/lane_profile_tests.cpp
     core/lane_transform_tests.cpp
@@ -106,6 +107,7 @@ add_executable(wormedit_core_tests
 target_include_directories(wormedit_core_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
 target_compile_definitions(wormedit_core_tests
     PRIVATE WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+            WORMEDIT_SOURCE_DIR="${CMAKE_SOURCE_DIR}/src"
 )
 if(Iconv_FOUND)
     target_compile_definitions(wormedit_core_tests PRIVATE WORMEDIT_TEST_HAS_ICONV=1)

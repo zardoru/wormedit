@@ -2169,10 +2169,10 @@ std::uint64_t prepare_compose_projection_state(const compose_final_projection_co
                                 static_cast<double>(chart.divisions_per_standard_measure);
     const auto maximum_scroll = std::max(0.0, content_height -
         view.viewport_height_pixels * retained_state->viewport_end_margin_fraction);
-    retained_state->viewport_scroll_pixels = std::clamp(
+    set_viewport_scroll_pixels(*retained_state, std::clamp(
         retained_state->viewport_scroll_pixels,
         -view.viewport_height_pixels * retained_state->viewport_minimum_margin_fraction,
-        maximum_scroll);
+        maximum_scroll));
     interaction_view.viewport_scroll_pixels = retained_state->viewport_scroll_pixels;
     view.area_canvas_rows = canvas_rows;
     view.area_rows_per_measure = chart.divisions_per_standard_measure;

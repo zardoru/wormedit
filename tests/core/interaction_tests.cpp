@@ -110,6 +110,21 @@ TEST_CASE("Escape restoration returns the Compose cursor to its preplay position
     CHECK_FALSE(preview_cursor.restore(history, &state));
 }
 
+TEST_CASE("Escape restoration also restores the drawn cursor offset and scroll",
+          "[unit][core][interaction][transport]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.cursor_subrow = 3.5;
+    const auto scroll = state.viewport_scroll_pixels;
+    sys::inline_preview_cursor_t preview_cursor;
+    preview_cursor.capture(&state);
+
+    REQUIRE(sys::follow_compose_playhead(history, state, 1'200.0, true));
+    REQUIRE(preview_cursor.restore(history, &state));
+    CHECK(state.cursor_subrow == Catch::Approx(3.5));
+    CHECK(state.viewport_scroll_pixels == Catch::Approx(scroll));
+}
+
 using parallel_hold_signature_t =
     std::tuple<lane_id_t, local_position_t, std::optional<local_position_t>>;
 
@@ -4506,4 +4521,24 @@ TEST_CASE("native canvas navigation preserves authored measures beyond the virtu
     REQUIRE(selected);
     CHECK(state.cursor.measure == measure_id_t{65});
     CHECK_FALSE(dispatch_editor_action(history, state, select_bms_canvas_measure_action_t{100}));
+}
+
+TEST_CASE("Cursor pose helpers round-trip every cursor field",
+          "[unit][core][interaction][cursor_write_guard]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.cursor_subrow = 2.25;
+    state.viewport_scroll_pixels = 40.0;
+    const auto pose = capture_cursor_pose(state);
+
+    state.virtual_bms_cursor_row = 7;
+    state.cursor_subrow = 0.0;
+    state.viewport_scroll_pixels = 0.0;
+    restore_cursor_pose(state, pose);
+    CHECK(capture_cursor_pose(state) == pose);
+
+    state.virtual_bms_cursor_row = 7;
+    place_cursor_at(state, pose.cursor);
+    CHECK_FALSE(state.virtual_bms_cursor_row);
+    CHECK(state.cursor_subrow == 2.25);
 }

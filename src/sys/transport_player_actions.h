@@ -27,6 +27,19 @@ inline auto step_transport_rate(application_command_state_t& state, bool faster)
                                            : state.transport_rate_index - 1);
 }
 
+// Plain Space uses hard Stop while playing, and starts/resumes only otherwise.
+inline auto play_stop_transport(application_command_state_t& state)
+    -> std::optional<std::string> {
+    if (!state.transport_preview_playing) return std::nullopt;
+    if (state.transport_preview_playing()) {
+        if (!state.transport_stop) return std::nullopt;
+        state.transport_stop();
+        return "Audio preview stopped.";
+    }
+    if (!state.transport_play_pause) return std::nullopt;
+    return state.transport_play_pause();
+}
+
 // Returns a status when the action belongs to transport/player/export-policy
 // handling, and nullopt when the caller should try another action dispatcher.
 [[nodiscard]] auto dispatch_transport_player_action(

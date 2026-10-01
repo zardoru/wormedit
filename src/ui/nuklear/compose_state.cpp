@@ -18,6 +18,22 @@ auto worm_ui_nuklear_compose_canvas_input_available(const WormUiComposeView* vie
         !view->input_occluded && !text_owned && !ime_owned;
 }
 
+auto worm_ui_nuklear_begin_shift_range(worm_ui_nuklear_compose_state_t& state,
+    std::uint8_t shift_keys) -> bool {
+    if (shift_keys == 0 || state.space_range_hold_active) return false;
+    state.shift_range_keys = shift_keys;
+    state.space_range_hold_active = true;
+    state.space_range_hold_moved = false;
+    return true;
+}
+
+auto worm_ui_nuklear_release_shift_range(worm_ui_nuklear_compose_state_t& state,
+    std::uint8_t released_key) -> bool {
+    if (!state.space_range_hold_active || released_key == 0) return false;
+    state.shift_range_keys &= static_cast<std::uint8_t>(~released_key);
+    return state.shift_range_keys == 0;
+}
+
 namespace {
 
 struct compose_file_dialog_state_t {

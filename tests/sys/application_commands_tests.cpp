@@ -565,3 +565,33 @@ TEST_CASE("notification history has a stable typed application command", "[unit]
           application_command_t{.kind = application_command_kind_t::view_notifications});
     CHECK_FALSE(parse_application_command("view.notifications.extra"));
 }
+
+namespace { void expect_play_stop(bool value) { CHECK(value); } }
+
+TEST_CASE("Plain Space transport starts or hard stops without pausing", "[unit][sys][commands]") {
+    application_command_state_t state;
+    bool playing{};
+    bool paused{};
+    int starts{};
+    int stops{};
+    state.transport_preview_playing = [&] { return playing; };
+    state.transport_play_pause = [&] {
+        if (playing) paused = true;
+        else { ++starts; playing = true; paused = false; }
+        return std::string{"started"};
+    };
+    state.transport_stop = [&] { ++stops; playing = false; paused = false; };
+    expect_play_stop(play_stop_transport(state) == "started");
+    expect_play_stop(starts == 1);
+    expect_play_stop(play_stop_transport(state) == "Audio preview stopped.");
+    expect_play_stop(stops == 1);
+    expect_play_stop(!playing);
+    expect_play_stop(!paused);
+    paused = true;
+    expect_play_stop(play_stop_transport(state) == "started");
+    expect_play_stop(starts == 2);
+    expect_play_stop(!paused);
+    state.transport_stop = {};
+    expect_play_stop(!play_stop_transport(state));
+    expect_play_stop(playing);
+}

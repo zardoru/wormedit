@@ -482,7 +482,7 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 
 ## T-296 Use Shift navigation for ranges and Space for Play/Stop
 
-- **Status:** ready
+- **Status:** done (Shift exact inclusive range/reversal/cancellation; Space Play/hard Stop with held-key suppression; real Xvfb text-owner and Stop/reset gates, full 1162/1162)
 - **Outcome:** Shift plus cursor navigation selects the exact inclusive area range; Space starts playback or invokes hard Stop, never Pause. Focused tap timing uses T; text/IME and modal input retain ownership.
 - **Read first:** `include/wormedit/core/interaction.h`, `src/sys/compose_input.cpp`, `src/core/command_registry.cpp`.
 - **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/compose_input.cpp`, `src/sys/application_commands.h/.cpp`, `src/sys/application_command_dispatch.cpp/.h`, `src/sys/transport_player_actions.cpp/.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `src/core/command_registry.cpp`, `src/sys/main.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/core/interaction_tests.cpp`, `tests/core/command_registry_tests.cpp`, `tests/sys/application_commands_tests.cpp`.

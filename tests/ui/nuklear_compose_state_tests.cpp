@@ -643,3 +643,22 @@ TEST_CASE("Compose key batches preserve same-frame edges and release held keys a
     expect_inline(!held);
     expect_inline(state.key_event_count == 0);
 }
+
+TEST_CASE("Shift navigation range capture starts once and commits on the final Shift release",
+          "[unit][frontend][compose]") {
+    worm_ui_nuklear_compose_state_t state;
+    expect_inline(!worm_ui_nuklear_begin_shift_range(state, 0));
+    expect_inline(worm_ui_nuklear_begin_shift_range(state, 1));
+    expect_inline(!worm_ui_nuklear_begin_shift_range(state, 1));
+    state.space_range_hold_moved = true;
+    state.shift_range_keys |= 2;
+    expect_inline(!worm_ui_nuklear_release_shift_range(state, 1));
+    expect_inline(state.space_range_hold_active && state.space_range_hold_moved);
+    expect_inline(!worm_ui_nuklear_release_shift_range(state, 0));
+    expect_inline(worm_ui_nuklear_release_shift_range(state, 2));
+    state.space_range_hold_active = false;
+    state.space_range_hold_moved = false;
+    expect_inline(!worm_ui_nuklear_release_shift_range(state, 2));
+    expect_inline(worm_ui_nuklear_begin_shift_range(state, 2));
+    expect_inline(!state.space_range_hold_moved);
+}

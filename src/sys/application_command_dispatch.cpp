@@ -163,6 +163,13 @@ auto transport_command(command_context_t& context) -> std::optional<command_resu
         context.status = boundary ? "Playback rate unchanged." : "Playback rate changed.";
         return command_result_t{.accepted = true};
     }
+    if (kind == command_kind_t::transport_play_stop) {
+        const auto result = play_stop_transport(app);
+        if (!result)
+            return reject_application_command(context.status, "Chart preview is unavailable.");
+        context.status = *result;
+        return command_result_t{.accepted = true};
+    }
     if (kind == command_kind_t::transport_play_pause) {
         if (!app.transport_play_pause)
             return reject_application_command(context.status, "Chart preview is unavailable.");

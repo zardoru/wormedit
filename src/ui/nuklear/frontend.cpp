@@ -494,8 +494,8 @@ void worm_ui_frontend_begin_input(void) {
 }
 
 static bool capture_tap_timing_key(const SDL_KeyboardEvent& event) {
-    if (event.scancode != SDL_SCANCODE_T && event.scancode != SDL_SCANCODE_SPACE) return false;
-    bool& captured = event.scancode == SDL_SCANCODE_T ? g_tap_key_captured : g_tap_space_captured;
+    if (event.scancode != SDL_SCANCODE_T) return false;
+    bool& captured = g_tap_key_captured;
     if (event.type == SDL_EVENT_KEY_UP) {
         const bool consumed = captured;
         captured = false;
@@ -504,12 +504,11 @@ static bool capture_tap_timing_key(const SDL_KeyboardEvent& event) {
     if (event.repeat) return captured;
     if (!g_tap_timing_visible || !g_window_focused || !g_window ||
         event.windowID != SDL_GetWindowID(g_window) || project_dialog_active() ||
-        g_new_project_wizard.open || nuklear_text_entry_active()) return false;
+        g_new_project_wizard.open || g_ime_composition_active ||
+        nuklear_text_entry_active()) return false;
     const auto modifiers = SDL_KMOD_SHIFT | SDL_KMOD_CTRL | SDL_KMOD_ALT |
                            SDL_KMOD_GUI | SDL_KMOD_MODE | SDL_KMOD_LEVEL5;
     if ((event.mod & modifiers) != 0) return false;
-    if (event.scancode == SDL_SCANCODE_SPACE &&
-        !nk_window_is_active(g_context, "Tap timing")) return false;
     captured = true;
     if (!event.repeat) queue_shortcut_key_event(&event, true);
     return true;

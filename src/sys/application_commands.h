@@ -14,6 +14,7 @@ enum class application_command_kind_t {
     document_new_chart,
     history_undo,
     history_redo,
+    transport_play_stop,
     transport_play_pause,
     transport_play_from_start,
     transport_stop,

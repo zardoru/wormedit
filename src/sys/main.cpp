@@ -1744,6 +1744,12 @@ void refresh_note_kind_commands(wormedit::command_registry_t& registry,
             compose_ready && compose_state->armed_note_kind == kind);
 }
 
+auto play_stop_available(const wormedit::chart_document_t* chart,
+    const application_command_state_t& state) -> bool {
+    return chart && state.transport_preview_playing && state.transport_play_pause &&
+           state.transport_stop;
+}
+
 void refresh_application_command_states(
     wormedit::command_registry_t& registry, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
@@ -1790,6 +1796,7 @@ void refresh_application_command_states(
     set("navigation.next_marker", beat_marker_navigation_available);
     set("navigation.previous_snap", compose_ready);
     set("navigation.next_snap", compose_ready);
+    set("transport.play_stop", play_stop_available(chart, application_state));
     set("transport.play_pause",
         chart != nullptr && static_cast<bool>(application_state.transport_play_pause));
     set("transport.play_from_start",

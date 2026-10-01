@@ -1482,15 +1482,15 @@ auto dispatch_compose_selection_input(const WormUiComposeInputAction& input,
             break;
         case WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION:
             if (!selection_mode(input.selection_mode).has_value()) {
-                return "Compose Space selection used an unknown selection mode.";
+                return "Compose Shift range used an unknown selection mode.";
             }
             result = dispatch_editor_action(history, state,
                                             space_range_selection_action_t{
                                                 .mode = *selection_mode(input.selection_mode),
                                             });
             accepted = state.pending_space_range_selection
-                           ? "Space range selection started; move the cursor and press Space again."
-                           : "Space range selection committed.";
+                           ? "Shift range selection started; navigate and release Shift to commit."
+                           : "Shift range selection committed.";
             break;
     default:
         return {};

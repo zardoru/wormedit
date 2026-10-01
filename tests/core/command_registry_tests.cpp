@@ -498,3 +498,21 @@ TEST_CASE("notification history shortcut respects text and IME guards",
     CHECK(ime.status == command_dispatch_status_t::focus_consumed);
     CHECK(calls->empty());
 }
+
+TEST_CASE("Plain Space plays or stops once and respects input owners", "[unit][commands]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    auto focus = focus_for_compose();
+    const shortcut_event_t event{.chord = {.key = shortcut_key_t::space}};
+    const auto result = dispatch_shortcut(registry, event, focus, shortcut_primary_modifier_t::control);
+    CHECK(result.command == command_id_t{"transport.play_stop"});
+    auto repeat = event;
+    repeat.auto_repeat = true;
+    const auto repeated = dispatch_shortcut(registry, repeat, focus, shortcut_primary_modifier_t::control);
+    CHECK(repeated.status == command_dispatch_status_t::repeat_suppressed);
+    CHECK(calls->size() == 1);
+    focus.ime_composition_active = true;
+    CHECK(dispatch_shortcut(registry, event, focus, shortcut_primary_modifier_t::control).status ==
+          command_dispatch_status_t::focus_consumed);
+    CHECK(calls->size() == 1);
+}

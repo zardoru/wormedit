@@ -806,6 +806,8 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
     add_builtin(registry, invoker, "navigation.next_snap", "Next Snap",
                 command_category_t::navigation, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::right)}, false, compose);
+    add_builtin(registry, invoker, "transport.play_stop", "Play / Stop",
+                command_category_t::transport, workspace, {chord(shortcut_key_t::space)}, true);
     add_builtin(registry, invoker, "transport.play_pause", "Play from Cursor / Pause",
                 command_category_t::transport, workspace,
                 {chord(shortcut_key_t::space, primary())});

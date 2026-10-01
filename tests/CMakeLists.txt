@@ -438,13 +438,30 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/frame_timing.cpp
         ../src/sys/workspace_projection.cpp
         ../src/sys/timing_view.cpp
-        ../src/sys/compose_resource_presenter.cpp)
+        ../src/sys/compose_resource_presenter.cpp
+        ../src/sys/metadata_view_projection.cpp
+        ../src/sys/metadata_drop_state.cpp
+        ../src/sys/metadata_asset_runtime.cpp)
     target_include_directories(wormedit_frame_projection_arena_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/generated")
     target_compile_definitions(wormedit_frame_projection_arena_tests PRIVATE
         $<$<CONFIG:Debug>:WORMEDIT_FRAME_ALLOCATION_HOOK=1>)
     target_link_libraries(wormedit_frame_projection_arena_tests PRIVATE
         wormedit::core SDL3::SDL3 Catch2::Catch2WithMain)
+    # Projection tests use drop-state storage, not its desktop event dispatcher.
+    # Discard that unreferenced handler rather than substituting frontend behavior.
+    if(MSVC)
+        target_compile_options(wormedit_frame_projection_arena_tests PRIVATE /Gy)
+        target_link_options(wormedit_frame_projection_arena_tests PRIVATE /OPT:REF)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(wormedit_frame_projection_arena_tests PRIVATE
+            -ffunction-sections -fdata-sections)
+        if(APPLE)
+            target_link_options(wormedit_frame_projection_arena_tests PRIVATE -Wl,-dead_strip)
+        else()
+            target_link_options(wormedit_frame_projection_arena_tests PRIVATE -Wl,--gc-sections)
+        endif()
+    endif()
     catch_discover_tests(wormedit_frame_projection_arena_tests TEST_PREFIX "frame-arena."
         PROPERTIES LABELS "unit;sys;performance" DISCOVERY_MODE PRE_TEST)
 endif()

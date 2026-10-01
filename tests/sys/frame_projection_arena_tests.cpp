@@ -1,6 +1,7 @@
 #include "sys/frame_timing.h"
 #include "sys/workspace_projection.h"
 #include "sys/timing_view.h"
+#include "sys/metadata_view_projection.h"
 #include <cstring>
 #include <limits>
 #include <catch2/catch_test_macros.hpp>
@@ -578,4 +579,155 @@ TEST_CASE("Metadata arena list storage stays bounded through 1000 dense resets",
     check_frame_storage(stable);
     check_frame_storage(allocation_count_independent);
     INFO("Metadata projection still allocates " << small_count << " outside the converted lists");
+}
+
+namespace {
+struct metadata_text_fixture_t {
+    wormedit::document_history_t history;
+    wormedit::workspace_controller_t workspace;
+    metadata_drop_state_t drop;
+    runtime::metadata_asset_t runtime;
+    std::filesystem::path base = "/tmp/metadata-arena-project-directory";
+    metadata_text_fixture_t() {
+        history.document.id = wormedit::song_id_t{1};
+        history.document.charts.push_back({.id = wormedit::chart_id_t{1}});
+        history.document.audio_assets.push_back({.id = wormedit::asset_id_t{7},
+            .source_path = "audio/a-long-selected-music-source.wav"});
+        history.document.output_groups.push_back({.name = "Long retained output group name",
+            .charts = {wormedit::chart_id_t{1}}, .relative_output_path = "exports/chart.bms"});
+        workspace.active_tab = wormedit::workspace_tab_t::metadata;
+        workspace.selected_chart = wormedit::chart_id_t{1};
+        workspace.transport.audio_asset = wormedit::asset_id_t{7};
+        drop.chart_id = 1;
+        drop.music_revision = history.document.revision;
+        drop.music_path = "/tmp/a-long-dropped-audio-source.wav";
+        drop.output_path = "exports/a-long-dropped-output.bms";
+    }
+    auto project(frame_arena_t* arena = nullptr) -> flattened_workspace_t {
+        flattened_workspace_t frame(arena);
+        frame.view.metadata.visible = true;
+        frame.view.metadata.chart_id = 1;
+        populate_metadata_view_projection(frame, history, workspace, base, drop, runtime);
+        return frame;
+    }
+    void start_preview() {
+        WormUiWorkspaceAction action{};
+        action.compose_input_chart_id = 1;
+        action.compose_input_document_revision = history.document.revision;
+        action.compose_resource_asset_id = 8;
+        action.metadata_inspect_import = true;
+        std::strcpy(action.compose_import_path, "/tmp/arena-copy-preview-source.wav");
+        const auto status = runtime.start_copy_preview(action, history, workspace, base);
+        INFO(status);
+        REQUIRE(runtime.copy_preview_key());
+    }
+};
+void check_metadata_text(const WormUiMetadataView& view) {
+    check_frame_storage(std::strcmp(view.project_directory, "/tmp/metadata-arena-project-directory") == 0);
+    check_frame_storage(std::strcmp(view.selected_music_source, "audio/a-long-selected-music-source.wav") == 0);
+    check_frame_storage(std::strcmp(view.dropped_music_path, "/tmp/a-long-dropped-audio-source.wav") == 0);
+    check_frame_storage(std::strcmp(view.dropped_output_relative_path, "exports/a-long-dropped-output.bms") == 0);
+    check_frame_storage(view.selected_music_asset_id == 7);
+    REQUIRE(view.output_group_count == 1);
+    check_frame_storage(std::strcmp(view.output_groups[0].name, "Long retained output group name") == 0);
+    check_frame_storage(std::strcmp(view.output_groups[0].relative_output_path, "exports/chart.bms") == 0);
+    check_frame_storage(std::strcmp(view.output_groups[0].relative_asset_directory, "exports/assets") == 0);
+    check_frame_storage(view.output_groups[0].document_index == 0);
+}
+}
+
+TEST_CASE("Metadata frame text and output groups survive source mutation and projection moves",
+          "[sys][frame-arena][metadata-text]") {
+    flattened_workspace_t retained;
+    {
+        metadata_text_fixture_t fixture;
+        fixture.start_preview();
+        retained = fixture.project();
+        fixture.drop.clear_paths();
+        fixture.history.document.audio_assets.clear();
+        fixture.history.document.output_groups.clear();
+        fixture.runtime.clear_copy_preview_key();
+    }
+    auto moved = std::move(retained);
+    moved.rebind_view_pointers();
+    check_metadata_text(moved.view.metadata);
+    check_frame_storage(!moved.metadata.text_truncated);
+    check_frame_storage(std::strcmp(moved.view.metadata.copy_preview_text,
+        "Inspecting destination bytes in the background...") == 0);
+    check_frame_storage(std::strcmp(moved.view.metadata.copy_preview_source,
+        "/tmp/arena-copy-preview-source.wav") == 0);
+}
+
+TEST_CASE("Metadata text exhaustion publishes null paths and complete output group prefixes",
+          "[sys][frame-arena][metadata-text]") {
+    metadata_text_fixture_t fixture;
+    fixture.start_preview();
+    frame_arena_t tiny({.chunk_bytes = 8, .maximum_bytes = 8});
+    auto failed = fixture.project(&tiny);
+    check_frame_storage(failed.metadata.text_truncated);
+    check_frame_storage(failed.view.metadata.project_directory == nullptr);
+    check_frame_storage(failed.view.metadata.selected_music_source == nullptr);
+    check_frame_storage(failed.view.metadata.copy_preview_source == nullptr);
+    check_frame_storage(failed.view.metadata.output_group_count == 0);
+    check_frame_storage(failed.view.metadata.output_groups_truncated);
+    const auto* diagnostic = failed.view.metadata.copy_preview_text;
+    REQUIRE(diagnostic);
+    tiny.reset();
+    check_frame_storage(std::strcmp(diagnostic,
+        "Metadata display text truncated (frame storage limit).") == 0);
+    fixture.runtime.clear_copy_preview_key();
+    auto second = fixture.history.document.output_groups.front();
+    second.name.assign(4096, 'x');
+    fixture.history.document.output_groups.push_back(std::move(second));
+    frame_arena_t limited({.chunk_bytes = 1024, .maximum_bytes = 1024});
+    auto prefix = fixture.project(&limited);
+    check_metadata_text(prefix.view.metadata);
+    check_frame_storage(prefix.view.metadata.output_groups_truncated);
+}
+
+TEST_CASE("Metadata output groups retain their capacity and selected chart filtering",
+          "[sys][frame-arena][metadata-text]") {
+    metadata_text_fixture_t fixture;
+    auto& groups = fixture.history.document.output_groups;
+    groups.resize(WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY, groups.front());
+    groups.front().charts = {wormedit::chart_id_t{2}};
+    auto accepted = fixture.project();
+    check_frame_storage(accepted.view.metadata.output_group_count == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY - 1);
+    check_frame_storage(accepted.view.metadata.output_groups[0].document_index == 1);
+    check_frame_storage(!accepted.view.metadata.output_groups_truncated);
+    groups.push_back(groups.back());
+    auto exact = fixture.project();
+    check_frame_storage(exact.view.metadata.output_group_count == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY);
+    check_frame_storage(!exact.view.metadata.output_groups_truncated);
+    groups.push_back(groups.back());
+    auto truncated = fixture.project();
+    check_frame_storage(truncated.view.metadata.output_group_count == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY);
+    check_frame_storage(truncated.view.metadata.output_groups_truncated);
+}
+
+TEST_CASE("Metadata frame text keeps stable warmed storage across 1000 projections",
+          "[sys][frame-arena][metadata-text]") {
+    metadata_text_fixture_t fixture;
+    frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    (void)fixture.project(&arena);
+    const auto used = arena.used_bytes();
+    const auto committed = arena.committed_bytes();
+    arena.reset();
+    const auto before = frame_heap_allocation_snapshot();
+    (void)fixture.project(&arena);
+    const auto allocations = frame_heap_allocation_snapshot().count - before.count;
+    bool stable = true;
+    bool consistent = true;
+    for (int iteration = 0; iteration < 1000; ++iteration) {
+        arena.reset();
+        const auto start = frame_heap_allocation_snapshot();
+        const auto frame = fixture.project(&arena);
+        const auto finish = frame_heap_allocation_snapshot();
+        stable = stable && arena.used_bytes() == used && arena.committed_bytes() == committed &&
+            !frame.metadata.text_truncated && frame.view.metadata.output_group_count == 1;
+        consistent = consistent && finish.count - start.count == allocations;
+    }
+    check_frame_storage(stable);
+    check_frame_storage(consistent);
+    INFO("Filesystem generic formatting still allocates " << allocations << " per projection");
 }

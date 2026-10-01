@@ -102,15 +102,10 @@ struct flattened_workspace_t {
         frame_span<std::size_t> search_tag_length;
         frame_span<WormUiMetadataFormatFieldView> format_field;
         frame_span<WormUiMetadataFormatTargetView> format_target;
-        std::string project_directory;
-        std::string music_source;
-        std::string copy_preview_source;
+        // Arena-owned text is published directly; persistent sources retain ownership.
+        bool text_truncated{};
         struct {
-            std::array<WormUiComposeOutputGroupView, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
-                view{};
-            std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY> name;
-            std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY> path;
-            std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY> asset_directory;
+            frame_span<WormUiComposeOutputGroupView> view;
         } output_group;
     } metadata;
     struct {

@@ -140,9 +140,22 @@ struct task_submit_result_t {
 // Fixed jthread pool with a preallocated ring queue. The capacity covers queued,
 // running, and dependency-blocked nodes across submitted graphs. It does not bound
 // memory allocated by user callbacks or their result payloads. No std::async is used.
+struct task_scheduler_options_t {
+    // Runs once on each worker thread before it takes work (for example to lower its
+    // priority). A throwing hook is ignored; the worker continues at default priority.
+    std::function<void()> on_worker_start;
+};
+
+// Workers a scheduler may start: the request, capped at hardware_threads - 2 so the
+// frame and audio threads keep cores, and never below one. Unknown hardware (0) does
+// not cap the request.
+[[nodiscard]] auto clamp_worker_count(std::size_t requested, std::size_t hardware_threads) noexcept
+    -> std::size_t;
+
 class task_scheduler_t {
   public:
-    explicit task_scheduler_t(std::size_t worker_count, std::size_t maximum_outstanding_tasks);
+    explicit task_scheduler_t(std::size_t worker_count, std::size_t maximum_outstanding_tasks,
+                              task_scheduler_options_t options = {});
     task_scheduler_t(const task_scheduler_t&) = delete;
     auto operator=(const task_scheduler_t&) -> task_scheduler_t& = delete;
     ~task_scheduler_t();
@@ -151,6 +164,7 @@ class task_scheduler_t {
     void shutdown();
     [[nodiscard]] auto outstanding_tasks() const noexcept -> std::size_t;
     [[nodiscard]] auto maximum_outstanding_tasks() const noexcept -> std::size_t;
+    [[nodiscard]] auto worker_count() const noexcept -> std::size_t;
 
   private:
     struct impl_t;

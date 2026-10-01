@@ -84,6 +84,8 @@ auto preview_session_t::prime_started(preview_bridge_start_result_t started,
     timeline_frame_ = timeline_frame;
     start_frame_ = timeline_frame;
     output_latency_frames_.store(0, std::memory_order_release);
+    ++generation_;
+    publish_playhead();
     result.status = preview_session_start_status_t::started;
     result.token = token_;
     return result;
@@ -156,6 +158,7 @@ auto preview_session_t::render(std::span<float> interleaved_stereo)
                 .mix = mixed};
     }
     timeline_frame_ += mixed.frames;
+    publish_playhead();
     if (mixed.missing_blocks == 0 && bridge_.exhausted() &&
         transport_.scheduled_voice_count() == 0 &&
         timeline_frame_ >= minimum_end_frame_) {
@@ -194,15 +197,21 @@ auto preview_session_t::set_assist_grid(bool active,
 }
 
 auto preview_session_t::active() const -> bool {
-    const std::scoped_lock lock(mutex_);
-    return token_.has_value();
+    return playhead_.read().active;
 }
 
 auto preview_session_t::timeline_frame() const -> std::uint64_t {
-    const std::scoped_lock lock(mutex_);
+    const auto playhead = playhead_.read();
     const auto latency = output_latency_frames_.load(std::memory_order_acquire);
-    const auto elapsed = timeline_frame_ - start_frame_;
-    return start_frame_ + (elapsed > latency ? elapsed - latency : 0);
+    const auto elapsed = playhead.timeline_frame - playhead.start_frame;
+    return playhead.start_frame + (elapsed > latency ? elapsed - latency : 0);
+}
+
+void preview_session_t::publish_playhead() noexcept {
+    playhead_.publish({.active = token_.has_value(),
+                       .timeline_frame = timeline_frame_,
+                       .start_frame = start_frame_,
+                       .generation = generation_});
 }
 
 void preview_session_t::clear_state() noexcept {
@@ -211,6 +220,8 @@ void preview_session_t::clear_state() noexcept {
     start_frame_ = 0;
     output_latency_frames_.store(0, std::memory_order_release);
     minimum_end_frame_ = 0;
+    ++generation_;
+    publish_playhead();
 }
 
 } // namespace wormedit::audio

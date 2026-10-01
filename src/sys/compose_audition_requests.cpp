@@ -34,6 +34,7 @@ void process_object_request(const editor_object_audition_request_t& request,
         return;
     }
 
+    audition_sources.await_pending();
     const auto prepared = object_audition.prepare(
         history.document, {request.document_revision, request.chart, request.object.id},
         audition_sources.bindings());
@@ -60,6 +61,7 @@ void process_draft_request(const bmson_draft_audition_request_t& request,
                            runtime::chart_preview_t& preview_state,
                            sdl_audition_output_t& audition_output,
                            std::string& status) {
+    audition_sources.await_pending();
     const auto resolved = audio::resolve_bmson_draft_audition(
         history.document,
         {.expected_revision = request.revision,

@@ -3,6 +3,7 @@
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 
 #include "sys/compose_view.h"
+#include "sys/thread_priority.h"
 
 #include <wormedit/audio/source_registry.h>
 #include <wormedit/audio/waveform.h>
@@ -109,7 +110,7 @@ private:
         {.maximum_bytes = 4U * 1024U * 1024U, .maximum_frames = 524288,
          .maximum_bytes_per_asset = 2U * 1024U * 1024U, .maximum_frames_per_asset = 262144}};
     audio::waveform_cache_t waveform_cache_;
-    task_scheduler_t scheduler_{2, 4};
+    task_scheduler_t scheduler_{2, 4, background_scheduler_options()};
     audio::waveform_job_t waveform_job_;
     audio::waveform_job_t channel_waveform_job_;
     audio::waveform_job_t detail_job_;

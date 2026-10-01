@@ -233,3 +233,35 @@ TEST_CASE("scheduler shutdown requests cancellation and completes waiting graph 
     CHECK(submitted.graph.result(*blocked.id)->error->code == task_error_code_t::scheduler_stopped);
     CHECK(scheduler.outstanding_tasks() == 0);
 }
+
+TEST_CASE("task scheduler worker count is clamped to leave two hardware threads free",
+          "[core][task-graph]") {
+    CHECK(clamp_worker_count(8, 8) == 6);
+    CHECK(clamp_worker_count(2, 8) == 2);
+    CHECK(clamp_worker_count(4, 2) == 1);
+    CHECK(clamp_worker_count(4, 1) == 1);
+    CHECK(clamp_worker_count(0, 8) == 1);
+    CHECK(clamp_worker_count(3, 0) == 3);
+}
+
+TEST_CASE("task scheduler runs the worker start hook once per worker and survives a throwing hook",
+          "[core][task-graph]") {
+    std::atomic<int> started{0};
+    {
+        task_scheduler_t scheduler(1, 2, {.on_worker_start = [&] { ++started; }});
+        CHECK(scheduler.worker_count() == 1);
+    }
+    CHECK(started.load() == 1);
+
+    task_scheduler_t throwing(1, 2,
+                              {.on_worker_start = [] { throw std::runtime_error("denied"); }});
+    task_graph_t graph(1);
+    const auto added = graph.add_task({}, [](std::span<const task_result_t>, std::stop_token) {
+        return task_result_t::success(make_task_value(std::make_shared<const int>(7)));
+    });
+    REQUIRE(added);
+    auto submitted = throwing.submit(std::move(graph));
+    REQUIRE(submitted);
+    REQUIRE(submitted.graph.wait());
+    CHECK(*task_value_cast<int>(*submitted.graph.result(*added.id)) == 7);
+}

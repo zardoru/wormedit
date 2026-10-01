@@ -973,6 +973,7 @@ void compare_follow_step(document_history_t& history, const measure_index_t& ind
     if (std::abs(*target - expected.viewport_scroll_pixels) >= 0.001)
         REQUIRE(dispatch_editor_action(history, expected,
             scroll_editor_view_action_t{.vertical_pixels = *target - expected.viewport_scroll_pixels}));
+    expected.cursor_subrow = static_cast<double>(bounded - snapped_row);
     REQUIRE(follow_compose_playhead(history, actual, row, anchored,
         {chart.id, history.document.revision, &index}));
     compare_follow_state(actual, expected);

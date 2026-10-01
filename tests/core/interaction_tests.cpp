@@ -2983,6 +2983,27 @@ TEST_CASE("preview starts at the cursor time and Compose cursor follows the play
     CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
 }
 
+TEST_CASE("Following audio keeps the cursor at the anchor between snaps and edits clear the offset",
+          "[unit][core][interaction][transport]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.viewport_height_pixels = 400.0;
+    const auto& chart = history.document.charts.front();
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto pixels_per_row = state.pixels_per_standard_measure / chart.divisions_per_standard_measure;
+    for (const double row : {600.3, 600.9, 601.5, 613.77, 700.01}) {
+        REQUIRE(sys::follow_compose_playhead(history, state, row, true,
+            {chart.id, history.document.revision, &index}, 0.5));
+        const auto view = std::get<editor_interaction_view_model_t>(inspect_editor_interaction(history, state));
+        const auto cursor_row = static_cast<double>(*absolute_row(index, view.cursor)) + view.cursor_subrow;
+        CHECK(cursor_row * pixels_per_row - view.viewport_scroll_pixels ==
+              Catch::Approx(200.0).margin(0.01));
+    }
+    CHECK(state.cursor_subrow > 0.0);
+    REQUIRE(dispatch_editor_action(history, state, move_edit_cursor_action_t{}));
+    CHECK(state.cursor_subrow == 0.0);
+}
+
 TEST_CASE("Compose playback keeps the playhead anchored 20 percent from the chart start",
           "[unit][core][interaction][transport]") {
     auto history = make_document_history(make_song());

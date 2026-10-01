@@ -2152,3 +2152,117 @@ TEST_CASE("Compose paired grid limits remain bounded when scene budget rejects e
     expect_compose_test(fixture.flattened.compose.grid.line.empty() && fixture.flattened.compose.grid.row.empty());
     check_grid_pairs(fixture.flattened);
 }
+
+namespace {
+auto bgm_arena_song(format_family_t family) -> song_document_t {
+    auto song = scalar_reuse_song();
+    auto& chart = song.charts.front();
+    chart.source_family = family;
+    song.resources.push_back({.id = resource_id_t{81000}, .name = "Independent BGM resource label",
+        .roles = {resource_role_t::bgm}, .target_identities = {
+            {.family = format_family_t::bms, .identifier = "01", .namespace_name = "WAV"}}});
+    chart.measures.front().bgm_events.front().sound = resource_id_t{81000};
+    if (family == format_family_t::bmson) {
+        chart.sound_channels = {{.id = object_id_t{82000}, .name = "BGM slices",
+            .source_clip = {.id = clip_id_t{82001}, .source = asset_id_t{82002}},
+            .events = {{.id = object_id_t{82003}, .position = {measure_id_t{1},240},
+                .end = local_position_t{measure_id_t{1},480}, .lane = lane_id_t{0},
+                .continuation = false, .playable = false}}}};
+        chart.measures.front().bgm_events.front().sound_channel_event = object_id_t{82003};
+    }
+    return song;
+}
+void compare_bgm_arena_views(const WormUiComposeView& a, const WormUiComposeView& b) {
+    expect_compose_test(a.bgm_lane_count == b.bgm_lane_count && a.bgm_event_count == b.bgm_event_count);
+    for (std::size_t i = 0; i < a.bgm_lane_count; ++i) {
+        compare_geometry_rect(a.bgm_lanes[i].bounds, b.bgm_lanes[i].bounds);
+        expect_compose_test(a.bgm_lanes[i].source_lane_id == b.bgm_lanes[i].source_lane_id);
+        expect_compose_test(a.bgm_lanes[i].source_order == b.bgm_lanes[i].source_order);
+    }
+    for (std::size_t i = 0; i < a.bgm_event_count; ++i) {
+        const auto& x = a.bgm_events[i]; const auto& y = b.bgm_events[i];
+        compare_geometry_rect(x.bounds, y.bounds);
+        expect_compose_test(std::tie(x.event_id,x.source_lane_id,x.sound_id,x.has_sound,x.bmson_slice,
+            x.bmson_restart,x.selected) == std::tie(y.event_id,y.source_lane_id,y.sound_id,y.has_sound,
+            y.bmson_slice,y.bmson_restart,y.selected));
+        expect_compose_test(std::strcmp(x.sound_label,y.sound_label)==0);
+        expect_compose_test(std::strcmp(x.sound_detail,y.sound_detail)==0);
+    }
+}
+}
+namespace {
+void check_bgm_arena_family(format_family_t family) {
+        const auto song = bgm_arena_song(family);
+        compose_test_fixture_t reused(song), fresh(song);
+        wormedit::frame_arena_t a({.chunk_bytes=1024*1024,.maximum_bytes=2*1024*1024});
+        wormedit::frame_arena_t b({.chunk_bytes=1024*1024,.maximum_bytes=2*1024*1024});
+        project_geometry_arena(reused,a); project_geometry_arena(fresh,b);
+        REQUIRE(reused.flattened.view.compose.bgm_lane_count > 0);
+        REQUIRE(reused.flattened.view.compose.bgm_event_count > 0);
+        compare_bgm_arena_views(reused.flattened.view.compose,fresh.flattened.view.compose);
+        const auto& initial = reused.flattened.view.compose.bgm_events[0];
+        expect_compose_test(initial.bmson_slice == (family == format_family_t::bmson));
+        if (family == format_family_t::bmson) expect_compose_test(initial.bmson_restart);
+        expect_compose_test(initial.bounds.bottom > initial.bounds.top);
+        const auto storage = reused.cache.static_scene_storage;
+        REQUIRE(storage);
+        for (const double scroll : {0.5,24.0,0.0}) {
+            a.reset(); b.reset(); fresh.cache={};
+            reused.interaction->selected_objects={{editor_selection_object_kind_t::bgm_event,object_id_t{70001}}};
+            fresh.interaction->selected_objects=reused.interaction->selected_objects;
+            reused.interaction->viewport_scroll_pixels=scroll;
+            fresh.interaction->viewport_scroll_pixels=scroll;
+            project_geometry_arena(reused,a); project_geometry_arena(fresh,b);
+            compare_bgm_arena_views(reused.flattened.view.compose,fresh.flattened.view.compose);
+            if (reused.flattened.view.compose.bgm_event_count)
+                expect_compose_test(reused.flattened.view.compose.bgm_events[0].selected);
+            expect_compose_test(reused.flattened.view.compose.bgm_lanes == reused.flattened.compose.bgm.lane.data());
+            expect_compose_test(reused.flattened.view.compose.bgm_events == reused.flattened.compose.bgm.event.data());
+        }
+        expect_compose_test(storage->view.compose.bgm_event_count > 0);
+        expect_compose_test(std::strcmp(storage->view.compose.bgm_events[0].sound_label,"01")==0);
+        expect_compose_test(std::strcmp(storage->view.compose.bgm_events[0].sound_detail,
+            "Independent BGM resource label")==0);
+}
+}
+TEST_CASE("Compose BGM arena rows preserve fresh and retained projection labels and clipping",
+          "[sys][compose-bgm-arena]") {
+    check_bgm_arena_family(format_family_t::bms);
+    check_bgm_arena_family(format_family_t::bmson);
+}
+TEST_CASE("Compose BGM arena storage remains stable across 1000 reused frames",
+          "[sys][compose-bgm-arena]") {
+    compose_test_fixture_t fixture(bgm_arena_song(format_family_t::bms));
+    wormedit::frame_arena_t arena({.chunk_bytes=1024*1024,.maximum_bytes=2*1024*1024});
+    project_geometry_arena(fixture,arena); arena.reset(); project_geometry_arena(fixture,arena);
+    const auto used=arena.used_bytes(), committed=arena.committed_bytes();
+    bool stable=true;
+    for (int i=0;i<1000;++i) {
+        arena.reset(); project_geometry_arena(fixture,arena);
+        stable=stable && arena.used_bytes()==used && arena.committed_bytes()==committed &&
+            fixture.flattened.view.compose.bgm_lane_count>0 && fixture.flattened.view.compose.bgm_event_count>0;
+    }
+    expect_compose_test(stable);
+}
+TEST_CASE("Compose BGM arena exhaustion publishes bounded initialized rows",
+          "[sys][compose-bgm-arena]") {
+    compose_test_fixture_t fixture(bgm_arena_song(format_family_t::bms));
+    wormedit::frame_arena_t arena({.chunk_bytes=64,.maximum_bytes=64});
+    project_geometry_arena(fixture,arena);
+    const auto& view=fixture.flattened.view.compose;
+    expect_compose_test(view.truncated);
+    expect_compose_test(view.bgm_lane_count==fixture.flattened.compose.bgm.lane.size());
+    expect_compose_test(view.bgm_event_count==fixture.flattened.compose.bgm.event.size());
+    expect_compose_test(view.bgm_lane_count<=WORM_UI_COMPOSE_BGM_LANE_CAPACITY);
+    expect_compose_test(view.bgm_event_count<=WORM_UI_COMPOSE_BGM_EVENT_CAPACITY);
+}
+TEST_CASE("Compose BGM arena respects primitive budget on oversized source projection",
+          "[sys][compose-bgm-arena]") {
+    compose_test_fixture_t fixture(bgm_arena_song(format_family_t::bms));
+    wormedit::frame_arena_t arena({.chunk_bytes=1024*1024,.maximum_bytes=16*1024*1024});
+    project_geometry_arena(fixture,arena,2000000);
+    expect_compose_test(!fixture.flattened.view.compose.scene_available);
+    expect_compose_test(!fixture.flattened.view.compose.static_scene);
+    expect_compose_test(fixture.flattened.view.compose.bgm_lane_count<=WORM_UI_COMPOSE_BGM_LANE_CAPACITY);
+    expect_compose_test(fixture.flattened.view.compose.bgm_event_count<=WORM_UI_COMPOSE_BGM_EVENT_CAPACITY);
+}

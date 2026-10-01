@@ -145,8 +145,8 @@ struct flattened_workspace_t {
         frame_span<WormUiComposeNoteView> note;
         std::unordered_map<std::uint64_t, std::pair<std::string, std::string>> sound_labels;
         struct {
-            std::vector<WormUiComposeBgmLaneView> lane;
-            std::vector<WormUiComposeBgmEventView> event;
+            frame_span<WormUiComposeBgmLaneView> lane;
+            frame_span<WormUiComposeBgmEventView> event;
             std::vector<WormUiComposeBgmDraftView> draft;
             std::optional<WormUiComposeBgmMovePreviewView> move;
         } bgm;

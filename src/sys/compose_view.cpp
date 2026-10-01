@@ -728,23 +728,29 @@ void project_compose_bgm(const compose_scene_projection_context_t& projection) {
     const auto& bgm_lanes = scene.bgm_lanes;
     const auto bgm_lane_count =
         std::min(bgm_lanes.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BGM_LANE_CAPACITY));
-    flattened.compose.bgm.lane.reserve(bgm_lane_count);
+    if (!prepare_compose_geometry_rows(flattened, flattened.compose.bgm.lane, bgm_lane_count)) {
+        view.truncated = true;
+        return;
+    }
     for (std::size_t index = 0; index < bgm_lane_count; ++index) {
         const auto& lane = bgm_lanes[index];
-        flattened.compose.bgm.lane.push_back({.bounds = convert_rect(lane.bounds),
+        append_compose_geometry_row(flattened.compose.bgm.lane, {.bounds = convert_rect(lane.bounds),
                                                       .source_lane_id = lane.source_lane.value,
-                                                      .source_order = lane.source_order});
+                                                      .source_order = lane.source_order}, view.truncated);
     }
     const auto& bgm_events = scene.bgm_events;
     const auto bgm_event_count =
         std::min(bgm_events.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BGM_EVENT_CAPACITY));
-    flattened.compose.bgm.event.reserve(bgm_event_count);
+    if (!prepare_compose_geometry_rows(flattened, flattened.compose.bgm.event, bgm_event_count)) {
+        view.truncated = true;
+        return;
+    }
     for (std::size_t index = 0; index < bgm_event_count; ++index) {
         const auto& event = bgm_events[index];
         const auto sound = event.sound
                                ? flattened.compose.sound_labels.find(event.sound->value)
                                : flattened.compose.sound_labels.end();
-        flattened.compose.bgm.event.push_back(
+        append_compose_geometry_row(flattened.compose.bgm.event,
             {.bounds = convert_rect(event.bounds),
              .event_id = event.event.value,
              .source_lane_id = event.source_lane.value,
@@ -758,7 +764,7 @@ void project_compose_bgm(const compose_scene_projection_context_t& projection) {
                                 : sound->second.first.c_str(),
              .sound_detail = sound == flattened.compose.sound_labels.end()
                                  ? (event.sound ? "Unknown sound resource" : "Unbound BGM slot")
-                                 : sound->second.second.c_str()});
+                                 : sound->second.second.c_str()}, view.truncated);
     }
 
     view.truncated = view.truncated || bgm_lane_count != bgm_lanes.size() ||
@@ -2259,7 +2265,6 @@ auto compose_static_storage_bytes(const flattened_workspace_t& storage) -> std::
     // The independently owned arena's committed chunks include all span storage.
     // Count those chunks once, separately from the remaining heap containers.
     std::size_t bytes = sizeof(storage) + storage.owned_arena_committed_bytes() +
-        compose_vector_bytes(data.bgm.lane) + compose_vector_bytes(data.bgm.event) +
         compose_vector_bytes(data.timing_marker) + compose_vector_bytes(data.timing_marker_labels);
     for (const auto& label : data.timing_marker_labels)
         bytes += label.first.capacity() + label.second.capacity() + 2;

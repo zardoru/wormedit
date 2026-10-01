@@ -5,8 +5,33 @@
 #include "ui/nuklear/lucide_icons.h"
 
 #include <algorithm>
+#include <cstring>
 
 namespace wormedit::ui::chrome {
+
+// Focus names the next edit widget, so it must precede drawing that widget.
+inline auto autofocus_text_field(nk_context* context, nk_flags flags, char* text,
+                                 int capacity, nk_plugin_filter filter,
+                                 bool& focus_pending) -> nk_flags {
+    if (focus_pending) {
+        nk_edit_focus(context, NK_EDIT_ALWAYS_INSERT_MODE);
+        if ((flags & NK_EDIT_AUTO_SELECT) != 0) {
+            auto& edit = context->current->edit;
+            edit.cursor = static_cast<int>(std::strlen(text));
+            edit.sel_start = 0;
+            edit.sel_end = edit.cursor;
+        }
+        focus_pending = false;
+    }
+    return nk_edit_string_zero_terminated(context, flags, text, capacity, filter);
+}
+
+// Finish a retained popup in its own panel so Nuklear releases the parent input lock.
+inline void dismiss_popup(nk_context* context, const char* title, struct nk_rect bounds) {
+    if (!nk_popup_begin(context, NK_POPUP_STATIC, title, NK_WINDOW_NO_SCROLLBAR, bounds)) return;
+    nk_popup_close(context);
+    nk_popup_end(context);
+}
 
 // Nuklear popups cannot contain another popup. Keep this boundary shared by
 // every dropdown so a future popup caller receives a usable inline fallback.

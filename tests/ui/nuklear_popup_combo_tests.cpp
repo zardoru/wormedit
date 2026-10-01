@@ -138,3 +138,78 @@ TEST_CASE("Nuklear dropdown entry points are owned only by the central chrome gu
     for (const auto& path : unexpected) INFO(path);
     expect_combo(unexpected.empty());
 }
+
+namespace {
+void check_active_edit(nk_flags flags, bool focus_pending) {
+    CHECK((flags & NK_EDIT_ACTIVE) != 0);
+    CHECK_FALSE(focus_pending);
+}
+
+auto autofocus_popup_frame(nk_context& context, char* text, bool& focus_pending)
+    -> nk_flags {
+    expect_combo(nk_begin(&context, "Edit host", nk_rect(0, 0, 400, 400), NK_WINDOW_NO_SCROLLBAR));
+    expect_combo(nk_popup_begin(&context, NK_POPUP_STATIC, "Timing value", NK_WINDOW_NO_SCROLLBAR,
+                               nk_rect(20, 20, 250, 100)));
+    nk_layout_row_dynamic(&context, 25, 1);
+    const auto flags = wormedit::ui::chrome::autofocus_text_field(
+        &context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER | NK_EDIT_AUTO_SELECT,
+        text, 64, nk_filter_default, focus_pending);
+    nk_layout_row_dynamic(&context, 20, 1);
+    nk_label(&context, "Enter to apply", NK_TEXT_LEFT);
+    nk_popup_end(&context);
+    nk_end(&context);
+    return flags;
+}
+}
+
+TEST_CASE("Inline popup autofocus accepts typing without an extra click and reports blur",
+          "[unit][frontend][inline-timing]") {
+    combo_context_t fixture;
+    auto& context = fixture.context;
+    char text[64] = "125";
+    bool focus_pending = true;
+    input_frame(context, nk_vec2(0, 0), false);
+    const auto first = autofocus_popup_frame(context, text, focus_pending);
+    check_active_edit(first, focus_pending);
+    const auto label = text_position(context, "Enter to apply");
+    nk_clear(&context);
+    nk_input_begin(&context);
+    nk_input_unicode(&context, '2');
+    nk_input_unicode(&context, '.');
+    nk_input_unicode(&context, '5');
+    nk_input_end(&context);
+    const auto typed = autofocus_popup_frame(context, text, focus_pending);
+    check_active_edit(typed, focus_pending);
+    CHECK(std::string(text) == "2.5");
+    nk_clear(&context);
+    SECTION("Enter commits without a click") {
+        nk_input_begin(&context);
+        nk_input_key(&context, NK_KEY_ENTER, nk_true);
+        nk_input_end(&context);
+        const auto committed = autofocus_popup_frame(context, text, focus_pending);
+        CHECK((committed & NK_EDIT_COMMITTED) != 0);
+    }
+    SECTION("Clicking the popup label deactivates the value field") {
+        input_frame(context, label, true);
+        const auto blurred = autofocus_popup_frame(context, text, focus_pending);
+        CHECK((blurred & NK_EDIT_DEACTIVATED) != 0);
+    }
+}
+
+TEST_CASE("Dismissed inline popup releases its parent input lock",
+          "[unit][frontend][inline-timing]") {
+    combo_context_t fixture;
+    auto& context = fixture.context;
+    char text[64] = "125";
+    bool focus_pending = true;
+    input_frame(context, nk_vec2(0, 0), false);
+    static_cast<void>(autofocus_popup_frame(context, text, focus_pending));
+    nk_clear(&context);
+    input_frame(context, nk_vec2(0, 0), false);
+    expect_combo(nk_begin(&context, "Edit host", nk_rect(0, 0, 400, 400), NK_WINDOW_NO_SCROLLBAR));
+    auto* parent = context.current;
+    wormedit::ui::chrome::dismiss_popup(&context, "Timing value", nk_rect(20, 20, 250, 100));
+    CHECK(parent->popup.active == 0);
+    nk_end(&context);
+    CHECK((parent->flags & NK_WINDOW_ROM) == 0);
+}

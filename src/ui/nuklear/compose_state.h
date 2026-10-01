@@ -127,6 +127,8 @@ struct worm_ui_nuklear_compose_state_t {
     std::uint64_t timing_marker_revision{};
     bool inline_timing_open{};
     bool inline_timing_focus_pending{};
+    bool inline_timing_popup_close_pending{};
+    bool inline_timing_input_consumed{};
     std::uint64_t inline_timing_chart_id{};
     std::uint64_t inline_timing_revision{};
     std::uint64_t inline_timing_object_id{};
@@ -226,6 +228,12 @@ void worm_ui_nuklear_reset_compose_state();
 
 void worm_ui_nuklear_inline_timing_initial_text(const WormUiTimingView& view, char* destination,
                                                 std::size_t capacity);
+void worm_ui_nuklear_inline_timing_cancel(worm_ui_nuklear_compose_state_t& state,
+                                         WormUiWorkspaceAction& action);
+void worm_ui_nuklear_inline_timing_update(worm_ui_nuklear_compose_state_t& state,
+                                         const WormUiTimingView& view,
+                                         WormUiWorkspaceAction& action,
+                                         bool committed, bool deactivated);
 [[nodiscard]] auto worm_ui_nuklear_inline_timing_confirm(const WormUiTimingView& view,
                                                          const char* text,
                                                          WormUiWorkspaceAction& action) -> bool;

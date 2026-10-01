@@ -10,6 +10,7 @@
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/chrome.h"
 #include "ui/nuklear/timing_panel.h"
 
 #include "wormedit/nuklear_config.h"
@@ -666,23 +667,8 @@ struct ComposePanelRenderContext {
     std::size_t shortcut_event_count;
 };
 
-static void render_compose_inline_timing_editor(const ComposePanelRenderContext& panel,
-                                                struct nk_rect viewport) {
-    if (!state.inline_timing_open) return;
-    const auto& timing = *panel.timing_view;
-    if (!timing.stage_active) return;
-    if (timing.chart_id != state.inline_timing_chart_id ||
-        timing.document_revision != state.inline_timing_revision ||
-        timing.stage_existing_object_id != state.inline_timing_object_id ||
-        timing.stage_lane != state.inline_timing_lane) {
-        state.inline_timing_open = false;
-        state.inline_timing_focus_pending = false;
-        return;
-    }
-    if (state.inline_timing_focus_pending)
-        worm_ui_nuklear_inline_timing_initial_text(
-            timing, state.inline_timing_text.data(), state.inline_timing_text.size());
-
+static auto compose_inline_timing_popup_bounds(nk_context* context, struct nk_rect viewport)
+    -> struct nk_rect {
     constexpr float popup_width = 196.0f;
     constexpr float popup_height = 75.0f;
     const auto popup_x = std::clamp(state.inline_timing_anchor_screen_x,
@@ -690,37 +676,68 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
     const auto popup_y = std::clamp(state.inline_timing_anchor_screen_y - 24.0f,
                                     viewport.y,
                                     viewport.y + std::max(0.0f, viewport.h - popup_height));
-    const auto parent_clip = nk_window_get_content_region(panel.context);
-    const auto popup_rect = nk_rect(popup_x - parent_clip.x, popup_y - parent_clip.y,
+    const auto parent_clip = nk_window_get_content_region(context);
+    return nk_rect(popup_x - parent_clip.x, popup_y - parent_clip.y,
                                     popup_width, popup_height);
+
+}
+
+static void dismiss_compose_inline_timing_popup(nk_context* context, struct nk_rect viewport) {
+    wormedit::ui::chrome::dismiss_popup(
+        context, "Compose timing value", compose_inline_timing_popup_bounds(context, viewport));
+    state.inline_timing_popup_close_pending = false;
+    state.inline_timing_open = false;
+    state.inline_timing_focus_pending = false;
+}
+
+static void render_compose_inline_timing_editor(const ComposePanelRenderContext& panel,
+                                                struct nk_rect viewport) {
+    if (state.inline_timing_popup_close_pending) {
+        dismiss_compose_inline_timing_popup(panel.context, viewport);
+        return;
+    }
+    if (!state.inline_timing_open) return;
+    if (!panel.window_focused) {
+        worm_ui_nuklear_inline_timing_cancel(state, *panel.action);
+        dismiss_compose_inline_timing_popup(panel.context, viewport);
+        return;
+    }
+    const auto& timing = *panel.timing_view;
+    if (!timing.stage_active) {
+        // The opening double-click reaches the application after this frame.
+        if (panel.action->timing_stage_action == WORM_UI_TIMING_STAGE_BEGIN) return;
+        dismiss_compose_inline_timing_popup(panel.context, viewport);
+        return;
+    }
+    if (timing.chart_id != state.inline_timing_chart_id ||
+        timing.document_revision != state.inline_timing_revision ||
+        timing.stage_existing_object_id != state.inline_timing_object_id ||
+        timing.stage_lane != state.inline_timing_lane) {
+        dismiss_compose_inline_timing_popup(panel.context, viewport);
+        return;
+    }
+    if (state.inline_timing_focus_pending && state.inline_timing_error[0] == '\0')
+        worm_ui_nuklear_inline_timing_initial_text(
+            timing, state.inline_timing_text.data(), state.inline_timing_text.size());
+
     if (!nk_popup_begin(panel.context, NK_POPUP_STATIC, "Compose timing value",
-                        NK_WINDOW_NO_SCROLLBAR, popup_rect)) {
-        state.inline_timing_open = false;
-        state.inline_timing_focus_pending = false;
-        panel.action->timing_stage_action = WORM_UI_TIMING_STAGE_CANCEL;
+                        NK_WINDOW_NO_SCROLLBAR,
+                        compose_inline_timing_popup_bounds(panel.context, viewport))) {
+        worm_ui_nuklear_inline_timing_cancel(state, *panel.action);
         return;
     }
     nk_layout_row_dynamic(panel.context, 25.0f, 1);
-    const auto edit_flags = nk_edit_string_zero_terminated(
+    const auto edit_flags = wormedit::ui::chrome::autofocus_text_field(
         panel.context, static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER |
                            NK_EDIT_AUTO_SELECT,
         state.inline_timing_text.data(), static_cast<int>(state.inline_timing_text.size()),
-        nk_filter_default);
-    if (state.inline_timing_focus_pending) {
-        nk_edit_focus(panel.context, NK_EDIT_ALWAYS_INSERT_MODE);
-        state.inline_timing_focus_pending = false;
-    }
-    if ((edit_flags & NK_EDIT_COMMITTED) != 0) {
-        if (worm_ui_nuklear_inline_timing_confirm(timing, state.inline_timing_text.data(),
-                                                   *panel.action)) {
-            state.inline_timing_open = false;
-            state.inline_timing_focus_pending = false;
-            nk_popup_close(panel.context);
-        } else {
-            std::snprintf(state.inline_timing_error.data(), state.inline_timing_error.size(),
-                          "Enter a valid timing value");
-            nk_edit_focus(panel.context, NK_EDIT_ALWAYS_INSERT_MODE);
-        }
+        nk_filter_default, state.inline_timing_focus_pending);
+    worm_ui_nuklear_inline_timing_update(state, timing, *panel.action,
+                                        (edit_flags & NK_EDIT_COMMITTED) != 0,
+                                        (edit_flags & NK_EDIT_DEACTIVATED) != 0);
+    if (!state.inline_timing_open) {
+        nk_popup_close(panel.context);
+        state.inline_timing_popup_close_pending = false;
     }
     nk_layout_row_dynamic(panel.context, 17.0f, 1);
     nk_label(panel.context, state.inline_timing_error[0] ? state.inline_timing_error.data()

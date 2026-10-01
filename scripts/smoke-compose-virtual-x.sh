@@ -48,6 +48,9 @@ touch "$XAUTHORITY"
 chmod 600 "$XAUTHORITY"
 for display_number in {140..159}; do
     export DISPLAY="localhost:$display_number"
+    if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
+        continue
+    fi
     xauth -f "$XAUTHORITY" add "$DISPLAY" . "$(mcookie)" >/dev/null
     Xvfb ":$display_number" -screen 0 1280x1024x24 -nolisten unix -listen tcp \
         -auth "$XAUTHORITY" >"$temp_dir/Xvfb.log" 2>&1 &
@@ -78,7 +81,7 @@ export XDG_DATA_HOME="$temp_dir/data"
 app_pid=$!
 window_id=
 for attempt in {1..50}; do
-    window_id=$(xdotool search --onlyvisible --name '^wormedit$' 2>/dev/null | head -n 1 || true)
+    window_id=$(xdotool search --onlyvisible --pid "$app_pid" 2>/dev/null | head -n 1 || true)
     if [[ -n $window_id ]]; then
         break
     fi
@@ -102,6 +105,11 @@ if [[ ! $geometry =~ WIDTH=([0-9]+) ]]; then
     exit 1
 fi
 window_width=${BASH_REMATCH[1]}
+if [[ ! $geometry =~ HEIGHT=([0-9]+) ]]; then
+    echo "Could not read Wormedit window height." >&2
+    exit 1
+fi
+window_height=${BASH_REMATCH[1]}
 click_at() {
     xdotool mousemove --window "$window_id" "$1" "$2" mousedown 1
     sleep 0.12
@@ -113,8 +121,8 @@ if [[ $mode != landing ]]; then
     click_at "$((window_width / 2))" 150
 fi
 if [[ $mode != landing && $mode != wizard ]]; then
-    # Confirm the default 7K layout in the new-project dialog.
-    click_at "$((window_width / 2 + 160))" 375
+    # The centered, 204-pixel wizard puts Create 46 pixels below the window midpoint.
+    click_at "$((window_width / 2 + 160))" "$((window_height / 2 + 46))"
     # Compose is the middle of seven equal-width tabs.
     click_at "$((window_width / 2))" 55
     if [[ $mode == timing || $mode == recipe || $mode == recipe_apply ]]; then

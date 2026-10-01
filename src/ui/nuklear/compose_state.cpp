@@ -307,6 +307,34 @@ auto worm_ui_nuklear_inline_timing_confirm(const WormUiTimingView& view, const c
     return true;
 }
 
+void worm_ui_nuklear_inline_timing_cancel(worm_ui_nuklear_compose_state_t& state,
+                                         WormUiWorkspaceAction& action) {
+    state.inline_timing_input_consumed = true;
+    state.inline_timing_open = false;
+    state.inline_timing_focus_pending = false;
+    state.inline_timing_popup_close_pending = true;
+    action.timing_stage_action = WORM_UI_TIMING_STAGE_CANCEL;
+}
+
+void worm_ui_nuklear_inline_timing_update(worm_ui_nuklear_compose_state_t& state,
+                                         const WormUiTimingView& view,
+                                         WormUiWorkspaceAction& action,
+                                         bool committed, bool deactivated) {
+    state.inline_timing_input_consumed = true;
+    if (committed) {
+        if (worm_ui_nuklear_inline_timing_confirm(view, state.inline_timing_text.data(), action)) {
+            state.inline_timing_open = false;
+            state.inline_timing_focus_pending = false;
+        } else {
+            std::snprintf(state.inline_timing_error.data(), state.inline_timing_error.size(),
+                          "Enter a valid timing value");
+            state.inline_timing_focus_pending = true;
+        }
+    } else if (deactivated) {
+        worm_ui_nuklear_inline_timing_cancel(state, action);
+    }
+}
+
 auto worm_ui_nuklear_overview_fraction(double x, double left, double width)
     -> std::optional<double> {
     if (!std::isfinite(x) || !std::isfinite(left) || !std::isfinite(width) || width <= 0.0)

@@ -345,7 +345,7 @@ void compose_handle_focus_lost_input() {
     state.note_move_active = false;
     state.timing_stage_drag_active = false;
     reset_timing_marker_drag_capture();
-    state.inline_timing_open = false;
+    // Deliver the timing cancellation through prepare_compose_panel_input.
     state.area_selection_candidate_active = false;
     state.area_selection_active = false;
     state.navigation_key_active = false;
@@ -666,11 +666,11 @@ void process_compose_key_events(struct nk_context* context, const WormUiComposeV
         return;
     }
     if (state.inline_timing_open) {
+        state.inline_timing_input_consumed = true;
         for (size_t index = 0; index < state.key_event_count; ++index) {
             const auto& event = state.key_events[index];
             if (event.down && event.keycode == static_cast<uint32_t>(SDLK_ESCAPE)) {
-                state.inline_timing_open = false;
-                action->timing_stage_action = WORM_UI_TIMING_STAGE_CANCEL;
+                worm_ui_nuklear_inline_timing_cancel(state, *action);
                 break;
             }
         }
@@ -698,6 +698,7 @@ void process_compose_key_events(struct nk_context* context, const WormUiComposeV
 }
 
 static void cancel_pending_compose_panel_actions(WormUiWorkspaceAction* action) {
+    if (state.inline_timing_open) worm_ui_nuklear_inline_timing_cancel(state, *action);
     cancel_beat_fit_drag(action);
     cancel_offset_fit_drag(action);
     if (state.waveform_beat_zero_drag_active) {

@@ -1,11 +1,18 @@
 #include "ui/nuklear/compose_state.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <cstring>
 #include <limits>
+#include <source_location>
 
 namespace {
+
+void expect_inline(bool condition, std::source_location where = std::source_location::current()) {
+    INFO("inline timing check caller line " << where.line());
+    CHECK(condition);
+}
 
 auto staged_timing(WormUiTimingLaneKind lane) -> WormUiTimingView {
     WormUiTimingView view{};
@@ -542,4 +549,49 @@ TEST_CASE("Minimap gestures distinguish clicks drags and focus cancellation", "[
     CHECK(worm_ui_nuklear_overview_gesture(gesture, 10, true, true, true) == event::none);
     CHECK(worm_ui_nuklear_overview_gesture(gesture, 15, false, true, false) == event::none);
     CHECK(worm_ui_nuklear_overview_gesture(gesture, 15, false, false, true) == event::none);
+}
+
+TEST_CASE("Inline timing confirm and blur share the BPM and SV lifecycle",
+          "[unit][frontend][compose][inline-timing]") {
+    const auto lane = GENERATE(WORM_UI_TIMING_LANE_BPM, WORM_UI_TIMING_LANE_SCROLL);
+    auto view = staged_timing(lane);
+    worm_ui_nuklear_compose_state_t editor{};
+    editor.inline_timing_open = true;
+    std::strcpy(editor.inline_timing_text.data(), "2.5");
+    WormUiWorkspaceAction action{};
+    SECTION("Enter confirms the typed value and closes") {
+        worm_ui_nuklear_inline_timing_update(editor, view, action, true, false);
+        expect_inline(!editor.inline_timing_open);
+        expect_inline(action.timing_stage_action == WORM_UI_TIMING_STAGE_CONFIRM);
+        expect_inline(action.timing_lane == lane);
+        check_primary(action, "5", "2");
+    }
+    SECTION("Invalid Enter retains the draft and requests focus again") {
+        std::strcpy(editor.inline_timing_text.data(), "invalid");
+        worm_ui_nuklear_inline_timing_update(editor, view, action, true, false);
+        expect_inline(editor.inline_timing_open);
+        expect_inline(editor.inline_timing_focus_pending);
+        expect_inline(std::strcmp(editor.inline_timing_text.data(), "invalid") == 0);
+        expect_inline(editor.inline_timing_error[0] != '\0');
+        expect_inline(action.timing_stage_action == WORM_UI_TIMING_STAGE_NONE);
+    }
+    SECTION("Blur cancels without applying the draft") {
+        worm_ui_nuklear_inline_timing_update(editor, view, action, false, true);
+        expect_inline(!editor.inline_timing_open);
+        expect_inline(!editor.inline_timing_focus_pending);
+        expect_inline(action.timing_stage_action == WORM_UI_TIMING_STAGE_CANCEL);
+        expect_inline(editor.inline_timing_popup_close_pending);
+        expect_inline(editor.inline_timing_input_consumed);
+        expect_inline(action.timing_primary_numerator_text[0] == '\0');
+    }
+    SECTION("Escape uses the same cancellation") {
+        editor.inline_timing_focus_pending = true;
+        worm_ui_nuklear_inline_timing_cancel(editor, action);
+        expect_inline(!editor.inline_timing_open);
+        expect_inline(!editor.inline_timing_focus_pending);
+        expect_inline(action.timing_stage_action == WORM_UI_TIMING_STAGE_CANCEL);
+        expect_inline(editor.inline_timing_popup_close_pending);
+        expect_inline(editor.inline_timing_input_consumed);
+        expect_inline(action.timing_primary_numerator_text[0] == '\0');
+    }
 }

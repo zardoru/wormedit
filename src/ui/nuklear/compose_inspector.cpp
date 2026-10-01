@@ -172,6 +172,7 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
     render_initial_bpm_control(inspector);
     render_timing_lane_visibility(inspector);
     if (!state.inline_timing_open && inspector.timing_view->stage_active &&
+        inspector.action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE &&
         nk_tree_push(inspector.context, NK_TREE_TAB, "Timing event", NK_MAXIMIZED)) {
         worm_ui_nuklear_render_timing_stage_editor(inspector.context, inspector.timing_view,
                                                    inspector.action);

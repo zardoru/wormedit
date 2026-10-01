@@ -580,8 +580,8 @@ struct editor_interaction_state_t {
     note_kind_t armed_note_kind{note_kind_t::tap};
     local_position_t cursor;
     std::optional<std::uint64_t> virtual_bms_cursor_row;
-    // Non-authoring fraction of a chart row past `cursor`, set only while following
-    // audio so the cursor is drawn at the exact audible position; any cursor move clears it.
+    // Non-authoring signed offset, in chart rows, from `cursor` to where it is drawn: set while
+    // following audio or scrolling with a fixed cursor anchor; other cursor moves clear it.
     double cursor_subrow{};
     struct virtual_lane_key_t {
         std::uint64_t canvas_row{};

@@ -103,3 +103,15 @@ TEST_CASE("audio project starts with playable lanes and a linked music resource"
     CHECK(nine_lanes->output_groups.front().family == wormedit::format_family_t::osu_mania);
     CHECK_FALSE(wormedit::sys::audio_project_document(wormedit::song_id_t{123}, {}, "", "", 7));
 }
+
+TEST_CASE("audio project creates editable measures through the imported music duration",
+          "[sys][application-defaults][audio-extent]") {
+    const auto document = wormedit::sys::audio_project_document(
+        wormedit::song_id_t{123}, "/tmp/track.mp3", "Track", "Artist", 7,
+        {44'100, 2, 44'100 * 13, true});
+    REQUIRE(document);
+    REQUIRE(document->charts.front().measures.size() == 7);
+    CHECK(document->charts.front().measures.front().id == wormedit::measure_id_t{3});
+    CHECK(document->audio_assets.front().stream.frame_count == 44'100 * 13);
+    CHECK(wormedit::validate_document(*document).empty());
+}

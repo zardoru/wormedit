@@ -52,7 +52,9 @@ struct sound_slice_result_t {
 };
 
 // Derives exact source-frame boundaries from the channel's distinct musical
-// event times. source_frame_count is the decoded asset length; when neither it
+// event times. Each restart rewinds to source_clip.begin_frame and anchors
+// subsequent continuation offsets at its own chart time. source_frame_count
+// is the decoded asset length; when neither it
 // nor source_clip.end_frame is known, the final slice remains open-ended.
 [[nodiscard]] auto derive_sound_channel_slices(
     const chart_document_t& chart, const sound_channel_t& channel,

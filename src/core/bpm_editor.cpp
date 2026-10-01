@@ -1,5 +1,6 @@
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/measure.h>
+#include <wormedit/core/measure_editor.h>
 #include <wormedit/core/timing.h>
 
 #include <algorithm>
@@ -335,6 +336,11 @@ auto apply_bpm_edit(document_history_t& history, std::uint64_t expected_revision
     auto outcome = std::visit(
         [&](const auto& edit) { return apply_chart_edit(proposed, edit, limits, result); }, action);
     if (!outcome.valid || !result.diagnostics.empty() || !outcome.changed) {
+        return result;
+    }
+    if (!extend_native_charts_to_audio_end(proposed)) {
+        reject(result, diagnostic_code_t::invalid_measure,
+               "BPM edit would exceed the audio chart measure limits");
         return result;
     }
     return commit_document_command(history, std::move(proposed), std::move(outcome.label));

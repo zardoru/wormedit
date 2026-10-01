@@ -1,6 +1,8 @@
 #include "sys/frame_timing.h"
+#include "sys/application_defaults.h"
 #include "sys/timing_view.h"
 #include "sys/waveform_view_projection.h"
+#include "sys/waveform_analysis_runtime.h"
 #include "sys/bmson_waveform_projection.h"
 #include "sys/compose_view.h"
 #include "sys/compose_playhead_cursor.h"
@@ -252,6 +254,23 @@ TEST_CASE("Idle Compose timing projection does not build a measure index", "[sys
 }
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+TEST_CASE("Waveform runtime reports decoder failures instead of silently losing the waveform",
+          "[sys][waveform-projection]") {
+    audio::decoded_source_registry_t sources;
+    runtime::waveform_analysis_t waveform(sources);
+    workspace_controller_t workspace;
+    workspace.transport.audio_asset = asset_id_t{42};
+    compose_scene_cache_t cache;
+    song_document_t document;
+    std::string status;
+    waveform.service(document, workspace, cache, nullptr, status);
+    for (std::size_t attempt = 0; attempt < 200 && waveform.waveform_job().busy(); ++attempt) {
+        SDL_Delay(5);
+        waveform.service(document, workspace, cache, nullptr, status);
+    }
+    REQUIRE_FALSE(waveform.waveform_job().busy());
+    CHECK(status == "Waveform analysis failed: the audio source is unavailable.");
+}
 namespace {
 auto overview_analysis(float peak) -> audio::waveform_analysis_result_t {
     audio::waveform_t waveform;
@@ -302,6 +321,26 @@ TEST_CASE("Compose overview keeps cached rows while moving its visible range", "
     flattened.view.compose.pixels_per_standard_measure = 0;
     CHECK_FALSE(populate_compose_waveform_projection(flattened, cache, &analysis, false,
                                                       true, &interaction));
+}
+TEST_CASE("Compose waveform remains visible in a padded one-measure viewport", "[sys][waveform-projection]") {
+    auto song = dense_song();
+    song.charts.front().measures.resize(1);
+    compose_scene_cache_t cache;
+    cache.marker_timing_index = build_timing_index(song.charts.front()).index;
+    REQUIRE(cache.marker_timing_index);
+    flattened_workspace_t flattened;
+    flattened.view.compose.visible = true;
+    flattened.view.compose.scene_available = true;
+    flattened.view.compose.viewport_height_pixels = 800;
+    flattened.view.compose.pixels_per_standard_measure = 192;
+    editor_interaction_state_t interaction;
+    interaction.viewport_scroll_pixels = -160;
+    auto analysis = overview_analysis(0.5f);
+    REQUIRE(populate_compose_waveform_projection(flattened, cache, &analysis, false,
+                                                true, &interaction));
+    REQUIRE(flattened.view.compose.waveform_row_count > 0);
+    CHECK(flattened.compose.waveform.row.front().y_pixels >= 160);
+    CHECK(flattened.compose.waveform.row.front().absolute_peak[0] == 0.5f);
 }
 namespace { void expect_gpu_work(bool value); }
 TEST_CASE("Compose envelope projects only exposed stable world rows during follow", "[sys][waveform-projection]") {
@@ -406,6 +445,87 @@ void compare_cached_envelope_source(envelope_projection_fixture_t& fixture) {
     }
     expect_gpu_work(index == fixture.flattened.compose.waveform.row.size());
 }
+void check_waveform_axis(envelope_projection_fixture_t& fixture, bool sample_points) {
+    auto& view = fixture.flattened.view.compose;
+    view.downscroll = false;
+    fixture.project();
+    const auto upscroll = fixture.flattened.compose.waveform.row;
+    expect_gpu_work(!upscroll.empty());
+    view.downscroll = true;
+    fixture.project();
+    const auto& downscroll = fixture.flattened.compose.waveform.row;
+    expect_gpu_work(downscroll.size() == upscroll.size());
+    for (std::size_t index = 0; index < upscroll.size(); ++index) {
+        const auto& before = upscroll[index];
+        const auto& after = downscroll[index];
+        expect_gpu_work(before.sample_point == sample_points && after.sample_point == sample_points);
+        expect_gpu_work(std::ranges::equal(after.absolute_peak, before.absolute_peak) &&
+                        std::ranges::equal(after.samples, before.samples));
+        expect_gpu_work(std::abs(after.y_pixels + before.y_pixels - view.viewport_height_pixels) < 1e-8);
+    }
+}
+void check_waveform_scroll(envelope_projection_fixture_t& fixture) {
+    const auto before = fixture.flattened.compose.waveform.row[80];
+    const auto& view = fixture.flattened.view.compose;
+    const auto pixels_per_row = view.pixels_per_standard_measure /
+        fixture.cache.marker_timing_index->divisions_per_standard_measure;
+    const auto world_row = (fixture.interaction.viewport_scroll_pixels +
+        view.viewport_height_pixels - before.y_pixels) / pixels_per_row;
+    fixture.interaction.viewport_scroll_pixels += 25;
+    fixture.project();
+    const auto& after = fixture.flattened.compose.waveform.row[55];
+    expect_gpu_work(std::ranges::equal(after.absolute_peak, before.absolute_peak));
+    expect_gpu_work(after.y_pixels == before.y_pixels + 25);
+    const auto chart_y = compose_project_y(world_row, pixels_per_row,
+        fixture.interaction.viewport_scroll_pixels, fixture.flattened.view.compose.viewport_height_pixels, true);
+    expect_gpu_work(std::abs(chart_y - after.y_pixels) < 1e-8);
+    expect_gpu_work(fixture.cache.waveform_envelope_ring.projected_rows == 25);
+}
+void prepare_waveform_sample_points(envelope_projection_fixture_t& fixture) {
+    fixture.flattened.view.compose.pixels_per_standard_measure = 200'000;
+    fixture.style = {.sample_points = true, .detail_level = true};
+    const audio::audio_block_key_t key{fixture.analysis.waveform->key.source, 0};
+    const std::vector<float> pcm(32768, .8f);
+    expect_gpu_work(fixture.blocks.store(key, 16384, pcm) == audio::block_store_status_t::stored);
+}
+void prepare_seven_key_mp3_project(envelope_projection_fixture_t& fixture) {
+    const auto path = std::filesystem::path(__FILE__).parent_path().parent_path() /
+        "fixtures" / "audio" / "sliced-seek-source.mp3";
+    audio::decoder_t decoder;
+    expect_gpu_work(decoder.open(path));
+    const auto info = decoder.info();
+    expect_gpu_work(info.has_value());
+    const auto song = audio_project_document(song_id_t{42}, path, "7K MP3", "", 7,
+        {info->source_sample_rate, info->source_channel_count, info->source_frame_count, info->seekable});
+    expect_gpu_work(song.has_value());
+    fixture.history = make_document_history(*song);
+    const auto& chart = fixture.history.document.charts.front();
+    expect_gpu_work(chart.lane_layouts.front().layout.lanes.size() == 7);
+    fixture.cache = {};
+    fixture.cache.chart = chart.id;
+    fixture.cache.revision = fixture.history.document.revision;
+    fixture.cache.marker_timing_index = build_timing_index(chart).index;
+    fixture.flattened.view.compose.downscroll = compose_field_downscroll(chart);
+    expect_gpu_work(fixture.flattened.view.compose.downscroll);
+    audio::waveform_cache_t waveforms;
+    fixture.analysis = audio::analyze_waveform(decoder, fixture.blocks, waveforms,
+        {"fixture:7k-mp3", "immutable:v1"}, 256);
+    expect_gpu_work(fixture.analysis.waveform.has_value());
+}
+}
+TEST_CASE("MP3 project 7K waveform follows downscroll chart movement while reusing cached rows",
+          "[sys][waveform-projection]") {
+    envelope_projection_fixture_t fixture;
+    prepare_seven_key_mp3_project(fixture);
+    check_waveform_axis(fixture, false);
+    expect_gpu_work(fixture.cache.waveform_envelope_ring.projected_rows == 0);
+    check_waveform_scroll(fixture);
+}
+TEST_CASE("Compose waveform sample points follow the downscroll chart axis",
+          "[sys][waveform-projection]") {
+    envelope_projection_fixture_t fixture;
+    prepare_waveform_sample_points(fixture);
+    check_waveform_axis(fixture, true);
 }
 TEST_CASE("Incomplete envelope detail retries after PCM arrives and retains resolved rows",
           "[sys][waveform-projection]") {

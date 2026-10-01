@@ -309,9 +309,10 @@ TEST_CASE("append arena compaction copies live spans in order and returns the re
 TEST_CASE("append arena stale accounting excludes alignment padding",
           "[unit][arena][append][capacity]") {
     append_arena_t arena;
-    REQUIRE((arena.append(1, 1) && arena.append(1, 16)));
+    constexpr auto alignment = alignof(std::max_align_t);
+    REQUIRE((arena.append(1, 1) && arena.append(1, alignment)));
     CHECK(std::tuple{arena.statistics().used_bytes, arena.live_bytes()} ==
-          std::tuple{std::size_t{17}, std::size_t{2}});
+          std::tuple{alignment + 1, std::size_t{2}});
     arena.mark_stale(2);
     CHECK(std::tuple{arena.stale_bytes(), arena.live_bytes(), arena.stale_ratio()} ==
           std::tuple{std::size_t{2}, std::size_t{0}, 1.0});
@@ -323,7 +324,7 @@ TEST_CASE("append arena moves and compaction preserve payload accounting",
           "[unit][arena][append][compact]") {
     append_arena_t source;
     const auto stale = source.append(1, 1);
-    auto live = source.append(1, 16);
+    auto live = source.append(1, alignof(std::max_align_t));
     REQUIRE((stale && live));
     source.mark_stale(1);
     append_arena_t moved{std::move(source)};

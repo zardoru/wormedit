@@ -45,8 +45,12 @@ struct control_signature_t {
 };
 
 struct control_inventory_t {
+    struct choice_t {
+        branch_id_t id;
+        std::size_t source_order{};
+    };
     std::vector<control_signature_t> signatures;
-    std::vector<const bms_control_node_t*> choices;
+    std::vector<choice_t> choices;
     std::unordered_map<std::uint64_t, std::size_t> choice_indices_by_id;
 };
 
@@ -68,7 +72,7 @@ auto control_inventory(const bms_control_node_t& root) -> control_inventory_t {
                                           node.command_token, node.raw_value, node.close_text});
             if (is_choice_control(node.kind)) {
                 result.choice_indices_by_id.emplace(node.id.value, result.choices.size());
-                result.choices.push_back(&node);
+                result.choices.push_back({node.id, node.source_order});
             }
         }
         const auto child_inside_branch = inside_branch || begins_branch_scope(node.kind);
@@ -242,7 +246,7 @@ auto map_proposed_choices(const bms_branch_selection_request_t& request,
             return std::nullopt;
         }
         choices.push_back(
-            {baseline.choices[index->second]->source_order, selection.selected_value});
+            {baseline.choices[index->second].source_order, selection.selected_value});
     }
     return choices;
 }
@@ -264,8 +268,8 @@ auto same_proposed_selection(const chart_document_t& chart,
             original_index->second >= rematerialized.choices.size()) {
             return false;
         }
-        const auto* control = rematerialized.choices[original_index->second];
-        const auto found = actual.find(control->id.value);
+        const auto& control = rematerialized.choices[original_index->second];
+        const auto found = actual.find(control.id.value);
         if (found == actual.end() || found->second != selection.selected_value) {
             return false;
         }

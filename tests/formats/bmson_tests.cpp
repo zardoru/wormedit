@@ -157,10 +157,12 @@ TEST_CASE("BMSON published slicing derives exact shared source-frame ranges",
         chart, chart.sound_channels.front(), 48'000, 200'000);
     REQUIRE(slices);
     REQUIRE(slices.slices.size() == 6);
-    const std::array expected_begin{0ULL, 12'000ULL, 48'000ULL,
-                                    60'000ULL, 96'000ULL, 144'000ULL};
+    // The restart at pulse 720 rewinds the source; the preceding slice still
+    // ends at frame 48,000, measured from the first anchor at pulse 240.
+    const std::array expected_begin{0ULL, 12'000ULL, 0ULL,
+                                    12'000ULL, 48'000ULL, 96'000ULL};
     const std::array<std::optional<std::uint64_t>, 6> expected_end{
-        12'000ULL, 48'000ULL, 60'000ULL, 96'000ULL, 144'000ULL, 200'000ULL};
+        12'000ULL, 48'000ULL, 12'000ULL, 48'000ULL, 96'000ULL, 200'000ULL};
     const std::array expected_restart{true, false, true, false, false, false};
     const std::array<std::size_t, 6> expected_event_count{1, 2, 2, 2, 1, 1};
     for (std::size_t index = 0; index < slices.slices.size(); ++index) {

@@ -1,4 +1,5 @@
 #include <wormedit/core/measure_editor.h>
+#include <wormedit/core/timing.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -53,6 +54,40 @@ auto absolute_note_row(const song_document_t& song) -> std::uint64_t {
 }
 
 } // namespace
+
+namespace { void check_audio_extent(bool value) { CHECK(value); } }
+
+TEST_CASE("audio extent appends measures using final BPM and offset without moving notes",
+          "[core][measure-editor][audio-extent]") {
+    auto song = measure_song();
+    auto& chart = song.charts.front();
+    chart.beat_zero_audio_offset_seconds = {-1, 1};
+    chart.bpms.push_back({.id = object_id_t{31}, .position = {measure_id_t{11}, 0},
+                          .beats_per_minute = {60, 1}});
+    check_audio_extent(extend_chart_to_audio_end(chart, {48'000, 2, 48'000 * 13, true}));
+    REQUIRE(chart.measures.size() == 4);
+    check_audio_extent(chart.measures.front().id == measure_id_t{10});
+    check_audio_extent(chart.measures[2].notes.front().id == object_id_t{30});
+    check_audio_extent(chart.measures[2].notes.front().position == (local_position_t{measure_id_t{12}, 0}));
+    check_audio_extent(chart.measures.back().id == measure_id_t{13});
+    const auto timing = build_timing_index(chart);
+    REQUIRE(timing);
+    check_audio_extent(timing.index->rows.back().after_stops_seconds == (signed_rational_t{13, 1}));
+    check_audio_extent(extend_chart_to_audio_end(chart, {48'000, 2, 48'000 * 13, true}));
+    check_audio_extent(chart.measures.size() == 4);
+    check_audio_extent(validate_document(song).empty());
+}
+
+TEST_CASE("audio extent rejects excessive growth atomically and ignores unknown duration",
+          "[core][measure-editor][audio-extent]") {
+    auto chart = measure_song().charts.front();
+    CHECK_FALSE(extend_chart_to_audio_end(chart, {48'000, 2, 48'000 * 10, true},
+                                         {.maximum_measures = 4}));
+    CHECK(chart.measures.size() == 3);
+    CHECK(chart.measures.back().id == measure_id_t{12});
+    CHECK(extend_chart_to_audio_end(chart, {}));
+    CHECK(chart.measures.size() == 3);
+}
 
 TEST_CASE("measure insertion length editing and deletion preserve stable local identities",
           "[unit][core][measure-editor]") {

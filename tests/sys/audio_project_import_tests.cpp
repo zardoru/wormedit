@@ -53,9 +53,8 @@ auto tagged_audio_creates_selectable_project() -> bool {
     const auto imported = sys::inspect_audio_for_project(fixture("tagged-project.ogg"));
     if (!imported) return false;
     auto document = sys::audio_project_document(song_id_t{42}, imported.source_path,
-                                                imported.title, imported.artist, 4);
+                                                imported.title, imported.artist, 4, imported.stream);
     if (!document || document->audio_assets.size() != 1) return false;
-    document->audio_assets.front().stream = imported.stream;
     if (document->metadata.title != "Título 雪" || document->metadata.artist != "Björk" ||
         document->charts.size() != 1 || document->charts.front().lane_layouts.size() != 1 ||
         document->charts.front().lane_layouts.front().layout.lanes.size() != 4 ||

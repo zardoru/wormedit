@@ -29,6 +29,13 @@ void set_error(std::string* destination, std::string message) {
     }
 }
 
+auto position_decoder(ma_decoder& decoder, std::uint64_t frame) -> bool {
+    ma_uint64 cursor{};
+    if (ma_decoder_get_cursor_in_pcm_frames(&decoder, &cursor) == MA_SUCCESS && cursor == frame)
+        return true;
+    return ma_decoder_seek_to_pcm_frame(&decoder, frame) == MA_SUCCESS;
+}
+
 } // namespace
 
 struct decoder_t::impl_t {
@@ -242,7 +249,7 @@ auto decoder_t::read_at(std::uint64_t output_frame, std::span<float> interleaved
                 frames};
     }
     if (!impl_->stream_info.seekable || output_frame > impl_->stream_info.output_frame_count ||
-        ma_decoder_seek_to_pcm_frame(&impl_->decoder, output_frame) != MA_SUCCESS) {
+        !position_decoder(impl_->decoder, output_frame)) {
         return {read_status_t::seek_error, 0};
     }
     if (requested_frames == 0) {

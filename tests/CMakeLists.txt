@@ -408,6 +408,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         wormedit::core SDL3::SDL3 Catch2::Catch2WithMain)
     if(TARGET wormedit_audio_decoder)
         target_sources(wormedit_frame_timing_tests PRIVATE
+            sys/compose_beat_fit_tests.cpp
             ../src/sys/application_defaults.cpp
             ../src/sys/waveform_view_projection.cpp
             ../src/sys/waveform_analysis_runtime.cpp

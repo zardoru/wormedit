@@ -1518,9 +1518,13 @@ auto dispatch_compose_beat_fit_input(
         return begin_compose_beat_fit(input, history, workspace, state, application_state,
                                       scene_cache, input_chart);
     case WORM_UI_COMPOSE_INPUT_BEAT_FIT_UPDATE:
-    case WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE:
-        return update_compose_beat_fit(input, history, workspace, state, application_state,
+    case WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE: {
+        auto source_input = input;
+        source_input.y_pixels = compose_source_y(input.y_pixels, state.viewport_height_pixels,
+                                                input_chart && compose_field_downscroll(*input_chart));
+        return update_compose_beat_fit(source_input, history, workspace, state, application_state,
                                        scene_cache);
+    }
     case WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL:
         scene_cache.beat_fit_drag.reset();
         scene_cache.beat_fit_asset.reset();
@@ -1580,7 +1584,7 @@ auto dispatch_compose_offset_fit_input(
     cache.offset_fit_drag->target_y_pixels = input.y_pixels;
     const auto target = sample_frame_at_chart_y(
         drag.timing, context.state.viewport_scroll_pixels, context.state.pixels_per_standard_measure,
-        input.y_pixels, context.state.viewport_height_pixels, drag.beat.sample_rate);
+        context.input_source_y(input.y_pixels), context.state.viewport_height_pixels, drag.beat.sample_rate);
     if (!target || *target >= cache.waveform_overview_total_frames) {
         if (input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE) {
             cache.offset_fit_drag.reset();

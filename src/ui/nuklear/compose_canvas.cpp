@@ -544,10 +544,12 @@ static void draw_compose_beat_fit_region(const ComposePaintContext& paint,
     if (!view.beat_fit_drag_active) {
         return;
     }
-    const auto top = std::clamp(compose_projected_y(paint, view.beat_fit_anchor_y_pixels),
-                                paint.viewport.y, paint.viewport.y + paint.viewport.h);
-    const auto bottom = std::clamp(compose_projected_y(paint, view.beat_fit_beat_y_pixels),
+    const auto anchor_y = std::clamp(compose_projected_y(paint, view.beat_fit_anchor_y_pixels),
+                                     paint.viewport.y, paint.viewport.y + paint.viewport.h);
+    const auto beat_y = std::clamp(compose_projected_y(paint, view.beat_fit_beat_y_pixels),
                                    paint.viewport.y, paint.viewport.y + paint.viewport.h);
+    const auto top = std::min(anchor_y, beat_y);
+    const auto bottom = std::max(anchor_y, beat_y);
     if (bottom <= top) {
         return;
     }

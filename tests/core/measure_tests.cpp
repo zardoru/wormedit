@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <vector>
 
 using namespace wormedit;
 
@@ -85,4 +86,25 @@ TEST_CASE("BMSON mapping rejects invalid grids and overflow", "[unit][core][bmso
     CHECK_FALSE(bmson_pulse_for_row(
         {.resolution = 1, .pulses_per_editor_row = 2},
         std::numeric_limits<std::uint64_t>::max()));
+}
+
+TEST_CASE("suggest_meters lists denominators 4, 8 and 16 that fit exactly", "[unit][core][measure]")
+{
+    using meters_t = std::vector<meter_t>;
+    CHECK(suggest_meters({1, 1}) == meters_t{{4, 4}, {8, 8}, {16, 16}});
+    CHECK(suggest_meters({3, 4}) == meters_t{{3, 4}, {6, 8}, {12, 16}});
+    CHECK(suggest_meters({5, 4}) == meters_t{{5, 4}, {10, 8}, {20, 16}});
+    CHECK(suggest_meters({7, 8}) == meters_t{{7, 8}, {14, 16}});
+    CHECK(suggest_meters({1, 3}).empty());
+}
+
+TEST_CASE("suggest_meters normalizes input and rejects degenerate lengths", "[unit][core][measure][negative]")
+{
+    using meters_t = std::vector<meter_t>;
+    CHECK(suggest_meters({6, 8}) == meters_t{{3, 4}, {6, 8}, {12, 16}});
+    CHECK(suggest_meters({1, 16}) == meters_t{{1, 16}});
+    CHECK(suggest_meters({1, 32}).empty());
+    CHECK(suggest_meters({0, 1}).empty());
+    CHECK(suggest_meters({1, 0}).empty());
+    CHECK(suggest_meters({std::numeric_limits<std::uint64_t>::max(), 1}).empty());
 }

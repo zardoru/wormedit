@@ -59,6 +59,7 @@ stale-plan check (rule 9) first.
 ## T-73 Suggest time signatures from a measure length
 
 - **Status:** ready
+- **Implementation notes (2026-10-01):** steps 1 and 2 are done: `suggest_meters(rational_t) -> std::vector<meter_t>` in `include/wormedit/core/measure.h` (denominators 4, 8, 16 in order; at most three entries; empty when no exact candidate or for zero/overflowing input) with tests for 1, 3/4, 5/4, 7/8, 1/3 and degenerate inputs in `tests/core/measure_tests.cpp`. Step 3 (buttons in the meter form) remains and touches UI files.
 - **Outcome:** when a measure length is entered, the meter form lists candidate signatures (for example length 3/4 → 3/4, 6/8) and fills the chosen one.
 - **Read first:** `docs/chart-editor-plan/document-model.md` (measure length paragraph), `include/wormedit/core/measure.h`, `src/ui/nuklear/timing_panel.cpp` (meter form).
 - **Files owned:** `include/wormedit/core/measure.h`, `src/core/measure.cpp`, `tests/core/measure_tests.cpp`, `src/sys/timing_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/timing_panel.cpp`.

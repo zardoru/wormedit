@@ -29,10 +29,32 @@ void set_error(std::string* destination, std::string message) {
     }
 }
 
+// Seeking compressed audio can cost time proportional to the stream position,
+// so a short forward gap is cheaper to decode through than to seek over.
+constexpr std::uint64_t maximum_skip_frames = 4U * maximum_read_frames;
+
+auto skip_decoder_frames(ma_decoder& decoder, std::uint64_t count) -> bool {
+    std::vector<float> discard(maximum_read_frames * output_channel_count);
+    while (count != 0) {
+        const auto chunk = std::min<std::uint64_t>(count, maximum_read_frames);
+        ma_uint64 frames_read{};
+        const auto result = ma_decoder_read_pcm_frames(&decoder, discard.data(), chunk, &frames_read);
+        if (frames_read != chunk || (result != MA_SUCCESS && result != MA_AT_END))
+            return false;
+        count -= chunk;
+    }
+    return true;
+}
+
 auto position_decoder(ma_decoder& decoder, std::uint64_t frame) -> bool {
     ma_uint64 cursor{};
-    if (ma_decoder_get_cursor_in_pcm_frames(&decoder, &cursor) == MA_SUCCESS && cursor == frame)
-        return true;
+    if (ma_decoder_get_cursor_in_pcm_frames(&decoder, &cursor) == MA_SUCCESS) {
+        if (cursor == frame)
+            return true;
+        if (cursor < frame && frame - cursor <= maximum_skip_frames &&
+            skip_decoder_frames(decoder, frame - cursor))
+            return true;
+    }
     return ma_decoder_seek_to_pcm_frame(&decoder, frame) == MA_SUCCESS;
 }
 

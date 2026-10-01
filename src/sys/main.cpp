@@ -2589,12 +2589,11 @@ void create_audio_project_session(Context& context, const char* path,
     }
     auto document = wormedit::sys::audio_project_document(
         wormedit::sys::new_session_project_id(), audio.source_path,
-        audio.title, audio.artist, lane_count);
+        audio.title, audio.artist, lane_count, audio.stream);
     if (!document) {
         context.status_ref = "Could not create the selected audio chart layout.";
         return;
     }
-    document->audio_assets.front().stream = audio.stream;
     if (!replace_project_session(context, std::move(*document), true, true, false,
                                  {}, audio.source_path.parent_path())) return;
     const auto selected = wormedit::apply_workspace_action(

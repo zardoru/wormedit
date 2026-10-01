@@ -103,8 +103,8 @@ TEST_CASE("object audition forwards exact BGM clips and Stop through the bridge"
     REQUIRE(started);
     REQUIRE(started.prepared.has_value());
     REQUIRE(started.prepared->clips.size() == 1);
-    CHECK(started.prepared->clips.front().source_start_frame == 132'300);
-    CHECK(started.prepared->clips.front().frame_count == 67'700);
+    CHECK(started.prepared->clips.front().source_start_frame == 88'200);
+    CHECK(started.prepared->clips.front().frame_count == 111'800);
     CHECK(controller.stop().scheduled_voices == 1);
     CHECK_FALSE(bridge.session_token().has_value());
 }

@@ -75,17 +75,17 @@ struct sound_slice_build_context_t {
     const sound_channel_t& channel;
     const std::vector<indexed_event_t>& events;
     const timing_index_t& timing;
-    signed_rational_t first_time;
+    signed_rational_t restart_time;
     std::uint32_t sample_rate;
     std::optional<std::uint64_t> source_end;
     sound_slice_options_t options;
 };
 
-auto append_sound_slice_group(const sound_slice_build_context_t& context, std::size_t begin,
+auto append_sound_slice_group(sound_slice_build_context_t& context, std::size_t begin,
                               std::size_t end, sound_slice_result_t& result) -> bool {
     const auto& event = context.events[begin];
     const auto event_time = timing_at(context.timing, event.row);
-    const auto elapsed = event_time ? subtract_exact(*event_time.seconds, context.first_time)
+    const auto elapsed = event_time ? subtract_exact(*event_time.seconds, context.restart_time)
                                     : std::nullopt;
     const auto relative_frame = elapsed
                                     ? sample_frame_at(*elapsed, context.sample_rate,
@@ -104,14 +104,19 @@ auto append_sound_slice_group(const sound_slice_build_context_t& context, std::s
             "sound-channel slice boundary overflows the source frame range", event.event->id));
         return false;
     }
-    const auto source_begin = context.channel.source_clip.begin_frame + *relative_frame.frame;
+    const auto restart = std::any_of(context.events.begin() + static_cast<std::ptrdiff_t>(begin),
+                                    context.events.begin() + static_cast<std::ptrdiff_t>(end),
+                                    [](const auto& item) { return !item.event->continuation; });
+    const auto boundary = context.channel.source_clip.begin_frame + *relative_frame.frame;
+    const auto previous_end = context.source_end ? std::min(boundary, *context.source_end) : boundary;
+    const auto source_begin = restart ? context.channel.source_clip.begin_frame : boundary;
     if (context.source_end.has_value() && source_begin >= *context.source_end) {
         result.diagnostics.push_back(diagnostic(
             sound_slice_error_code_t::invalid_source_range,
             "sound-channel slice begins at or beyond the decoded source end", event.event->id));
         return false;
     }
-    if (!result.slices.empty() && source_begin <= result.slices.back().source_begin_frame) {
+    if (!result.slices.empty() && previous_end <= result.slices.back().source_begin_frame) {
         result.diagnostics.push_back(diagnostic(
             sound_slice_error_code_t::invalid_source_range,
             "distinct sound-channel markers must derive a positive source-frame range",
@@ -121,16 +126,16 @@ auto append_sound_slice_group(const sound_slice_build_context_t& context, std::s
     derived_sound_slice_t slice{.absolute_row = event.row,
                                 .source_begin_frame = source_begin,
                                 .source_end_frame = std::nullopt,
-                                .restart = false,
+                                .restart = restart,
                                 .events = {}};
     slice.events.reserve(end - begin);
     for (auto index = begin; index < end; ++index) {
-        slice.restart = slice.restart || !context.events[index].event->continuation;
         slice.events.push_back(context.events[index].event->id);
     }
     if (!result.slices.empty()) {
-        result.slices.back().source_end_frame = source_begin;
+        result.slices.back().source_end_frame = previous_end;
     }
+    if (restart) context.restart_time = *event_time.seconds;
     result.slices.push_back(std::move(slice));
     return true;
 }
@@ -211,9 +216,8 @@ auto derive_sound_channel_slices(const chart_document_t& chart,
         return result;
     }
 
-    const sound_slice_build_context_t context{channel, events, *timing.index,
-                                              *first_time.seconds, sample_rate, source_end,
-                                              options};
+    sound_slice_build_context_t context{channel, events, *timing.index,
+                                       *first_time.seconds, sample_rate, source_end, options};
     for (std::size_t begin = 0; begin < events.size();) {
         auto end = begin + 1;
         while (end < events.size() && events[end].row == events[begin].row) {

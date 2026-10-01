@@ -1,4 +1,5 @@
 #include <wormedit/core/bpm_editor.h>
+#include <wormedit/core/measure_editor.h>
 #include <wormedit/core/timing.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -8,6 +9,31 @@
 #include <ranges>
 
 using namespace wormedit;
+
+namespace { void check_music_extent(bool value) { CHECK(value); } }
+
+TEST_CASE("BPM edits extend native music charts through the audio end atomically",
+          "[core][bpm-editor][audio-extent]") {
+    song_document_t song{.id = song_id_t{1}, .revision = 1,
+        .audio_assets = {{.id = asset_id_t{1}, .source_path = "/tmp/track.mp3",
+                           .stream = {44'100, 2, 44'100 * 13, true}}},
+        .resources = {{.id = resource_id_t{1}, .asset = asset_id_t{1},
+                        .roles = {resource_role_t::music}}},
+        .charts = {{.id = chart_id_t{2}, .source_family = format_family_t::native_project,
+                    .measures = {{.id = measure_id_t{3}}},
+                    .bpms = {{.id = object_id_t{10}, .position = {measure_id_t{3}, 0},
+                               .beats_per_minute = {120, 1}}}}}};
+    REQUIRE(extend_native_charts_to_audio_end(song));
+    REQUIRE(song.charts.front().measures.size() == 7);
+    auto history = make_document_history(song);
+    REQUIRE(apply_bpm_edit(history, 1, update_bpm_event_action_t{
+        chart_id_t{2}, object_id_t{10}, {measure_id_t{3}, 0}, {240, 1}}));
+    check_music_extent(history.document.charts.front().measures.size() == 13);
+    check_music_extent(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    check_music_extent(history.document.charts.front().measures.size() == 7);
+    check_music_extent(history.document.charts.front().bpms.front().beats_per_minute == (signed_rational_t{120, 1}));
+}
 
 namespace {
 

@@ -20,7 +20,8 @@ namespace wormedit::sys {
 [[nodiscard]] auto audio_project_document(song_id_t project_id,
                                           std::filesystem::path audio_source_path,
                                           std::string title, std::string artist,
-                                          std::uint32_t lane_count)
+                                          std::uint32_t lane_count,
+                                          audio_stream_info_t stream = {})
     -> std::optional<song_document_t>;
 
 } // namespace wormedit::sys

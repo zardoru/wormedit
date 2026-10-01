@@ -1,4 +1,5 @@
 #include <wormedit/core/audio_offset_editor.h>
+#include <wormedit/core/measure_editor.h>
 
 #include <algorithm>
 #include <limits>
@@ -169,6 +170,11 @@ auto apply_audio_offset_edit(document_history_t& history, std::uint64_t expected
     if (selected->beat_zero_audio_offset_seconds == offset_seconds)
         return result;
     selected->beat_zero_audio_offset_seconds = offset_seconds;
+    if (!extend_native_charts_to_audio_end(proposed)) {
+        result.diagnostics.push_back(error(diagnostic_code_t::invalid_measure,
+                                           "Offset edit would exceed the audio chart measure limits"));
+        return result;
+    }
     return commit_document_command(history, std::move(proposed), "Set audio offset");
 }
 

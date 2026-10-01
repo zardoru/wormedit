@@ -1,6 +1,8 @@
 #include <wormedit/core/measure_editor.h>
+#include <wormedit/core/timing.h>
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <ranges>
 #include <string>
@@ -215,6 +217,56 @@ auto apply_measure_edit(document_history_t& history, std::uint64_t expected_revi
         return result;
     }
     return commit_document_command(history, std::move(proposed), std::move(context.label));
+}
+
+auto extend_chart_to_audio_end(chart_document_t& chart, const audio_stream_info_t& stream,
+                               measure_edit_limits_t limits) -> bool {
+    if (!stream.frame_count || stream.sample_rate == 0) return true;
+    const auto timing = build_timing_index(chart);
+    if (!timing || timing.index->rows.empty()) return false;
+    const auto& end = timing.index->rows.back();
+    const auto end_seconds = static_cast<long double>(end.after_stops_seconds.numerator) /
+                             end.after_stops_seconds.denominator;
+    const auto audio_seconds = static_cast<long double>(*stream.frame_count) / stream.sample_rate;
+    if (audio_seconds <= end_seconds) return true;
+    const auto bpm = static_cast<long double>(end.effective_bpm.numerator) /
+                     end.effective_bpm.denominator;
+    const auto extra = std::ceil((audio_seconds - end_seconds) * bpm / 240.0L);
+    if (!std::isfinite(extra) || extra < 1 || chart.measures.size() > limits.maximum_measures ||
+        extra > limits.maximum_measures - chart.measures.size() ||
+        chart.divisions_per_standard_measure > limits.maximum_rows_per_measure) return false;
+    const auto first = next_measure_id(chart);
+    const auto count = static_cast<std::size_t>(extra);
+    if (!first || count - 1 > std::numeric_limits<std::uint64_t>::max() - first->value)
+        return false;
+    chart.measures.reserve(chart.measures.size() + count);
+    for (std::size_t index = 0; index < count; ++index)
+        chart.measures.push_back({.id = measure_id_t{first->value + index}});
+    return true;
+}
+
+auto extend_native_charts_to_audio_end(song_document_t& document) -> bool {
+    const audio_stream_info_t* longest{};
+    long double duration{};
+    for (const auto& resource : document.resources) {
+        if (std::ranges::find(resource.roles, resource_role_t::music) == resource.roles.end() &&
+            std::ranges::find(resource.roles, resource_role_t::bgm) == resource.roles.end()) continue;
+        const auto asset = std::ranges::find(document.audio_assets, resource.asset, &audio_asset_t::id);
+        if (asset == document.audio_assets.end() || !asset->stream.frame_count ||
+            asset->stream.sample_rate == 0) continue;
+        const auto seconds = static_cast<long double>(*asset->stream.frame_count) /
+                             asset->stream.sample_rate;
+        if (seconds > duration) {
+            duration = seconds;
+            longest = &asset->stream;
+        }
+    }
+    if (!longest) return true;
+    for (auto& chart : document.charts) {
+        if (chart.source_family == format_family_t::native_project &&
+            !extend_chart_to_audio_end(chart, *longest)) return false;
+    }
+    return true;
 }
 
 } // namespace wormedit

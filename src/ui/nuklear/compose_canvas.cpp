@@ -425,7 +425,7 @@ static auto draw_compose_envelope_texture(const ComposePaintContext& paint,
     // Envelope texels describe whole world pixels. PCM points keep their exact
     // projected coordinates in draw_compose_waveform_samples.
     const auto scroll = std::floor(view.area_scroll_pixels);
-    const auto origin = joined && view.downscroll
+    const auto origin = view.downscroll
         ? -scroll - view.viewport_height_pixels : scroll;
     static std::vector<wormedit::ui::field::envelope_row_t> rows;
     rows.clear();

@@ -9,6 +9,21 @@
 
 namespace wormedit::sys::runtime {
 
+namespace {
+auto waveform_failure_message(audio::waveform_analysis_status_t status) -> const char* {
+    using enum audio::waveform_analysis_status_t;
+    switch (status) {
+    case decoder_unavailable: return "Waveform analysis failed: the audio source is unavailable.";
+    case source_too_large: return "Waveform analysis failed: the audio exceeds the analysis cache limit.";
+    case decode_failed: return "Waveform analysis failed while decoding the audio.";
+    case analysis_cache_capacity_exceeded: return "Waveform analysis failed: the waveform cache is full.";
+    case invalid_request: return "Waveform analysis failed: the analysis range is invalid.";
+    case cancelled: return "Waveform analysis was cancelled.";
+    default: return "Waveform analysis returned no waveform.";
+    }
+}
+} // namespace
+
 waveform_analysis_t::waveform_analysis_t(audio::decoded_source_registry_t& sources,
     audio::decoded_block_cache_t* preview_blocks)
     : sources_(sources), preview_blocks_(preview_blocks),
@@ -124,6 +139,8 @@ void waveform_analysis_t::service_workspace_waveform(
         completed && waveform_job_asset_ == completed->asset) {
         if (*completed) {
             waveform_analysis_ = completed->analysis;
+            if (!waveform_analysis_->waveform)
+                status = waveform_failure_message(waveform_analysis_->status);
         } else if (completed->task_error) {
             status = completed->task_error->message;
         }

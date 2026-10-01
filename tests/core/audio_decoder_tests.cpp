@@ -46,6 +46,33 @@ constexpr std::array<double, 6> silence_centers{
     1.0, 3.0, 5.0, 7.0, 9.0, 11.0,
 };
 
+void check_mp3_continuity(bool value) { REQUIRE(value); }
+
+TEST_CASE("adjacent MP3 read_at blocks agree with continuous reads across intervening seeks",
+          "[audio][decoder][fixture]") {
+    using namespace wormedit::audio;
+    const auto path = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio/sliced-seek-source.mp3";
+    decoder_t positioned;
+    decoder_t continuous;
+    REQUIRE(positioned.open(path));
+    REQUIRE(continuous.open(path));
+    std::vector<float> expected(maximum_read_frames * output_channel_count);
+    std::vector<float> actual(expected.size());
+    for (std::size_t block = 0; block < 10; ++block) {
+        const auto before = continuous.read(expected, maximum_read_frames);
+        const auto after = positioned.read_at(block * maximum_read_frames, actual, maximum_read_frames);
+        check_mp3_continuity(before.status == read_status_t::success);
+        check_mp3_continuity(after.status == read_status_t::success);
+        check_mp3_continuity(before.frames_read == after.frames_read);
+        check_mp3_continuity(actual == expected);
+    }
+    check_mp3_continuity(positioned.seek(0));
+    check_mp3_continuity(continuous.seek(0));
+    check_mp3_continuity(positioned.read_at(0, actual, maximum_read_frames).status == read_status_t::success);
+    check_mp3_continuity(continuous.read(expected, maximum_read_frames).status == read_status_t::success);
+    check_mp3_continuity(actual == expected);
+}
+
 auto fixture_audio_path(std::string_view name, std::string_view extension)
     -> std::filesystem::path {
     return std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "audio" /

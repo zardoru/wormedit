@@ -348,6 +348,27 @@ TEST_CASE("resource import registers decoded asset and catalog entry in one hist
     CHECK(history.document.resources.back().asset == history.document.audio_assets.back().id);
 }
 
+namespace { void check_import_extent(bool value) { CHECK(value); } }
+
+TEST_CASE("BGM import extends native chart measures in the same undo command",
+          "[core][resources][audio-extent]") {
+    auto song = assignment_song();
+    song.charts.front().source_family = format_family_t::native_project;
+    auto history = make_document_history(song);
+    REQUIRE(apply_resource_asset_import(history, song.revision,
+        {.source_path = "/tmp/track.mp3", .role = resource_role_t::bgm,
+         .audio_stream = audio_stream_info_t{44'100, 2, 44'100 * 13, true}}));
+    REQUIRE(history.document.charts.front().measures.size() == 7);
+    check_import_extent(history.document.charts.front().measures.front().notes.front().position ==
+          song.charts.front().measures.front().notes.front().position);
+    check_import_extent(history.undo.size() == 1);
+    check_import_extent(validate_document(history.document).empty());
+    REQUIRE(undo_document_command(history));
+    check_import_extent(history.document.charts.front().measures.size() == 1);
+    REQUIRE(redo_document_command(history));
+    check_import_extent(history.document.charts.front().measures.size() == 7);
+}
+
 TEST_CASE("resource import rejects path and decoded-type errors without partial assets",
           "[unit][core][resources]") {
     auto history = make_document_history(assignment_song());

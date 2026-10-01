@@ -28,6 +28,20 @@ auto bin_at_seconds(const wormedit::audio::waveform_t& waveform, double seconds)
 
 } // namespace
 
+TEST_CASE("MP3 project audio produces a complete coarse waveform", "[audio][waveform][fixture]") {
+    wormedit::audio::decoder_t decoder;
+    std::string error;
+    REQUIRE(decoder.open(fixture_path("sliced-seek-source.mp3"), &error));
+    wormedit::audio::decoded_block_cache_t blocks;
+    wormedit::audio::waveform_cache_t waveforms;
+    const auto result = wormedit::audio::analyze_waveform(decoder, blocks, waveforms,
+                                                        fixture_source(), 256);
+    CAPTURE(result.status);
+    REQUIRE(result.waveform);
+    CHECK(result.waveform->total_frames == decoder.info()->output_frame_count);
+    CHECK(bin_at_seconds(*result.waveform, 0.2).absolute_peak[0] > 0.05F);
+}
+
 TEST_CASE("complete waveform analysis streams through the bounded decoded-block cache",
           "[unit][audio][waveform][fixture]") {
     wormedit::audio::decoder_t decoder;

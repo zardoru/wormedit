@@ -213,6 +213,11 @@ auto envelope_style(const audio::aligned_waveform_style_t* playback,
     return {.sample_points = window->frames_per_pixel < 1,
             .detail_level = window->frames_per_pixel < 256};
 }
+void orient_compose_waveform_rows(std::vector<WormUiComposeWaveformRowView>& rows,
+                                  const WormUiComposeView& view) {
+    for (auto& row : rows)
+        row.y_pixels = compose_source_y(row.y_pixels, view.viewport_height_pixels, view.downscroll);
+}
 } // namespace
 
 
@@ -315,6 +320,7 @@ auto populate_compose_waveform_projection(
         populate_direct_envelope(flattened.compose.waveform.row, waveform, selected_waveform,
                                  *cache.marker_timing_index, request, decoded_blocks,
                                  detail_analysis, stable_style);
+    orient_compose_waveform_rows(flattened.compose.waveform.row, compose);
     compose.waveform_rows = flattened.compose.waveform.row.data();
     compose.waveform_row_count = flattened.compose.waveform.row.size();
 

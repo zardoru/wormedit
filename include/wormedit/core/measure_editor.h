@@ -34,6 +34,18 @@ using measure_edit_action_t =
     std::variant<insert_measure_action_t, update_measure_definition_action_t,
                  delete_measure_action_t>;
 
+// Append default 4/4 measures through the source audio's end using the chart's
+// final BPM and exact existing timing. Existing IDs and positions stay intact.
+// Unknown stream lengths are a no-op; invalid or excessive extents fail before
+// modifying the chart. Callers commit the resulting draft through history.
+[[nodiscard]] auto extend_chart_to_audio_end(chart_document_t& chart,
+                                             const audio_stream_info_t& stream,
+                                             measure_edit_limits_t limits = {}) -> bool;
+
+// Extend native charts to the longest linked music/BGM source after a timing
+// edit. Apply to a document draft so a failed extent rejects the whole command.
+[[nodiscard]] auto extend_native_charts_to_audio_end(song_document_t& document) -> bool;
+
 // Applies one structural or definition edit through shared document history.
 // Insertions preserve existing measure IDs and local positions. Deletion is
 // deliberately conservative: any remaining object that names the measure makes

@@ -1,6 +1,7 @@
 #include "sys/application_defaults.h"
 
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/measure_editor.h>
 
 #include <chrono>
 #include <cstdint>
@@ -152,18 +153,21 @@ auto initial_document(song_id_t project_id, std::uint32_t lane_count)
 }
 
 auto audio_project_document(song_id_t project_id, std::filesystem::path audio_source_path,
-                            std::string title, std::string artist, std::uint32_t lane_count)
+                            std::string title, std::string artist, std::uint32_t lane_count,
+                            audio_stream_info_t stream)
     -> std::optional<song_document_t> {
     if (!project_id || !supported_lane_count(lane_count) ||
         audio_source_path.filename().empty()) return std::nullopt;
     auto chart = make_initial_chart(make_playable_profile(lane_count),
                                     format_family_t::native_project);
+    if (!extend_chart_to_audio_end(chart, stream)) return std::nullopt;
     auto resource_name = audio_source_path.filename().generic_string();
     return song_document_t{
         .id = project_id,
         .revision = 1,
         .metadata = {.title = std::move(title), .artist = std::move(artist)},
-        .audio_assets = {{.id = asset_id_t{6}, .source_path = std::move(audio_source_path)}},
+        .audio_assets = {{.id = asset_id_t{6}, .source_path = std::move(audio_source_path),
+                          .stream = stream}},
         .resources = {{.id = resource_id_t{7},
                        .name = std::move(resource_name),
                        .asset = asset_id_t{6},

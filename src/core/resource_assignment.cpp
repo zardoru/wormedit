@@ -1,4 +1,5 @@
 #include <wormedit/core/resource_assignment.h>
+#include <wormedit/core/measure_editor.h>
 #include <wormedit/core/virtual_canvas.h>
 
 #include <algorithm>
@@ -974,6 +975,16 @@ auto apply_resource_asset_import(document_history_t& history, std::uint64_t expe
     if (!created.applied) {
         result.diagnostics = created.diagnostics;
         return result;
+    }
+    if (action.role == resource_role_t::bgm) {
+        for (auto& chart : draft.document.charts) {
+            if (chart.source_family == format_family_t::native_project &&
+                !extend_chart_to_audio_end(chart, *action.audio_stream)) {
+                reject(result, diagnostic_code_t::invalid_measure,
+                       "imported audio exceeds the chart's timing or measure limits");
+                return result;
+            }
+        }
     }
     return commit_document_command(history, std::move(draft.document), "Import resource asset");
 }

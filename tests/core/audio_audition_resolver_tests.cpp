@@ -71,7 +71,7 @@ TEST_CASE("audition resolver maps published BMSON slices into normalized transpo
     REQUIRE(resolved);
     REQUIRE(resolved.clips.size() == 1);
     CHECK(resolved.document_revision == song.revision);
-    CHECK(resolved.clips.front().source_start_frame == 44'100);
+    CHECK(resolved.clips.front().source_start_frame == 0);
     CHECK(resolved.clips.front().frame_count == 11'025);
 
     const auto retained_shared = event_at(360, true);
@@ -119,8 +119,9 @@ TEST_CASE("audition resolver isolates BGM slices and falls back to whole unlinke
         song, chart.id, bgm_measure->bgm_events.front().id, bindings);
     REQUIRE(bgm);
     REQUIRE(bgm.clips.size() == 1);
-    CHECK(bgm.clips.front().source_start_frame == 132'300);
-    CHECK(bgm.clips.front().frame_count == 67'700);
+    // Pulse 1680 is two source seconds after the restart at pulse 720.
+    CHECK(bgm.clips.front().source_start_frame == 88'200);
+    CHECK(bgm.clips.front().frame_count == 111'800);
 
     auto& note = chart.measures.front().notes.front();
     note.sound_channel_event.reset();
@@ -210,7 +211,7 @@ TEST_CASE("BMSON draft audition resolves a staged region without editing the son
     }
     REQUIRE(first);
     REQUIRE(first.clips.size() == 1);
-    CHECK(first.clips.front().source_start_frame == 121'275);
+    CHECK(first.clips.front().source_start_frame == 77'175);
     CHECK(first.clips.front().frame_count == 11'025);
     const auto second = wormedit::audio::resolve_bmson_draft_audition(
         song,
@@ -222,8 +223,9 @@ TEST_CASE("BMSON draft audition resolves a staged region without editing the son
         bindings);
     REQUIRE(second);
     REQUIRE(second.clips.size() == 1);
-    CHECK(second.clips.front().source_start_frame == 143'325);
-    CHECK(second.clips.front().frame_count == 56'675);
+    // The second draft marker requests another restart, so it plays from zero.
+    CHECK(second.clips.front().source_start_frame == 0);
+    CHECK(second.clips.front().frame_count == 200'000);
     auto mixed_markers = markers;
     mixed_markers[0].playable_lane = chart.lane_layouts.front().layout.lanes.front().id;
     const auto playable = wormedit::audio::resolve_bmson_draft_audition(
@@ -354,10 +356,10 @@ TEST_CASE("preview binding resolver indexes exact BMSON slices for one schedule 
     };
     CHECK(voice_for(shared.id).source_start_frame == 11'025);
     CHECK(voice_for(shared.id).frame_count == 33'075);
-    CHECK(voice_for(restart.id).source_start_frame == 44'100);
+    CHECK(voice_for(restart.id).source_start_frame == 0);
     CHECK(voice_for(restart.id).frame_count == 11'025);
-    CHECK(voice_for(bgm.id).source_start_frame == 132'300);
-    CHECK(voice_for(bgm.id).frame_count == 67'700);
+    CHECK(voice_for(bgm.id).source_start_frame == 88'200);
+    CHECK(voice_for(bgm.id).frame_count == 111'800);
 
     schedule.playable.front().resource = wormedit::resource_id_t{999'999};
     const auto stale =

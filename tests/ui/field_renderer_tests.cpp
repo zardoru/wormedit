@@ -447,6 +447,19 @@ TEST_CASE("Waveform texture ring composites stable RMS pixels with delta rasteri
     compare_envelope_frame(fixture, cached, 1000);
     expect_field(cached.envelope_work().regenerated_rows == 66);
 }
+TEST_CASE("Waveform texture ring renders the reversed world axis during downscroll",
+          "[ui][field][sdl][waveform]") {
+    field_submission_fixture_t fixture;
+    renderer_t cached;
+    compare_envelope_frame(fixture, cached, -64);
+    expect_field(cached.envelope_work().regenerated_rows == 66);
+    compare_envelope_frame(fixture, cached, -65);
+    expect_field(cached.envelope_work().regenerated_rows == 1);
+    compare_envelope_frame(fixture, cached, -65.75);
+    expect_field(cached.envelope_work().regenerated_rows == 1);
+    compare_envelope_frame(fixture, cached, -65);
+    expect_field(cached.envelope_work().regenerated_rows == 1);
+}
 namespace {
 void draw_scaled_envelope_reference(field_submission_fixture_t& fixture,
                                     std::span<const envelope_row_t> rows, double origin, float scale) {

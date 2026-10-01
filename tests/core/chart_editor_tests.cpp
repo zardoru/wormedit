@@ -1,6 +1,7 @@
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/native_project.h>
+#include <wormedit/formats/stepmania.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -259,5 +260,80 @@ TEST_CASE("New chart accepts explicit profiles beyond the bounded project table"
     expect_chart(added.chart == history.document.charts.back().id);
     expect_chart(history.document.charts.back().source_family == format_family_t::bms);
     expect_chart(history.document.charts.back().lane_layouts[0].layout.split_stage);
+    expect_chart(validate_document(history.document).empty());
+}
+
+namespace {
+auto four_key_template_song() -> song_document_t {
+    constexpr std::string_view bytes = "#VERSION:0.83;\n#TITLE:Template;\n#BPMS:0=120;\n#NOTEDATA:;\n#CHARTNAME:Active4K;\n#STEPSTYPE:dance-single;\n#DIFFICULTY:Hard;\n#METER:8;\n#NOTES:\n1000\n0000\n0100\n0000\n;\n";
+    auto parsed = parse_stepmania_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}),
+        {.profile = stepmania_profile_t::ssc});
+    require_chart(parsed.song.has_value() && !parsed.has_errors());
+    auto song = std::move(*parsed.song);
+    song.revision = 4;
+    song.charts[0].divisions_per_standard_measure = 3840;
+    song.charts[0].beat_zero_audio_offset_seconds = {-7, 20};
+    song.output_groups = {{.name = "SSC", .charts = {song.charts[0].id}}};
+    require_chart(validate_document(song).empty());
+    return song;
+}
+}
+
+TEST_CASE("New chart templates active four-key profile resolution and exact offset without source content", "[unit][core][chart-editor]") {
+    auto history = make_document_history(four_key_template_song());
+    const auto source = history.document.charts[0];
+    const auto result = apply_add_chart_command(history, 4, source.id);
+    require_chart(static_cast<bool>(result));
+    const auto created = history.document.charts.back();
+    expect_chart(validate_document(history.document).empty());
+    expect_chart(created.source_family == format_family_t::stepmania);
+    expect_chart(created.divisions_per_standard_measure == 3840 && created.beat_zero_audio_offset_seconds == signed_rational_t{-7, 20});
+    expect_chart(created.lane_layouts.size() == 1 && created.lane_layouts[0].layout.profile_id == source.lane_layouts[0].layout.profile_id);
+    expect_chart(created.lane_layouts[0].layout.lanes.size() == 4 && created.input_profile.bindings.size() == 4);
+    expect_chart(created.lane_layouts[0].layout.lanes[0].glyph == lane_glyph_t::arrow_left);
+    expect_chart(created.lane_layouts[0].layout.lanes[0].id != source.lane_layouts[0].layout.lanes[0].id);
+    expect_chart(created.input_profile.bindings[0].lane == created.lane_layouts[0].layout.lanes[0].id);
+    expect_chart(created.measures.size() == 1 && created.measures[0].notes.empty());
+    expect_chart(created.metadata.format_groups.empty() && !created.metadata.rating && created.metadata.author.empty());
+    expect_chart(history.document.charts[0].measures[0].notes.size() == source.measures[0].notes.size());
+    expect_chart(history.document.charts[0].metadata.name == source.metadata.name);
+    expect_chart(history.document.output_groups[0].charts == std::vector{source.id});
+    expect_chart(history.undo.size() == 1);
+    require_chart(undo_document_command(history));
+    expect_chart(history.document.charts.size() == 1);
+    require_chart(redo_document_command(history));
+    expect_chart(history.document.charts.back().id == created.id);
+    require_chart(undo_document_command(history));
+    const auto replacement = apply_add_chart_command(history, history.document.revision, source.id);
+    require_chart(static_cast<bool>(replacement));
+    expect_chart(replacement.chart->value > created.id.value);
+}
+
+TEST_CASE("New chart template rejects stale missing and exhausted requests atomically", "[unit][core][chart-editor]") {
+    auto history = make_document_history(four_key_template_song());
+    const auto source = history.document.charts[0].id;
+    expect_chart(!apply_add_chart_command(history, 3, source));
+    expect_chart(!apply_add_chart_command(history, 4, chart_id_t{9999}));
+    expect_chart(history.document.charts.size() == 1 && history.document.revision == 4 && history.undo.empty());
+    history.document.id = song_id_t{std::numeric_limits<std::uint64_t>::max()};
+    expect_chart(!apply_add_chart_command(history, 4, source));
+    expect_chart(history.document.charts.size() == 1 && history.undo.empty() && history.redo.empty());
+}
+
+TEST_CASE("New chart templates the initial layout without copying later measure extent", "[unit][core][chart-editor]") {
+    auto song = four_key_template_song();
+    auto& source = song.charts[0];
+    source.measures.push_back({.id = measure_id_t{600}});
+    source.lane_layouts.push_back({.id = object_id_t{601}, .position = {measure_id_t{600}, 0},
+        .layout = {.profile_id = "future", .lanes = {{.id = lane_id_t{602}, .name = "Future key"}}}});
+    source.input_profile.bindings.push_back({physical_key_t::key_q, lane_id_t{602}});
+    require_chart(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    const auto created = apply_add_chart_command(history, 4, history.document.charts[0].id);
+    require_chart(static_cast<bool>(created));
+    const auto& chart = history.document.charts.back();
+    expect_chart(chart.measures.size() == 1 && chart.lane_layouts.size() == 1);
+    expect_chart(chart.lane_layouts[0].layout.profile_id == "stepmania:dance-single");
+    expect_chart(chart.input_profile.bindings.size() == 4);
     expect_chart(validate_document(history.document).empty());
 }

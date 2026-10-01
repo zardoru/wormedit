@@ -61,7 +61,7 @@ Apply the stale-plan check (rule 9) first.
 - **Status:** ready
 - **Outcome:** program scope only. File → Options… and `workspace.options` (default Ctrl+, / ⌘,) open a modeless Options window with a category list on the left and the selected page on the right; each page edits a draft copy with Apply, Revert, and Restore defaults; Apply validates and saves through T-253.
 - **Read first:** `include/wormedit/core/preferences.h`, `src/ui/nuklear/external_player_panel.cpp` (existing modeless panel), `src/core/command_registry.cpp`, `src/ui/nuklear/chrome.h`.
-- **Files owned:** new `src/ui/nuklear/options_window.cpp/.h`, new `src/sys/options_runtime.cpp/.h`, `src/ui/frontend.h`, `src/core/command_registry.cpp`, `src/sys/main.cpp` (dispatch/view only), `CMakeLists.txt`, new `tests/ui/nuklear_options_state_tests.cpp`, `tests/CMakeLists.txt`.
+- **Files owned:** new `src/ui/nuklear/options_window.cpp/.h`, new `src/sys/options_runtime.cpp/.h`, `src/ui/frontend.h`, `src/core/command_registry.cpp`, `src/sys/main.cpp` (dispatch/view only), `CMakeLists.txt`, new `tests/ui/nuklear_options_state_tests.cpp`, `tests/CMakeLists.txt`; user-approved frontend integration extension: `src/ui/nuklear/frontend.cpp` (File menu entry and modeless renderer wiring).
 - **Steps:** 1. Scalar view with the draft values and validation messages per field. 2. Category list: General, Editor, Playback & audio, Display, Input & shortcuts, External players. 3. Pages are registered functions so later cards add content without touching the shell.
 - **Invariants:** opening Options does not change editor focus, selection, or tool; nothing is applied until Apply.
 - **Reject/failure behavior:** invalid fields disable Apply and show their message inline.
@@ -134,14 +134,14 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-260 Turn Setup into a Project tab with a chart manager
 
-- **Status:** done (full suite 1008/1008; focused Project/New/batch/selection 15/15; isolated multi-difficulty SSC-derived GUI actions and F1 alias verified)
+- **Status:** done (Project actions verified; New preserves the active profile, resolution, and exact offset; full suite 1016/1016, core 780/780, and isolated saved-document GUI proof passed)
 - **Outcome:** project scope only. The Setup tab is renamed **Project** and shows a table of the song's charts: name, author, rating, mode/key count, output group, note count, length; row actions New (T-52), Duplicate, Delete (with confirmation), Up/Down, and Open in Compose; multi-select enables batch metadata (T-128). The recovery rows and StepMania export policy stay below the table.
 - **Read first:** `src/ui/nuklear/setup_panel.cpp/.h`, `src/ui/nuklear/setup_state.h`, `src/core/workspace.cpp` (tab list and selected difficulty), `include/wormedit/core/chart_editor.h`.
 - **Files owned:** `src/ui/nuklear/setup_panel.cpp/.h`, `src/ui/nuklear/setup_state.cpp/.h`, new `src/sys/project_view.cpp/.h`, `src/sys/main.cpp` (dispatch/view only), `src/core/workspace.cpp` (tab label only), `src/ui/frontend.h`, `CMakeLists.txt`, `tests/ui/nuklear_setup_state_tests.cpp`; user-approved prerequisite/integration extensions: `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`, `tests/core/chart_editor_tests.cpp` (New chart), `include/wormedit/core/metadata_editor.h`, `src/core/metadata_editor.cpp`, `tests/core/metadata_editor_tests.cpp` (atomic batch metadata), `src/sys/workspace_projection.cpp`, `src/ui/nuklear/frontend.cpp` (Project labels and recovery placement), `tests/CMakeLists.txt`, new `tests/sys/project_view_tests.cpp`.
 - **Steps:** 1. Scalar table view (bounded to 256 charts). 2. Actions through the standard pattern. 3. Delete confirmation lists what will be removed (notes count, groups).
 - **Invariants:** the command id `workspace.open_setup` keeps working (alias to the Project tab).
 - **Reject/failure behavior:** core rejections shown per row.
-- **Verify:** standard build/test; smoke PNG of the Project tab with a multi-difficulty SSC fixture.
+- **Verify:** full build passed; full suite 1016/1016 in 44.64 seconds (`/tmp/wormedit-t249-t279-t294-final-ctest.log`); core 780/780 in 12.05 seconds (`/tmp/wormedit-t260/template-core-prefix.log`). Configured clang-tidy found no cognitive-complexity violations in the five affected follow-up translation units (`/tmp/wormedit-t260/template-tidy.log`). Isolated Xvfb/SDL dummy multi-difficulty SSC-derived GUI actions passed; Project New and Ctrl+Shift+N opened four-lane empty Compose charts, and the saved native document confirmed both new charts preserve `stepmania:dance-single`, resolution 3840, exact offset -7/20, one measure, and no notes (`/tmp/wormedit-t260/template-exact-values.log`; `project-new-compose.png`, `project-new-shortcut.png`, and `project-final.png` in the same directory).
 - **Out of scope:** output-group editing (T-261).
 
 ## T-261 Manage output groups in the Project tab

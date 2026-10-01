@@ -16,6 +16,7 @@
    - **Blocks:** new BMS export profiles beyond the current ones. Do not start it until the user answers.
 4. How much non-gameplay source data must round-trip initially: BGA/storyboard/video, preview metadata, custom headers/tags, and comments?
    - **Provisional default (unconfirmed):** Round-trip everything the importer already preserves losslessly; do not add new BGA/storyboard/preview writers.
+   - **Answered (2026-09-30):** Format-dependent: robust round-trip for BMS and osu!mania (T-288, T-289); SM/SSC keeps what the importer already preserves, no new writers.
    - **Blocks:** new non-gameplay writers. Do not start it until the user answers.
 5. When a BPM edit affects time-anchored osu!mania notes, which behavior should be the default: keep their audio times fixed or move them with the beat grid?
    - **Provisional default (unconfirmed):** Keep audio times fixed (move notes with the audio, not the grid); expose as a policy value, not hard-coded.
@@ -23,6 +24,7 @@
    - **Blocks:** osu!mania BPM-edit commands. Do not start it until the user answers.
 6. May column count change only at measure boundaries, or must mid-measure layout changes be editable too?
    - **Provisional default (unconfirmed):** Column count may change only at measure boundaries.
+   - **Answered (2026-09-30):** Column count changes only at measure boundaries for now; mid-measure layout changes are a late ambition (niche).
    - **Blocks:** mid-measure layout-change editing. Do not start it until the user answers.
 7. When locally dragging an unlocked beat, should the default preserve both neighboring beat anchors by changing BPM on both sides, or preserve only the previous anchor and allow the following grid to move?
    - **Provisional default (unconfirmed):** Preserve only the previous anchor; the following grid may move.
@@ -56,6 +58,7 @@
    - **Answered (2026-09-30, extension):** StepMania/ITG palette adds 48th cyan and 64th green; everything else stays as above (T-286).
 15. Which BMS encodings and aliases belong in the automatic detector's initial candidate set, and what confidence threshold should force manual confirmation?
    - **Provisional default (unconfirmed):** Candidates UTF-8, CP932/Shift-JIS, EUC-KR/CP949, Windows-1252; below the current detector confidence, require manual confirmation.
+   - **Answered (2026-09-30):** BMS export prefers UTF-8 because beatoraja is the target (T-282); the LR2 profile writes CP932. Import detection keeps the current candidates.
    - **Blocks:** detector candidate-set changes. Do not start it until the user answers.
 16. Which initial video containers/codecs, resolutions, frame rates, alpha/background policies, and audio-mix options are required?
    - **Provisional default (unconfirmed):** None chosen; do not start encoder work.
@@ -66,6 +69,7 @@
    - **Blocks:** converter executable naming. Do not start it until the user answers.
 18. Which additional StepMania implementations merit named export profiles, and can pinned fixtures safely expand the current StepMania 5.1/Etterna 0.75.1 native-SSC subsets to any legacy negative-BPM or negative-stop encoding?
    - **Provisional default (unconfirmed):** Keep the pinned StepMania 5.1/Etterna 0.75.1 native-SSC subsets only.
+   - **Answered (2026-09-30):** Keep StepMania 5.1 and Etterna 0.75.1; a modern AMX profile is a much later addition. osu!mania: pin the latest lazer format (T-291).
    - **Blocks:** new StepMania export profiles. Do not start it until the user answers.
 
 ## How to use this list
@@ -86,3 +90,4 @@ An executing model never resolves an open question by itself. If a task depends 
 - The command journal replays edits (T-121).
 - Unsaved changes prompt Save / Discard / Cancel (T-53).
 - Lua SV recipes (T-156, T-161, T-162, T-189–T-191) are near-term, not deferred.
+- T-245: no real-display measurement; render acceptance uses T-246 counters.

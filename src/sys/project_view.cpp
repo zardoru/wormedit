@@ -82,7 +82,9 @@ auto project_chart_row(const song_document_t& document, const chart_document_t& 
 auto apply_project_chart_command(document_history_t& history,
     const project_chart_command_t& action) -> project_chart_command_result_t {
     if (action.kind == project_chart_command_kind_t::create) {
-        auto created = apply_new_chart_command(history, action.expected_revision);
+        auto created = history.document.charts.empty()
+            ? apply_new_chart_command(history, action.expected_revision)
+            : apply_add_chart_command(history, action.expected_revision, action.chart);
         return {.command = std::move(created.command), .open_chart = created.chart};
     }
     if (action.kind == project_chart_command_kind_t::duplicate) {
@@ -199,13 +201,15 @@ void project_chart_view(project_chart_runtime_t& runtime, const song_document_t&
 }
 
 auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,
-    document_history_t& history, const WormUiProjectChartAction& action) -> project_chart_ui_result_t {
+    document_history_t& history, const WormUiProjectChartAction& action,
+    std::optional<chart_id_t> active_chart) -> project_chart_ui_result_t {
     if (action.session_generation != runtime.session_generation)
         return {.status = "Project chart action belongs to a closed session."};
     const auto kind = ui_command_kind(action.kind);
     if (!kind) return {.status = "Project chart action is invalid."};
     project_chart_command_t command{.kind = *kind, .expected_revision = action.document_revision,
         .chart = chart_id_t{action.chart_id}};
+    if (*kind == project_chart_command_kind_t::create && active_chart) command.chart = *active_chart;
     if (*kind == project_chart_command_kind_t::batch_metadata) {
         const auto metadata = ui_batch_metadata(action);
         if (!metadata) {

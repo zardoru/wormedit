@@ -1675,7 +1675,7 @@ bool dispatch_project_chart_action(wormedit::sys::project_chart_runtime_t& runti
     if (handled) return true;
     if (!loaded || action.kind == WORM_UI_PROJECT_CHART_NONE) return false;
     const auto previous_chart = workspace.selected_chart;
-    auto result = wormedit::sys::apply_project_chart_ui_action(runtime, history, action);
+    auto result = wormedit::sys::apply_project_chart_ui_action(runtime, history, action, workspace.selected_chart);
     status = result.status;
     if (result.applied) {
         const auto rebound = wormedit::rebind_workspace(workspace, history);
@@ -2995,7 +2995,8 @@ auto dispatch_registered_application_command(
             status, "Command is not implemented by the application.");
     }
     if (command->kind == wormedit::sys::application_command_kind_t::document_new_chart) {
-        const auto created = wormedit::apply_new_chart_command(history, history.document.revision);
+        const auto created = wormedit::apply_add_chart_command(history, history.document.revision,
+            workspace.selected_chart.value_or(wormedit::chart_id_t{}));
         if (!created) return wormedit::sys::reject_application_command(status,
             created.command.diagnostics.empty() ? "New chart could not be created." : created.command.diagnostics.front().message);
         const auto rebound = wormedit::rebind_workspace(workspace, history);

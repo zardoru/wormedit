@@ -17,6 +17,11 @@ struct duplicate_chart_result_t {
     std::uint64_t expected_revision, lane_input_profile_t profile = make_bms_7k_profile(),
     format_family_t source_family = format_family_t::native_project) -> duplicate_chart_result_t;
 
+// Templates only the initial lane profile, resolution and exact audio offset.
+// Creates one empty standard measure with fresh identities; source content is never cloned.
+[[nodiscard]] auto apply_add_chart_command(document_history_t& history,
+    std::uint64_t expected_revision, chart_id_t template_chart) -> duplicate_chart_result_t;
+
 [[nodiscard]] auto apply_duplicate_chart_command(document_history_t& history,
     std::uint64_t expected_revision, chart_id_t chart) -> duplicate_chart_result_t;
 [[nodiscard]] auto apply_delete_chart_command(document_history_t& history,

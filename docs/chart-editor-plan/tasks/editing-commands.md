@@ -40,7 +40,7 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-52 Enable New Chart
 
-- **Status:** ready
+- **Status:** done (active-template New selects one empty difficulty; core 780/780 and isolated Project/shortcut saved-document proof passed)
 - **Outcome:** `document.new_chart` adds an empty difficulty (same lane profile and resolution as the active chart) to the open song as one undoable command and selects it.
 - **Read first:** `include/wormedit/core/command.h`, `include/wormedit/core/document.h` (`chart_document_t`), `src/sys/main.cpp` (`set("document.new_chart", false)`), `src/sys/application_command_dispatch.cpp`.
 - **Files owned:** new `include/wormedit/core/chart_editor.h`, new `src/core/chart_editor.cpp`, new `tests/core/chart_editor_tests.cpp`, `src/sys/main.cpp`, `src/sys/application_command_dispatch.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -50,7 +50,7 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
   3. Dispatch the command and select the new chart in the workspace.
 - **Invariants:** existing charts and output groups unchanged; IDs never reused.
 - **Reject/failure behavior:** stale revision or missing template rejects without a history entry.
-- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'` passed 780/780 in 12.05 seconds (`/tmp/wormedit-t260/template-core-prefix.log`). Full suite 1016/1016 passed; configured affected-file complexity checks passed. Isolated GUI Project New and Ctrl+Shift+N selected empty four-lane charts, and native saving confirmed the active profile, resolution 3840, and exact offset -7/20 (`/tmp/wormedit-t260/template-exact-values.log`).
 - **Out of scope:** deleting or reordering difficulties.
 
 ## T-53 Enable New Project from the command registry

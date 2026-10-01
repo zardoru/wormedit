@@ -130,3 +130,21 @@ Apply the stale-plan check (rule 9) first.
 - **Reject/failure behavior:** none.
 - **Verify:** standard build/test; smoke PNGs.
 - **Out of scope:** new layer features.
+
+## T-290 Add a CJK-capable font and UI localization (ja, zh, ko)
+
+- **Status:** deferred (late ambition, user decision 2026-09-30; was: ready)
+- **Outcome:** the UI font covers Japanese, Chinese (simplified and traditional), and Korean glyphs, so chart titles, artists, genres, `#WAV`/`#BMP` names, and paths render correctly; UI strings go through a localization table with English, Japanese, Simplified Chinese, Traditional Chinese, and Korean catalogs, selectable in Options (program scope, T-253).
+- **Note:** CJK *display* of chart data (BMS metadata and file names are often Japanese) may be wanted before UI translation; if so, split steps 1–3 into their own near-term card.
+- **Read first:** `src/ui/nuklear/frontend.cpp` (font atlas setup), `src/ui/nuklear/theme.cpp`, `include/wormedit/core/preferences.h` (T-253), the command registry's localization keys (`command.<id>` in `src/core/command_registry.cpp`).
+- **Files owned:** `assets/fonts/` (font files and their license), `src/ui/nuklear/frontend.cpp`, new `src/ui/nuklear/font_atlas.cpp/.h`, new `assets/locales/*.json`, new `src/core/localization.cpp`, new `include/wormedit/core/localization.h`, new `tests/core/localization_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Steps:**
+  1. Choose an OFL-licensed pan-CJK font (for example Noto Sans CJK or Source Han Sans subsets) and record the license; keep the Latin UI font and add CJK as a fallback.
+  2. Nuklear bakes atlases ahead of time, so do not bake all CJK glyphs: build the atlas from the glyph set actually present in the current UI strings plus document text (re-bake on project open or locale change), with a size cap; missing glyphs fall back to a box and one diagnostic.
+  3. Verify rendering with Japanese, Chinese, and Korean BMS/osu! metadata fixtures (smoke PNG).
+  4. Localization table keyed by stable string ids (reuse the registry's `command.<id>` keys); English is the source catalog; missing translations fall back to English.
+  5. Locale choice in Options; tests for lookup, fallback, and plural-free formatting with arguments.
+- **Invariants:** document text is never modified by display; Latin text rendering unchanged.
+- **Reject/failure behavior:** a missing or corrupt locale file falls back to English with a warning.
+- **Verify:** standard build/test; smoke PNGs with each locale.
+- **Out of scope:** right-to-left scripts, IME improvements.

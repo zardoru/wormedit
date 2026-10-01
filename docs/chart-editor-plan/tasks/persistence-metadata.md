@@ -135,3 +135,20 @@ was recently reorganized into collapsible sections; apply the stale-plan check
 - **Reject/failure behavior:** out-of-range values show an inline error and are not applied.
 - **Verify:** standard build/test; smoke PNG of `metadata`.
 - **Out of scope:** new fields not listed here.
+
+## T-295 Validate every opened document before using it
+
+- **Status:** ready
+- **Outcome:** after any chart or project is parsed, the whole document is validated before it becomes the editing document; an invalid document is either repaired by a named, safe normalization (with a warning listing what changed) or refused with an error that names the chart, measure, and object; the app never opens a document in which every edit will be rejected.
+- **Cause (user session 2026-09-30, gdb):** a StepMania `.sm` with a hold crossing a measure boundary was imported by an older parser that stored the hold in its tail's measure while its position named the head's measure (fixed in the working tree on 2026-09-30 22:08, with a regression test in `tests/formats/stepmania_tests.cpp`). Because `src/sys/project_open.cpp` does not validate parsed documents, the app opened it; every later command then failed whole-document validation with "note is stored outside the measure named by its position" — in a different difficulty from the one being edited — so note placement, tab switches, and zoom silently did nothing while the cursor appeared stuck.
+- **Read first:** `src/sys/project_open.cpp` (`take_parsed_document`, `normalize_empty_input_profiles`), `include/wormedit/core/document.h` (graph validation entry point and diagnostics), `src/core/document.cpp`, `include/wormedit/core/command.h` (`commit_document_command` validation).
+- **Files owned:** `src/sys/project_open.cpp/.h`, `tests/sys/project_open_tests.cpp`, new `tests/formats/fixture_validation_tests.cpp`, `tests/CMakeLists.txt`, `src/core/document.cpp` (diagnostic text only).
+- **Steps:**
+  1. After parsing and load normalizations, run the same document validation commands use. On failure: if every diagnostic is in a repairable class (for example a note stored in the wrong measure chunk but with a valid position), re-home those objects into the measure their position names and report "Repaired N objects stored in the wrong measure"; otherwise refuse to open and show the first diagnostics with chart name, measure number, lane, and row.
+  2. Make validation diagnostics name the chart (difficulty name) and the measure number, not only ids, so a command rejected because of another difficulty is understandable.
+  3. Fixture-wide test: every positive fixture under `tests/fixtures/` (all formats) parses into a document that passes validation, and one command (place a tap) succeeds on each chart.
+  4. Regression test: a hand-built document with a note in the wrong measure chunk is repaired on open; an unrepairable one is refused with a readable message.
+- **Invariants:** valid documents open exactly as before; repairs never change positions, only storage.
+- **Reject/failure behavior:** a refused document leaves the current session unchanged.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'project_open|fixture_validation|^core\.'`.
+- **Out of scope:** UI for browsing all diagnostics (notifications T-224 cover that).

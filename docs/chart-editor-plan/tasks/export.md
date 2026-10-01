@@ -118,8 +118,44 @@ Most remaining format work waits on user decisions; those cards are
 - **Outcome:** BMS export defaults to a named `beatoraja` profile (user decision 2026-09-30): it may emit beatoraja-supported extensions (for example `#LNMODE`, `#SCROLL`/SC channel, `#PREVIEW`, extended BPM/STOP) where the document uses them, and an `lr2_compatible` profile restricts output to the classic command set with explicit loss diagnostics.
 - **Read first:** `src/formats/bms_writer.cpp`, `include/wormedit/formats/bms_writer.h`, `docs/references/bms-command-memo.md`, `include/wormedit/formats/conversion.h`.
 - **Files owned:** `src/formats/bms_writer.cpp`, `include/wormedit/formats/bms_writer.h`, `src/formats/conversion.cpp`, `tests/formats/bms_writer_tests.cpp`, new fixtures under `tests/fixtures/bms/` for each profile, `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`.
-- **Steps:** 1. Fixture-first: one paired fixture per extension, with the beatoraja behavior cited from beatoraja's source (record the commit). 2. Profile enum in the writer options; default `beatoraja`. 3. `lr2_compatible` converts or rejects each extension with a classified loss.
+- **Steps:** 1. Fixture-first: one paired fixture per extension, with the beatoraja behavior cited from beatoraja's source (record the commit). 2. Profile enum in the writer options; default `beatoraja`. 3. `lr2_compatible` converts or rejects each extension with a classified loss. 4. Text encoding (user decision 2026-09-30): the `beatoraja` profile writes UTF-8 for all normalized output and offers "convert untouched source lines to UTF-8" (default on for this profile, so a re-exported Shift-JIS chart becomes UTF-8). Check beatoraja's charset detection in its source (record the commit) to decide whether to write a BOM; add a fixture that beatoraja's detection reads as UTF-8. The `lr2_compatible` profile writes CP932 through iconv and rejects characters CP932 cannot represent.
 - **Invariants:** unedited imports still re-export byte-identically under the profile they were imported with.
 - **Reject/failure behavior:** extensions the chosen profile cannot express reject with classified losses.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'bms|loss'`.
 - **Out of scope:** other players' profiles.
+
+## T-288 Round-trip BMS non-gameplay data robustly
+
+- **Status:** ready
+- **Outcome:** BMS import → edit → export preserves every non-gameplay construct listed below, verified by paired fixtures: `#BMP`/BGA base, layer, layer2, and poor channels; `#BGA` definitions; `#STAGEFILE`, `#BANNER`, `#BACKBMP`, `#PREVIEW`; `#SUBTITLE`, `#SUBARTIST`, `#GENRE`, `#COMMENT`, `#DIFFICULTY`, `#PLAYLEVEL`, `#RANK`, `#DEFEXRANK`, `#TOTAL`, `#VOLWAV`, `#LNTYPE`/`#LNOBJ`/`#LNMODE`; `;` and `//` comment lines; unknown `#` headers in source order (user decision 2026-09-30, question 4).
+- **Read first:** `src/formats/bms.cpp`, `src/formats/bms_writer.cpp`, `tests/formats/bms_writer_tests.cpp`, `docs/references/bms-command-memo.md`, `tests/fixtures/README.md`.
+- **Files owned:** `src/formats/bms.cpp`, `src/formats/bms_writer.cpp`, `tests/formats/bms_tests.cpp`, `tests/formats/bms_writer_tests.cpp`, new fixtures under `tests/fixtures/bms/`, `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`.
+- **Steps:** 1. One fixture containing every construct above. 2. Test: import, edit one note far away, export, compare every listed line (byte-equal where untouched, semantically equal where normalized). 3. List the gaps found in the report, then fix each one.
+- **Invariants:** untouched lines byte-identical under the import profile.
+- **Reject/failure behavior:** constructs that cannot be preserved are reported as classified losses, never dropped silently.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'bms|loss|round.?trip'`.
+- **Out of scope:** BGA editing UI.
+
+## T-289 Round-trip osu!mania non-gameplay data robustly
+
+- **Status:** ready
+- **Outcome:** osu!mania import → edit → export preserves `[Events]` (background, video with offset, breaks, storyboard lines in source order), `[Colours]`, `[General]` sample settings (`SampleSet`, `SampleVolume`, `AudioLeadIn`, `PreviewTime`, `Countdown`, `SpecialStyle`, `WidescreenStoryboard`), timing-point sample sets/volumes/effects, hit-object hitsample fields, and unknown keys, verified by paired fixtures (user decision 2026-09-30, question 4).
+- **Read first:** `src/formats/osu_mania.cpp`, `include/wormedit/formats/osu_mania.h`, `tests/formats/osu_mania_tests.cpp`, `docs/references/osu-mania-version-profiles.md`.
+- **Files owned:** `src/formats/osu_mania.cpp`, `tests/formats/osu_mania_tests.cpp`, new fixtures under `tests/fixtures/osu/`, `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`.
+- **Steps:** as T-288 for osu!mania.
+- **Invariants:** unedited files re-export semantically equal; storyboard lines keep order.
+- **Reject/failure behavior:** as T-288.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'osu|loss|round.?trip'`.
+- **Out of scope:** storyboard editing (deferred).
+
+## T-291 Pin the latest osu!mania format version
+
+- **Status:** ready
+- **Outcome:** the lazer profile is pinned to the latest `osu file format vN` emitted by the current osu! (lazer) encoder, with a fixture and the encoder commit recorded; stable v14 stays readable (user decision 2026-09-30).
+- **Read first:** `docs/references/osu-mania-version-profiles.md`, `src/formats/osu_mania.cpp` (profile selection), `tests/fixtures/osu/`.
+- **Files owned:** `docs/references/osu-mania-version-profiles.md`, `src/formats/osu_mania.cpp`, `include/wormedit/formats/osu_mania.h`, `tests/formats/osu_mania_tests.cpp`, new fixture under `tests/fixtures/osu/`, `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`.
+- **Steps:** 1. Read the current lazer `LegacyBeatmapEncoder` (record commit and version number). 2. If newer than v128, add a profile for it with a fixture and make it the default export profile. 3. Keep v128 and v14 reading.
+- **Invariants:** existing fixtures keep passing.
+- **Reject/failure behavior:** unknown future versions still reject transactionally.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'osu'`.
+- **Out of scope:** osu! standard/taiko/catch.

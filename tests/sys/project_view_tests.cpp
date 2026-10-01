@@ -56,7 +56,7 @@ TEST_CASE("Project chart table cache refreshes revisions and reopened sessions",
 TEST_CASE("Project chart commands preserve atomic rejection and open newly created charts", "[unit][project-view]") {
     auto history = make_document_history(project_song());
     auto created = apply_project_chart_command(history, {.kind = project_chart_command_kind_t::create,
-        .expected_revision = history.document.revision});
+        .expected_revision = history.document.revision, .chart = history.document.charts[0].id});
     require_project(static_cast<bool>(created.command));
     expect_project(created.open_chart == history.document.charts.back().id);
     const auto revision = history.document.revision;
@@ -114,4 +114,46 @@ TEST_CASE("Project chart scalar projection exposes row rejection and refreshes a
     require_project(result.applied);
     project_chart_view(runtime, history.document, view);
     expect_project(view.chart_row_count == 2 && std::string_view{view.charts[0].diagnostic}.empty());
+}
+
+TEST_CASE("Project New templates the selected four-key chart instead of the first chart or default profile", "[unit][project-view]") {
+    auto history = make_document_history(project_song());
+    lane_input_profile_t profile{.layout = {.profile_id = "stepmania:dance-single", .display_name = "4K",
+        .lanes = {{.id = lane_id_t{1}, .name = "Left", .display_order = 0, .glyph = lane_glyph_t::arrow_left},
+                  {.id = lane_id_t{2}, .name = "Down", .display_order = 1, .glyph = lane_glyph_t::arrow_down},
+                  {.id = lane_id_t{3}, .name = "Up", .display_order = 2, .glyph = lane_glyph_t::arrow_up},
+                  {.id = lane_id_t{4}, .name = "Right", .display_order = 3, .glyph = lane_glyph_t::arrow_right}}}};
+    profile.input = *default_input_profile_for(profile.layout);
+    const auto active = apply_new_chart_command(history, history.document.revision, std::move(profile), format_family_t::stepmania);
+    require_project(static_cast<bool>(active));
+    auto& selected = history.document.charts.back();
+    selected.divisions_per_standard_measure = 3840;
+    selected.beat_zero_audio_offset_seconds = {-7, 20};
+    project_chart_runtime_t runtime;
+    const auto added = apply_project_chart_ui_action(runtime, history,
+        {.kind = WORM_UI_PROJECT_CHART_NEW, .document_revision = history.document.revision,
+         .session_generation = runtime.session_generation}, *active.chart);
+    require_project(added.applied && added.open_chart.has_value());
+    const auto& chart = history.document.charts.back();
+    expect_project(chart.id == *added.open_chart && chart.id != *active.chart);
+    expect_project(chart.source_family == format_family_t::stepmania && chart.divisions_per_standard_measure == 3840);
+    expect_project(chart.beat_zero_audio_offset_seconds == signed_rational_t{-7, 20});
+    expect_project(chart.lane_layouts[0].layout.lanes.size() == 4 && chart.measures[0].notes.empty());
+    const auto table = build_project_chart_table(history.document);
+    expect_project(table.rows[0].key_count == 7 && table.rows.back().key_count == 4);
+    expect_project(table.rows.back().mode == "4K");
+    expect_project(validate_document(history.document).empty());
+}
+
+TEST_CASE("Project New allows an empty document fallback and rejects a missing active template otherwise", "[unit][project-view]") {
+    auto empty = make_document_history(song_document_t{.id = song_id_t{1}, .revision = 4});
+    const auto fallback = apply_project_chart_command(empty, {.kind = project_chart_command_kind_t::create,
+        .expected_revision = 4});
+    require_project(static_cast<bool>(fallback.command));
+    expect_project(empty.document.charts.back().lane_layouts[0].layout.profile_id == make_bms_7k_profile().layout.profile_id);
+    const auto before = empty.document.revision;
+    const auto rejected = apply_project_chart_command(empty, {.kind = project_chart_command_kind_t::create,
+        .expected_revision = before, .chart = chart_id_t{9999}});
+    expect_project(!rejected.command.applied && !rejected.command.diagnostics.empty());
+    expect_project(empty.document.charts.size() == 1 && empty.document.revision == before);
 }

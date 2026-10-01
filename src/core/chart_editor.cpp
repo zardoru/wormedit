@@ -173,18 +173,16 @@ void remove_memberships(song_document_t& document, chart_id_t id) {
     for (auto& group : document.output_groups) std::erase(group.charts, id);
 }
 
-} // namespace
-
-auto apply_new_chart_command(document_history_t& history, std::uint64_t revision,
-    lane_input_profile_t profile, format_family_t source_family) -> duplicate_chart_result_t {
-    if (history.document.revision != revision)
-        return {.command = reject(history, "chart command revision is stale")};
+auto commit_empty_chart(document_history_t& history, lane_input_profile_t profile,
+    format_family_t source_family, std::uint64_t divisions, signed_rational_t offset)
+    -> duplicate_chart_result_t {
     const auto ceiling = history_id_ceiling(history);
     if (ceiling == std::numeric_limits<std::uint64_t>::max())
         return {.command = reject(history, "chart ID sequence is exhausted")};
     chart_document_t chart{
         .id = chart_id_t{1}, .metadata = {.name = "New Difficulty"},
-        .source_family = source_family, .measures = {{.id = measure_id_t{1}}},
+        .source_family = source_family, .divisions_per_standard_measure = divisions,
+        .beat_zero_audio_offset_seconds = offset, .measures = {{.id = measure_id_t{1}}},
         .lane_layouts = {{.id = object_id_t{1}, .position = {measure_id_t{1}, 0},
                           .layout = std::move(profile.layout)}},
         .input_profile = std::move(profile.input),
@@ -199,6 +197,32 @@ auto apply_new_chart_command(document_history_t& history, std::uint64_t revision
     auto result = commit_document_command(history, std::move(proposed), "New chart");
     const auto applied = result.applied;
     return {.command = std::move(result), .chart = applied ? std::optional{id} : std::nullopt};
+}
+
+} // namespace
+
+auto apply_new_chart_command(document_history_t& history, std::uint64_t revision,
+    lane_input_profile_t profile, format_family_t source_family) -> duplicate_chart_result_t {
+    if (history.document.revision != revision)
+        return {.command = reject(history, "chart command revision is stale")};
+    return commit_empty_chart(history, std::move(profile), source_family,
+        default_divisions_per_standard_measure, {});
+}
+
+auto apply_add_chart_command(document_history_t& history, std::uint64_t revision,
+    chart_id_t template_chart) -> duplicate_chart_result_t {
+    if (auto invalid = check_chart(history, revision, template_chart))
+        return {.command = std::move(*invalid)};
+    const auto source = find_chart(history.document, template_chart);
+    if (source->lane_layouts.empty())
+        return {.command = reject(history, "new chart template has no initial lane layout")};
+    lane_input_profile_t profile{.layout = source->lane_layouts.front().layout,
+        .input = source->input_profile};
+    std::erase_if(profile.input.bindings, [&](const auto& binding) {
+        return std::ranges::none_of(profile.layout.lanes, [&](const auto& lane) { return lane.id == binding.lane; });
+    });
+    return commit_empty_chart(history, std::move(profile), source->source_family,
+        source->divisions_per_standard_measure, source->beat_zero_audio_offset_seconds);
 }
 
 auto apply_duplicate_chart_command(document_history_t& history, std::uint64_t revision,

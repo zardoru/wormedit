@@ -45,7 +45,7 @@ enum class project_chart_command_kind_t { create, duplicate, erase, move_up, mov
 struct project_chart_command_t {
     project_chart_command_kind_t kind{project_chart_command_kind_t::open};
     std::uint64_t expected_revision{};
-    chart_id_t chart;
+    chart_id_t chart; // create: active chart template; other actions: target row.
     batch_chart_metadata_action_t metadata;
 };
 struct project_chart_command_result_t {
@@ -70,7 +70,8 @@ struct project_chart_ui_result_t {
 void project_chart_view(project_chart_runtime_t& runtime, const song_document_t& document,
     WormUiSetupView& view);
 [[nodiscard]] auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,
-    document_history_t& history, const WormUiProjectChartAction& action) -> project_chart_ui_result_t;
+    document_history_t& history, const WormUiProjectChartAction& action,
+    std::optional<chart_id_t> active_chart = std::nullopt) -> project_chart_ui_result_t;
 
 [[nodiscard]] auto build_project_chart_table(const song_document_t& document) -> project_chart_table_t;
 // Caller-owned session generation distinguishes reopened documents with identical IDs/revisions.

@@ -28,6 +28,7 @@ thread_local bool count_allocations = false;
 thread_local std::size_t allocations = 0;
 }
 void* operator new(std::size_t size) {
+    wormedit::sys::record_frame_heap_allocation(size);
     if (count_allocations) ++allocations;
     if (auto* value = std::malloc(size == 0 ? 1 : size)) return value;
     throw std::bad_alloc();
@@ -985,4 +986,49 @@ TEST_CASE("new-chart requested custom snap is admitted without replacing existin
     const auto incompatible = filter_snap_denominators(384, preferences, 5);
     CHECK(incompatible.active_was_fallback);
     CHECK(incompatible.active_denominator != 5);
+}
+
+namespace {
+template<class Actual, class Expected>
+void check_heap_counter(const Actual& actual, const Expected& expected,
+                        std::source_location location = std::source_location::current()) {
+    INFO("heap assertion at " << location.file_name() << ':' << location.line()
+         << ", actual=" << actual << ", expected=" << expected);
+    CHECK(actual == expected);
+}
+}
+
+TEST_CASE("Debug heap counters attribute nested projection allocations exactly once",
+          "[sys][frame-timing][allocation]") {
+#ifndef NDEBUG
+    frame_timing_t timer;
+    timer.begin_frame();
+    const auto parent = timer.enter(frame_phase_t::workspace);
+    void* workspace = ::operator new(17);
+    const auto child = timer.enter(frame_phase_t::scene);
+    void* scene = ::operator new(31);
+    timer.restore(child);
+    void* tail = ::operator new(13);
+    timer.restore(parent);
+    void* outside = ::operator new(7);
+    timer.end_frame();
+    ::operator delete(workspace);
+    ::operator delete(scene);
+    ::operator delete(tail);
+    ::operator delete(outside);
+    const auto& sample = timer.sample(0);
+    check_heap_counter(sample.heap_measured, true);
+    check_heap_counter(sample.frame_heap.count, 4);
+    check_heap_counter(sample.frame_heap.bytes, 68);
+    const auto projection = sample.phase_heap[static_cast<std::size_t>(frame_phase_t::workspace)];
+    check_heap_counter(projection.count, 3);
+    check_heap_counter(projection.bytes, 61);
+    const auto geometry = sample.phase_heap[static_cast<std::size_t>(frame_phase_t::scene)];
+    check_heap_counter(geometry.count, 1);
+    check_heap_counter(geometry.bytes, 31);
+    check_heap_counter(timer.heap_summary(frame_phase_t::workspace).average, 3);
+    check_heap_counter(timer.heap_summary(frame_phase_t::workspace, true).p99, 61);
+#else
+    check_heap_counter(frame_heap_allocation_snapshot().count, 0);
+#endif
 }

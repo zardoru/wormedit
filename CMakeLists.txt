@@ -391,6 +391,9 @@ if(WORMEDIT_BUILD_APP)
             nlohmann_json::nlohmann_json
     )
 
+    target_compile_definitions(wormedit PRIVATE
+        $<$<CONFIG:Debug>:WORMEDIT_FRAME_ALLOCATION_HOOK=1>)
+
     if(UNIX)
         set_target_properties(wormedit PROPERTIES ENABLE_EXPORTS ON)
     endif()

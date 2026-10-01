@@ -1877,6 +1877,11 @@ typedef struct WormUiFrameTimingView {
     WormUiFrameTimingStats frame;
     const char* phase_names[WORM_UI_FRAME_TIMING_PHASE_COUNT];
     WormUiFrameTimingStats phases[WORM_UI_FRAME_TIMING_PHASE_COUNT];
+    uint32_t heap_allocations_available;
+    uint64_t projection_heap_allocations_latest;
+    uint64_t projection_heap_bytes_latest;
+    WormUiFrameGpuWorkStats projection_heap_allocations;
+    WormUiFrameGpuWorkStats projection_heap_bytes;
     uint32_t gpu_work_available;
     WormUiFrameGpuWork gpu_work_latest;
     const char* gpu_work_names[WORM_UI_FRAME_GPU_WORK_COUNT];

@@ -1,13 +1,107 @@
 #include "sys/frame_timing.h"
 #include "ui/frontend.h"
 #include <SDL3/SDL_timer.h>
+#include <SDL3/SDL_stdinc.h>
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <new>
+
+// App-only debug replacement; test executables retain their existing hooks.
+#if defined(WORMEDIT_FRAME_ALLOCATION_HOOK) && !defined(NDEBUG)
+namespace {
+void* allocate_counted_heap(std::size_t bytes, std::size_t alignment = 0) {
+    const auto size = std::max<std::size_t>(bytes, 1);
+    for (;;) {
+        void* result = alignment == 0 ? std::malloc(size) : SDL_aligned_alloc(alignment, size);
+        if (result) {
+            wormedit::sys::record_frame_heap_allocation(bytes);
+            return result;
+        }
+        const auto handler = std::get_new_handler();
+        if (!handler) throw std::bad_alloc();
+        handler();
+    }
+}
+void* allocate_nothrow_heap(std::size_t bytes, std::size_t alignment = 0) noexcept {
+    try { return allocate_counted_heap(bytes, alignment); }
+    catch (...) { return nullptr; }
+}
+}
+void* operator new(std::size_t bytes) { return allocate_counted_heap(bytes); }
+void* operator new[](std::size_t bytes) { return allocate_counted_heap(bytes); }
+void* operator new(std::size_t bytes, const std::nothrow_t&) noexcept {
+    return allocate_nothrow_heap(bytes);
+}
+void* operator new[](std::size_t bytes, const std::nothrow_t&) noexcept {
+    return allocate_nothrow_heap(bytes);
+}
+void* operator new(std::size_t bytes, std::align_val_t alignment) {
+    return allocate_counted_heap(bytes, static_cast<std::size_t>(alignment));
+}
+void* operator new[](std::size_t bytes, std::align_val_t alignment) {
+    return allocate_counted_heap(bytes, static_cast<std::size_t>(alignment));
+}
+void* operator new(std::size_t bytes, std::align_val_t alignment, const std::nothrow_t&) noexcept {
+    return allocate_nothrow_heap(bytes, static_cast<std::size_t>(alignment));
+}
+void* operator new[](std::size_t bytes, std::align_val_t alignment, const std::nothrow_t&) noexcept {
+    return allocate_nothrow_heap(bytes, static_cast<std::size_t>(alignment));
+}
+void operator delete(void* value) noexcept { std::free(value); }
+void operator delete[](void* value) noexcept { std::free(value); }
+void operator delete(void* value, std::size_t) noexcept { std::free(value); }
+void operator delete[](void* value, std::size_t) noexcept { std::free(value); }
+void operator delete(void* value, const std::nothrow_t&) noexcept { std::free(value); }
+void operator delete[](void* value, const std::nothrow_t&) noexcept { std::free(value); }
+void operator delete(void* value, std::align_val_t) noexcept { SDL_aligned_free(value); }
+void operator delete[](void* value, std::align_val_t) noexcept { SDL_aligned_free(value); }
+void operator delete(void* value, std::size_t, std::align_val_t) noexcept { SDL_aligned_free(value); }
+void operator delete[](void* value, std::size_t, std::align_val_t) noexcept { SDL_aligned_free(value); }
+void operator delete(void* value, std::align_val_t, const std::nothrow_t&) noexcept {
+    SDL_aligned_free(value);
+}
+void operator delete[](void* value, std::align_val_t, const std::nothrow_t&) noexcept {
+    SDL_aligned_free(value);
+}
+#endif
 
 namespace wormedit::sys {
 namespace {
+#ifndef NDEBUG
+thread_local frame_heap_allocation_t heap_allocations{};
+thread_local bool heap_hook_seen{};
+#endif
+void report_phase_heap_allocations(std::FILE* output, const frame_timing_t& timer) {
+    for (const auto phase : frame_phase_display_order) {
+        const auto count = timer.heap_summary(phase);
+        if (count.count == 0) continue;
+        const auto bytes = timer.heap_summary(phase, true);
+        std::fprintf(output,
+            "%s C++ new: average %.3f, p99 %.0f; requested bytes average %.3f, p99 %.0f\n",
+            frame_phase_names[static_cast<std::size_t>(phase)], count.average, count.p99,
+            bytes.average, bytes.p99);
+    }
+}
+void report_heap_allocations(std::FILE* output, const frame_timing_t& timer) {
+    const auto count = timer.heap_summary(frame_phase_t::workspace);
+    const auto bytes = timer.heap_summary(frame_phase_t::workspace, true);
+    if (count.count == 0) {
+        std::fprintf(output, "Projection C++ heap allocations: unavailable (allocation hook inactive)\n");
+        return;
+    }
+    std::fprintf(output,
+        "Projection C++ heap allocations: average %.3f, p99 %.0f (%zu samples)\n",
+        count.average, count.p99, count.count);
+    std::fprintf(output,
+        "Projection C++ heap requested bytes: average %.3f, p99 %.0f (%zu samples)\n",
+        bytes.average, bytes.p99, bytes.count);
+    const auto frame = timer.heap_summary();
+    std::fprintf(output, "Frame C++ heap allocations: average %.3f, p99 %.0f (%zu samples)\n",
+        frame.average, frame.p99, frame.count);
+    report_phase_heap_allocations(output, timer);
+}
 auto milliseconds(std::uint64_t ticks) -> double {
     return static_cast<double>(ticks) * 1000.0 / static_cast<double>(SDL_GetPerformanceFrequency());
 }
@@ -33,6 +127,7 @@ void report_if_requested(const frame_timing_t& timer) {
                          frame_phase_names[index], summary.average_ms, summary.p99_ms,
                          summary.count);
     }
+    report_heap_allocations(output, timer);
     std::fprintf(output, "GPU work per frame:\n");
     for (std::size_t metric = 0; metric < frame_gpu_work_count; ++metric) {
         const auto summary = timer.gpu_work_summary(metric);
@@ -45,6 +140,22 @@ void report_if_requested(const frame_timing_t& timer) {
     std::fclose(output);
 }
 } // namespace
+void record_frame_heap_allocation(std::size_t bytes) noexcept {
+#ifndef NDEBUG
+    heap_hook_seen = true;
+    ++heap_allocations.count;
+    heap_allocations.bytes += bytes;
+#else
+    (void)bytes;
+#endif
+}
+auto frame_heap_allocation_snapshot() noexcept -> frame_heap_allocation_t {
+#ifndef NDEBUG
+    return heap_allocations;
+#else
+    return {};
+#endif
+}
 auto frame_phase_parent(frame_phase_t phase) -> frame_phase_t {
     if (phase == frame_phase_t::audio_service || phase == frame_phase_t::audio_pump)
         return frame_phase_t::audio;
@@ -60,6 +171,10 @@ auto frame_timing() -> frame_timing_t& {
 }
 void frame_timing_t::begin_frame() {
     current_ = {};
+#ifndef NDEBUG
+    current_.heap_measured = heap_hook_seen;
+#endif
+    heap_begin_ = heap_last_ = frame_heap_allocation_snapshot();
     phase_ = frame_phase_t::count;
     begin_ = last_ = SDL_GetPerformanceCounter();
     active_ = true;
@@ -68,17 +183,32 @@ void frame_timing_t::checkpoint() {
     if (!active_)
         return;
     const auto now = SDL_GetPerformanceCounter();
+    const auto heap = frame_heap_allocation_snapshot();
+    const frame_heap_allocation_t delta{heap.count - heap_last_.count,
+                                      heap.bytes - heap_last_.bytes};
     if (phase_ != frame_phase_t::count) {
         const auto index = static_cast<std::size_t>(phase_);
         current_.phase_ms[index] += milliseconds(now - last_);
         current_.measured[index] = true;
+        current_.phase_heap[index].count += delta.count;
+        current_.phase_heap[index].bytes += delta.bytes;
         const auto parent = frame_phase_parent(phase_);
         if (parent != frame_phase_t::count) {
             const auto parent_index = static_cast<std::size_t>(parent);
             current_.phase_ms[parent_index] += milliseconds(now - last_);
             current_.measured[parent_index] = true;
         }
+        // Scene time remains exclusive, as before. Heap accounting includes
+        // Compose scene preparation in the inclusive projection allocation count.
+        const auto heap_parent = phase_ == frame_phase_t::scene
+            ? frame_phase_t::workspace : parent;
+        if (heap_parent != frame_phase_t::count) {
+            auto& parent_heap = current_.phase_heap[static_cast<std::size_t>(heap_parent)];
+            parent_heap.count += delta.count;
+            parent_heap.bytes += delta.bytes;
+        }
     }
+    heap_last_ = heap;
     last_ = now;
 }
 auto frame_timing_t::enter(frame_phase_t phase) -> frame_phase_t {
@@ -96,6 +226,11 @@ void frame_timing_t::end_frame() {
         return;
     checkpoint();
     current_.frame_ms = milliseconds(last_ - begin_);
+#ifndef NDEBUG
+    current_.heap_measured = heap_hook_seen;
+#endif
+    current_.frame_heap = {heap_last_.count - heap_begin_.count,
+                           heap_last_.bytes - heap_begin_.bytes};
     record(current_);
     active_ = false;
     if (next_ == 0)
@@ -117,6 +252,27 @@ auto frame_timing_t::gpu_work_summary(std::size_t metric) const -> frame_counter
         const auto& work = sample(frame).gpu_work;
         if (!work.measured) continue;
         const auto value = static_cast<double>(work.values[metric]);
+        sorted[result.count++] = value;
+        result.average += value;
+    }
+    if (result.count == 0) return result;
+    result.average /= static_cast<double>(result.count);
+    std::sort(sorted.begin(), sorted.begin() + result.count);
+    result.p99 = sorted[(result.count * 99 + 99) / 100 - 1];
+    return result;
+}
+auto frame_timing_t::heap_summary(frame_phase_t phase, bool bytes) const
+    -> frame_counter_summary_t {
+    frame_counter_summary_t result;
+    std::array<double, frame_timing_capacity> sorted{};
+    const auto index = static_cast<std::size_t>(phase);
+    if (index > frame_phase_count) return result;
+    for (std::size_t frame = 0; frame < size_; ++frame) {
+        const auto& entry = sample(frame);
+        if (!entry.heap_measured || (phase != frame_phase_t::count && !entry.measured[index]))
+            continue;
+        const auto heap = phase == frame_phase_t::count ? entry.frame_heap : entry.phase_heap[index];
+        const auto value = static_cast<double>(bytes ? heap.bytes : heap.count);
         sorted[result.count++] = value;
         result.average += value;
     }
@@ -174,6 +330,19 @@ WormUiFrameTimingView worm_ui_frame_timing_view() {
         result.phase_names[i] = frame_phase_names[index];
         result.phases[i] = {summary.count, summary.average_ms, summary.p99_ms};
     }
+    if (timer.size() != 0) {
+        const auto& latest = timer.sample(timer.size() - 1);
+        result.heap_allocations_available = latest.heap_measured;
+        const auto heap = latest.phase_heap[static_cast<std::size_t>(frame_phase_t::workspace)];
+        result.projection_heap_allocations_latest = heap.count;
+        result.projection_heap_bytes_latest = heap.bytes;
+    }
+    const auto allocation_count = timer.heap_summary(frame_phase_t::workspace);
+    const auto allocation_bytes = timer.heap_summary(frame_phase_t::workspace, true);
+    result.projection_heap_allocations = {allocation_count.count, allocation_count.average,
+                                          allocation_count.p99};
+    result.projection_heap_bytes = {allocation_bytes.count, allocation_bytes.average,
+                                    allocation_bytes.p99};
     static_assert(WORM_UI_FRAME_GPU_WORK_COUNT == frame_gpu_work_count);
     if (timer.size() != 0) {
         const auto& work = timer.sample(timer.size() - 1).gpu_work;

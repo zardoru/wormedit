@@ -1696,6 +1696,15 @@ static void render_frame_timing_overlay(int width, int height) {
                 nk_chart_push(g_context, static_cast<float>(timer.frame_ms[i]));
             nk_chart_end(g_context);
         }
+        nk_layout_row_dynamic(g_context, 22, 1);
+        if (timer.heap_allocations_available)
+            nk_labelf(g_context, NK_TEXT_LEFT,
+                "Projection new: %llu / %llu bytes (avg %.1f, p99 %.0f)",
+                static_cast<unsigned long long>(timer.projection_heap_allocations_latest),
+                static_cast<unsigned long long>(timer.projection_heap_bytes_latest),
+                timer.projection_heap_allocations.average,
+                timer.projection_heap_allocations.p99);
+        else nk_label(g_context, "Projection new: unavailable (allocation hook inactive)", NK_TEXT_LEFT);
         render_gpu_work_summary(timer);
         for (std::size_t i = 0; i < WORM_UI_FRAME_TIMING_PHASE_COUNT; ++i) {
             const auto summary = timer.phases[i];

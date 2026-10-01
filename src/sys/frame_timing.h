@@ -91,8 +91,19 @@ struct frame_gpu_work_t {
     std::array<std::uint64_t, frame_gpu_work_count> values{};
     bool measured{};
 };
+struct frame_heap_allocation_t {
+    std::uint64_t count{};
+    std::uint64_t bytes{};
+};
+// Successful C++ new allocations only; no allocation, locking, or timer
+// singleton initialization occurs in the hook. Counters are thread-local.
+void record_frame_heap_allocation(std::size_t bytes) noexcept;
+auto frame_heap_allocation_snapshot() noexcept -> frame_heap_allocation_t;
 struct frame_timing_sample_t {
     frame_gpu_work_t gpu_work{};
+    frame_heap_allocation_t frame_heap{};
+    std::array<frame_heap_allocation_t, frame_phase_count> phase_heap{};
+    bool heap_measured{};
     double frame_ms{};
     std::array<double, frame_phase_count> phase_ms{};
     std::array<bool, frame_phase_count> measured{};
@@ -116,6 +127,8 @@ class frame_timing_t {
     void record(const frame_timing_sample_t& sample);
     void record_gpu_work(const frame_gpu_work_t& work);
     auto gpu_work_summary(std::size_t metric) const -> frame_counter_summary_t;
+    auto heap_summary(frame_phase_t phase = frame_phase_t::count, bool bytes = false) const
+        -> frame_counter_summary_t;
     auto sample(std::size_t chronological_index) const -> const frame_timing_sample_t&;
     auto size() const -> std::size_t {
         return size_;
@@ -128,6 +141,8 @@ class frame_timing_t {
     frame_timing_sample_t current_{};
     std::size_t next_{};
     std::size_t size_{};
+    frame_heap_allocation_t heap_begin_{};
+    frame_heap_allocation_t heap_last_{};
     std::uint64_t begin_{};
     std::uint64_t last_{};
     frame_phase_t phase_{frame_phase_t::count};

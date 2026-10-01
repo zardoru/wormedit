@@ -431,3 +431,17 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     catch_discover_tests(wormedit_frame_timing_tests TEST_PREFIX "frame-timing."
         PROPERTIES LABELS "unit;sys;performance" DISCOVERY_MODE PRE_TEST)
 endif()
+
+if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
+    add_executable(wormedit_frame_projection_arena_tests
+        sys/frame_projection_arena_tests.cpp
+        ../src/sys/frame_timing.cpp)
+    target_include_directories(wormedit_frame_projection_arena_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/src")
+    target_compile_definitions(wormedit_frame_projection_arena_tests PRIVATE
+        $<$<CONFIG:Debug>:WORMEDIT_FRAME_ALLOCATION_HOOK=1>)
+    target_link_libraries(wormedit_frame_projection_arena_tests PRIVATE
+        SDL3::SDL3 Catch2::Catch2WithMain)
+    catch_discover_tests(wormedit_frame_projection_arena_tests TEST_PREFIX "frame-arena."
+        PROPERTIES LABELS "unit;sys;performance" DISCOVERY_MODE PRE_TEST)
+endif()

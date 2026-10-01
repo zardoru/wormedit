@@ -47,6 +47,7 @@ add_executable(wormedit_core_tests
     core/fixture_inventory_tests.cpp
     core/grid_tests.cpp
     core/interaction_tests.cpp
+    core/chart_clipboard_tests.cpp
     core/lane_profile_tests.cpp
     core/marker_editor_tests.cpp
     core/marker_navigation_tests.cpp

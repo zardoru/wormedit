@@ -6,6 +6,7 @@
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/chart_clipboard.h>
 #include <wormedit/core/player_preview.h>
 #include <wormedit/core/sound_slice.h>
 #include <wormedit/core/timing.h>
@@ -138,6 +139,7 @@ struct compose_scene_cache_t {
 enum class external_player_action_t;
 
 struct application_command_state_t {
+    std::optional<wormedit::chart_clipboard_t> chart_clipboard;
     wormedit::editor_preferences_t editor_preferences;
     struct bmson_marker_draft_t {
         wormedit::chart_id_t chart;

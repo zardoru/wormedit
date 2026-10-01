@@ -777,6 +777,10 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
                 {chord(shortcut_key_t::z, primary())}, true);
     add_builtin(registry, invoker, "history.redo", "Redo", command_category_t::edit, global,
                 {chord(shortcut_key_t::z, modified(shortcut_modifier_t::shift))}, true);
+    add_builtin(registry, invoker, "edit.copy", "Copy", command_category_t::edit,
+                command_focus_scope_t::tab, {chord(shortcut_key_t::c, primary())}, false, compose);
+    add_builtin(registry, invoker, "edit.cut", "Cut", command_category_t::edit,
+                command_focus_scope_t::tab, {chord(shortcut_key_t::x, primary())}, true, compose);
     add_builtin(registry, invoker, "edit.delete", "Delete", command_category_t::edit,
                 command_focus_scope_t::tab,
                 {chord(shortcut_key_t::delete_key), chord(shortcut_key_t::backspace)}, true,

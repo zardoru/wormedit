@@ -25,6 +25,8 @@ enum class application_command_kind_t {
     transport_rate_slower,
     transport_rate_faster,
     edit_delete,
+    edit_copy,
+    edit_cut,
     edit_note_kind,
     selection_clear,
     selection_select_all,

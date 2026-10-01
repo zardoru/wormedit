@@ -53,6 +53,36 @@ auto has_command(const command_registry_t& registry, std::string_view id) -> boo
 
 } // namespace
 
+namespace {
+void check_chart_clipboard_chord(const command_registry_t& registry, shortcut_key_t key,
+                                std::string_view expected, shortcut_primary_modifier_t primary,
+                                shortcut_modifier_t modifier) {
+    const shortcut_event_t event{.chord = {.key = key,
+        .modifiers = static_cast<shortcut_modifiers_t>(modifier)}};
+    auto focus = focus_for_compose();
+    CHECK(dispatch_shortcut(registry, event, focus, primary).command ==
+          command_id_t{std::string(expected)});
+    focus.text_entry_active = true;
+    CHECK(dispatch_shortcut(registry, event, focus, primary).status ==
+          command_dispatch_status_t::focus_consumed);
+    focus.text_entry_active = false;
+    focus.ime_composition_active = true;
+    CHECK(dispatch_shortcut(registry, event, focus, primary).status ==
+          command_dispatch_status_t::focus_consumed);
+}
+}
+
+TEST_CASE("Chart clipboard chords use platform Primary and defer to text and IME",
+          "[unit][core][command_registry][clipboard]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    check_chart_clipboard_chord(registry, shortcut_key_t::c, "edit.copy",
+        shortcut_primary_modifier_t::control, shortcut_modifier_t::control);
+    check_chart_clipboard_chord(registry, shortcut_key_t::x, "edit.cut",
+        shortcut_primary_modifier_t::meta, shortcut_modifier_t::meta);
+    CHECK(calls->size() == 2);
+}
+
 TEST_CASE("registry stores stable metadata and shares typed invocation for menus and shortcuts",
           "[unit][core][command_registry]") {
     auto calls = std::make_shared<std::vector<command_id_t>>();
@@ -460,6 +490,7 @@ TEST_CASE("Tap timing dispatch accepts workspace taps and rejects text entry", "
         shortcut_primary_modifier_t::control).status != command_dispatch_status_t::invoked);
     CHECK(calls->size() == 1);
 }
+
 namespace {
 void check_notification_chord(const command_registry_t& registry,
                               shortcut_primary_modifier_t primary_mode,

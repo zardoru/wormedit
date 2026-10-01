@@ -192,7 +192,26 @@ auto transport_command(command_context_t& context) -> std::optional<command_resu
     return std::nullopt;
 }
 
+auto clipboard_commands(command_context_t& context) -> std::optional<command_result_t> {
+    const auto kind = context.command.kind;
+    if (kind != command_kind_t::edit_copy && kind != command_kind_t::edit_cut)
+        return std::nullopt;
+    auto* state = context.compose();
+    if (!state)
+        return reject_application_command(context.status, "Clipboard requires the active Compose chart.");
+    auto copied = kind == command_kind_t::edit_cut
+        ? wormedit::cut_chart_selection(context.history, *state, context.history.document.revision)
+        : wormedit::copy_chart_selection(context.history.document, *state,
+                                         context.history.document.revision);
+    if (!copied) return reject_application_command(context.status, std::move(copied.error));
+    context.application_state.chart_clipboard = std::move(copied.clipboard);
+    context.status = kind == command_kind_t::edit_cut ? "Selection cut." : "Selection copied.";
+    if (kind == command_kind_t::edit_cut) return context.rebind();
+    return command_result_t{.accepted = true};
+}
+
 auto edit_commands(command_context_t& context) -> std::optional<command_result_t> {
+    if (const auto result = clipboard_commands(context)) return result;
     if (context.command.kind != command_kind_t::edit_delete) return std::nullopt;
     auto* state = context.compose();
     if (!state)

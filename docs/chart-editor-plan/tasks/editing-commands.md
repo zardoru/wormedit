@@ -171,7 +171,7 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-61 Copy and cut chart objects to an internal clipboard
 
-- **Status:** ready
+- **Status:** done (exact rational note/BGM snippets, atomic cut/undo, Primary shortcuts; 847/847 core tests and actual isolated Copy/Cut/Undo passed)
 - **Outcome:** copy/cut store the selected notes and BGM events as a row-relative, resolution-independent snippet; cut also deletes them in one command.
 - **Read first:** `docs/chart-editor-plan/editing/interactions.md`, `include/wormedit/core/document.h`, `include/wormedit/core/interaction.h`.
 - **Files owned:** new `include/wormedit/core/chart_clipboard.h`, new `src/core/chart_clipboard.cpp`, new `tests/core/chart_clipboard_tests.cpp`, `src/core/command_registry.cpp`, `src/sys/application_command_dispatch.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -186,7 +186,7 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-62 Paste the internal clipboard with a ghost preview
 
-- **Status:** blocked-on T-61
+- **Status:** ready
 - **Outcome:** `edit.paste` shows the snippet as ghosts at the cursor; click or Enter commits, Escape cancels; collisions show red ghosts and block commit.
 - **Read first:** `include/wormedit/core/chart_clipboard.h`, `src/core/interaction.cpp` (move-proposal ghosts), `src/sys/compose_input.cpp`.
 - **Files owned:** `src/core/chart_clipboard.cpp`, `include/wormedit/core/chart_clipboard.h`, `src/sys/compose_input.cpp`, `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `tests/core/chart_clipboard_tests.cpp`.

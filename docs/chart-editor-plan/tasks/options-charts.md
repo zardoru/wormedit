@@ -58,15 +58,16 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-254 Build the Options window shell
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** program scope only. File → Options… and `workspace.options` (default Ctrl+, / ⌘,) open a modeless Options window with a category list on the left and the selected page on the right; each page edits a draft copy with Apply, Revert, and Restore defaults; Apply validates and saves through T-253.
 - **Read first:** `include/wormedit/core/preferences.h`, `src/ui/nuklear/external_player_panel.cpp` (existing modeless panel), `src/core/command_registry.cpp`, `src/ui/nuklear/chrome.h`.
-- **Files owned:** new `src/ui/nuklear/options_window.cpp/.h`, new `src/sys/options_runtime.cpp/.h`, `src/ui/frontend.h`, `src/core/command_registry.cpp`, `src/sys/main.cpp` (dispatch/view only), `CMakeLists.txt`, new `tests/ui/nuklear_options_state_tests.cpp`, `tests/CMakeLists.txt`; user-approved frontend integration extension: `src/ui/nuklear/frontend.cpp` (File menu entry and modeless renderer wiring).
+- **Files owned:** new `src/ui/nuklear/options_window.cpp/.h`, new `src/sys/options_runtime.cpp/.h`, `src/ui/frontend.h`, `src/core/command_registry.cpp`, `src/sys/main.cpp` (dispatch/view only), `CMakeLists.txt`, new `tests/ui/nuklear_options_state_tests.cpp`, `tests/CMakeLists.txt`; user-approved frontend integration extension: `src/ui/nuklear/frontend.cpp` (File menu entry and modeless renderer wiring); user-approved typed-command extension: `src/sys/application_commands.h/.cpp`, `tests/sys/application_commands_tests.cpp` (Options enum, parser mapping, and direct parse assertion); user-approved input-occlusion extension: `src/ui/nuklear/compose_panel.cpp` and `src/ui/nuklear/timing_panel.cpp` (draw charts while the Options window owns input, preserving focus, selection, gestures, and staged timing events).
 - **Steps:** 1. Scalar view with the draft values and validation messages per field. 2. Category list: General, Editor, Playback & audio, Display, Input & shortcuts, External players. 3. Pages are registered functions so later cards add content without touching the shell.
 - **Invariants:** opening Options does not change editor focus, selection, or tool; nothing is applied until Apply.
 - **Reject/failure behavior:** invalid fields disable Apply and show their message inline.
-- **Verify:** standard build/test; smoke PNG with the window open.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; isolated Xvfb smoke PNG with the window open.
 - **Out of scope:** page contents (T-255–T-258).
+- **Verification evidence (2026-09-30):** full application build passed (`/tmp/wormedit-t254-timing-final-build.log`); full suite 1074/1074 passed in 47.70 s (`/tmp/wormedit-t254-final-all-tests.log`); Options focused tests 9/9 passed; configured clang-tidy passed with no new cognitive-complexity violations. Isolated Xvfb GUI proofs passed on the final coherent binary: landing Ctrl+, and File → Options; all six categories and modeless background interaction; Defaults/Revert without publication, Apply retaining unrelated audio preferences; selection and held-navigation release; Options double-clicks without staging a Timing SV. Evidence: `/tmp/wormedit-t254/options-landing.log`, `/tmp/wormedit-t254/options-compose-gui.log`, `/tmp/wormedit-t254/options-timing-final.log`; inspected PNGs include `options-landing-key.png`, `options-landing-menu.png`, and `options-timing-closed.png` in that directory.
 
 ## T-255 Fill the General and Editor pages
 

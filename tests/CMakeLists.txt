@@ -249,6 +249,20 @@ if(TARGET wormedit_video_decoder AND TARGET wormedit_visual_decoder)
 endif()
 
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
+    add_executable(wormedit_options_state_tests
+        ui/nuklear_options_state_tests.cpp
+        ../src/sys/options_runtime.cpp
+        ../src/sys/preferences_runtime.cpp
+        ../src/sys/platform_shortcut_profile.cpp
+    )
+    target_include_directories(wormedit_options_state_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+    target_link_libraries(wormedit_options_state_tests PRIVATE
+        wormedit::core SDL3::SDL3 Catch2::Catch2WithMain)
+    catch_discover_tests(wormedit_options_state_tests
+        TEST_PREFIX "frontend-state."
+        PROPERTIES LABELS "unit;options"
+        DISCOVERY_MODE PRE_TEST)
+
     add_executable(wormedit_external_player_tests
         sys/external_player_tests.cpp
         ../src/sys/external_player.cpp

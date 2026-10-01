@@ -746,6 +746,19 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
     nk_popup_end(panel.context);
 }
 
+static void discard_occluded_compose_input(const ComposePanelRenderContext& panel) {
+    // Release previously held editor keys; Options owns new presses and wheel input.
+    std::size_t releases{};
+    for (std::size_t index = 0; index < state.key_event_count; ++index) {
+        if (!state.key_events[index].down) state.key_events[releases++] = state.key_events[index];
+    }
+    state.key_event_count = releases;
+    if (releases != 0)
+        process_compose_key_events(panel.context, panel.view, panel.action,
+            panel.window_focused, panel.ime_composition_active);
+    discard_compose_frame_input();
+}
+
 static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
                                         bool inspector_drawn, float inspector_width) {
     auto* context = panel.context;
@@ -778,6 +791,11 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     const auto editor_input_right = inspector_drawn
         ? viewport.x + viewport.w - inspector_width - 8.0f
         : viewport.x + viewport.w;
+    if (view->input_occluded) {
+        discard_occluded_compose_input(panel);
+        draw_compose_scene_canvas(context, view, canvas, viewport);
+        return;
+    }
     const auto pointer_focus = update_compose_pointer_focus(
         {context, view, action, viewport, nk_rect(0, 0, 0, 0), editor_input_right, false,
          window_focused});

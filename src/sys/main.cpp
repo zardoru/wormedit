@@ -28,6 +28,7 @@
 #include "sys/platform_shortcut_profile.h"
 #include "sys/external_player.h"
 #include "sys/preferences_runtime.h"
+#include "sys/options_runtime.h"
 #include "sys/project_view.h"
 #include <wormedit/core/chart_editor.h>
 #include "sys/tap_timing_runtime.h"
@@ -1544,6 +1545,20 @@ void persist_session_preferences(wormedit::sys::program_preferences_runtime_t& r
         status = "Minimap paused-click preference saved.";
 }
 
+void dispatch_options_frame_action(wormedit::sys::options_runtime_t& options,
+    wormedit::sys::program_preferences_runtime_t& program, const WormUiOptionsAction& action,
+    external_player_runtime_t& players, application_command_state_t& state, std::string& status) {
+    if (!wormedit::sys::apply_options_action(options, program, action)) return;
+    if (options.category == WORM_UI_OPTIONS_EDITOR)
+        state.minimap_click_moves_paused_playhead = program.preferences.minimap.click_moves_paused_playhead;
+    if (options.category == WORM_UI_OPTIONS_PLAYERS) {
+        players.preferences = program.preferences.players;
+        ++players.revision;
+    }
+    if (options.category == WORM_UI_OPTIONS_AUDIO) initialize_preferred_transport(program.preferences, state);
+    status = options.status;
+}
+
 auto external_source_measure(const wormedit::chart_document_t& chart,
     const std::optional<wormedit::editor_interaction_state_t>& interaction) -> std::optional<std::uint64_t> {
     if (!interaction || interaction->chart != chart.id) return std::nullopt;
@@ -1840,13 +1855,13 @@ auto dispatch_application_shortcuts(
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     const std::optional<wormedit::editor_interaction_state_t>& compose_state,
     application_command_state_t& application_state, std::string& status,
-    std::optional<std::uint64_t>& tap_event_ns, bool& tap_only) -> bool {
+    std::optional<std::uint64_t>& tap_event_ns, bool& preserves_editor_gesture) -> bool {
     using namespace wormedit;
-    tap_only = true;
+    preserves_editor_gesture = true;
     if (action.shortcut_overflowed ||
         action.shortcut_event_count > WORM_UI_SHORTCUT_EVENT_CAPACITY) {
         status = "Shortcut input exceeded its per-frame capacity and was discarded.";
-        tap_only = false;
+        preserves_editor_gesture = false;
         return true;
     }
     bool handled{};
@@ -1864,7 +1879,8 @@ auto dispatch_application_shortcuts(
              .auto_repeat = input.repeat},
             application_command_focus(action, workspace), application_primary_modifier());
         tap_event_ns.reset();
-        if (!dispatched.command || dispatched.command->value != "timing.tap") tap_only = false;
+        if (!dispatched.command || (dispatched.command->value != "timing.tap" &&
+            dispatched.command->value != "workspace.options")) preserves_editor_gesture = false;
         if (dispatched.status == command_dispatch_status_t::invoked) {
             handled = true;
         } else if (dispatched.status == command_dispatch_status_t::disabled) {
@@ -2244,21 +2260,21 @@ void cancel_stale_compose_interaction(
 template <typename Context>
 auto process_compose_frame_action(Context& context, WormUiWorkspaceAction& action,
                                   double viewport_delta_seconds) -> bool {
-    if (!context.session_loaded_ref) return false;
-    bool tap_only{};
+    bool preserves_editor_gesture{};
     const bool shortcut_handled =
         action.kind != WORM_UI_WORKSPACE_ACTION_QUIT &&
         dispatch_application_shortcuts(action, context.command_registry_ref, context.history_ref,
                                        context.workspace_ref, context.compose_interaction_state_ref,
                                        context.application_command_state_ref, context.status_ref,
-                                       context.tap_event_ns_ref, tap_only);
-    if (shortcut_handled && !tap_only && context.compose_interaction_state_ref &&
+                                       context.tap_event_ns_ref, preserves_editor_gesture);
+    if (!context.session_loaded_ref) return shortcut_handled;
+    if (shortcut_handled && !preserves_editor_gesture && context.compose_interaction_state_ref &&
         editor_interaction_has_pending_gesture(*context.compose_interaction_state_ref)) {
         (void)wormedit::dispatch_editor_action(
             context.history_ref, *context.compose_interaction_state_ref,
             wormedit::cancel_editor_gesture_action_t{});
     }
-    if (shortcut_handled && !tap_only) {
+    if (shortcut_handled && !preserves_editor_gesture) {
         context.audio_offset_drag_ref.reset();
         context.audio_offset_drag_tab_ref.reset();
         context.compose_scene_cache_ref.beat_fit_drag.reset();
@@ -2979,6 +2995,18 @@ auto read_tap_clock(tap_clock_context_t& context) -> wormedit::sys::tap_timing_c
         return clock;
 }
 
+template<class InvokeEditor>
+auto dispatch_options_or_editor_command(const wormedit::command_invocation_context_t& invocation,
+    wormedit::sys::options_runtime_t& options, const wormedit::program_preferences_t& preferences,
+    InvokeEditor&& invoke_editor) -> wormedit::command_invocation_result_t {
+    const auto command = parse_application_command(invocation.command.value);
+    if (command && command->kind == wormedit::sys::application_command_kind_t::workspace_options) {
+        wormedit::sys::open_options(options, preferences);
+        return {.accepted = true};
+    }
+    return invoke_editor();
+}
+
 auto dispatch_registered_application_command(
     const wormedit::command_invocation_context_t& invocation,
     wormedit::document_history_t& history,
@@ -3160,6 +3188,7 @@ int main(int argc, char** argv) {
     application_command_state_t application_command_state;
     external_player_runtime_t external_player_runtime;
     wormedit::sys::project_chart_runtime_t project_chart_runtime;
+    wormedit::sys::options_runtime_t options_runtime;
     auto program_preferences = wormedit::sys::load_program_preferences_runtime();
     initialize_program_preferences(program_preferences, external_player_runtime, application_command_state, status);
     application_command_state.external_player = [&](wormedit::sys::external_player_action_t action) {
@@ -3196,9 +3225,12 @@ int main(int argc, char** argv) {
     timing_grid_state_t timing_grid;
     auto command_registry = wormedit::make_default_editor_command_registry(
         [&](const wormedit::command_invocation_context_t& invocation) {
-            return dispatch_registered_application_command(
-                invocation, history, workspace, compose_interaction_state, timing_edit.stage,
-                application_command_state, status, tap_runtime, tap_clock, tap_event_ns);
+            return dispatch_options_or_editor_command(invocation, options_runtime,
+                program_preferences.preferences, [&] {
+                    return dispatch_registered_application_command(
+                        invocation, history, workspace, compose_interaction_state, timing_edit.stage,
+                        application_command_state, status, tap_runtime, tap_clock, tap_event_ns);
+                });
         });
     const auto shortcut_startup = load_preferred_shortcuts(program_preferences, command_registry);
     append_shortcut_startup_diagnostic(status, shortcut_startup);
@@ -3430,6 +3462,7 @@ int main(int argc, char** argv) {
             flattened.view.transport_rate_available = static_cast<bool>(application_command_state.transport_set_playback_rate);
             flattened.view.transport_keep_pitch = application_command_state.transport_keep_pitch;
             flattened.view.transport_keep_pitch_available = application_command_state.transport_keep_pitch_available;
+            flattened.view.options = wormedit::sys::options_view(options_runtime);
             project_external_player_view(external_player_runtime, flattened.view);
             wormedit::sys::project_chart_view(project_chart_runtime, history.document, flattened.view.setup);
             project_tap_timing(tap_runtime, tap_clock, command_registry, flattened.view);
@@ -3456,6 +3489,8 @@ int main(int argc, char** argv) {
                         waveform_runtime.waveform_analysis()->waveform->sample_rate;
                 }
 #endif
+                dispatch_options_frame_action(options_runtime, program_preferences, action.options,
+                    external_player_runtime, application_command_state, status);
                 dispatch_tap_panel_action(tap_runtime, action.tap_timing);
                 publish_tap_assist();
                 const bool shortcut_handled = process_compose_frame_action(

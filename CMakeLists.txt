@@ -318,6 +318,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/transport_player_actions.cpp
         src/sys/external_player.cpp
         src/sys/preferences_runtime.cpp
+        src/sys/options_runtime.cpp
         src/sys/project_view.cpp
         src/sys/tap_timing_runtime.cpp
         src/sys/platform_recovery.cpp
@@ -325,6 +326,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/window.cpp
         src/ui/nuklear/audio_panel.cpp
         src/ui/nuklear/external_player_panel.cpp
+        src/ui/nuklear/options_window.cpp
         src/ui/nuklear/tap_timing_panel.cpp
         src/ui/nuklear/audio_state.cpp
         src/ui/nuklear/bms_branch_panel.cpp

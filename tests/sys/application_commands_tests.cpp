@@ -32,6 +32,8 @@ TEST_CASE("Compose navigation cleanup preserves command results", "[unit][sys][c
 }
 
 TEST_CASE("application command IDs parse into typed commands", "[unit][sys][commands]") {
+    CHECK(parse_application_command("workspace.options") ==
+          application_command_t{.kind = application_command_kind_t::workspace_options});
     CHECK(parse_application_command("history.undo") ==
           application_command_t{.kind = application_command_kind_t::history_undo});
     CHECK(parse_application_command("workspace.open_compare_validate") ==

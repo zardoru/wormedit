@@ -1554,10 +1554,10 @@ void worm_ui_nuklear_render_timing_panel(struct nk_context* context, const WormU
     if (!canvas || !view->scene_available) return;
     initialize_timing_lanes(*canvas);
     draw_timing_grid(*canvas);
-    process_timing_pointer(*canvas);
+    if (!view->input_occluded) process_timing_pointer(*canvas);
     draw_timing_overlays(*canvas);
     nk_push_scissor(canvas->commands, canvas->parent_clip);
-    handle_timing_double_clicks(*canvas);
+    if (!view->input_occluded) handle_timing_double_clicks(*canvas);
     worm_ui_nuklear_render_timing_stage_editor(context, view, action);
     render_timing_recipe_form(context, view, action);
 }

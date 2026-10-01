@@ -1,4 +1,5 @@
 #include "ui/nuklear/external_player_panel.h"
+#include "ui/nuklear/options_window.h"
 #include "ui/nuklear/tap_timing_panel.h"
 
 #include "ui/frontend.h"
@@ -634,6 +635,8 @@ static void render_project_menu_files(const WormUiWorkspaceView* view,
         start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_OPEN_FILE);
     if (dialog_busy) nk_widget_disable_end(g_context);
     if (view->project_loaded) render_loaded_project_menu_files(view, action, dialog_busy);
+    if (nk_menu_item_label(g_context, "Options...", NK_TEXT_LEFT))
+        action->options.kind = WORM_UI_OPTIONS_OPEN;
 }
 
 static void render_project_menu_navigation(const WormUiWorkspaceView* view,
@@ -670,7 +673,7 @@ static void render_external_player_menu(const WormUiWorkspaceView& view,
 
 static void render_project_menu(const WormUiWorkspaceView* view,
                                 WormUiWorkspaceAction* action) {
-    if (!nk_menu_begin_label(g_context, "Project", NK_TEXT_LEFT, nk_vec2(250, 540))) return;
+    if (!nk_menu_begin_label(g_context, "File", NK_TEXT_LEFT, nk_vec2(250, 540))) return;
     render_project_menu_files(view, action);
     render_project_menu_navigation(view, action);
     render_external_player_menu(*view, *action);
@@ -1013,6 +1016,18 @@ static auto render_recovery_above_content(const WormUiWorkspaceView& view,
     return render_recovery_panel(view, action);
 }
 
+static bool options_owns_content_input(const WormUiWorkspaceView& view) {
+    if (!view.options.visible || !g_context) return false;
+    const auto* window = nk_window_find(g_context, "Options");
+    const auto bounds = window ? window->bounds : nk_rect(180, 110, 800, 450);
+    if (nk_input_is_mouse_hovering_rect(&g_context->input, bounds)) return true;
+    for (const auto& button : g_context->input.mouse.buttons) {
+        if (button.down && button.clicked_pos.x >= bounds.x && button.clicked_pos.x <= bounds.x + bounds.w &&
+            button.clicked_pos.y >= bounds.y && button.clicked_pos.y <= bounds.y + bounds.h) return true;
+    }
+    return nk_window_is_active(g_context, "Options") && nuklear_text_entry_active();
+}
+
 static void render_workspace_content(const WormUiWorkspaceView& view,
                                      WormUiWorkspaceAction& action) {
     prepare_workspace_content_scroll(g_context, view.compose.visible);
@@ -1026,12 +1041,16 @@ static void render_workspace_content(const WormUiWorkspaceView& view,
         worm_ui_nuklear_render_metadata_panel(g_context, &view.metadata, &action,
                                               g_window_focused);
     } else if (view.timing.visible) {
-        worm_ui_nuklear_render_timing_panel(g_context, &view.timing, &action,
+        auto timing = view.timing;
+        timing.input_occluded = options_owns_content_input(view);
+        worm_ui_nuklear_render_timing_panel(g_context, &timing, &action,
                                             g_window_focused, g_double_clicks.data(),
                                             g_double_click_count);
     } else if (view.compose.visible) {
+        auto compose = view.compose;
+        compose.input_occluded = options_owns_content_input(view);
         worm_ui_nuklear_render_compose_panel(
-            g_context, &view.compose, &view.timing, &action, g_window_focused,
+            g_context, &compose, &view.timing, &action, g_window_focused,
             g_ime_composition_active, g_double_clicks.data(), g_double_click_count,
             g_shortcut_event_count);
     } else if (view.audio_slices.visible) {
@@ -1387,6 +1406,8 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
 }
 
 static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
+    if (!project_modal_active(frame.view))
+        worm_ui_nuklear_render_options_window(g_context, &frame.view.options, &frame.action.options);
     if (project_modal_active(frame.view)) return;
     if (!frame.view.project_loaded) {
         worm_ui_nuklear_render_external_player_panel(g_context, &frame.view.external_player,

@@ -1,0 +1,242 @@
+#include "sys/options_runtime.h"
+#include <wormedit/audio/playback_rate.h>
+#include <algorithm>
+#include <iterator>
+#include <limits>
+
+namespace wormedit::sys {
+namespace {
+auto valid_category(WormUiOptionsCategory value) -> bool {
+    return value >= WORM_UI_OPTIONS_GENERAL && value < WORM_UI_OPTIONS_CATEGORY_COUNT;
+}
+void copy_category(program_preferences_t& target, const program_preferences_t& source,
+    WormUiOptionsCategory category) {
+    switch (category) {
+    case WORM_UI_OPTIONS_GENERAL:
+        target.general.autosave_minutes = source.general.autosave_minutes;
+        target.general.recent_files_count = source.general.recent_files_count;
+        target.general.confirm_unsaved_close = source.general.confirm_unsaved_close;
+        break;
+    case WORM_UI_OPTIONS_EDITOR: target.editor = source.editor; target.minimap = source.minimap; break;
+    case WORM_UI_OPTIONS_AUDIO: target.audio = source.audio; break;
+    case WORM_UI_OPTIONS_DISPLAY: target.display = source.display; target.layout = source.layout; break;
+    case WORM_UI_OPTIONS_INPUT: target.general.shortcut_profile_path = source.general.shortcut_profile_path; break;
+    case WORM_UI_OPTIONS_PLAYERS: target.players = source.players; break;
+    default: break;
+    }
+}
+auto category_equal(const program_preferences_t& a, const program_preferences_t& b,
+    WormUiOptionsCategory category) -> bool {
+    auto copy = a;
+    copy_category(copy, b, category);
+    return copy == a;
+}
+void diagnose(options_runtime_t& runtime, WormUiOptionsField field, bool valid, const char* message) {
+    if (!valid) runtime.diagnostics.push_back({field, message});
+}
+auto valid_text(const std::string& value) -> bool {
+    return value.size() <= maximum_preference_string_bytes && value.find('\0') == std::string::npos;
+}
+void validate_general(options_runtime_t& r) {
+    diagnose(r, WORM_UI_OPTIONS_FIELD_AUTOSAVE, r.draft.general.autosave_minutes >= 1 &&
+        r.draft.general.autosave_minutes <= 30, "Autosave must be between 1 and 30 minutes.");
+    diagnose(r, WORM_UI_OPTIONS_FIELD_RECENT_FILES, r.draft.general.recent_files_count >= 1 &&
+        r.draft.general.recent_files_count <= 100, "Recent files must be between 1 and 100.");
+}
+void validate_display(options_runtime_t& r) {
+    diagnose(r, WORM_UI_OPTIONS_FIELD_THEME, valid_text(r.draft.display.theme), "Theme path is too long or contains a null character.");
+    const auto scale = r.draft.display.ui_scale_percent;
+    diagnose(r, WORM_UI_OPTIONS_FIELD_SCALE, scale == 0 || (scale >= 100 && scale <= 200), "Scale must be automatic or between 100 and 200 percent.");
+    diagnose(r, WORM_UI_OPTIONS_FIELD_LAYOUT, valid_text(r.draft.layout.dock_layout), "Layout is too long or contains a null character.");
+}
+void validate_draft(options_runtime_t& r) {
+    r.diagnostics.clear();
+    switch (r.category) {
+    case WORM_UI_OPTIONS_GENERAL: validate_general(r); break;
+    case WORM_UI_OPTIONS_EDITOR:
+        diagnose(r, WORM_UI_OPTIONS_FIELD_SNAP, r.draft.editor.default_snap >= 1 &&
+            r.draft.editor.default_snap <= 1920, "Snap must be between 1 and 1920."); break;
+    case WORM_UI_OPTIONS_AUDIO:
+        diagnose(r, WORM_UI_OPTIONS_FIELD_RATE,
+            std::ranges::find(audio::playback_rates, r.draft.audio.playback_rate) != audio::playback_rates.end(),
+            "Playback rate is unsupported."); break;
+    case WORM_UI_OPTIONS_DISPLAY: validate_display(r); break;
+    case WORM_UI_OPTIONS_INPUT:
+        diagnose(r, WORM_UI_OPTIONS_FIELD_SHORTCUT_PATH, valid_text(r.draft.general.shortcut_profile_path) &&
+            !r.draft.general.shortcut_profile_path.empty(), "Shortcut profile path must be nonempty and at most 4096 bytes."); break;
+    case WORM_UI_OPTIONS_PLAYERS:
+        diagnose(r, WORM_UI_OPTIONS_FIELD_PLAYERS, valid_external_player_preferences(r.draft.players), "External-player definitions are invalid."); break;
+    default: break;
+    }
+    auto candidate = default_program_preferences();
+    copy_category(candidate, r.draft, r.category);
+    if (r.diagnostics.empty() && !serialize_program_preferences(candidate))
+        r.diagnostics.push_back({WORM_UI_OPTIONS_FIELD_PAGE, "This page contains invalid text or oversized values."});
+}
+auto apply_category(options_runtime_t& r, program_preferences_runtime_t& program) -> bool {
+    validate_draft(r);
+    if (!r.diagnostics.empty()) { r.status = "Correct this page's invalid fields before applying."; return false; }
+    if (!category_equal(program.preferences, r.baseline, r.category)) {
+        r.status = "These settings changed outside Options. Revert this page before applying.";
+        return false;
+    }
+    if (category_equal(program.preferences, r.draft, r.category)) { r.status = "This page has no changes."; return false; }
+    auto candidate = program.preferences;
+    copy_category(candidate, r.draft, r.category);
+    if (!serialize_program_preferences(candidate)) { r.status = "Program preferences contain invalid or oversized values."; return false; }
+    const auto error = apply_program_preferences(program, std::move(candidate));
+    copy_category(r.baseline, program.preferences, r.category);
+    r.status = error.empty() ? "Options saved." : error;
+    return true;
+}
+auto edit_general(program_preferences_t& p, const WormUiOptionsAction& a) -> bool {
+    switch (a.field) {
+    case WORM_UI_OPTIONS_FIELD_AUTOSAVE: p.general.autosave_minutes = static_cast<std::uint32_t>(a.integer); return true;
+    case WORM_UI_OPTIONS_FIELD_RECENT_FILES: p.general.recent_files_count = static_cast<std::uint32_t>(a.integer); return true;
+    case WORM_UI_OPTIONS_FIELD_CONFIRM_CLOSE: p.general.confirm_unsaved_close = a.boolean; return true;
+    default: return false;
+    }
+}
+auto edit_editor(program_preferences_t& p, const WormUiOptionsAction& a) -> bool {
+    switch (a.field) {
+    case WORM_UI_OPTIONS_FIELD_SNAP: p.editor.default_snap = static_cast<std::uint32_t>(a.integer); return true;
+    case WORM_UI_OPTIONS_FIELD_MINIMAP_CLICK: p.minimap.click_moves_paused_playhead = a.boolean; return true;
+    default: return false;
+    }
+}
+auto edit_audio(program_preferences_t& p, const WormUiOptionsAction& a) -> bool {
+    switch (a.field) {
+    case WORM_UI_OPTIONS_FIELD_RATE: p.audio.playback_rate = {a.integer, a.denominator}; return true;
+    case WORM_UI_OPTIONS_FIELD_KEEP_PITCH: p.audio.keep_pitch = a.boolean; return true;
+    default: return false;
+    }
+}
+auto edit_display(program_preferences_t& p, const WormUiOptionsAction& a) -> bool {
+    switch (a.field) {
+    case WORM_UI_OPTIONS_FIELD_THEME: p.display.theme = a.text; return true;
+    case WORM_UI_OPTIONS_FIELD_SCALE: p.display.ui_scale_percent = static_cast<std::uint32_t>(a.integer); return true;
+    case WORM_UI_OPTIONS_FIELD_LAYOUT: p.layout.dock_layout = a.text; return true;
+    case WORM_UI_OPTIONS_FIELD_TIMING_OVERLAY: p.display.frame_timing_overlay = a.boolean; return true;
+    default: return false;
+    }
+}
+auto edit_player_text(external_player_definition_t& p, const WormUiOptionsAction& a) -> bool {
+    switch (a.field) {
+    case WORM_UI_OPTIONS_FIELD_PLAYER_NAME: p.name = a.text; return true;
+    case WORM_UI_OPTIONS_FIELD_PLAYER_PATH: p.path = a.text; return true;
+    case WORM_UI_OPTIONS_FIELD_PLAYER_START: p.start_arguments = a.text; return true;
+    case WORM_UI_OPTIONS_FIELD_PLAYER_HERE: p.here_arguments = a.text; return true;
+    case WORM_UI_OPTIONS_FIELD_PLAYER_STOP: p.stop_arguments = a.text; return true;
+    default: return false;
+    }
+}
+auto edit_players(program_preferences_t& p, const WormUiOptionsAction& a) -> bool {
+    auto& players = p.players;
+    if (a.field == WORM_UI_OPTIONS_FIELD_PLAYER_ADD) {
+        if (players.players.size() >= maximum_external_players) return false;
+        players.players.push_back({});
+        return true;
+    }
+    if (a.player_index >= players.players.size()) return false;
+    if (a.field == WORM_UI_OPTIONS_FIELD_PLAYER_SELECTED) { players.selected = a.player_index; return true; }
+    if (a.field == WORM_UI_OPTIONS_FIELD_PLAYER_REMOVE) {
+        if (players.players.size() == 1) return false;
+        players.players.erase(players.players.begin() + a.player_index);
+        if (players.selected > a.player_index) --players.selected;
+        players.selected = std::min(players.selected, players.players.size() - 1);
+        return true;
+    }
+    return edit_player_text(players.players[a.player_index], a);
+}
+auto bounded_edit(const WormUiOptionsAction& action) -> bool {
+    if (std::ranges::find(action.text, '\0') == std::end(action.text)) return false;
+    const bool small_integer = action.field == WORM_UI_OPTIONS_FIELD_AUTOSAVE ||
+        action.field == WORM_UI_OPTIONS_FIELD_RECENT_FILES || action.field == WORM_UI_OPTIONS_FIELD_SNAP ||
+        action.field == WORM_UI_OPTIONS_FIELD_SCALE;
+    return !small_integer || action.integer <= std::numeric_limits<std::uint32_t>::max();
+}
+auto edit_field(options_runtime_t& r, const WormUiOptionsAction& action) -> bool {
+    if (action.category != r.category || !bounded_edit(action)) return false;
+    auto candidate = r.draft;
+    bool edited{};
+    switch (r.category) {
+    case WORM_UI_OPTIONS_GENERAL: edited = edit_general(candidate, action); break;
+    case WORM_UI_OPTIONS_EDITOR: edited = edit_editor(candidate, action); break;
+    case WORM_UI_OPTIONS_AUDIO: edited = edit_audio(candidate, action); break;
+    case WORM_UI_OPTIONS_DISPLAY: edited = edit_display(candidate, action); break;
+    case WORM_UI_OPTIONS_INPUT:
+        if (action.field != WORM_UI_OPTIONS_FIELD_SHORTCUT_PATH) return false;
+        candidate.general.shortcut_profile_path = action.text; edited = true; break;
+    case WORM_UI_OPTIONS_PLAYERS: edited = edit_players(candidate, action); break;
+    default: return false;
+    }
+    return edited && edit_options_draft(r, action.revision, candidate);
+}
+} // namespace
+void open_options(options_runtime_t& r, const program_preferences_t& preferences) {
+    if (r.visible) return;
+    r.visible = true;
+    r.draft = preferences;
+    r.baseline = preferences;
+    r.status.clear();
+    ++r.revision;
+    validate_draft(r);
+}
+auto edit_options_draft(options_runtime_t& r, std::uint64_t revision,
+    const program_preferences_t& candidate) -> bool {
+    if (!r.visible || revision != r.revision) return false;
+    copy_category(r.draft, candidate, r.category);
+    ++r.revision;
+    r.status.clear();
+    validate_draft(r);
+    return true;
+}
+auto options_view(options_runtime_t& r) -> WormUiOptionsView {
+    validate_draft(r);
+    r.diagnostic_views.clear();
+    for (const auto& item : r.diagnostics) r.diagnostic_views.push_back({item.field, item.message.c_str()});
+    r.player_views.clear();
+    for (const auto& player : r.draft.players.players)
+        r.player_views.push_back({player.name.c_str(), player.path.c_str(), player.start_arguments.c_str(),
+            player.here_arguments.c_str(), player.stop_arguments.c_str()});
+    const auto& p = r.draft;
+    return {.visible = r.visible, .revision = r.revision, .category = r.category,
+        .changed = !category_equal(p, r.baseline, r.category), .can_apply = r.diagnostics.empty(),
+        .autosave_minutes = p.general.autosave_minutes, .recent_files_count = p.general.recent_files_count,
+        .default_snap = p.editor.default_snap, .ui_scale_percent = p.display.ui_scale_percent,
+        .confirm_unsaved_close = p.general.confirm_unsaved_close, .keep_pitch = p.audio.keep_pitch,
+        .frame_timing_overlay = p.display.frame_timing_overlay,
+        .minimap_click_moves_paused_playhead = p.minimap.click_moves_paused_playhead,
+        .rate_numerator = p.audio.playback_rate.numerator, .rate_denominator = p.audio.playback_rate.denominator,
+        .theme = p.display.theme.c_str(), .dock_layout = p.layout.dock_layout.c_str(),
+        .shortcut_profile_path = p.general.shortcut_profile_path.c_str(), .players = r.player_views.data(),
+        .player_count = r.player_views.size(), .selected_player = p.players.selected,
+        .diagnostics = r.diagnostic_views.data(), .diagnostic_count = r.diagnostic_views.size(), .status = r.status.c_str()};
+}
+auto apply_options_action(options_runtime_t& r, program_preferences_runtime_t& program,
+    const WormUiOptionsAction& action) -> bool {
+    if (action.kind == WORM_UI_OPTIONS_NONE) return false;
+    if (action.kind == WORM_UI_OPTIONS_OPEN) { open_options(r, program.preferences); return false; }
+    if (!r.visible || action.revision != r.revision) return false;
+    if (action.kind == WORM_UI_OPTIONS_EDIT_FIELD) {
+        (void)edit_field(r, action);
+        return false; // Draft edits never accept preferences or publish a file.
+    }
+    bool accepted = false;
+    switch (action.kind) {
+    case WORM_UI_OPTIONS_CLOSE: r.visible = false; break;
+    case WORM_UI_OPTIONS_SELECT_CATEGORY:
+        if (!valid_category(action.category)) return false;
+        r.category = action.category; r.status.clear(); break;
+    case WORM_UI_OPTIONS_APPLY: accepted = apply_category(r, program); break;
+    case WORM_UI_OPTIONS_REVERT:
+        copy_category(r.draft, program.preferences, r.category);
+        copy_category(r.baseline, program.preferences, r.category); r.status.clear(); break;
+    case WORM_UI_OPTIONS_DEFAULTS: copy_category(r.draft, default_program_preferences(), r.category); r.status.clear(); break;
+    default: return false;
+    }
+    ++r.revision;
+    validate_draft(r);
+    return accepted;
+}
+} // namespace wormedit::sys

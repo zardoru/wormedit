@@ -34,6 +34,7 @@ constexpr command_name_t command_names[]{
     {"navigation.next_snap", application_command_kind_t::navigation_next_snap},
     {"navigation.previous_marker", application_command_kind_t::navigation_previous_marker},
     {"navigation.next_marker", application_command_kind_t::navigation_next_marker},
+    {"workspace.options", application_command_kind_t::workspace_options},
     {"workspace.open_setup", application_command_kind_t::workspace_open_setup},
     {"workspace.open_metadata", application_command_kind_t::workspace_open_metadata},
     {"workspace.open_timing", application_command_kind_t::workspace_open_timing},

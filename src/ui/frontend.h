@@ -670,6 +670,8 @@ typedef struct WormUiComposeOutputGroupView {
 // Coordinates are relative to the scene viewport; no chart/core types cross
 // the private frontend boundary.
 typedef struct WormUiComposeView {
+    // A modeless program window owns this frame's content input.
+    bool input_occluded;
     uint32_t armed_note_kind;
     uint32_t allowed_note_kind_mask;
     bool visible;
@@ -972,6 +974,7 @@ typedef struct WormUiTimingRecipeDraftView {
 // Renderer-neutral scalar projection of the timing pane. SPEEDS spans are
 // evaluated by the timing core before crossing this private C boundary.
 typedef struct WormUiTimingView {
+    bool input_occluded;
     bool visible;
     bool scene_available;
     bool truncated;
@@ -1280,7 +1283,67 @@ typedef struct WormUiTapTimingAction {
     bool reset;
 } WormUiTapTimingAction;
 
+typedef enum WormUiOptionsCategory {
+    WORM_UI_OPTIONS_GENERAL = 0, WORM_UI_OPTIONS_EDITOR, WORM_UI_OPTIONS_AUDIO,
+    WORM_UI_OPTIONS_DISPLAY, WORM_UI_OPTIONS_INPUT, WORM_UI_OPTIONS_PLAYERS,
+    WORM_UI_OPTIONS_CATEGORY_COUNT
+} WormUiOptionsCategory;
+typedef enum WormUiOptionsField {
+    WORM_UI_OPTIONS_FIELD_AUTOSAVE, WORM_UI_OPTIONS_FIELD_RECENT_FILES,
+    WORM_UI_OPTIONS_FIELD_SNAP, WORM_UI_OPTIONS_FIELD_RATE,
+    WORM_UI_OPTIONS_FIELD_THEME, WORM_UI_OPTIONS_FIELD_SCALE,
+    WORM_UI_OPTIONS_FIELD_LAYOUT, WORM_UI_OPTIONS_FIELD_SHORTCUT_PATH,
+    WORM_UI_OPTIONS_FIELD_PLAYERS, WORM_UI_OPTIONS_FIELD_PAGE,
+    WORM_UI_OPTIONS_FIELD_CONFIRM_CLOSE, WORM_UI_OPTIONS_FIELD_MINIMAP_CLICK,
+    WORM_UI_OPTIONS_FIELD_KEEP_PITCH, WORM_UI_OPTIONS_FIELD_TIMING_OVERLAY,
+    WORM_UI_OPTIONS_FIELD_PLAYER_NAME, WORM_UI_OPTIONS_FIELD_PLAYER_PATH,
+    WORM_UI_OPTIONS_FIELD_PLAYER_START, WORM_UI_OPTIONS_FIELD_PLAYER_HERE,
+    WORM_UI_OPTIONS_FIELD_PLAYER_STOP, WORM_UI_OPTIONS_FIELD_PLAYER_SELECTED,
+    WORM_UI_OPTIONS_FIELD_PLAYER_ADD, WORM_UI_OPTIONS_FIELD_PLAYER_REMOVE
+} WormUiOptionsField;
+typedef struct WormUiOptionsDiagnostic {
+    WormUiOptionsField field;
+    const char* message;
+} WormUiOptionsDiagnostic;
+typedef struct WormUiOptionsView {
+    bool visible;
+    uint64_t revision;
+    WormUiOptionsCategory category;
+    bool changed;
+    bool can_apply;
+    uint32_t autosave_minutes, recent_files_count, default_snap, ui_scale_percent;
+    bool confirm_unsaved_close, keep_pitch, frame_timing_overlay;
+    bool minimap_click_moves_paused_playhead;
+    uint64_t rate_numerator, rate_denominator;
+    const char* theme;
+    const char* dock_layout;
+    const char* shortcut_profile_path;
+    const struct WormUiExternalPlayerDefinitionView* players;
+    size_t player_count, selected_player;
+    const WormUiOptionsDiagnostic* diagnostics;
+    size_t diagnostic_count;
+    const char* status;
+} WormUiOptionsView;
+typedef enum WormUiOptionsActionKind {
+    WORM_UI_OPTIONS_NONE = 0, WORM_UI_OPTIONS_OPEN, WORM_UI_OPTIONS_CLOSE,
+    WORM_UI_OPTIONS_SELECT_CATEGORY, WORM_UI_OPTIONS_APPLY,
+    WORM_UI_OPTIONS_REVERT, WORM_UI_OPTIONS_DEFAULTS, WORM_UI_OPTIONS_EDIT_FIELD
+} WormUiOptionsActionKind;
+// EDIT_FIELD payload is consumed immediately; strings are bounded and owned.
+#define WORM_UI_OPTIONS_TEXT_CAPACITY 4097
+typedef struct WormUiOptionsAction {
+    WormUiOptionsActionKind kind;
+    uint64_t revision;
+    WormUiOptionsCategory category;
+    WormUiOptionsField field;
+    uint64_t integer, denominator;
+    bool boolean;
+    uint32_t player_index;
+    char text[WORM_UI_OPTIONS_TEXT_CAPACITY];
+} WormUiOptionsAction;
+
 typedef struct WormUiWorkspaceView {
+    WormUiOptionsView options;
     WormUiTapTimingView tap_timing;
     bool project_loaded;
     bool project_has_native_path;
@@ -1533,6 +1596,7 @@ typedef enum WormUiMetadataEditKind {
 } WormUiMetadataEditKind;
 
 typedef struct WormUiWorkspaceAction {
+    WormUiOptionsAction options;
     WormUiProjectChartAction project_chart;
     WormUiTapTimingAction tap_timing;
     WormUiWorkspaceActionKind kind;

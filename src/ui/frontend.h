@@ -380,6 +380,7 @@ typedef struct WormUiComposeLaneView {
     uint8_t role;
     uint8_t stage;
     uint8_t glyph;
+    uint8_t key_color; // wormedit::lane_key_color_t; 0 = generic.
 } WormUiComposeLaneView;
 
 typedef struct WormUiComposeGridLineView {
@@ -404,6 +405,7 @@ typedef struct WormUiComposeHoldView {
     uint64_t note_id;
     uint64_t lane_id;
     uint32_t display_lane_number; // 1-based chart layout order; 0 when unavailable.
+    uint8_t key_color; // lane key color of the owning lane; 0 = generic.
     bool selected;
     bool proposal_origin;
     bool proposal_ghost;
@@ -419,6 +421,7 @@ typedef struct WormUiComposeNoteView {
     uint64_t note_id;
     uint64_t lane_id;
     uint32_t display_lane_number; // 1-based chart layout order; 0 when unavailable.
+    uint8_t key_color; // lane key color of the owning lane; 0 = generic.
     const char* sound_label;
     const char* sound_detail;
     uint8_t glyph;

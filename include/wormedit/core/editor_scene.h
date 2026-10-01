@@ -93,6 +93,7 @@ struct editor_field_lane_geometry_t {
     stage_group_t stage{stage_group_t::none};
     lane_glyph_t glyph{lane_glyph_t::bar};
     std::uint32_t display_order{};
+    lane_key_color_t key_color{lane_key_color_t::generic};
     editor_field_rect_t bounds;
 };
 

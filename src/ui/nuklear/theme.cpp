@@ -133,6 +133,25 @@ auto compose(ComposeColor color) -> nk_color {
 auto compose_lane(size_t lane, bool alternate) -> nk_color {
     return lane_colors[lane < lane_colors.size() ? lane : lane_colors.size() - 1][alternate];
 }
+auto compose_key_color(std::uint8_t key_color, bool alternate) -> key_color_t {
+    const auto lane = [alternate](int r, int g, int b) {
+        const auto shift = alternate ? 5 : 0;
+        return nk_rgb(r + shift, g + shift, b + shift);
+    };
+    switch (key_color) {
+    case 1: return {true, lane(58, 62, 74), nk_rgb(226, 232, 240)};   // white
+    case 2: return {true, lane(24, 27, 36), nk_rgb(96, 128, 190)};    // black
+    case 3: return {true, lane(62, 32, 40), nk_rgb(232, 84, 96)};     // scratch
+    case 4: return {true, lane(36, 52, 54), nk_rgb(113, 201, 216)};   // foot pedal
+    case 5: return {true, lane(42, 49, 58), nk_rgb(236, 194, 112)};   // free zone
+    case 6: return {true, lane(58, 62, 74), nk_rgb(238, 240, 246)};   // pms white
+    case 7: return {true, lane(60, 56, 30), nk_rgb(244, 214, 82)};    // pms yellow
+    case 8: return {true, lane(30, 58, 38), nk_rgb(96, 206, 118)};    // pms green
+    case 9: return {true, lane(30, 42, 66), nk_rgb(92, 150, 240)};    // pms blue
+    case 10: return {true, lane(66, 32, 36), nk_rgb(240, 90, 92)};    // pms red
+    default: return {};
+    }
+}
 auto compose_note_accent(size_t index) -> nk_color {
     return note_accents[index % note_accents.size()];
 }

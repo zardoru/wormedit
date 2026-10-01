@@ -1502,6 +1502,7 @@ auto append_visible_layout_band(scene_geometry_context_t& context,
                                        .stage = lanes[lane_index]->stage,
                                        .glyph = lanes[lane_index]->glyph,
                                        .display_order = lanes[lane_index]->display_order,
+                                       .key_color = lanes[lane_index]->key_color,
                                        .bounds = {left, band_top, right, band_bottom}});
     }
     visible_bands.push_back(std::move(band));

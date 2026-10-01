@@ -468,6 +468,29 @@ void populate_compose_sound_labels(const compose_scene_projection_context_t& pro
     }
 }
 
+auto prepare_compose_grid_rows(flattened_workspace_t& flattened, std::size_t count) -> bool {
+    auto& grid = flattened.compose.grid;
+    grid.line = {};
+    grid.row = {};
+    if (count == 0) return true;
+    auto* arena = flattened.arena();
+    if (!arena) return false;
+    auto lines = arena_array<WormUiComposeGridLineView>(*arena, count);
+    auto rows = arena_array<wormedit::exact_chart_row_t>(*arena, count);
+    if (lines.capacity() != count || rows.capacity() != count) return false;
+    grid.line = lines;
+    grid.row = rows;
+    return true;
+}
+auto append_compose_grid_row(flattened_workspace_t& flattened,
+                             const WormUiComposeGridLineView& line,
+                             const wormedit::exact_chart_row_t& row) -> bool {
+    auto& grid = flattened.compose.grid;
+    if (grid.line.size() == grid.line.capacity() || grid.row.size() == grid.row.capacity())
+        return false;
+    return grid.line.push_back(line) && grid.row.push_back(row);
+}
+
 void project_compose_grid_lines(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.flattened;
     const auto& chart = projection.chart;
@@ -490,11 +513,12 @@ void project_compose_grid_lines(const compose_scene_projection_context_t& projec
             virtual_canvas = std::move(*built);
         }
     }
-    flattened.compose.grid.line.reserve(line_count);
-    flattened.compose.grid.row.reserve(line_count);
+    if (!prepare_compose_grid_rows(flattened, line_count)) {
+        view.truncated = true;
+        return;
+    }
     for (std::size_t index = 0; index < line_count; ++index) {
         const auto& line = lines[index];
-        flattened.compose.grid.row.push_back(line.chart_row);
         const auto measure = measure_numbers.find(line.chart_row.whole_rows);
         std::uint32_t measure_number = measure != measure_numbers.end() ? measure->second : 0;
         if (line.kind == wormedit::editor_grid_line_kind_t::measure &&
@@ -505,7 +529,7 @@ void project_compose_grid_lines(const compose_scene_projection_context_t& projec
                 measure_number = static_cast<std::uint32_t>(virtual_measure->number + 1);
             }
         }
-        flattened.compose.grid.line.push_back(
+        if (!append_compose_grid_row(flattened,
             {.y_pixels = line.y_pixels,
              .kind = static_cast<std::uint8_t>(line.kind),
              .emphasis = static_cast<std::uint8_t>(line.emphasis),
@@ -513,7 +537,11 @@ void project_compose_grid_lines(const compose_scene_projection_context_t& projec
                                    ? measure_number
                                    : 0,
              .chart_row =
-             line.chart_row.fractional_rows.numerator == 0 ? line.chart_row.whole_rows : 0});
+             line.chart_row.fractional_rows.numerator == 0 ? line.chart_row.whole_rows : 0},
+             line.chart_row)) {
+            view.truncated = true;
+            break;
+        }
     }
     view.truncated = view.truncated || line_count != lines.size();
 
@@ -2231,7 +2259,6 @@ auto compose_static_storage_bytes(const flattened_workspace_t& storage) -> std::
     // The independently owned arena's committed chunks include all span storage.
     // Count those chunks once, separately from the remaining heap containers.
     std::size_t bytes = sizeof(storage) + storage.owned_arena_committed_bytes() +
-        compose_vector_bytes(data.grid.line) + compose_vector_bytes(data.grid.row) +
         compose_vector_bytes(data.bgm.lane) + compose_vector_bytes(data.bgm.event) +
         compose_vector_bytes(data.timing_marker) + compose_vector_bytes(data.timing_marker_labels);
     for (const auto& label : data.timing_marker_labels)
@@ -2489,14 +2516,19 @@ auto extract_scalar_grid(compose_scene_cache_t& cache, const wormedit::editor_fi
     if (!indices)
         return false;
     const auto& source = cache.static_scene_storage->compose.grid;
+    const auto visible = [&](std::size_t index) {
+        return source.row[index].whole_rows >= scene.visible_begin_row &&
+               source.row[index].whole_rows < scene.visible_end_row;
+    };
+    const auto count = static_cast<std::size_t>(std::count_if(indices->begin(), indices->end(), visible));
+    if (!prepare_compose_grid_rows(flattened, count)) return false;
     for (const auto index : *indices) {
         if (source.row[index].whole_rows < scene.visible_begin_row ||
             source.row[index].whole_rows >= scene.visible_end_row)
             continue;
         auto line = source.line[index];
         line.y_pixels += shift;
-        flattened.compose.grid.line.push_back(line);
-        flattened.compose.grid.row.push_back(source.row[index]);
+        if (!append_compose_grid_row(flattened, line, source.row[index])) return false;
     }
     return true;
 }

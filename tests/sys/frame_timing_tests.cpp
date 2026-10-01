@@ -2004,3 +2004,151 @@ TEST_CASE("Compose geometry scene budget rejects dense excess without exceeding 
     expect_compose_test(fixture.history.document.revision == revision && fixture.history.undo.empty());
     check_geometry_view_spans(fixture.flattened);
 }
+
+namespace {
+void check_grid_pairs(const flattened_workspace_t& frame) {
+    const auto& grid = frame.compose.grid;
+    const auto& view = frame.view.compose;
+    expect_compose_test(grid.line.size() == grid.row.size());
+    expect_compose_test(view.grid_lines == grid.line.data());
+    expect_compose_test(view.grid_line_count == grid.line.size());
+    expect_compose_test(grid.line.size() <= WORM_UI_COMPOSE_GRID_CAPACITY);
+    for (std::size_t index = 0; index < grid.line.size(); ++index) {
+        const auto& row = grid.row[index];
+        expect_compose_test(grid.line[index].chart_row ==
+            (row.fractional_rows.numerator == 0 ? row.whole_rows : 0));
+    }
+}
+void compare_grid_frames(const flattened_workspace_t& actual, const flattened_workspace_t& expected) {
+    compare_scalar_grid(actual.view.compose, expected.view.compose);
+    expect_compose_test(actual.compose.grid.row.size() == expected.compose.grid.row.size());
+    for (std::size_t index = 0; index < actual.compose.grid.row.size(); ++index)
+        expect_compose_test(actual.compose.grid.row[index] == expected.compose.grid.row[index]);
+    check_grid_pairs(actual);
+}
+void check_grid_cache_parity(std::uint32_t direction, format_family_t family) {
+    auto song = geometry_arena_song();
+    song.charts.front().source_family = family;
+    compose_test_fixture_t cached(song), fresh(song);
+    cached.application.editor_preferences.scroll_directions.fill(direction);
+    fresh.application.editor_preferences.scroll_directions.fill(direction);
+    wormedit::frame_arena_t arena, reference;
+    project_geometry_arena(cached, arena);
+    project_geometry_arena(fresh, reference);
+    const auto source = cached.cache.static_scene_storage;
+    expect_compose_test(source != nullptr);
+    expect_compose_test(cached.flattened.view.compose.bms_measure_labels == (family == format_family_t::bms));
+    if (family == format_family_t::bms)
+        expect_compose_test(std::any_of(cached.flattened.compose.grid.line.begin(),
+            cached.flattened.compose.grid.line.end(), [](const auto& line) { return line.measure_number > 1; }));
+    for (const auto scroll : {0.5, 20.0, 0.5}) {
+        arena.reset(); reference.reset();
+        cached.interaction->viewport_scroll_pixels = scroll;
+        fresh.interaction->viewport_scroll_pixels = scroll;
+        fresh.cache = {};
+        project_geometry_arena(cached, arena);
+        project_geometry_arena(fresh, reference);
+        compare_grid_frames(cached.flattened, fresh.flattened);
+        expect_compose_test(cached.cache.static_scene_storage == source);
+    }
+    expect_compose_test(cached.cache.static_projection_reused_frames > 0);
+    ++cached.history.document.revision;
+    ++fresh.history.document.revision;
+    arena.reset(); reference.reset(); fresh.cache = {};
+    project_geometry_arena(cached, arena);
+    project_geometry_arena(fresh, reference);
+    expect_compose_test(cached.cache.static_scene_storage != source);
+    compare_grid_frames(cached.flattened, fresh.flattened);
+}
+}
+
+TEST_CASE("Compose paired grid spans belong to frame and independent static arenas", "[sys][frame-arena][compose-grid]") {
+    compose_test_fixture_t fixture(geometry_arena_song());
+    wormedit::frame_arena_t arena;
+    const auto begin = arena.allocate_bytes(1, alignof(char));
+    project_geometry_arena(fixture, arena);
+    const auto end = arena.allocate_bytes(1, alignof(char));
+    expect_compose_test(static_cast<bool>(begin) && static_cast<bool>(end));
+    expect_compose_test(!fixture.flattened.compose.grid.line.empty());
+    check_grid_pairs(fixture.flattened);
+    check_geometry_between(fixture.flattened.compose.grid.line,
+        reinterpret_cast<std::uintptr_t>(begin.data), reinterpret_cast<std::uintptr_t>(end.data));
+    check_geometry_between(fixture.flattened.compose.grid.row,
+        reinterpret_cast<std::uintptr_t>(begin.data), reinterpret_cast<std::uintptr_t>(end.data));
+    const auto source = fixture.cache.static_scene_storage;
+    expect_compose_test(source != nullptr);
+    expect_compose_test(source->compose.grid.line.data() != fixture.flattened.compose.grid.line.data());
+    const auto line = source->compose.grid.line[0];
+    const auto row = source->compose.grid.row[0];
+    auto moved = std::move(fixture.flattened);
+    check_grid_pairs(moved);
+    fixture.flattened = {};
+    arena.reset();
+    const auto overwrite = arena.allocate_bytes(4096, alignof(char));
+    expect_compose_test(static_cast<bool>(overwrite));
+    std::memset(overwrite.data, 0xA5, 4096);
+    expect_compose_test(source->compose.grid.line[0].y_pixels == line.y_pixels);
+    expect_compose_test(source->compose.grid.row[0] == row);
+    expect_compose_test(fixture.cache.static_scene_accounted_bytes >=
+        sizeof(*source) + source->owned_arena_committed_bytes());
+}
+
+TEST_CASE("Compose paired grid cached filters preserve fresh BMS and native labels", "[sys][frame-arena][compose-grid]") {
+    for (const auto direction : {1U, 2U})
+        for (const auto family : {format_family_t::native_project, format_family_t::bms})
+            check_grid_cache_parity(direction, family);
+}
+
+TEST_CASE("Compose grid arena exhaustion publishes only complete paired units", "[sys][frame-arena][compose-grid]") {
+    bool preceding = false;
+    bool completed = false;
+    for (std::size_t limit = 128; limit <= 2048; limit += 32) {
+        compose_test_fixture_t fixture(geometry_arena_song());
+        wormedit::frame_arena_t arena({.chunk_bytes = limit, .maximum_bytes = limit});
+        project_geometry_arena(fixture, arena);
+        check_grid_pairs(fixture.flattened);
+        expect_compose_test(fixture.history.document.revision == 1 && fixture.history.undo.empty());
+        if (fixture.flattened.compose.grid.line.empty()) {
+            expect_compose_test(fixture.flattened.view.compose.truncated);
+            expect_compose_test(!fixture.flattened.view.compose.static_scene);
+            preceding = preceding || !fixture.flattened.compose.lane.empty();
+        } else completed = true;
+    }
+    expect_compose_test(preceding && completed);
+}
+
+TEST_CASE("Warmed paired grid rows remain stable through 1000 actual arena resets", "[sys][frame-arena][compose-grid]") {
+    compose_test_fixture_t fixture(geometry_arena_song());
+    wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    project_geometry_arena(fixture, arena);
+    arena.reset(); project_geometry_arena(fixture, arena);
+    const auto used = arena.used_bytes(), committed = arena.committed_bytes();
+    const auto source = fixture.cache.static_scene_storage;
+    const auto count = fixture.flattened.compose.grid.line.size();
+    arena.reset(); allocations = 0; count_allocations = true;
+    project_geometry_arena(fixture, arena);
+    count_allocations = false;
+    const auto remaining = allocations;
+    bool stable = true;
+    for (int iteration = 0; iteration < 1000; ++iteration) {
+        arena.reset(); allocations = 0; count_allocations = true;
+        project_geometry_arena(fixture, arena);
+        count_allocations = false;
+        stable = stable && allocations == remaining && arena.used_bytes() == used &&
+            arena.committed_bytes() == committed && fixture.cache.static_scene_storage == source &&
+            fixture.flattened.compose.grid.line.size() == count &&
+            fixture.flattened.compose.grid.row.size() == count && !fixture.flattened.view.compose.truncated;
+    }
+    INFO("remaining projection allocations=" << remaining << ", used=" << used << ", committed=" << committed);
+    expect_compose_test(stable);
+    check_grid_pairs(fixture.flattened);
+}
+
+TEST_CASE("Compose paired grid limits remain bounded when scene budget rejects excess", "[sys][frame-arena][compose-grid]") {
+    compose_test_fixture_t fixture(dense_song());
+    wormedit::frame_arena_t arena;
+    project_geometry_arena(fixture, arena, 2000000);
+    expect_compose_test(!fixture.flattened.view.compose.scene_available);
+    expect_compose_test(fixture.flattened.compose.grid.line.empty() && fixture.flattened.compose.grid.row.empty());
+    check_grid_pairs(fixture.flattened);
+}

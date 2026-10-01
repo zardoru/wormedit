@@ -132,8 +132,8 @@ struct flattened_workspace_t {
         frame_span<WormUiComposeBandView> band;
         frame_span<WormUiComposeLaneView> lane;
         struct {
-            std::vector<WormUiComposeGridLineView> line;
-            std::vector<wormedit::exact_chart_row_t> row;
+            frame_span<WormUiComposeGridLineView> line;
+            frame_span<wormedit::exact_chart_row_t> row;
             std::vector<WormUiComposeGridLineView> proposed;
         } grid;
         std::vector<WormUiComposeTimingPreviewRectView> timing_preview_rect;

@@ -55,7 +55,7 @@ jobs:
         run: cmake --preset headless
 
       - name: Build
-        run: cmake --build --preset headless
+        run: cmake --build --preset headless -- -k 0
 
       - name: Test
         run: ctest --preset headless --output-on-failure -j4

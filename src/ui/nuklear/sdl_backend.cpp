@@ -29,6 +29,7 @@
 #include <cmath>
 #include <utility>
 #include <algorithm>
+#include <array>
 #include <vector>
 #include <chrono>
 #include <span>
@@ -59,14 +60,18 @@ struct GpuSubmissionCounters {
     bool current_clip_enabled{};
     bool previous_clip_enabled{};
     bool submitted{};
+    bool uncounted{};
 };
 static GpuSubmissionCounters g_gpu_submission;
+// Command-buffer user data of windows begun inside uncounted_window_scope_t.
+static char g_uncounted_geometry_tag;
 
 static nk_flags convert_nuklear_commands(nk_context* context, nk_buffer* commands,
                                          nk_buffer* vertices, nk_buffer* indices,
                                          const nk_convert_config* config) {
     const RenderSubphaseScope convert_phase{WORM_UI_FRAME_RENDER_CONVERT};
     const auto result = nk_convert(context, commands, vertices, indices, config);
+    if (g_gpu_submission.uncounted) return result;
     g_gpu_submission.work.vertices +=
         config->vertex_size == 0 ? 0 : vertices->allocated / config->vertex_size;
     g_gpu_submission.work.indices += indices->allocated / sizeof(nk_draw_index);
@@ -98,15 +103,17 @@ static bool render_nuklear_geometry_raw(SDL_Renderer* renderer, SDL_Texture* tex
                                         int color_stride, const float* uv, int uv_stride,
                                         int vertex_count, const void* indices, int index_count,
                                         int) {
-    ++g_gpu_submission.work.draw_calls;
-    if (g_gpu_submission.submitted) {
-        g_gpu_submission.work.clip_rect_changes += !same_nuklear_clip();
-        g_gpu_submission.work.texture_switches += texture != g_gpu_submission.previous_texture;
+    if (!g_gpu_submission.uncounted) {
+        ++g_gpu_submission.work.draw_calls;
+        if (g_gpu_submission.submitted) {
+            g_gpu_submission.work.clip_rect_changes += !same_nuklear_clip();
+            g_gpu_submission.work.texture_switches += texture != g_gpu_submission.previous_texture;
+        }
+        g_gpu_submission.previous_clip = g_gpu_submission.current_clip;
+        g_gpu_submission.previous_clip_enabled = g_gpu_submission.current_clip_enabled;
+        g_gpu_submission.previous_texture = texture;
+        g_gpu_submission.submitted = true;
     }
-    g_gpu_submission.previous_clip = g_gpu_submission.current_clip;
-    g_gpu_submission.previous_clip_enabled = g_gpu_submission.current_clip_enabled;
-    g_gpu_submission.previous_texture = texture;
-    g_gpu_submission.submitted = true;
     return SDL_RenderGeometryRaw(renderer, texture, xy, xy_stride, colors, color_stride, uv,
                                  uv_stride, vertex_count, indices, index_count,
                                  sizeof(nk_draw_index));
@@ -529,7 +536,8 @@ static bool submit_overview_marker(nk_sdl* sdl, const nk_draw_command* command,
 }
 
 static void submit_sdl_draw_list(nk_context* context, nk_sdl* sdl) {
-    if (sdl->field->marker_count != 0) {
+    // Field markers stay set until the frame ends; count them in the counted pass only.
+    if (sdl->field->marker_count != 0 && !g_gpu_submission.uncounted) {
         const auto work = sdl->field->geometry.workload();
         g_gpu_submission.work.vertices += work.vertices;
         g_gpu_submission.work.indices += work.indices;
@@ -564,13 +572,8 @@ static void submit_sdl_draw_list(nk_context* context, nk_sdl* sdl) {
         submit_sdl_batch(sdl, *last);
 }
 
-NK_API void nk_sdl_render(struct nk_context* ctx, enum nk_anti_aliasing AA) {
-    /* setup global state */
-    struct nk_sdl* sdl;
-    NK_ASSERT(ctx);
-    sdl = (struct nk_sdl*)ctx->userdata.ptr;
-    NK_ASSERT(sdl);
-
+// Converts and submits the context's visible windows without ending its frame.
+static void render_nuklear_pass(struct nk_context* ctx, struct nk_sdl* sdl, enum nk_anti_aliasing AA) {
     {
         SDL_Rect saved_clip;
         bool clipping_enabled;
@@ -597,6 +600,7 @@ NK_API void nk_sdl_render(struct nk_context* ctx, enum nk_anti_aliasing AA) {
         config.line_AA = AA;
 
         /* convert shapes into vertices */
+        nk_buffer_clear(&sdl->ogl.cmds);
         nk_buffer_clear(&vbuf);
         nk_buffer_clear(&ebuf);
         nk_convert(ctx, &sdl->ogl.cmds, &vbuf, &ebuf, &config);
@@ -609,11 +613,80 @@ NK_API void nk_sdl_render(struct nk_context* ctx, enum nk_anti_aliasing AA) {
         if (!clipping_enabled) {
             SDL_SetRenderClipRect(sdl->renderer, NULL);
         }
-
-        sdl->field->marker_count = 0;
-        nk_clear(ctx);
-        nk_buffer_clear(&sdl->ogl.cmds);
     }
+}
+
+static void finish_nuklear_frame(struct nk_context* ctx, struct nk_sdl* sdl) {
+    sdl->field->marker_count = 0;
+    nk_clear(ctx);
+    nk_buffer_clear(&sdl->ogl.cmds);
+}
+
+NK_API void nk_sdl_render(struct nk_context* ctx, enum nk_anti_aliasing AA) {
+    NK_ASSERT(ctx);
+    auto* sdl = static_cast<struct nk_sdl*>(ctx->userdata.ptr);
+    NK_ASSERT(sdl);
+    render_nuklear_pass(ctx, sdl, AA);
+    finish_nuklear_frame(ctx, sdl);
+}
+
+namespace {
+// Windows hidden for one render pass: Nuklear's command list skips hidden
+// windows, so a pass converts only the windows of one counting group.
+class hidden_windows_t {
+  public:
+    static auto uncounted(const nk_window& window) -> bool {
+        return window.buffer.userdata.ptr == &g_uncounted_geometry_tag;
+    }
+    static auto drawn(const nk_context& ctx, const nk_window& window) -> bool {
+        return !(window.flags & NK_WINDOW_HIDDEN) && window.seq == ctx.seq;
+    }
+    static auto count(const nk_context& ctx, bool uncounted_group) -> std::size_t {
+        std::size_t result = 0;
+        for (const auto* window = ctx.begin; window; window = window->next)
+            result += drawn(ctx, *window) && uncounted(*window) == uncounted_group;
+        return result;
+    }
+    static auto fits(std::size_t windows) -> bool { return windows <= capacity; }
+    void hide(nk_context& ctx, bool uncounted_group) {
+        for (auto* window = ctx.begin; window && count_ < capacity; window = window->next) {
+            if (!drawn(ctx, *window) || uncounted(*window) != uncounted_group) continue;
+            window->flags |= NK_WINDOW_HIDDEN;
+            windows_[count_++] = window;
+        }
+    }
+    void restore() {
+        for (std::size_t index = 0; index < count_; ++index)
+            windows_[index]->flags &= ~static_cast<nk_flags>(NK_WINDOW_HIDDEN);
+        count_ = 0;
+    }
+
+  private:
+    static constexpr std::size_t capacity = 64;
+    std::array<nk_window*, capacity> windows_{};
+    std::size_t count_{};
+};
+} // namespace
+
+// Counted windows (and every popup) render first; uncounted windows follow in
+// a pass that is left out of the frame's GPU work.
+static void render_counted_then_uncounted(nk_context* ctx, nk_sdl* sdl, nk_anti_aliasing AA) {
+    const auto uncounted = hidden_windows_t::count(*ctx, true);
+    if (uncounted == 0 || !hidden_windows_t::fits(uncounted) ||
+        !hidden_windows_t::fits(hidden_windows_t::count(*ctx, false))) {
+        render_nuklear_pass(ctx, sdl, AA);
+        return;
+    }
+    hidden_windows_t hidden;
+    hidden.hide(*ctx, true);
+    render_nuklear_pass(ctx, sdl, AA);
+    hidden.restore();
+    hidden.hide(*ctx, false);
+    ctx->build = nk_false; // relink the command list without the counted windows
+    g_gpu_submission.uncounted = true;
+    render_nuklear_pass(ctx, sdl, AA);
+    g_gpu_submission.uncounted = false;
+    hidden.restore();
 }
 
 NK_INTERN void nk_sdl_clipboard_paste(nk_handle usr, struct nk_text_edit* edit) {
@@ -1302,6 +1375,15 @@ void insert_compose_field(nk_context* context, nk_command_buffer* canvas, struct
     frame.next_index = end;
     nk_push_custom(canvas, viewport, convert_field_marker, nk_handle_ptr(&marker));
 }
+uncounted_window_scope_t::uncounted_window_scope_t(nk_context* context)
+    : context_(context), previous_(context->userdata) {
+    // nk_begin copies the context user data into the window's command buffer,
+    // which is how the render pass recognizes the window.
+    nk_set_user_data(context_, nk_handle_ptr(&g_uncounted_geometry_tag));
+}
+uncounted_window_scope_t::~uncounted_window_scope_t() {
+    nk_set_user_data(context_, previous_);
+}
 void render_sdl_backend(nk_context* context, nk_anti_aliasing anti_aliasing, nk_context* overlay) {
     g_gpu_submission = {};
     auto* sdl = static_cast<nk_sdl*>(context->userdata.ptr);
@@ -1309,7 +1391,8 @@ void render_sdl_backend(nk_context* context, nk_anti_aliasing anti_aliasing, nk_
     context->delta_time_seconds = static_cast<float>(ticks - sdl->last_render) / 1000.0f;
     sdl->last_render = ticks;
     if (overlay) overlay->delta_time_seconds = context->delta_time_seconds;
-    nk_sdl_render(context, anti_aliasing);
+    render_counted_then_uncounted(context, sdl, anti_aliasing);
+    finish_nuklear_frame(context, sdl);
     if (overlay) nk_sdl_render(overlay, anti_aliasing);
     worm_ui_frame_timing_record_gpu_work(g_gpu_submission.work);
 }

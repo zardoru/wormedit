@@ -1749,11 +1749,36 @@ static void render_gpu_work_summary(const WormUiFrameTimingView& timer) {
     }
 }
 
+// nk_chart_begin keeps the themed background and plot bounds; one polyline
+// replaces NK_CHART_LINES' per-point line segments and filled point markers.
+static void render_frame_time_graph(const WormUiFrameTimingView& timer) {
+    nk_layout_row_dynamic(g_context, 90, 1);
+    const auto count = std::min<std::size_t>(timer.count, WORM_UI_FRAME_TIMING_CAPACITY);
+    const auto maximum_ms = static_cast<float>(count == 0 ? 1.0 : std::max(1.0,
+        *std::max_element(timer.frame_ms, timer.frame_ms + count)));
+    if (!nk_chart_begin(g_context, NK_CHART_LINES, static_cast<int>(count), 0.0f, maximum_ms))
+        return;
+    const auto& chart = g_context->current->layout->chart;
+    const float step = count == 0 ? 0.0f : chart.w / static_cast<float>(count);
+    std::array<float, 2 * WORM_UI_FRAME_TIMING_CAPACITY> points{};
+    for (std::size_t i = 0; i < count; ++i) {
+        const float ratio = static_cast<float>(timer.frame_ms[i]) / maximum_ms;
+        points[2 * i] = chart.x + step * static_cast<float>(i);
+        points[2 * i + 1] = chart.y + chart.h - ratio * chart.h;
+    }
+    if (count >= 2)
+        nk_stroke_polyline(nk_window_get_canvas(g_context), points.data(), static_cast<int>(count),
+                           1.0f, chart.slots[0].color);
+    nk_chart_end(g_context);
+}
+
 static void render_frame_timing_overlay(int width, int height) {
     if (!g_frame_timing_visible) return;
     const auto timer = worm_ui_frame_timing_view();
     const float panel_width = std::min(480.0f, static_cast<float>(width));
     const float panel_height = std::min(720.0f, static_cast<float>(height) - 42.0f);
+    // The panel reports the application's GPU work, not its own.
+    const wormedit::ui::nuklear::uncounted_window_scope_t uncounted{g_context};
     if (nk_begin(g_context, "Frame timing",
                  nk_rect(static_cast<float>(width) - panel_width, 42, panel_width, panel_height),
                  NK_WINDOW_BORDER | NK_WINDOW_MOVABLE | NK_WINDOW_TITLE)) {
@@ -1761,15 +1786,7 @@ static void render_frame_timing_overlay(int width, int height) {
         nk_layout_row_dynamic(g_context, 22, 1);
         nk_labelf(g_context, NK_TEXT_LEFT, "Last %zu frames: avg %.3f ms, p99 %.3f ms",
                   frame.count, frame.average_ms, frame.p99_ms);
-        nk_layout_row_dynamic(g_context, 90, 1);
-        const auto maximum_ms = timer.count == 0 ? 1.0 : std::max(1.0,
-            *std::max_element(timer.frame_ms, timer.frame_ms + timer.count));
-        if (nk_chart_begin(g_context, NK_CHART_LINES, static_cast<int>(timer.count), 0.0f,
-                           static_cast<float>(maximum_ms))) {
-            for (std::size_t i = 0; i < timer.count; ++i)
-                nk_chart_push(g_context, static_cast<float>(timer.frame_ms[i]));
-            nk_chart_end(g_context);
-        }
+        render_frame_time_graph(timer);
         nk_layout_row_dynamic(g_context, 22, 1);
         if (timer.heap_allocations_available)
             nk_labelf(g_context, NK_TEXT_LEFT,

@@ -123,6 +123,24 @@ class sdl_draw_batcher_t {
 };
 void render_sdl_backend(nk_context* context, nk_anti_aliasing anti_aliasing,
                         nk_context* overlay = nullptr);
+// Windows begun inside this scope are drawn in a separate pass on top of the
+// context's other windows and popups, and that pass stays out of the frame's
+// recorded GPU work, so diagnostics such as the frame-timing overlay do not
+// measure themselves. The scope replaces the context user data that backend
+// extensions (field, overview) look up, so only plain Nuklear widgets and
+// canvas primitives may be drawn inside it; popups would be drawn and counted
+// with the other windows.
+class uncounted_window_scope_t {
+  public:
+    explicit uncounted_window_scope_t(nk_context* context);
+    ~uncounted_window_scope_t();
+    uncounted_window_scope_t(const uncounted_window_scope_t&) = delete;
+    auto operator=(const uncounted_window_scope_t&) -> uncounted_window_scope_t& = delete;
+
+  private:
+    nk_context* context_;
+    nk_handle previous_;
+};
 auto begin_compose_field(nk_context* context, SDL_FRect viewport)
     -> wormedit::ui::field::renderer_t&;
 auto compose_field(nk_context* context) -> wormedit::ui::field::renderer_t&;

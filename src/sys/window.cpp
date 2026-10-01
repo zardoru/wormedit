@@ -89,6 +89,13 @@ bool worm_window_create(WormWindow *window, const WormWindowDesc *desc)
     if (!SDL_SetRenderVSync(window->renderer, 1)) {
         fprintf(stderr, "SDL GPU renderer VSync setup failed: %s\n", SDL_GetError());
     }
+    // All application UVs stay within [0, 1], so AUTO would always resolve to
+    // CLAMP, but only after scanning every submitted vertex's UV per draw call.
+    // The mode is renderer state and survives render-target switches.
+    if (!SDL_SetRenderTextureAddressMode(window->renderer, SDL_TEXTURE_ADDRESS_CLAMP,
+                                         SDL_TEXTURE_ADDRESS_CLAMP)) {
+        fprintf(stderr, "SDL texture address mode setup failed: %s\n", SDL_GetError());
+    }
 
     window->width = desc->width;
     window->height = desc->height;

@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <bit>
+#include <string_view>
 
 namespace wormedit::ui::field {
 namespace {
@@ -47,7 +49,335 @@ auto clipped_uv(float start, float end, float offset, float size) -> float {
 }
 } // namespace
 
-void renderer_t::begin(SDL_FRect viewport, SDL_FPoint scale, solid_texture_t solid) {
+auto ring_rows_t::slot(std::int64_t world_row) const noexcept -> std::size_t {
+    if (slots_.empty()) return 0;
+    const auto count = static_cast<std::int64_t>(slots_.size());
+    const auto remainder = world_row % count;
+    return static_cast<std::size_t>(remainder < 0 ? remainder + count : remainder);
+}
+void ring_rows_t::invalidate() noexcept {
+    valid_ = false;
+    dirty_.clear();
+    regenerated_ = 0;
+}
+void ring_rows_t::mark_dirty(std::size_t index) {
+    ++regenerated_;
+    if (!dirty_.empty() && dirty_.back().first + dirty_.back().count == index)
+        ++dirty_.back().count;
+    else
+        dirty_.push_back({index, 1});
+}
+void ring_rows_t::update(std::uint64_t generation, std::int64_t first_row,
+                         std::span<const std::uint64_t> fingerprints) {
+    constexpr std::size_t maximum_rows = 4'098;
+    dirty_.clear();
+    regenerated_ = 0;
+    if (fingerprints.size() > maximum_rows ||
+        first_row > std::numeric_limits<std::int64_t>::max() -
+                        static_cast<std::int64_t>(fingerprints.size())) {
+        invalidate();
+        return;
+    }
+    const bool reset = !valid_ || generation != generation_ || fingerprints.size() != slots_.size();
+    slots_.resize(fingerprints.size());
+    dirty_.reserve(fingerprints.size());
+    generation_ = generation;
+    first_row_ = first_row;
+    for (std::size_t index = 0; index < fingerprints.size(); ++index) {
+        const auto world_row = first_row + static_cast<std::int64_t>(index);
+        auto& entry = slots_[slot(world_row)];
+        if (reset || !entry.valid || entry.world_row != world_row ||
+            entry.fingerprint != fingerprints[index]) {
+            entry = {world_row, fingerprints[index], true};
+            mark_dirty(slot(world_row));
+        }
+    }
+    valid_ = true;
+}
+auto ring_rows_t::head() const noexcept -> std::size_t {
+    return slot(first_row_);
+}
+auto ring_rows_t::ranges() const noexcept -> std::array<ring_range_t, 2> {
+    const auto first = head();
+    return {{{first, slots_.size() - first}, {0, first}}};
+}
+
+struct envelope_cache_t {
+    SDL_Texture* texture{};
+    SDL_Renderer* device{};
+    SDL_FRect bounds{};
+    double origin{};
+    float y_scale{1};
+    envelope_style_t style{};
+    ring_rows_t plan;
+    std::vector<envelope_row_t> rows;
+    std::vector<envelope_row_t> input_rows;
+    std::vector<std::int64_t> world_rows;
+    std::vector<std::uint64_t> row_hashes, fingerprints;
+    std::unique_ptr<renderer_t> raster;
+    std::uint64_t generation{};
+    int width{}, height{};
+    bool active{}, pending{}, ready{}, fallback_submitted{}, unavailable{};
+    ~envelope_cache_t() { if (texture) SDL_DestroyTexture(texture); }
+};
+namespace {
+auto hash_value(std::uint64_t hash, std::uint64_t value) -> std::uint64_t {
+    return (hash ^ value) * 1099511628211ULL;
+}
+auto envelope_hash(const envelope_row_t& row) -> std::uint64_t {
+    std::uint64_t hash = 1469598103934665603ULL;
+    for (const auto value : {row.rms[0], row.rms[1], row.peak[0], row.peak[1]})
+        hash = hash_value(hash, std::bit_cast<std::uint32_t>(value));
+    return hash;
+}
+auto color_hash(color_t color) -> std::uint64_t {
+    return (static_cast<std::uint64_t>(color.r) << 24U) |
+           (static_cast<std::uint64_t>(color.g) << 16U) |
+           (static_cast<std::uint64_t>(color.b) << 8U) | color.a;
+}
+auto envelope_slot(std::int64_t row, int height) -> std::size_t {
+    const auto remainder = row % height;
+    return static_cast<std::size_t>(remainder < 0 ? remainder + height : remainder);
+}
+auto valid_envelope_row(const envelope_row_t& row) -> bool {
+    return std::isfinite(row.world_y) && std::abs(row.world_y) <= 1e12 &&
+           std::isfinite(row.rms[0]) && std::isfinite(row.rms[1]) &&
+           std::isfinite(row.peak[0]) && std::isfinite(row.peak[1]);
+}
+auto ensure_envelope_texture(envelope_cache_t& cache, SDL_Renderer* device, int width,
+                              int height) -> bool {
+    // Two independent rings have a combined 32 MiB texture ceiling.
+    constexpr std::uint64_t maximum_pixels = 4U * 1024U * 1024U;
+    if (width <= 0 || height <= 0 || static_cast<std::uint64_t>(width) * height > maximum_pixels)
+        return false;
+    if (cache.device == device && cache.width == width && cache.height == height)
+        return cache.texture && !cache.unavailable;
+    if (cache.texture) SDL_DestroyTexture(cache.texture);
+    cache.texture = nullptr;
+    cache.plan.invalidate();
+    cache.ready = false;
+    cache.unavailable = false;
+    cache.device = device;
+    cache.width = width;
+    cache.height = height;
+    cache.texture = SDL_CreateTexture(device, SDL_PIXELFORMAT_RGBA32, SDL_TEXTUREACCESS_TARGET,
+                                       width, height);
+    if (cache.texture && SDL_SetTextureBlendMode(cache.texture, SDL_BLENDMODE_BLEND_PREMULTIPLIED) &&
+        SDL_SetTextureScaleMode(cache.texture, SDL_SCALEMODE_NEAREST)) return true;
+    if (cache.texture) SDL_DestroyTexture(cache.texture);
+    cache.texture = nullptr;
+    cache.unavailable = true;
+    return false;
+}
+void collect_envelope_rows(envelope_cache_t& cache, std::span<const envelope_row_t> rows,
+                           std::int64_t first) {
+    const auto count = static_cast<std::size_t>(cache.height);
+    cache.rows.assign(count + 1, {});
+    cache.world_rows.assign(count + 1, std::numeric_limits<std::int64_t>::min());
+    cache.row_hashes.assign(count + 1, 0);
+    cache.fingerprints.resize(count);
+    for (const auto& row : rows) {
+        if (!valid_envelope_row(row)) continue;
+        const auto world = static_cast<std::int64_t>(std::floor(row.world_y));
+        if (world < first - 1 || world >= first + cache.height) continue;
+        const auto slot = envelope_slot(world, static_cast<int>(cache.rows.size()));
+        cache.rows[slot] = row;
+        cache.world_rows[slot] = world;
+        cache.row_hashes[slot] = envelope_hash(row);
+    }
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto world = first + static_cast<std::int64_t>(index);
+        const auto current = envelope_slot(world, static_cast<int>(cache.rows.size()));
+        const auto previous = envelope_slot(world - 1, static_cast<int>(cache.rows.size()));
+        cache.fingerprints[index] = hash_value(cache.row_hashes[current], cache.row_hashes[previous]);
+    }
+}
+void envelope_scanline(renderer_t& geometry, const envelope_cache_t& cache,
+                        std::int64_t source, std::int64_t world, float y) {
+    const auto slot = envelope_slot(source, static_cast<int>(cache.rows.size()));
+    if (cache.world_rows[slot] != source) return;
+    const auto& row = cache.rows[slot];
+    const auto absolute_center = cache.bounds.x + cache.bounds.w * .5f;
+    const auto center = std::round(absolute_center) - std::round(cache.bounds.x);
+    const auto half = cache.bounds.w * .5f;
+    const auto draw = [&](const std::array<float, 2>& values, color_t color) {
+        const auto left = std::round(absolute_center - std::clamp(values[0], 0.0f, 1.0f) * half) - std::round(cache.bounds.x);
+        const auto right = std::round(absolute_center + std::clamp(values[1], 0.0f, 1.0f) * half) - std::round(cache.bounds.x);
+        if (cache.style.joined_channels) {
+            geometry.rect(0, {left, y, right - left, 1}, color);
+        } else {
+            geometry.rect(0, {left, y, center - left, 1}, color);
+            geometry.rect(0, {center, y, right - center, 1}, color);
+        }
+    };
+    draw(row.rms, cache.style.rms);
+    if (source == world) draw(row.peak, cache.style.peak);
+}
+void prepare_envelope_raster(envelope_cache_t& cache, std::int64_t first) {
+    if (!cache.raster) cache.raster = std::make_unique<renderer_t>();
+    cache.raster->begin({0, 0, static_cast<float>(cache.width), static_cast<float>(cache.height)});
+    for (const auto range : cache.plan.dirty_ranges()) {
+        for (std::size_t slot = range.first; slot < range.first + range.count; ++slot) {
+            const auto relative = (slot + cache.plan.capacity() - cache.plan.head()) % cache.plan.capacity();
+            const auto world = first + static_cast<std::int64_t>(relative);
+            const auto y = static_cast<float>(slot);
+            envelope_scanline(*cache.raster, cache, world - 1, world, y);
+            envelope_scanline(*cache.raster, cache, world, world, y);
+        }
+    }
+    cache.pending = cache.plan.regenerated_rows() != 0;
+}
+auto refill_envelope(envelope_cache_t& cache, submission_t hooks) -> bool {
+    if (!cache.pending) return cache.ready;
+    cache.ready = false;
+    auto* device = cache.device;
+    auto* previous = SDL_GetRenderTarget(device);
+    SDL_BlendMode blend{};
+    std::uint8_t r{}, g{}, b{}, a{};
+    if (!SDL_GetRenderDrawBlendMode(device, &blend) || !SDL_GetRenderDrawColor(device, &r, &g, &b, &a))
+        return false;
+    if (!SDL_SetRenderTarget(device, cache.texture)) {
+        cache.plan.invalidate();
+        cache.pending = false;
+        return false;
+    }
+    bool success = true;
+    success = SDL_SetRenderDrawBlendMode(device, SDL_BLENDMODE_NONE) && success;
+    success = SDL_SetRenderDrawColor(device, 0, 0, 0, 0) && success;
+    success = SDL_SetRenderClipRect(device, nullptr) && success;
+    for (const auto range : cache.plan.dirty_ranges()) {
+        const SDL_FRect clear{0, static_cast<float>(range.first), static_cast<float>(cache.width),
+                               static_cast<float>(range.count)};
+        success = SDL_RenderFillRect(device, &clear) && success;
+    }
+    success = cache.raster->submit(device, hooks) && success;
+    success = SDL_SetRenderTarget(device, previous) && success;
+    success = SDL_SetRenderDrawBlendMode(device, blend) && success;
+    success = SDL_SetRenderDrawColor(device, r, g, b, a) && success;
+    cache.pending = false;
+    cache.ready = success;
+    if (!success) cache.plan.invalidate();
+    return success;
+}
+auto draw_envelope_direct(const envelope_cache_t& cache, SDL_Renderer* device,
+                          SDL_FRect viewport, submission_t hooks) -> bool {
+    renderer_t direct;
+    direct.begin(viewport);
+    const auto center = cache.bounds.x + cache.bounds.w * .5f;
+    const auto half = cache.bounds.w * .5f;
+    for (const auto& row : cache.input_rows) {
+        if (!valid_envelope_row(row)) continue;
+        const auto y = cache.bounds.y + static_cast<float>(row.world_y - cache.origin) * cache.y_scale;
+        const auto draw = [&](const std::array<float, 2>& values, float width, color_t color) {
+            if (cache.style.joined_channels) {
+                direct.hline(0, center - values[0] * half, center + values[1] * half, y, width, color);
+            } else {
+                direct.hline(0, center - values[0] * half, center, y, width, color);
+                direct.hline(0, center, center + values[1] * half, y, width, color);
+            }
+        };
+        draw(row.rms, 2, cache.style.rms);
+        draw(row.peak, 1, cache.style.peak);
+    }
+    return direct.submit(device, hooks);
+}
+} // namespace
+renderer_t::renderer_t() = default;
+renderer_t::~renderer_t() = default;
+void renderer_t::invalidate_envelopes() noexcept {
+    for (auto& cache : envelopes_) cache.reset();
+}
+auto renderer_t::envelope(std::size_t slot, layer_t layer, std::span<const envelope_row_t> rows,
+                          SDL_FRect bounds, double origin, std::uint64_t generation,
+                          envelope_style_t style, float y_scale) -> bool {
+    if (!device_ || !std::isfinite(y_scale) || y_scale <= 0 || slot >= envelopes_.size() || rows.empty() || !std::isfinite(origin) ||
+        std::abs(origin) > 1e12 || bounds.w <= 0 || bounds.h <= 0 || bounds.w > 4096 || bounds.h > 4096)
+        return false;
+    // Software SDL truncates UV and destination vertices to integers. Wrapped
+    // fractional scaling cannot retain the direct sampling phase there.
+    const auto* backend = SDL_GetRendererName(device_);
+    if (y_scale != 1 && backend && std::string_view(backend) == "software") return false;
+    origin = std::floor(origin);
+    if (!envelopes_[slot]) envelopes_[slot] = std::make_unique<envelope_cache_t>();
+    auto& cache = *envelopes_[slot];
+    const auto width = static_cast<int>(std::round(bounds.x + bounds.w) - std::round(bounds.x));
+    const auto projected_height = static_cast<double>(bounds.h) / y_scale;
+    if (!std::isfinite(projected_height) || projected_height > 4096) return false;
+    const auto height = static_cast<int>(std::ceil(projected_height)) + 2;
+    if (!ensure_envelope_texture(cache, device_, width, height)) return false;
+    cache.active = true;
+    cache.bounds = bounds;
+    cache.origin = origin;
+    cache.y_scale = y_scale;
+    cache.style = style;
+    cache.fallback_submitted = false;
+    cache.input_rows.assign(rows.begin(), rows.end());
+    const auto first = static_cast<std::int64_t>(std::floor(origin)) - 1;
+    collect_envelope_rows(cache, rows, first);
+    generation = hash_value(generation, std::bit_cast<std::uint32_t>(y_scale));
+    generation = hash_value(generation, std::bit_cast<std::uint32_t>(bounds.w));
+    generation = hash_value(generation, std::bit_cast<std::uint32_t>(bounds.x - std::floor(bounds.x)));
+    generation = hash_value(generation, color_hash(style.rms));
+    generation = hash_value(generation, color_hash(style.peak));
+    generation = hash_value(generation, style.joined_channels);
+    cache.plan.update(generation, first, cache.fingerprints);
+    prepare_envelope_raster(cache, first);
+    const auto spans = cache.plan.ranges();
+    auto world = first;
+    for (const auto span : spans) {
+        if (span.count == 0) continue;
+        envelope_quad(layer, cache, span, world);
+        world += static_cast<std::int64_t>(span.count);
+    }
+    return true;
+}
+void renderer_t::envelope_quad(layer_t layer, const envelope_cache_t& cache,
+                               ring_range_t span, std::int64_t world) {
+    const auto& bounds = cache.bounds;
+    const auto y_scale = cache.y_scale;
+    // A 1/64 screen-pixel shift resolves nearest-filter and fixed-subpixel
+    // rasterizer ties across wrap seams without extending UVs past an edge.
+    // Unity drawing retains its original pixel phase.
+    const auto origin = cache.origin + (y_scale == 1 ? 0 : 1.0 / (64 * y_scale));
+    const auto width = cache.width;
+    const auto height = cache.height;
+    const auto y = bounds.y + static_cast<float>(static_cast<double>(world) - origin) * y_scale;
+    const SDL_FRect destination{std::round(bounds.x), y, static_cast<float>(width),
+                                static_cast<float>(span.count) * y_scale};
+    const auto left_x = std::max(destination.x, viewport_.x);
+    const auto top_y = std::max(destination.y, viewport_.y);
+    const auto right_x = std::min(destination.x + destination.w, viewport_.x + viewport_.w);
+    const auto bottom_y = std::min(destination.y + destination.h, viewport_.y + viewport_.h);
+    if (right_x <= left_x || bottom_y <= top_y) return;
+    // Derive clipped UVs from canonical rows, not a second floating bounds ratio.
+    const auto top_row = top_y == destination.y ? static_cast<double>(span.first)
+        : span.first + (static_cast<double>(top_y) - bounds.y) / y_scale + origin - world;
+    const auto bottom_row = bottom_y == destination.y + destination.h
+        ? static_cast<double>(span.first + span.count)
+        : span.first + (static_cast<double>(bottom_y) - bounds.y) / y_scale + origin - world;
+    const SDL_FPoint first_uv{(left_x - destination.x) / destination.w,
+                              std::clamp(static_cast<float>(top_row / height), 0.0f, 1.0f)};
+    const SDL_FPoint last_uv{(right_x - destination.x) / destination.w,
+                             std::clamp(static_cast<float>(bottom_row / height), 0.0f, 1.0f)};
+    const std::array<SDL_FPoint, 4> points{{{left_x,top_y}, {right_x,top_y},
+                                           {right_x,bottom_y}, {left_x,bottom_y}}};
+    quad(layer, points, {255,255,255,255}, cache.texture, first_uv, last_uv);
+}
+auto renderer_t::envelope_work() const noexcept -> envelope_work_t {
+    envelope_work_t work;
+    for (const auto& cache : envelopes_) {
+        if (!cache || !cache->active) continue;
+        work.regenerated_rows += cache->plan.regenerated_rows();
+        work.retained_rows += cache->plan.capacity() - cache->plan.regenerated_rows();
+        work.raster_vertices += cache->raster ? cache->raster->workload().vertices : 0;
+        work.composites += cache->plan.ranges()[1].count != 0 ? 2 : 1;
+    }
+    return work;
+}
+
+void renderer_t::begin(SDL_FRect viewport, SDL_FPoint scale, solid_texture_t solid, SDL_Renderer* device) {
+    device_ = device;
+    for (auto& cache : envelopes_) if (cache) cache->active = false;
     solid_ = solid;
     viewport_ = viewport;
     scale_ = {std::max(.001f, scale.x), std::max(.001f, scale.y)};
@@ -255,10 +585,32 @@ void renderer_t::text(layer_t layer, SDL_FPoint pen, std::string_view utf8, colo
     }
 }
 auto renderer_t::workload() const noexcept -> workload_t {
-    return {vertices_.size(), indices_.size(), batches_.size()};
+    workload_t result{vertices_.size(), indices_.size(), batches_.size()};
+    for (const auto& cache : envelopes_) {
+        if (!cache || !cache->active || !cache->pending || !cache->raster) continue;
+        const auto work = cache->raster->workload();
+        result.vertices += work.vertices;
+        result.indices += work.indices;
+        result.draw_calls += work.draw_calls;
+    }
+    return result;
 }
 auto renderer_t::submit(SDL_Renderer* renderer, submission_t hooks) const -> bool {
     return submit_range(renderer, 0, indices_.size(), hooks);
+}
+auto renderer_t::submit_envelope_fallback(SDL_Renderer* renderer, SDL_Texture* texture,
+                                            submission_t hooks, bool& fallback) const -> bool {
+    fallback = false;
+    bool success = true;
+        for (const auto& cache : envelopes_) {
+            if (!cache || !cache->active || cache->texture != texture || cache->ready) continue;
+            fallback = true;
+            if (!cache->fallback_submitted) {
+                success = draw_envelope_direct(*cache, renderer, viewport_, hooks) && success;
+                cache->fallback_submitted = true;
+            }
+        }
+    return success;
 }
 auto renderer_t::submit_range(SDL_Renderer* renderer, std::size_t first_index,
                               std::size_t index_count, submission_t hooks) const -> bool {
@@ -279,6 +631,11 @@ auto renderer_t::submit_range(SDL_Renderer* renderer, std::size_t first_index,
         static_cast<int>(std::ceil(viewport_.y + viewport_.h) - std::floor(viewport_.y))};
     bool success = SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     success = clip(renderer, &viewport) && success;
+    for (const auto& cache : envelopes_) {
+        if (cache && cache->active && cache->pending)
+            refill_envelope(*cache, hooks);
+    }
+    success = clip(renderer, &viewport) && success;
     const auto& first = vertices_.front();
     const auto end = std::min(indices_.size(), first_index + index_count);
     for (const auto& batch : batches_) {
@@ -286,6 +643,9 @@ auto renderer_t::submit_range(SDL_Renderer* renderer, std::size_t first_index,
         const auto batch_end = std::min(end, batch.index_offset + batch.index_count);
         if (begin >= batch_end)
             continue;
+        bool fallback = false;
+        success = submit_envelope_fallback(renderer, batch.texture, hooks, fallback) && success;
+        if (fallback) continue;
         success = draw(renderer, batch.texture, &first.position.x, sizeof(SDL_Vertex), &first.color,
                        sizeof(SDL_Vertex), &first.tex_coord.x, sizeof(SDL_Vertex),
                        static_cast<int>(vertices_.size()), indices_.data() + begin,

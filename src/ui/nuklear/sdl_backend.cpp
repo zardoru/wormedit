@@ -663,6 +663,10 @@ NK_API int nk_sdl_handle_event(struct nk_context* ctx, SDL_Event* evt) {
     }
 
     switch (evt->type) {
+    case SDL_EVENT_RENDER_TARGETS_RESET:
+    case SDL_EVENT_RENDER_DEVICE_RESET:
+        sdl->field->geometry.invalidate_envelopes();
+        return 1;
     case SDL_EVENT_KEY_UP:
     case SDL_EVENT_KEY_DOWN:
         return handle_sdl_key(ctx, sdl, *evt);
@@ -895,7 +899,7 @@ auto begin_compose_field(nk_context* context, SDL_FRect viewport)
     if (context->style.font && context->style.font->texture.ptr == white.texture.ptr) {
         solid = {static_cast<SDL_Texture*>(white.texture.ptr), {white.uv.x, white.uv.y}};
     }
-    frame.geometry.begin(viewport, {1, 1}, solid);
+    frame.geometry.begin(viewport, {1, 1}, solid, backend.renderer);
     return frame.geometry;
 }
 static auto query_field_glyph(void* userdata, float height, std::uint32_t unicode,

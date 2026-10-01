@@ -416,14 +416,48 @@ static void draw_compose_scene_background(const ComposePaintContext& paint,
     draw_compose_bgm_lanes(paint);
 }
 
+static auto draw_compose_envelope_texture(const ComposePaintContext& paint,
+        const WormUiComposeWaveformRowView* source, size_t count, float center, float half_width,
+        size_t slot, nk_color rms, nk_color peak, bool joined) -> bool {
+    const auto& view = *paint.view;
+    const auto y_scale = paint.viewport.h / static_cast<float>(view.viewport_height_pixels);
+    if (!std::isfinite(y_scale) || y_scale <= 0) return false;
+    // Envelope texels describe whole world pixels. PCM points keep their exact
+    // projected coordinates in draw_compose_waveform_samples.
+    const auto scroll = std::floor(view.area_scroll_pixels);
+    const auto origin = joined && view.downscroll
+        ? -scroll - view.viewport_height_pixels : scroll;
+    static std::vector<wormedit::ui::field::envelope_row_t> rows;
+    rows.clear();
+    rows.reserve(count);
+    for (size_t index = 0; index < count; ++index) {
+        const auto& row = source[index];
+        rows.push_back({row.y_pixels + origin, {row.rms[0], row.rms[1]},
+                                               {row.absolute_peak[0], row.absolute_peak[1]}});
+    }
+    auto key = view.document_revision ^ (view.project_id * 1099511628211ULL);
+    key ^= view.chart_id * 1469598103934665603ULL;
+    key ^= view.selected_audio_asset_id * 1099511628211ULL;
+    key ^= view.channel_waveform_source_lane_id * static_cast<uint64_t>(slot);
+    key ^= std::bit_cast<uint64_t>(view.pixels_per_standard_measure);
+    key ^= std::bit_cast<uint64_t>(view.waveform_audio_offset_numerator);
+    key ^= view.waveform_audio_offset_denominator;
+    return wormedit::ui::nuklear::compose_field(paint.context).envelope(slot, 6, rows,
+        {center - half_width, paint.viewport.y, half_width * 2, paint.viewport.h}, origin, key,
+        {field_color(rms), field_color(peak), joined}, y_scale);
+}
+
 static void draw_compose_waveform_samples(const ComposePaintContext& paint,
                                           float center, float half_width) {
     const auto& view = *paint.view;
     for (size_t index = 1; index < view.waveform_row_count; ++index) {
         const auto& before = view.waveform_rows[index - 1U];
         const auto& after = view.waveform_rows[index];
-        if (!before.sample_point || !after.sample_point) continue;
+        if (!before.sample_point || !after.sample_point || !std::isfinite(before.y_pixels) ||
+            !std::isfinite(after.y_pixels)) continue;
         for (size_t channel = 0; channel < 2; ++channel) {
+            if (!std::isfinite(before.samples[channel]) || !std::isfinite(after.samples[channel]))
+                continue;
             const auto color = channel == 0 ? nk_rgba(114, 222, 239, 190)
                                             : nk_rgba(238, 160, 114, 190);
             field_line(paint,
@@ -433,6 +467,10 @@ static void draw_compose_waveform_samples(const ComposePaintContext& paint,
                 compose_projected_y(paint, after.y_pixels), 1.0f, color, 6);
         }
     }
+}
+static auto finite_envelope_row(const WormUiComposeWaveformRowView& row) -> bool {
+    return std::isfinite(row.y_pixels) && std::isfinite(row.rms[0]) && std::isfinite(row.rms[1]) &&
+           std::isfinite(row.absolute_peak[0]) && std::isfinite(row.absolute_peak[1]);
 }
 
 static void draw_compose_waveform(const ComposePaintContext& paint) {
@@ -449,8 +487,12 @@ static void draw_compose_waveform(const ComposePaintContext& paint) {
         draw_compose_waveform_samples(paint, center, half_width);
         return;
     }
+    if (draw_compose_envelope_texture(paint, view.waveform_rows, view.waveform_row_count,
+            center, half_width, 0, nk_rgba(57, 137, 167, 96), nk_rgba(114, 222, 239, 142), false))
+        return;
     for (size_t index = 0; index < view.waveform_row_count; ++index) {
         const auto& row = view.waveform_rows[index];
+        if (!finite_envelope_row(row)) continue;
         const auto y = compose_projected_y(paint, row.y_pixels);
         field_line(paint, center - row.rms[0] * half_width, y, center, y, 2.0f,
                        nk_rgba(57, 137, 167, 96), 6);
@@ -481,8 +523,12 @@ static void draw_compose_channel_waveform(const ComposePaintContext& paint) {
     }
     const auto center = rect.x + rect.w * 0.5f;
     const auto half_width = rect.w * 0.43f;
+    if (draw_compose_envelope_texture(paint, view.channel_waveform_rows,
+            view.channel_waveform_row_count, center, half_width, 1,
+            nk_rgba(87, 157, 196, 126), nk_rgba(146, 230, 251, 224), true)) return;
     for (size_t index = 0; index < view.channel_waveform_row_count; ++index) {
         const auto& row = view.channel_waveform_rows[index];
+        if (!finite_envelope_row(row)) continue;
         const auto y = compose_projected_y(paint, row.y_pixels);
         field_line(paint, center - row.rms[0] * half_width, y,
                        center + row.rms[1] * half_width, y, 2.0f, nk_rgba(87, 157, 196, 126), 6);

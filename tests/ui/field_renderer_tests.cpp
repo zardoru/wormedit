@@ -3,8 +3,10 @@
 #include "ui/nuklear/arrow_glyph.h"
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <new>
+#include <limits>
 
 namespace {
 thread_local bool count_field_allocations{};
@@ -25,6 +27,69 @@ void operator delete(void* value, std::size_t) noexcept {
 }
 
 using namespace wormedit::ui::field;
+namespace { void expect_field(bool value); }
+TEST_CASE("Waveform ring keeps world rows while its head wraps in either direction", "[ui][field]") {
+    ring_rows_t ring;
+    std::array<std::uint64_t, 4> rows{10, 11, 12, 13};
+    ring.update(1, 0, rows);
+    expect_field(ring.regenerated_rows() == 4);
+    ring.update(1, 0, rows);
+    expect_field(ring.regenerated_rows() == 0);
+    rows = {11, 12, 13, 14};
+    ring.update(1, 1, rows);
+    expect_field(ring.regenerated_rows() == 1);
+    expect_field(ring.head() == 1);
+    expect_field(ring.ranges()[0].count == 3);
+    expect_field(ring.ranges()[1].count == 1);
+    expect_field(ring.dirty_ranges().size() == 1);
+    expect_field(ring.dirty_ranges()[0].first == 0);
+    rows = {13, 14, 15, 16};
+    ring.update(1, 3, rows);
+    expect_field(ring.regenerated_rows() == 2);
+    expect_field(ring.head() == 3);
+    rows = {12, 13, 14, 15};
+    ring.update(1, 2, rows);
+    expect_field(ring.regenerated_rows() == 1);
+    rows = {9, 10, 11, 12};
+    ring.update(1, -1, rows);
+    expect_field(ring.regenerated_rows() == 3);
+    expect_field(ring.head() == 3);
+}
+TEST_CASE("Waveform ring invalidates generations seeks and changed retained detail", "[ui][field]") {
+    ring_rows_t ring;
+    std::array<std::uint64_t, 4> rows{10, 11, 12, 13};
+    ring.update(1, 0, rows);
+    rows[2] = 42;
+    ring.update(1, 0, rows);
+    expect_field(ring.regenerated_rows() == 1);
+    expect_field(ring.dirty_ranges()[0].first == 2);
+    ring.update(2, 0, rows);
+    expect_field(ring.regenerated_rows() == 4);
+    ring.update(2, 100, rows);
+    expect_field(ring.regenerated_rows() == 4);
+    ring.invalidate();
+    ring.update(2, 100, rows);
+    expect_field(ring.regenerated_rows() == 4);
+    ring.update(2, 100, std::span(rows).first(2));
+    expect_field(ring.capacity() == 2);
+    expect_field(ring.regenerated_rows() == 2);
+    ring.update(2, std::numeric_limits<std::int64_t>::max(), rows);
+    expect_field(ring.regenerated_rows() == 0);
+}
+TEST_CASE("Waveform ring reuses bounded storage for 4096 rows without warm allocations", "[ui][field]") {
+    ring_rows_t ring;
+    std::array<std::uint64_t, 4096> rows{};
+    ring.update(1, 4095, rows);
+    expect_field(ring.regenerated_rows() == rows.size());
+    expect_field(ring.dirty_ranges().size() == 2);
+    field_allocations = 0;
+    count_field_allocations = true;
+    ring.update(1, 4096, rows);
+    count_field_allocations = false;
+    expect_field(field_allocations == 0);
+    expect_field(ring.regenerated_rows() == 1);
+    expect_field(ring.head() == 0);
+}
 namespace {
 void expect_field(bool value) {
     REQUIRE(value);
@@ -130,13 +195,17 @@ struct field_submission_fixture_t {
     SDL_Surface* surface{};
     SDL_Renderer* renderer{};
     nk_context* context{};
-    field_submission_fixture_t() {
+    field_submission_fixture_t(bool accelerated = false) {
         expect_field(SDL_Init(SDL_INIT_VIDEO));
         window = SDL_CreateWindow("field barrier", 128, 128, SDL_WINDOW_HIDDEN);
         expect_field(window != nullptr);
-        surface = SDL_CreateSurface(128, 128, SDL_PIXELFORMAT_RGBA32);
-        expect_field(surface != nullptr);
-        renderer = SDL_CreateSoftwareRenderer(surface);
+        if (accelerated) {
+            renderer = SDL_CreateRenderer(window, "opengl");
+        } else {
+            surface = SDL_CreateSurface(128, 128, SDL_PIXELFORMAT_RGBA32);
+            expect_field(surface != nullptr);
+            renderer = SDL_CreateSoftwareRenderer(surface);
+        }
         expect_field(renderer != nullptr);
         context = nk_sdl_init(window, renderer, nk_sdl_allocator());
         expect_field(context != nullptr);
@@ -288,4 +357,207 @@ TEST_CASE("Field solids and interleaved glyphs share the white font atlas withou
     renderer.rect(2, {10, 10, 20, 20}, {100, 120, 140, 255});
     expect_field(renderer.batches().front().texture == nullptr);
     expect_field(renderer.vertices()[0].tex_coord.x == 0);
+}
+
+namespace {
+auto envelope_test_rows(std::int64_t begin, std::size_t count) -> std::vector<envelope_row_t> {
+    std::vector<envelope_row_t> rows;
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto world = begin + static_cast<std::int64_t>(index);
+        const auto amplitude = .15f + static_cast<float>((world + 1000) % 9) * .07f;
+        rows.push_back({static_cast<double>(world) + .5, {amplitude * .6f, amplitude * .4f},
+                                                        {amplitude, amplitude * .8f}});
+    }
+    return rows;
+}
+void envelope_reference(renderer_t& geometry, std::span<const envelope_row_t> rows, double origin) {
+    for (const auto& row : rows) {
+        const auto y = static_cast<float>(row.world_y - origin);
+        geometry.hline(6, 64 - row.rms[0] * 50, 64, y, 2, {57,137,167,96});
+        geometry.hline(6, 64, 64 + row.rms[1] * 50, y, 2, {57,137,167,96});
+        geometry.hline(6, 64 - row.peak[0] * 50, 64, y, 1, {114,222,239,142});
+        geometry.hline(6, 64, 64 + row.peak[1] * 50, y, 1, {114,222,239,142});
+    }
+}
+auto envelope_pixels(field_submission_fixture_t& fixture) -> std::vector<SDL_Color> {
+    expect_field(SDL_FlushRenderer(fixture.renderer));
+    std::vector<SDL_Color> pixels;
+    auto* surface = fixture.surface ? fixture.surface : SDL_RenderReadPixels(fixture.renderer, nullptr);
+    expect_field(surface != nullptr);
+    for (int y = 0; y < 64; ++y) {
+        for (int x = 0; x < 128; ++x) {
+            SDL_Color pixel{};
+            expect_field(SDL_ReadSurfacePixel(surface, x, y, &pixel.r, &pixel.g, &pixel.b, &pixel.a));
+            pixels.push_back(pixel);
+        }
+    }
+    if (!fixture.surface) SDL_DestroySurface(surface);
+    return pixels;
+}
+auto maximum_envelope_rgb_error(std::span<const SDL_Color> before, std::span<const SDL_Color> after) -> unsigned {
+    unsigned maximum_error = 0;
+    for (std::size_t index = 0; index < before.size(); ++index) {
+        for (const auto difference : {std::abs(int(before[index].r) - int(after[index].r)),
+                                     std::abs(int(before[index].g) - int(after[index].g)),
+                                     std::abs(int(before[index].b) - int(after[index].b))})
+            maximum_error = std::max(maximum_error, static_cast<unsigned>(difference));
+    }
+    return maximum_error;
+}
+void compare_envelope_frame(field_submission_fixture_t& fixture, renderer_t& cached, double origin) {
+    const auto begin = static_cast<std::int64_t>(std::floor(origin)) - 2;
+    const auto rows = envelope_test_rows(begin, 69);
+    renderer_t direct;
+    direct.begin({0,0,128,64});
+    direct.rect(0, {0,0,128,64}, {37,43,55,255});
+    // The envelope contract snaps its origin once; exact sample curves do not.
+    envelope_reference(direct, rows, std::floor(origin));
+    expect_field(direct.submit(fixture.renderer));
+    const auto before = envelope_pixels(fixture);
+    cached.begin({0,0,128,64}, {1,1}, {}, fixture.renderer);
+    cached.rect(0, {0,0,128,64}, {37,43,55,255});
+    expect_field(cached.envelope(0, 6, rows, {14,0,100,64}, origin, 1,
+                             {{57,137,167,96}, {114,222,239,142}, false}));
+    expect_field(cached.submit(fixture.renderer));
+    const auto after = envelope_pixels(fixture);
+    const auto maximum_error = maximum_envelope_rgb_error(before, after);
+    INFO("Origin " << origin << ", maximum RGB difference " << maximum_error);
+    expect_field(maximum_error <= 1);
+}
+}
+TEST_CASE("Waveform texture ring composites stable RMS pixels with delta rasterization",
+          "[ui][field][sdl][waveform]") {
+    field_submission_fixture_t fixture;
+    renderer_t cached;
+    compare_envelope_frame(fixture, cached, 0);
+    expect_field(cached.envelope_work().regenerated_rows == 66);
+    compare_envelope_frame(fixture, cached, 0);
+    expect_field(cached.envelope_work().regenerated_rows == 0);
+    expect_field(cached.envelope_work().raster_vertices == 0);
+    compare_envelope_frame(fixture, cached, 1);
+    expect_field(cached.envelope_work().regenerated_rows == 1);
+    compare_envelope_frame(fixture, cached, 65);
+    expect_field(cached.envelope_work().regenerated_rows == 64);
+    compare_envelope_frame(fixture, cached, 66);
+    expect_field(cached.envelope_work().regenerated_rows == 1);
+    compare_envelope_frame(fixture, cached, 65);
+    expect_field(cached.envelope_work().regenerated_rows == 1);
+    compare_envelope_frame(fixture, cached, 65.3);
+    expect_field(cached.envelope_work().regenerated_rows == 0);
+    compare_envelope_frame(fixture, cached, 1000);
+    expect_field(cached.envelope_work().regenerated_rows == 66);
+}
+namespace {
+void draw_scaled_envelope_reference(field_submission_fixture_t& fixture,
+                                    std::span<const envelope_row_t> rows, double origin, float scale) {
+    const auto height = static_cast<int>(std::ceil(64 / scale)) + 2;
+    auto* texture = SDL_CreateTexture(fixture.renderer, SDL_PIXELFORMAT_RGBA32,
+                                      SDL_TEXTUREACCESS_TARGET, 128, height);
+    expect_field(texture != nullptr);
+    expect_field(SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND_PREMULTIPLIED));
+    expect_field(SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST));
+    expect_field(SDL_SetRenderTarget(fixture.renderer, texture));
+    expect_field(SDL_SetRenderDrawColor(fixture.renderer, 0, 0, 0, 0));
+    expect_field(SDL_RenderClear(fixture.renderer));
+    renderer_t direct;
+    direct.begin({0,0,128,static_cast<float>(height)});
+    envelope_reference(direct, rows, std::floor(origin) - 1);
+    expect_field(direct.submit(fixture.renderer));
+    expect_field(SDL_SetRenderTarget(fixture.renderer, nullptr));
+    expect_field(SDL_SetRenderDrawColor(fixture.renderer, 37,43,55,255));
+    expect_field(SDL_RenderClear(fixture.renderer));
+    // Canonical nearest sampling resolves exact texel-boundary ties upward.
+    const double tie_bias = 1.0 / (64 * scale);
+    const auto top = static_cast<float>((1 + tie_bias) / height);
+    const auto bottom = static_cast<float>((64.0 / scale + 1 + tie_bias) / height);
+    const std::array<SDL_Vertex, 4> quad{{
+        {{0,0}, {1,1,1,1}, {0,top}}, {{128,0}, {1,1,1,1}, {1,top}},
+        {{128,64}, {1,1,1,1}, {1,bottom}}, {{0,64}, {1,1,1,1}, {0,bottom}}}};
+    const std::array<int, 6> indices{0,1,2,0,2,3};
+    expect_field(SDL_RenderGeometry(fixture.renderer, texture, quad.data(), quad.size(),
+                                    indices.data(), indices.size()));
+    SDL_DestroyTexture(texture);
+}
+void compare_scaled_envelope_frame(field_submission_fixture_t& fixture, renderer_t& cached,
+                                   double origin, float scale) {
+    const auto count = static_cast<std::size_t>(std::ceil(64 / scale)) + 5;
+    const auto rows = envelope_test_rows(static_cast<std::int64_t>(std::floor(origin)) - 2, count);
+    draw_scaled_envelope_reference(fixture, rows, origin, scale);
+    const auto before = envelope_pixels(fixture);
+    cached.begin({0,0,128,64}, {1,1}, {}, fixture.renderer);
+    cached.rect(0, {0,0,128,64}, {37,43,55,255});
+    expect_field(cached.envelope(0, 6, rows, {14,0,100,64}, origin, 1,
+                             {{57,137,167,96}, {114,222,239,142}, false}, scale));
+    expect_field(cached.submit(fixture.renderer));
+    const auto after = envelope_pixels(fixture);
+    const auto error = maximum_envelope_rgb_error(before, after);
+    const auto work = cached.envelope_work();
+    std::fprintf(stderr, "GPU scale=%.6f origin=%.1f maxRGB=%u dirty=%zu raster=%zu quads=%zu\n",
+                 scale, origin, error, work.regenerated_rows, work.raster_vertices, work.composites);
+    INFO("Scale " << scale << ", origin " << origin << ", maximum RGB difference " << error);
+    expect_field(error <= 1);
+}
+}
+TEST_CASE("Waveform rings retain canonical projection rows across scaled canvas composition",
+          "[ui][field][sdl][waveform]") {
+    if (!std::getenv("WORMEDIT_TEST_GPU_ENVELOPE")) {
+        field_submission_fixture_t fixture;
+        renderer_t cached;
+        const auto rows = envelope_test_rows(-2, 80);
+        cached.begin({0,0,128,64}, {1,1}, {}, fixture.renderer);
+        expect_field(!cached.envelope(0, 6, rows, {14,0,100,64}, 0, 1,
+            {{57,137,167,96}, {114,222,239,142}, false}, 756.0f / 792.0f));
+        return;
+    }
+    field_submission_fixture_t fixture(true);
+    INFO("Renderer " << SDL_GetRendererName(fixture.renderer));
+    renderer_t cached;
+    compare_envelope_frame(fixture, cached, 0);
+    for (const auto scale : {756.0f / 792.0f, 1.25f}) {
+        compare_scaled_envelope_frame(fixture, cached, 0, scale);
+        compare_scaled_envelope_frame(fixture, cached, 0, scale);
+        expect_field(cached.envelope_work().regenerated_rows == 0);
+        compare_scaled_envelope_frame(fixture, cached, 1, scale);
+        expect_field(cached.envelope_work().regenerated_rows == 1);
+        compare_scaled_envelope_frame(fixture, cached, 65, scale);
+        compare_scaled_envelope_frame(fixture, cached, 66, scale);
+        compare_scaled_envelope_frame(fixture, cached, 65.3, scale);
+        expect_field(cached.envelope_work().regenerated_rows == 1);
+        compare_scaled_envelope_frame(fixture, cached, 65.3, scale);
+        expect_field(cached.envelope_work().regenerated_rows == 0);
+        compare_scaled_envelope_frame(fixture, cached, 1000, scale);
+        for (const auto& vertex : cached.vertices()) {
+            expect_field(vertex.tex_coord.y >= 0);
+            expect_field(vertex.tex_coord.y <= 1);
+        }
+    }
+}
+TEST_CASE("Exact stereo sample segments need fewer than 35000 vertices for 4096 rows", "[ui][field]") {
+    renderer_t geometry;
+    geometry.begin({0,0,200,4096});
+    for (unsigned row = 1; row < 4096; ++row) {
+        const auto x = static_cast<float>(row % 2) * 10;
+        for (unsigned channel = 0; channel < 2; ++channel)
+            geometry.line(6, {30 + x, static_cast<float>(row - 1)},
+                             {40 - x, static_cast<float>(row)}, 1, {114,222,239,190});
+    }
+    expect_field(geometry.workload().vertices == 32760);
+    expect_field(geometry.workload().draw_calls == 1);
+}
+TEST_CASE("SDL target reset recreates waveform rings before drawing current pixels", "[ui][field][sdl]") {
+    field_submission_fixture_t fixture;
+    auto& cached = wormedit::ui::nuklear::compose_field(fixture.context);
+    compare_envelope_frame(fixture, cached, 65);
+    compare_envelope_frame(fixture, cached, 65);
+    expect_field(cached.envelope_work().regenerated_rows == 0);
+    SDL_Event event{};
+    event.type = SDL_EVENT_RENDER_TARGETS_RESET;
+    event.render.windowID = SDL_GetWindowID(fixture.window);
+    expect_field(nk_sdl_handle_event(fixture.context, &event) == 1);
+    compare_envelope_frame(fixture, cached, 65);
+    expect_field(cached.envelope_work().regenerated_rows == 66);
+    event.type = SDL_EVENT_RENDER_DEVICE_RESET;
+    expect_field(nk_sdl_handle_event(fixture.context, &event) == 1);
+    compare_envelope_frame(fixture, cached, 65);
+    expect_field(cached.envelope_work().regenerated_rows == 66);
 }

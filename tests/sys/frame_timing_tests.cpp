@@ -1,6 +1,7 @@
 #include "sys/frame_timing.h"
 #include "sys/timing_view.h"
 #include "sys/waveform_view_projection.h"
+#include "sys/bmson_waveform_projection.h"
 #include "sys/compose_view.h"
 #include "sys/compose_playhead_cursor.h"
 #include <wormedit/core/command.h>
@@ -8,10 +9,16 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include <cstdio>
+#include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <SDL3/SDL_timer.h>
 #include <cstdlib>
 #include <new>
+
+// The real Compose input selector is linked below. Its unrelated UI-only
+// resource-placement notification has no recipient in this headless harness.
+void worm_ui_frontend_resource_placed(uint64_t, uint64_t) {}
 
 namespace {
 thread_local bool count_allocations = false;
@@ -295,6 +302,257 @@ TEST_CASE("Compose overview keeps cached rows while moving its visible range", "
     flattened.view.compose.pixels_per_standard_measure = 0;
     CHECK_FALSE(populate_compose_waveform_projection(flattened, cache, &analysis, false,
                                                       true, &interaction));
+}
+namespace { void expect_gpu_work(bool value); }
+TEST_CASE("Compose envelope projects only exposed stable world rows during follow", "[sys][waveform-projection]") {
+    auto history = make_document_history(dense_song());
+    compose_scene_cache_t cache;
+    cache.marker_timing_index = build_timing_index(history.document.charts.front()).index;
+    expect_gpu_work(cache.marker_timing_index.has_value());
+    flattened_workspace_t flattened;
+    flattened.view.compose.visible = true;
+    flattened.view.compose.scene_available = true;
+    flattened.view.compose.viewport_height_pixels = 200;
+    flattened.view.compose.pixels_per_standard_measure = 200;
+    editor_interaction_state_t interaction;
+    interaction.viewport_scroll_pixels = 10;
+    auto analysis = overview_analysis(.25f);
+    audio::decoded_block_cache_t blocks;
+    const audio::aligned_waveform_style_t style{};
+    const auto project = [&] {
+        flattened.compose.waveform.row.clear();
+        return populate_compose_waveform_projection(flattened, cache, &analysis, false, true,
+                                                    &interaction, nullptr, &blocks, &style);
+    };
+    expect_gpu_work(project());
+    expect_gpu_work(cache.waveform_envelope_ring.projected_rows == 202);
+    expect_gpu_work(cache.waveform_envelope_ring.projection_calls == 1);
+    interaction.viewport_scroll_pixels = 10.75;
+    expect_gpu_work(project());
+    expect_gpu_work(cache.waveform_envelope_ring.projected_rows == 0);
+    expect_gpu_work(cache.waveform_envelope_ring.reused_rows == 202);
+    interaction.viewport_scroll_pixels = 11.25;
+    expect_gpu_work(project());
+    expect_gpu_work(cache.waveform_envelope_ring.projected_rows == 1);
+    expect_gpu_work(cache.waveform_envelope_ring.reused_rows == 201);
+    const audio::audio_block_key_t key{{"unrelated", "immutable"}, 0};
+    std::array<float, 16> pcm{};
+    expect_gpu_work(blocks.store(key, 8, pcm) == audio::block_store_status_t::stored);
+    expect_gpu_work(project());
+    expect_gpu_work(cache.waveform_envelope_ring.projected_rows == 0);
+    interaction.viewport_scroll_pixels = 10.75;
+    expect_gpu_work(project());
+    expect_gpu_work(cache.waveform_envelope_ring.projected_rows == 1);
+    interaction.viewport_scroll_pixels = 2000;
+    expect_gpu_work(project());
+    expect_gpu_work(cache.waveform_envelope_ring.projected_rows == 202);
+    ++cache.revision;
+    expect_gpu_work(project());
+    expect_gpu_work(cache.waveform_envelope_ring.projected_rows == 202);
+}
+namespace {
+struct envelope_projection_fixture_t {
+    document_history_t history{make_document_history(dense_song())};
+    compose_scene_cache_t cache;
+    flattened_workspace_t flattened;
+    editor_interaction_state_t interaction;
+    audio::waveform_analysis_result_t analysis{overview_analysis(.25f)};
+    audio::decoded_block_cache_t blocks;
+    audio::aligned_waveform_style_t style;
+    envelope_projection_fixture_t() {
+        cache.chart = history.document.charts.front().id;
+        cache.revision = history.document.revision;
+        cache.marker_timing_index = build_timing_index(history.document.charts.front()).index;
+        expect_gpu_work(cache.marker_timing_index.has_value());
+        auto& view = flattened.view.compose;
+        view.visible = view.scene_available = true;
+        view.project_id = history.document.id.value;
+        view.viewport_height_pixels = view.pixels_per_standard_measure = 200;
+        interaction.viewport_scroll_pixels = 10;
+        for (std::size_t index = 0; index < analysis.waveform->bins.size(); ++index) {
+            auto& bin = analysis.waveform->bins[index];
+            const auto value = static_cast<float>(index + 1) / analysis.waveform->bins.size();
+            bin.absolute_peak = {value, value};
+            bin.rms = {value * .5f, value * .5f};
+        }
+    }
+    void project() {
+        expect_gpu_work(populate_compose_waveform_projection(flattened, cache, &analysis, false,
+            true, &interaction, nullptr, &blocks, &style));
+    }
+};
+void expect_published_waveform_rows(std::span<const WormUiComposeWaveformRowView> rows, double height) {
+    for (const auto& row : rows)
+        expect_gpu_work(std::isfinite(row.y_pixels) && row.y_pixels >= 0 && row.y_pixels <= height);
+}
+void compare_cached_envelope_source(envelope_projection_fixture_t& fixture) {
+    const auto height = fixture.flattened.view.compose.viewport_height_pixels;
+    const auto scroll = std::floor(fixture.interaction.viewport_scroll_pixels);
+    const auto reference = audio::project_composed_aligned_waveform(*fixture.analysis.waveform,
+        nullptr, *fixture.cache.marker_timing_index,
+        {.viewport_scroll_pixels = scroll - 1, .viewport_height_pixels = height + 2,
+         .pixels_per_standard_measure = fixture.flattened.view.compose.pixels_per_standard_measure},
+        &fixture.blocks, fixture.style);
+    expect_gpu_work(static_cast<bool>(reference));
+    std::size_t index = 0;
+    for (const auto& row : reference.rows) {
+        const auto y = row.y_pixels - 1;
+        if (y < 0 || y > height) continue;
+        expect_gpu_work(index < fixture.flattened.compose.waveform.row.size());
+        const auto& cached = fixture.flattened.compose.waveform.row[index++];
+        expect_gpu_work(std::abs(cached.y_pixels - y) < 1e-8);
+        expect_gpu_work(std::abs(cached.absolute_peak[0] - row.absolute_peak[0]) < 1e-6f);
+        expect_gpu_work(std::abs(cached.rms[0] - row.rms[0]) < 1e-6f);
+    }
+    expect_gpu_work(index == fixture.flattened.compose.waveform.row.size());
+}
+}
+TEST_CASE("Incomplete envelope detail retries after PCM arrives and retains resolved rows",
+          "[sys][waveform-projection]") {
+    envelope_projection_fixture_t fixture;
+    fixture.flattened.view.compose.viewport_height_pixels = 32;
+    fixture.flattened.view.compose.pixels_per_standard_measure = 32000;
+    fixture.style.detail_level = true;
+    fixture.project();
+    expect_gpu_work(fixture.cache.waveform_envelope_ring.projected_rows == 34);
+    expect_gpu_work(std::ranges::any_of(fixture.cache.waveform_envelope_ring.rows,
+        [](const auto& row) { return row.incomplete; }));
+    const auto coarse_peak = fixture.flattened.compose.waveform.row.front().absolute_peak[0];
+    fixture.project();
+    expect_gpu_work(fixture.cache.waveform_envelope_ring.projected_rows == 0);
+    const audio::audio_block_key_t key{fixture.analysis.waveform->key.source, 0};
+    const std::vector<float> pcm(32768, .8f);
+    expect_gpu_work(fixture.blocks.store(key, 16384, pcm) == audio::block_store_status_t::stored);
+    fixture.project();
+    expect_gpu_work(fixture.cache.waveform_envelope_ring.projected_rows == 34);
+    expect_gpu_work(fixture.cache.waveform_envelope_ring.projection_calls == 1);
+    expect_gpu_work(std::ranges::all_of(fixture.cache.waveform_envelope_ring.rows,
+        [](const auto& row) { return row.present && !row.incomplete; }));
+    const auto& resolved = fixture.flattened.compose.waveform.row.front();
+    expect_gpu_work(std::abs(resolved.absolute_peak[0] - .8f) < .00001f);
+    expect_gpu_work(std::abs(resolved.rms[0] - .8f) < .00001f);
+    expect_gpu_work(resolved.absolute_peak[0] != coarse_peak);
+    const audio::audio_block_key_t unrelated{{"elsewhere", "unchanged"}, 0};
+    expect_gpu_work(fixture.blocks.store(unrelated, 16384, pcm) == audio::block_store_status_t::stored);
+    fixture.project();
+    expect_gpu_work(fixture.cache.waveform_envelope_ring.projected_rows == 0);
+    expect_gpu_work(fixture.cache.waveform_envelope_ring.reused_rows == 34);
+    expect_gpu_work(std::abs(fixture.flattened.compose.waveform.row.front().absolute_peak[0] - .8f) < .00001f);
+}
+TEST_CASE("Compose envelope chart identity changes recompute actual source timing at unchanged revision",
+          "[sys][waveform-projection]") {
+    envelope_projection_fixture_t fixture;
+    fixture.project();
+    compare_cached_envelope_source(fixture);
+    expect_gpu_work(!fixture.flattened.compose.waveform.row.empty());
+    const auto peak = fixture.flattened.compose.waveform.row.front().absolute_peak[0];
+    auto second = fixture.history.document.charts.front();
+    second.id = chart_id_t{2};
+    second.bpms.front().beats_per_minute = {240, 1};
+    fixture.cache.chart = second.id;
+    fixture.cache.marker_timing_index = build_timing_index(second).index;
+    expect_gpu_work(fixture.cache.marker_timing_index.has_value());
+    fixture.project();
+    expect_gpu_work(fixture.cache.waveform_envelope_ring.projected_rows == 202);
+    compare_cached_envelope_source(fixture);
+    expect_gpu_work(fixture.flattened.compose.waveform.row.front().absolute_peak[0] < peak);
+    fixture.project();
+    expect_gpu_work(fixture.cache.waveform_envelope_ring.projected_rows == 0);
+    ++fixture.flattened.view.compose.project_id;
+    fixture.project();
+    expect_gpu_work(fixture.cache.waveform_envelope_ring.projected_rows == 202);
+}
+TEST_CASE("Compose envelope padding stays private at zero fractional and normal viewport scroll",
+          "[sys][waveform-projection]") {
+    envelope_projection_fixture_t fixture;
+    fixture.flattened.view.compose.viewport_height_pixels = 532;
+    for (const auto scroll : {0.0, .75, 10.0, 10.75, 100.25}) {
+        fixture.interaction.viewport_scroll_pixels = scroll;
+        fixture.project();
+        expect_published_waveform_rows(fixture.flattened.compose.waveform.row, 532);
+        expect_gpu_work(fixture.flattened.compose.waveform.row.size() <= 532);
+    }
+    fixture.project();
+    expect_gpu_work(fixture.cache.waveform_envelope_ring.projected_rows == 0);
+}
+namespace {
+struct channel_projection_fixture_t : envelope_projection_fixture_t {
+    workspace_controller_t workspace;
+    audio::decoded_source_registry_t sources;
+    std::optional<asset_id_t> asset{asset_id_t{7}};
+    std::shared_ptr<const audio::waveform_analysis_result_t> channel_analysis;
+    channel_projection_fixture_t() {
+        const auto path = std::filesystem::path(__FILE__).parent_path().parent_path() /
+                          "fixtures" / "audio" / "keysound-c4.ogg";
+        const auto added = sources.register_source({asset_id_t{7}, path, {"waveform:test", "immutable:v1"}});
+        expect_gpu_work(static_cast<bool>(added));
+        history.document.audio_assets.push_back({.id = asset_id_t{7}, .source_path = path,
+            .stream = {added.binding->source_sample_rate, 2, added.binding->source_frame_count, true}});
+        auto& waveform = *analysis.waveform;
+        waveform.key.source = added.binding->source;
+        waveform.sample_rate = added.binding->output_sample_rate;
+        waveform.total_frames = added.binding->output_frame_count;
+        waveform.bins.resize((waveform.total_frames + 255) / 256);
+        for (std::size_t index = 0; index < waveform.bins.size(); ++index) {
+            auto& bin = waveform.bins[index];
+            const auto peak = static_cast<float>(index + 1) / waveform.bins.size();
+            bin.absolute_peak = {peak, peak};
+            bin.rms = {peak * .5f, peak * .5f};
+            bin.frame_count = std::min<std::uint64_t>(256, waveform.total_frames - index * 256);
+        }
+        channel_analysis = std::make_shared<audio::waveform_analysis_result_t>(analysis);
+        auto& chart = history.document.charts.front();
+        chart.source_family = format_family_t::bmson;
+        chart.lane_layouts.front().layout.lanes.front().glyph = lane_glyph_t::arrow_left;
+        chart.sound_channels = {
+            {.id = object_id_t{71000}, .source_clip = {clip_id_t{72000}, asset_id_t{7}},
+             .events = {{.id = object_id_t{73000}, .position = {measure_id_t{1}, 0},
+                         .lane = lane_id_t{3}, .playable = false}}},
+            {.id = object_id_t{71001}, .source_clip = {clip_id_t{72001}, asset_id_t{7}},
+             .events = {{.id = object_id_t{73001}, .position = {measure_id_t{1}, 240},
+                         .lane = lane_id_t{3}, .playable = false}}}};
+        chart.measures.front().bgm_events = {
+            {.id = object_id_t{74000}, .position = {measure_id_t{1}, 0}, .source_lane = object_id_t{3},
+             .sound_channel_event = object_id_t{73000}},
+            {.id = object_id_t{74001}, .position = {measure_id_t{1}, 240}, .source_lane = object_id_t{3},
+             .sound_channel_event = object_id_t{73001}}};
+        workspace.selected_chart = chart.id;
+        flattened.view.compose.selected_bmson_bgm_event_id = 74000;
+        interaction.viewport_scroll_pixels = 0;
+    }
+    void project_channel() {
+        cache.channel_waveform_rows.clear();
+        const bmson_waveform_projection_context_t context{flattened, history, workspace, &interaction,
+            cache, sources, {asset, channel_analysis}, {asset, channel_analysis}, 1};
+        populate_bmson_waveform_projection(context);
+        expect_published_waveform_rows(cache.channel_waveform_rows, flattened.view.compose.viewport_height_pixels);
+    }
+};
+}
+TEST_CASE("BMSON channel switches sharing an asset preserve independent timing and bounded padded rows",
+          "[sys][waveform-projection][bmson]") {
+    channel_projection_fixture_t fixture;
+    fixture.project_channel();
+    expect_gpu_work(!fixture.cache.channel_waveform_rows.empty());
+    const auto first = fixture.cache.channel_waveform_rows.front().y_pixels;
+    fixture.flattened.view.compose.selected_bmson_bgm_event_id = 74001;
+    fixture.project_channel();
+    expect_gpu_work(fixture.cache.channel_envelope_ring.channel == 71001);
+    expect_gpu_work(fixture.cache.channel_envelope_ring.projected_rows == 202);
+    expect_gpu_work(!fixture.cache.channel_waveform_rows.empty());
+    expect_gpu_work(fixture.cache.channel_waveform_rows.front().y_pixels > first + 40);
+    fixture.interaction.viewport_scroll_pixels = .75;
+    fixture.project_channel();
+    expect_gpu_work(fixture.cache.channel_envelope_ring.projected_rows == 0);
+    fixture.interaction.viewport_scroll_pixels = 1.25;
+    fixture.project_channel();
+    expect_gpu_work(fixture.cache.channel_envelope_ring.projected_rows == 1);
+    fixture.history.document.charts.front().lane_layouts.front().layout.lanes.front().glyph = lane_glyph_t::bar;
+    fixture.flattened.view.compose.downscroll = true;
+    fixture.cache.channel_waveform_projection_valid = false;
+    fixture.interaction.viewport_scroll_pixels = 0;
+    fixture.project_channel();
+    expect_gpu_work(fixture.cache.channel_waveform_rows.front().y_pixels > 140);
 }
 namespace {
 auto reference_frame(const timing_index_t& timing, long double row, bool end,

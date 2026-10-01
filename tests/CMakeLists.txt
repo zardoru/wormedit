@@ -390,7 +390,11 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     target_link_libraries(wormedit_frame_timing_tests PRIVATE
         wormedit::core SDL3::SDL3 Catch2::Catch2WithMain)
     if(TARGET wormedit_audio_decoder)
-        target_sources(wormedit_frame_timing_tests PRIVATE ../src/sys/waveform_view_projection.cpp)
+        target_sources(wormedit_frame_timing_tests PRIVATE
+            ../src/sys/waveform_view_projection.cpp
+            ../src/sys/bmson_waveform_projection.cpp
+            ../src/sys/compose_input.cpp
+            ../src/sys/compose_minimap_navigation.cpp)
         target_compile_definitions(wormedit_frame_timing_tests PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1)
         target_link_libraries(wormedit_frame_timing_tests PRIVATE wormedit::audio_decoder)
     endif()

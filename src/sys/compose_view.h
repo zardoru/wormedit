@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -45,6 +46,25 @@ struct bmson_draft_audition_request_t {
     std::vector<wormedit::bmson_sound_marker_insertion_t> markers;
     std::size_t marker_index{};
 };
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+// A bounded CPU envelope ring. Geometry and GPU textures live in the frontend.
+struct envelope_projection_ring_t {
+    struct row_t {
+        std::int64_t world_row{std::numeric_limits<std::int64_t>::min()};
+        WormUiComposeWaveformRowView value{};
+        bool present{}, incomplete{};
+    };
+    std::vector<row_t> rows;
+    std::optional<audio::waveform_key_t> source_key, detail_key;
+    const void* source_identity{};
+    const void* detail_identity{};
+    std::uint64_t revision{}, project{}, chart{}, channel{}, source_generation{}, availability_evictions{};
+    std::size_t availability_entries{}, availability_frames{};
+    double zoom{};
+    bool detail_level{}, valid{};
+    std::size_t projected_rows{}, reused_rows{}, projection_calls{};
+};
+#endif
 
 struct compose_scene_cache_t {
     struct channel_waveform_selection_t {
@@ -90,6 +110,8 @@ struct compose_scene_cache_t {
     bool channel_waveform_projection_valid{};
     std::vector<WormUiComposeWaveformRowView> channel_waveform_rows;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    envelope_projection_ring_t waveform_envelope_ring;
+    envelope_projection_ring_t channel_envelope_ring;
     std::optional<wormedit::audio::waveform_key_t> waveform_overview_key;
     const void* waveform_overview_identity{};
     std::uint64_t waveform_overview_revision{};

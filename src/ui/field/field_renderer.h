@@ -3,6 +3,7 @@
 #include <array>
 #include <span>
 #include <vector>
+#include <memory>
 
 namespace wormedit::ui::field {
 using layer_t = std::uint16_t;
@@ -27,10 +28,61 @@ struct submission_t {
     auto (*geometry)(SDL_Renderer*, SDL_Texture*, const float*, int, const SDL_FColor*, int,
                      const float*, int, int, const void*, int, int) -> bool{};
 };
+struct ring_range_t {
+    std::size_t first{}, count{};
+};
+// World rows retain their physical slot while the viewport follows playback.
+// This planning state has no texture, audio or document dependency.
+class ring_rows_t {
+  public:
+    void update(std::uint64_t generation, std::int64_t first_row,
+                std::span<const std::uint64_t> fingerprints);
+    void invalidate() noexcept;
+    auto head() const noexcept -> std::size_t;
+    auto ranges() const noexcept -> std::array<ring_range_t, 2>;
+    auto dirty_ranges() const noexcept -> std::span<const ring_range_t> { return dirty_; }
+    auto regenerated_rows() const noexcept -> std::size_t { return regenerated_; }
+    auto capacity() const noexcept -> std::size_t { return slots_.size(); }
+
+  private:
+    struct slot_t {
+        std::int64_t world_row{};
+        std::uint64_t fingerprint{};
+        bool valid{};
+    };
+    std::vector<slot_t> slots_;
+    std::vector<ring_range_t> dirty_;
+    std::uint64_t generation_{};
+    std::int64_t first_row_{};
+    std::size_t regenerated_{};
+    bool valid_{};
+    auto slot(std::int64_t world_row) const noexcept -> std::size_t;
+    void mark_dirty(std::size_t index);
+};
+struct envelope_row_t {
+    double world_y{};
+    std::array<float, 2> rms{}, peak{};
+};
+struct envelope_style_t {
+    color_t rms{}, peak{};
+    bool joined_channels{};
+};
+struct envelope_work_t {
+    std::size_t retained_rows{}, regenerated_rows{}, raster_vertices{}, composites{};
+};
+struct envelope_cache_t;
 // Frontend-private geometry only: no document state or toolkit objects are retained.
 class renderer_t {
   public:
-    void begin(SDL_FRect viewport, SDL_FPoint scale = {1, 1}, solid_texture_t solid = {});
+    renderer_t();
+    ~renderer_t();
+    void invalidate_envelopes() noexcept;
+    void begin(SDL_FRect viewport, SDL_FPoint scale = {1, 1}, solid_texture_t solid = {},
+               SDL_Renderer* device = nullptr);
+    auto envelope(std::size_t slot, layer_t layer, std::span<const envelope_row_t> rows,
+                  SDL_FRect bounds, double world_origin, std::uint64_t generation,
+                  envelope_style_t style, float y_scale = 1) -> bool;
+    auto envelope_work() const noexcept -> envelope_work_t;
     void rect(layer_t layer, SDL_FRect bounds, color_t color);
     void hline(layer_t layer, float x0, float x1, float y, float width, color_t color);
     void vline(layer_t layer, float x, float y0, float y1, float width, color_t color);
@@ -62,6 +114,12 @@ class renderer_t {
     std::vector<SDL_Vertex> vertices_;
     std::vector<std::uint32_t> indices_;
     std::vector<batch_t> batches_;
+    SDL_Renderer* device_{};
+    std::array<std::unique_ptr<envelope_cache_t>, 2> envelopes_;
+    auto submit_envelope_fallback(SDL_Renderer* renderer, SDL_Texture* texture,
+                                   submission_t hooks, bool& fallback) const -> bool;
+    void envelope_quad(layer_t layer, const envelope_cache_t& cache,
+                       ring_range_t span, std::int64_t world);
     void append_batch(layer_t layer, SDL_Texture* texture, std::size_t count);
     void quad(layer_t layer, std::span<const SDL_FPoint, 4> points, color_t color,
               SDL_Texture* texture = nullptr, SDL_FPoint uv_min = {}, SDL_FPoint uv_max = {});

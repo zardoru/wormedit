@@ -440,6 +440,9 @@ struct channel_line_t {
     std::size_t measure{};
     std::string channel;
     std::vector<note_slot_t> notes;
+    // Subdivision of the source line the events came from, so `00` padding
+    // survives edits instead of collapsing to the coarsest exact grid.
+    std::uint64_t minimum_slots{1};
 };
 
 struct hold_endpoint_t {
@@ -2206,8 +2209,9 @@ void export_branch_bgm_event(const bgm_event_t& event, bgm_export_context_t& con
                                                       *field, path);
     const auto lane = std::ranges::find(context.chart.bgm_source_lanes, event.source_lane,
                                          &bgm_source_lane_t::id);
-    if (lane == context.chart.bgm_source_lanes.end() ||
-        lane->source_order != event.provenance.source_order || event.branch)
+    // BGM lanes are per-measure columns shared by many source lines, so the
+    // retained line is identified by the claimed slot, not by the lane.
+    if (lane == context.chart.bgm_source_lanes.end() || event.branch)
         fail(bms_write_diagnostic_code_t::branch_provenance,
              "branch BGM event source lane no longer matches its retained source line",
              std::string(path));
@@ -2238,6 +2242,17 @@ auto exported_bgm_audio_id(const bgm_export_context_t& context, resource_id_t re
     return wav->second;
 }
 
+// Slot count of the `#mmmCC:payload` line an imported event came from.
+auto source_line_slot_count(std::string_view spelling) -> std::optional<std::uint64_t> {
+    const auto colon = spelling.find(':');
+    if (colon == std::string_view::npos) return std::nullopt;
+    auto payload = spelling.substr(colon + 1);
+    const auto end = payload.find_first_of(" \t\r\n");
+    if (end != std::string_view::npos) payload = payload.substr(0, end);
+    if (payload.empty() || payload.size() % 2 != 0) return std::nullopt;
+    return payload.size() / 2;
+}
+
 void export_root_bgm_event(const bgm_event_t& event, std::size_t measure,
                            bgm_export_context_t& context, std::string_view path) {
     if (event.branch)
@@ -2262,6 +2277,9 @@ void export_root_bgm_event(const bgm_event_t& event, std::size_t measure,
     auto [line, inserted] = context.lines.try_emplace(
         key, channel_line_t{.measure = measure, .channel = "01"});
     (void)inserted;
+    if (const auto slots = source_line_slot_count(event.provenance.source_spelling))
+        line->second.minimum_slots =
+            checked_lcm(line->second.minimum_slots, *slots).value_or(line->second.minimum_slots);
     line->second.notes.push_back({numerator, denominator, std::move(object_id), std::string(path)});
 }
 
@@ -2703,7 +2721,7 @@ auto emit_metadata_header(metadata_output_context_t context) -> std::vector<std:
 
 auto encode_bms_channel_line(const channel_line_t& line,
                              const bms_write_options_t& options) -> std::string {
-    std::uint64_t slot_count = 1;
+    std::uint64_t slot_count = std::max<std::uint64_t>(line.minimum_slots, 1);
     for (const auto& note : line.notes) {
         const auto slots = checked_lcm(slot_count, note.denominator);
         if (!slots || *slots > options.max_slots_per_line || *slots > 500'000)

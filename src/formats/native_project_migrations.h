@@ -43,6 +43,13 @@ struct migration_outcome_t {
 // schema bump. Schema version 1 is the first release, so the table is empty.
 [[nodiscard]] auto default_migrations() -> std::span<const migration_t>;
 
+// Repairs BMS BGM data saved before `00` slots stopped being events and BGM
+// lines became per-measure columns: drops sound-less events that came from a
+// `00` slot, then maps the k-th legacy line of every measure onto column k.
+// Idempotent and content-detected, so it needs no schema bump. Returns true
+// when the document changed.
+[[nodiscard]] auto normalize_legacy_bms_bgm(song_document_t& song) -> bool;
+
 // Walks `document.schema_version` up to `target_version`, one table step at a
 // time, and sets the version after each successful step.
 [[nodiscard]] auto migrate_document(nlohmann::json& document, std::uint32_t target_version,

@@ -11,6 +11,7 @@
 namespace {
 
 constexpr std::array fixture_paths{
+    "bms/bgm-columns-per-measure.bms",
     "bms/control-flow-fixed-values.bms",
     "bms/control-flow-mixed.bms",
     "bms/custom-channel.bme",

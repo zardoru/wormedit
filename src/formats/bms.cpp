@@ -733,10 +733,36 @@ struct bms_channel_materializer_t {
     const std::map<std::string, signed_rational_t, std::less<>>& stop_definitions;
     const std::optional<lane_input_profile_t>& selected_profile;
     std::map<std::uint64_t, std::vector<long_note_endpoint_t>>& long_note_endpoints;
+    // BGM lines already placed per measure; the k-th line of a measure uses
+    // the chart-wide BGM column k, as iBMSC and BMSE present them.
+    std::map<std::size_t, std::size_t> bgm_columns_used;
+
+    static constexpr std::size_t maximum_bgm_lines_per_measure = 128;
 
     void diagnose(const bms_control_node_t& node, diagnostic_severity_t severity,
                   bms_parse_diagnostic_code_t code, std::string message) {
         add_line_diagnostic(result, severity, code, std::move(message), node_source_line(node));
+    }
+
+    // Column for the next BGM line of this measure, created on first use.
+    auto next_bgm_column(const root_channel_line_t& channel_line, const bms_control_node_t& node)
+        -> object_id_t {
+        const auto column = bgm_columns_used[channel_line.measure]++;
+        if (column == maximum_bgm_lines_per_measure) {
+            diagnose(node, diagnostic_severity_t::warning, bms_parse_diagnostic_code_t::malformed_line,
+                     "measure has more than 128 BGM lines; the extra lines are kept but exceed "
+                     "the BMSE limit");
+        }
+        if (column >= chart.bgm_source_lanes.size()) {
+            const auto lane_id = new_id<object_id_t>(ids);
+            chart.bgm_source_lanes.push_back({
+                .id = lane_id,
+                .name = "BGM " + std::to_string(column + 1),
+                .source_order = node.source_order,
+            });
+            return lane_id;
+        }
+        return chart.bgm_source_lanes[column].id;
     }
 
     auto lane_for_channel(std::string_view channel) const -> const lane_definition_t* {
@@ -818,10 +844,12 @@ struct bms_channel_materializer_t {
                        const bms_control_node_t& node, std::size_t slot,
                        const std::string& object_id, local_position_t position,
                        object_id_t source_lane) {
-        std::optional<resource_id_t> sound;
-        if (object_id != "00") {
-            sound = resource_for_object(node, object_id);
+        // `00` is positional padding, not an event; its slot index is kept by
+        // the neighbouring events' structural slots.
+        if (object_id == "00") {
+            return;
         }
+        const auto sound = resource_for_object(node, object_id);
         chart.measures[channel_line.measure].bgm_events.push_back({
             .id = new_id<object_id_t>(ids),
             .position = position,
@@ -989,14 +1017,7 @@ struct bms_channel_materializer_t {
         const auto& node = *channel_line.node;
         auto bgm_source_lane = std::optional<object_id_t>{};
         if (channel == "01") {
-            const auto lane_id = new_id<object_id_t>(ids);
-            bgm_source_lane = lane_id;
-            chart.bgm_source_lanes.push_back({
-                .id = lane_id,
-                .name = "BGM source #" + channel_line.node->command_token + " (line " +
-                        std::to_string(node.source_order + 1) + ")",
-                .source_order = node.source_order,
-            });
+            bgm_source_lane = next_bgm_column(channel_line, node);
         }
         for (std::size_t slot = 0; slot < channel_line.pair_count; ++slot) {
             const auto object_id =

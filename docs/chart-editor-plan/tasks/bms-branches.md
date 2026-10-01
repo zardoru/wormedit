@@ -107,7 +107,8 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-97 Stop importing BMS `00` slots as BGM events
 
-- **Status:** ready
+- **Status:** done (headless tests; the real application was not run)
+- **Implementation notes (2026-10-01):** `add_bgm_event` skips `00` slots (slot indices stay in `structural_slot`). The writer remembers each source line's slot count from the event's retained line text (`channel_line_t::minimum_slots`), so an edited export keeps each line's `00` padding instead of collapsing to the coarsest exact grid; unedited sources still export byte-identically. Tests in `bms_tests.cpp` and `bms_writer_tests.cpp` were updated to the non-`00` event lists.
 - **Outcome:** importing `#00101:01000200` creates two BGM events (slots 0 and 2), not four; unedited export stays byte-identical.
 - **Read first:** `docs/references/bms-command-memo.md` (Wormedit consequences), `src/formats/bms.cpp` (`add_bgm_event`, `materialize`), `src/formats/bms_writer.cpp` (BGM emission near `structural_slot`), `tests/formats/bms_writer_tests.cpp`.
 - **Files owned:** `src/formats/bms.cpp`, `src/formats/bms_writer.cpp`, `tests/formats/bms_tests.cpp`, `tests/formats/bms_writer_tests.cpp`, `tests/fixtures/README.md` (the `repeated-bgm-ratio-stop-collision.bms` row), `include/wormedit/core/document.h` (comment on `bgm_event_t::sound` only).
@@ -124,7 +125,8 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-98 Assign BMS BGM lines to per-measure columns
 
-- **Status:** blocked-on T-97
+- **Status:** done (headless tests; opening the fixture in the real application to see five BGM columns is still to do)
+- **Implementation notes (2026-10-01):** importer keeps a per-measure BGM line counter (`bms_channel_materializer_t::next_bgm_column`), columns are named `BGM 1`, `BGM 2`, … and shared across measures; more than 128 lines in a measure imports with a warning. The writer groups by (measure, column) in column order. The branch BGM export check no longer compares a lane to one source line because lanes are shared columns; the retained line is identified by its claimed slot. New fixture `bms/bgm-columns-per-measure.bms` (5 columns, 602 events, 200 measures) with import, byte-identical, normalized-export and round-trip tests in `bms_writer_tests.cpp`.
 - **Outcome:** a chart whose busiest measure has 3 `#mmm01` lines shows exactly 3 BGM columns, however many measures it has; in each measure the k-th line (active source order) lands in column k.
 - **Read first:** `docs/references/bms-command-memo.md` (per-measure columns), `src/formats/bms.cpp` (`materialize`, the `channel == "01"` block that pushes a new `bgm_source_lanes` entry per line), `src/formats/bms_writer.cpp` (grouping by `(measure, source_lane)`), `include/wormedit/core/document.h` (`bgm_source_lane_t`).
 - **Files owned:** `src/formats/bms.cpp`, `src/formats/bms_writer.cpp`, `tests/formats/bms_tests.cpp`, `tests/formats/bms_writer_tests.cpp`, new fixture `tests/fixtures/bms/bgm-columns-per-measure.bms`, `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`.
@@ -141,7 +143,8 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-99 Normalize BGM columns in older native projects
 
-- **Status:** blocked-on T-98, T-122
+- **Status:** done (headless tests)
+- **Implementation notes (2026-10-01):** instead of a schema bump (which would touch recovery/autosave files and every document literal), `normalize_legacy_bms_bgm` in `native_project_migrations.cpp` repairs old documents when they load: it drops sound-less events whose provenance names `01 slot N object 00`, then maps the k-th legacy `BGM source #…` lane of each measure onto column k, renames the kept lanes `BGM k`, and removes the other legacy lanes. It is content-detected and idempotent, and runs before validation. Tests in `native_project_tests.cpp`.
 - **Outcome:** a native project saved before T-97/T-98 loads with no sound-less BMS `00` events and with per-measure BGM columns, through a schema migration.
 - **Read first:** `src/formats/native_project_migrations.cpp` (from T-122), `src/formats/native_project.cpp` (`bgm_source_lanes`, `structural_slot`), `tests/formats/native_project_tests.cpp`.
 - **Files owned:** `src/formats/native_project_migrations.cpp`, `src/formats/native_project.cpp`, `tests/formats/native_project_tests.cpp`.

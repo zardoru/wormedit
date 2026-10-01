@@ -714,6 +714,44 @@ struct editor_measure_geometry_t {
                                               const editor_interaction_state_t& previous)
     -> editor_interaction_setup_t;
 
+// The edit cursor's position and where it is drawn. Code outside `core` must not assign the
+// underlying state fields; it captures, restores or places the cursor through these helpers
+// (or dispatches an editor action), so a cursor move cannot leave one field stale. The
+// `cursor_write_guard` test enforces this.
+struct cursor_pose_t {
+    local_position_t cursor;
+    std::optional<std::uint64_t> virtual_bms_cursor_row;
+    double cursor_subrow{};
+    double viewport_scroll_pixels{};
+
+    friend bool operator==(const cursor_pose_t&, const cursor_pose_t&) = default;
+};
+
+[[nodiscard]] inline auto capture_cursor_pose(const editor_interaction_state_t& state)
+    -> cursor_pose_t {
+    return {state.cursor, state.virtual_bms_cursor_row, state.cursor_subrow,
+            state.viewport_scroll_pixels};
+}
+
+inline void restore_cursor_pose(editor_interaction_state_t& state, const cursor_pose_t& pose) {
+    state.cursor = pose.cursor;
+    state.virtual_bms_cursor_row = pose.virtual_bms_cursor_row;
+    state.cursor_subrow = pose.cursor_subrow;
+    state.viewport_scroll_pixels = pose.viewport_scroll_pixels;
+}
+
+// Move the cursor to an authored position, leaving any virtual-canvas row and the drawn
+// offset and scroll as they are except that the virtual row is dropped.
+inline void place_cursor_at(editor_interaction_state_t& state, const local_position_t& position) {
+    state.cursor = position;
+    state.virtual_bms_cursor_row.reset();
+}
+
+// Clamp the viewport scroll without moving the cursor.
+inline void set_viewport_scroll_pixels(editor_interaction_state_t& state, double pixels) {
+    state.viewport_scroll_pixels = pixels;
+}
+
 [[nodiscard]] auto inspect_editor_interaction(const document_history_t& history,
                                               const editor_interaction_state_t& state)
     -> std::variant<editor_interaction_view_model_t, diagnostic_list_t>;

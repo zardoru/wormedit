@@ -101,9 +101,7 @@ std::optional<std::string> dispatch_compose_measure_navigation(compose_action_co
                                          select_bms_canvas_measure_action_t{
                                              static_cast<std::size_t>(canvas_number)});
         if (result.accepted) {
-            context.state.cursor = candidate.cursor;
-            context.state.virtual_bms_cursor_row = candidate.virtual_bms_cursor_row;
-            context.state.viewport_scroll_pixels = candidate.viewport_scroll_pixels;
+            restore_cursor_pose(context.state, capture_cursor_pose(candidate));
             context.state.active_lane = candidate.active_lane;
         }
     } else {
@@ -579,13 +577,13 @@ std::optional<std::string> finish_compose_resource_placement(
     auto& state = context.state;
     if (state.virtual_bms_cursor_row) {
         const auto* chart = selected_chart(context.history, context.workspace);
+        std::optional<local_position_t> position;
         if (chart) {
             const auto built = build_measure_index(*chart);
             if (const auto* index = std::get_if<measure_index_t>(&built))
-                if (const auto position = timing_position_at_row(*index, *state.virtual_bms_cursor_row))
-                    state.cursor = *position;
+                position = timing_position_at_row(*index, *state.virtual_bms_cursor_row);
         }
-        state.virtual_bms_cursor_row.reset();
+        place_cursor_at(state, position.value_or(state.cursor));
     }
     const auto role = kind == resource_placement_kind_t::sample_note ? resource_role_t::sample
         : kind == resource_placement_kind_t::bgm_event ? resource_role_t::bgm : resource_role_t::bga;

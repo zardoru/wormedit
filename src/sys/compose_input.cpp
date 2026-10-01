@@ -1163,8 +1163,7 @@ auto begin_alt_pointer_gesture(const WormUiComposeInputAction& input,
     if (target->note && target->note_kind &&
         (*target->note_kind == note_kind_t::tap || *target->note_kind == note_kind_t::hold)) {
         state.active_lane = target->lane;
-        state.cursor = target->position;
-        state.virtual_bms_cursor_row.reset();
+        place_cursor_at(state, target->position);
         result = dispatch_editor_action(history, state,
                                         begin_note_duration_gesture_action_t{*target->note});
         accepted = "Note resize started; drag to change duration and release to finish.";
@@ -1386,8 +1385,7 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
             std::ranges::find(state.selected_notes, *target->note) == state.selected_notes.end())
             return "Begin a note move by dragging a selected playable note.";
         state.active_lane = target->lane;
-        state.cursor = target->position;
-        state.virtual_bms_cursor_row.reset();
+        place_cursor_at(state, target->position);
         result =
             dispatch_editor_action(history, state, begin_note_move_gesture_action_t{*target->note});
         accepted = "Selected-note move started.";
@@ -2064,9 +2062,7 @@ auto select_or_place_virtual_pointer(const WormUiComposeInputAction& input,
     result = dispatch_editor_action(context.history, candidate,
                                     select_bms_canvas_measure_action_t{measure->number});
     if (result.accepted) {
-        context.state.cursor = candidate.cursor;
-        context.state.virtual_bms_cursor_row = candidate.virtual_bms_cursor_row;
-        context.state.viewport_scroll_pixels = candidate.viewport_scroll_pixels;
+        restore_cursor_pose(context.state, capture_cursor_pose(candidate));
         context.state.active_lane = virtual_hit->second;
     }
     accepted = "BMS measure selected.";
@@ -2091,8 +2087,7 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
         finish_virtual_hold_at_authored_row(context, *chart, target->position, target->lane, result, accepted))
         return std::nullopt;
     context.state.active_lane = target->lane;
-    context.state.cursor = target->position;
-    context.state.virtual_bms_cursor_row.reset();
+    place_cursor_at(context.state, target->position);
     const bool clicked_hold_end = context.state.pending_hold &&
                                   !context.state.pending_hold->gesture_source;
     if (*mode == editor_area_selection_mode_t::replace && (!target->note || clicked_hold_end)) {
@@ -2371,8 +2366,7 @@ auto dispatch_resource_pointer(const WormUiComposeInputAction& input,
     result.document_changed = applied.applied;
     result.diagnostics = applied.diagnostics;
     if (result.accepted) {
-        context.state.cursor = *position;
-        context.state.virtual_bms_cursor_row.reset();
+        place_cursor_at(context.state, *position);
         if (pointer.lane)
             context.state.active_lane = pointer.lane;
     }

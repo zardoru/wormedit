@@ -87,8 +87,7 @@ auto select_compose_area_contents(wormedit::document_history_t& history,
     auto temporary = state;
     temporary.selected_notes.clear();
     temporary.selected_objects.clear();
-    temporary.cursor = span.begin;
-    temporary.virtual_bms_cursor_row.reset();
+    place_cursor_at(temporary, span.begin);
     const space_range_selection_action_t selection{editor_area_selection_mode_t::replace,
                                                    {true, true, true, true}};
     const auto started = dispatch_editor_action(history, temporary, selection);
@@ -97,7 +96,7 @@ auto select_compose_area_contents(wormedit::document_history_t& history,
     const auto last = area_position_at_row(*measures, *end);
     if (!last)
         return std::nullopt;
-    temporary.cursor = *last;
+    place_cursor_at(temporary, *last);
     const auto selected = dispatch_editor_action(history, temporary, selection);
     if (!selected.accepted)
         return std::nullopt;

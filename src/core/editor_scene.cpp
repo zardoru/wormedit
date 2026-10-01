@@ -1642,8 +1642,11 @@ auto compose_scene_cursor(scene_geometry_context_t& context, Consume&& consume, 
         return false;
     }
     const auto y = y_for_row(*row);
+    const auto subrow = context.view.cursor_subrow;
+    const auto y_offset = subrow > 0.0 && std::isfinite(subrow)
+        ? (y_for_row(static_cast<long double>(*row) + 1.0L) - y) * subrow : 0.0;
     context.scene.cursor = editor_field_cursor_geometry_t{
-        .lane = context.view.active_lane, .bounds = {lane->left, y - 1.0, lane->right, y + 1.0}};
+        .lane = context.view.active_lane, .bounds = {lane->left, y + y_offset - 1.0, lane->right, y + y_offset + 1.0}};
     return true;
 }
 

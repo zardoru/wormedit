@@ -1531,3 +1531,97 @@ TEST_CASE("cached scene validates changed margins instead of retaining its old a
     current.viewport_end_margin_fraction = 0.1;
     check_reused_frame(chart, index, current, request, window);
 }
+
+namespace {
+auto coverage_window_chart() -> wormedit::chart_document_t {
+    auto chart = window_chart();
+    for (std::uint64_t i = 25; i <= 100; ++i) {
+        chart.measures.push_back({.id = wormedit::measure_id_t{i},
+            .definition = {{1, 1}, wormedit::meter_t{4, 4}},
+            .notes = {{.id = wormedit::object_id_t{100 + i},
+                .position = {wormedit::measure_id_t{i}, (i * 17) % 960},
+                .lane = wormedit::lane_id_t{1}}}});
+    }
+    return chart;
+}
+void check_complete_tile_coverage(const wormedit::editor_field_scene_window_t& window,
+                                 const wormedit::editor_interaction_view_model_t& current,
+                                 double scale, bool downscroll) {
+    constexpr double guard = 96;
+    const auto begin = current.viewport_scroll_pixels;
+    const auto end = begin + current.viewport_height_pixels;
+    const auto source_begin = window.view.viewport_scroll_pixels;
+    const auto source_end = source_begin + window.view.viewport_height_pixels;
+    const auto covered_begin = (source_begin == 0 ? 0 : source_begin + guard) * scale;
+    const auto covered_end = (source_end - guard) * scale;
+    const auto visible_begin = downscroll ? -end * scale : begin * scale;
+    const auto visible_end = downscroll ? -begin * scale : end * scale;
+    const auto tile_begin = std::floor(visible_begin / 512) * 512;
+    const auto tile_end = std::ceil(visible_end / 512) * 512;
+    CHECK((downscroll ? -covered_end : covered_begin) <= tile_begin + 1e-8);
+    CHECK((downscroll ? -covered_begin : covered_end) >= tile_end - 1e-8);
+}
+}
+TEST_CASE("Retained source margin covers complete GPU tiles without moving visible geometry",
+          "[editor-scene][tile-window-coverage]") {
+    const auto chart = coverage_window_chart();
+    const auto index = std::get<wormedit::editor_field_scene_index_t>(
+        wormedit::build_editor_field_scene_index(chart, 7));
+    for (const auto direction : {wormedit::editor_field_scroll_direction_t::up,
+                                 wormedit::editor_field_scroll_direction_t::down}) {
+        auto current = view();
+        current.viewport_height_pixels = 532;
+        wormedit::editor_field_scene_request_t request{.field_left_pixels = 10,
+            .field_width_pixels = 200, .scroll_direction = direction,
+            .bgm_pane_left_pixels = 220, .bgm_pane_width_pixels = 36,
+            .retained_window_minimum_margin_pixels = 1120};
+        wormedit::editor_field_scene_window_t window;
+        for (const double scroll : {0.0, 67.25, 620.74, 785.694, 2048.75, 2896.25,
+                                   2200.5, 785.0, 0.0}) {
+            current.viewport_scroll_pixels = scroll;
+            check_reused_frame(chart, index, current, request, window);
+            for (const double scale : {1.0, .992, 496.0 / 532.0, .5})
+                check_complete_tile_coverage(window, current, scale,
+                    direction == wormedit::editor_field_scroll_direction_t::down);
+        }
+        CHECK(window.reuse_count > 0);
+    }
+}
+TEST_CASE("Default source padding preserves three viewport windows and invalid padding falls back",
+          "[editor-scene][tile-window-coverage]") {
+    const auto chart = coverage_window_chart();
+    const auto index = std::get<wormedit::editor_field_scene_index_t>(
+        wormedit::build_editor_field_scene_index(chart, 7));
+    auto current = view();
+    wormedit::editor_field_scene_request_t request{.field_width_pixels = 200};
+    wormedit::editor_field_scene_window_t window;
+    check_reused_frame(chart, index, current, request, window);
+    CHECK(window.view.viewport_height_pixels == current.viewport_height_pixels * 3);
+    const auto rebuilt = window.rebuild_count;
+    request.retained_window_minimum_margin_pixels = 1120;
+    check_reused_frame(chart, index, current, request, window);
+    CHECK(window.rebuild_count == rebuilt + 1);
+    for (const double invalid : {-1.0, std::numeric_limits<double>::infinity(),
+                                 std::numeric_limits<double>::quiet_NaN()}) {
+        request.retained_window_minimum_margin_pixels = invalid;
+        CHECK_FALSE(wormedit::can_reuse_editor_field_scene_window(chart, index, current, request, window));
+        check_reused_frame(chart, index, current, request, window);
+    }
+}
+
+TEST_CASE("Expanded source budget failure retains valid fresh visible primitives",
+          "[editor-scene][tile-window-coverage]") {
+    const auto chart = coverage_window_chart();
+    const auto index = std::get<wormedit::editor_field_scene_index_t>(
+        wormedit::build_editor_field_scene_index(chart, 7));
+    auto current = view();
+    current.viewport_height_pixels = 532;
+    wormedit::editor_field_scene_request_t request{.field_width_pixels = 200,
+        .maximum_scene_primitives = 64,
+        .retained_window_minimum_margin_pixels = 1120};
+    wormedit::editor_field_scene_window_t window;
+    check_reused_frame(chart, index, current, request, window);
+    CHECK_FALSE(window.scene);
+    CHECK(window.rebuild_count == 0);
+    CHECK_FALSE(wormedit::can_reuse_editor_field_scene_window(chart, index, current, request, window));
+}

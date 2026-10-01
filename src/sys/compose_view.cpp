@@ -2763,7 +2763,10 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
         .required_semantic_layers = application_state.required_semantic_layer_filters,
         .excluded_semantic_layers = application_state.excluded_semantic_layer_filters,
         .maximum_grid_lines = WORM_UI_COMPOSE_GRID_CAPACITY,
-        .maximum_scene_primitives = WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY};
+        .maximum_scene_primitives = WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY,
+        // One physical 512-row tile at scale >= .5, plus conservative glyph halo.
+        .retained_window_minimum_margin_pixels =
+            1024.0 + std::max(96.0, playable_field_width * .5 + 20.0)};
     refresh_compose_static_scene_style(cache,view);
     const auto frame_scene_previous = frame_timing().enter(frame_phase_t::scene);
     if (project_reused_scalar_scene(input, field_left_pixels, playable_field_width, pixels_per_row,

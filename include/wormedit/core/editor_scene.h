@@ -205,6 +205,9 @@ struct editor_field_scene_request_t {
     std::size_t maximum_comparison_difference_rows{100'000};
     std::size_t maximum_scene_primitives{250'000};
     std::size_t maximum_composition_operations{500'000};
+    // Extra retained-source margin only; visible geometry is unchanged.
+    // Zero preserves the original three-viewport cache policy.
+    double retained_window_minimum_margin_pixels{};
 };
 
 struct editor_field_scene_result_t {

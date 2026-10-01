@@ -16,6 +16,9 @@ struct inline_preview_cursor_t {
     struct anchor_t {
         chart_id_t chart;
         local_position_t position;
+        // Drawn offset and scroll, so a fixed-cursor view returns to the same screen position.
+        double cursor_subrow{};
+        double viewport_scroll_pixels{};
     };
 
     std::optional<anchor_t> anchor;
@@ -43,7 +46,9 @@ struct inline_preview_cursor_t {
     }
 
     void capture(const editor_interaction_state_t* state) {
-        anchor = state ? std::optional{anchor_t{state->chart, state->cursor}} : std::nullopt;
+        anchor = state ? std::optional{anchor_t{state->chart, state->cursor, state->cursor_subrow,
+                                                state->viewport_scroll_pixels}}
+                       : std::nullopt;
     }
 
     [[nodiscard]] auto restore(document_history_t& history,
@@ -51,9 +56,15 @@ struct inline_preview_cursor_t {
         const auto previous = std::exchange(anchor, std::nullopt);
         if (!previous || !state || state->chart != previous->chart) return false;
         (void)dispatch_editor_action(history, *state, cancel_editor_gesture_action_t{});
-        return static_cast<bool>(dispatch_editor_action(
+        const auto jumped = dispatch_editor_action(
             history, *state,
-            jump_edit_cursor_action_t{previous->position, history.document.revision}));
+            jump_edit_cursor_action_t{previous->position, history.document.revision});
+        if (!jumped) return false;
+        if (std::isfinite(previous->cursor_subrow) && std::isfinite(previous->viewport_scroll_pixels)) {
+            state->cursor_subrow = previous->cursor_subrow;
+            state->viewport_scroll_pixels = previous->viewport_scroll_pixels;
+        }
+        return true;
     }
 };
 

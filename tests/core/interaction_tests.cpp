@@ -110,6 +110,21 @@ TEST_CASE("Escape restoration returns the Compose cursor to its preplay position
     CHECK_FALSE(preview_cursor.restore(history, &state));
 }
 
+TEST_CASE("Escape restoration also restores the drawn cursor offset and scroll",
+          "[unit][core][interaction][transport]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.cursor_subrow = 3.5;
+    const auto scroll = state.viewport_scroll_pixels;
+    sys::inline_preview_cursor_t preview_cursor;
+    preview_cursor.capture(&state);
+
+    REQUIRE(sys::follow_compose_playhead(history, state, 1'200.0, true));
+    REQUIRE(preview_cursor.restore(history, &state));
+    CHECK(state.cursor_subrow == Catch::Approx(3.5));
+    CHECK(state.viewport_scroll_pixels == Catch::Approx(scroll));
+}
+
 using parallel_hold_signature_t =
     std::tuple<lane_id_t, local_position_t, std::optional<local_position_t>>;
 

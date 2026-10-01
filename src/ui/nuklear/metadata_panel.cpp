@@ -1636,7 +1636,8 @@ void render_audio_waveform(const MetadataPanel& panel) {
         .waveform_columns = metadata.audio_waveform_columns,
         .waveform_column_count = metadata.audio_waveform_column_count,
         .has_chart = metadata.has_chart, .chart_id = metadata.chart_id,
-        .document_revision = metadata.document_revision, .timing_locked = metadata.timing_locked,
+        .document_revision = metadata.document_revision,
+        .timing_locked = metadata.timing_locked || metadata.audio_offset_locked,
         .offset_numerator = metadata.audio_offset_numerator,
         .offset_denominator = metadata.audio_offset_denominator,
         .offset_drag_active = metadata.audio_offset_drag_active,
@@ -1683,7 +1684,9 @@ void render_audio_sync_section(const MetadataPanel& panel) {
         nk_label_colored(context, "Enter a number or fraction, e.g. -0.125, 1/3 or -125 ms.",
                          NK_TEXT_LEFT, wormedit::ui::theme::ui(wormedit::ui::theme::UiColor::status));
     }
-    if (metadata.timing_locked) muted_label(context, "Unlock timing to edit the offset.");
+    if (metadata.timing_locked || metadata.audio_offset_locked)
+        muted_label(context, metadata.audio_offset_locked ? "Unlock audio offset in Compose to edit it."
+                                                         : "Unlock timing to edit the offset.");
     const auto projected = worm_ui_nuklear_format_metadata_rational(
         {metadata.audio_offset_numerator, metadata.audio_offset_denominator});
     const auto dirty = parsed

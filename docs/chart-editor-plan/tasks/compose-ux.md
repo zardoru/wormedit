@@ -507,15 +507,16 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 
 ## T-298 Lock audio offset changes beside its tools
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** A visible padlock beside the offset tools prevents offset changes from numeric edits, nudges and drag gestures while locked.
 - **Read first:** `src/sys/compose_actions.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_toolbar.cpp`.
-- **Files owned:** `src/sys/main.cpp` (offset-only lock/capture boundaries), `src/sys/application_frame_projection.cpp` (offset control projection only), `src/ui/nuklear/compose_input_panel.cpp` (offset capture guard only), `src/sys/compose_view.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/compose_toolbar.cpp`, `src/sys/compose_actions.cpp`, `src/sys/compose_input.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/metadata_panel.cpp` (accurate offset-lock explanation only), `src/sys/main.cpp` (offset-only lock/capture boundaries), `src/sys/application_frame_projection.cpp` (offset control projection only), `src/ui/nuklear/compose_input_panel.cpp` (offset capture guard only), `src/sys/compose_view.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/compose_toolbar.cpp`, `src/sys/compose_actions.cpp`, `src/sys/compose_input.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
 - **Steps:** 1. Add one shared offset-lock state and display its padlock near the offset tools. 2. Enforce it at offset action and gesture boundaries, cancelling any pending offset preview when locking. 3. Verify every editing entry point rejects without mutation.
 - **Invariants:** Locking offset does not prevent navigation, BPM editing or playback; unlocking does not replay a rejected edit.
 - **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; isolated Xvfb/SDL-dummy checks for UI/audio behavior.
 - **Out of scope:** unrelated rendering and preferences work.
+- **Evidence:** Authoritative application build passed and full suite passed 1180/1180 (63.24 s). Configured clang-tidy passed for all nine changed C++ files with no source-owned complexity violations. Real isolated Xvfb/SDL-dummy checks verified the padlock, rejected numeric/nudge/calibrated waveform and offset-fit changes, retained exact saved 1/3, allowed BPM fitting and playback while locked, and restored fresh exact 1/4 editing without replay on unlock. Runtime regression covers locking before a simultaneous captured release, offset preview cancellation and BPM preview retention. Locking cancels an open inline edit; Metadata explains the independent offset lock correctly. Chart payload comparison, clean shutdown and literal Compose smoke passed; PNGs were inspected (`/tmp/wormedit-t298/final-smoke.png`).
 
 ## T-299 Use the upper progress bar only when no BGM exists
 

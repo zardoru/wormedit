@@ -117,7 +117,7 @@ std::optional<std::string> dispatch_compose_audio_offset(compose_action_context_
     const auto applied = wormedit::apply_audio_offset_edit(context.history,
         context.action.compose_input_document_revision, context.state.chart,
         {context.action.compose_audio_offset_numerator, context.action.compose_audio_offset_denominator},
-        context.application_state.timing_locked);
+        context.application_state.audio_offset_edits_locked());
     if (!applied.applied)
         return applied.diagnostics.empty() ? "Audio offset unchanged." : applied.diagnostics.front().message;
     const auto rebound = wormedit::rebind_workspace(context.workspace, context.history);

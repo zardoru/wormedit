@@ -1547,13 +1547,13 @@ auto dispatch_compose_offset_fit_input(
         return "Offset fit cancelled; timing was unchanged.";
     }
     if (input.kind == WORM_UI_COMPOSE_INPUT_OFFSET_FIT_BEGIN) {
-        cache.beat_fit_drag.reset();
-        cache.beat_fit_asset.reset();
-        if (context.application_state.timing_locked || cache.offset_fit_drag ||
+        if (context.application_state.audio_offset_edits_locked() || cache.offset_fit_drag ||
             !cache.marker_timing_index || !context.workspace.transport.audio_asset ||
             input.object_id == 0) {
             return "Offset fitting requires an unlocked waveform and idle chart gesture.";
         }
+        cache.beat_fit_drag.reset();
+        cache.beat_fit_asset.reset();
         const auto status = begin_compose_beat_fit(input, context.history, context.workspace,
                                                    context.state, context.application_state, cache,
                                                    context.input_chart);
@@ -1576,7 +1576,7 @@ auto dispatch_compose_offset_fit_input(
     if (!cache.offset_fit_drag ||
         cache.offset_fit_drag->beat.document_revision != context.history.document.revision ||
         cache.offset_fit_drag->asset != context.workspace.transport.audio_asset ||
-        context.application_state.timing_locked) {
+        context.application_state.audio_offset_edits_locked()) {
         cache.offset_fit_drag.reset();
         action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_CANCEL;
         return "Offset fit expired after its chart or waveform changed.";

@@ -1247,3 +1247,81 @@ TEST_CASE("Paste cached anchor keeps collision diagnostics across an outside poi
     expect_compose_test(fixture.history.undo.empty());
 }
 #endif
+
+TEST_CASE("Offset padlock disables exact offset controls independently of BPM timing",
+          "[sys][offset-lock]") {
+    compose_test_fixture_t fixture;
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.audio_offset_editable);
+    const auto revision = fixture.history.document.revision;
+    const auto bpm = fixture.history.document.charts.front().bpms.front().beats_per_minute;
+    fixture.application.audio_offset_locked = true;
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.audio_offset_locked);
+    expect_compose_test(!fixture.flattened.view.compose.audio_offset_editable);
+    expect_compose_test(!fixture.flattened.view.compose.waveform_timing_locked);
+    expect_compose_test(fixture.history.document.revision == revision);
+    expect_compose_test(fixture.history.document.charts.front().bpms.front().beats_per_minute == bpm);
+    expect_compose_test(fixture.history.undo.empty());
+    fixture.application.audio_offset_locked = false;
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.audio_offset_editable);
+    expect_compose_test(fixture.history.undo.empty());
+}
+
+TEST_CASE("Locked offset fit rejects captured input without clearing a BPM preview",
+          "[sys][offset-lock]") {
+    compose_test_fixture_t fixture;
+    fixture.project();
+    fixture.application.audio_offset_locked = true;
+    fixture.cache.beat_fit_drag = beat_interval_drag_t{};
+    WormUiWorkspaceAction action{};
+    action.compose_input_chart_id = fixture.interaction->chart.value;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    action.compose_input_count = 1;
+    action.compose_inputs[0] = {.kind = WORM_UI_COMPOSE_INPUT_OFFSET_FIT_BEGIN, .object_id = 2};
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    const auto status = dispatch_compose_input_action(action, fixture.history,
+        *fixture.binding.workspace, *fixture.interaction, viewport, navigation,
+        fixture.application, fixture.cache, 0);
+    INFO(status);
+    expect_compose_test(status.find("unlocked waveform") != std::string::npos);
+    expect_compose_test(fixture.cache.beat_fit_drag.has_value());
+    expect_compose_test(!fixture.cache.offset_fit_drag.has_value());
+    expect_compose_test(action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
+    expect_compose_test(fixture.history.undo.empty());
+}
+
+TEST_CASE("Offset locking takes precedence over a captured release and never replays it",
+          "[sys][offset-lock]") {
+    compose_test_fixture_t fixture;
+    fixture.project();
+    auto begun = begin_audio_offset_drag(fixture.history.document, chart_id_t{1}, 48000);
+    expect_compose_test(begun.drag.has_value());
+    auto updated = update_audio_offset_drag(fixture.history.document, *begun.drag, 4800);
+    expect_compose_test(updated.drag.has_value());
+    auto drag = updated.drag;
+    std::optional<workspace_tab_t> tab = workspace_tab_t::compose;
+    fixture.cache.offset_fit_drag = compose_scene_cache_t::offset_fit_drag_t{};
+    fixture.cache.beat_fit_drag = beat_interval_drag_t{};
+    fixture.cache.proposed_offset_seconds = signed_rational_t{1, 10};
+    WormUiWorkspaceAction action{};
+    action.compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK;
+    action.compose_input_chart_id = 1;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_COMMIT;
+    (void)toggle_compose_audio_offset_lock(action, fixture.history, *fixture.binding.workspace,
+        fixture.application, fixture.cache, drag, tab);
+    expect_compose_test(fixture.application.audio_offset_locked);
+    expect_compose_test(!drag && !tab && !fixture.cache.offset_fit_drag);
+    expect_compose_test(!fixture.cache.proposed_offset_seconds);
+    expect_compose_test(fixture.cache.beat_fit_drag.has_value());
+    expect_compose_test(fixture.history.undo.empty());
+    (void)toggle_compose_audio_offset_lock(action, fixture.history, *fixture.binding.workspace,
+        fixture.application, fixture.cache, drag, tab);
+    expect_compose_test(!fixture.application.audio_offset_locked);
+    expect_compose_test(!drag && !tab && !fixture.cache.offset_fit_drag);
+    expect_compose_test(fixture.history.undo.empty());
+}

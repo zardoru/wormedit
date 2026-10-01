@@ -74,6 +74,13 @@ auto project_application_frame(application_frame_projection_context_t context)
                                           context.metadata_asset_runtime);
     }
 
+    flattened.view.metadata.audio_offset_locked =
+        context.application_command_state.audio_offset_locked;
+    if (context.application_command_state.audio_offset_locked) {
+        flattened.view.metadata.audio_offset_editable = false;
+        flattened.view.audio_slices.timing_locked = true;
+    }
+
     int compose_window_width = 0;
     int compose_window_height = 0;
     worm_window_get_size(&context.window, &compose_window_width, &compose_window_height);

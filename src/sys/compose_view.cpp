@@ -880,6 +880,7 @@ bool initialize_compose_view_state(
     view.waveform_overview_total_frames = 0;
     view.waveform_overview_sample_rate = 0;
     view.audio_offset_editable = false;
+    view.audio_offset_locked = application_state.audio_offset_locked;
     view.waveform_audio_offset_numerator = 0;
     view.waveform_audio_offset_denominator = 1;
     view.waveform_offset_drag_active = false;
@@ -2453,7 +2454,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
     const auto measure_data = prepare_compose_chart_view(flattened, chart, history, cache,
                                                          application_state);
     if (!measure_data) return;
-    view.audio_offset_editable = !application_state.timing_locked &&
+    view.audio_offset_editable = !application_state.audio_offset_edits_locked() &&
         (!retained_state || !editor_interaction_has_pending_gesture(*retained_state));
     const auto& measures = *measure_data;
     const compose_interaction_population_context_t interaction_context{
@@ -2465,6 +2466,26 @@ void populate_compose_view(flattened_workspace_t& flattened,
         flattened, history, chart, cache, retained_state, application_state, view,
         interaction_view, measures, downscroll, timing_stage};
     populate_compose_final_projection(final_context);
+}
+
+auto toggle_compose_audio_offset_lock(const WormUiWorkspaceAction& action,
+    const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
+    application_command_state_t& application, compose_scene_cache_t& cache,
+    std::optional<wormedit::audio_offset_drag_t>& drag,
+    std::optional<wormedit::workspace_tab_t>& drag_tab) -> std::string {
+    if (workspace.active_tab != wormedit::workspace_tab_t::compose || !workspace.selected_chart ||
+        workspace.selected_chart->value != action.compose_input_chart_id ||
+        history.document.revision != action.compose_input_document_revision)
+        return "Audio offset lock ignored because the chart or document revision changed.";
+    application.audio_offset_locked = !application.audio_offset_locked;
+    if (application.audio_offset_locked) {
+        drag.reset();
+        drag_tab.reset();
+        cache.offset_fit_drag.reset();
+        cache.proposed_offset_timing_index.reset();
+        cache.proposed_offset_seconds.reset();
+    }
+    return application.audio_offset_locked ? "Audio offset locked." : "Audio offset unlocked.";
 }
 
 } // namespace wormedit::sys

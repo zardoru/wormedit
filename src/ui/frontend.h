@@ -257,6 +257,7 @@ typedef struct WormUiMetadataView {
     bool song_fields_editable;
     bool chart_fields_editable;
     bool audio_offset_editable;
+    bool audio_offset_locked;
     bool search_tags_editable;
     uint64_t document_revision;
     bool has_chart;
@@ -832,6 +833,7 @@ typedef struct WormUiComposeView {
     uint64_t source_playhead_chart_id;
     uint64_t source_playhead_document_revision;
     bool audio_offset_editable;
+    bool audio_offset_locked;
     int64_t waveform_audio_offset_numerator;
     uint64_t waveform_audio_offset_denominator;
     bool waveform_offset_drag_active;
@@ -1536,6 +1538,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE,
     WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET,
+    WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK,
     WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_ADD_BEAT_BOOKMARK,
     WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK,

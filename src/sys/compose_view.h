@@ -5,6 +5,7 @@
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/bpm_editor.h>
+#include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/chart_clipboard.h>
 #include <wormedit/core/player_preview.h>
@@ -181,6 +182,10 @@ struct application_command_state_t {
     };
     std::optional<bmson_marker_move_preview_t> bmson_marker_move_preview;
     bool timing_locked{};
+    bool audio_offset_locked{};
+    [[nodiscard]] bool audio_offset_edits_locked() const noexcept {
+        return timing_locked || audio_offset_locked;
+    }
     bool note_paint_mode_active{};
     bool semantic_layer_paint_mode_active{};
     bool semantic_layer_solo_active{};
@@ -280,6 +285,12 @@ auto update_compose_paste(application_command_state_t& application_state,
 auto commit_compose_paste(application_command_state_t& application_state,
     wormedit::document_history_t& history, wormedit::editor_interaction_state_t& state,
     std::string& status) -> bool;
+
+auto toggle_compose_audio_offset_lock(const WormUiWorkspaceAction& action,
+    const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
+    application_command_state_t& application, compose_scene_cache_t& cache,
+    std::optional<wormedit::audio_offset_drag_t>& drag,
+    std::optional<wormedit::workspace_tab_t>& drag_tab) -> std::string;
 
 void populate_compose_view(flattened_workspace_t& flattened,
                            wormedit::document_history_t& history,

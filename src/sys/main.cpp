@@ -2890,9 +2890,13 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
             // by the same input frame, preventing duplicate mutations.
         } else if (dispatch_clipboard_menu(context, action)) {
             // Clipboard menu actions use the same typed registry as shortcuts.
+        } else if (action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK) {
+            status = toggle_compose_audio_offset_lock(action, history, workspace,
+                application_command_state, context.compose_scene_cache_ref,
+                audio_offset_drag, audio_offset_drag_tab);
         } else if (action.audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
             status = dispatch_audio_offset_drag_action(
-                action, history, workspace, application_command_state.timing_locked,
+                action, history, workspace, application_command_state.audio_offset_edits_locked(),
                 sample_rate, audio_offset_drag, audio_offset_drag_tab);
         } else if (const auto common_status = wormedit::sys::dispatch_transport_player_action(
                        action, application_command_state, stepmania_export_policy)) {
@@ -2918,7 +2922,7 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
                        dispatch_workspace_selection_action(action, history, workspace)) {
             status = *selection_status;
         } else if (const auto metadata_status = wormedit::sys::dispatch_metadata_action(
-                       action, history, workspace, application_command_state.timing_locked,
+                       action, history, workspace, application_command_state.audio_offset_edits_locked(),
                        metadata_drop, metadata_asset_runtime, asset_base,
                        resource_copy_scheduler, resource_copy_runtime.busy(),
                        export_runtime.busy())) {
@@ -3105,7 +3109,7 @@ void prepare_bound_workspace_frame(
         (!audio_offset_drag_tab || workspace.active_tab != *audio_offset_drag_tab ||
          !workspace.selected_chart || *workspace.selected_chart != audio_offset_drag->chart ||
          history.document.revision != audio_offset_drag->document_revision ||
-         application_command_state.timing_locked)) {
+         application_command_state.audio_offset_edits_locked())) {
         audio_offset_drag.reset();
         audio_offset_drag_tab.reset();
     }
@@ -3126,7 +3130,7 @@ void prepare_bound_workspace_frame(
          history.document.revision !=
              compose_scene_cache.offset_fit_drag->beat.document_revision ||
          workspace.transport.audio_asset != compose_scene_cache.offset_fit_drag->asset ||
-         application_command_state.timing_locked)) {
+         application_command_state.audio_offset_edits_locked())) {
         compose_scene_cache.offset_fit_drag.reset();
     }
 }

@@ -1049,7 +1049,7 @@ static bool compose_offset_fit_start_allowed(const ComposeBeatFitInput& input) {
            (input.pointer_modifiers & other_modifiers) == 0 &&
            input.pointer_started_x >= 22.0 && input.pointer_started_x <= 42.0 &&
            view.waveform_row_count != 0 && view.waveform_overview_sample_rate != 0 &&
-           !view.waveform_timing_locked && !view.waveform_offset_drag_active &&
+           !view.waveform_timing_locked && !view.audio_offset_locked && !view.waveform_offset_drag_active &&
            !state.offset_fit_drag_active && !state.waveform_beat_zero_drag_active;
 }
 
@@ -1120,7 +1120,7 @@ static void cancel_compose_offset_fit_drag(WormUiWorkspaceAction* action) {
 static void update_active_offset_fit_drag(const ComposeBeatFitInput& input) {
     const auto& view = *input.view;
     const bool matches = input.window_focused && view.scene_available &&
-                         view.offset_fit_drag_active && !view.waveform_timing_locked &&
+                         view.offset_fit_drag_active && !view.waveform_timing_locked && !view.audio_offset_locked &&
                          view.chart_id == state.beat_fit_chart_id &&
                          view.document_revision == state.beat_fit_revision &&
                          view.selected_audio_asset_id == state.beat_fit_asset_id &&
@@ -1209,7 +1209,7 @@ static void start_waveform_beat_zero_drag(const ComposeOverviewInput& input) {
     const auto& left_button = input.context->input.mouse.buttons[NK_BUTTON_LEFT];
     if (state.action_overflowed || !input.available || !input.pressed ||
         !input.window_focused || !view.scene_available ||
-        !view.waveform_beat_zero_visible || view.waveform_timing_locked ||
+        !view.waveform_beat_zero_visible || view.waveform_timing_locked || view.audio_offset_locked ||
         view.waveform_offset_drag_active ||
         input.action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE ||
         std::abs(static_cast<double>(left_button.clicked_pos.x) -
@@ -1240,7 +1240,7 @@ static void update_waveform_beat_zero_drag(const ComposeOverviewInput& input) {
     }
     const bool matches =
         input.available && input.window_focused && view.scene_available &&
-        !view.waveform_timing_locked && view.chart_id == state.waveform_beat_zero_drag_chart_id &&
+        !view.waveform_timing_locked && !view.audio_offset_locked && view.chart_id == state.waveform_beat_zero_drag_chart_id &&
         view.document_revision == state.waveform_beat_zero_drag_revision &&
         view.selected_audio_asset_id == state.waveform_beat_zero_drag_asset_id &&
         view.waveform_overview_total_frames == state.waveform_beat_zero_drag_total_frames &&

@@ -117,7 +117,7 @@ static void render_offset_value(nk_context* context, const WormUiComposeView& vi
             ? view.waveform_proposed_audio_offset_numerator : view.waveform_audio_offset_numerator) /
         static_cast<double>(view.waveform_offset_drag_active
             ? view.waveform_proposed_audio_offset_denominator : view.waveform_audio_offset_denominator),
-        view.waveform_timing_locked ? " · locked" : view.waveform_offset_drag_active ? " · preview" : "");
+        (view.waveform_timing_locked || view.audio_offset_locked) ? " · locked" : view.waveform_offset_drag_active ? " · preview" : "");
 }
 
 static void render_inline_offset(const ComposeToolbarContext& toolbar) {
@@ -150,7 +150,7 @@ static void render_inline_offset(const ComposeToolbarContext& toolbar) {
 static void render_compose_audio_offset(const ComposeToolbarContext& toolbar, bool show_offset) {
     auto* context = toolbar.context;
     const auto& view = *toolbar.view;
-    const bool disabled = view.waveform_timing_locked || view.waveform_offset_drag_active ||
+    const bool disabled = view.waveform_timing_locked || view.audio_offset_locked || view.waveform_offset_drag_active ||
                           !view.waveform_overview_row_count || state.inline_offset_open;
     const auto ten_ms = static_cast<std::int64_t>(std::max(1U, view.waveform_overview_sample_rate / 100U));
     if (disabled) nk_widget_disable_begin(context);
@@ -188,10 +188,29 @@ static void render_compose_snap_controls(nk_context* context) {
         static_cast<int>(std::size(steps) - 1)));
 }
 
+static void render_offset_padlock(const ComposeToolbarContext& toolbar) {
+    auto* context = toolbar.context;
+    const auto bounds = nk_widget_bounds(context);
+    const bool locked = toolbar.view->audio_offset_locked;
+    if (nk_button_label(context, "")) {
+        toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK;
+        toolbar.action->compose_input_chart_id = toolbar.view->chart_id;
+        toolbar.action->compose_input_document_revision = toolbar.view->document_revision;
+    }
+    auto* canvas = nk_window_get_canvas(context);
+    const auto color = context->style.text.color;
+    const float center = bounds.x + bounds.w * 0.5f;
+    nk_stroke_rect(canvas, nk_rect(center - 5.0f + (locked ? 0.0f : 4.0f), bounds.y + 5.0f,
+                                   10.0f, 11.0f), 4.0f, 2.0f, color);
+    nk_fill_rect(canvas, nk_rect(center - 7.0f, bounds.y + 13.0f, 14.0f, 10.0f), 2.0f, color);
+    if (nk_input_is_mouse_hovering_rect(&context->input, bounds))
+        nk_tooltip(context, locked ? "Unlock audio offset" : "Lock audio offset");
+}
+
 static void render_compose_offset_toolbar(const ComposeToolbarContext& toolbar) {
     const auto* view = toolbar.view;
     const bool show_offset = nk_window_get_bounds(toolbar.context).w >= 900.0f;
-    nk_label(toolbar.context, "", NK_TEXT_LEFT);
+    render_offset_padlock(toolbar);
     render_compose_audio_offset(toolbar, show_offset);
     nk_label(toolbar.context, "", NK_TEXT_LEFT);
     render_compose_snap_controls(toolbar.context);
@@ -230,8 +249,8 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     wormedit::ui::chrome::IconButton::layout_columns(context, 3);
     nk_layout_row_template_push_static(context, 12);
     wormedit::ui::chrome::IconButton::layout_columns(context, 2);
-    // Audio offset nudges, optional readout, then the BPM snap magnet and step combo.
-    nk_layout_row_template_push_static(context, 12);
+    // Offset padlock, nudges and optional readout, then the BPM snap controls.
+    wormedit::ui::chrome::IconButton::layout_columns(context);
     wormedit::ui::chrome::IconButton::layout_columns(context, 2);
     if (nk_window_get_bounds(context).w >= 900.0f)
         nk_layout_row_template_push_static(context, 150);

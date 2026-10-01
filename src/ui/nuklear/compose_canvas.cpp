@@ -1318,7 +1318,7 @@ static bool draw_compose_note_glyph(const ComposePaintContext& paint,
 
 static void draw_compose_note_sound_label(const ComposePaintContext& paint,
                                           const WormUiComposeNoteView& note,
-                                          struct nk_rect tile) {
+                                          struct nk_rect tile, struct nk_color fill) {
     if (note.glyph > 1 || note.tail || !note.sound_label || !note.sound_label[0]) return;
     const auto* font = paint.context->style.font;
     const auto length = static_cast<int>(strlen(note.sound_label));
@@ -1328,8 +1328,11 @@ static void draw_compose_note_sound_label(const ComposePaintContext& paint,
     const auto text_bounds = nk_rect(tile.x + (tile.w - text_width) * 0.5f,
                                      tile.y + (tile.h - font->height) * 0.5f,
                                      text_width, font->height);
+    const auto luminance = (fill.r * 299 + fill.g * 587 + fill.b * 114) / 1000;
+    const auto light_fill = luminance >= 150;
     field_text(paint, text_bounds, note.sound_label, length, font,
-                 nk_rgba(13, 21, 31, 220), nk_rgb(248, 251, 255), 2);
+                 light_fill ? nk_rgba(0, 0, 0, 0) : nk_rgba(13, 21, 31, 220),
+                 light_fill ? nk_rgb(16, 24, 36) : nk_rgb(248, 251, 255), 2);
 }
 
 static void draw_compose_note(const ComposePaintContext& paint,
@@ -1350,7 +1353,7 @@ static void draw_compose_note(const ComposePaintContext& paint,
     field_line(paint, tile.x + 1.0f, tile.y + 1.0f,
                    tile.x + tile.w - 1.0f, tile.y + 1.0f, 1.0f,
                    nk_rgba(255, 255, 255, 105), 2);
-    draw_compose_note_sound_label(paint, note, tile);
+    draw_compose_note_sound_label(paint, note, tile, style.fill);
 }
 
 static void draw_compose_notes(const ComposePaintContext& paint) {

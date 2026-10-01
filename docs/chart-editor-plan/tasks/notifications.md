@@ -27,7 +27,7 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 ## T-218 Add the headless notification center
 
-- **Status:** ready
+- **Status:** done (2026-09-30; integrated build and 824 core/documentation tests passed)
 - **Outcome:** `notification_center_t` implements the design's entry type, severity rules, dedupe, bounded eviction, thread-safe inbox, read/dismiss, and a bounded snapshot for views.
 - **Read first:** this file's Design section, `include/wormedit/core/document.h` (`diagnostic_severity_t`, `diagnostic_list_t`), `include/wormedit/core/async_job.h`.
 - **Files owned:** new `include/wormedit/core/notifications.h`, new `src/core/notifications.cpp`, new `tests/core/notifications_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -39,10 +39,11 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 - **Reject/failure behavior:** over-long messages are truncated at a UTF-8 boundary with "…".
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`.
 - **Out of scope:** UI.
+- **Verification evidence (2026-09-30):** full application build passed; `ctest --test-dir build --output-on-failure -R '^(core|documentation)\.'` reported `100% tests passed out of 824` (14.74 s). Configured clang-tidy on implementation/tests passed without diagnostics. Review added cross-drain sliding-window dedupe regressions and allocation-free `borrowed_snapshot(max)` for frame views; owning `snapshot(max)` remains available. After four seconds, current line selects the newest hint or becomes empty when none exists, following the Design section.
 
 ## T-219 Show notifications in the status bar and as toasts
 
-- **Status:** blocked-on T-218
+- **Status:** ready
 - **Outcome:** the application owns one `notification_center_t`; the status bar shows the current line and an unread badge; warnings/errors show as toasts with a dismiss button; Escape dismisses the newest toast when no edit gesture or text field has focus.
 - **Read first:** `src/ui/nuklear/frontend.cpp` (`render_status_bar`), `src/ui/frontend.h` (`WormUiWorkspaceView::status_text`), `src/sys/workspace_projection.cpp` (`flatten_workspace`).
 - **Files owned:** `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, new `src/ui/nuklear/notification_toasts.cpp/.h`, `src/sys/workspace_projection.cpp/.h`, `src/sys/main.cpp` (ownership, drain, and view only), `CMakeLists.txt`, `tests/ui/nuklear_compose_state_tests.cpp` or a new `tests/ui/nuklear_notification_state_tests.cpp`.

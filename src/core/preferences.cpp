@@ -84,11 +84,40 @@ void read_general(preference_reader_t& reader, const json_t& root) {
     }
 }
 
+constexpr std::array<const char*, editor_mode_family_count> scroll_keys{
+    "beatmania", "popn", "dance", "pump", "keyboard", "other"};
+void read_editor(preference_reader_t& reader, const json_t& root) {
+    const auto& section = reader.section(root, "editor");
+    auto& value = reader.result.preferences.editor;
+    reader.check_keys(section, {"default_snap", "scroll_directions", "playhead_anchor_percent",
+        "note_kind_palette_visible", "lane_key_legend_visible", "area_band_alpha"});
+    reader.integer(section, "default_snap", value.default_snap, 1, 1920);
+    reader.integer(section, "playhead_anchor_percent", value.playhead_anchor_percent, 0, 100);
+    reader.integer(section, "area_band_alpha", value.area_band_alpha, 0, 255);
+    reader.boolean(section, "note_kind_palette_visible", value.note_kind_palette_visible);
+    reader.boolean(section, "lane_key_legend_visible", value.lane_key_legend_visible);
+    const auto& scroll = reader.section(section, "scroll_directions");
+    reader.check_keys(scroll, {"beatmania", "popn", "dance", "pump", "keyboard", "other"});
+    for (std::size_t index = 0; index < scroll_keys.size(); ++index)
+        reader.integer(scroll, scroll_keys[index], value.scroll_directions[index], 0, 2);
+}
+auto valid_editor(const editor_preferences_t& value) -> bool {
+    return value.default_snap >= 1 && value.default_snap <= 1920 &&
+        value.playhead_anchor_percent <= 100 && value.area_band_alpha <= 255 &&
+        std::ranges::all_of(value.scroll_directions, [](auto direction) { return direction <= 2; });
+}
+auto editor_json(const editor_preferences_t& value) -> json_t {
+    auto scroll = json_t::object();
+    for (std::size_t index = 0; index < scroll_keys.size(); ++index)
+        scroll[scroll_keys[index]] = value.scroll_directions[index];
+    return {{"default_snap", value.default_snap}, {"scroll_directions", std::move(scroll)},
+        {"playhead_anchor_percent", value.playhead_anchor_percent},
+        {"note_kind_palette_visible", value.note_kind_palette_visible},
+        {"lane_key_legend_visible", value.lane_key_legend_visible}, {"area_band_alpha", value.area_band_alpha}};
+}
 void read_editor_audio(preference_reader_t& reader, const json_t& root) {
-    const auto& editor = reader.section(root, "editor");
+    read_editor(reader, root);
     auto& values = reader.result.preferences;
-    reader.check_keys(editor, {"default_snap"});
-    reader.integer(editor, "default_snap", values.editor.default_snap, 1, 1920);
     const auto& audio = reader.section(root, "audio");
     reader.check_keys(audio, {"playback_rate", "keep_pitch"});
     reader.boolean(audio, "keep_pitch", values.audio.keep_pitch);
@@ -155,7 +184,7 @@ auto valid_preferences(const program_preferences_t& value) -> bool {
     return value.general.autosave_minutes >= 1 && value.general.autosave_minutes <= 30 &&
         value.general.recent_files_count >= 1 && value.general.recent_files_count <= 100 &&
         valid_string(value.general.shortcut_profile_path) && !value.general.shortcut_profile_path.empty() &&
-        value.editor.default_snap >= 1 && value.editor.default_snap <= 1920 &&
+        valid_editor(value.editor) &&
         supported_rate(value.audio.playback_rate) && valid_string(value.display.theme) &&
         (value.display.ui_scale_percent == 0 ||
             (value.display.ui_scale_percent >= 100 && value.display.ui_scale_percent <= 200)) &&
@@ -172,7 +201,7 @@ auto preferences_json(const program_preferences_t& value) -> json_t {
             {"recent_files_count", value.general.recent_files_count},
             {"confirm_unsaved_close", value.general.confirm_unsaved_close},
             {"shortcut_profile_path", value.general.shortcut_profile_path}}},
-        {"editor", {{"default_snap", value.editor.default_snap}}},
+        {"editor", editor_json(value.editor)},
         {"audio", {{"playback_rate", {{"numerator", value.audio.playback_rate.numerator},
             {"denominator", value.audio.playback_rate.denominator}}}, {"keep_pitch", value.audio.keep_pitch}}},
         {"display", {{"theme", value.display.theme}, {"ui_scale_percent", value.display.ui_scale_percent},

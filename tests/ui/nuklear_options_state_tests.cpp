@@ -222,3 +222,31 @@ TEST_CASE("Options bounded text and player actions reject malformed payloads wit
     expect_options(r.draft.players.players[0].name == "Test player");
     expect_options(program.preferences.players == before);
 }
+
+TEST_CASE("Editor Options typed edits retain page isolation and reject invalid family bounds", "[options]") {
+    program_preferences_runtime_t program;
+    options_runtime_t runtime;
+    open_options(runtime, program.preferences);
+    select(runtime, program, WORM_UI_OPTIONS_EDITOR);
+    auto edit = action(runtime, WORM_UI_OPTIONS_EDIT_FIELD, WORM_UI_OPTIONS_EDITOR);
+    edit.field = WORM_UI_OPTIONS_FIELD_SCROLL_DIRECTION;
+    edit.family_index = 2;
+    edit.integer = 2;
+    expect_options(!apply_options_action(runtime, program, edit));
+    expect_options(runtime.draft.editor.scroll_directions[2] == 2);
+    expect_options(program.preferences.editor.scroll_directions[2] == 0);
+    edit.revision = runtime.revision;
+    edit.family_index = 6;
+    const auto before = runtime.draft;
+    expect_options(!apply_options_action(runtime, program, edit));
+    expect_options(runtime.draft == before);
+    edit.family_index = 2;
+    edit.integer = 3;
+    expect_options(!apply_options_action(runtime, program, edit));
+    expect_options(!options_view(runtime).can_apply);
+    expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
+    (void)apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS));
+    expect_options(runtime.draft.editor == editor_preferences_t{});
+    expect_options(options_view(runtime).can_apply);
+    expect_options(program.preferences.general.autosave_minutes == 5);
+}

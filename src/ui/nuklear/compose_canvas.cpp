@@ -375,7 +375,7 @@ static void draw_compose_play_lanes(const ComposePaintContext& paint) {
         field_rect(paint, rect, 0.0f, compose_lane_color(lane.role, lane.display_order));
         field_line(paint, rect.x, rect.y, rect.x, rect.y + rect.h, 1.0f,
                        nk_rgb(62, 70, 86));
-        if (rect.w >= 28.0f && rect.h >= 18.0f) {
+        if (paint.view->lane_key_legend_visible && rect.w >= 28.0f && rect.h >= 18.0f) {
             char label[16]{};
             const auto label_length = snprintf(label, sizeof(label), "%u", lane.display_order + 1U);
             if (label_length > 0) {
@@ -1098,7 +1098,7 @@ static void draw_compose_area_band(const ComposePaintContext& paint) {
     const auto& view = *paint.view;
     if (!view.area_range_available || view.area_rows_per_measure == 0) return;
     const auto rect = compose_area_band_rect(view, paint.viewport);
-    field_rect(paint, rect, 0, nk_rgba(75, 149, 215, 48), 5);
+    field_rect(paint, rect, 0, nk_rgba(75,149,215,static_cast<nk_byte>(std::min(255U,paint.view->area_band_alpha))), 5);
     for (const auto y : {rect.y, rect.y + rect.h}) {
         const auto edge = nk_rect(rect.x, y - 4, rect.w, 8);
         const auto hover = nk_input_is_mouse_hovering_rect(&paint.context->input, edge);

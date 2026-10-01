@@ -580,6 +580,9 @@ struct editor_interaction_state_t {
     bool active_snap_was_fallback{};
     double pixels_per_standard_measure{default_pixels_per_standard_measure};
     double viewport_scroll_pixels{};
+    // Non-authoring bound retained after a configured playback anchor.
+    double viewport_minimum_margin_fraction{editor_cursor_edge_margin_fraction};
+    double viewport_end_margin_fraction{editor_cursor_edge_margin_fraction};
     double viewport_height_pixels{1.0};
     std::optional<double> fixed_cursor_screen_y_pixels;
     editor_field_scroll_direction_t scroll_direction{editor_field_scroll_direction_t::up};
@@ -675,7 +678,8 @@ struct editor_measure_geometry_t {
 // Update the non-authoring playback cursor and viewport using retained geometry.
 [[nodiscard]] auto follow_editor_playhead(document_history_t& history,
     editor_interaction_state_t& state, editor_measure_geometry_t geometry,
-    local_position_t position, double target_scroll) -> editor_interaction_result_t;
+    local_position_t position, double target_scroll,
+    double following_anchor_fraction = editor_cursor_edge_margin_fraction) -> editor_interaction_result_t;
 
 // Creates transient, frontend-independent editing state from a validated
 // history snapshot. Snap denominators are ordered by editor preference.

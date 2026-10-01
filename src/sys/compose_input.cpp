@@ -981,7 +981,8 @@ void update_compose_pointer_hover(const WormUiWorkspaceAction& ui_action, bool g
                                   const wormedit::chart_document_t* chart,
                                   const wormedit::editor_interaction_view_model_t* interaction_view,
                                   std::uint64_t revision, double field_left_pixels,
-                                  double field_width_pixels, compose_scene_cache_t& scene_cache) {
+                                  double field_width_pixels, compose_scene_cache_t& scene_cache,
+                                  const wormedit::editor_preferences_t& preferences) {
     using namespace wormedit;
     if (!ui_action.compose_has_pointer_hover || gesture_active || !chart || !interaction_view) {
         scene_cache.hover.reset();
@@ -998,7 +999,7 @@ void update_compose_pointer_hover(const WormUiWorkspaceAction& ui_action, bool g
                 {.x_pixels = ui_action.compose_pointer_hover_x_pixels,
                  .y_pixels = compose_source_y(ui_action.compose_pointer_hover_y_pixels,
                                               interaction_view->viewport_height_pixels,
-                                              compose_field_downscroll(*chart)),
+                                              compose_field_downscroll(*chart, preferences)),
                  .field_left_pixels = field_left_pixels,
                  .field_width_pixels = field_width_pixels,
                  .hit_radius_pixels = 8.0,
@@ -1051,7 +1052,7 @@ struct compose_input_context_t {
     }
     auto input_source_y(double y) const -> double {
         return compose_source_y(y, state.viewport_height_pixels,
-                                input_chart && compose_field_downscroll(*input_chart));
+                                input_chart && compose_field_downscroll(*input_chart, application_state.editor_preferences));
     }
     auto hit_target_at(const wormedit::chart_document_t& chart,
                        const wormedit::editor_interaction_view_model_t& view, double x_pixels,
@@ -1067,7 +1068,7 @@ struct compose_input_context_t {
             chart, *scene_cache.hit_test_index, view,
             {.x_pixels = x_pixels,
              .y_pixels = compose_source_y(y_pixels, view.viewport_height_pixels,
-                                          compose_field_downscroll(chart)),
+                                          compose_field_downscroll(chart, application_state.editor_preferences)),
              .field_left_pixels = field_left_pixels,
              .field_width_pixels = field_width_pixels});
     }
@@ -1077,7 +1078,7 @@ struct compose_input_context_t {
         return wormedit::editor_position_at_y_pixels(
             chart, view,
             compose_source_y(y_pixels, view.viewport_height_pixels,
-                             compose_field_downscroll(chart)));
+                             compose_field_downscroll(chart, application_state.editor_preferences)));
     }
     auto virtual_bms_row_at(const wormedit::chart_document_t& chart,
                             const wormedit::editor_interaction_view_model_t& view,
@@ -1091,7 +1092,7 @@ struct compose_input_context_t {
         if (!canvas)
             return std::nullopt;
         const auto source_y = compose_source_y(y_pixels, view.viewport_height_pixels,
-                                               compose_field_downscroll(chart));
+                                               compose_field_downscroll(chart, application_state.editor_preferences));
         const auto row = (static_cast<long double>(view.viewport_scroll_pixels) + source_y) *
                          chart.divisions_per_standard_measure / view.pixels_per_standard_measure;
         if (!std::isfinite(row) || row < 0.0L ||
@@ -2117,7 +2118,7 @@ auto select_compose_bms_measure(const WormUiComposeInputAction& input,
         return "The BMS measure canvas is unavailable.";
     const auto exact_row = (static_cast<long double>(view->viewport_scroll_pixels) +
                             compose_source_y(input.y_pixels, view->viewport_height_pixels,
-                                             compose_field_downscroll(*chart))) *
+                                             compose_field_downscroll(*chart, context.application_state.editor_preferences))) *
                            chart->divisions_per_standard_measure /
                            view->pixels_per_standard_measure;
     if (!std::isfinite(exact_row) || exact_row < 0.0L ||
@@ -2561,7 +2562,7 @@ void apply_compose_viewport_scroll(const wormedit::viewport_scroll_action_t& scr
         status = "The selected difficulty is no longer available.";
         return;
     }
-    const auto downscroll = compose_field_downscroll(*context.input_chart);
+    const auto downscroll = compose_field_downscroll(*context.input_chart, context.application_state.editor_preferences);
     const auto result = dispatch_editor_action(
         context.history, context.state,
         scroll_editor_view_action_t{
@@ -2719,7 +2720,8 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
     update_compose_pointer_hover(
         ui_action, gesture_active, chart == history.document.charts.end() ? nullptr : &*chart,
         scene_cache.interaction_view ? &*scene_cache.interaction_view : nullptr,
-        history.document.revision, field_left_pixels, field_width_pixels, scene_cache);
+        history.document.revision, field_left_pixels, field_width_pixels, scene_cache,
+        application_state.editor_preferences);
     auto status = dispatch_compose_input_batch(input_context);
     if (ui_action.compose_note_label_focus_consumed) {
         scene_cache.focus_note_label_editor = false;

@@ -668,12 +668,41 @@ void worm_ui_frontend_end_input(void) {
     }
 }
 
+static void render_close_confirmation(const WormUiCloseConfirmationView& view,
+    WormUiWorkspaceAction& action, int width, int height) {
+    if (!view.visible) return;
+    if (nk_begin(g_context, "Unsaved changes", nk_rect(width / 2.0f - 200, height / 2.0f - 95, 400, 190),
+        NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_NO_SCROLLBAR)) {
+        nk_layout_row_dynamic(g_context, 45, 1);
+        nk_label_wrap(g_context, view.application
+            ? "Save your changes before quitting WormEdit?" : "Save your changes before closing this project?");
+        nk_layout_row_dynamic(g_context, 30, 3);
+        WormUiCloseDecision decision = WORM_UI_CLOSE_NONE;
+        if (nk_button_label(g_context, "Cancel")) decision = WORM_UI_CLOSE_CANCEL;
+        if (nk_button_label(g_context, "Discard changes")) decision = WORM_UI_CLOSE_DISCARD;
+        if (nk_button_label(g_context, "Save")) {
+            decision = WORM_UI_CLOSE_SAVE;
+            if (view.has_native_path)
+                action.kind = WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT;
+            else start_project_file_dialog(WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
+        }
+        if (decision != WORM_UI_CLOSE_NONE) {
+            action.close_decision = decision;
+            action.close_project_id = view.project_id;
+            action.close_revision = view.revision;
+        }
+        nk_layout_row_dynamic(g_context, 40, 1);
+        nk_label_wrap(g_context, view.status_text ? view.status_text : "");
+    }
+    nk_end(g_context);
+}
+
 static void render_workspace_error(WormUiWorkspaceAction* action, int width, int height,
-                                   const char* diagnostic) {
+                                   const char* diagnostic, bool input_blocked = false) {
     worm_ui_nuklear_compose_discard_frame_input();
     worm_ui_nuklear_reconcile_timing_gestures(nullptr, false, false);
     if (nk_begin(g_context, "wormedit-workspace", nk_rect(0, 0, (float)width, (float)height),
-                 NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND)) {
+                 NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND | (input_blocked ? NK_WINDOW_NO_INPUT : 0))) {
         nk_layout_row_dynamic(g_context, 30, 1);
         nk_label(g_context, "The editor could not display this workspace frame.", NK_TEXT_LEFT);
         nk_layout_row_dynamic(g_context, 72, 1);
@@ -694,10 +723,12 @@ static void render_workspace_error(WormUiWorkspaceAction* action, int width, int
 }
 
 WormUiWorkspaceAction worm_ui_frontend_workspace_error(
-    const char* diagnostic, const WormUiNotificationView* notifications) {
+    const char* diagnostic, const WormUiNotificationView* notifications,
+    const WormUiCloseConfirmationView* close) {
     worm_ui_nuklear_begin_image_quad_frame();
     WormUiWorkspaceAction action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_NONE;
+    consume_project_file_dialog(action);
     action.tab = WORM_UI_WORKSPACE_TAB_SETUP;
     action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_NONE;
     action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
@@ -710,10 +741,12 @@ WormUiWorkspaceAction worm_ui_frontend_workspace_error(
         return action;
     }
     g_notification_view = notifications ? *notifications : WormUiNotificationView{};
-    g_notification_modal = false;
-    g_notification_project_modal = false;
-    render_workspace_error(&action, width, height, diagnostic);
-    render_notification_frame(g_notification_view, action, width, height, false);
+    const bool modal = close && close->visible;
+    g_notification_modal = modal;
+    g_notification_project_modal = modal;
+    render_workspace_error(&action, width, height, diagnostic, modal);
+    if (close) render_close_confirmation(*close, action, width, height);
+    render_notification_frame(g_notification_view, action, width, height, modal);
     return action;
 }
 
@@ -1174,6 +1207,7 @@ static auto render_recovery_above_content(const WormUiWorkspaceView& view,
 }
 
 static bool options_owns_content_input(const WormUiWorkspaceView& view) {
+    if (view.close_confirmation.visible) return true;
     const auto& compose = worm_ui_nuklear_compose_state();
     const bool text_active = nuklear_text_entry_active() || g_ime_composition_active ||
                              compose.inline_timing_open || compose.go_to_measure_open;
@@ -1340,7 +1374,7 @@ static void confirm_new_project_wizard(WormUiWorkspaceAction& action) {
 }
 
 static bool project_modal_active(const WormUiWorkspaceView& view) {
-    return g_new_project_wizard.open ||
+    return view.close_confirmation.visible || g_new_project_wizard.open ||
            (view.pending_bms_encoding_path && view.pending_bms_encoding_path[0]);
 }
 
@@ -1569,6 +1603,7 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
 }
 
 static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
+    render_close_confirmation(frame.view.close_confirmation, frame.action, frame.width, frame.height);
     if (!project_modal_active(frame.view))
         worm_ui_nuklear_render_options_window(g_context, &frame.view.options, &frame.action.options);
     if (project_modal_active(frame.view)) return;
@@ -1637,7 +1672,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     }
 
     if (validation_error) {
-        render_workspace_error(&action, width, height, validation_error);
+        render_workspace_error(&action, width, height, validation_error, view->close_confirmation.visible);
+        render_close_confirmation(view->close_confirmation, action, width, height);
         render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
         return action;
     }

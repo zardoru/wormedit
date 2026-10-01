@@ -674,6 +674,8 @@ typedef struct WormUiComposeView {
     bool input_occluded;
     uint32_t armed_note_kind;
     uint32_t allowed_note_kind_mask;
+    bool note_kind_palette_visible, lane_key_legend_visible;
+    uint32_t area_band_alpha;
     bool visible;
     bool scene_available;
     bool downscroll;
@@ -1299,7 +1301,10 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_PLAYER_NAME, WORM_UI_OPTIONS_FIELD_PLAYER_PATH,
     WORM_UI_OPTIONS_FIELD_PLAYER_START, WORM_UI_OPTIONS_FIELD_PLAYER_HERE,
     WORM_UI_OPTIONS_FIELD_PLAYER_STOP, WORM_UI_OPTIONS_FIELD_PLAYER_SELECTED,
-    WORM_UI_OPTIONS_FIELD_PLAYER_ADD, WORM_UI_OPTIONS_FIELD_PLAYER_REMOVE
+    WORM_UI_OPTIONS_FIELD_PLAYER_ADD, WORM_UI_OPTIONS_FIELD_PLAYER_REMOVE,
+    WORM_UI_OPTIONS_FIELD_SCROLL_DIRECTION, WORM_UI_OPTIONS_FIELD_ANCHOR,
+    WORM_UI_OPTIONS_FIELD_NOTE_PALETTE, WORM_UI_OPTIONS_FIELD_LANE_LEGEND,
+    WORM_UI_OPTIONS_FIELD_AREA_ALPHA
 } WormUiOptionsField;
 typedef struct WormUiOptionsDiagnostic {
     WormUiOptionsField field;
@@ -1312,6 +1317,9 @@ typedef struct WormUiOptionsView {
     bool changed;
     bool can_apply;
     uint32_t autosave_minutes, recent_files_count, default_snap, ui_scale_percent;
+    uint32_t scroll_directions[6];
+    uint32_t playhead_anchor_percent, area_band_alpha;
+    bool note_kind_palette_visible, lane_key_legend_visible;
     bool confirm_unsaved_close, keep_pitch, frame_timing_overlay;
     bool minimap_click_moves_paused_playhead;
     uint64_t rate_numerator, rate_denominator;
@@ -1339,6 +1347,7 @@ typedef struct WormUiOptionsAction {
     uint64_t integer, denominator;
     bool boolean;
     uint32_t player_index;
+    uint32_t family_index;
     char text[WORM_UI_OPTIONS_TEXT_CAPACITY];
 } WormUiOptionsAction;
 
@@ -1381,9 +1390,18 @@ typedef struct WormUiNotificationAction {
     uint64_t id;
 } WormUiNotificationAction;
 
+typedef enum WormUiCloseDecision {
+    WORM_UI_CLOSE_NONE = 0, WORM_UI_CLOSE_CANCEL, WORM_UI_CLOSE_DISCARD, WORM_UI_CLOSE_SAVE
+} WormUiCloseDecision;
+typedef struct WormUiCloseConfirmationView {
+    bool visible, application, has_native_path;
+    uint64_t project_id, revision;
+    const char* status_text;
+} WormUiCloseConfirmationView;
 typedef struct WormUiWorkspaceView {
     WormUiNotificationView notifications;
     WormUiOptionsView options;
+    WormUiCloseConfirmationView close_confirmation;
     WormUiTapTimingView tap_timing;
     bool project_loaded;
     bool project_has_native_path;
@@ -1638,6 +1656,8 @@ typedef enum WormUiMetadataEditKind {
 typedef struct WormUiWorkspaceAction {
     WormUiNotificationAction notifications;
     WormUiOptionsAction options;
+    WormUiCloseDecision close_decision;
+    uint64_t close_project_id, close_revision;
     WormUiProjectChartAction project_chart;
     WormUiTapTimingAction tap_timing;
     WormUiWorkspaceActionKind kind;
@@ -1793,7 +1813,8 @@ void worm_ui_frontend_end_input(void);
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view);
 // Draw a recoverable workspace error when the model could not produce a view.
 WormUiWorkspaceAction worm_ui_frontend_workspace_error(
-    const char* diagnostic, const WormUiNotificationView* notifications);
+    const char* diagnostic, const WormUiNotificationView* notifications,
+    const WormUiCloseConfirmationView* close);
 void worm_ui_frontend_resource_placed(uint64_t placed_resource_id, uint64_t next_resource_id);
 void worm_ui_frontend_render(int window_width, int window_height);
 

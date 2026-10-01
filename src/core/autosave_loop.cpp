@@ -50,6 +50,12 @@ native_project_autosave_loop_t::native_project_autosave_loop_t(
 
 native_project_autosave_loop_t::~native_project_autosave_loop_t() = default;
 
+auto native_project_autosave_loop_t::set_interval(clock_t::duration interval) noexcept -> bool {
+    if (!coordinator_.set_interval(interval)) return false;
+    interval_ = interval;
+    return true;
+}
+
 void native_project_autosave_loop_t::mark_explicit_save(
     native_project_document_version_t saved_version) noexcept {
     if (busy()) {
@@ -168,6 +174,7 @@ void native_project_autosave_loop_t::collect_completed(
         return;
     }
     coordinator_ = completion->coordinator;
+    (void)coordinator_.set_interval(interval_);
     if (deferred_explicit_save_) {
         coordinator_.mark_explicit_save(*deferred_explicit_save_);
         deferred_explicit_save_.reset();

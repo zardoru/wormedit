@@ -11,6 +11,7 @@
 #include <wormedit/core/timing.h>
 #include <wormedit/core/timing_lane_controller.h>
 #include <wormedit/core/workspace.h>
+#include <wormedit/core/preferences.h>
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 #include <wormedit/audio/waveform.h>
@@ -137,6 +138,7 @@ struct compose_scene_cache_t {
 enum class external_player_action_t;
 
 struct application_command_state_t {
+    wormedit::editor_preferences_t editor_preferences;
     struct bmson_marker_draft_t {
         wormedit::chart_id_t chart;
         std::uint64_t revision{};
@@ -232,7 +234,10 @@ struct compose_horizontal_layout_t {
 
 
 auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) -> double;
+auto compose_mode_family(const wormedit::lane_layout_t& layout) -> wormedit::editor_mode_family_t;
 auto compose_field_downscroll(const wormedit::chart_document_t& chart) -> bool;
+auto compose_field_downscroll(const wormedit::chart_document_t& chart,
+    const wormedit::editor_preferences_t& preferences) -> bool;
 auto compose_project_y(long double row, double pixels_per_row, double scroll,
                        double viewport_height, bool downscroll) -> double;
 auto compose_source_y(double viewport_y, double viewport_height, bool downscroll) -> double;
@@ -247,6 +252,8 @@ auto has_audio_marker_navigation(const wormedit::chart_document_t& chart) -> boo
 auto timing_lane_kind_to_ui(wormedit::timing_lane_kind_t lane) -> WormUiTimingLaneKind;
 auto requested_snap_denominator(const application_command_state_t& application_state,
                                 wormedit::chart_id_t chart) -> std::uint64_t;
+auto compose_snap_preferences(const application_command_state_t& state, wormedit::chart_id_t chart)
+    -> std::array<std::uint64_t, chart_snap_preferences.size() + 1>;
 auto editor_interaction_has_pending_gesture(
     const wormedit::editor_interaction_state_t& state) -> bool;
 

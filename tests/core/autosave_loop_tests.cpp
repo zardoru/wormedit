@@ -59,6 +59,9 @@ auto wait_for_result(wormedit::native_project_autosave_loop_t& loop,
     return std::nullopt;
 }
 
+void expect_autosave_interval(bool value) { CHECK(value); }
+void require_autosave_interval(bool value) { REQUIRE(value); }
+
 } // namespace
 
 TEST_CASE("autosave target keeps saved projects adjacent and untitled sessions ID-stable",
@@ -295,4 +298,36 @@ TEST_CASE("autosave worker errors retain an explicit-save baseline deferred duri
     const auto parsed = parse_native_project_recovery_snapshot(read_text(target.backup_path));
     REQUIRE(parsed.snapshot.has_value());
     CHECK(parsed.snapshot->metadata.last_explicit_save_revision == document.revision);
+}
+
+TEST_CASE("autosave interval changes preserve successful cadence and survive pending workers", "[unit][core][autosave]") {
+    using namespace wormedit;
+    using clock_t = native_project_autosave_loop_t::clock_t;
+    temporary_directory_t directory;
+    auto document = song(71, 2);
+    const auto target = make_native_project_autosave_target(document.id, false, {}, directory.path);
+    const auto start = clock_t::time_point{};
+    task_scheduler_t scheduler(1, 1);
+    native_project_autosave_loop_t loop(start, scheduler, {}, 4);
+    require_autosave_interval(loop.set_interval(1min));
+    expect_autosave_interval(!loop.set_interval(0min));
+    expect_autosave_interval(!loop.tick(document, true, start + 1min - 1ms, target));
+    expect_autosave_interval(!loop.tick(document, true, start + 1min, target));
+    require_autosave_interval(loop.busy());
+    require_autosave_interval(loop.set_interval(10min));
+    const auto first = wait_for_result(loop, document, start + 1min, target);
+    require_autosave_interval(first.has_value());
+    require_autosave_interval(first->status == native_project_autosave_status_t::published);
+    expect_autosave_interval(loop.session_sequence() == 5);
+    ++document.revision;
+    expect_autosave_interval(!loop.tick(document, true, start + 6min, target));
+    expect_autosave_interval(!loop.busy());
+    expect_autosave_interval(!loop.tick(document, true, start + 11min, target));
+    const auto second = wait_for_result(loop, document, start + 11min, target);
+    require_autosave_interval(second.has_value());
+    require_autosave_interval(second->status == native_project_autosave_status_t::published);
+    expect_autosave_interval(loop.session_sequence() == 6);
+    require_autosave_interval(loop.set_interval(1min));
+    expect_autosave_interval(!loop.tick(document, true, start + 20min, target));
+    expect_autosave_interval(!loop.busy());
 }

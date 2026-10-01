@@ -234,5 +234,5 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     render_compose_view_controls(toolbar);
     render_compose_offset_toolbar(toolbar);
     render_compose_bgm_scroll_controls(toolbar);
-    render_note_kind_palette(toolbar);
+    if (toolbar.view->note_kind_palette_visible) render_note_kind_palette(toolbar);
 }

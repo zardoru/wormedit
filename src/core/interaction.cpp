@@ -355,7 +355,8 @@ auto transition_lane(const chart_document_t& chart, const measure_index_t& index
 }
 
 auto maximum_viewport_scroll(const chart_document_t& chart, const measure_index_t& index,
-                             double scale, double viewport_height) -> std::optional<double> {
+                             double scale, double viewport_height,
+                             double end_fraction = editor_cursor_edge_margin_fraction) -> std::optional<double> {
     auto total_rows = index.total_rows;
     if (chart.source_family == format_family_t::bms) {
         const auto canvas = build_virtual_canvas(chart);
@@ -370,7 +371,9 @@ auto maximum_viewport_scroll(const chart_document_t& chart, const measure_index_
         viewport_height <= 0.0) {
         return std::nullopt;
     }
-    return editor_maximum_viewport_scroll(content_height, viewport_height);
+    if (!std::isfinite(end_fraction) || end_fraction < 0.0 || end_fraction > editor_cursor_edge_margin_fraction)
+        return std::nullopt;
+    return std::max(0.0, content_height - viewport_height * end_fraction);
 }
 
 auto minimum_viewport_scroll(double viewport_height) -> double {
@@ -469,15 +472,19 @@ auto valid_view_snap(const chart_document_t& chart,
         chart.divisions_per_standard_measure % state.active_snap_denominator == 0;
 }
 
+auto valid_viewport_margin(double fraction) -> bool {
+    return std::isfinite(fraction) && fraction >= editor_cursor_edge_margin_fraction && fraction <= 1.0;
+}
 auto valid_viewport(const chart_document_t& chart, const measure_index_t& index,
                     const editor_interaction_state_t& state) -> bool {
     const auto maximum = maximum_viewport_scroll(
-        chart, index, state.pixels_per_standard_measure, state.viewport_height_pixels);
+        chart, index, state.pixels_per_standard_measure, state.viewport_height_pixels, state.viewport_end_margin_fraction);
     if (!std::isfinite(state.pixels_per_standard_measure) ||
         state.pixels_per_standard_measure < minimum_pixels_per_standard_measure ||
         state.pixels_per_standard_measure > maximum_pixels_per_standard_measure ||
         !maximum || !std::isfinite(state.viewport_scroll_pixels) ||
-        state.viewport_scroll_pixels < minimum_viewport_scroll(state.viewport_height_pixels) ||
+        !valid_viewport_margin(state.viewport_minimum_margin_fraction) ||
+        state.viewport_scroll_pixels < -state.viewport_height_pixels * state.viewport_minimum_margin_fraction ||
         state.viewport_scroll_pixels > *maximum) return false;
     if (state.fixed_cursor_screen_y_pixels &&
         (!std::isfinite(*state.fixed_cursor_screen_y_pixels) ||
@@ -1496,35 +1503,60 @@ auto inspect_editor_interaction(const document_history_t& history,
     return make_view(history, state);
 }
 
+namespace {
+auto prepare_follow_view_state(const document_history_t& history, const chart_document_t& chart,
+    const measure_index_t& index, const editor_interaction_state_t& state, double fraction)
+    -> std::variant<editor_interaction_state_t, diagnostic_list_t> {
+    if (!valid_viewport_margin(state.viewport_minimum_margin_fraction) ||
+        !std::isfinite(state.viewport_end_margin_fraction) || state.viewport_end_margin_fraction < 0.0 ||
+        state.viewport_end_margin_fraction > editor_cursor_edge_margin_fraction)
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution, "playhead viewport margin is invalid")};
+    auto proposed = state;
+    proposed.viewport_minimum_margin_fraction = std::max(editor_cursor_edge_margin_fraction, fraction);
+    proposed.viewport_end_margin_fraction = std::min(editor_cursor_edge_margin_fraction, fraction);
+    if (!note_kind_allowed(chart, proposed.armed_note_kind)) proposed.armed_note_kind = note_kind_t::tap;
+    const auto maximum = maximum_viewport_scroll(chart, index,
+        proposed.pixels_per_standard_measure, proposed.viewport_height_pixels, proposed.viewport_end_margin_fraction);
+    if (!maximum || !std::isfinite(proposed.viewport_scroll_pixels))
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_resolution, "playhead viewport geometry is invalid")};
+    proposed.viewport_scroll_pixels = std::clamp(proposed.viewport_scroll_pixels,
+        -proposed.viewport_height_pixels * proposed.viewport_minimum_margin_fraction, *maximum);
+    auto view = make_view(history, proposed, &index);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&view)) return *diagnostics;
+    return proposed;
+}
+} // namespace
+
 auto follow_editor_playhead(document_history_t& history, editor_interaction_state_t& state,
                             editor_measure_geometry_t geometry, local_position_t position,
-                            double target_scroll) -> editor_interaction_result_t {
+                            double target_scroll, double following_anchor_fraction) -> editor_interaction_result_t {
     const auto* chart = find_chart(history.document, state.chart);
     if (!chart || !geometry.index || geometry.chart != state.chart ||
         geometry.document_revision != history.document.revision ||
-        !std::isfinite(target_scroll) || playhead_gesture_active(state))
+        !std::isfinite(target_scroll) || !std::isfinite(following_anchor_fraction) ||
+        following_anchor_fraction < 0.0 || following_anchor_fraction > 1.0 || playhead_gesture_active(state))
         return {.diagnostics = {error(diagnostic_code_t::invalid_id,
                                      "playhead geometry is stale or playback editing is blocked")}};
     const auto& index = *geometry.index;
     if (!absolute_row(index, position))
         return {.diagnostics = {error(diagnostic_code_t::row_out_of_range,
                                      "playhead cursor is outside chart geometry")}};
-    if (!note_kind_allowed(*chart, state.armed_note_kind)) state.armed_note_kind = note_kind_t::tap;
-    auto initial = make_view(history, state, &index);
+    auto initial = prepare_follow_view_state(history, *chart, index, state, following_anchor_fraction);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&initial))
         return {.diagnostics = *diagnostics};
-    auto candidate = proposed_playhead_cursor(history, *chart, index, state, position);
+    auto candidate = proposed_playhead_cursor(history, *chart, index,
+        std::get<editor_interaction_state_t>(initial), position);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&candidate))
         return {.diagnostics = *diagnostics};
     auto proposed = std::get<editor_interaction_state_t>(std::move(candidate));
     const auto maximum = maximum_viewport_scroll(*chart, index,
-        proposed.pixels_per_standard_measure, proposed.viewport_height_pixels);
+        proposed.pixels_per_standard_measure, proposed.viewport_height_pixels, proposed.viewport_end_margin_fraction);
     if (!maximum)
         return {.diagnostics = {error(diagnostic_code_t::invalid_resolution,
                                      "playhead viewport geometry is invalid")}};
     if (std::abs(target_scroll - proposed.viewport_scroll_pixels) >= 0.001)
         proposed.viewport_scroll_pixels = std::clamp(target_scroll,
-            minimum_viewport_scroll(proposed.viewport_height_pixels), *maximum);
+            -proposed.viewport_height_pixels * proposed.viewport_minimum_margin_fraction, *maximum);
     auto view = make_view(history, proposed, &index);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&view))
         return {.diagnostics = *diagnostics};

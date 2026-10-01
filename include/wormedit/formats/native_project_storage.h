@@ -292,6 +292,7 @@ class native_project_autosave_coordinator_t {
         std::chrono::steady_clock::duration interval = std::chrono::minutes{5},
         std::uint64_t initial_session_sequence = 0);
 
+    [[nodiscard]] auto set_interval(clock_t::duration interval) noexcept -> bool;
     void mark_explicit_save(native_project_document_version_t saved_version) noexcept;
 
     [[nodiscard]] auto is_due(const song_document_t& song, clock_t::time_point now) const noexcept

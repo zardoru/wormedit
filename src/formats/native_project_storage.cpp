@@ -2325,6 +2325,13 @@ native_project_autosave_coordinator_t::native_project_autosave_coordinator_t(
       last_explicit_save_(last_explicit_save), session_sequence_(initial_session_sequence),
       interval_valid_(interval > std::chrono::steady_clock::duration::zero()) {}
 
+auto native_project_autosave_coordinator_t::set_interval(clock_t::duration interval) noexcept -> bool {
+    if (interval <= clock_t::duration::zero()) return false;
+    interval_ = interval;
+    interval_valid_ = true;
+    return true;
+}
+
 void native_project_autosave_coordinator_t::mark_explicit_save(
     native_project_document_version_t saved_version) noexcept {
     last_explicit_save_ = saved_version;

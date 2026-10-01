@@ -7,6 +7,7 @@
 #include "sys/compose_view.h"
 #include "sys/compose_playhead_cursor.h"
 #include <wormedit/core/command.h>
+#include <wormedit/core/rational.h>
 #include <wormedit/core/workspace.h>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
@@ -931,4 +932,57 @@ TEST_CASE("Retained playhead geometry rejects stale provenance and active gestur
     CHECK_FALSE(follow_editor_playhead(history, state, {chart_id_t{1}, 1, &index},
         {measure_id_t{3}, 0}, 100));
     compare_follow_state(state, before);
+}
+
+TEST_CASE("configured playing anchor preserves paused comfort scrolling", "[frame-timing]") {
+    editor_interaction_state_t state;
+    state.viewport_height_pixels = 600;
+    state.pixels_per_standard_measure = 192;
+    chart_document_t chart;
+    chart.divisions_per_standard_measure = 1920;
+    const auto default_target = compose_playhead_scroll_target(state, chart, 4000, 0, true);
+    const auto configured = compose_playhead_scroll_target(state, chart, 4000, 0, true, 0.35);
+    REQUIRE(default_target);
+    REQUIRE(configured);
+    CHECK(*default_target == 280);
+    CHECK(*configured == 190);
+    CHECK(compose_playhead_scroll_target(state, chart, 4000, 0, false, 0.35) ==
+          compose_playhead_scroll_target(state, chart, 4000, 0, false));
+    CHECK_FALSE(compose_playhead_scroll_target(state, chart, 4000, 0, true, 1.1));
+}
+
+TEST_CASE("scroll overrides follow mode identity across native and imported charts", "[frame-timing]") {
+    chart_document_t chart;
+    lane_layout_t layout;
+    layout.profile_id = "stepmania:dance-single";
+    chart.lane_layouts.push_back({.layout = layout});
+    editor_preferences_t preferences;
+    preferences.scroll_directions[static_cast<size_t>(editor_mode_family_t::dance)] = 1;
+    chart.source_family = format_family_t::stepmania;
+    CHECK_FALSE(compose_field_downscroll(chart, preferences));
+    chart.source_family = format_family_t::native_project;
+    CHECK_FALSE(compose_field_downscroll(chart, preferences));
+    CHECK(compose_mode_family(layout) == editor_mode_family_t::dance);
+    layout.profile_id = "stepmania:pump-double";
+    CHECK(compose_mode_family(layout) == editor_mode_family_t::pump);
+    layout.profile_id = "custom-layout";
+    CHECK(compose_mode_family(layout) == editor_mode_family_t::other);
+    layout.bmson_generic_keys_only = true;
+    CHECK(compose_mode_family(layout) == editor_mode_family_t::keyboard);
+}
+
+TEST_CASE("new-chart requested custom snap is admitted without replacing existing chart preferences", "[frame-timing]") {
+    application_command_state_t state;
+    state.editor_preferences.default_snap = 5;
+    state.requested_snap_denominators.emplace(1, 8);
+    state.requested_snap_denominators.emplace(2, state.editor_preferences.default_snap);
+    const auto preferences = compose_snap_preferences(state, chart_id_t{2});
+    const auto custom = filter_snap_denominators(1920, preferences, requested_snap_denominator(state, chart_id_t{2}));
+    CHECK(custom.active_denominator == 5);
+    CHECK(std::ranges::find(custom.supported_denominators, 5) != custom.supported_denominators.end());
+    CHECK(requested_snap_denominator(state, chart_id_t{1}) == 8);
+    CHECK(requested_snap_denominator(state, chart_id_t{3}) == 4);
+    const auto incompatible = filter_snap_denominators(384, preferences, 5);
+    CHECK(incompatible.active_was_fallback);
+    CHECK(incompatible.active_denominator != 5);
 }

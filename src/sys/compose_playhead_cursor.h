@@ -27,7 +27,8 @@ namespace wormedit::sys {
 // chart-start side (#000); when paused it only scrolls once it leaves the comfort band.
 [[nodiscard]] inline auto compose_playhead_scroll_target(
     const editor_interaction_state_t& state, const chart_document_t& chart,
-    long double absolute_row, double previous_scroll, bool anchored) -> std::optional<double> {
+    long double absolute_row, double previous_scroll, bool anchored,
+    double following_anchor_fraction = editor_cursor_edge_margin_fraction) -> std::optional<double> {
     if (!std::isfinite(absolute_row) || !std::isfinite(previous_scroll) ||
         !std::isfinite(state.viewport_height_pixels) ||
         !std::isfinite(state.pixels_per_standard_measure) ||
@@ -39,7 +40,10 @@ namespace wormedit::sys {
     const auto visible_y = playhead_y - previous_scroll;
     const auto comfort_top = state.viewport_height_pixels * editor_cursor_edge_margin_fraction;
     const auto comfort_bottom = state.viewport_height_pixels - comfort_top;
-    const auto target = anchored                     ? playhead_y - comfort_top
+    if (!std::isfinite(following_anchor_fraction) || following_anchor_fraction < 0.0 ||
+        following_anchor_fraction > 1.0) return std::nullopt;
+    const auto following_anchor = state.viewport_height_pixels * following_anchor_fraction;
+    const auto target = anchored                     ? playhead_y - following_anchor
                       : visible_y < comfort_top    ? playhead_y - comfort_top
                       : visible_y > comfort_bottom ? playhead_y - comfort_bottom
                                                    : static_cast<long double>(previous_scroll);
@@ -54,7 +58,8 @@ namespace wormedit::sys {
 [[nodiscard]] inline auto follow_compose_playhead(document_history_t& history,
                                                    editor_interaction_state_t& state,
                                                    double absolute_row, bool anchored,
-                                                   editor_measure_geometry_t geometry = {}) -> bool {
+                                                   editor_measure_geometry_t geometry = {},
+                                                   double following_anchor_fraction = editor_cursor_edge_margin_fraction) -> bool {
     if (!std::isfinite(absolute_row) || absolute_row < 0.0 ||
         playhead_cursor_edit_blocked(state))
         return false;
@@ -85,10 +90,11 @@ namespace wormedit::sys {
     const auto measure = std::prev(after);
     const local_position_t position{measure->id, row - measure->absolute_begin_row};
     const auto target_scroll = compose_playhead_scroll_target(
-        state, *chart, bounded_row, previous_scroll, anchored);
+        state, *chart, bounded_row, previous_scroll, anchored, following_anchor_fraction);
     if (!target_scroll) return false;
     return static_cast<bool>(follow_editor_playhead(history, state, geometry, position,
-                                                   *target_scroll));
+                                                   *target_scroll, anchored ? following_anchor_fraction
+                                                       : state.viewport_minimum_margin_fraction));
 }
 
 } // namespace wormedit::sys

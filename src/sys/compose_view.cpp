@@ -6,6 +6,7 @@
 
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/rational.h>
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/virtual_canvas.h>
@@ -69,6 +70,37 @@ auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) 
 }
 
 
+namespace {
+auto known_mania_key_profile(std::string_view id) -> bool {
+    constexpr std::string_view prefix{"osu-mania-"};
+    if (!id.starts_with(prefix) || !id.ends_with('k')) return false;
+    const auto digits = id.substr(prefix.size(), id.size() - prefix.size() - 1);
+    unsigned keys{};
+    const auto parsed = std::from_chars(digits.data(), digits.data() + digits.size(), keys);
+    return parsed.ec == std::errc{} && parsed.ptr == digits.data() + digits.size() && keys >= 1 && keys <= 18;
+}
+} // namespace
+auto compose_mode_family(const wormedit::lane_layout_t& layout) -> wormedit::editor_mode_family_t {
+    using family = wormedit::editor_mode_family_t;
+    const auto& id = layout.profile_id;
+    const auto catalog = wormedit::built_in_bms_lane_profiles();
+    const auto found = std::ranges::find(catalog, id, [](const auto& item) -> const std::string& { return item.profile.layout.profile_id; });
+    if (found != catalog.end()) {
+        if (found->family == wormedit::bms_lane_profile_family_t::popn) return family::popn;
+        return found->family == wormedit::bms_lane_profile_family_t::special ? family::other : family::beatmania;
+    }
+    constexpr std::array<std::string_view, 4> beat{"bmson-beat-5k", "bmson-beat-7k", "bmson-beat-10k", "bmson-beat-14k"};
+    if (std::ranges::find(beat, id) != beat.end()) return family::beatmania;
+    if (id == "bmson-popn-5k" || id == "bmson-popn-9k") return family::popn;
+    constexpr std::array<std::string_view, 5> dance{"stepmania:dance-single", "stepmania:dance-double", "stepmania:dance-couple", "stepmania:dance-solo", "stepmania:dance-threepanel"};
+    if (std::ranges::find(dance, id) != dance.end()) return family::dance;
+    constexpr std::array<std::string_view, 4> pump{"stepmania:pump-single", "stepmania:pump-double", "stepmania:pump-couple", "stepmania:pump-halfdouble"};
+    if (std::ranges::find(pump, id) != pump.end()) return family::pump;
+    if (layout.bmson_generic_keys_only || id == "stepmania:kb7-single" || known_mania_key_profile(id))
+        return family::keyboard;
+    return family::other;
+}
+
 auto compose_field_downscroll(const wormedit::chart_document_t& chart) -> bool {
     for (const auto& segment : chart.lane_layouts) {
         for (const auto& lane : segment.layout.lanes) {
@@ -85,6 +117,14 @@ auto compose_field_downscroll(const wormedit::chart_document_t& chart) -> bool {
         }
     }
     return true;
+}
+
+auto compose_field_downscroll(const wormedit::chart_document_t& chart,
+    const wormedit::editor_preferences_t& preferences) -> bool {
+    const auto family = chart.lane_layouts.empty() ? wormedit::editor_mode_family_t::other
+        : compose_mode_family(chart.lane_layouts.front().layout);
+    const auto direction = preferences.scroll_directions[static_cast<std::size_t>(family)];
+    return direction == 0 ? compose_field_downscroll(chart) : direction == 2;
 }
 
 auto compose_project_y(long double row, double pixels_per_row, double scroll,
@@ -261,6 +301,14 @@ auto requested_snap_denominator(const application_command_state_t& application_s
                                 wormedit::chart_id_t chart) -> std::uint64_t {
     const auto found = application_state.requested_snap_denominators.find(chart.value);
     return found == application_state.requested_snap_denominators.end() ? 4 : found->second;
+}
+
+auto compose_snap_preferences(const application_command_state_t& state, wormedit::chart_id_t chart)
+    -> std::array<std::uint64_t, chart_snap_preferences.size() + 1> {
+    std::array<std::uint64_t, chart_snap_preferences.size() + 1> result{};
+    std::ranges::copy(chart_snap_preferences, result.begin());
+    result.back() = requested_snap_denominator(state, chart);
+    return result;
 }
 
 auto editor_interaction_has_pending_gesture(const wormedit::editor_interaction_state_t& state)
@@ -1773,7 +1821,7 @@ bool initialize_compose_interaction(const compose_interaction_population_context
             return {};
         }
         return wormedit::make_editor_interaction(
-            history, chart.id, *initial_lane, *initial_cursor, chart_snap_preferences,
+            history, chart.id, *initial_lane, *initial_cursor, compose_snap_preferences(application_state, chart.id),
             requested_snap_denominator(application_state, chart.id), view.viewport_height_pixels);
     };
     if (!retained_state || retained_state->chart != chart.id) {
@@ -1815,7 +1863,7 @@ bool update_compose_snap_preferences(const compose_interaction_population_contex
     // Keep a gesture's captured grid stable until the next idle frame.
     if (!editor_interaction_has_pending_gesture(*retained_state)) {
         const auto snap = wormedit::filter_snap_denominators(
-            chart.divisions_per_standard_measure, chart_snap_preferences,
+            chart.divisions_per_standard_measure, compose_snap_preferences(application_state, chart.id),
             requested_snap_denominator(application_state, chart.id));
         if (!snap) {
             flattened.compose.status = "The chart snap configuration is invalid.";
@@ -1922,11 +1970,11 @@ std::uint64_t prepare_compose_projection_state(const compose_final_projection_co
     const auto content_height = static_cast<double>(canvas_rows) *
                                 interaction_view.pixels_per_standard_measure /
                                 static_cast<double>(chart.divisions_per_standard_measure);
-    const auto maximum_scroll = wormedit::editor_maximum_viewport_scroll(
-        content_height, view.viewport_height_pixels);
+    const auto maximum_scroll = std::max(0.0, content_height -
+        view.viewport_height_pixels * retained_state->viewport_end_margin_fraction);
     retained_state->viewport_scroll_pixels = std::clamp(
         retained_state->viewport_scroll_pixels,
-        -view.viewport_height_pixels * wormedit::editor_cursor_edge_margin_fraction,
+        -view.viewport_height_pixels * retained_state->viewport_minimum_margin_fraction,
         maximum_scroll);
     interaction_view.viewport_scroll_pixels = retained_state->viewport_scroll_pixels;
     view.area_canvas_rows = canvas_rows;
@@ -2048,6 +2096,9 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     auto& retained_state = input.retained_state;
     auto& application_state = input.application_state;
     auto& view = input.view;
+    view.note_kind_palette_visible = application_state.editor_preferences.note_kind_palette_visible;
+    view.lane_key_legend_visible = application_state.editor_preferences.lane_key_legend_visible;
+    view.area_band_alpha = application_state.editor_preferences.area_band_alpha;
     view.armed_note_kind = static_cast<std::uint32_t>(retained_state->armed_note_kind);
     view.allowed_note_kind_mask = 0;
     for (unsigned kind = 0; kind <= static_cast<unsigned>(wormedit::note_kind_t::fake); ++kind)
@@ -2261,7 +2312,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
         return;
     }
     const auto& chart = *chart_it;
-    const auto downscroll = compose_field_downscroll(chart);
+    const auto downscroll = compose_field_downscroll(chart, application_state.editor_preferences);
     const auto measure_data = prepare_compose_chart_view(flattened, chart, history, cache,
                                                          application_state);
     if (!measure_data) return;

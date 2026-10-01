@@ -43,6 +43,18 @@ void validate_general(options_runtime_t& r) {
     diagnose(r, WORM_UI_OPTIONS_FIELD_RECENT_FILES, r.draft.general.recent_files_count >= 1 &&
         r.draft.general.recent_files_count <= 100, "Recent files must be between 1 and 100.");
 }
+void validate_editor(options_runtime_t& r) {
+    const auto& e = r.draft.editor;
+    diagnose(r, WORM_UI_OPTIONS_FIELD_SNAP, e.default_snap >= 1 && e.default_snap <= 1920,
+        "Snap must be between 1 and 1920.");
+    diagnose(r, WORM_UI_OPTIONS_FIELD_ANCHOR, e.playhead_anchor_percent <= 100,
+        "Following anchor must be between 0 and 100 percent.");
+    diagnose(r, WORM_UI_OPTIONS_FIELD_AREA_ALPHA, e.area_band_alpha <= 255,
+        "Area-band opacity must be between 0 and 255.");
+    diagnose(r, WORM_UI_OPTIONS_FIELD_SCROLL_DIRECTION,
+        std::ranges::all_of(e.scroll_directions, [](auto direction) { return direction <= 2; }),
+        "Scroll direction must be Profile default, Up, or Down.");
+}
 void validate_display(options_runtime_t& r) {
     diagnose(r, WORM_UI_OPTIONS_FIELD_THEME, valid_text(r.draft.display.theme), "Theme path is too long or contains a null character.");
     const auto scale = r.draft.display.ui_scale_percent;
@@ -53,9 +65,7 @@ void validate_draft(options_runtime_t& r) {
     r.diagnostics.clear();
     switch (r.category) {
     case WORM_UI_OPTIONS_GENERAL: validate_general(r); break;
-    case WORM_UI_OPTIONS_EDITOR:
-        diagnose(r, WORM_UI_OPTIONS_FIELD_SNAP, r.draft.editor.default_snap >= 1 &&
-            r.draft.editor.default_snap <= 1920, "Snap must be between 1 and 1920."); break;
+    case WORM_UI_OPTIONS_EDITOR: validate_editor(r); break;
     case WORM_UI_OPTIONS_AUDIO:
         diagnose(r, WORM_UI_OPTIONS_FIELD_RATE,
             std::ranges::find(audio::playback_rates, r.draft.audio.playback_rate) != audio::playback_rates.end(),
@@ -100,6 +110,13 @@ auto edit_general(program_preferences_t& p, const WormUiOptionsAction& a) -> boo
 auto edit_editor(program_preferences_t& p, const WormUiOptionsAction& a) -> bool {
     switch (a.field) {
     case WORM_UI_OPTIONS_FIELD_SNAP: p.editor.default_snap = static_cast<std::uint32_t>(a.integer); return true;
+    case WORM_UI_OPTIONS_FIELD_SCROLL_DIRECTION:
+        if (a.family_index >= p.editor.scroll_directions.size()) return false;
+        p.editor.scroll_directions[a.family_index] = static_cast<std::uint32_t>(a.integer); return true;
+    case WORM_UI_OPTIONS_FIELD_ANCHOR: p.editor.playhead_anchor_percent = static_cast<std::uint32_t>(a.integer); return true;
+    case WORM_UI_OPTIONS_FIELD_AREA_ALPHA: p.editor.area_band_alpha = static_cast<std::uint32_t>(a.integer); return true;
+    case WORM_UI_OPTIONS_FIELD_NOTE_PALETTE: p.editor.note_kind_palette_visible = a.boolean; return true;
+    case WORM_UI_OPTIONS_FIELD_LANE_LEGEND: p.editor.lane_key_legend_visible = a.boolean; return true;
     case WORM_UI_OPTIONS_FIELD_MINIMAP_CLICK: p.minimap.click_moves_paused_playhead = a.boolean; return true;
     default: return false;
     }
@@ -152,7 +169,8 @@ auto bounded_edit(const WormUiOptionsAction& action) -> bool {
     if (std::ranges::find(action.text, '\0') == std::end(action.text)) return false;
     const bool small_integer = action.field == WORM_UI_OPTIONS_FIELD_AUTOSAVE ||
         action.field == WORM_UI_OPTIONS_FIELD_RECENT_FILES || action.field == WORM_UI_OPTIONS_FIELD_SNAP ||
-        action.field == WORM_UI_OPTIONS_FIELD_SCALE;
+        action.field == WORM_UI_OPTIONS_FIELD_SCALE || action.field == WORM_UI_OPTIONS_FIELD_SCROLL_DIRECTION ||
+        action.field == WORM_UI_OPTIONS_FIELD_ANCHOR || action.field == WORM_UI_OPTIONS_FIELD_AREA_ALPHA;
     return !small_integer || action.integer <= std::numeric_limits<std::uint32_t>::max();
 }
 auto edit_field(options_runtime_t& r, const WormUiOptionsAction& action) -> bool {
@@ -204,6 +222,11 @@ auto options_view(options_runtime_t& r) -> WormUiOptionsView {
         .changed = !category_equal(p, r.baseline, r.category), .can_apply = r.diagnostics.empty(),
         .autosave_minutes = p.general.autosave_minutes, .recent_files_count = p.general.recent_files_count,
         .default_snap = p.editor.default_snap, .ui_scale_percent = p.display.ui_scale_percent,
+        .scroll_directions = {p.editor.scroll_directions[0], p.editor.scroll_directions[1],
+            p.editor.scroll_directions[2], p.editor.scroll_directions[3], p.editor.scroll_directions[4],
+            p.editor.scroll_directions[5]},
+        .playhead_anchor_percent = p.editor.playhead_anchor_percent, .area_band_alpha = p.editor.area_band_alpha,
+        .note_kind_palette_visible = p.editor.note_kind_palette_visible, .lane_key_legend_visible = p.editor.lane_key_legend_visible,
         .confirm_unsaved_close = p.general.confirm_unsaved_close, .keep_pitch = p.audio.keep_pitch,
         .frame_timing_overlay = p.display.frame_timing_overlay,
         .minimap_click_moves_paused_playhead = p.minimap.click_moves_paused_playhead,

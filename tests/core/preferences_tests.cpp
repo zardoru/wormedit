@@ -234,3 +234,33 @@ TEST_CASE("Program preferences never replace an existing corrupt file with legac
     expect_preference(loaded.contents.preferences == default_program_preferences());
     expect_preference(std::filesystem::file_size(current) == 5);
 }
+
+TEST_CASE("Editor preference defaults preserve existing appearance and profile direction", "[preferences]") {
+    const auto defaults = default_program_preferences();
+    expect_preference(defaults.editor.default_snap == 4);
+    expect_preference(defaults.editor.playhead_anchor_percent == 20);
+    expect_preference(defaults.editor.note_kind_palette_visible);
+    expect_preference(defaults.editor.lane_key_legend_visible);
+    expect_preference(defaults.editor.area_band_alpha == 48);
+    for (auto direction : defaults.editor.scroll_directions) expect_preference(direction == 0);
+    expect_preference(parse_program_preferences(R"({"version":1,"editor":{"default_snap":8}})").preferences.editor.area_band_alpha == 48);
+}
+TEST_CASE("Editor preference fields round trip and invalid individual values retain defaults", "[preferences]") {
+    auto value = default_program_preferences();
+    value.editor.scroll_directions = {1, 2, 1, 2, 1, 2};
+    value.editor.playhead_anchor_percent = 35;
+    value.editor.note_kind_palette_visible = false;
+    value.editor.lane_key_legend_visible = false;
+    value.editor.area_band_alpha = 0;
+    const auto bytes = serialize_program_preferences(value);
+    require_preference(bytes.has_value());
+    expect_preference(parse_program_preferences(*bytes).preferences == value);
+    const auto invalid = parse_program_preferences(R"({"version":1,"editor":{"playhead_anchor_percent":101,"area_band_alpha":256,"scroll_directions":{"dance":3,"popn":2},"note_kind_palette_visible":false}})");
+    expect_preference(invalid.preferences.editor.playhead_anchor_percent == 20);
+    expect_preference(invalid.preferences.editor.area_band_alpha == 48);
+    expect_preference(invalid.preferences.editor.scroll_directions[2] == 0);
+    expect_preference(invalid.preferences.editor.scroll_directions[1] == 2);
+    expect_preference(!invalid.preferences.editor.note_kind_palette_visible);
+    value.editor.scroll_directions[0] = 3;
+    expect_preference(!serialize_program_preferences(value));
+}

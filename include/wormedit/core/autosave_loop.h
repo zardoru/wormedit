@@ -47,6 +47,8 @@ class native_project_autosave_loop_t {
     auto operator=(const native_project_autosave_loop_t&)
         -> native_project_autosave_loop_t& = delete;
 
+    // Preserve the session and last successful publication; pending workers keep their snapshot.
+    [[nodiscard]] auto set_interval(clock_t::duration interval) noexcept -> bool;
     void mark_explicit_save(native_project_document_version_t saved_version) noexcept;
     [[nodiscard]] auto
     reset_session(clock_t::time_point session_started_at,

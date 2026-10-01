@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -18,6 +19,7 @@
 #include <limits>
 #include <ranges>
 #include <span>
+#include <source_location>
 #include <string>
 
 using namespace wormedit;
@@ -4297,4 +4299,65 @@ TEST_CASE("Virtual BMS armed kinds stay atomic with explicit hold durations", "[
     require_note_kind_condition(dispatch_editor_action(history, state, place_virtual_bms_hold_action_t{4800, 5040, lane_id_t{1}}));
     require_note_kind_condition(note_count(history) == 2);
     check_note_kind_condition(history.document.charts.front().measures.back().notes.front().kind == note_kind_t::hold);
+}
+
+namespace {
+void expect_configured_follow(bool value, std::source_location where = std::source_location::current()) {
+    INFO("configured follow caller line " << where.line());
+    CHECK(value);
+}
+void require_configured_follow(bool value, std::source_location where = std::source_location::current()) {
+    INFO("configured follow requirement caller line " << where.line());
+    REQUIRE(value);
+}
+}
+TEST_CASE("configured playback anchor remains inspectable at chart boundaries and after pause", "[unit][core][interaction][transport]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.viewport_height_pixels = 400;
+    state.pixels_per_standard_measure = 400;
+    require_configured_follow(sys::follow_compose_playhead(history, state, 0, true, {}, 0.35));
+    expect_configured_follow(state.viewport_scroll_pixels == -140);
+    expect_configured_follow(state.viewport_minimum_margin_fraction == 0.35);
+    expect_configured_follow(std::holds_alternative<editor_interaction_view_model_t>(inspect_editor_interaction(history, state)));
+    require_configured_follow(sys::follow_compose_playhead(history, state, 1919, true, {}, 0.35));
+    expect_configured_follow(std::abs(state.viewport_scroll_pixels - (1919.0 * 400 / 960 - 140)) < 0.001);
+    expect_configured_follow(std::holds_alternative<editor_interaction_view_model_t>(inspect_editor_interaction(history, state)));
+    require_configured_follow(sys::follow_compose_playhead(history, state, 0, true, {}, 0.35));
+    require_configured_follow(sys::follow_compose_playhead(history, state, 0, false, {}, 0.35));
+    // Pausing keeps a playhead already inside the original 20..80% comfort band.
+    expect_configured_follow(state.viewport_scroll_pixels == -140);
+    state.viewport_scroll_pixels = -20;
+    require_configured_follow(sys::follow_compose_playhead(history, state, 0, false, {}, 0.35));
+    expect_configured_follow(state.viewport_scroll_pixels == -80);
+    const auto moved = dispatch_editor_action(history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
+    expect_configured_follow(bool(moved));
+    expect_configured_follow(std::holds_alternative<editor_interaction_view_model_t>(inspect_editor_interaction(history, state)));
+}
+TEST_CASE("invalid configured playback anchors reject without changing interaction state", "[unit][core][interaction][transport]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.viewport_height_pixels = 400;
+    state.pixels_per_standard_measure = 400;
+    const auto cursor = state.cursor;
+    const auto scroll = state.viewport_scroll_pixels;
+    expect_configured_follow(!sys::follow_compose_playhead(history, state, 0, true, {}, 1.1));
+    expect_configured_follow(state.cursor == cursor);
+    expect_configured_follow(state.viewport_scroll_pixels == scroll);
+    expect_configured_follow(state.viewport_minimum_margin_fraction == 0.2);
+}
+
+TEST_CASE("configured playback anchors reach both chart ends at zero and one hundred percent", "[unit][core][interaction][transport]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.viewport_height_pixels = 400;
+    state.pixels_per_standard_measure = 400;
+    for (const auto fraction : {0.0, 1.0}) {
+        require_configured_follow(sys::follow_compose_playhead(history, state, 0, true, {}, fraction));
+        expect_configured_follow(state.viewport_scroll_pixels == -400 * fraction);
+        expect_configured_follow(std::holds_alternative<editor_interaction_view_model_t>(inspect_editor_interaction(history, state)));
+        require_configured_follow(sys::follow_compose_playhead(history, state, 1919, true, {}, fraction));
+        expect_configured_follow(std::abs(state.viewport_scroll_pixels - (1919.0 * 400 / 960 - 400 * fraction)) < 0.001);
+        expect_configured_follow(std::holds_alternative<editor_interaction_view_model_t>(inspect_editor_interaction(history, state)));
+    }
 }

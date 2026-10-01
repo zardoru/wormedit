@@ -3,6 +3,7 @@
 #include <wormedit/core/measure.h>
 #include <wormedit/core/atomic_file_storage.h>
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -23,8 +24,16 @@ struct general_preferences_t {
     std::string shortcut_profile_path{"shortcuts.json"};
     auto operator==(const general_preferences_t&) const -> bool = default;
 };
+enum class editor_mode_family_t : std::uint32_t { beatmania, popn, dance, pump, keyboard, other };
+inline constexpr std::size_t editor_mode_family_count = 6;
 struct editor_preferences_t {
     std::uint32_t default_snap{4};
+    // Indexed by editor_mode_family_t; 0 preserves the profile, 1 up, 2 down.
+    std::array<std::uint32_t, editor_mode_family_count> scroll_directions{};
+    std::uint32_t playhead_anchor_percent{20};
+    bool note_kind_palette_visible{true};
+    bool lane_key_legend_visible{true};
+    std::uint32_t area_band_alpha{48};
     auto operator==(const editor_preferences_t&) const -> bool = default;
 };
 struct audio_preferences_t {

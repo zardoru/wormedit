@@ -1,4 +1,5 @@
 #include "ui/nuklear/options_window.h"
+#include "ui/nuklear/chrome.h"
 #include "wormedit/nuklear_config.h"
 #include <array>
 
@@ -18,8 +19,57 @@ void placeholder(nk_context* context, const WormUiOptionsView* view, WormUiOptio
     nk_layout_row_dynamic(context, 48, 1);
     nk_label_wrap(context, "Changes stay in a draft until Apply. Revert reloads this page's current settings; Restore defaults changes only its draft.");
 }
+void edit_integer(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action,
+    const char* label, WormUiOptionsField field, uint32_t value, int minimum, int maximum) {
+    nk_layout_row_dynamic(context, 28, 1);
+    int draft = static_cast<int>(value);
+    nk_property_int(context, label, minimum, &draft, maximum, 1, 1);
+    if (draft == static_cast<int>(value) || action.kind != WORM_UI_OPTIONS_NONE) return;
+    action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
+        .field = field, .integer = static_cast<uint64_t>(draft)};
+}
+void edit_toggle(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action,
+    const char* label, WormUiOptionsField field, bool value) {
+    nk_layout_row_dynamic(context, 28, 1);
+    nk_bool draft = value;
+    if (!nk_checkbox_label(context, label, &draft) || action.kind != WORM_UI_OPTIONS_NONE) return;
+    action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
+        .field = field, .boolean = draft != 0};
+}
+void general_page(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
+    edit_integer(context, *view, *action, "Autosave interval (minutes)", WORM_UI_OPTIONS_FIELD_AUTOSAVE,
+        view->autosave_minutes, 1, 30);
+    edit_integer(context, *view, *action, "Recent-files limit", WORM_UI_OPTIONS_FIELD_RECENT_FILES,
+        view->recent_files_count, 1, 100);
+    edit_toggle(context, *view, *action, "Confirm closing unsaved work", WORM_UI_OPTIONS_FIELD_CONFIRM_CLOSE,
+        view->confirm_unsaved_close);
+}
+void scroll_directions(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action) {
+    constexpr std::array<const char*, 6> families{"Beat keys", "Pop’n buttons", "Dance", "Pump", "Keyboard", "Other modes"};
+    constexpr const char* directions[]{"Profile default", "Up", "Down"};
+    for (size_t index = 0; index < families.size(); ++index) {
+        nk_layout_row_dynamic(context, 28, 2);
+        nk_label(context, families[index], NK_TEXT_LEFT);
+        const auto value = static_cast<int>(view.scroll_directions[index]);
+        const auto selected = wormedit::ui::chrome::safe_combo(context, directions, 3, value, 24, nk_vec2(180, 120));
+        if (selected == value || action.kind != WORM_UI_OPTIONS_NONE) continue;
+        action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
+            .field = WORM_UI_OPTIONS_FIELD_SCROLL_DIRECTION, .integer = static_cast<uint64_t>(selected),
+            .family_index = static_cast<uint32_t>(index)};
+    }
+}
+void editor_page(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
+    edit_integer(context, *view, *action, "Default snap denominator", WORM_UI_OPTIONS_FIELD_SNAP, view->default_snap, 1, 1920);
+    scroll_directions(context, *view, *action);
+    edit_integer(context, *view, *action, "Following anchor (%)", WORM_UI_OPTIONS_FIELD_ANCHOR, view->playhead_anchor_percent, 0, 100);
+    edit_toggle(context, *view, *action, "Show note-kind palette", WORM_UI_OPTIONS_FIELD_NOTE_PALETTE, view->note_kind_palette_visible);
+    edit_toggle(context, *view, *action, "Show lane legend", WORM_UI_OPTIONS_FIELD_LANE_LEGEND, view->lane_key_legend_visible);
+    edit_integer(context, *view, *action, "Area-band opacity (0–255)", WORM_UI_OPTIONS_FIELD_AREA_ALPHA, view->area_band_alpha, 0, 255);
+    edit_toggle(context, *view, *action, "Minimap click moves paused playhead", WORM_UI_OPTIONS_FIELD_MINIMAP_CLICK,
+        view->minimap_click_moves_paused_playhead);
+}
 std::array<WormUiOptionsPageRenderer, WORM_UI_OPTIONS_CATEGORY_COUNT> pages{
-    placeholder, placeholder, placeholder, placeholder, placeholder, placeholder};
+    general_page, editor_page, placeholder, placeholder, placeholder, placeholder};
 void emit(WormUiOptionsAction& action, const WormUiOptionsView& view, WormUiOptionsActionKind kind) {
     if (action.kind != WORM_UI_OPTIONS_NONE) return;
     action = {.kind = kind, .revision = view.revision, .category = view.category};

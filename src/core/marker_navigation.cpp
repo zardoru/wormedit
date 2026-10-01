@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <ranges>
+#include <iterator>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <variant>
@@ -303,6 +305,112 @@ void collect_sections(marker_search_t<coordinate_t>& search, const chart_documen
     for (const auto& section : chart.sections) consider_section(search, section);
 }
 
+// Projects audio-time markers onto absolute rows for beat navigation.
+struct audio_projection_t {
+    const timing_index_t* timing{};
+    const measure_index_t* measures{};
+    diagnostic_list_t warnings;
+    bool timing_usable{true};
+};
+
+struct projected_row_t {
+    std::uint64_t row{};
+    local_position_t position;
+};
+
+void warn(audio_projection_t& projection, std::string message,
+          std::optional<object_id_t> object = std::nullopt) {
+    projection.warnings.push_back({.severity = diagnostic_severity_t::warning,
+                                   .code = diagnostic_code_t::row_out_of_range,
+                                   .message = std::move(message),
+                                   .object = object});
+}
+
+auto locate_row(const measure_index_t& measures, std::uint64_t row)
+    -> std::optional<projected_row_t> {
+    const auto next = std::ranges::upper_bound(measures.entries, row, {},
+                                               &measure_index_entry_t::absolute_begin_row);
+    if (next == measures.entries.begin() || row >= measures.total_rows) return std::nullopt;
+    const auto& entry = *std::prev(next);
+    if (row - entry.absolute_begin_row >= entry.row_capacity) return std::nullopt;
+    return projected_row_t{row, {entry.id, row - entry.absolute_begin_row}};
+}
+
+auto project_audio_milliseconds(audio_projection_t& projection, std::int64_t milliseconds,
+                                object_id_t object) -> std::optional<projected_row_t> {
+    if (!projection.timing_usable) return std::nullopt;
+    const auto query = musical_position_at(*projection.timing, {milliseconds, 1000});
+    if (!query.absolute_row) {
+        if (query.error && query.error->code == timing_error_code_t::invalid_document) {
+            projection.timing_usable = false;
+            warn(projection, "timing index is unusable; audio-time markers are not navigable");
+        } else {
+            warn(projection, "audio-time marker lies outside the chart timing range", object);
+        }
+        return std::nullopt;
+    }
+    const auto& row = *query.absolute_row;
+    const auto located = row.numerator < 0 || row.denominator == 0
+                             ? std::nullopt
+                             : locate_row(*projection.measures,
+                                          static_cast<std::uint64_t>(row.numerator) /
+                                              row.denominator);
+    if (!located) warn(projection, "audio-time marker maps outside the chart rows", object);
+    return located;
+}
+
+void consider_projected(marker_search_t<std::uint64_t>& search, audio_projection_t& projection,
+                        marker_navigation_item_t item) {
+    const auto projected = project_audio_milliseconds(projection, *item.audio_milliseconds,
+                                                      item.object);
+    if (!projected) return;
+    item.beat_position = projected->position;
+    search.consider(projected->row, std::move(item));
+}
+
+void project_audio_bookmark(marker_search_t<std::uint64_t>& search,
+                            audio_projection_t& projection, const bookmark_t& bookmark) {
+    if (bookmark.anchor != marker_anchor_t::audio_time || !bookmark.id) return;
+    if (bookmark.position || !bookmark.audio_milliseconds) {
+        reject(search.diagnostics, diagnostic_code_t::invalid_id,
+               "audio-time bookmark has inconsistent position fields", bookmark.id);
+        return;
+    }
+    consider_projected(search, projection,
+                       {.object = bookmark.id, .kind = marker_navigation_kind_t::bookmark,
+                        .source_order = bookmark.id.value,
+                        .audio_milliseconds = bookmark.audio_milliseconds});
+}
+
+void project_audio_section(marker_search_t<std::uint64_t>& search,
+                           audio_projection_t& projection, const section_t& section) {
+    if (section.anchor != marker_anchor_t::audio_time || !section.id) return;
+    if (section.beat_span || !section.audio_millisecond_span ||
+        section.audio_millisecond_span->second <= section.audio_millisecond_span->first) {
+        reject(search.diagnostics, diagnostic_code_t::invalid_id,
+               "audio-time section has an inconsistent or empty span", section.id);
+        return;
+    }
+    const auto [begin, end] = *section.audio_millisecond_span;
+    if (search.filter.include_section_begins)
+        consider_projected(search, projection,
+                           {.object = section.id, .kind = marker_navigation_kind_t::section_begin,
+                            .source_order = section.id.value, .audio_milliseconds = begin});
+    if (search.filter.include_section_ends)
+        consider_projected(search, projection,
+                           {.object = section.id, .kind = marker_navigation_kind_t::section_end,
+                            .source_order = section.id.value, .audio_milliseconds = end});
+}
+
+void collect_projected_audio_markers(marker_search_t<std::uint64_t>& search,
+                                     audio_projection_t& projection,
+                                     const chart_document_t& chart) {
+    if (search.filter.include_bookmarks)
+        for (const auto& bookmark : chart.bookmarks)
+            project_audio_bookmark(search, projection, bookmark);
+    for (const auto& section : chart.sections) project_audio_section(search, projection, section);
+}
+
 auto validate_selected_marker(const chart_document_t& chart, const marker_navigation_item_t& item,
                               marker_navigation_result_t& result) -> bool {
     const auto count = chart_object_id_count(chart, item.object);
@@ -324,7 +432,8 @@ auto navigate_impl(const song_document_t& song, std::uint64_t expected_revision,
                    chart_id_t chart_id, coordinate_t cursor,
                    marker_navigation_direction_t direction, marker_navigation_filter_t filter,
                    marker_navigation_limits_t limits, marker_anchor_t anchor,
-                   const measure_lookup_t* measures) -> marker_navigation_result_t {
+                   const measure_lookup_t* measures, audio_projection_t* projection = nullptr)
+    -> marker_navigation_result_t {
     marker_navigation_result_t result{.document_revision = song.revision, .chart = chart_id};
     auto query = validate_chart_query(song, expected_revision, chart_id, limits);
     if (!query.diagnostics.empty()) {
@@ -348,10 +457,17 @@ auto navigate_impl(const song_document_t& song, std::uint64_t expected_revision,
                                          result.diagnostics, std::nullopt};
     collect_bookmarks(search, *query.chart);
     collect_sections(search, *query.chart);
+    if (projection) {
+        if constexpr (std::is_same_v<coordinate_t, std::uint64_t>)
+            collect_projected_audio_markers(search, *projection, *query.chart);
+    }
     if (!result.diagnostics.empty()) {
         result.status = marker_navigation_status_t::invalid_request;
         return result;
     }
+    if (projection)
+        result.diagnostics.insert(result.diagnostics.end(), projection->warnings.begin(),
+                                  projection->warnings.end());
     if (!search.best) return result;
     if (!validate_selected_marker(*query.chart, search.best->item, result)) {
         result.status = marker_navigation_status_t::invalid_request;
@@ -367,7 +483,8 @@ auto navigate_impl(const song_document_t& song, std::uint64_t expected_revision,
 auto navigate_markers(const song_document_t& song, std::uint64_t expected_revision,
                       chart_id_t chart, local_position_t beat_cursor,
                       marker_navigation_direction_t direction, marker_navigation_filter_t filter,
-                      marker_navigation_limits_t limits) -> marker_navigation_result_t {
+                      marker_navigation_limits_t limits, const timing_index_t* timing)
+    -> marker_navigation_result_t {
     auto result = marker_navigation_result_t{.document_revision = song.revision, .chart = chart};
     auto query = validate_chart_query(song, expected_revision, chart, limits);
     if (!query.diagnostics.empty()) {
@@ -389,8 +506,9 @@ auto navigate_markers(const song_document_t& song, std::uint64_t expected_revisi
         result.status = marker_navigation_status_t::invalid_request;
         return result;
     }
+    audio_projection_t projection{.timing = timing, .measures = &measures};
     return navigate_impl(song, expected_revision, chart, *cursor_row, direction, filter, limits,
-                         marker_anchor_t::beat, &measure_lookup);
+                         marker_anchor_t::beat, &measure_lookup, timing ? &projection : nullptr);
 }
 
 auto navigate_markers(const song_document_t& song, std::uint64_t expected_revision,

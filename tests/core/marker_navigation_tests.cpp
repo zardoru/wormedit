@@ -262,3 +262,115 @@ TEST_CASE("beat marker navigation indexes large measure sets once per query",
     CHECK(result.item->object == object_id_t{2});
     CHECK(elapsed < std::chrono::milliseconds{500});
 }
+
+namespace {
+
+auto projected_song() -> song_document_t {
+    chart_document_t chart{.id = chart_id_t{2}, .divisions_per_standard_measure = 960};
+    chart.measures = {{.id = measure_id_t{1}, .definition = {{1, 1}, meter_t{4, 4}}},
+                      {.id = measure_id_t{2}, .definition = {{1, 1}, meter_t{4, 4}}}};
+    chart.bpms = {{.id = object_id_t{10},
+                   .position = {measure_id_t{1}, 0},
+                   .beats_per_minute = {120, 1}}};
+    chart.pauses = {{.id = object_id_t{11},
+                     .position = {measure_id_t{1}, 480},
+                     .kind = pause_kind_t::stop,
+                     .duration = {1, 1},
+                     .source_unit = pause_unit_t::seconds}};
+    chart.bookmarks = {{.id = object_id_t{1},
+                        .anchor = marker_anchor_t::beat,
+                        .position = local_position_t{measure_id_t{2}, 0}},
+                       {.id = object_id_t{2},
+                        .anchor = marker_anchor_t::audio_time,
+                        .audio_milliseconds = 250},
+                       {.id = object_id_t{3},
+                        .anchor = marker_anchor_t::audio_time,
+                        .audio_milliseconds = 1500},
+                       {.id = object_id_t{4},
+                        .anchor = marker_anchor_t::audio_time,
+                        .audio_milliseconds = 600'000}};
+    chart.sections = {{.id = object_id_t{5},
+                       .anchor = marker_anchor_t::audio_time,
+                       .audio_millisecond_span = std::pair{500, 750}}};
+    return {.id = song_id_t{1}, .revision = 4, .charts = {std::move(chart)}};
+}
+
+auto next_from(const song_document_t& song, std::uint32_t row, const timing_index_t* timing)
+    -> marker_navigation_result_t {
+    return navigate_markers(song, 4, chart_id_t{2}, local_position_t{measure_id_t{1}, row},
+                            marker_navigation_direction_t::next, {}, {}, timing);
+}
+
+} // namespace
+
+TEST_CASE("timing projection adds audio-time markers at exact rows",
+          "[unit][core][marker-navigation]") {
+    const auto song = projected_song();
+    const auto built = build_timing_index(song.charts.front());
+    REQUIRE(built);
+    const auto* timing = &*built.index;
+
+    // 120 BPM: 250 ms is row 120, 500 ms row 240, 750 ms row 360.
+    const auto first = next_from(song, 0, timing);
+    REQUIRE(first.status == marker_navigation_status_t::found);
+    CHECK(first.item->object == object_id_t{2});
+    CHECK(first.item->beat_position == local_position_t{measure_id_t{1}, 120});
+    CHECK(first.item->audio_milliseconds == 250);
+
+    const auto begin = next_from(song, 120, timing);
+    CHECK(begin.item->object == object_id_t{5});
+    CHECK(begin.item->kind == marker_navigation_kind_t::section_begin);
+    CHECK(begin.item->beat_position == local_position_t{measure_id_t{1}, 240});
+    const auto end = next_from(song, 240, timing);
+    CHECK(end.item->kind == marker_navigation_kind_t::section_end);
+    CHECK(end.item->beat_position == local_position_t{measure_id_t{1}, 360});
+
+    // 1500 ms falls inside the one-second stop at row 480 and maps to that row.
+    const auto stop = next_from(song, 360, timing);
+    CHECK(stop.item->object == object_id_t{3});
+    CHECK(stop.item->beat_position == local_position_t{measure_id_t{1}, 480});
+
+    const auto beat = next_from(song, 480, timing);
+    CHECK(beat.item->object == object_id_t{1});
+}
+
+TEST_CASE("timing projection skips out-of-range markers with a diagnostic",
+          "[unit][core][marker-navigation][negative]") {
+    const auto song = projected_song();
+    const auto built = build_timing_index(song.charts.front());
+    REQUIRE(built);
+
+    const auto result = next_from(song, 480, &*built.index);
+    REQUIRE(result.status == marker_navigation_status_t::found);
+    CHECK(result.item->object == object_id_t{1});
+    REQUIRE(result.diagnostics.size() == 1);
+    CHECK(result.diagnostics.front().severity == diagnostic_severity_t::warning);
+    CHECK(result.diagnostics.front().object == object_id_t{4});
+}
+
+TEST_CASE("beat navigation without a timing index ignores audio-time markers",
+          "[unit][core][marker-navigation]") {
+    const auto song = projected_song();
+    const auto result = next_from(song, 0, nullptr);
+    REQUIRE(result);
+    CHECK(result.item->object == object_id_t{1});
+
+    const auto built = build_timing_index(song.charts.front());
+    REQUIRE(built);
+    const auto previous = navigate_markers(
+        song, 4, chart_id_t{2}, local_position_t{measure_id_t{2}, 0},
+        marker_navigation_direction_t::previous, {}, {}, &*built.index);
+    REQUIRE(previous.status == marker_navigation_status_t::found);
+    CHECK(previous.item->object == object_id_t{3});
+}
+
+TEST_CASE("an unusable timing index falls back to beat markers with one warning",
+          "[unit][core][marker-navigation][negative]") {
+    const auto song = projected_song();
+    const timing_index_t unusable{};
+    const auto result = next_from(song, 0, &unusable);
+    REQUIRE(result.status == marker_navigation_status_t::found);
+    CHECK(result.item->object == object_id_t{1});
+    REQUIRE(result.diagnostics.size() == 1);
+    CHECK(result.diagnostics.front().severity == diagnostic_severity_t::warning);
+}

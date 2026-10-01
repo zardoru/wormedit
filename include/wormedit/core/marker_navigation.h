@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/timing.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -63,11 +64,20 @@ struct marker_navigation_result_t {
 // respected. Navigation is strict: previous/next excludes an item exactly at
 // the cursor. At equal positions, stable chart-wide object IDs determine order;
 // next returns the lowest ID and previous the highest ID.
+//
+// When a timing index is passed, audio-time bookmarks and section boundaries are
+// also candidates: each millisecond value is converted to an absolute row by
+// inverse timing lookup (warp side = entry) and floored to the row that contains
+// it; the item then carries both beat_position and audio_milliseconds. A marker
+// outside the timing range is skipped and reported as a warning diagnostic, and
+// an unusable timing index falls back to beat markers with one warning. The
+// result keeps status found, but operator bool is false while warnings exist.
+// With no timing index, behavior is unchanged and audio markers are ignored.
 [[nodiscard]] auto
 navigate_markers(const song_document_t& song, std::uint64_t expected_revision, chart_id_t chart,
                  local_position_t beat_cursor, marker_navigation_direction_t direction,
-                 marker_navigation_filter_t filter = {}, marker_navigation_limits_t limits = {})
-    -> marker_navigation_result_t;
+                 marker_navigation_filter_t filter = {}, marker_navigation_limits_t limits = {},
+                 const timing_index_t* timing = nullptr) -> marker_navigation_result_t;
 
 // Audio-time cursors compare only audio-anchored bookmarks and section
 // boundaries, using signed integer milliseconds without a timing approximation.

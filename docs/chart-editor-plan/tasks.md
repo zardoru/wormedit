@@ -31,7 +31,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Frame time during live transport](tasks/live-transport.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-278.
+every number above T-287.
 
 ## Rules for whoever executes a card
 
@@ -45,6 +45,7 @@ every number above T-278.
 8. When finished, edit `resume.md` only to remove or advance the finished card's line, and report what you changed.
 9. **Stale-plan check first.** The stage roadmap lags the code. Before step 1, search for the behavior the **Outcome** describes (the card names a symbol or string to grep when it can). If it already works, set **Status** to `done (already implemented: <file:line>)`, change nothing else, and stop.
 10. A card whose status is `blocked-on-user` starts with a **STOP** step naming the [open question](decisions/open-questions.md) or missing input. Do not implement the provisional default unless the user says so.
+11. A card whose status starts with `deferred` is a late-stage ambition. Never pick it up while choosing work; start it only when the user names its ID. Its original status is kept in parentheses for when it is un-deferred.
 
 ## Standard wiring pattern for a new UI action
 
@@ -66,7 +67,7 @@ Copy this shape for every new card. Every heading is mandatory. The
 ```text
 ## T-NN Title (imperative, one behavior)
 
-- **Status:** ready | blocked-on-user | blocked-on <T-id> | done
+- **Status:** ready | blocked-on-user | blocked-on <T-id> | deferred (was: …) | done
 - **Outcome:** one sentence a reviewer can check by running something.
 - **Read first:** exact paths (max 5).
 - **Files owned:** exact paths this card may create or edit.

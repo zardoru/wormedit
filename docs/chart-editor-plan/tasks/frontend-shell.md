@@ -160,14 +160,12 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 
 ## T-48 Decide how trackpad momentum reaches Compose
 
-- **Status:** blocked-on-user
-- **Outcome:** a recorded decision on whether wormedit synthesizes momentum or relies on OS-delivered momentum wheel events.
-- **Read first:** `include/wormedit/core/viewport_input.h` (`begin_momentum`), `src/ui/nuklear/frontend.cpp` (`queue_compose_wheel_event`), `docs/chart-editor-plan/editing/interactions.md` (wheel/trackpad paragraphs).
-- **Files owned:** `docs/chart-editor-plan/decisions/open-questions.md`.
-- **Steps:**
-  1. STOP: explain to the user that SDL3 exposes no trackpad phase events; macOS already sends momentum as wheel events. Ask whether synthesized momentum is wanted on Linux/Windows.
-  2. Record the answer. If "yes", add a follow-up card that calls `begin_momentum` when smooth wheel input stops for 50 ms.
-- **Invariants:** none (decision only).
+- **Status:** done (user decision 2026-09-30: no synthetic momentum; rely on OS-delivered wheel events (macOS momentum), elsewhere scrolling stops with the fingers.)
+- **Outcome:** decision recorded.
+- **Read first:** `include/wormedit/core/viewport_input.h`.
+- **Files owned:** this file.
+- **Steps:** recorded.
+- **Invariants:** none.
 - **Reject/failure behavior:** none.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^documentation\.'`.
 - **Out of scope:** implementation.

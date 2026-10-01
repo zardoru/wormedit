@@ -566,7 +566,7 @@ static void render_workspace_error(WormUiWorkspaceAction* action, int width, int
                                      ? diagnostic
                                      : "No diagnostic was provided for the workspace error.");
         nk_layout_row_dynamic(g_context, 30, 2);
-        if (nk_button_label(g_context, "Setup")) {
+        if (nk_button_label(g_context, "Project")) {
             action->kind = WORM_UI_WORKSPACE_ACTION_SWITCH_TAB;
             action->tab = WORM_UI_WORKSPACE_TAB_SETUP;
         }
@@ -1004,6 +1004,12 @@ static auto render_recovery_panel(const WormUiWorkspaceView& view,
     return height;
 }
 
+static auto render_recovery_above_content(const WormUiWorkspaceView& view,
+    WormUiWorkspaceAction& action) -> float {
+    if (view.setup.visible) return 0.0f;
+    return render_recovery_panel(view, action);
+}
+
 static void render_workspace_content(const WormUiWorkspaceView& view,
                                      WormUiWorkspaceAction& action) {
     prepare_workspace_content_scroll(g_context, view.compose.visible);
@@ -1012,6 +1018,7 @@ static void render_workspace_content(const WormUiWorkspaceView& view,
         return;
     if (view.setup.visible) {
         worm_ui_nuklear_render_setup_panel(g_context, &view.setup, &action);
+        (void)render_recovery_panel(view, action);
     } else if (view.metadata.visible) {
         worm_ui_nuklear_render_metadata_panel(g_context, &view.metadata, &action,
                                               g_window_focused);
@@ -1069,7 +1076,7 @@ static auto workspace_validation_error(const WormUiWorkspaceView& view) -> const
                        view.recovery_diagnostic_count <= WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY
                    ? nullptr : "Empty workspace view data is invalid.";
     if (!workspace_base_view_valid(view)) return "Workspace view data is invalid.";
-    if (!worm_ui_nuklear_setup_view_valid(&view.setup)) return "Setup view data is invalid.";
+    if (!worm_ui_nuklear_setup_view_valid(&view.setup)) return "Project view data is invalid.";
     if (!metadata_workspace_view_valid(view.metadata)) return "Metadata view data is invalid.";
     if ((view.timing.visible || view.compose.visible) &&
         !worm_ui_nuklear_timing_view_valid(&view.timing))
@@ -1362,7 +1369,7 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
         render_title_bar(&view, &action);
         render_transport_seek_control(view, action);
         render_workspace_tabs(&view, &action);
-        const float recovery_height = render_recovery_panel(view, action);
+        const float recovery_height = render_recovery_above_content(view, action);
         float content_height = frame.height > 300
                                   ? static_cast<float>(frame.height) - 132.0f - recovery_height
                                   : 80.0f;

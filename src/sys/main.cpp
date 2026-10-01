@@ -28,6 +28,8 @@
 #include "sys/platform_shortcut_profile.h"
 #include "sys/external_player.h"
 #include "sys/preferences_runtime.h"
+#include "sys/project_view.h"
+#include <wormedit/core/chart_editor.h>
 #include "sys/tap_timing_runtime.h"
 #include <SDL3/SDL_filesystem.h>
 #include <wormedit/core/virtual_canvas.h>
@@ -1651,6 +1653,48 @@ auto dispatch_external_player_action(external_player_runtime_t& runtime,
     return true;
 }
 
+auto open_project_chart(wormedit::document_history_t& history,
+    wormedit::workspace_controller_t& workspace,
+    std::optional<wormedit::editor_interaction_state_t>& interaction, wormedit::chart_id_t chart)
+    -> std::string {
+    const auto selected = wormedit::apply_workspace_action(workspace, history.document,
+        history.document.revision, wormedit::workspace_select_chart_action_t{chart});
+    if (!selected) return selected.diagnostics.empty() ? "Chart selection failed." : selected.diagnostics.front().message;
+    const auto opened = wormedit::apply_workspace_action(workspace, history.document,
+        history.document.revision, wormedit::workspace_switch_tab_action_t{wormedit::workspace_tab_t::compose});
+    if (!opened) return opened.diagnostics.empty() ? "Compose could not be opened." : opened.diagnostics.front().message;
+    interaction.reset();
+    return {};
+}
+
+bool dispatch_project_chart_action(wormedit::sys::project_chart_runtime_t& runtime,
+    const WormUiProjectChartAction& action, wormedit::document_history_t& history,
+    wormedit::workspace_controller_t& workspace,
+    std::optional<wormedit::editor_interaction_state_t>& interaction,
+    application_command_state_t& application, std::string& status, bool handled, bool loaded) {
+    if (handled) return true;
+    if (!loaded || action.kind == WORM_UI_PROJECT_CHART_NONE) return false;
+    const auto previous_chart = workspace.selected_chart;
+    auto result = wormedit::sys::apply_project_chart_ui_action(runtime, history, action);
+    status = result.status;
+    if (result.applied) {
+        const auto rebound = wormedit::rebind_workspace(workspace, history);
+        if (!rebound) {
+            status = rebound.diagnostics.empty() ? "Project changed, but workspace rebinding failed." : rebound.diagnostics.front().message;
+            return true;
+        }
+    }
+    if (result.open_chart) {
+        if (application.transport_stop) application.transport_stop();
+        const auto error = open_project_chart(history, workspace, interaction, *result.open_chart);
+        if (!error.empty()) status = error;
+    } else if (previous_chart != workspace.selected_chart) {
+        if (application.transport_stop) application.transport_stop();
+        interaction.reset();
+    }
+    return true;
+}
+
 void refresh_note_kind_commands(wormedit::command_registry_t& registry,
     const wormedit::chart_document_t* chart,
     const std::optional<wormedit::editor_interaction_state_t>& compose_state,
@@ -1694,7 +1738,7 @@ void refresh_application_command_states(
         (void)update_command_state(registry, command_id_t{std::move(id)}, enabled, checked);
     };
     set("document.new_project", false);
-    set("document.new_chart", false);
+    set("document.new_chart", chart != nullptr);
     set("history.undo", !history.undo.empty());
     set("history.redo", !history.redo.empty());
     set("edit.delete", compose_ready);
@@ -2338,6 +2382,8 @@ void reset_project_edit_state(application_command_state_t& current) {
 
 template <typename Context>
 void reset_project_runtime_state(Context& context) {
+    const auto generation = context.project_chart_runtime_ref.session_generation + 1;
+    context.project_chart_runtime_ref = {.session_generation = generation};
     context.audio_offset_drag_ref.reset();
     context.audio_offset_drag_tab_ref.reset();
     context.compose_interaction_state_ref.reset();
@@ -2948,6 +2994,18 @@ auto dispatch_registered_application_command(
         return wormedit::sys::reject_application_command(
             status, "Command is not implemented by the application.");
     }
+    if (command->kind == wormedit::sys::application_command_kind_t::document_new_chart) {
+        const auto created = wormedit::apply_new_chart_command(history, history.document.revision);
+        if (!created) return wormedit::sys::reject_application_command(status,
+            created.command.diagnostics.empty() ? "New chart could not be created." : created.command.diagnostics.front().message);
+        const auto rebound = wormedit::rebind_workspace(workspace, history);
+        if (!rebound) return wormedit::sys::reject_application_command(status, "New chart created, but workspace rebinding failed.");
+        if (application_command_state.transport_stop) application_command_state.transport_stop();
+        const auto error = open_project_chart(history, workspace, compose_interaction_state, *created.chart);
+        if (!error.empty()) return wormedit::sys::reject_application_command(status, error);
+        status = "New chart created.";
+        return wormedit::command_invocation_result_t{.accepted = true};
+    }
     if (command->kind == wormedit::sys::application_command_kind_t::timing_tap_assistant) {
         tap_runtime.toggle();
         (void)tap_runtime.observe(tap_clock());
@@ -3100,6 +3158,7 @@ int main(int argc, char** argv) {
     wormedit::editor_navigation_input_controller_t compose_navigation_input;
     application_command_state_t application_command_state;
     external_player_runtime_t external_player_runtime;
+    wormedit::sys::project_chart_runtime_t project_chart_runtime;
     auto program_preferences = wormedit::sys::load_program_preferences_runtime();
     initialize_program_preferences(program_preferences, external_player_runtime, application_command_state, status);
     application_command_state.external_player = [&](wormedit::sys::external_player_action_t action) {
@@ -3224,6 +3283,7 @@ int main(int argc, char** argv) {
         decltype(recovery_controller)& recovery_controller_ref;
         decltype(scanned_primary_version)& scanned_primary_version_ref;
         decltype(external_player_runtime)& external_player_runtime_ref;
+        decltype(project_chart_runtime)& project_chart_runtime_ref;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         decltype(audition_reconciliation)& audition_reconciliation_ref;
 #endif
@@ -3261,6 +3321,7 @@ int main(int argc, char** argv) {
         recovery_controller,
         scanned_primary_version,
         external_player_runtime,
+        project_chart_runtime,
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         audition_reconciliation,
 #endif
@@ -3369,6 +3430,7 @@ int main(int argc, char** argv) {
             flattened.view.transport_keep_pitch = application_command_state.transport_keep_pitch;
             flattened.view.transport_keep_pitch_available = application_command_state.transport_keep_pitch_available;
             project_external_player_view(external_player_runtime, flattened.view);
+            wormedit::sys::project_chart_view(project_chart_runtime, history.document, flattened.view.setup);
             project_tap_timing(tap_runtime, tap_clock, command_registry, flattened.view);
             publish_tap_assist();
             flattened.view.project_loaded = session_loaded;
@@ -3400,8 +3462,11 @@ int main(int argc, char** argv) {
                 const bool external_handled =
                     dispatch_external_player_action(external_player_runtime, action.external_player,
                                                     application_command_state, status);
+                const bool project_handled = dispatch_project_chart_action(project_chart_runtime, action.project_chart,
+                    history, workspace, compose_interaction_state, application_command_state, status,
+                    shortcut_handled || external_handled, session_loaded);
                 dispatch_workspace_frame_action(
-                    workspace_frame_action_context, action, shortcut_handled || external_handled,
+                    workspace_frame_action_context, action, project_handled,
                     selected_waveform_sample_rate, flattened.view.compose.viewport_height_pixels);
             }
         }

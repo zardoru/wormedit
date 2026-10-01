@@ -2,13 +2,15 @@
 
 [Back to the task-card index](../tasks.md).
 
+> **Deferred group (user decision, 2026-09-30):** these are late-stage ambitions, not MVP work. Every card here is `deferred`; do not start one unless the user explicitly asks for it by ID.
+
 Stage 8 from [later work](../stages/later.md). The `.qua` format is documented in the [Quaver format reference](../../references/quaver-qua-format.md). The document model already has a
 `roll` note kind and the SM/SSC codec reads and writes rolls; authoring and
 ticked holds are missing. Apply the stale-plan check (rule 9) first.
 
 ## T-170 Author StepMania rolls
 
-- **Status:** ready
+- **Status:** deferred (stage 7–8 ambition; was: ready)
 - **Outcome:** in StepMania-family charts, a toolbar note-kind toggle makes hold entry (mouse Alt-drag and lane-key hold) create rolls instead of holds; rolls draw with a distinct striped body.
 - **Read first:** `include/wormedit/core/document.h` (`roll`), `src/core/interaction.cpp` (hold entry), `src/ui/nuklear/compose_canvas.cpp` (hold body drawing), `src/formats/stepmania.cpp`.
 - **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `tests/core/interaction_tests.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_toolbar.cpp`.
@@ -20,7 +22,7 @@ ticked holds are missing. Apply the stale-plan check (rule 9) first.
 
 ## T-171 Read and write SSC `TICKCOUNTS`
 
-- **Status:** ready
+- **Status:** deferred (stage 7–8 ambition; was: ready)
 - **Outcome:** SSC `#TICKCOUNTS` imports into a chart-scoped tick-count timing segment list and exports identically; `.sm` export reports a loss when non-default tick counts exist.
 - **Read first:** `src/formats/stepmania.cpp`, `include/wormedit/formats/stepmania.h`, `include/wormedit/core/document.h` (typed timing events), `tests/formats/stepmania_tests.cpp`.
 - **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, `src/formats/stepmania.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/stepmania_tests.cpp`, `tests/formats/native_project_tests.cpp`, new fixture `tests/fixtures/stepmania/tickcounts.ssc`.
@@ -32,7 +34,7 @@ ticked holds are missing. Apply the stale-plan check (rule 9) first.
 
 ## T-172 Edit and preview tick counts
 
-- **Status:** blocked-on T-171
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-171)
 - **Outcome:** a Ticks timing lane in Timing/Compose edits tick-count segments; player preview draws tick marks along holds.
 - **Read first:** `include/wormedit/core/timing_lane_controller.h`, `src/ui/nuklear/timing_panel.cpp`, `src/core/player_preview.cpp`.
 - **Files owned:** `include/wormedit/core/timing_lane_controller.h`, `src/core/timing_lane_controller.cpp`, `tests/core/timing_lane_controller_tests.cpp`, `src/sys/timing_view.cpp`, `src/ui/nuklear/timing_panel.cpp`, `src/core/player_preview.cpp`, `tests/core/player_preview_tests.cpp`.
@@ -44,7 +46,7 @@ ticked holds are missing. Apply the stale-plan check (rule 9) first.
 
 ## T-173 Add paired Quaver `.qua` fixtures
 
-- **Status:** ready
+- **Status:** deferred (stage 7–8 ambition; was: ready)
 - **Outcome:** hand-written positive and negative `.qua` fixtures with expected semantics in the fixture README, covering every construct in the format reference.
 - **Read first:** `docs/references/quaver-qua-format.md`, `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`.
 - **Files owned:** new `tests/fixtures/quaver/` (fixtures), `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`, `.gitattributes` (add `*.qua -text` so CRLF survives).
@@ -59,7 +61,7 @@ ticked holds are missing. Apply the stale-plan check (rule 9) first.
 
 ## T-174 Read `.qua` files
 
-- **Status:** blocked-on T-173
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-173)
 - **Outcome:** a bounded, transactional `.qua` reader imports every construct in the reference into the song document, retaining unmodeled data (timing groups, `LegacyLNRendering`, map IDs) as format fields for round trips.
 - **Read first:** `docs/references/quaver-qua-format.md`, `src/formats/osu_mania.cpp` (millisecond-to-measure rewiring), `include/wormedit/formats/osu_mania.h`.
 - **Files owned:** new `include/wormedit/formats/quaver.h`, new `src/formats/quaver.cpp`, new `tests/formats/quaver_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -75,7 +77,7 @@ ticked holds are missing. Apply the stale-plan check (rule 9) first.
 
 ## T-175 Write `.qua` files
 
-- **Status:** blocked-on T-174
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-174)
 - **Outcome:** a deterministic writer emits CRLF YAML with default-valued fields omitted, `QuaVersion` computed, and semantic re-import equality for every positive fixture; the format is added to the conversion pipeline.
 - **Read first:** `docs/references/quaver-qua-format.md` (write rules), `include/wormedit/formats/conversion.h`, `src/formats/conversion.cpp`.
 - **Files owned:** `src/formats/quaver.cpp`, `include/wormedit/formats/quaver.h`, `tests/formats/quaver_tests.cpp`, `src/formats/conversion.cpp`, `include/wormedit/formats/conversion.h`, `tests/formats/conversion_tests.cpp`.

@@ -2,6 +2,8 @@
 
 [Back to the task-card index](../tasks.md).
 
+> **Deferred group (user decision, 2026-09-30):** these are late-stage ambitions, not MVP work. Every card here is `deferred`; do not start one unless the user explicitly asks for it by ID.
+
 Stage 7 from [later work](../stages/later.md) and the
 [OSBX draft](../../osbx-draft-spec.md). Several items wait on open questions 9,
 13, and 16; those cards are `blocked-on-user`. Apply the stale-plan check
@@ -9,7 +11,7 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-150 Parse and emit OSB Animation objects
 
-- **Status:** ready
+- **Status:** deferred (stage 7–8 ambition; was: ready)
 - **Outcome:** `Animation,layer,origin,"path",x,y,frameCount,frameDelay,loopType` headers parse into a structured object with the same command children as Sprite, and emit back identically.
 - **Read first:** `include/wormedit/core/storyboard.h`, `src/core/storyboard.cpp`, `tests/core/storyboard_tests.cpp`.
 - **Files owned:** `include/wormedit/core/storyboard.h`, `src/core/storyboard.cpp`, `src/formats/native_project.cpp` (storyboard JSON), `tests/core/storyboard_tests.cpp`, `tests/formats/native_project_tests.cpp`.
@@ -21,7 +23,7 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-151 Parse and emit OSB Sample directives
 
-- **Status:** ready
+- **Status:** deferred (stage 7–8 ambition; was: ready)
 - **Outcome:** `Sample,time,layer,"path",volume` lines become structured objects scheduled on the preview clock and emitted back identically.
 - **Read first:** as T-150, plus `include/wormedit/core/storyboard_preview.h`.
 - **Files owned:** as T-150, plus `src/core/storyboard_preview.cpp`, `tests/core/storyboard_preview_tests.cpp`.
@@ -33,7 +35,7 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-152 Draw Animation frames in the player preview
 
-- **Status:** blocked-on T-150
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-150)
 - **Outcome:** preview selects the correct frame path (`name0.png`, `name1.png`, …) from time, delay, and loop type.
 - **Read first:** `src/core/storyboard_preview.cpp`, `src/sys/player_preview_presenter.cpp`.
 - **Files owned:** `src/core/storyboard_preview.cpp`, `tests/core/storyboard_preview_tests.cpp`, `src/sys/player_preview_presenter.cpp`.
@@ -45,7 +47,7 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-153 Model OSB trigger blocks
 
-- **Status:** ready
+- **Status:** deferred (stage 7–8 ambition; was: ready)
 - **Outcome:** `T,triggerName,start,end` blocks with nested commands parse structurally instead of rejecting, and emit back identically; preview ignores them unless T-154 lands.
 - **Read first:** as T-150.
 - **Files owned:** as T-150.
@@ -57,7 +59,7 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-154 Simulate Pass/Fail state in storyboard preview
 
-- **Status:** blocked-on T-153
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-153)
 - **Outcome:** a preview toggle chooses Pass or Fail; the Pass/Fail layers and `Passing`/`Failing` triggers follow it.
 - **Read first:** `src/core/storyboard_preview.cpp`, `src/sys/player_preview_presenter.cpp`, `src/ui/nuklear/player_preview.cpp`.
 - **Files owned:** those three files, `src/ui/frontend.h`, `tests/core/storyboard_preview_tests.cpp`.
@@ -69,7 +71,7 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-155 Decide the storyboard-editor and video-export scope
 
-- **Status:** blocked-on-user
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on-user)
 - **Outcome:** answers to open questions 9 (standalone `.osb` vs `[Events]`), 16 (video profiles), and the OSBX syntax items in `memory/chart-editor-status/open-decisions.md`; then cards for the Storyboard tab, OSBX DSL, storyboard-to-video export, and the area-selection **Export player-preview video** action.
 - **Read first:** `docs/chart-editor-plan/decisions/open-questions.md`, `docs/osbx-draft-spec.md`, `docs/chart-editor-plan/playback/player-preview.md` (video export section).
 - **Files owned:** `docs/chart-editor-plan/decisions/open-questions.md`, this file.
@@ -81,7 +83,7 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-156 Create a sandboxed, bounded Lua state
 
-- **Status:** ready
+- **Status:** ready (un-deferred, user decision 2026-09-30: Lua SV recipes are near-term)
 - **Outcome:** a core wrapper creates a Lua 5.4 state with only `base` (minus `dofile`/`loadfile`/`load` of binary chunks), `string`, `table`, `math`, `utf8`; enforces an instruction budget and memory cap; returns typed errors.
 - **Read first:** `tests/lua/lua_runtime_tests.cpp`, `cmake/dependencies/lua.cmake`, `tests/CMakeLists.txt` (`wormedit_lua_tests`).
 - **Files owned:** new `include/wormedit/scripting/lua_sandbox.h`, new `src/scripting/lua_sandbox.cpp`, new `tests/lua/lua_sandbox_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -93,7 +95,7 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-157 Import Standard MIDI files as assets
 
-- **Status:** ready
+- **Status:** deferred (stage 7–8 ambition; was: ready)
 - **Outcome:** a bounded SMF type 0/1 reader produces exact tick-positioned notes, tempo, meter, markers, and controller events stored as a project MIDI asset.
 - **Read first:** `include/wormedit/core/document.h` (MIDI extension records), `docs/chart-editor-plan/formats-persistence.md` (MIDI paragraph).
 - **Files owned:** new `include/wormedit/formats/midi.h`, new `src/formats/midi.cpp`, new `tests/formats/midi_tests.cpp`, new fixtures under `tests/fixtures/midi/` (generated in-test or tiny hand-written bytes), `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -105,7 +107,7 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-158 Give Lua read-only access to the document
 
-- **Status:** blocked-on T-156
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-156)
 - **Outcome:** a versioned `wormedit` Lua table exposes selection, measures, timing, lane profile, and MIDI asset data read-only (API version 1).
 - **Read first:** `include/wormedit/scripting/lua_sandbox.h`, `docs/chart-editor-plan/formats-persistence.md` (Lua paragraphs), `docs/chart-editor-plan/decisions/open-questions.md` (question 13).
 - **Files owned:** new `src/scripting/lua_document_api.cpp/.h`, new `tests/lua/lua_document_api_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -117,7 +119,7 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-159 Run a Lua generator as a previewable command batch
 
-- **Status:** blocked-on T-158
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-158)
 - **Outcome:** a script returns note/layer proposals; the editor shows them as ghosts; Apply commits one command, Cancel discards.
 - **Read first:** `src/scripting/lua_document_api.h`, `src/core/interaction.cpp` (ghost proposals).
 - **Files owned:** new `src/scripting/lua_generator.cpp/.h`, new `tests/lua/lua_generator_tests.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_inspector.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -129,7 +131,7 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-160 Persist generator recipes
 
-- **Status:** blocked-on T-159
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-159)
 - **Outcome:** a generator run can be saved as a recipe (script hash, inputs, parameters, seed, materialized output IDs); re-running is explicit and previewed.
 - **Read first:** `include/wormedit/core/document.h` (generator-recipe records), `src/formats/native_project.cpp`.
 - **Files owned:** `src/scripting/lua_generator.cpp`, `src/formats/native_project.cpp`, `tests/formats/native_project_tests.cpp`, `tests/lua/lua_generator_tests.cpp`.
@@ -141,7 +143,7 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-161 Manage SV recipes in a list
 
-- **Status:** ready
+- **Status:** ready (un-deferred, user decision 2026-09-30: Lua SV recipes are near-term)
 - **Outcome:** the Timing pane lists the chart's SV/SCROLLS/SPEEDS recipes with Enable toggle, Duplicate, Delete, and Up/Down reorder, each one command.
 - **Read first:** `include/wormedit/core/sv_recipe.h`, `src/ui/nuklear/timing_panel.cpp` (recipe form), `src/sys/timing_edit_runtime.cpp`.
 - **Files owned:** `include/wormedit/core/sv_recipe.h`, `src/core/sv_recipe.cpp`, `tests/core/sv_recipe_tests.cpp`, `src/sys/timing_edit_runtime.cpp`, `src/sys/timing_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/timing_panel.cpp`.
@@ -151,14 +153,29 @@ Stage 7 from [later work](../stages/later.md) and the
 - **Verify:** standard build/test.
 - **Out of scope:** impulses (T-162).
 
-## T-162 Decide SV impulse policies
+## T-162 Add SV impulses as finite boxes
 
-- **Status:** blocked-on-user
-- **Outcome:** answers for per-target finite-pulse policy for zero-width impulses (sampling defaults are proposed in T-180; normalization is T-190), then a card for `curve.dirac`.
-- **Read first:** `memory/chart-editor-status/open-decisions.md`, `docs/chart-editor-plan/editing/interactions.md` (SV recipe paragraphs).
-- **Files owned:** `docs/chart-editor-plan/decisions/open-questions.md`, this file.
-- **Steps:** 1. STOP and ask. 2. Record; add follow-up cards.
-- **Invariants:** none.
-- **Reject/failure behavior:** none.
-- **Verify:** `ctest --test-dir build --output-on-failure -R '^documentation\.'`.
-- **Out of scope:** implementation.
+- **Status:** blocked-on T-190 (un-deferred, user decision 2026-09-30: Lua SV recipes are near-term)
+- **Outcome:** `curve.dirac { at, area }` adds a zero-width scroll impulse to a recipe; export compiles it to a finite constant box 1 ms wide by default (width configurable per recipe) whose integrated area equals the impulse, and the preview shows the generated points and approximation error (user decision 2026-09-30).
+- **Read first:** `docs/osbx-draft-spec.md` (Dirac impulses), `include/wormedit/core/sv_recipe.h` (`compile_sv_recipes`, `bake_sv_recipes_for_export`), `tests/core/sv_recipe_tests.cpp`.
+- **Files owned:** `include/wormedit/core/sv_recipe.h`, `src/core/sv_recipe.cpp`, `tests/core/sv_recipe_tests.cpp`, `src/formats/native_project.cpp`, `tests/formats/native_project_tests.cpp`.
+- **Steps:** 1. Impulse primitive in the recipe model (not sampled). 2. Box compilation at export with exact area and boundary ownership rules. 3. Coincident impulses add their areas. 4. Tests: area preservation, width setting, target resolution limits.
+- **Invariants:** recipes still store no sampled points.
+- **Reject/failure behavior:** a box narrower than the target's time resolution rejects with the minimum width.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'sv_recipe'`.
+- **Out of scope:** triangular pulses.
+
+## T-292 Carry storyboards into SM/SSC exports
+
+- **Status:** deferred (stage 7–8 ambition, user idea 2026-09-30; was: blocked-on T-155)
+- **Outcome:** exporting a song with an OSB/OSBX storyboard to SM/SSC can also emit a non-interactive version of it: by default a rendered video (offline storyboard renderer from T-155's follow-up cards) referenced through `#BGCHANGES` (background layers) and `#FGCHANGES` (foreground layers); optionally, a small bundled Lua OSB interpreter as a StepMania BGAnimation that reads the `.osb` and draws sprites with the game engine.
+- **Read first:** `docs/osbx-draft-spec.md` (Video export, Standard OSB compatibility export), `src/formats/stepmania.cpp` (retained `#BGCHANGES`/`#FGCHANGES` fields), `include/wormedit/core/storyboard_preview.h`.
+- **Files owned:** decided when un-deferred (split into a video-path card and an interpreter card first).
+- **Steps:**
+  1. Video path: render Background/Fail/Pass and Foreground layers to two videos (or one, flattened) over the song length; write `#BGCHANGES`/`#FGCHANGES` entries with exact beat or time starts; loss-diagnose trigger-dependent content (Pass/Fail chooses one state).
+  2. Interpreter path (optional): a Lua BGAnimation that parses the OSB subset wormedit emits (Sprite, Animation, commands, loops), evaluated per frame from the song time; per-profile notes on which forks allow song Lua (Etterna restricts it; SM5 and ITGmania allow BGAnimations).
+  3. Fixture: a small OSB rendered both ways; re-import keeps `#BGCHANGES`/`#FGCHANGES` round-trippable.
+- **Invariants:** the gameplay chart is unchanged; storyboard export never blocks chart export (it is an extra artifact).
+- **Reject/failure behavior:** unsupported storyboard features are listed as classified losses for the chosen path.
+- **Verify:** defined by the split cards.
+- **Out of scope:** interactive (input-reactive) storyboards in StepMania.

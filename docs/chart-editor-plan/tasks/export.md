@@ -39,11 +39,11 @@ Most remaining format work waits on user decisions; those cards are
 
 ## T-112 Decide the converter CLI name and schema
 
-- **Status:** blocked-on-user
-- **Outcome:** answer to open question 17 recorded, then a card for a headless CLI target that reads a JSON request and calls the same conversion + publication services.
-- **Read first:** `docs/chart-editor-plan/decisions/open-questions.md` (question 17), `docs/chart-editor-plan/formats-persistence.md` (converter paragraph).
+- **Status:** done (user decision 2026-09-30: separate executable `wormedit-convert` with its own JSON request schema; no rdconverter alias. Follow-up: T-281.)
+- **Outcome:** answer recorded in `docs/chart-editor-plan/decisions/open-questions.md` (question 17).
+- **Read first:** `docs/chart-editor-plan/decisions/open-questions.md`.
 - **Files owned:** `docs/chart-editor-plan/decisions/open-questions.md`, this file.
-- **Steps:** 1. STOP: ask question 17 and the JSON schema scope. 2. Record; add the follow-up card.
+- **Steps:** recorded; follow-up added.
 - **Invariants:** none.
 - **Reject/failure behavior:** none.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^documentation\.'`.
@@ -51,8 +51,8 @@ Most remaining format work waits on user decisions; those cards are
 
 ## T-113 Decide BMS dialect, StepMania, and osu! profile scope
 
-- **Status:** blocked-on-user
-- **Outcome:** answers to open questions 3 (BMS dialect target) and 18 (StepMania profiles), plus which osu!mania implementation profiles beyond stable v14 / lazer v128 to pin; each answer becomes a fixture-first follow-up card.
+- **Status:** done (user decision 2026-09-30; see Outcome)
+- **Outcome:** question 3 is answered (user decision 2026-09-30: BMS exports target beatoraja first; LR2/legacy compatibility is a separate named profile; follow-up T-282). Question 18 is answered (user decision 2026-09-30): keep the pinned StepMania 5.1 and Etterna 0.75.1 profiles; a modern AMX profile is a much later ambition. osu!mania: pin the latest lazer format version (T-291). No other profiles now.
 - **Read first:** `docs/chart-editor-plan/decisions/open-questions.md`, `docs/references/stepmania-warps-and-conversion.md`, `docs/references/osu-mania-version-profiles.md`.
 - **Files owned:** `docs/chart-editor-plan/decisions/open-questions.md`, this file.
 - **Steps:** 1. STOP and ask. 2. Record; add one card per new profile, each starting with "add paired positive/negative fixtures".
@@ -77,8 +77,9 @@ Most remaining format work waits on user decisions; those cards are
 
 ## T-115 Decide Standard MIDI export defaults
 
-- **Status:** blocked-on-user
+- **Status:** deferred (user decision 2026-09-30: MIDI export is a later ambition; was: blocked-on-user)
 - **Outcome:** answers for default tap duration, PPQ cap, track grouping, and loss policy (from `memory/chart-editor-status/open-decisions.md`), then a card for a MIDI writer over lane `midi_destination_t` mappings.
+- **Purpose (user, 2026-09-30):** a quality-of-life tool for advanced uses (driving storyboard generation, importing chart rhythm into Blender or other tools), not an interchange target; when un-deferred, favor faithful timing and per-lane tracks over playback fidelity.
 - **Read first:** `memory/chart-editor-status/open-decisions.md`, `include/wormedit/core/document.h` (`midi_destination_t`).
 - **Files owned:** `docs/chart-editor-plan/decisions/open-questions.md`, this file.
 - **Steps:** 1. STOP and ask the four defaults. 2. Record; add the writer card.
@@ -89,8 +90,8 @@ Most remaining format work waits on user decisions; those cards are
 
 ## T-116 Decide label export and non-gameplay round-trip scope
 
-- **Status:** blocked-on-user
-- **Outcome:** answers to open questions 1, 2, and 4, then cards for any writer changes they require.
+- **Status:** done (user decision 2026-09-30; see Outcome)
+- **Outcome:** questions 1 and 2 are answered (user decision 2026-09-30: labels are private author comments stored only in the native project; every exporter omits them with a non-fatal loss note, so no writer change is needed beyond that note). Question 4 is answered (user decision 2026-09-30): non-gameplay data must round-trip robustly for BMS and osu!mania (T-288, T-289); SM/SSC keeps only what the importer already preserves (no new writers; SSC is too ambitious for now).
 - **Read first:** `docs/chart-editor-plan/decisions/open-questions.md`, `docs/chart-editor-plan/document-model.md` (labels paragraph).
 - **Files owned:** `docs/chart-editor-plan/decisions/open-questions.md`, this file.
 - **Steps:** 1. STOP and ask. 2. Record; add follow-up cards.
@@ -98,3 +99,27 @@ Most remaining format work waits on user decisions; those cards are
 - **Reject/failure behavior:** none.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^documentation\.'`.
 - **Out of scope:** implementation.
+
+## T-281 Add the `wormedit-convert` command-line converter
+
+- **Status:** ready
+- **Outcome:** a separate headless executable `wormedit-convert` reads a JSON request (input file, target family and policies, chart selection, output directory, overwrite policy), runs the same `convert_document` and publication services as the editor, and prints a JSON result with artifacts and classified losses; exit code 0 only on success (user decision 2026-09-30).
+- **Read first:** `include/wormedit/formats/conversion.h`, `include/wormedit/formats/conversion_publication.h`, `src/sys/project_open.cpp` (input parsing), `docs/chart-editor-plan/formats-persistence.md` (converter paragraph).
+- **Files owned:** new `src/tools/wormedit_convert.cpp`, new `tests/tools/wormedit_convert_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Steps:** 1. Request/response schema with bounded parsing (nlohmann/json, as elsewhere). 2. Headless target (no SDL, no Nuklear). 3. Tests run the binary on fixtures (BMS → SSC, SM → osu!mania) and compare re-imported semantics.
+- **Invariants:** identical output to the editor's export for the same request.
+- **Reject/failure behavior:** invalid requests print a JSON error and exit non-zero without writing files.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'wormedit_convert'`.
+- **Out of scope:** an rdconverter-compatible argument mode.
+
+## T-282 Add a beatoraja BMS export profile
+
+- **Status:** ready
+- **Outcome:** BMS export defaults to a named `beatoraja` profile (user decision 2026-09-30): it may emit beatoraja-supported extensions (for example `#LNMODE`, `#SCROLL`/SC channel, `#PREVIEW`, extended BPM/STOP) where the document uses them, and an `lr2_compatible` profile restricts output to the classic command set with explicit loss diagnostics.
+- **Read first:** `src/formats/bms_writer.cpp`, `include/wormedit/formats/bms_writer.h`, `docs/references/bms-command-memo.md`, `include/wormedit/formats/conversion.h`.
+- **Files owned:** `src/formats/bms_writer.cpp`, `include/wormedit/formats/bms_writer.h`, `src/formats/conversion.cpp`, `tests/formats/bms_writer_tests.cpp`, new fixtures under `tests/fixtures/bms/` for each profile, `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`.
+- **Steps:** 1. Fixture-first: one paired fixture per extension, with the beatoraja behavior cited from beatoraja's source (record the commit). 2. Profile enum in the writer options; default `beatoraja`. 3. `lr2_compatible` converts or rejects each extension with a classified loss.
+- **Invariants:** unedited imports still re-export byte-identically under the profile they were imported with.
+- **Reject/failure behavior:** extensions the chosen profile cannot express reject with classified losses.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'bms|loss'`.
+- **Out of scope:** other players' profiles.

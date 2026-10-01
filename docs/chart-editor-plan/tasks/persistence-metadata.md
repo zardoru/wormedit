@@ -32,7 +32,7 @@ was recently reorganized into collapsible sections; apply the stale-plan check
 - **Read first:** `docs/references/recovery-design.md` (journal paragraphs), `include/wormedit/core/command.h`, `include/wormedit/core/autosave_loop.h`.
 - **Files owned:** new `include/wormedit/core/command_journal.h`, new `src/core/command_journal.cpp`, new `tests/core/command_journal_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Steps:**
-  1. STOP if the design reference does not say whether records replay edits or only count them; ask the user.
+  1. Records **replay** edits (user decision 2026-09-30): each record stores the serialized command (or the post-state delta) so recovery replays journaled edits on top of the last autosave, losing at most the last edit.
   2. Implement bounded append, truncation on successful autosave, and a reader that stops at the first bad checksum.
   3. Tests: torn final record, checksum mismatch, size cap.
 - **Invariants:** journal writes are off the frame thread.
@@ -54,15 +54,15 @@ was recently reorganized into collapsible sections; apply the stale-plan check
 
 ## T-123 Decide native-project packaging
 
-- **Status:** blocked-on-user
-- **Outcome:** answer to open question 12 recorded, then a follow-up card.
-- **Read first:** `docs/chart-editor-plan/decisions/open-questions.md`, `docs/chart-editor-plan/formats-persistence.md` (packaging paragraph).
+- **Status:** done (user decision 2026-09-30: keep the native project as a single JSON file with assets in the song folder beside it; no folder manifest or archive work.)
+- **Outcome:** answer recorded in `docs/chart-editor-plan/decisions/open-questions.md` (question 12).
+- **Read first:** `docs/chart-editor-plan/decisions/open-questions.md`.
 - **Files owned:** `docs/chart-editor-plan/decisions/open-questions.md`, this file.
-- **Steps:** 1. STOP and ask. 2. Record; add the follow-up card.
+- **Steps:** recorded.
 - **Invariants:** none.
 - **Reject/failure behavior:** none.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^documentation\.'`.
-- **Out of scope:** implementation.
+- **Out of scope:** none.
 
 ## T-124 Model metadata inheritance and overrides
 

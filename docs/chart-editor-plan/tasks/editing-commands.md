@@ -60,7 +60,7 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 - **Read first:** `src/sys/main.cpp` (`create_new_project_session`, `set("document.new_project", false)`), `src/sys/application_command_dispatch.cpp`.
 - **Files owned:** `src/sys/main.cpp`, `src/sys/application_command_dispatch.cpp`.
 - **Steps:**
-  1. When the current document is dirty, route through the existing unsaved-changes prompt if one exists; if none exists, STOP and ask whether to add one.
+  1. When the current document is dirty, show a Save / Discard / Cancel dialog (user decision 2026-09-30); add a shared `confirm_unsaved_changes` helper (a normal Nuklear window, not a popup, see T-264) that New project, Open, Close project, and Quit all use.
   2. Enable the command and invoke the landing-page flow.
 - **Invariants:** the current document is never discarded without an explicit choice.
 - **Reject/failure behavior:** cancel keeps the current session untouched.
@@ -216,14 +216,48 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-64 Decide the remaining note-presentation questions
 
-- **Status:** blocked-on-user
-- **Outcome:** answers recorded for open questions 8 (5K/6K arrows), 10 (multi-layer notes), 11 (10K/14K naming), and 14 (snap colors); each "yes" answer gets its own follow-up card in this file.
+- **Status:** done (user decision 2026-09-30: question 8 → ship Pump 5K and Solo 6K; question 10 → one semantic layer per note (no change); question 11 → beatmania-style DP5/DP7 with scratches outside, plus a separate scratchless osu!mania-style 10K; question 14 → StepMania/ITG snap palette. Follow-ups: T-284, T-285, T-286.)
+- **Outcome:** answers recorded in `docs/chart-editor-plan/decisions/open-questions.md`.
 - **Read first:** `docs/chart-editor-plan/decisions/open-questions.md`.
 - **Files owned:** `docs/chart-editor-plan/decisions/open-questions.md`, this file.
-- **Steps:**
-  1. STOP: ask the user the four questions verbatim.
-  2. Record answers; add follow-up cards with the next free IDs.
+- **Steps:** recorded; follow-ups added.
 - **Invariants:** none.
-- **Reject/failure behavior:** unanswered questions stay open.
+- **Reject/failure behavior:** none.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^documentation\.'`.
 - **Out of scope:** implementation.
+
+## T-284 Add Pump 5K and Solo 6K arrow profiles
+
+- **Status:** ready
+- **Outcome:** built-in lane profiles for pump-single (down-left, up-left, center, up-right, down-right) and dance-solo (left, up-left, down, up, up-right, right) with arrow glyphs, number-row default bindings (T-242), and SM/SSC step-type mapping (`pump-single`, `dance-solo`) (user decision 2026-09-30, question 8).
+- **Read first:** `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `include/wormedit/core/document.h` (`lane_glyph_t`), `src/formats/stepmania.cpp` (step types), `src/ui/nuklear/arrow_glyph.h`.
+- **Files owned:** `include/wormedit/core/document.h` (diagonal and center glyph values), `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `tests/core/lane_profile_tests.cpp`, `src/formats/stepmania.cpp`, `tests/formats/stepmania_tests.cpp`, `src/ui/nuklear/arrow_glyph.cpp/.h`, new fixtures under `tests/fixtures/stepmania/`, `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`.
+- **Steps:** 1. Glyph values for diagonals and center; polygons in `arrow_glyph`. 2. Profiles and step-type mapping. 3. Paired SM/SSC fixtures and round-trip tests.
+- **Invariants:** existing 4K/8K behavior unchanged.
+- **Reject/failure behavior:** unknown step types keep the current custom-map behavior.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'stepmania|lane_profile'`; smoke PNG.
+- **Out of scope:** pump-double, rolls (deferred T-170).
+
+## T-285 Name BMS double-play DP5/DP7 and add a scratchless 10K
+
+- **Status:** ready
+- **Outcome:** BMS double-play profiles are named DP5 and DP7 in the UI with beatmania-style layout (1P scratch far left, 2P scratch far right), and a separate scratchless 10K profile (osu!mania-style, ten playable lanes, no scratch) exists for charts that do not use scratches (user decision 2026-09-30, question 11).
+- **Read first:** `src/core/lane_profiles.cpp` (`make_bme_7k_profile`, 10K/14K profiles), `include/wormedit/core/bms_profile_detection.h`, `docs/references/bms-command-memo.md`.
+- **Files owned:** `src/core/lane_profiles.cpp`, `include/wormedit/core/lane_profiles.h`, `tests/core/lane_profile_tests.cpp`, `src/core/bms_profile_detection.cpp`, `tests/core/bms_profile_detection_tests.cpp`.
+- **Steps:** 1. Rename display names (ids unchanged for compatibility). 2. Default scratch placement outside. 3. New scratchless 10K profile; detection chooses it only when no scratch channels are used and the user confirms. 4. Tests.
+- **Invariants:** profile ids stored in existing projects keep working.
+- **Reject/failure behavior:** ambiguous detection still asks the user.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'lane_profile|bms_profile'`.
+- **Out of scope:** PMS naming.
+
+## T-286 Use the StepMania/ITG snap color palette
+
+- **Status:** ready
+- **Outcome:** arrow notes use 4th red, 8th blue, 12th purple, 16th yellow, 24th pink, 32nd orange, 48th cyan, 64th green, other grey (user decision 2026-09-30, question 14); the table lives in the compose theme file.
+- **Read first:** `src/ui/nuklear/arrow_glyph.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_view.cpp` (`snap_class` projection), `assets/themes/compose-field.json`.
+- **Files owned:** `src/sys/compose_view.cpp`, `src/ui/frontend.h` (snap class values 48 and 64), `assets/themes/compose-field.json`, `src/ui/nuklear/theme.cpp/.h`, `src/ui/nuklear/compose_canvas.cpp`, `tests/ui/arrow_glyph_tests.cpp`.
+- **Steps:** 1. Extend snap classification with 48 and 64. 2. Move the palette into the theme file. 3. Test classification of exact positions.
+- **Invariants:** classification uses exact rational positions.
+- **Reject/failure behavior:** none.
+- **Verify:** standard build/test; smoke PNG of an SM chart with mixed snaps.
+- **Out of scope:** BMS tile colors (T-270).

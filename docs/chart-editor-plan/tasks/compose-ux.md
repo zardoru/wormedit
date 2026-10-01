@@ -284,15 +284,19 @@ conditional optimization remains unproven.
 
 ## T-217 Play osu! hitsounds in preview
 
-- **Status:** blocked-on-user
-- **Outcome:** preview plays the right normal/addition samples for each note.
-- **Read first:** `docs/chart-editor-plan/playback-audio.md`, `include/wormedit/audio/preview_bridge.h`.
-- **Files owned:** decided after the STOP.
-- **Steps:** 1. STOP: ask where default samples come from (user-supplied skin folder, bundled free samples, or silence when absent). 2. Split into resolver and playback cards.
-- **Invariants:** custom per-map samples always win over defaults.
-- **Reject/failure behavior:** missing samples are silent with one diagnostic.
-- **Verify:** defined by the split cards.
-- **Out of scope:** skin browsing.
+- **Status:** blocked-on T-216
+- **Outcome:** preview plays normal and addition samples for each note: wormedit ships its own small CC0 default set (normal/soft/drum × hitnormal/whistle/finish/clap), and Options can point to an osu! skin folder whose files override the bundled ones; per-map custom samples always win (user decision 2026-09-30).
+- **Read first:** `docs/chart-editor-plan/playback-audio.md`, `include/wormedit/audio/preview_bridge.h`, `src/sys/audio_source_registration.cpp` (internal metronome sources: same pattern for bundled samples), `include/wormedit/core/preferences.h` (T-253).
+- **Files owned:** new `assets/hitsounds/` (samples + `LICENSE.md` stating CC0 and provenance), new `src/audio/hitsound_resolver.cpp/.h`, new `tests/core/audio_hitsound_resolver_tests.cpp`, `src/sys/audio_source_registration.cpp`, `src/audio/preview_bridge.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Steps:**
+  1. Bundled samples: synthesize them (short procedurally generated clicks/claps written by a checked-in generator script) so they are CC0 by construction; do not copy osu! skin files.
+  2. Resolver order: map custom sample → skin folder (`soft-hitwhistle.wav` naming) → bundled default.
+  3. Schedule hitsound voices for notes with `osu_hitsample_t` (T-215) through the preview bridge.
+  4. Tests for the resolver order and missing-file fallback.
+- **Invariants:** BMS keysounds unaffected.
+- **Reject/failure behavior:** missing samples fall back silently with one diagnostic.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual playback of an osu!mania fixture.
+- **Out of scope:** skin browsing UI beyond the folder option.
 
 ## T-240 Stop high-zoom waveform flicker during playback
 
@@ -391,17 +395,15 @@ conditional optimization remains unproven.
 
 ## T-245 Measure render/present on a real 144 Hz display
 
-- **Status:** blocked-on-user
-- **Outcome:** a frame-timing report from the user's machine (real GPU, VSync on, 144 Hz) after T-243 and T-244, used to decide whether render/present needs work (Xvfb's 27.6 ms is not representative: software presentation without DRI3).
-- **Read first:** `src/sys/frame_timing.cpp` (`WORMEDIT_FRAME_TIMING_REPORT`).
+- **Status:** done (user decision 2026-09-30: the user cannot run this measurement; render work is judged by T-246's counters instead — vertex count, draw calls, clip/texture changes, convert/submit time — with targets set in T-248–T-250, plus isolated Xvfb timings. Present/VSync wait is not used as an acceptance metric.)
+- **Outcome:** replaced by counter-based targets.
+- **Read first:** `docs/chart-editor-plan/tasks/rendering.md` (T-246).
 - **Files owned:** this card.
-- **Steps:**
-  1. STOP and ask the user to run, with a dense chart playing (Ctrl+Space) for at least 5 seconds: `WORMEDIT_FRAME_TIMING_REPORT=/tmp/wormedit-frames.txt build/wormedit <project>` and paste the last block of that file.
-  2. If render/present exceeds ~2 ms without VSync wait, add a card to reduce vertex count (batch lane backgrounds and grid lines into single rects, skip off-screen primitives, avoid per-row waveform quads at low zoom).
+- **Steps:** none.
 - **Invariants:** none.
 - **Reject/failure behavior:** none.
-- **Verify:** the pasted report.
-- **Out of scope:** implementation.
+- **Verify:** none.
+- **Out of scope:** real-display measurements.
 
 ## T-266 Stop the status bar from flickering during playback
 
@@ -455,3 +457,19 @@ conditional optimization remains unproven.
 - **Reject/failure behavior:** a theme missing an entry falls back to `generic`.
 - **Verify:** standard build/test; smoke PNGs of a 7K BMS fixture (scratch left), a PMS fixture, and an SM chart, with a few notes selected.
 - **Out of scope:** the field renderer move (T-248 will reuse these colors).
+
+
+## T-279 Focus inline timing values on double-click and cancel on blur
+
+- **Status:** ready
+- **Outcome:** double-clicking a Compose BPM or SV point opens a focused value field; typing immediately replaces its value, Enter applies it, and losing focus closes it without applying the draft.
+- **Read first:** `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/chrome.h`.
+- **Files owned:** `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/chrome.h`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/ui/nuklear_popup_combo_tests.cpp`.
+- **Steps:**
+  1. Focus the upcoming inline text widget through a shared helper and select its value when first opened.
+  2. Share the inline timing confirm/cancel lifecycle; cancel on text-field blur, popup dismissal, Escape, and window focus loss. Preserve invalid drafts when requesting focus again; the inspector must preserve already pending inline actions.
+  3. Add real Nuklear regressions for immediate typing, Enter, and deactivation, plus BPM/SV state regressions for confirm, invalid input, blur, and cancel.
+- **Invariants:** Enter remains the explicit apply action; losing focus never applies a draft; Escape retains its existing priority; existing audio and waveform work stays unchanged.
+- **Reject/failure behavior:** invalid input keeps the editor open and retains the typed draft for correction; dismissal cancels the staged edit without changing the document.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^frontend-state\.'`; `ctest --test-dir build --output-on-failure -R '^documentation\.'`; `clang-tidy -p build src/ui/nuklear/compose_panel.cpp`; `clang-tidy -p build src/ui/nuklear/compose_state.cpp`; `clang-tidy -p build src/ui/nuklear/compose_inspector.cpp`; `clang-tidy -p build src/ui/nuklear/compose_input_panel.cpp`; `scripts/smoke-compose-virtual-x.sh /tmp/wormedit-t279-compose.png compose`, then inspect the PNG. Any automated window interaction uses isolated Xvfb and SDL dummy audio, never the user's Niri desktop.
+- **Out of scope:** timing values, snap behavior, other text fields, audio, waveform rendering, preferences.

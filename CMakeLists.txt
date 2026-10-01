@@ -316,6 +316,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/transport_player_actions.cpp
         src/sys/external_player.cpp
         src/sys/preferences_runtime.cpp
+        src/sys/project_view.cpp
         src/sys/tap_timing_runtime.cpp
         src/sys/platform_recovery.cpp
         src/sys/platform_shortcut_profile.cpp

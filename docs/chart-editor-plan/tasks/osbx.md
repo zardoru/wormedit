@@ -2,6 +2,8 @@
 
 [Back to the task-card index](../tasks.md).
 
+> **Deferred group (user decision, 2026-09-30):** these are late-stage ambitions, not MVP work. Every card here is `deferred`; do not start one unless the user explicitly asks for it by ID.
+
 Turns the [OSBX draft](../../osbx-draft-spec.md) into buildable slices. Order:
 first the typed document and evaluator in plain C++ (no Lua), then Lua as a
 thin declaration layer over it, then chart DSL and SV curve functions, then
@@ -12,7 +14,7 @@ document, and a failed run keeps the last materialized result.
 
 ## T-180 Answer the OSBX open questions with recommended defaults
 
-- **Status:** blocked-on-user
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on-user)
 - **Outcome:** each question in the draft's "Open specification questions" has an answer written back into `docs/osbx-draft-spec.md`, so later cards need no design choices.
 - **Read first:** `docs/osbx-draft-spec.md` (last section), `docs/chart-editor-plan/decisions/open-questions.md`.
 - **Files owned:** `docs/osbx-draft-spec.md`, `docs/chart-editor-plan/decisions/open-questions.md`.
@@ -26,7 +28,7 @@ document, and a failed run keeps the last materialized result.
 
 ## T-181 Define the typed OSBX storyboard document
 
-- **Status:** ready
+- **Status:** deferred (stage 7–8 ambition; was: ready)
 - **Outcome:** C++ types for OSBX nodes (group/sprite/animation/sample), stable IDs, parent links, layers, ordered transform stacks, property tracks, keyframes with easing, and reusable clips, plus a validator for every rule in the draft's Validation section that applies to storyboards.
 - **Read first:** `docs/osbx-draft-spec.md` (Scene graph, Matrices, Keyframes, Validation), `include/wormedit/core/storyboard.h`.
 - **Files owned:** new `include/wormedit/core/osbx_document.h`, new `src/core/osbx_document.cpp`, new `tests/core/osbx_document_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -38,7 +40,7 @@ document, and a failed run keeps the last materialized result.
 
 ## T-182 Evaluate OSBX transform stacks and keyframes
 
-- **Status:** blocked-on T-181
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-181)
 - **Outcome:** a pure evaluator returns each visible node's world affine matrix `[a,b,c,d,tx,ty]`, opacity, and color at a millisecond time, following the draft's column-vector and declaration-order rules.
 - **Read first:** `docs/osbx-draft-spec.md` (Matrices, Keyframes), `include/wormedit/core/osbx_document.h`, `src/core/storyboard.cpp` (existing easing functions).
 - **Files owned:** new `include/wormedit/core/osbx_evaluator.h`, new `src/core/osbx_evaluator.cpp`, new `tests/core/osbx_evaluator_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -50,7 +52,7 @@ document, and a failed run keeps the last materialized result.
 
 ## T-183 Draw OSBX scenes in the player preview
 
-- **Status:** blocked-on T-182
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-182)
 - **Outcome:** OSBX sprites render through the existing storyboard draw path (same quads, layers, and image cache as OSB sprites).
 - **Read first:** `include/wormedit/core/storyboard_preview.h`, `src/sys/player_preview_presenter.cpp`, `include/wormedit/core/osbx_evaluator.h`.
 - **Files owned:** `src/core/storyboard_preview.cpp`, `include/wormedit/core/storyboard_preview.h`, `src/sys/player_preview_presenter.cpp`, `tests/core/storyboard_preview_tests.cpp`.
@@ -62,7 +64,7 @@ document, and a failed run keeps the last materialized result.
 
 ## T-184 Persist OSBX documents in the native project
 
-- **Status:** blocked-on T-181, T-122
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-181, T-122)
 - **Outcome:** native projects store OSBX documents plus their materialized-output provenance (API version, source file hashes, seed); older projects load unchanged.
 - **Read first:** `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `include/wormedit/core/osbx_document.h`.
 - **Files owned:** `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`.
@@ -74,7 +76,7 @@ document, and a failed run keeps the last materialized result.
 
 ## T-185 Build OSBX storyboards from Lua declarations
 
-- **Status:** blocked-on T-181, T-156, T-180
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-181, T-156, T-180)
 - **Outcome:** a `*.osbx.lua` file using the draft's Premake-style calls (`storyboard`, `image`, `group`, `sprite`, `layer`, `parent`, `origin`, `transform.*`, `opacity`, `key`) evaluates in the sandbox into one `osbx_document_t`.
 - **Read first:** `docs/osbx-draft-spec.md` (Storyboard declaration example), `include/wormedit/scripting/lua_sandbox.h`, `include/wormedit/core/osbx_document.h`.
 - **Files owned:** new `src/scripting/osbx_lua.cpp/.h`, new `tests/lua/osbx_lua_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -89,7 +91,7 @@ document, and a failed run keeps the last materialized result.
 
 ## T-186 Resolve `project.lua` includes and asset declarations
 
-- **Status:** blocked-on T-185
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-185)
 - **Outcome:** `worm_project`, `include`, `audio`, `image`, and `midi` declarations load modules in stated order relative to the including file, hash every source and asset, and refuse paths outside the project.
 - **Read first:** `docs/osbx-draft-spec.md` (File roles, Language execution), `src/scripting/osbx_lua.cpp`.
 - **Files owned:** new `src/scripting/lua_project.cpp/.h`, new `tests/lua/lua_project_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -101,7 +103,7 @@ document, and a failed run keeps the last materialized result.
 
 ## T-187 Build chart difficulties from `measure { … }` descriptors
 
-- **Status:** blocked-on T-159, T-186
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-159, T-186)
 - **Outcome:** `*.chart.lua` modules with `difficulty`, `resolution`, `offset`, `columns`, `measure { … }`, `measures(seq)`, `note`, `hold`, `bgm`, and chart-level `bpm`/`stop`/`warp`/`scroll` produce a generator transaction previewed and applied as one command.
 - **Read first:** `docs/osbx-draft-spec.md` (Measure-based chart declarations), `src/scripting/lua_generator.cpp`, `include/wormedit/core/rational.h` (exact float→rational helper).
 - **Files owned:** new `src/scripting/chart_lua.cpp/.h`, new `tests/lua/chart_lua_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -116,7 +118,7 @@ document, and a failed run keeps the last materialized result.
 
 ## T-188 Accept typed sample references from Lua
 
-- **Status:** blocked-on T-187
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-187)
 - **Outcome:** `osu_sample { … }`, `bms_wav "0A"`, and `audio_file "…"` attach typed references to notes/BGM; export runs a `resource_plan_t` pass that reuses or allocates BMS slots / BMSON channels / osu! filenames and reports conflicts before writing.
 - **Read first:** `docs/osbx-draft-spec.md` (Audio sample references and writer allocation), `include/wormedit/core/resource_assignment.h`, `include/wormedit/formats/conversion.h`.
 - **Files owned:** `src/scripting/chart_lua.cpp`, new `include/wormedit/formats/resource_plan.h`, new `src/formats/resource_plan.cpp`, new `tests/formats/resource_plan_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -128,7 +130,7 @@ document, and a failed run keeps the last materialized result.
 
 ## T-189 Evaluate Lua curve functions in SV recipes
 
-- **Status:** blocked-on T-156
+- **Status:** blocked-on T-156 (un-deferred, user decision 2026-09-30: Lua SV recipes are near-term)
 - **Outcome:** an SV/`SCROLLS`/`SPEEDS` recipe can use `values(function(p, ctx) … end)` (or a module entry point returning such a function); preview and export evaluate it in a fresh sandbox with the recipe's sampling policy and store only source reference, API version, entry point, named parameters, input hashes, and seed.
 - **Read first:** `docs/osbx-draft-spec.md` (Parametric scroll and speed generation), `include/wormedit/core/sv_recipe.h` (`sample_sv_recipe`, `compile_sv_recipes`), `include/wormedit/scripting/lua_sandbox.h`.
 - **Files owned:** `include/wormedit/core/sv_recipe.h`, `src/core/sv_recipe.cpp`, new `src/scripting/lua_curve.cpp/.h`, new `tests/lua/lua_curve_tests.cpp`, `tests/core/sv_recipe_tests.cpp`, `src/formats/native_project.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -145,7 +147,7 @@ document, and a failed run keeps the last materialized result.
 
 ## T-190 Add the recipe post-process pipeline
 
-- **Status:** ready
+- **Status:** ready (un-deferred, user decision 2026-09-30: Lua SV recipes are near-term)
 - **Outcome:** recipes carry an ordered `postprocess` list with `multiply { value }`, `normalize { mode = preserve_displacement | preserve_distance | preserve_average, value }`, and `balance_bump { solve = x | y }`, applied to a copy of the sampled batch exactly as the draft's formulas say.
 - **Read first:** `docs/osbx-draft-spec.md` (Post-process pipeline, Finite bumps), `include/wormedit/core/sv_recipe.h`, `tests/core/sv_recipe_tests.cpp`.
 - **Files owned:** `include/wormedit/core/sv_recipe.h`, `src/core/sv_recipe.cpp`, `tests/core/sv_recipe_tests.cpp`, `src/formats/native_project.cpp`, `tests/formats/native_project_tests.cpp`.
@@ -159,7 +161,7 @@ document, and a failed run keeps the last materialized result.
 
 ## T-191 Edit Lua curve recipes in the SV recipe inspector
 
-- **Status:** blocked-on T-189, T-201
+- **Status:** blocked-on T-189, T-201 (un-deferred, user decision 2026-09-30: Lua SV recipes are near-term)
 - **Outcome:** the SV recipe inspector section (T-201) can switch a recipe's curve to "Lua function", pick a module file and entry point, edit named parameters and seed, and shows sampled points, errors with file:line, and the composed curve.
 - **Read first:** `src/scripting/lua_curve.h`, the T-201 inspector section, `docs/osbx-draft-spec.md` (Composition, preview, and recipe editing).
 - **Files owned:** the T-201 inspector unit, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`.
@@ -171,7 +173,7 @@ document, and a failed run keeps the last materialized result.
 
 ## T-192 Classify and bake OSBX for standard `.osb` export
 
-- **Status:** blocked-on T-182, T-180
+- **Status:** deferred (stage 7–8 ambition; was: blocked-on T-182, T-180)
 - **Outcome:** export classifies each object as exact, baked, or unsupported (rasterized waits for a later card) and emits standard OSB for exact/baked, with a report listing every baked or blocked ID.
 - **Read first:** `docs/osbx-draft-spec.md` (Standard OSB compatibility export), `src/core/storyboard.cpp` (OSB emission), `include/wormedit/core/osbx_evaluator.h`.
 - **Files owned:** new `src/core/osbx_osb_export.cpp/.h`, new `tests/core/osbx_osb_export_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.

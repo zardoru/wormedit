@@ -23,19 +23,21 @@ stale-plan check (rule 9) first.
 - **Verify:** standard build/test; manual insert, undo, remove on a BMS fixture.
 - **Out of scope:** removing nonempty measures (T-71), virtual BMS measures (already materialize on demand).
 
-## T-71 Define nonempty-measure removal
+## T-71 Remove nonempty measures by deleting their contents
 
-- **Status:** blocked-on-user
-- **Outcome:** a recorded policy for removing a measure that contains objects (delete its objects, shift later content earlier, or refuse), then a follow-up card.
-- **Read first:** `include/wormedit/core/measure_editor.h`, `docs/chart-editor-plan/document-model.md` (measure ownership paragraph).
-- **Files owned:** `docs/chart-editor-plan/decisions/open-questions.md`, this file.
+- **Status:** ready
+- **Outcome:** removing a measure that still contains objects deletes its notes, holds that start in it, and BGM/BGA events in it (after a confirmation that lists counts), moves timing events located inside it to its start row, and shifts everything after it earlier by the measure's length, as one undoable command (user decision 2026-09-30).
+- **Read first:** `include/wormedit/core/measure_editor.h` (`delete_measure_action_t`, `apply_measure_edit`), `src/core/measure_editor.cpp`, `docs/chart-editor-plan/document-model.md` (measure ownership paragraph), T-70.
+- **Files owned:** `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp`, `tests/core/measure_editor_tests.cpp`, `src/sys/compose_actions.cpp`, `src/ui/nuklear/compose_inspector.cpp` (confirmation only).
 - **Steps:**
-  1. STOP: ask the user which policy, and whether timing events inside the measure move or are deleted.
-  2. Record the answer as a new open-question entry marked answered; write the follow-up card.
-- **Invariants:** none.
-- **Reject/failure behavior:** until answered, core keeps rejecting.
-- **Verify:** `ctest --test-dir build --output-on-failure -R '^documentation\.'`.
-- **Out of scope:** implementation.
+  1. Proposal function returning the counts of objects to delete and timing events to move, without mutating.
+  2. Command: delete contained objects; holds that start in the measure are deleted, holds that start earlier and end inside are shortened to the measure start; timing events inside move to row 0 of the measure (keeping source order) before the measure is removed; later content keeps its musical position relative to the following measures (stable measure IDs make this automatic).
+  3. Confirmation in the UI shows the counts; Remove on an empty measure needs no confirmation (T-70 behavior).
+  4. Tests: delete with notes, with a hold crossing in, with a BPM change inside; undo restores everything.
+- **Invariants:** stable IDs of untouched objects; BMS measure-number projections repaired by core.
+- **Reject/failure behavior:** stale revision or a branch-owned object inside the measure rejects with the reason.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`.
+- **Out of scope:** merging measures.
 
 ## T-72 Add a global redivision control
 
@@ -123,13 +125,13 @@ stale-plan check (rule 9) first.
 
 ## T-78 Decide local beat-drag and time-anchored note behavior
 
-- **Status:** blocked-on-user
-- **Outcome:** answers to open questions 5 and 7 recorded, then follow-up cards for local Ctrl-drag beat fitting, downstream locked-anchor compensation, and BPM edits on time-anchored notes.
-- **Read first:** `docs/chart-editor-plan/decisions/open-questions.md`, `docs/chart-editor-plan/playback-audio.md` (beat-fit modes).
+- **Status:** done (user decision 2026-09-30: question 7 → preserve only the previous anchor, the following grid moves; question 5 → notes move with the beat grid by default, keeping audio time is an explicit option. Follow-ups: T-283, T-280.)
+- **Outcome:** answers recorded in `docs/chart-editor-plan/decisions/open-questions.md`.
+- **Read first:** `docs/chart-editor-plan/decisions/open-questions.md`.
 - **Files owned:** `docs/chart-editor-plan/decisions/open-questions.md`, this file.
-- **Steps:** 1. STOP: ask questions 5 and 7. 2. Record answers. 3. Add cards for the local fit solver and the timing-edit policy.
+- **Steps:** 1. Recorded. 2. Follow-up cards T-283 and T-280 added.
 - **Invariants:** none.
-- **Reject/failure behavior:** unanswered → no cards.
+- **Reject/failure behavior:** none.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^documentation\.'`.
 - **Out of scope:** implementation.
 
@@ -243,10 +245,34 @@ Verification (2026-09-30): seven bridge regressions pass (62 assertions), includ
 - **Files owned:** new `include/wormedit/core/tap_timing_apply.h`, new `src/core/tap_timing_apply.cpp`, new `tests/core/tap_timing_apply_tests.cpp`, `src/sys/tap_timing_runtime.cpp`, `src/ui/nuklear/tap_timing_panel.cpp`, `src/sys/compose_waveform_overlays.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Steps:**
   1. Core: one command that updates the row-0 BPM and the signed beat-zero offset together (exact rational offset from the phase frame), revision-checked.
-  2. If the chart already has later BPM changes, STOP and ask whether Apply should also shift them or only set the initial segment; until answered, disable Apply for such charts with that explanation.
+  2. If the chart already has later BPM changes, Apply only sets the initial segment (user decision 2026-09-30); later BPM changes keep their musical positions. Say so in the panel.
   3. Ghost preview reuses the offset-drag overlay path.
   4. Tests: apply on an empty chart; undo restores both values in one step; timing lock rejects.
 - **Invariants:** notes keep their beat positions (they move with the grid), as with the existing offset edit.
 - **Reject/failure behavior:** a stale revision or unstable estimate (not "stable") disables Apply.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`; manual tap-and-apply on a fixture song.
 - **Out of scope:** multi-segment tempo detection.
+
+## T-283 Ctrl-drag a single beat to fit the audio (local fit)
+
+- **Status:** ready
+- **Outcome:** Ctrl-dragging an unlocked beat marker in the Compose rail pins that beat to the pointer's audio frame by changing only the BPM segment from the previous anchor (or previous BPM change) to the dragged beat; the grid after it moves with the beat (user decision 2026-09-30, question 7); preview and commit work like the existing interval fit.
+- **Read first:** `include/wormedit/core/bpm_editor.h` (`begin_beat_interval_drag`, `update_beat_interval_drag_to_bpm`, `commit_beat_interval_drag`), `include/wormedit/core/timing_anchor_editor.h`, `src/sys/compose_input.cpp` (existing rail drag), `docs/chart-editor-plan/playback-audio.md` (beat-fit modes).
+- **Files owned:** `include/wormedit/core/bpm_editor.h`, `src/core/bpm_editor.cpp`, `tests/core/bpm_editor_tests.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_input_panel.cpp`.
+- **Steps:** 1. Core solver: insert or update one BPM change at the previous anchor so the dragged beat lands on the target frame exactly (rational). 2. Reuse the interval-fit preview path. 3. Tests: fit with and without an existing BPM change at the previous anchor; locked anchor between them rejects; undo.
+- **Invariants:** anchors before the previous anchor never move; locked anchors after the dragged beat block the drag with a message instead of moving.
+- **Reject/failure behavior:** non-positive or overflowing BPM rejects.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`; manual drag.
+- **Out of scope:** preserving both neighbors.
+
+## T-280 Add a time-anchoring policy for BPM edits
+
+- **Status:** ready
+- **Outcome:** BPM and timing edits keep every object's musical position by default (objects move in time with the grid, user decision 2026-09-30, question 5); a per-edit option "Keep audio time of notes" re-positions playable notes, BGM, and audio-time markers so their audio times stay fixed, shown in the edit preview.
+- **Read first:** `include/wormedit/core/bpm_editor.h` (`apply_bpm_edit`), `include/wormedit/core/timing.h` (`musical_position_at`), `docs/chart-editor-plan/document-model.md` (positioning domain paragraph), `include/wormedit/core/quantize.h` (exact repositioning helpers).
+- **Files owned:** `include/wormedit/core/bpm_editor.h`, `src/core/bpm_editor.cpp`, `tests/core/bpm_editor_tests.cpp`, `src/sys/timing_edit_runtime.cpp`, `src/ui/nuklear/compose_inspector.cpp`.
+- **Steps:** 1. Policy enum on timing edit commands (default `musical`). 2. `audio` policy: compute each affected object's audio time before, its exact row after (inverse lookup), quantize only if the resolution cannot represent it (report count). 3. Preview counts; checkbox in the timing editor. 4. Tests for both policies with an osu!mania import.
+- **Invariants:** default behavior unchanged from today.
+- **Reject/failure behavior:** positions that cannot be represented exactly are reported and the edit is rejected unless the user allows quantization.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`.
+- **Out of scope:** per-object anchoring flags.

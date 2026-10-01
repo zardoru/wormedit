@@ -151,8 +151,55 @@ typedef enum WormUiStepmaniaImplementation {
     WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1,
 } WormUiStepmaniaImplementation;
 
+#define WORM_UI_PROJECT_CHART_CAPACITY 256
+
+typedef struct WormUiProjectChartRow {
+    uint64_t chart_id;
+    const char* name;
+    const char* author;
+    const char* rating;
+    const char* mode;
+    uint32_t key_count;
+    const char* output_groups;
+    uint64_t note_count;
+    const char* length;
+    const char* diagnostic;
+} WormUiProjectChartRow;
+
+typedef enum WormUiProjectChartActionKind {
+    WORM_UI_PROJECT_CHART_NONE = 0,
+    WORM_UI_PROJECT_CHART_NEW,
+    WORM_UI_PROJECT_CHART_DUPLICATE,
+    WORM_UI_PROJECT_CHART_DELETE,
+    WORM_UI_PROJECT_CHART_UP,
+    WORM_UI_PROJECT_CHART_DOWN,
+    WORM_UI_PROJECT_CHART_OPEN,
+    WORM_UI_PROJECT_CHART_BATCH_METADATA,
+} WormUiProjectChartActionKind;
+
+typedef struct WormUiProjectChartAction {
+    WormUiProjectChartActionKind kind;
+    uint64_t document_revision;
+    uint64_t session_generation;
+    uint64_t chart_id;
+    size_t selected_count;
+    uint64_t selected_chart_ids[WORM_UI_PROJECT_CHART_CAPACITY];
+    bool edit_author;
+    const char* author;
+    bool edit_rating;
+    bool unset_rating;
+    const char* rating_numerator;
+    const char* rating_denominator;
+} WormUiProjectChartAction;
+
 typedef struct WormUiSetupView {
     bool visible;
+    uint64_t song_id;
+    uint64_t document_revision;
+    uint64_t session_generation;
+    const WormUiProjectChartRow* charts;
+    size_t chart_row_count;
+    bool charts_truncated;
     size_t chart_count;
     size_t audio_asset_count;
     size_t visual_asset_count;
@@ -1486,6 +1533,7 @@ typedef enum WormUiMetadataEditKind {
 } WormUiMetadataEditKind;
 
 typedef struct WormUiWorkspaceAction {
+    WormUiProjectChartAction project_chart;
     WormUiTapTimingAction tap_timing;
     WormUiWorkspaceActionKind kind;
     struct WormUiExternalPlayerAction external_player;

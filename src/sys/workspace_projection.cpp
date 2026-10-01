@@ -21,7 +21,7 @@ namespace wormedit::sys {
 namespace {
 
 constexpr std::array<const char*, WORM_UI_WORKSPACE_TAB_COUNT> tab_labels{
-    "Setup", "Metadata", "Timing", "Compose", "Storyboard", "Audio / Slices", "Compare / Validate",
+    "Project", "Metadata", "Timing", "Compose", "Storyboard", "Audio / Slices", "Compare / Validate",
 };
 
 auto ui_stepmania_file_profile(wormedit::stepmania_profile_t profile)

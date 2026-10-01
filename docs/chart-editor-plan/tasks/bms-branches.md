@@ -68,13 +68,13 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 
 ## T-94 Decide multi-chart branch source identity and malformed-flow policy
 
-- **Status:** blocked-on-user
-- **Outcome:** recorded answers for (a) how a multi-chart project identifies which BMS source a branch edit targets and (b) which malformed control-flow constructs each target profile repairs, preserves, or rejects (see `memory/chart-editor-status/open-decisions.md`).
-- **Read first:** `memory/chart-editor-status/open-decisions.md`, `docs/references/bms-control-flow.md`.
+- **Status:** done (user decision 2026-09-30: each chart keeps its own retained BMS source tree and branch edits target the selected chart; malformed control flow is preserved as-is by default, and the editor offers repair proposals the user can review and opt out of. Follow-up: T-287.)
+- **Outcome:** decisions recorded.
+- **Read first:** `docs/references/bms-control-flow.md`.
 - **Files owned:** `docs/chart-editor-plan/decisions/open-questions.md`, this file.
-- **Steps:** 1. STOP and ask both questions. 2. Record answers and add follow-up cards.
+- **Steps:** recorded; follow-up added.
 - **Invariants:** none.
-- **Reject/failure behavior:** until answered, inactive edits stay single-chart only.
+- **Reject/failure behavior:** none.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^documentation\.'`.
 - **Out of scope:** implementation.
 
@@ -152,3 +152,15 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 - **Reject/failure behavior:** events without BMS provenance keep their lane; migration never deletes a sound-bound event.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'native_project'`.
 - **Out of scope:** changing the native schema beyond the version bump.
+
+## T-287 Per-chart branch sources and opt-out repair proposals
+
+- **Status:** ready
+- **Outcome:** inactive-branch edits work in multi-chart projects by targeting the selected chart's own retained BMS source; malformed control flow (unterminated `#IF`/`#RANDOM`/`#SWITCH`, orphan `#ENDIF`, `#ELSE` without `#IF`) is preserved by default and listed in the branch outline as repair proposals (for example "close #IF at end of block") that the user can apply individually or dismiss; dismissed proposals stay dismissed for that file (user decision 2026-09-30).
+- **Read first:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp` (the one-chart restriction), `include/wormedit/formats/bms.h` (control tree, diagnostics), `src/ui/nuklear/bms_branch_panel.cpp`, `tests/fixtures/bms/negative-orphan-control.bms`.
+- **Files owned:** `include/wormedit/core/bms_branch_editor.h`, `src/core/bms_branch_editor.cpp`, `tests/core/bms_branch_editor_tests.cpp`, `include/wormedit/core/document.h` (per-chart source link if missing), `src/formats/native_project.cpp`, `src/ui/nuklear/bms_branch_panel.cpp`, `src/sys/compose_actions.cpp`.
+- **Steps:** 1. Link each chart to its own retained source tree; remove the one-chart restriction. 2. Repair proposal generator from parser diagnostics (pure, no mutation). 3. Apply-proposal command (atomic, undoable) and dismiss state stored in the project. 4. Tests on the negative fixtures.
+- **Invariants:** without user action, export writes malformed blocks back unchanged.
+- **Reject/failure behavior:** a proposal made stale by an edit is withdrawn.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'bms'`.
+- **Out of scope:** automatic repair.

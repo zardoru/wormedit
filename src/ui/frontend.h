@@ -685,6 +685,8 @@ typedef struct WormUiComposeView {
     uint32_t area_band_alpha;
     bool visible;
     bool scene_available;
+    // Full chart index presence, independent of viewport and visibility filters.
+    bool has_bgm_events;
     bool downscroll;
     bool bms_measure_labels;
     uint64_t compose_measure_count;

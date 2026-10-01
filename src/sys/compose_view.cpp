@@ -1874,6 +1874,7 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         view.status_text = flattened.compose.status.c_str();
         return nullptr;
     }
+    view.has_bgm_events = !cache.index->bgm_events.empty();
     if (chart.measures.empty()) {
         flattened.compose.status = "This difficulty has no measures to display.";
         view.status_text = flattened.compose.status.c_str();

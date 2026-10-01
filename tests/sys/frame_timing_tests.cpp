@@ -1325,3 +1325,34 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
     expect_compose_test(!drag && !tab && !fixture.cache.offset_fit_drag);
     expect_compose_test(fixture.history.undo.empty());
 }
+
+TEST_CASE("Compose overview BGM presence follows the full cached chart index",
+          "[sys][compose-overview]") {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    chart.bgm_source_lanes = {{.id = object_id_t{100001}, .name = "Autoplay"}};
+    for (std::uint64_t id = 2; id <= 20; ++id)
+        chart.measures.push_back({.id = measure_id_t{id}});
+    compose_test_fixture_t fixture{std::move(song)};
+    fixture.project();
+    expect_compose_test(!fixture.flattened.view.compose.has_bgm_events);
+
+    auto& retained_chart = fixture.history.document.charts.front();
+    retained_chart.measures.back().bgm_events.push_back({
+        .id = object_id_t{100002}, .position = {measure_id_t{20}, 0},
+        .source_lane = object_id_t{100001}});
+    ++fixture.history.document.revision;
+    fixture.project();
+    expect_compose_test(fixture.flattened.view.compose.has_bgm_events);
+    expect_compose_test(fixture.flattened.view.compose.bgm_event_count == 0);
+    const auto* full_index = &*fixture.cache.index;
+    fixture.project();
+    expect_compose_test(&*fixture.cache.index == full_index);
+    expect_compose_test(fixture.flattened.view.compose.has_bgm_events);
+    expect_compose_test(fixture.flattened.view.compose.bgm_event_count == 0);
+
+    retained_chart.measures.back().bgm_events.clear();
+    ++fixture.history.document.revision;
+    fixture.project();
+    expect_compose_test(!fixture.flattened.view.compose.has_bgm_events);
+}

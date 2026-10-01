@@ -1086,7 +1086,7 @@ static void render_workspace_tabs(const WormUiWorkspaceView* view,
 }
 
 static bool status_minimap_available(const WormUiComposeView& view) {
-    return view.visible && view.scene_available && view.waveform_overview_row_count != 0 &&
+    return view.visible && view.scene_available && view.has_bgm_events &&
            worm_ui_nuklear_compose_view_valid(&view);
 }
 
@@ -1124,6 +1124,14 @@ static void render_minimap_preferences(const WormUiWorkspaceView& view,
 
 static void render_status_minimap(const WormUiWorkspaceView& view,
                                   WormUiWorkspaceAction* action, bool available) {
+    if (available && view.compose.waveform_overview_row_count == 0) {
+        nk_widget_disable_begin(g_context);
+        nk_label(g_context, "Overview unavailable", NK_TEXT_CENTERED);
+        nk_widget_disable_end(g_context);
+        if (nk_widget_is_hovered(g_context))
+            nk_tooltip(g_context, "Audio is unavailable for this chart overview.");
+        return;
+    }
     struct nk_rect bounds{};
     const auto widget = available ? nk_widget(&bounds, g_context) : NK_WIDGET_INVALID;
     const bool interactive = widget == NK_WIDGET_VALID || widget == NK_WIDGET_ROM;
@@ -1502,7 +1510,17 @@ static auto workspace_validation_error(const WormUiWorkspaceView& view) -> const
 
 static void render_transport_seek_control(const WormUiWorkspaceView& view,
                                          WormUiWorkspaceAction& action) {
-    if (!view.transport_available || view.transport_end_frame == 0) return;
+    if (view.compose.visible && view.compose.has_bgm_events) return;
+    if (!view.transport_available || view.transport_end_frame == 0) {
+        if (view.compose.visible) {
+            nk_size unavailable_position = 0;
+            nk_layout_row_dynamic(g_context, 16, 1);
+            nk_widget_disable_begin(g_context);
+            nk_progress(g_context, &unavailable_position, 10'000, NK_FIXED);
+            nk_widget_disable_end(g_context);
+        }
+        return;
+    }
     constexpr nk_size seek_steps = 10'000;
     const auto bounded_frame = std::min(view.transport_frame, view.transport_end_frame);
     nk_size seek_position = static_cast<nk_size>(

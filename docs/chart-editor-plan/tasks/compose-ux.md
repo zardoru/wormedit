@@ -520,7 +520,7 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 
 ## T-299 Use the upper progress bar only when no BGM exists
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** The progress bar above the toolbar replaces the lower minimap only for charts without BGM; charts with BGM retain the lower minimap as the authoritative overview.
 - **Read first:** `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/frontend.cpp`, `src/sys/compose_view.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_view.cpp/.h`, `src/ui/frontend.h`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`.
@@ -529,6 +529,8 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 - **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; isolated Xvfb/SDL-dummy checks for UI/audio behavior.
 - **Out of scope:** unrelated rendering and preferences work.
+
+- **Result:** Full cached BGM presence chooses a stable upper bar without BGM or a lower minimap with BGM; missing audio displays a disabled lower diagnostic. Isolated Xvfb/SDL-dummy captures verified empty, populated, offscreen and horizontally hidden BGM, playback/navigation and 47/49-second audio-tail seeks. Configured tidy on all three changed C++ files passed without owned warnings; coordinated app build passed, focused tests 15/15 and full suite 1188/1188 passed (55.79 s). The separate 35-percent anchor scene-validation gap is tracked by T-306.
 
 ## T-300 Repeat Tab navigation every 200 milliseconds while held
 

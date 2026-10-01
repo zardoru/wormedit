@@ -158,9 +158,7 @@ struct flattened_workspace_t {
         std::vector<std::uint8_t> bmson_draft_restart;
         std::optional<WormUiComposeCursorView> cursor;
         struct {
-            std::array<WormUiComposeSemanticLayerView,
-                       WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY> view{};
-            std::array<std::string, WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY> name;
+            frame_span<WormUiComposeSemanticLayerView> view;
         } semantic_layer;
         struct {
             frame_span<WormUiComposeBranchRowView> row;

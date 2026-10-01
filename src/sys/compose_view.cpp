@@ -1032,6 +1032,25 @@ void populate_semantic_layer_target_state(WormUiComposeView& view,
                          application_state.excluded_semantic_layer_filters.end());
 }
 
+auto append_semantic_layer_row(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+                               const wormedit::semantic_layer_t& layer, bool selected) -> bool {
+    auto* arena = flattened.arena();
+    const auto* name = arena ? arena_string(*arena, layer.name) : nullptr;
+    if (!name) return false;
+    return flattened.compose.semantic_layer.view.push_back({
+            .layer_id = layer.id.value,
+            .name = name,
+            .red = layer.color.red,
+            .green = layer.color.green,
+            .blue = layer.color.blue,
+            .alpha = layer.color.alpha,
+            .assigned_note_count = cache.semantic_layer_membership_counts[layer.id.value],
+            .visible = layer.visible,
+            .locked = layer.locked,
+            .selected = selected,
+    });
+}
+
 bool populate_semantic_layer_palette(
     flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
     compose_scene_cache_t& cache, const wormedit::document_history_t& history,
@@ -1073,23 +1092,21 @@ bool populate_semantic_layer_palette(
     view.semantic_layer_page = palette->page;
     view.semantic_layer_page_count = palette->page_count;
     view.semantic_layers_truncated = palette->page_count > 1;
+    if (!prepare_compose_geometry_rows(flattened, flattened.compose.semantic_layer.view,
+                                        palette->layer_indices.size())) {
+        view.semantic_layers_truncated = true;
+        view.semantic_layers = nullptr;
+        return true;
+    }
+    view.semantic_layers = flattened.compose.semantic_layer.view.data();
     for (const auto layer_index : palette->layer_indices) {
         const auto& layer = chart.semantic_layers[layer_index];
         const auto selected = application_state.semantic_layer_target == layer.id;
-        const auto index = view.semantic_layer_count++;
-        flattened.compose.semantic_layer.name[index] = layer.name;
-        flattened.compose.semantic_layer.view[index] = {
-            .layer_id = layer.id.value,
-            .name = flattened.compose.semantic_layer.name[index].c_str(),
-            .red = layer.color.red,
-            .green = layer.color.green,
-            .blue = layer.color.blue,
-            .alpha = layer.color.alpha,
-            .assigned_note_count = cache.semantic_layer_membership_counts[layer.id.value],
-            .visible = layer.visible,
-            .locked = layer.locked,
-            .selected = selected,
-        };
+        if (!append_semantic_layer_row(flattened, cache, layer, selected)) {
+            view.semantic_layers_truncated = true;
+            break;
+        }
+        view.semantic_layer_count = flattened.compose.semantic_layer.view.size();
         populate_semantic_layer_target_state(view, application_state, layer, selected);
     }
     return true;

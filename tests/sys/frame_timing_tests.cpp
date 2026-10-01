@@ -2266,3 +2266,102 @@ TEST_CASE("Compose BGM arena respects primitive budget on oversized source proje
     expect_compose_test(fixture.flattened.view.compose.bgm_lane_count<=WORM_UI_COMPOSE_BGM_LANE_CAPACITY);
     expect_compose_test(fixture.flattened.view.compose.bgm_event_count<=WORM_UI_COMPOSE_BGM_EVENT_CAPACITY);
 }
+
+namespace {
+auto semantic_arena_song(std::size_t count=2) -> song_document_t {
+    auto song=compose_test_song();
+    auto& chart=song.charts.front();
+    for(std::size_t i=0;i<count;++i)
+        chart.semantic_layers.push_back({.id=layer_id_t{101+i},.name=std::string(80,'L')+std::to_string(i),
+            .color={99,120,140,255},.visible=true,.locked=i==0});
+    if(count) chart.measures.front().notes.front().semantic_layers={layer_id_t{101}};
+    return song;
+}
+void check_semantic_first(const WormUiComposeView& view) {
+    expect_compose_test(view.semantic_layer_count>0);
+    const auto& row=view.semantic_layers[0];
+    expect_compose_test(row.layer_id==101 && std::strlen(row.name)==81);
+    expect_compose_test(row.red==99 && row.green==120 && row.blue==140 && row.alpha==255);
+    expect_compose_test(row.assigned_note_count==1 && row.visible && row.locked);
+}
+}
+TEST_CASE("Compose semantic arena preserves palette flags and independent text lifetime",
+          "[sys][compose-semantic-arena]") {
+    compose_test_fixture_t fixture(semantic_arena_song());
+    fixture.application.semantic_layer_filter_chart=chart_id_t{1};
+    fixture.application.semantic_layer_target=layer_id_t{101};
+    fixture.application.semantic_layer_solo_active=true;
+    fixture.application.required_semantic_layer_filters={layer_id_t{101}};
+    fixture.application.excluded_semantic_layer_filters={layer_id_t{102}};
+    wormedit::frame_arena_t arena({.chunk_bytes=1024*1024,.maximum_bytes=2*1024*1024});
+    project_geometry_arena(fixture,arena);
+    const auto& view=fixture.flattened.view.compose;
+    REQUIRE(view.scene_available);
+    check_semantic_first(view);
+    expect_compose_test(view.semantic_layer_count==2 && view.semantic_layer_total_count==2);
+    expect_compose_test(view.semantic_layers[0].selected && !view.semantic_layers[1].selected);
+    expect_compose_test(view.semantic_layer_target_locked && view.semantic_layer_target_visible);
+    expect_compose_test(view.semantic_layer_target_required_filter && !view.semantic_layer_target_excluded_filter);
+    expect_compose_test(view.semantic_layer_solo_active);
+    arena.reset();
+    fixture.application.semantic_layer_target=layer_id_t{102};
+    fixture.application.semantic_layer_paint_mode_active=true;
+    project_geometry_arena(fixture,arena);
+    expect_compose_test(fixture.flattened.view.compose.semantic_layer_target_excluded_filter);
+    expect_compose_test(!fixture.flattened.view.compose.semantic_layer_target_locked);
+    expect_compose_test(fixture.flattened.view.compose.semantic_layer_paint_mode_active);
+    fixture.application.semantic_layer_target=layer_id_t{101};
+    arena.reset();
+    project_geometry_arena(fixture,arena);
+    fixture.history.document.charts.front().semantic_layers[0].name="changed source";
+    auto moved=std::move(fixture.flattened);
+    moved.rebind_view_pointers();
+    check_semantic_first(moved.view.compose);
+    arena.reset();
+    project_geometry_arena(fixture,arena);
+    expect_compose_test(std::strcmp(fixture.flattened.view.compose.semantic_layers[0].name,"changed source")==0);
+}
+TEST_CASE("Compose semantic arena preserves palette capacity pages and empty state",
+          "[sys][compose-semantic-arena]") {
+    compose_test_fixture_t empty(semantic_arena_song(0)); empty.project();
+    expect_compose_test(empty.flattened.view.compose.semantic_layer_count==0);
+    expect_compose_test(empty.flattened.view.compose.semantic_layer_total_count==0);
+    expect_compose_test(!empty.flattened.view.compose.semantic_layers_truncated);
+    compose_test_fixture_t dense(semantic_arena_song(20)); dense.project();
+    const auto& view=dense.flattened.view.compose;
+    expect_compose_test(view.semantic_layer_count==WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY);
+    expect_compose_test(view.semantic_layer_total_count==20 && view.semantic_layer_page_count==3);
+    expect_compose_test(view.semantic_layers_truncated);
+}
+TEST_CASE("Compose semantic arena exhaustion publishes only complete named rows",
+          "[sys][compose-semantic-arena]") {
+    bool found=false;
+    for(std::size_t limit=64;limit<=4096;++limit) {
+        compose_test_fixture_t fixture(semantic_arena_song());
+        wormedit::frame_arena_t arena({.chunk_bytes=limit,.maximum_bytes=limit});
+        project_geometry_arena(fixture,arena);
+        const auto& view=fixture.flattened.view.compose;
+        if(view.semantic_layer_count!=1) continue;
+        expect_compose_test(view.semantic_layers_truncated);
+        check_semantic_first(view); found=true;break;
+    }
+    expect_compose_test(found);
+}
+TEST_CASE("Compose semantic arena text remains stable across 1000 warmed frames",
+          "[sys][compose-semantic-arena]") {
+    compose_test_fixture_t fixture(semantic_arena_song());
+    wormedit::frame_arena_t arena({.chunk_bytes=1024*1024,.maximum_bytes=2*1024*1024});
+    project_geometry_arena(fixture,arena);arena.reset();project_geometry_arena(fixture,arena);
+    const auto used=arena.used_bytes(),committed=arena.committed_bytes();bool stable=true;
+    std::uint64_t allocations{};
+    for(int i=0;i<1000;++i) {
+        arena.reset();
+        const auto before=frame_heap_allocation_snapshot();
+        project_geometry_arena(fixture,arena);
+        allocations=frame_heap_allocation_snapshot().count-before.count;
+        stable=stable && arena.used_bytes()==used && arena.committed_bytes()==committed &&
+            fixture.flattened.view.compose.semantic_layer_count==2;
+    }
+    INFO("Semantic narrow fixture remaining projection allocations: " << allocations);
+    expect_compose_test(stable);
+}

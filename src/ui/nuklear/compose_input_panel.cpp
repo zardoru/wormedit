@@ -600,7 +600,7 @@ static void process_compose_key_event(const auto& key_event, const WormUiCompose
                                       WormUiWorkspaceAction* action, bool keyboard_ready,
                                       bool pointer_paint_mode_active) {
     if (release_compose_key_hold(key_event, action)) return;
-    if (!keyboard_ready || !state.keyboard_focus || !key_event.down || key_event.repeat) return;
+    if (!keyboard_ready || !key_event.down || key_event.repeat) return;
     if (process_compose_escape_or_space(key_event, view, action, pointer_paint_mode_active)) return;
     if (compose_shortcut_modifier(key_event.modifiers)) return;
     if (process_compose_navigation_key(key_event, view, action)) return;
@@ -657,11 +657,24 @@ static bool process_go_to_measure_keys(nk_context* context, const WormUiComposeV
     return false;
 }
 
+static bool compose_text_owned(const nk_context* context) {
+    if (!context || !context->active) return false;
+    const auto* active = context->active;
+    return active->popup.win ? active->popup.win->edit.active != 0 : active->edit.active != 0;
+}
+
+static void release_discarded_compose_keys(WormUiWorkspaceAction* action) {
+    worm_ui_nuklear_dispatch_compose_keys(state, false, [&](const auto& event) {
+        (void)release_compose_key_hold(event, action);
+    });
+}
+
 void process_compose_key_events(struct nk_context* context, const WormUiComposeView* view,
                                        WormUiWorkspaceAction* action, bool window_focused,
                                        bool ime_composition_active) {
     if (process_go_to_measure_keys(context, *view, action, window_focused,
                                    ime_composition_active)) {
+        release_discarded_compose_keys(action);
         state.key_event_count = 0;
         return;
     }
@@ -674,27 +687,26 @@ void process_compose_key_events(struct nk_context* context, const WormUiComposeV
                 break;
             }
         }
-        state.key_event_count = 0;
+        release_discarded_compose_keys(action);
         return;
     }
-    const bool keyboard_ready =
-        window_focused && state.keyboard_focus && view->scene_available && context;
+    const bool keyboard_ready = context && worm_ui_nuklear_compose_canvas_input_available(
+        view, window_focused, compose_text_owned(context), ime_composition_active);
+    if (!keyboard_ready) cancel_compose_navigation(action);
     const bool pointer_paint_mode_active = compose_pointer_paint_mode_active(view, action);
     if (ime_composition_active) {
+        release_discarded_compose_keys(action);
         cancel_compose_navigation(action);
         state.key_event_count = 0;
         return;
     }
     cancel_holds_for_pointer_paint(pointer_paint_mode_active, action);
-    for (size_t event_index = 0; event_index < state.key_event_count && !state.action_overflowed;
-         ++event_index) {
-        const auto& key_event = state.key_events[event_index];
-        if (compose_area_capture_active() && key_event.keycode != static_cast<uint32_t>(SDLK_ESCAPE))
-            continue;
+    worm_ui_nuklear_dispatch_compose_keys(state, keyboard_ready, [&](const auto& key_event) {
+        if (key_event.down && compose_area_capture_active() &&
+            key_event.keycode != static_cast<uint32_t>(SDLK_ESCAPE)) return;
         process_compose_key_event(key_event, view, action, keyboard_ready,
                                   pointer_paint_mode_active);
-    }
-    state.key_event_count = 0;
+    });
 }
 
 static void cancel_pending_compose_panel_actions(WormUiWorkspaceAction* action) {

@@ -12,6 +12,12 @@
 #include <string_view>
 #include <utility>
 
+auto worm_ui_nuklear_compose_canvas_input_available(const WormUiComposeView* view,
+    bool window_focused, bool text_owned, bool ime_owned) -> bool {
+    return view && view->visible && view->scene_available && window_focused &&
+        !view->input_occluded && !text_owned && !ime_owned;
+}
+
 namespace {
 
 struct compose_file_dialog_state_t {

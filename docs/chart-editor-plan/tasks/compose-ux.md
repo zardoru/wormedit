@@ -485,7 +485,7 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 - **Status:** ready
 - **Outcome:** Shift plus cursor navigation selects the exact inclusive area range; Space starts playback or invokes hard Stop, never Pause. Focused tap timing uses T; text/IME and modal input retain ownership.
 - **Read first:** `include/wormedit/core/interaction.h`, `src/sys/compose_input.cpp`, `src/core/command_registry.cpp`.
-- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/compose_input.cpp`, `src/sys/application_commands.h/.cpp`, `src/sys/application_command_dispatch.cpp/.h`, `src/sys/transport_player_actions.cpp/.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `tests/core/interaction_tests.cpp`, `tests/core/command_registry_tests.cpp`, `tests/sys/application_commands_tests.cpp`.
+- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/compose_input.cpp`, `src/sys/application_commands.h/.cpp`, `src/sys/application_command_dispatch.cpp/.h`, `src/sys/transport_player_actions.cpp/.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `src/core/command_registry.cpp`, `src/sys/main.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/core/interaction_tests.cpp`, `tests/core/command_registry_tests.cpp`, `tests/sys/application_commands_tests.cpp`.
 - **Steps:** 1. Replace Space range recognition with Shift plus keyboard cursor movement, preserving the shared exact range controller. 2. Route Space through Play/hard Stop and suppress repeated toggles. 3. Verify range reversal, cancellation, text focus and immediate audio stop in isolated tests.
 - **Invariants:** Shift mouse dragging keeps its offset behavior; navigation alone never edits document data.
 - **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
@@ -543,11 +543,11 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 ## T-301 Fix slow macOS trackpad navigation
 
 - **Status:** ready
-- **Outcome:** Trackpad navigation retains precise scroll deltas and responds without avoidable per-event chart reconstruction or artificial low-frequency gating.
+- **Outcome:** Trackpad navigation retains precise scroll deltas and responds without avoidable per-event chart reconstruction or artificial low-frequency gating; screen-space movement respects macOS natural scrolling consistently in upscroll and downscroll, without double direction inversion.
 - **Read first:** `src/ui/nuklear/frontend.cpp`, `src/sys/compose_input.cpp`, `src/sys/frame_timing.h`.
 - **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
-- **Steps:** 1. Trace wheel precision, event delivery and navigation work before changing behavior. 2. Correct the measured bottleneck using shared navigation paths. 3. Verify fractional/rapid synthetic event traces and report isolated measurements; actual macOS confirmation remains required evidence when a Mac is available.
-- **Invariants:** No guessed speed multiplier; preserve navigation direction, cursor bounds and input ownership.
+- **Steps:** 1. Trace wheel precision, SDL flipped-direction normalization, upscroll/downscroll screen movement, event delivery and navigation work before changing behavior. 2. Correct the measured bottleneck using shared navigation paths. 3. Verify fractional/rapid synthetic event traces and report isolated measurements; actual macOS confirmation remains required evidence when a Mac is available.
+- **Invariants:** No guessed speed multiplier; normalize device direction once, preserve intuitive screen-space movement, cursor bounds and input ownership.
 - **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; isolated Xvfb/SDL-dummy checks for UI/audio behavior.
 - **Out of scope:** unrelated rendering and preferences work.
@@ -566,7 +566,7 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 
 ## T-303 Prioritize the Compose note canvas without a focus click
 
-- **Status:** ready
+- **Status:** done (shared canvas ownership and FIFO key edges; real isolated first-key, wheel, pan and paint checks passed; IME-only ownership retained)
 - **Outcome:** while Compose is visible, the note-editing canvas accepts the first wheel/scroll, pan, object-insertion and edit gesture without requiring previous panel focus; keyboard navigation and insertion target the canvas when no actual text/IME/dialog owner is active.
 - **Read first:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/sys/compose_input.cpp`.
 - **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `src/sys/compose_input.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/ui/nuklear_options_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.

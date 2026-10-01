@@ -6,6 +6,7 @@
 #include <cstring>
 #include <limits>
 #include <source_location>
+#include <vector>
 
 namespace {
 
@@ -594,4 +595,51 @@ TEST_CASE("Inline timing confirm and blur share the BPM and SV lifecycle",
         expect_inline(editor.inline_timing_input_consumed);
         expect_inline(action.timing_primary_numerator_text[0] == '\0');
     }
+}
+
+TEST_CASE("Compose canvas ownership ignores historical inspector focus but defers to real owners",
+          "[unit][frontend][compose]") {
+    worm_ui_nuklear_reset_compose_state();
+    auto& state = worm_ui_nuklear_compose_state();
+    state.keyboard_focus = false;
+    WormUiComposeView view{};
+    view.visible = true;
+    view.scene_available = true;
+    expect_inline(worm_ui_nuklear_compose_canvas_input_available(&view, true, false, false));
+    SECTION("text entry") { expect_inline(!worm_ui_nuklear_compose_canvas_input_available(&view, true, true, false)); }
+    SECTION("IME") { expect_inline(!worm_ui_nuklear_compose_canvas_input_available(&view, true, false, true)); }
+    SECTION("modal or covered input") { view.input_occluded = true; }
+    SECTION("hidden Compose") { view.visible = false; }
+    SECTION("unavailable scene") { view.scene_available = false; }
+    SECTION("native focus lost") { expect_inline(!worm_ui_nuklear_compose_canvas_input_available(&view, false, false, false)); }
+    if (view.input_occluded || !view.visible || !view.scene_available)
+        expect_inline(!worm_ui_nuklear_compose_canvas_input_available(&view, true, false, false));
+}
+
+TEST_CASE("Compose key batches preserve same-frame edges and release held keys after text ownership",
+          "[unit][frontend][compose]") {
+    worm_ui_nuklear_compose_state_t state;
+    std::vector<bool> edges;
+    state.key_events[0] = {.scancode = 30, .down = true};
+    state.key_events[1] = {.scancode = 30, .down = false};
+    state.key_event_count = 2;
+    worm_ui_nuklear_dispatch_compose_keys(state, true, [&](const auto& event) { edges.push_back(event.down); });
+    expect_inline(edges == std::vector<bool>{true, false});
+    expect_inline(state.key_event_count == 0);
+    bool held{};
+    state.key_events[0] = {.scancode = 30, .down = true};
+    state.key_event_count = 1;
+    worm_ui_nuklear_dispatch_compose_keys(state, true, [&](const auto& event) { held = event.down; });
+    expect_inline(held);
+    state.key_events[0] = {.scancode = 30, .down = true, .repeat = true};
+    state.key_events[1] = {.scancode = 30, .down = false};
+    state.key_event_count = 2;
+    edges.clear();
+    worm_ui_nuklear_dispatch_compose_keys(state, false, [&](const auto& event) {
+        edges.push_back(event.down);
+        held = event.down;
+    });
+    expect_inline(edges == std::vector<bool>{false});
+    expect_inline(!held);
+    expect_inline(state.key_event_count == 0);
 }

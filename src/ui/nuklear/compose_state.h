@@ -9,6 +9,10 @@
 #include <optional>
 #include <string>
 
+// Historical panel focus does not decide canvas ownership. Actual entry/occlusion does.
+auto worm_ui_nuklear_compose_canvas_input_available(const WormUiComposeView* view,
+    bool window_focused, bool text_owned, bool ime_owned) -> bool;
+
 enum class worm_ui_nuklear_overview_event_t { none, scroll, click };
 struct worm_ui_nuklear_overview_gesture_t {
     bool active{};
@@ -219,6 +223,19 @@ struct worm_ui_nuklear_compose_state_t {
     worm_ui_nuklear_bmson_razor_mode_t bmson_razor_mode{
         worm_ui_nuklear_bmson_razor_mode_t::off};
 };
+
+// Keep press/release pairs ordered, including pairs received within one SDL frame.
+// When another owner takes input, discard new presses but deliver matching releases.
+template <typename Consumer>
+void worm_ui_nuklear_dispatch_compose_keys(worm_ui_nuklear_compose_state_t& state,
+    bool accept_presses, Consumer&& consume) {
+    for (size_t index = 0; index < state.key_event_count && !state.action_overflowed; ++index) {
+        const auto& event = state.key_events[index];
+        if (event.down && !accept_presses) continue;
+        consume(event);
+    }
+    state.key_event_count = 0;
+}
 
 [[nodiscard]] auto worm_ui_nuklear_compose_state() noexcept -> worm_ui_nuklear_compose_state_t&;
 void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,

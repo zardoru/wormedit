@@ -4,7 +4,9 @@
 
 ## Immediate work
 
-User priority (2026-10-01), short term: [T-296–T-303](../../docs/chart-editor-plan/tasks/compose-ux.md): Shift cursor-range selection and Space Play/Stop; inline offset and padlock; conditional upper overview; held-Tab repeat (200 ms); macOS navigation and pinch; first-gesture priority for the Compose note canvas without a focus click. Finish the already verified cut and prioritize these before the ordinary backlog.
+User priority (2026-10-01), short term: [T-296–T-303](../../docs/chart-editor-plan/tasks/compose-ux.md): Shift cursor-range selection and Space Play/Stop; inline offset and padlock; conditional upper overview; held-Tab repeat (200 ms); macOS navigation (including natural-scroll/downscroll direction) and pinch; first-gesture priority for the Compose note canvas without a focus click. Finish the already verified cut and prioritize these before the ordinary backlog.
+T-303 is done: shared actual input ownership accepts the first keyboard/pointer gesture after inspector focus, preserves FIFO press/release edges, and defers to text/IME/occlusion; actual isolated saved-note checks and the complete 1151-test checkpoint verify the cut.
+Selection (T-296) and clipboard T-61/T-62 plus their UI integration are immediate usability priorities alongside performance; do not postpone them behind the ordinary backlog.
 
 Work is executed as [task cards](../../docs/chart-editor-plan/tasks.md). Take the first card whose status is `ready`; do not start a blocked or `deferred` card.
 

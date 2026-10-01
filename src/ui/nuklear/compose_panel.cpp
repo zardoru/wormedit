@@ -1045,6 +1045,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
 
 bool worm_ui_nuklear_compose_lane_focused(const WormUiComposeView* view, bool compose_tab_active,
                                           bool window_focused) {
-    return view && window_focused && compose_tab_active && state.keyboard_focus && view->visible &&
-           view->scene_available && view->cursor && view->cursor->lane_id != 0;
+    return compose_tab_active && worm_ui_nuklear_compose_canvas_input_available(
+        view, window_focused, state.inline_timing_open || state.go_to_measure_open, false) &&
+        view->cursor && view->cursor->lane_id != 0;
 }

@@ -323,8 +323,7 @@ static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_la
     action->shortcut_text_entry_active = nuklear_text_entry_active() ||
                                          compose_state.inline_timing_input_consumed;
     compose_state.inline_timing_input_consumed = false;
-    action->shortcut_ime_composition_active =
-        action->shortcut_text_entry_active && g_ime_composition_active;
+    action->shortcut_ime_composition_active = g_ime_composition_active;
     action->shortcut_compose_lane_focused = compose_lane_focused && g_window_focused;
     action->shortcut_focused_lane_id = action->shortcut_compose_lane_focused ? focused_lane_id : 0;
 

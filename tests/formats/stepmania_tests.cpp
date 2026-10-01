@@ -1,5 +1,6 @@
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/audio_offset_editor.h>
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/stepmania.h>
@@ -164,10 +165,10 @@ auto dance_layout_case_folding_and_solo_glyphs() -> bool {
     if (!parsed_solo.song) return false;
     const auto& lanes = parsed_solo.song->charts.front().lane_layouts.front().layout.lanes;
     constexpr std::array expected{wormedit::lane_glyph_t::arrow_left,
-                                  wormedit::lane_glyph_t::bar,
+                                  wormedit::lane_glyph_t::arrow_up_left,
                                   wormedit::lane_glyph_t::arrow_down,
                                   wormedit::lane_glyph_t::arrow_up,
-                                  wormedit::lane_glyph_t::bar,
+                                  wormedit::lane_glyph_t::arrow_up_right,
                                   wormedit::lane_glyph_t::arrow_right};
     return lanes.size() == expected.size() &&
            std::ranges::equal(lanes, expected, {}, &wormedit::lane_definition_t::glyph);
@@ -1015,4 +1016,54 @@ TEST_CASE("StepMania cross-measure holds remain editable through exact audio off
           "[formats][stepmania][audio-offset]") {
     for (const auto profile : {wormedit::stepmania_profile_t::sm, wormedit::stepmania_profile_t::ssc})
         check_cross_measure_offset_edit(profile);
+}
+
+TEST_CASE("pump-single and dance-solo fixtures import named arrow lanes and keep their step type",
+          "[unit][format][stepmania][lane-profile]") {
+    struct step_case_t {
+        const char* stem;
+        const char* step_type;
+        std::size_t columns;
+    };
+    for (const auto& item : {step_case_t{"pump-single", "pump-single", 5},
+                             step_case_t{"dance-solo", "dance-solo", 6}}) {
+        const auto specs = wormedit::stepmania_lane_specs(item.step_type);
+        REQUIRE(specs.size() == item.columns);
+        for (const auto profile : {wormedit::stepmania_profile_t::sm, wormedit::stepmania_profile_t::ssc}) {
+            const bool ssc = profile == wormedit::stepmania_profile_t::ssc;
+            const auto path = std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "stepmania" /
+                              (std::string(item.stem) + (ssc ? ".ssc" : ".sm"));
+            const auto parsed = wormedit::parse_stepmania_bytes(read_binary(path), {.profile = profile});
+            INFO(path.string());
+            REQUIRE_FALSE(parsed.has_errors());
+            REQUIRE(parsed.song.has_value());
+            const auto& chart = parsed.song->charts.front();
+            const auto& lanes = chart.lane_layouts.front().layout.lanes;
+            REQUIRE(lanes.size() == item.columns);
+            CHECK(chart.lane_layouts.front().layout.profile_id ==
+                  std::string("stepmania:") + item.step_type);
+            for (std::size_t index = 0; index < lanes.size(); ++index) {
+                CHECK(lanes[index].name == specs[index].name);
+                CHECK(lanes[index].glyph == specs[index].glyph);
+            }
+            std::size_t taps = 0;
+            for (const auto& measure : chart.measures)
+                for (const auto& note : measure.notes) {
+                    // Column n carries its single tap on row n of the first measure.
+                    CHECK(note.lane == lanes[taps].id);
+                    ++taps;
+                }
+            CHECK(taps == item.columns);
+
+            const auto written = wormedit::write_stepmania(*parsed.song, {.profile = profile});
+            REQUIRE(written.text.has_value());
+            CHECK(written.text->find(item.step_type) != std::string::npos);
+            const auto again = wormedit::parse_stepmania_bytes(
+                std::as_bytes(std::span{written.text->data(), written.text->size()}),
+                {.profile = profile});
+            REQUIRE(again.song.has_value());
+            CHECK(again.song->charts.front().lane_layouts.front().layout.lanes.size() ==
+                  item.columns);
+        }
+    }
 }

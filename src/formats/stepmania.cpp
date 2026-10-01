@@ -465,24 +465,23 @@ auto make_layout(std::string step_type, std::uint32_t count, id_source_t& ids) -
     const bool cardinal_dance = folded_step_type == "dance-single" ||
                                 folded_step_type == "dance-double" ||
                                 folded_step_type == "dance-couple";
-    const bool dance_solo = folded_step_type == "dance-solo";
     static constexpr std::array<lane_glyph_t, 4> dance_arrows{
         lane_glyph_t::arrow_left, lane_glyph_t::arrow_down,
         lane_glyph_t::arrow_up, lane_glyph_t::arrow_right};
-    static constexpr std::array<lane_glyph_t, 6> solo_arrows{
-        lane_glyph_t::arrow_left, lane_glyph_t::bar, lane_glyph_t::arrow_down,
-        lane_glyph_t::arrow_up, lane_glyph_t::bar, lane_glyph_t::arrow_right};
+    const auto named_specs = stepmania_lane_specs(folded_step_type);
+    const bool named = named_specs.size() == count;
     for (std::uint32_t i = 0; i < count; ++i) {
         layout.lanes.push_back(
             {.id = ids.take<lane_id_t>(),
-             .name = std::string(i < dance_names.size() ? dance_names[i] : "Column") +
-                     (i < dance_names.size() ? "" : " " + std::to_string(i + 1)),
+             .name = named ? std::string(named_specs[i].name)
+                           : std::string(i < dance_names.size() ? dance_names[i] : "Column") +
+                                 (i < dance_names.size() ? "" : " " + std::to_string(i + 1)),
              .role = lane_role_t::playable,
              .stage = count > 4 && i >= count / 2 ? stage_group_t::right : stage_group_t::left,
              .display_order = i,
              .glyph = cardinal_dance ? dance_arrows[i % dance_arrows.size()]
-                       : dance_solo && count == solo_arrows.size() ? solo_arrows[i]
-                                                                   : lane_glyph_t::bar});
+                       : named       ? named_specs[i].glyph
+                                     : lane_glyph_t::bar});
     }
     layout.split_stage = count == 8 || count == 10;
     if (layout.split_stage)

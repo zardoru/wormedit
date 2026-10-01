@@ -196,3 +196,29 @@ TEST_CASE("note-label editing stays bounded for fifty thousand selected notes",
     }
     CHECK(milliseconds < 500);
 }
+
+TEST_CASE("label search is case-insensitive, ordered by chart position, and read-only",
+          "[unit][core][note-label-editor][search]") {
+    auto song = label_song();
+    auto& notes = song.charts.front().measures.front().notes;
+    notes[0].label = "Vocal Chop";
+    notes[1].label = "bass";
+    notes.push_back({.id = object_id_t{12},
+                     .position = {measure_id_t{3}, 60},
+                     .lane = lane_id_t{1},
+                     .label = "VOCAL"});
+    notes.push_back({.id = object_id_t{13},
+                     .position = {measure_id_t{3}, 480},
+                     .lane = lane_id_t{1}});
+    const auto before = song;
+
+    const auto vocal = find_notes_by_label(song.charts.front(), "vocal");
+    REQUIRE(vocal.size() == 2);
+    CHECK(vocal[0] == object_id_t{12});
+    CHECK(vocal[1] == object_id_t{10});
+    CHECK(find_notes_by_label(song.charts.front(), "ASS") == std::vector{object_id_t{11}});
+    CHECK(find_notes_by_label(song.charts.front(), "missing").empty());
+    CHECK(find_notes_by_label(song.charts.front(), "").empty());
+    CHECK(song.charts.front().measures.front().notes.size() == before.charts.front().measures.front().notes.size());
+    CHECK(song.charts.front().measures.front().notes[0].label == before.charts.front().measures.front().notes[0].label);
+}

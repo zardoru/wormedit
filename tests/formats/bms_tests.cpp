@@ -319,6 +319,7 @@ TEST_CASE("every built-in BMS lane profile imports its fixture-backed visible ch
         fixture_case_t{"bms-10k-free-zone.bms", "bms-10k-left-outside-right-outside-free-zone", 14},
         fixture_case_t{"bms-10k-foot-pedal.bms", "bms-10k-left-outside-right-outside-foot-pedal",
                        14},
+        fixture_case_t{"bms-10k-scratchless.bms", "bms-10k-scratchless", 10},
         fixture_case_t{"bme-14k.bme", "bme-14k-left-outside-right-outside", 16},
         fixture_case_t{"bme-14k-foot-pedal.bme", "bme-14k-left-outside-right-outside-foot-pedal",
                        18},

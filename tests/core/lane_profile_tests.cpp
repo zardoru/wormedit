@@ -23,7 +23,7 @@ auto has_code(const diagnostic_list_t& diagnostics, diagnostic_code_t code) -> b
 TEST_CASE("built-in BMS profile registry is complete unique and frontend-neutral",
           "[unit][core][lane-profile][bms][registry]") {
     const auto profiles = built_in_bms_lane_profiles();
-    REQUIRE(profiles.size() == 15);
+    REQUIRE(profiles.size() == 16);
 
     std::set<std::string> ids;
     for (const auto& descriptor : profiles) {
@@ -51,7 +51,7 @@ TEST_CASE("built-in BMS profile registry is complete unique and frontend-neutral
           }) == 4);
     CHECK(std::ranges::count_if(profiles, [](const auto& descriptor) {
               return descriptor.family == bms_lane_profile_family_t::special;
-          }) == 3);
+          }) == 4);
 }
 
 TEST_CASE("BMS 7K built-in profile declares seven keys, scratch, and number-row bindings",
@@ -373,4 +373,86 @@ TEST_CASE("default input reuses split-stage digit and QWERTY rows", "[lane-profi
     CHECK(input->bindings.back().key == physical_key_t::key_y);
     CHECK(input->stage_count == 2);
     CHECK(validate_input_profile(profile.layout, *input).empty());
+}
+
+TEST_CASE("double-play profiles are named DP5 and DP7 with outside scratches by default",
+          "[unit][core][lane-profile][bms][double-play]") {
+    const auto dp5 = make_bms_10k_free_zone_profile();
+    const auto dp7 = make_bme_14k_profile();
+    CHECK(dp5.layout.display_name.find("DP5") != std::string::npos);
+    CHECK(dp7.layout.display_name.find("DP7") != std::string::npos);
+    // Profile ids are stored in projects and must not change.
+    CHECK(dp5.layout.profile_id == "bms-10k-left-outside-right-outside-free-zone");
+    CHECK(dp7.layout.profile_id == "bme-14k-left-outside-right-outside");
+
+    for (const auto& profile : {dp5, dp7}) {
+        const auto& lanes = profile.layout.lanes;
+        REQUIRE_FALSE(lanes.empty());
+        CHECK(lanes.front().role == lane_role_t::scratch);
+        CHECK(lanes.front().stage == stage_group_t::left);
+        const auto scratches = std::ranges::count(lanes, lane_role_t::scratch, &lane_definition_t::role);
+        CHECK(scratches == 2);
+        const auto right_scratch = std::ranges::find_if(lanes, [](const auto& lane) {
+            return lane.role == lane_role_t::scratch && lane.stage == stage_group_t::right;
+        });
+        REQUIRE(right_scratch != lanes.end());
+        const auto right_keys = std::ranges::count_if(lanes, [&](const auto& lane) {
+            return lane.role == lane_role_t::playable && lane.stage == stage_group_t::right &&
+                   lane.display_order > right_scratch->display_order;
+        });
+        CHECK(right_keys == 0);
+    }
+}
+
+TEST_CASE("scratchless 10K has ten playable keys and keeps the 10K lane ids",
+          "[unit][core][lane-profile][bms][double-play]") {
+    const auto profile = make_bms_10k_scratchless_profile();
+    const auto reference = make_bms_10k_free_zone_profile();
+    CHECK(profile.layout.profile_id == "bms-10k-scratchless");
+    REQUIRE(profile.layout.lanes.size() == 10);
+    CHECK(profile.layout.split_stage);
+    CHECK(std::ranges::all_of(profile.layout.lanes, [](const auto& lane) {
+        return lane.role == lane_role_t::playable;
+    }));
+    for (const auto& lane : profile.layout.lanes) {
+        const auto match = std::ranges::find(reference.layout.lanes, lane.id, &lane_definition_t::id);
+        REQUIRE(match != reference.layout.lanes.end());
+        CHECK(match->bms_channels.visible == lane.bms_channels.visible);
+    }
+    CHECK(validate_input_profile(profile.layout, profile.input).empty());
+}
+
+TEST_CASE("pump-single and dance-solo profiles carry arrow glyphs and number-row bindings",
+          "[unit][core][lane-profile][stepmania]") {
+    const auto pump = make_stepmania_pump_single_profile();
+    REQUIRE(pump.layout.lanes.size() == 5);
+    CHECK(pump.layout.profile_id == "stepmania:pump-single");
+    CHECK(pump.layout.lanes[0].glyph == lane_glyph_t::arrow_down_left);
+    CHECK(pump.layout.lanes[1].glyph == lane_glyph_t::arrow_up_left);
+    CHECK(pump.layout.lanes[2].glyph == lane_glyph_t::arrow_center);
+    CHECK(pump.layout.lanes[3].glyph == lane_glyph_t::arrow_up_right);
+    CHECK(pump.layout.lanes[4].glyph == lane_glyph_t::arrow_down_right);
+    REQUIRE(pump.input.bindings.size() == 5);
+    CHECK(pump.input.bindings.front().key == physical_key_t::digit_1);
+    CHECK(pump.input.bindings.back().key == physical_key_t::digit_5);
+    CHECK(validate_input_profile(pump.layout, pump.input).empty());
+
+    const auto solo = make_stepmania_dance_solo_profile();
+    REQUIRE(solo.layout.lanes.size() == 6);
+    CHECK(solo.layout.profile_id == "stepmania:dance-solo");
+    CHECK(solo.layout.lanes[0].glyph == lane_glyph_t::arrow_left);
+    CHECK(solo.layout.lanes[1].glyph == lane_glyph_t::arrow_up_left);
+    CHECK(solo.layout.lanes[2].glyph == lane_glyph_t::arrow_down);
+    CHECK(solo.layout.lanes[3].glyph == lane_glyph_t::arrow_up);
+    CHECK(solo.layout.lanes[4].glyph == lane_glyph_t::arrow_up_right);
+    CHECK(solo.layout.lanes[5].glyph == lane_glyph_t::arrow_right);
+    REQUIRE(solo.input.bindings.size() == 6);
+    CHECK(solo.input.bindings.back().key == physical_key_t::digit_6);
+    CHECK(validate_input_profile(solo.layout, solo.input).empty());
+
+    CHECK(stepmania_lane_specs("PUMP-Single").size() == 5);
+    CHECK(stepmania_lane_specs("dance-single").empty());
+    // Stored glyph values from before the diagonal glyphs keep their meaning.
+    CHECK(static_cast<int>(lane_glyph_t::arrow_right) == 5);
+    CHECK(static_cast<int>(lane_glyph_t::arrow_up_left) == 6);
 }

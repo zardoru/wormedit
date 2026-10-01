@@ -1,0 +1,21 @@
+#TITLE:Fixture: pump-single columns;
+#ARTIST:Wormedit fixture authors;
+#MUSIC:fixture.ogg;
+#OFFSET:0.000;
+#BPMS:0.000=120.000;
+#NOTEDATA:;
+#STEPSTYPE:pump-single;
+#DESCRIPTION:Fixture;
+#DIFFICULTY:Hard;
+#METER:8;
+#RADARVALUES:0,0,0,0,0;
+#NOTES:
+10000
+01000
+00100
+00010
+00001
+00000
+00000
+00000
+;

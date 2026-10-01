@@ -216,7 +216,7 @@ auto resident_content_key(const std::filesystem::path& path) -> std::optional<st
     const auto modified = std::filesystem::last_write_time(path, error);
     if (error) return std::nullopt;
     return path.generic_string() + "|" + std::to_string(size) + "|" +
-           std::to_string(modified.time_since_epoch().count());
+           std::to_string(static_cast<long long>(modified.time_since_epoch().count()));
 }
 
 struct resident_wanted_t {

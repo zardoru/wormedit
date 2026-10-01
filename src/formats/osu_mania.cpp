@@ -73,6 +73,8 @@ struct pending_visual_t {
     asset_kind_t kind{asset_kind_t::image};
     visual_event_kind_t event_kind{visual_event_kind_t::background};
     std::size_t order{};
+    // "xOffset,yOffset" as spelled in the source, empty when absent.
+    std::string offsets;
 };
 
 struct pending_resource_t {
@@ -82,6 +84,8 @@ struct pending_resource_t {
     std::size_t order{};
     std::optional<long double> time;
     bool sample_event{};
+    // "layer,volume" as spelled in the source, empty when absent.
+    std::string sample_fields;
 };
 
 struct parsed_event_lines_t {
@@ -528,6 +532,14 @@ auto parse_hit_object_line(const source_line_t& line, std::uint32_t version, fai
     return object;
 }
 
+auto event_offsets(const std::vector<std::string>& parts) -> std::string {
+    return parts.size() >= 5 ? parts[3] + "," + parts[4] : std::string{};
+}
+
+auto sample_event_fields(const std::vector<std::string>& parts) -> std::string {
+    return parts[2] + "," + (parts.size() >= 5 ? parts[4] : std::string{"100"});
+}
+
 template <typename fail_t>
 auto parse_event_line(const source_line_t& line, fail_t&& fail)
     -> parsed_event_lines_t {
@@ -548,7 +560,8 @@ auto parse_event_line(const source_line_t& line, fail_t&& fail)
                  "background/video event time must be finite", line.order, line.byte_offset);
         result.visuals.push_back(
             {event_time, (*parts)[2], video ? asset_kind_t::video : asset_kind_t::image,
-             video ? visual_event_kind_t::video : visual_event_kind_t::background, line.order});
+             video ? visual_event_kind_t::video : visual_event_kind_t::background, line.order,
+             event_offsets(*parts)});
     } else if (!indented && (kind == "Sprite" || kind == "Animation") && parts->size() >= 4) {
         result.resources.push_back({(*parts)[3], asset_kind_t::image, resource_role_t::bga,
                                     line.order, std::nullopt, false});
@@ -558,8 +571,9 @@ auto parse_event_line(const source_line_t& line, fail_t&& fail)
         if (!parse_number((*parts)[1], sample_time))
             fail(osu_mania_parse_diagnostic_code_t::malformed_field,
                  "sample event time must be finite", line.order, line.byte_offset);
-        result.resources.push_back({(*parts)[3], asset_kind_t::audio,
-                                    resource_role_t::sample, line.order, sample_time, true});
+        result.resources.push_back(
+            {(*parts)[3], asset_kind_t::audio, resource_role_t::sample, line.order, sample_time,
+             true, sample_event_fields(*parts)});
     } else {
         result.storyboard_lines.push_back(line);
     }
@@ -1303,11 +1317,17 @@ template <typename position_t, typename object_id_t>
 void append_osu_bga_events(chart_document_t& chart,
                            const std::vector<pending_visual_t>& visuals,
                            const std::vector<std::optional<resource_id_t>>& resources,
-                           position_t&& position_at, object_id_t&& take_object_id) {
+                           position_t&& position_at, object_id_t&& take_object_id,
+                           format_metadata_t& source_group) {
     for (std::size_t index = 0; index < visuals.size(); ++index) {
         const auto position = position_at(visuals[index].time);
         if (!position || !resources[index]) continue;
-        chart.bga_events.push_back({.id = take_object_id(visuals[index].order),
+        const auto event_id = take_object_id(visuals[index].order);
+        if (!visuals[index].offsets.empty())
+            retain_osu_source_value(source_group,
+                                    "osu.event." + std::to_string(event_id.value) + ".offset",
+                                    visuals[index].offsets, visuals[index].order, false);
+        chart.bga_events.push_back({.id = event_id,
                                     .position = *position,
                                     .resource = *resources[index],
                                     .kind = visuals[index].event_kind,
@@ -1320,7 +1340,8 @@ template <typename resource_catalog_t, typename position_t, typename object_id_t
 auto append_osu_event_resources(chart_document_t& chart,
                                 const std::vector<pending_resource_t>& events,
                                 resource_catalog_t& resources, position_t&& position_at,
-                                object_id_t&& take_object_id, fail_t&& fail)
+                                object_id_t&& take_object_id, format_metadata_t& source_group,
+                                fail_t&& fail)
     -> std::optional<decltype(take_object_id(0))> {
     if (!std::ranges::any_of(events, [](const auto& event) { return event.sample_event; }))
         return std::nullopt;
@@ -1338,8 +1359,12 @@ auto append_osu_event_resources(chart_document_t& chart,
         if (!position)
             fail(osu_mania_parse_diagnostic_code_t::internal_conversion_error,
                  "sample event falls outside the derived measure timeline", event.order);
+        const auto event_id = take_object_id(event.order);
+        retain_osu_source_value(source_group,
+                                "osu.event." + std::to_string(event_id.value) + ".sample",
+                                event.sample_fields, event.order, false);
         chart.measures[static_cast<std::size_t>(position->measure.value - 1)].bgm_events.push_back(
-            {.id = take_object_id(event.order),
+            {.id = event_id,
              .position = *position,
              .source_lane = source_lane,
              .sound = *sound,
@@ -1464,7 +1489,8 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
         auto hit_samples = resolve_hit_samples(hit_objects, resource_catalog);
         auto visual_event_resources = resolve_visual_resources(visuals, resource_catalog);
         const auto sample_source_lane = append_osu_event_resources(
-            chart, event_resources, resource_catalog, position_at, take_object_id, fail);
+            chart, event_resources, resource_catalog, position_at, take_object_id, source_group,
+            fail);
         (void)sample_source_lane;
 
         append_osu_hit_notes(chart, hit_objects, hit_samples, keys, position_at,
@@ -1476,7 +1502,8 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
             retain_osu_source_value(source_group, "osu.suppressed_bar_line_displacement_ms", format_double(displacement),
                          source_order, false);
         }
-        append_osu_bga_events(chart, visuals, visual_event_resources, position_at, take_object_id);
+        append_osu_bga_events(chart, visuals, visual_event_resources, position_at, take_object_id,
+                              source_group);
         append_osu_bookmarks(chart, find_osu_value(fields, "Editor", "Bookmarks"),
                              take_object_id, fail);
 
@@ -1681,6 +1708,65 @@ struct retained_osu_note_times_t {
     std::optional<retained_osu_time_t> head;
     std::optional<retained_osu_time_t> tail;
 };
+
+// Source-spelled event fields that the chart model has no slot for: background
+// and video offsets, and the layer and volume of Sample events.
+struct retained_osu_event_fields_t {
+    std::unordered_map<std::uint64_t, std::string> offsets;
+    std::unordered_map<std::uint64_t, std::string> samples;
+};
+
+auto retained_osu_event_fields(const chart_document_t& chart) -> retained_osu_event_fields_t {
+    retained_osu_event_fields_t result;
+    constexpr std::string_view prefix{"osu.event."};
+    for (const auto& group : chart.metadata.format_groups) {
+        if (group.family != format_family_t::osu_mania)
+            continue;
+        for (const auto& [key, value] : group.ordered_fields) {
+            const auto key_view = std::string_view{key};
+            if (!key_view.starts_with(prefix))
+                continue;
+            const auto dot = key_view.find('.', prefix.size());
+            std::uint64_t id{};
+            if (dot == std::string_view::npos ||
+                !parse_integer(key_view.substr(prefix.size(), dot - prefix.size()), id))
+                continue;
+            const auto field = key_view.substr(dot + 1);
+            if (field == "offset")
+                result.offsets[id] = value;
+            else if (field == "sample")
+                result.samples[id] = value;
+        }
+    }
+    return result;
+}
+
+// A retained "x,y" offset pair is reused only when both values are plain numbers.
+auto retained_event_offsets(const retained_osu_event_fields_t& retained, std::uint64_t id)
+    -> std::string {
+    const auto found = retained.offsets.find(id);
+    if (found == retained.offsets.end())
+        return "0,0";
+    const auto parts = split(found->second, ',');
+    long double ignored{};
+    if (parts.size() != 2 || !parse_number(parts[0], ignored) || !parse_number(parts[1], ignored))
+        return "0,0";
+    return found->second;
+}
+
+// Layer and volume of a Sample event; new events get layer 1 at full volume.
+auto retained_sample_event_fields(const retained_osu_event_fields_t& retained, std::uint64_t id)
+    -> std::pair<std::uint32_t, std::int64_t> {
+    const auto found = retained.samples.find(id);
+    if (found == retained.samples.end())
+        return {1, 100};
+    const auto parts = split(found->second, ',');
+    std::uint32_t layer{};
+    std::int64_t volume{};
+    if (parts.size() != 2 || !parse_integer(parts[0], layer) || !parse_integer(parts[1], volume))
+        return {1, 100};
+    return {layer, volume};
+}
 
 auto embedded_storyboard_source_orders(const song_document_t& song)
     -> std::unordered_set<std::uint64_t> {
@@ -2265,6 +2351,29 @@ void append_scroll_and_kiai_timing_lines(
     }
 }
 
+// A timing line synthesized at a measure start carries the sample set, index and
+// volume of the source point that is active there, so the sample mix does not
+// change where the file gains a new line.
+template <typename bpm_events_t, typename scrolls_t, typename kiais_t>
+auto active_osu_sample_fields(std::uint64_t row, const bpm_events_t& bpms, const scrolls_t& scrolls,
+                              const kiais_t& kiais) -> std::array<std::int64_t, 3> {
+    std::array<std::int64_t, 3> fields{0, 0, 100};
+    std::optional<std::uint64_t> best_row;
+    const auto consider = [&](const auto& points) {
+        for (const auto& point : points) {
+            if (point.row > row || point.event->provenance.source_spelling.empty() ||
+                (best_row && point.row < *best_row))
+                continue;
+            best_row = point.row;
+            fields = osu_timing_sample_fields(point.event->provenance);
+        }
+    };
+    consider(bpms);
+    consider(scrolls);
+    consider(kiais);
+    return fields;
+}
+
 template <typename timestamp_t, typename account_t, typename fail_t>
 auto build_osu_timing_output(
     const chart_document_t& chart, const measure_index_t& measures,
@@ -2304,7 +2413,7 @@ auto build_osu_timing_output(
             60'000.0L / positive_bpm_value(bpm_timing.groups[active].second, fail),
             osu_meter_at(chart, measures, row, fail), true,
             entry.id.value ? static_cast<std::size_t>(entry.id.value) : serial,
-            {0, 0, 100}, measures, timestamp_at_row, effects_at, account_event, fail);
+            active_osu_sample_fields(row, bpm_timing.events, scrolls, kiais), measures, timestamp_at_row, effects_at, account_event, fail);
     }
     append_scroll_and_kiai_timing_lines(output, timing_rows, serial, measures, scrolls, kiais,
                                         timestamp_at_row, effects_at, account_event, fail);
@@ -2776,7 +2885,7 @@ template <typename timestamp_t, typename fail_t, typename account_t>
 void append_osu_sample_event(std::vector<osu_output_event_t>& output, std::size_t& serial,
                              const measure_index_t& measures, const song_document_t& song,
                              local_position_t position, resource_id_t resource, std::size_t order,
-                             std::uint32_t layer, bool lazer_profile,
+                             std::uint32_t layer, std::int64_t volume, bool lazer_profile,
                              timestamp_t&& timestamp_at_row, account_t&& account_event,
                              fail_t&& fail) {
     const auto row = absolute_row(measures, position);
@@ -2789,7 +2898,7 @@ void append_osu_sample_event(std::vector<osu_output_event_t>& output, std::size_
              "sample event requires a safe relative audio resource without colons", "Events.Sample");
     const auto time = osu_event_time(*row, "Events.Sample", lazer_profile, timestamp_at_row, fail);
     const auto line = "Sample," + time.text + "," + std::to_string(layer) + "," +
-                      quote_csv(*name) + ",100";
+                      quote_csv(*name) + "," + std::to_string(volume);
     output.push_back({time.value, *row, order, serial++, line});
     account_event();
 }
@@ -2798,14 +2907,17 @@ template <typename timestamp_t, typename account_t, typename fail_t, typename wa
 void append_osu_bgm_events(
     std::vector<osu_output_event_t>& output, std::size_t& serial,
     const chart_document_t& chart, const measure_index_t& measures, const song_document_t& song,
-    bool lazer_profile, timestamp_t&& timestamp_at_row, account_t&& account_event,
-    fail_t&& fail, warn_t&& warn) {
+    const retained_osu_event_fields_t& retained, bool lazer_profile, timestamp_t&& timestamp_at_row,
+    account_t&& account_event, fail_t&& fail, warn_t&& warn) {
     for (const auto& measure : chart.measures) {
         for (const auto& event : measure.bgm_events) {
-            if (event.sound)
+            if (event.sound) {
+                const auto [layer, volume] = retained_sample_event_fields(retained, event.id.value);
                 append_osu_sample_event(output, serial, measures, song, event.position,
-                                        *event.sound, event.provenance.source_order, 1,
-                                        lazer_profile, timestamp_at_row, account_event, fail);
+                                        *event.sound, event.provenance.source_order, layer,
+                                        volume, lazer_profile, timestamp_at_row, account_event,
+                                        fail);
+            }
             else
                 warn(osu_mania_write_diagnostic_code_t::lossy_transform,
                      "empty background channel event has no osu! sample resource and was omitted",
@@ -2855,7 +2967,7 @@ void append_osu_sound_channels(
                      "osu! Sample events cannot represent sustained sound-channel events",
                      "sound_channels");
             append_osu_sample_event(output, serial, measures, song, event.position, resource->id,
-                                    event.provenance.source_order, 1, lazer_profile,
+                                    event.provenance.source_order, 1, 100, lazer_profile,
                                     timestamp_at_row, account_event, fail);
         }
     }
@@ -2864,7 +2976,8 @@ void append_osu_sound_channels(
 template <typename timestamp_t, typename account_t, typename fail_t>
 void append_osu_bga_events(std::vector<osu_output_event_t>& output, std::size_t& serial,
                            const chart_document_t& chart, const measure_index_t& measures,
-                           const song_document_t& song, bool lazer_profile,
+                           const song_document_t& song,
+                           const retained_osu_event_fields_t& retained, bool lazer_profile,
                            timestamp_t&& timestamp_at_row, account_t&& account_event,
                            fail_t&& fail) {
     for (const auto& event : chart.bga_events) {
@@ -2882,7 +2995,8 @@ void append_osu_bga_events(std::vector<osu_output_event_t>& output, std::size_t&
                  "visual event refers to an unsafe or missing visual asset", "Events");
         const auto time = osu_event_time(*row, "Events", lazer_profile, timestamp_at_row, fail);
         const auto line = (event.kind == visual_event_kind_t::video ? "Video," : "0,") +
-                          time.text + "," + quote_csv(*name) + ",0,0";
+                          time.text + "," + quote_csv(*name) + "," +
+                          retained_event_offsets(retained, event.id.value);
         output.push_back({time.value, *row, event.provenance.source_order, serial++, line});
         account_event();
     }
@@ -3039,12 +3153,14 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
                  "HitObjects.time");
 
         std::vector<osu_output_event_t> event_output;
-        append_osu_bgm_events(event_output, event_serial, *chart, measures, song, lazer_profile,
-                              timestamp_at_row, account_event, fail, warn);
+        const auto retained_events = retained_osu_event_fields(*chart);
+        append_osu_bgm_events(event_output, event_serial, *chart, measures, song, retained_events,
+                              lazer_profile, timestamp_at_row, account_event, fail, warn);
         append_osu_sound_channels(event_output, event_serial, *chart, measures, song,
                                   lazer_profile, timestamp_at_row, account_event, fail);
-        append_osu_bga_events(event_output, event_serial, *chart, measures, song, lazer_profile,
-                              timestamp_at_row, account_event, fail);
+        append_osu_bga_events(event_output, event_serial, *chart, measures, song,
+                              retained_events, lazer_profile, timestamp_at_row, account_event,
+                              fail);
         auto bookmark_times = serialize_osu_bookmarks(*chart, measures, timestamp_at_row,
                                                       account_event, fail, warn);
 

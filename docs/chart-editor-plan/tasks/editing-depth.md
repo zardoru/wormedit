@@ -7,7 +7,8 @@ other unless a card says otherwise. Apply the stale-plan check (rule 9) first.
 
 ## T-140 Mirror and shuffle lanes of a selection
 
-- **Status:** ready
+- **Status:** done (2026-10-01; `include/wormedit/core/lane_transform.h`, `src/core/lane_transform.cpp`, `tests/core/lane_transform_tests.cpp`, five tests)
+- **Implementation notes:** `apply_lane_mirror` reverses the playable lanes of each stage of the layout active at a note (scratch, free-zone and pedal lanes stay); `apply_lane_remap` takes an explicit bijection. Both go through one assignment routine that checks the layout at the note's head and tail, rejects any same-lane overlap, and commits through `commit_document_command`. A transform that moves nothing creates no history entry. The lane-move collision check in `interaction.cpp` is private, so the overlap check is a small local copy.
 - **Outcome:** **Mirror** reverses the lane order of selected playable notes within their stage; **Remap…** applies an explicit lane permutation; both are one command each.
 - **Read first:** `include/wormedit/core/interaction.h` (lane-move proposal), `src/core/interaction.cpp`, `include/wormedit/core/lane_profiles.h`.
 - **Files owned:** new `include/wormedit/core/lane_transform.h`, new `src/core/lane_transform.cpp`, new `tests/core/lane_transform_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -19,7 +20,7 @@ other unless a card says otherwise. Apply the stale-plan check (rule 9) first.
 
 ## T-141 Add a Transform menu for selections
 
-- **Status:** blocked-on T-140
+- **Status:** ready
 - **Outcome:** Compose has a Transform popup with Mirror, Remap, and Shift rows (T-142) acting on the selection.
 - **Read first:** `include/wormedit/core/lane_transform.h`, `src/ui/nuklear/compose_toolbar.cpp`, `src/sys/compose_actions.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_toolbar.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`.
@@ -31,7 +32,8 @@ other unless a card says otherwise. Apply the stale-plan check (rule 9) first.
 
 ## T-142 Shift a selection or everything after the cursor by N rows
 
-- **Status:** ready
+- **Status:** done (2026-10-01; `include/wormedit/core/time_shift.h`, `src/core/time_shift.cpp`, `tests/core/time_shift_tests.cpp`, five tests)
+- **Implementation notes:** `apply_shift_selection` moves named notes and BGM events; `apply_shift_from_cursor` moves everything beat-anchored at or after the cursor (notes, BGM, BGA, lane-layout segments, beat bookmarks and sections) and, with `include_timing`, BPM, pause, warp, scroll, speed, kiai and timing-anchor events. Rows are the chart's own division grid counted across measures, so a shift across a measure-length change is exact; a target outside the materialized measures rejects (it never creates measures). Audio-time bookmarks and sections stay and are counted in `audio_anchored_skipped`. Charts with retained BMS control flow or projections, objects linked to BMSON sound-channel events, and SV recipes with `include_timing` reject with `unsupported_feature`.
 - **Outcome:** a core command shifts selected notes/BGM (or every object after the cursor, optionally including timing events) by an exact signed row count.
 - **Read first:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `docs/chart-editor-plan/document-model.md` (positioning-domain paragraph).
 - **Files owned:** new `include/wormedit/core/time_shift.h`, new `src/core/time_shift.cpp`, new `tests/core/time_shift_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -56,6 +58,7 @@ other unless a card says otherwise. Apply the stale-plan check (rule 9) first.
 ## T-144 Search notes by label
 
 - **Status:** ready
+- **Implementation notes (2026-10-01):** step 1 is done: `find_notes_by_label(chart, text)` in `include/wormedit/core/note_label_editor.h` (ASCII case-insensitive, chart order, empty text matches nothing) with a test in `tests/core/note_label_editor_tests.cpp`. Step 2 (field, Next/Previous, status message) remains and touches the compose files.
 - **Outcome:** a search field selects every note whose label contains the text (case-insensitive) and jumps to the first; Next/Previous cycle.
 - **Read first:** `include/wormedit/core/note_label_editor.h`, `src/ui/nuklear/compose_inspector.cpp` (note label field), `src/sys/compose_actions.cpp`.
 - **Files owned:** `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_inspector.cpp`, `tests/core/note_label_editor_tests.cpp`.

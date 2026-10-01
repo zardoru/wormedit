@@ -1,5 +1,7 @@
 #include <wormedit/formats/native_project.h>
 
+#include "native_project_migrations.h"
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -649,7 +651,7 @@ auto valid_chart_layout_domains(const chart_document_t& chart) -> bool {
         for (const auto& lane : segment.layout.lanes) {
             if (!enum_at_most(lane.role, lane_role_t::foot_pedal) ||
                 !enum_at_most(lane.stage, stage_group_t::right) ||
-                !enum_at_most(lane.glyph, lane_glyph_t::arrow_right)) {
+                !enum_at_most(lane.glyph, lane_glyph_t::arrow_center)) {
                 return false;
             }
         }
@@ -1082,6 +1084,18 @@ auto graph_diagnostic_text(const diagnostic_t& diagnostic) -> std::string {
     return message;
 }
 
+auto migration_diagnostic_code(native_project_internal::migration_status_t status)
+    -> native_project_diagnostic_code_t {
+    switch (status) {
+    case native_project_internal::migration_status_t::malformed_version:
+        return native_project_diagnostic_code_t::malformed_json;
+    case native_project_internal::migration_status_t::failed:
+        return native_project_diagnostic_code_t::invalid_document;
+    default:
+        return native_project_diagnostic_code_t::unsupported_version;
+    }
+}
+
 } // namespace
 
 auto native_project_write_result_t::has_errors() const -> bool {
@@ -1149,6 +1163,16 @@ auto write_native_project(const song_document_t& song, native_project_limits_t l
 
 auto parse_native_project(std::string_view bytes, native_project_limits_t limits)
     -> native_project_parse_result_t {
+    return native_project_internal::parse_native_project_with_migrations(
+        bytes, limits, native_project_format_version, native_project_internal::default_migrations());
+}
+
+namespace native_project_internal {
+
+auto parse_native_project_with_migrations(std::string_view bytes, native_project_limits_t limits,
+                                          std::uint32_t target_version,
+                                          std::span<const migration_t> table)
+    -> native_project_parse_result_t {
     native_project_parse_result_t result;
     if (bytes.size() > limits.maximum_source_bytes) {
         result.diagnostics.push_back({diagnostic_severity_t::error,
@@ -1196,7 +1220,15 @@ auto parse_native_project(std::string_view bytes, native_project_limits_t limits
                                           "$.format_version"});
             return result;
         }
-        const auto& document = root.at("document");
+        auto document = root.at("document");
+        if (const auto outcome = migrate_document(document, target_version, table);
+            outcome.status != migration_status_t::unchanged &&
+            outcome.status != migration_status_t::migrated) {
+            result.diagnostics.push_back(
+                {diagnostic_severity_t::error, migration_diagnostic_code(outcome.status),
+                 outcome.message, "$.document.schema_version"});
+            return result;
+        }
         if (!strict_numeric_shape(document)) {
             result.diagnostics.push_back(
                 {diagnostic_severity_t::error, native_project_diagnostic_code_t::malformed_json,
@@ -1212,7 +1244,7 @@ auto parse_native_project(std::string_view bytes, native_project_limits_t limits
                  "native project fields do not match the selected schema version", "$.document"});
             return result;
         }
-        if (song.schema_version != native_project_format_version) {
+        if (song.schema_version != target_version) {
             result.diagnostics.push_back({diagnostic_severity_t::error,
                                           native_project_diagnostic_code_t::unsupported_version,
                                           "document schema version is unsupported",
@@ -1247,5 +1279,7 @@ auto parse_native_project(std::string_view bytes, native_project_limits_t limits
     }
     return result;
 }
+
+} // namespace native_project_internal
 
 } // namespace wormedit

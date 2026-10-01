@@ -52,6 +52,7 @@ auto explicit_fixture_profile(const std::filesystem::path& path) -> std::optiona
         {"bme-7k-foot-pedal.bme", "bme-7k-outside-scratch-foot-pedal"},
         {"bms-10k-free-zone.bms", "bms-10k-left-outside-right-outside-free-zone"},
         {"bms-10k-foot-pedal.bms", "bms-10k-left-outside-right-outside-foot-pedal"},
+        {"bms-10k-scratchless.bms", "bms-10k-scratchless"},
         {"bme-14k.bme", "bme-14k-left-outside-right-outside"},
         {"bme-14k-foot-pedal.bme", "bme-14k-left-outside-right-outside-foot-pedal"},
         {"pms-5button.pms", "pms-standard-5button"},

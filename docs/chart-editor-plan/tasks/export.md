@@ -25,7 +25,8 @@ Most remaining format work waits on user decisions; those cards are
 
 ## T-111 Fail tests on any unclassified export loss
 
-- **Status:** ready
+- **Status:** done (2026-10-01; `tests/formats/conversion_loss_matrix_tests.cpp`, ctest name starts `core.loss matrix`)
+- **Implementation notes:** converts every non-negative fixture to native project, BMS, SSC, SM, osu!mania and BMSON under the warn, allow and reject policies. A diagnostic is classified when it is a loss with the severity its policy implies, or a typed error that is not a request mistake. Pairs that already fail for another reason are not required to reach the loss gate. The test also checks that every successful output re-imported, that a lossy conversion under reject returns no outputs with `loss_rejected`, and that the matrix is not vacuous (some pairs convert, some with loss). No pair failed, so no new cards.
 - **Outcome:** a test converts every checked-in fixture to every writer it claims to support and fails if any diagnostic lacks a loss classification.
 - **Read first:** `include/wormedit/formats/conversion.h`, `tests/formats/conversion_tests.cpp`, `tests/fixtures/README.md`, `docs/chart-editor-plan/stages/authoring-export.md` (stage 5 exit condition).
 - **Files owned:** new `tests/formats/conversion_loss_matrix_tests.cpp`, `tests/CMakeLists.txt`.
@@ -140,7 +141,9 @@ Most remaining format work waits on user decisions; those cards are
 
 ## T-289 Round-trip osu!mania non-gameplay data robustly
 
-- **Status:** ready
+- **Status:** done (2026-10-01; fixture `tests/fixtures/osu/non-gameplay-roundtrip.osu`, test `osu!mania keeps events, samples, colours and unknown keys through an edit`)
+- **Implementation notes:** import → edit → export now keeps what the fixture holds. Gaps found and fixed in `src/formats/osu_mania.cpp`: background and video offsets (were written as `0,0`), `Sample` event layer and volume (were forced to layer 1, volume 100; stored per event id as `osu.event.<id>.offset` / `.sample` retained fields), and the sample set, index and volume of red lines the writer adds at measure starts (were `0,0,100`, which changed the hitsound mix until the next source point; they now copy the active source point). Already preserved before this card: `[General]` sample settings and unknown keys, `[Colours]`, break periods, storyboard lines in source order, timing-point sample fields and effects, hit-object hitsound and hitsample fields. The existing structured-storyboard test now expects `Sample,500,0,...` because the source layer is kept.
+- **Known remaining differences (not fixed):** comment lines (`//...`) are dropped; background/video rows come after break and storyboard rows instead of in source order; hit-sample fields are written inside double quotes (existing writer behavior, covered by tests), which this card did not verify against other osu! readers.
 - **Outcome:** osu!mania import → edit → export preserves `[Events]` (background, video with offset, breaks, storyboard lines in source order), `[Colours]`, `[General]` sample settings (`SampleSet`, `SampleVolume`, `AudioLeadIn`, `PreviewTime`, `Countdown`, `SpecialStyle`, `WidescreenStoryboard`), timing-point sample sets/volumes/effects, hit-object hitsample fields, and unknown keys, verified by paired fixtures (user decision 2026-09-30, question 4).
 - **Read first:** `src/formats/osu_mania.cpp`, `include/wormedit/formats/osu_mania.h`, `tests/formats/osu_mania_tests.cpp`, `docs/references/osu-mania-version-profiles.md`.
 - **Files owned:** `src/formats/osu_mania.cpp`, `tests/formats/osu_mania_tests.cpp`, new fixtures under `tests/fixtures/osu/`, `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`.

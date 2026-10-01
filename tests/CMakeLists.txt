@@ -49,10 +49,13 @@ add_executable(wormedit_core_tests
     core/interaction_tests.cpp
     core/chart_clipboard_tests.cpp
     core/lane_profile_tests.cpp
+    core/lane_transform_tests.cpp
+    core/time_shift_tests.cpp
     core/marker_editor_tests.cpp
     core/marker_navigation_tests.cpp
     core/metadata_editor_tests.cpp
     core/chart_editor_tests.cpp
+    core/lane_layout_editor_tests.cpp
     core/measure_editor_tests.cpp
     core/measure_tests.cpp
     core/note_label_editor_tests.cpp
@@ -91,6 +94,7 @@ add_executable(wormedit_core_tests
     formats/bmson_writer_tests.cpp
     formats/conversion_tests.cpp
     formats/conversion_publication_tests.cpp
+    formats/conversion_loss_matrix_tests.cpp
     formats/native_project_tests.cpp
     formats/native_project_storage_tests.cpp
     formats/osu_mania_tests.cpp

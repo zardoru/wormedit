@@ -26,6 +26,7 @@ stale-plan check (rule 9) first.
 ## T-71 Remove nonempty measures by deleting their contents
 
 - **Status:** ready
+- **Implementation notes (2026-10-01):** core is done: `remove_measure_with_contents_action_t` and `propose_measure_removal` in `measure_editor.h` (counts of deleted notes/BGM, shortened holds, moved positions). Holds ending inside are cut to the start of the following measure, and other positioned objects (timing, BGA, warps, markers, sections, sound channels, layout segments) move to its row 0. It rejects the last measure when it holds positioned objects, branch-owned or sound-linked objects, retained BMS BPM/pause projections or control tree, and a sole measure. Tests in `tests/core/measure_editor_tests.cpp`. The confirmation UI (step 3) remains.
 - **Outcome:** removing a measure that still contains objects deletes its notes, holds that start in it, and BGM/BGA events in it (after a confirmation that lists counts), moves timing events located inside it to its start row, and shifts everything after it earlier by the measure's length, as one undoable command (user decision 2026-09-30).
 - **Read first:** `include/wormedit/core/measure_editor.h` (`delete_measure_action_t`, `apply_measure_edit`), `src/core/measure_editor.cpp`, `docs/chart-editor-plan/document-model.md` (measure ownership paragraph), T-70.
 - **Files owned:** `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp`, `tests/core/measure_editor_tests.cpp`, `src/sys/compose_actions.cpp`, `src/ui/nuklear/compose_inspector.cpp` (confirmation only).
@@ -42,6 +43,7 @@ stale-plan check (rule 9) first.
 ## T-72 Add a global redivision control
 
 - **Status:** ready
+- **Implementation notes (2026-10-01):** step 1 and 2 are done: `apply_redivision_command(history, revision, chart, resolution)` in `command.h` returns the moved positions, rejects stale revisions, unknown charts and inexact positions without touching history, and treats the current resolution as a no-op. Tests in `tests/core/command_tests.cpp`. The Metadata field and Apply (step 3) remain.
 - **Outcome:** Metadata's chart section offers a resolution field (default 960, also 192 etc.); Apply runs exact global redivision as one command and reports how many positions moved, or rejects if any position is inexact.
 - **Read first:** `include/wormedit/core/document.h` (`redivide_chart_exact`), `include/wormedit/core/command.h`, `src/ui/nuklear/metadata_panel.cpp`, `src/sys/metadata_actions.cpp`.
 - **Files owned:** `include/wormedit/core/command.h`, `src/core/command.cpp`, `src/sys/metadata_actions.cpp`, `src/sys/metadata_view_projection.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/metadata_panel.cpp`, `tests/core/command_tests.cpp`.
@@ -71,7 +73,8 @@ stale-plan check (rule 9) first.
 
 ## T-74 Add a lane-layout change command at a measure boundary
 
-- **Status:** ready
+- **Status:** done
+- **Implementation notes (2026-10-01):** done: `apply_lane_layout_edit` in `include/wormedit/core/lane_layout_editor.h` with insert/update/delete actions and a `lane_layout_change_policy_t` (default `measure_boundaries_only`, `any_row` for later). Provisional answer to question 6 applied. Any note left on a lane the active layout lacks rejects with the count, and the chart-start segment cannot be removed. Tests in `tests/core/lane_layout_editor_tests.cpp`.
 - **Outcome:** a core command inserts, updates, or removes a `lane_layout_segment_t` at a measure start, validating that every note after it maps to an existing lane.
 - **Read first:** `include/wormedit/core/document.h` (`lane_layout_t`, `lane_layout_segment_t`), `docs/chart-editor-plan/decisions/open-questions.md` (question 6), `include/wormedit/core/lane_profiles.h`.
 - **Files owned:** new `include/wormedit/core/lane_layout_editor.h`, new `src/core/lane_layout_editor.cpp`, new `tests/core/lane_layout_editor_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -86,7 +89,7 @@ stale-plan check (rule 9) first.
 
 ## T-75 Expose lane-layout changes in Compose
 
-- **Status:** blocked-on T-74
+- **Status:** ready
 - **Outcome:** right side of the measure rail shows layout segments; an inspector form inserts or edits one at the cursor measure.
 - **Read first:** `include/wormedit/core/lane_layout_editor.h`, `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_inspector.cpp`.
 - **Files owned:** `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_canvas.cpp`.

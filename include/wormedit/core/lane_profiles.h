@@ -6,6 +6,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 
 namespace wormedit {
 
@@ -69,6 +70,13 @@ make_bms_10k_foot_pedal_profile(scratch_placement_t left_scratch = scratch_place
                                 scratch_placement_t right_scratch = scratch_placement_t::outside)
     -> lane_input_profile_t;
 
+// Ten playable keys (5 per player, channels 11-15 and 21-25) with no scratch or
+// auxiliary lane, for osu!mania-style charts. Lane ids match the other 10K
+// profiles. It is a special profile: detection never selects it on its own.
+[[nodiscard]] auto make_bms_10k_scratchless_profile() -> lane_input_profile_t;
+
+// BMS "10K" is beatmania double play with five keys per side (DP5), and "14K"
+// is double play with seven (DP7). Display names say both; profile ids stay.
 // BME 7K/14K profiles retain the existing BMS-named factories above for
 // source compatibility. The optional foot-pedal channels are separate lanes
 // and are not included in the default keyboard bindings.
@@ -113,6 +121,21 @@ make_bme_14k_foot_pedal_profile(scratch_placement_t left_scratch = scratch_place
 // digits regardless of semantic stage tags; split layouts use digits and QWERTY.
 [[nodiscard]] auto default_input_profile_for(const lane_layout_t& layout)
     -> std::optional<input_profile_t>;
+
+// Column names and arrow glyphs of the StepMania step types that have a named
+// layout (`pump-single`, `dance-solo`), in file column order. The step type is
+// matched ASCII case-insensitively; other types return an empty span.
+struct stepmania_lane_spec_t {
+    std::string_view name;
+    lane_glyph_t glyph{lane_glyph_t::bar};
+};
+[[nodiscard]] auto stepmania_lane_specs(std::string_view step_type)
+    -> std::span<const stepmania_lane_spec_t>;
+
+// pump-single: down-left, up-left, center, up-right, down-right.
+[[nodiscard]] auto make_stepmania_pump_single_profile() -> lane_input_profile_t;
+// dance-solo: left, up-left, down, up, up-right, right.
+[[nodiscard]] auto make_stepmania_dance_solo_profile() -> lane_input_profile_t;
 
 [[nodiscard]] auto make_bmson_generic_24k_profile() -> lane_input_profile_t;
 [[nodiscard]] auto make_bmson_generic_48k_profile() -> lane_input_profile_t;

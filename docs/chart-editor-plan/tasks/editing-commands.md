@@ -100,6 +100,7 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 ## T-56 Add a Quantize Selection command
 
 - **Status:** ready
+- **Implementation notes (2026-10-01):** core `apply_quantize_command` and `quantize_chart_exact` already exist and are tested, so only the dry-run projection and inspector UI remain.
 - **Outcome:** the Compose inspector offers **Quantize selection** to the active snap with a preview count of moved/colliding notes, then commits through `apply_quantize_command`.
 - **Read first:** `include/wormedit/core/quantize.h`, `include/wormedit/core/command.h` (`apply_quantize_command`), `docs/chart-editor-plan/editing/interactions.md` (quantization paragraph), `src/ui/nuklear/compose_inspector.cpp`.
 - **Files owned:** `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_inspector.cpp`, `tests/core/quantize_tests.cpp`.
@@ -229,6 +230,7 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 ## T-284 Add Pump 5K and Solo 6K arrow profiles
 
 - **Status:** ready
+- **Implementation notes (2026-10-01):** steps 2 and 3 are done and step 1 is half done. `lane_glyph_t` gained `arrow_up_left`, `arrow_up_right`, `arrow_down_left`, `arrow_down_right` and `arrow_center` appended after `arrow_right` (stored values 0-5 are unchanged; the native-project enum bound moved to `arrow_center`). `make_stepmania_pump_single_profile()`, `make_stepmania_dance_solo_profile()` and `stepmania_lane_specs()` live in `lane_profiles`; the importer takes lane names and glyphs from the same table, so `dance-solo` diagonals are now `arrow_up_left`/`arrow_up_right` instead of `bar`. Step-type mapping already worked through the `stepmania:<type>` profile id and the 5/6-column fallbacks. Paired fixtures `stepmania/pump-single.{sm,ssc}` and `dance-solo.{sm,ssc}` have import and re-export tests. **Remaining:** the arrow polygons in `src/ui/nuklear/arrow_glyph.cpp`, the `glyph >= 2 && glyph <= 5` range checks in `compose_canvas.cpp`, `compose_panel.cpp` and `player_preview.cpp`, the arrow switch in `compose_field_downscroll` (`src/sys/compose_view.cpp`, so Pump charts scroll up), and the smoke PNG. Until then the new glyphs draw as bars.
 - **Outcome:** built-in lane profiles for pump-single (down-left, up-left, center, up-right, down-right) and dance-solo (left, up-left, down, up, up-right, right) with arrow glyphs, number-row default bindings (T-242), and SM/SSC step-type mapping (`pump-single`, `dance-solo`) (user decision 2026-09-30, question 8).
 - **Read first:** `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `include/wormedit/core/document.h` (`lane_glyph_t`), `src/formats/stepmania.cpp` (step types), `src/ui/nuklear/arrow_glyph.h`.
 - **Files owned:** `include/wormedit/core/document.h` (diagonal and center glyph values), `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `tests/core/lane_profile_tests.cpp`, `src/formats/stepmania.cpp`, `tests/formats/stepmania_tests.cpp`, `src/ui/nuklear/arrow_glyph.cpp/.h`, new fixtures under `tests/fixtures/stepmania/`, `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`.
@@ -240,7 +242,8 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-285 Name BMS double-play DP5/DP7 and add a scratchless 10K
 
-- **Status:** ready
+- **Status:** done (2026-10-01; `src/core/lane_profiles.cpp`, `include/wormedit/core/lane_profiles.h`, tests in `tests/core/lane_profile_tests.cpp` and `tests/core/bms_profile_detection_tests.cpp`, fixture `bms/profiles/bms-10k-scratchless.bms`)
+- **Implementation notes:** display names are now "BMS DP5 / 10K (...)" and "BME DP7 / 14K (...)"; profile ids are unchanged. The default placement was already outside (1P scratch far left, 2P scratch far right, with the free-zone or pedal lane after it), and a test now pins it. `make_bms_10k_scratchless_profile()` (id `bms-10k-scratchless`, channels 11-15 and 21-25, lane ids equal to the other 10K profiles) is registered as a `special` profile, so detection offers it as a candidate when no scratch channel is used but never selects it without an explicit choice. The profile registry test, the fixture-backed channel-map test (`bms_tests.cpp`) and the profile fixture README were extended for the sixteenth profile.
 - **Outcome:** BMS double-play profiles are named DP5 and DP7 in the UI with beatmania-style layout (1P scratch far left, 2P scratch far right), and a separate scratchless 10K profile (osu!mania-style, ten playable lanes, no scratch) exists for charts that do not use scratches (user decision 2026-09-30, question 11).
 - **Read first:** `src/core/lane_profiles.cpp` (`make_bme_7k_profile`, 10K/14K profiles), `include/wormedit/core/bms_profile_detection.h`, `docs/references/bms-command-memo.md`.
 - **Files owned:** `src/core/lane_profiles.cpp`, `include/wormedit/core/lane_profiles.h`, `tests/core/lane_profile_tests.cpp`, `src/core/bms_profile_detection.cpp`, `tests/core/bms_profile_detection_tests.cpp`.

@@ -3,10 +3,13 @@
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/native_project.h>
 
+#include "formats/native_project_migrations.h"
+
 #include <catch2/catch_test_macros.hpp>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -496,4 +499,127 @@ TEST_CASE("native project rejects malformed, unsupported, over-limit, and invali
     CHECK_FALSE(deep_write.bytes.has_value());
     CHECK(has_code(deep_write.diagnostics,
                    wormedit::native_project_diagnostic_code_t::resource_limit));
+}
+
+namespace {
+
+namespace internal = wormedit::native_project_internal;
+
+// Fake legacy v0 shape: a valid v1 document with schema_version 0 and an extra
+// `legacy_title` field that the migration must fold away.
+auto fake_v0_to_v1(nlohmann::json& document) -> std::string {
+    if (!document.contains("legacy_title")) {
+        return "missing legacy_title";
+    }
+    document.erase("legacy_title");
+    return {};
+}
+
+auto fake_v1_to_v2(nlohmann::json& document) -> std::string {
+    document["chain"] = document.value("chain", std::string{}) + "1";
+    return {};
+}
+
+auto fake_v0_to_v1_chain(nlohmann::json& document) -> std::string {
+    document["chain"] = document.value("chain", std::string{}) + "0";
+    return {};
+}
+
+auto failing_migration(nlohmann::json&) -> std::string {
+    return "cannot upgrade";
+}
+
+auto legacy_project_bytes() -> std::string {
+    const auto written = wormedit::write_native_project(rich_bmson_song());
+    auto root = nlohmann::json::parse(*written.bytes);
+    root["document"]["schema_version"] = 0;
+    root["document"]["legacy_title"] = "old";
+    return root.dump();
+}
+
+} // namespace
+
+TEST_CASE("native project migrations: version 1 passes through the default table",
+          "[unit][format][native-project][migration]") {
+    CHECK(internal::default_migrations().empty());
+    const auto written = wormedit::write_native_project(rich_bmson_song());
+    REQUIRE(written.bytes.has_value());
+    auto document = nlohmann::json::parse(*written.bytes).at("document");
+    const auto before = document;
+    const auto outcome = internal::migrate_document(document, 1, internal::default_migrations());
+    CHECK(outcome.status == internal::migration_status_t::unchanged);
+    CHECK(document == before);
+}
+
+TEST_CASE("native project migrations: a v0 document migrates through the injected table",
+          "[unit][format][native-project][migration]") {
+    const std::array<internal::migration_t, 1> table{{{0, &fake_v0_to_v1}}};
+    const auto bytes = legacy_project_bytes();
+
+    // Without the migration the legacy document is rejected.
+    const auto rejected = wormedit::parse_native_project(bytes);
+    CHECK_FALSE(rejected.song.has_value());
+    CHECK(has_code(rejected.diagnostics,
+                   wormedit::native_project_diagnostic_code_t::unsupported_version));
+
+    const auto migrated =
+        internal::parse_native_project_with_migrations(bytes, {}, 1, table);
+    REQUIRE(migrated.song.has_value());
+    CHECK(migrated.song->schema_version == 1);
+    const auto rewritten = wormedit::write_native_project(*migrated.song);
+    REQUIRE(rewritten.bytes.has_value());
+    CHECK(rewritten.bytes == wormedit::write_native_project(rich_bmson_song()).bytes);
+}
+
+TEST_CASE("native project migrations: steps run in order and stop at the target",
+          "[unit][format][native-project][migration]") {
+    const std::array<internal::migration_t, 2> table{
+        {{1, &fake_v1_to_v2}, {0, &fake_v0_to_v1_chain}}};
+    nlohmann::json document{{"schema_version", 0U}};
+    const auto outcome = internal::migrate_document(document, 2, table);
+    CHECK(outcome.status == internal::migration_status_t::migrated);
+    CHECK(document.at("chain") == "01");
+    CHECK(document.at("schema_version") == 2);
+
+    nlohmann::json partial{{"schema_version", 0U}};
+    CHECK(internal::migrate_document(partial, 1, table).status ==
+          internal::migration_status_t::migrated);
+    CHECK(partial.at("chain") == "0");
+    CHECK(partial.at("schema_version") == 1);
+}
+
+TEST_CASE("native project migrations: future, malformed, and gapped versions reject",
+          "[unit][format][native-project][migration][negative]") {
+    const std::array<internal::migration_t, 1> table{{{1, &fake_v1_to_v2}}};
+    nlohmann::json future{{"schema_version", 3U}};
+    CHECK(internal::migrate_document(future, 2, table).status ==
+          internal::migration_status_t::unsupported_version);
+    CHECK(future.at("schema_version") == 3);
+
+    nlohmann::json negative{{"schema_version", -1}};
+    CHECK(internal::migrate_document(negative, 2, table).status ==
+          internal::migration_status_t::malformed_version);
+    nlohmann::json missing = nlohmann::json::object();
+    CHECK(internal::migrate_document(missing, 2, table).status ==
+          internal::migration_status_t::malformed_version);
+
+    nlohmann::json gap{{"schema_version", 0U}};
+    CHECK(internal::migrate_document(gap, 2, table).status ==
+          internal::migration_status_t::missing_step);
+}
+
+TEST_CASE("native project migrations: a failing step publishes no document",
+          "[unit][format][native-project][migration][negative]") {
+    const std::array<internal::migration_t, 1> table{{{0, &failing_migration}}};
+    const auto result =
+        internal::parse_native_project_with_migrations(legacy_project_bytes(), {}, 1, table);
+    CHECK_FALSE(result.song.has_value());
+    CHECK(has_code(result.diagnostics,
+                   wormedit::native_project_diagnostic_code_t::invalid_document));
+
+    nlohmann::json document{{"schema_version", 0U}, {"keep", true}};
+    const auto before = document;
+    CHECK(internal::migrate_document(document, 1, table).status ==
+          internal::migration_status_t::failed);
+    CHECK(document == before);
 }

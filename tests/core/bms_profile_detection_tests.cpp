@@ -265,3 +265,34 @@ TEST_CASE("a contradictory explicit profile blocks automatic reinterpretation",
     CHECK(has_evidence(result.evidence, bms_detection_evidence_source_t::explicit_profile));
     CHECK(result.custom_fallback.channels.size() == 5);
 }
+
+TEST_CASE("scratchless 10K is offered only without scratch channels and never auto-selected",
+          "[unit][core][bms-detection][double-play]") {
+    const std::vector<std::string> keys_only{"11", "12", "13", "14", "15",
+                                             "21", "22", "23", "24", "25"};
+    const auto plain = detect_bms_lane_profile(
+        {.file_extension = ".bms", .player_header = 3, .used_channels = keys_only});
+    const auto* offered = find_candidate(plain, "bms-10k-scratchless");
+    REQUIRE(offered != nullptr);
+    CHECK(offered->maps_all_playable_channels);
+    CHECK_FALSE(offered->automatic_selection_eligible);
+    if (plain.selected_profile)
+        CHECK(plain.selected_profile->layout.profile_id != "bms-10k-scratchless");
+
+    const auto confirmed = detect_bms_lane_profile({.file_extension = ".bms",
+                                                    .player_header = 3,
+                                                    .used_channels = keys_only,
+                                                    .explicit_profile_id = "bms-10k-scratchless"});
+    REQUIRE(confirmed.selected_profile.has_value());
+    CHECK(confirmed.selected_profile->layout.profile_id == "bms-10k-scratchless");
+
+    auto with_scratch = keys_only;
+    with_scratch.push_back("16");
+    const auto scratch = detect_bms_lane_profile({.file_extension = ".bms",
+                                                  .player_header = 3,
+                                                  .used_channels = with_scratch,
+                                                  .explicit_profile_id = "bms-10k-scratchless"});
+    CHECK(find_candidate(scratch, "bms-10k-scratchless") == nullptr);
+    if (scratch.selected_profile)
+        CHECK(scratch.selected_profile->layout.profile_id != "bms-10k-scratchless");
+}

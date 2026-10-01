@@ -65,7 +65,9 @@ add_library(wormedit_core
     src/core/metadata_editor.cpp
     src/core/chart_editor.cpp
     src/core/measure.cpp
+    src/core/lane_layout_editor.cpp
     src/core/measure_editor.cpp
+    src/core/lane_transform.cpp
     src/core/note_label_editor.cpp
     src/core/pause_warp_editor.cpp
     src/core/player_preview.cpp
@@ -88,6 +90,7 @@ add_library(wormedit_core
     src/core/sv_recipe.cpp
     src/core/startup_session.cpp
     src/core/task_graph.cpp
+    src/core/time_shift.cpp
     src/core/tap_tempo.cpp
     src/core/timing.cpp
     src/core/timing_discontinuity.cpp
@@ -107,6 +110,7 @@ add_library(wormedit_core
     src/formats/conversion_publication.cpp
     src/formats/conversion_publication_storage.cpp
     src/formats/native_project.cpp
+    src/formats/native_project_migrations.cpp
     src/formats/native_project_storage.cpp
     src/formats/osu_mania.cpp
     src/formats/stepmania.cpp
@@ -121,6 +125,8 @@ target_link_libraries(wormedit_core PUBLIC Threads::Threads)
 if(WIN32)
     # Keep <windows.h> from defining min/max macros that break std::min/std::max.
     target_compile_definitions(wormedit_core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
+
 # Headless converter: the editor's conversion service behind a JSON request.
 add_executable(wormedit-convert
     src/tools/wormedit_convert.cpp

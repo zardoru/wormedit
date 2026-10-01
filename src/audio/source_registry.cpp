@@ -137,6 +137,11 @@ auto decoded_source_registry_t::register_source(decoded_source_registration_t re
         const std::scoped_lock lock(mutex_);
         const auto found = std::ranges::find_if(
             entries_, [&](const auto& candidate) { return candidate->source == source; });
+        if (found == entries_.end()) {
+            return {.status = source_registration_status_t::invalid_request,
+                    .binding = std::nullopt,
+                    .message = "audio source was removed during registration"};
+        }
         entry = *found;
     }
     auto probed = probe_entry(entry, false);
@@ -186,7 +191,7 @@ auto decoded_source_registry_t::probe_entry(const std::shared_ptr<entry_t>& entr
         const std::scoped_lock lock(mutex_);
         entry->state = probe_state_t::failed;
         entry->failure = message;
-        if (report_failure) {
+        if (report_failure && std::ranges::find(entries_, entry) != entries_.end()) {
             probe_failures_.push_back({entry->asset, entry->path, message});
         }
         return {.status = source_registration_status_t::open_failed,
@@ -426,6 +431,9 @@ auto decoded_source_registry_t::decode_block(transport_t& transport, session_tok
     if (!valid_source(key.source)) {
         return invalid_decode();
     }
+    if (const auto resident = transport.resident_block_hit(token, key)) {
+        return *resident;
+    }
     std::shared_ptr<entry_t> entry;
     {
         const std::scoped_lock lock(mutex_);
@@ -444,6 +452,45 @@ auto decoded_source_registry_t::decode_block(transport_t& transport, session_tok
         return invalid_decode();
     }
     return transport.decode_block(lease.decoder(), token, std::move(key));
+}
+
+auto decoded_source_registry_t::preload_head(asset_id_t asset, decoded_block_cache_t& block_cache,
+                                             std::uint64_t frames, std::stop_token stop)
+    -> std::size_t {
+    const auto entry = find_entry(asset);
+    if (!entry) return 0;
+    const auto lease = acquire_lease(entry);
+    if (!lease) return 0;
+    const auto info = lease.decoder().info();
+    if (!info) return 0;
+    // A private session: nothing is published to any transport.
+    decode_session_t session;
+    const auto token = session.start();
+    if (!token) return 0;
+    const auto limit = std::min(frames, info->output_frame_count);
+    const auto blocks = (limit + maximum_read_frames - 1) / maximum_read_frames;
+    std::size_t cached{};
+    for (std::uint64_t block = 0; block < blocks && !stop.stop_requested(); ++block) {
+        const auto result = decode_and_cache_block(lease.decoder(), block_cache, session, *token,
+                                                   {.source = entry->source, .block_index = block});
+        if (result.status != block_decode_status_t::decoded &&
+            result.status != block_decode_status_t::cache_hit) {
+            break;
+        }
+        ++cached;
+        static_cast<void>(session.take_ready(*token));
+    }
+    return cached;
+}
+
+auto decoded_source_registry_t::load_resident(asset_id_t asset, resident_sample_store_t& store,
+                                              const resident_request_t& request,
+                                              std::stop_token stop) -> resident_load_status_t {
+    const auto entry = find_entry(asset);
+    if (!entry) return resident_load_status_t::decode_failed;
+    const auto lease = acquire_lease(entry);
+    if (!lease) return resident_load_status_t::decode_failed;
+    return store.load(request, lease.decoder(), stop);
 }
 
 auto decoded_source_registry_t::analyze_waveform(

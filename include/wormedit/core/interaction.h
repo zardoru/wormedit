@@ -580,6 +580,9 @@ struct editor_interaction_state_t {
     note_kind_t armed_note_kind{note_kind_t::tap};
     local_position_t cursor;
     std::optional<std::uint64_t> virtual_bms_cursor_row;
+    // Non-authoring signed offset, in chart rows, from `cursor` to where it is drawn: set while
+    // following audio or scrolling with a fixed cursor anchor; other cursor moves clear it.
+    double cursor_subrow{};
     struct virtual_lane_key_t {
         std::uint64_t canvas_row{};
         lane_id_t lane;
@@ -621,6 +624,7 @@ struct editor_interaction_view_model_t {
     std::string active_lane_name;
     local_position_t cursor;
     std::optional<std::uint64_t> virtual_bms_cursor_row;
+    double cursor_subrow{};
     std::uint64_t active_snap_denominator{};
     std::vector<std::uint64_t> supported_snap_denominators;
     std::uint64_t document_revision{};
@@ -692,7 +696,8 @@ struct editor_measure_geometry_t {
 [[nodiscard]] auto follow_editor_playhead(document_history_t& history,
     editor_interaction_state_t& state, editor_measure_geometry_t geometry,
     local_position_t position, double target_scroll,
-    double following_anchor_fraction = editor_cursor_edge_margin_fraction) -> editor_interaction_result_t;
+    double following_anchor_fraction = editor_cursor_edge_margin_fraction,
+    double cursor_subrow = 0.0) -> editor_interaction_result_t;
 
 // Creates transient, frontend-independent editing state from a validated
 // history snapshot. Snap denominators are ordered by editor preference.

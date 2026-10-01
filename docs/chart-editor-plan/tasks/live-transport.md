@@ -32,7 +32,7 @@ measurements. Apply the stale-plan check (rule 9) first.
 
 ## T-272 Arena-allocate the flattened workspace in fill order
 
-- **Status:** ready
+- **Status:** deferred (was: ready; user paused 2026-10-01 to prioritize usability)
 - **Outcome:** each frame's `flattened_workspace_t` lives in a `frame_arena_t` (T-271) that is reset at the start of the frame: every array and string the C view points to is carved from the arena in the order the projection fills it, so steady-state playback makes **zero** heap allocations in projection and the data the frontend walks is contiguous and in draw order.
 - **Why this shape:** the frontend boundary (`src/ui/frontend.h`) already consumes plain C views (pointer + count pairs), every array has a fixed capacity (`WORM_UI_*_CAPACITY`), and the view is consumed within the same frame before the next projection. Today `project_application_frame` builds a fresh `flattened_workspace_t` per frame whose 29 `std::vector`/`std::string` members reallocate every frame, and `rebind_view_pointers` then patches pointers into them.
 - **Read first:** `src/sys/workspace_projection.h/.cpp` (`flattened_workspace_t`, `flatten_workspace`, `rebind_view_pointers`), `src/sys/application_frame_projection.cpp` (fill order), `src/sys/compose_view.cpp`, `src/sys/timing_view.cpp`, `src/sys/waveform_view_projection.cpp`, `include/wormedit/core/arena.h` (T-271).
@@ -68,6 +68,8 @@ measurements. Apply the stale-plan check (rule 9) first.
 - **Out of scope:** revision-cached data (T-275 keeps it in a second arena).
 - **Expected gain:** removes allocator churn and page faults from every frame and improves cache locality of the data Nuklear and the field renderer walk.
 
+- **Paused checkpoint (2026-10-01):** User requested pausing T-272 in favor of usability. Marker and waveform arena proposals remain outside the worktree, verified privately but unintegrated; preserve their patches/evidence under `/home/zardoru/.cache/wormedit-verification/compose-markers/` and `t272-waveform/`. Resume only when requested.
+
 ## T-273 Register audio sources lazily and off the frame thread
 
 - **Status:** ready
@@ -88,7 +90,8 @@ measurements. Apply the stale-plan check (rule 9) first.
 
 ## T-274 Start keysound preloading as soon as the chart is parsed
 
-- **Status:** blocked-on T-273, T-267
+- **Status:** done (2026-10-01; `resident_sample_loader_t` in `src/sys/audio_source_registration.{h,cpp}`, `decoded_source_registry_t::preload_head`; headless `audio.` suite 126/126. The real application was not built or run in this session (no SDL3), so the "open a large BMS and press Ctrl+Space at once" check is pending)
+- **Implementation notes:** `reset_project_runtime_state` already calls `reconcile_audition_sources` right after the document is replaced, so the loader starts there, before the first frame, and `project_open.cpp` needed no change. Order: sources longer than the residency limit get their first 10 s decoded into the preview block cache (at most four), then keysounds in first-use order of the first chart. `prioritize()` re-orders the remaining queue, but nothing in the UI calls it yet (the cursor-jump trigger needs compose state). Waveform analysis is not part of this loader and still starts on its own. The status line shows "Loading keysounds n/m"; missing files are skipped and reported once through the probe-failure line.
 - **Outcome:** right after a BMS (or any chart) finishes parsing, before the first frame of the new project is drawn, the background preload starts: the song's first seconds and waveform analysis, then keysounds into the resident arena in first-use order from the cursor; playback started early uses whatever is resident and streams the rest.
 - **Read first:** `src/sys/project_open.cpp`, `src/sys/main.cpp` (`reset_project_runtime_state`), `src/sys/waveform_analysis_runtime.cpp` (`waveform_job_.request`), T-267 and T-273.
 - **Files owned:** `src/sys/project_open.cpp/.h`, `src/sys/audio_source_registration.cpp`, `src/sys/main.cpp` (ordering only), `src/audio/resident_samples.cpp`, `tests/sys/project_open_tests.cpp`.

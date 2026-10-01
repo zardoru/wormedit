@@ -1642,8 +1642,11 @@ auto compose_scene_cursor(scene_geometry_context_t& context, Consume&& consume, 
         return false;
     }
     const auto y = y_for_row(*row);
+    const auto subrow = context.view.cursor_subrow;
+    const auto y_offset = subrow != 0.0 && std::isfinite(subrow)
+        ? (y_for_row(static_cast<long double>(*row) + 1.0L) - y) * subrow : 0.0;
     context.scene.cursor = editor_field_cursor_geometry_t{
-        .lane = context.view.active_lane, .bounds = {lane->left, y - 1.0, lane->right, y + 1.0}};
+        .lane = context.view.active_lane, .bounds = {lane->left, y + y_offset - 1.0, lane->right, y + y_offset + 1.0}};
     return true;
 }
 
@@ -2060,6 +2063,11 @@ auto window_has_edit_preview(const editor_interaction_view_model_t& view) -> boo
         view.pending_note_duration_gesture || view.pending_note_move_gesture ||
         view.pending_note_paint_gesture;
 }
+auto scene_window_height(const editor_interaction_view_model_t& view,
+                         const editor_field_scene_request_t& request) -> double {
+    return view.viewport_height_pixels * 3.0 +
+           request.retained_window_minimum_margin_pixels * 2.0;
+}
 auto window_key_matches(const editor_field_scene_window_t& window,
                         const editor_interaction_view_model_t& view,
                         const editor_field_scene_request_t& request) -> bool {
@@ -2067,7 +2075,9 @@ auto window_key_matches(const editor_field_scene_window_t& window,
     return window.scene && previous.chart == view.chart &&
         previous.document_revision == view.document_revision &&
         previous.pixels_per_standard_measure == view.pixels_per_standard_measure &&
-        previous.viewport_height_pixels == view.viewport_height_pixels * 3.0 &&
+        previous.viewport_height_pixels == scene_window_height(view, request) &&
+        window.request.retained_window_minimum_margin_pixels ==
+            request.retained_window_minimum_margin_pixels &&
         previous.active_snap_denominator == view.active_snap_denominator &&
         previous.selected_notes == view.selected_notes &&
         previous.selected_objects == view.selected_objects &&
@@ -2080,11 +2090,13 @@ auto window_contains_view(const editor_field_scene_window_t& window,
     const auto begin = window.view.viewport_scroll_pixels;
     const auto end = begin + window.view.viewport_height_pixels;
     const auto height = view.viewport_height_pixels;
+    const auto minimum_margin = std::max(height * 0.25,
+        window.request.retained_window_minimum_margin_pixels);
     const auto low_margin = view.viewport_scroll_pixels - begin;
     const auto high_margin = end - view.viewport_scroll_pixels - height;
     // At the chart's beginning, the missing leading margin contains no objects.
-    return low_margin >= std::min(height * 0.25, view.viewport_scroll_pixels) &&
-           high_margin >= height * 0.25;
+    return low_margin >= std::min(minimum_margin, view.viewport_scroll_pixels) &&
+           high_margin >= minimum_margin;
 }
 auto scene_y_for_row(const chart_document_t& chart, const editor_interaction_view_model_t& view,
                      editor_field_scroll_direction_t direction, long double row) -> double {
@@ -2137,7 +2149,10 @@ void project_window_grid(const editor_field_scene_t& source, editor_field_scene_
 auto valid_window_request(const chart_document_t& chart, const editor_field_scene_index_t& index,
                           const editor_interaction_view_model_t& view,
                           const editor_field_scene_request_t& request) -> bool {
-    return !window_has_edit_preview(view) && request.authored_groupings.empty() &&
+    return std::isfinite(request.retained_window_minimum_margin_pixels) &&
+           request.retained_window_minimum_margin_pixels >= 0 &&
+           std::isfinite(scene_window_height(view, request)) &&
+           !window_has_edit_preview(view) && request.authored_groupings.empty() &&
            request.comparison_difference_rows.empty() && valid_scene_index(chart, index, view) &&
            valid_scene_view(view) &&
            valid_scene_request_geometry(request, view.viewport_height_pixels);
@@ -2239,9 +2254,10 @@ auto rebuild_scene_window(const chart_document_t& chart, const editor_field_scen
                           const editor_field_scene_request_t& request,
                           editor_field_scene_window_t& window) -> bool {
     auto expanded = view;
-    expanded.viewport_height_pixels *= 3.0;
+    expanded.viewport_height_pixels = scene_window_height(view, request);
     expanded.viewport_scroll_pixels =
-        std::max(0.0, view.viewport_scroll_pixels - view.viewport_height_pixels);
+        std::max(0.0, view.viewport_scroll_pixels - view.viewport_height_pixels -
+                         request.retained_window_minimum_margin_pixels);
     // A tall window at the end may exceed the allowed viewport scroll. Keep its
     // beginning in the content, while preserving coverage of the original view.
     diagnostic_list_t diagnostics;

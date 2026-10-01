@@ -616,6 +616,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .chart = state.chart, .active_lane = state.active_lane,
         .active_lane_name = geometry.lane->name, .cursor = state.cursor,
         .virtual_bms_cursor_row = state.virtual_bms_cursor_row,
+        .cursor_subrow = state.cursor_subrow,
         .active_snap_denominator = state.active_snap_denominator,
         .supported_snap_denominators = state.supported_snap_denominators,
         .document_revision = history.document.revision,
@@ -1528,11 +1529,13 @@ auto prepare_follow_view_state(const document_history_t& history, const chart_do
 
 auto follow_editor_playhead(document_history_t& history, editor_interaction_state_t& state,
                             editor_measure_geometry_t geometry, local_position_t position,
-                            double target_scroll, double following_anchor_fraction) -> editor_interaction_result_t {
+                            double target_scroll, double following_anchor_fraction,
+                            double cursor_subrow) -> editor_interaction_result_t {
     const auto* chart = find_chart(history.document, state.chart);
     if (!chart || !geometry.index || geometry.chart != state.chart ||
         geometry.document_revision != history.document.revision ||
         !std::isfinite(target_scroll) || !std::isfinite(following_anchor_fraction) ||
+        !std::isfinite(cursor_subrow) ||
         following_anchor_fraction < 0.0 || following_anchor_fraction > 1.0 || playhead_gesture_active(state))
         return {.diagnostics = {error(diagnostic_code_t::invalid_id,
                                      "playhead geometry is stale or playback editing is blocked")}};
@@ -1556,6 +1559,7 @@ auto follow_editor_playhead(document_history_t& history, editor_interaction_stat
     if (std::abs(target_scroll - proposed.viewport_scroll_pixels) >= 0.001)
         proposed.viewport_scroll_pixels = std::clamp(target_scroll,
             -proposed.viewport_height_pixels * proposed.viewport_minimum_margin_fraction, *maximum);
+    proposed.cursor_subrow = cursor_subrow;
     auto view = make_view(history, proposed, &index);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&view))
         return {.diagnostics = *diagnostics};
@@ -2657,6 +2661,8 @@ auto update_fixed_scroll_cursor(editor_scroll_context_t& context,
         cursor_row += step;
     const auto position = position_at(context.index, cursor_row);
     proposed.virtual_bms_cursor_row = position ? std::nullopt : std::optional{cursor_row};
+    // Draw the cursor at the anchored field position, not the snapped row beside it.
+    proposed.cursor_subrow = static_cast<double>(bounded_row - static_cast<long double>(cursor_row));
     if (position) {
         proposed.cursor = *position;
         const auto replacement = transition_lane(context.chart, context.index,
@@ -4470,8 +4476,30 @@ auto arm_note_kind(const document_history_t& history, editor_interaction_state_t
     return space_selection_view_result(make_view(history, state));
 }
 
+namespace {
+auto dispatch_editor_action_impl(document_history_t& history, editor_interaction_state_t& state,
+                                 const editor_ui_action_t& action) -> editor_interaction_result_t;
+} // namespace
+
 auto dispatch_editor_action(document_history_t& history, editor_interaction_state_t& state,
                             const editor_ui_action_t& action) -> editor_interaction_result_t {
+    const auto cursor = state.cursor;
+    const auto virtual_row = state.virtual_bms_cursor_row;
+    const auto subrow = state.cursor_subrow;
+    auto result = dispatch_editor_action_impl(history, state, action);
+    // The sub-row offset only describes the position the cursor was last placed at;
+    // an action that moves the cursor without recomputing it drops the stale offset.
+    if ((state.cursor != cursor || state.virtual_bms_cursor_row != virtual_row) &&
+        state.cursor_subrow == subrow) {
+        state.cursor_subrow = 0.0;
+        if (result.view) result.view->cursor_subrow = 0.0;
+    }
+    return result;
+}
+
+namespace {
+auto dispatch_editor_action_impl(document_history_t& history, editor_interaction_state_t& state,
+                                 const editor_ui_action_t& action) -> editor_interaction_result_t {
     if (auto canceled = handle_editor_cancellation(history, state, action))
         return *canceled;
     if (auto rejected = validate_active_gesture_action(history, state, action))
@@ -4889,5 +4917,6 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
             {error(diagnostic_code_t::invalid_id, "unknown editor action")});
     }
 }
+} // namespace
 
 } // namespace wormedit

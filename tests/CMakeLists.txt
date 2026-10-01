@@ -136,6 +136,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         core/audio_preview_pump_tests.cpp
         core/audio_playhead_snapshot_tests.cpp
         core/audio_preview_session_tests.cpp
+        core/audio_resident_samples_tests.cpp
         core/audio_playback_rate_tests.cpp
         core/audio_time_stretch_tests.cpp
         core/audio_preview_repro_tests.cpp
@@ -472,3 +473,23 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     catch_discover_tests(wormedit_frame_projection_arena_tests TEST_PREFIX "frame-arena."
         PROPERTIES LABELS "unit;sys;performance" DISCOVERY_MODE PRE_TEST)
 endif()
+
+add_executable(wormedit_convert_tests tools/wormedit_convert_tests.cpp)
+target_compile_definitions(wormedit_convert_tests
+    PRIVATE
+        WORMEDIT_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+        WORMEDIT_CONVERT_EXE="$<TARGET_FILE:wormedit-convert>"
+)
+target_include_directories(wormedit_convert_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+target_link_libraries(wormedit_convert_tests
+    PRIVATE
+        wormedit::core
+        Catch2::Catch2WithMain
+        nlohmann_json::nlohmann_json
+)
+add_dependencies(wormedit_convert_tests wormedit-convert)
+catch_discover_tests(wormedit_convert_tests
+    TEST_PREFIX "wormedit_convert."
+    PROPERTIES LABELS "unit;tools"
+    DISCOVERY_MODE PRE_TEST
+)

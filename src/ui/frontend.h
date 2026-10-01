@@ -1660,6 +1660,7 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_OFFSET_FIT_CANCEL,
     WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT,
     WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE,
+    WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP,
 } WormUiComposeInputKind;
 
 typedef enum WormUiComposeNavigationAction {
@@ -1696,6 +1697,7 @@ typedef struct WormUiComposeInputAction {
 typedef enum WormUiComposeViewportInputKind {
     WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL = 0,
     WORM_UI_COMPOSE_VIEWPORT_INPUT_SMOOTH_WHEEL,
+    WORM_UI_COMPOSE_VIEWPORT_INPUT_PINCH_ZOOM,
 } WormUiComposeViewportInputKind;
 
 typedef struct WormUiComposeViewportInput {
@@ -1705,6 +1707,7 @@ typedef struct WormUiComposeViewportInput {
     double delta_y;
     double cursor_x_pixels;
     double cursor_y_pixels;
+    double zoom_factor;
 } WormUiComposeViewportInput;
 
 typedef enum WormUiMetadataEditKind {

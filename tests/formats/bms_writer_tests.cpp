@@ -9,6 +9,10 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <span>
 #include <string>
@@ -2347,7 +2351,7 @@ TEST_CASE("BMS writer diagnoses unsafe retained metadata tokens", "[unit][format
                     wormedit::bms_write_diagnostic_code_t::unrepresentable_number));
 }
 
-TEST_CASE("BMS normalized output diagnoses omitted raw source lines",
+TEST_CASE("BMS normalized output keeps raw comment lines instead of omitting them",
           "[unit][format][bms][writer]") {
     constexpr std::string_view source =
         "; retained source comment\n#PLAYER 1\n#TITLE Commented\n#BPM 120\n";
@@ -2358,8 +2362,7 @@ TEST_CASE("BMS normalized output diagnoses omitted raw source lines",
                                              .preserve_unchanged_source = false});
     REQUIRE(written.bytes.has_value());
     CHECK_FALSE(written.has_errors());
-    CHECK(has_warning(written, wormedit::bms_write_diagnostic_code_t::lossy_transform));
-    CHECK(written.bytes->find("retained source comment") == std::string::npos);
+    CHECK(written.bytes->find("; retained source comment\n") != std::string::npos);
 }
 
 TEST_CASE("BMS writer emits every retained song and chart metadata group",
@@ -2415,4 +2418,127 @@ TEST_CASE("BMS export bakes recipes before reporting unsupported regular scroll 
     const auto written = wormedit::write_bms(song);
     CHECK_FALSE(written.bytes.has_value());
     CHECK(has_error(written, wormedit::bms_write_diagnostic_code_t::unsupported_feature));
+}
+
+namespace {
+
+auto read_fixture_text(std::string_view relative) -> std::string {
+    std::ifstream stream(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / relative,
+                         std::ios::binary);
+    return {std::istreambuf_iterator<char>(stream), std::istreambuf_iterator<char>()};
+}
+
+// Imports the non-gameplay fixture, deletes the one note in measure 040, and exports.
+auto export_after_far_edit(const std::string& source) -> wormedit::bms_write_result_t {
+    const auto imported = parse(source, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(imported.song);
+    REQUIRE_FALSE(imported.has_errors());
+    auto history = wormedit::make_document_history(*imported.song);
+    const auto& chart = history.document.charts.front();
+    const auto& far_measure = chart.measures.at(40);
+    REQUIRE(far_measure.notes.size() == 3);
+    const auto lane = chart.lane_layouts.front().layout.lanes.front().id;
+    const std::array snaps{std::uint64_t{1}};
+    const auto setup = wormedit::make_editor_interaction(
+        history, chart.id, lane, {far_measure.id, 0}, snaps, 1);
+    REQUIRE(setup);
+    auto state = *setup.state;
+    REQUIRE(wormedit::dispatch_editor_action(
+        history, state,
+        wormedit::select_editor_objects_action_t{
+            {{wormedit::editor_selection_object_kind_t::note, far_measure.notes.front().id}}}));
+    REQUIRE(wormedit::dispatch_editor_action(
+        history, state, wormedit::delete_editor_selection_action_t{}));
+    return wormedit::write_bms(history.document, {.lane_profile_id = "bme-7k-outside-scratch"});
+}
+
+} // namespace
+
+auto split_lines(std::string_view text) -> std::vector<std::string> {
+    std::vector<std::string> lines;
+    std::size_t begin{};
+    while (begin < text.size()) {
+        auto end = text.find('\n', begin);
+        if (end == std::string_view::npos) end = text.size();
+        lines.emplace_back(text.substr(begin, end - begin));
+        begin = end + 1;
+    }
+    return lines;
+}
+
+auto is_channel_line(std::string_view line) -> bool {
+    return line.size() > 6 && line[0] == '#' && line[6] == ':' &&
+           std::ranges::all_of(line.substr(1, 3), [](unsigned char c) { return std::isdigit(c); });
+}
+
+TEST_CASE("BMS round trip keeps every non-gameplay construct across a far edit",
+          "[unit][format][bms][writer][roundtrip][fixture]") {
+    const auto source = read_fixture_text("bms/non-gameplay-roundtrip.bme");
+    REQUIRE_FALSE(source.empty());
+    const auto written = export_after_far_edit(source);
+    REQUIRE(written.bytes);
+    CHECK_FALSE(written.has_errors());
+    CHECK_FALSE(has_warning(written, wormedit::bms_write_diagnostic_code_t::unsupported_feature));
+
+    // Every header, definition, and comment line is byte-equal in the export.
+    const auto output_lines = split_lines(*written.bytes);
+    std::vector<std::size_t> output_positions;
+    for (const auto& line : split_lines(source)) {
+        if (is_channel_line(line)) continue;
+        const auto found = std::ranges::find_if(output_lines, [&](const auto& candidate) {
+            return candidate == line || candidate == "\xef\xbb\xbf" + line;
+        });
+        INFO("missing source line: " << line);
+        REQUIRE(found != output_lines.end());
+        output_positions.push_back(static_cast<std::size_t>(found - output_lines.begin()));
+    }
+    // Comments and unknown headers keep their source order relative to each other.
+    const auto position_of = [&](std::string_view line) {
+        return line_order(*written.bytes, line);
+    };
+    CHECK(position_of("; Wormedit fixture: every non-gameplay BMS construct that must survive "
+                      "import, edit, and export.") <
+          position_of("// A second comment style, kept in source order."));
+    CHECK(position_of("// A second comment style, kept in source order.") <
+          position_of("#X-WORMEDIT-UNKNOWN keep this unknown header"));
+
+    // Gameplay content is semantically equal apart from the deleted far note.
+    const auto reparsed = parse(*written.bytes, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(reparsed.song);
+    const auto& original = parse(source, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(original.song);
+    const auto& before = original.song->charts.front();
+    const auto& after = reparsed.song->charts.front();
+    REQUIRE(before.measures.size() == after.measures.size());
+    CHECK(after.measures.at(40).notes.size() == before.measures.at(40).notes.size() - 1);
+    CHECK(after.measures.at(0).notes.size() == before.measures.at(0).notes.size());
+    CHECK(after.measures.at(1).bgm_events.size() == before.measures.at(1).bgm_events.size());
+    CHECK(after.bga_events.size() == before.bga_events.size());
+}
+
+TEST_CASE("BMS normalized output transcodes retained comments and unknown headers",
+          "[unit][format][bms][writer][roundtrip][encoding]") {
+    if (!wormedit::is_bms_text_encoding_supported(wormedit::text_encoding_t::cp932)) {
+        SUCCEED("CP932 is unavailable in this build");
+        return;
+    }
+    // Shift-JIS "テスト" in a comment and in an unknown header.
+    const std::string source = "#PLAYER 1\n; \x83\x65\x83\x58\x83\x67\n#X-MEMO \x83\x65\x83\x58\x83\x67\n"
+                               "#BPM 120\n#WAV01 a.wav\n#00011:01\n";
+    const auto imported = parse(source, {.encoding_override = wormedit::text_encoding_t::cp932,
+                                         .lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(imported.song);
+    auto song = *imported.song;
+    const auto utf8 = wormedit::write_bms(song, {.lane_profile_id = "bme-7k-outside-scratch",
+                                                 .preserve_unchanged_source = false});
+    REQUIRE(utf8.bytes);
+    CHECK(utf8.bytes->find("; テスト\n") != std::string::npos);
+    CHECK(utf8.bytes->find("#X-MEMO テスト\n") != std::string::npos);
+
+    const auto legacy = wormedit::write_bms(
+        song, {.lane_profile_id = "bme-7k-outside-scratch",
+               .preserve_unchanged_source = false,
+               .output_encoding = wormedit::text_encoding_t::cp932});
+    REQUIRE(legacy.bytes);
+    CHECK(legacy.bytes->find("#X-MEMO \x83\x65\x83\x58\x83\x67\n") != std::string::npos);
 }

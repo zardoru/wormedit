@@ -1421,6 +1421,7 @@ void configure_transport_play_pause(auto& state, auto& history, auto& workspace,
             state.minimap_start_frame.reset();
             inline_preview_cursor.capture(compose_cursor);
         }
+        if (preview_output.playing()) inline_preview_cursor.capture_follow_anchor(history, compose_cursor);
         return result;
     };
 }
@@ -1467,6 +1468,7 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
             preview_session, preview_output,
             std::nullopt, true);
         if (starting && preview_output.playing()) inline_preview_cursor.capture(compose_cursor);
+        if (preview_output.playing()) inline_preview_cursor.capture_follow_anchor(history, compose_cursor);
         return result;
     };
     state.transport_seek = [&](std::uint64_t frame) -> std::string {
@@ -3442,6 +3444,11 @@ int main(int argc, char** argv) {
     wormedit::audio::preview_transport_bridge_t preview_bridge{preview_transport};
     wormedit::audio::preview_session_t preview_session{audition_sources, preview_transport,
                                                        preview_bridge};
+    wormedit::audio::resident_sample_store_t resident_samples;
+    resident_samples.set_listener([&](wormedit::audio::resident_snapshot_ptr_t snapshot) {
+        audition_transport.set_resident_snapshot(snapshot);
+        preview_transport.set_resident_snapshot(std::move(snapshot));
+    });
     wormedit::sys::sdl_preview_output_t preview_output{preview_session};
     wormedit::sys::runtime::chart_preview_t preview_state;
     std::vector<wormedit::audio::preview_metronome_source_binding_t> preview_metronome_bindings;
@@ -3449,6 +3456,9 @@ int main(int argc, char** argv) {
     std::vector<wormedit::sys::audition_asset_entry_t> audition_asset_inventory;
     std::uint64_t audition_source_generation{};
     wormedit::task_scheduler_t audition_probe_scheduler(2, 4, wormedit::background_scheduler_options());
+    wormedit::sys::resident_sample_loader_t resident_loader{resident_samples,
+                                                           audition_probe_scheduler};
+    resident_loader.set_head_cache(&preview_cache);
     const wormedit::sys::audition_source_reconciliation_context_t audition_reconciliation{
         history.document,
         asset_base,
@@ -3464,6 +3474,7 @@ int main(int argc, char** argv) {
         [&] { waveform_runtime.reset_sources(); },
         [&] { preview_state.invalidate(); },
         &audition_probe_scheduler,
+        &resident_loader,
     };
     const auto initial_unavailable_audio_assets = wormedit::sys::reconcile_audition_sources(audition_reconciliation, false).value_or(0);
     if (initial_unavailable_audio_assets != 0) {
@@ -3699,6 +3710,12 @@ int main(int argc, char** argv) {
         if (const auto failed = wormedit::sys::drain_audition_probe_failures(audition_sources)) {
             status = *failed;
         }
+        if (const auto streaming = resident_loader.drain_report()) {
+            status = *streaming;
+        }
+        if (const auto loading = resident_loader.drain_progress()) {
+            status = *loading;
+        }
         wormedit::sys::service_audio_transport_frame(
             history.document, workspace, preview_state, preview_session,
             audition_output, preview_output,
@@ -3727,7 +3744,8 @@ int main(int argc, char** argv) {
                     *application_command_state.preview_playhead_absolute_row,
                     preview_output.playing(),
                     retained_compose_geometry(compose_scene_cache),
-                    application_command_state.editor_preferences.playhead_anchor_percent / 100.0);
+                    inline_preview_cursor.follow_anchor_fraction.value_or(
+                        application_command_state.editor_preferences.playhead_anchor_percent / 100.0));
             }
 #endif
 

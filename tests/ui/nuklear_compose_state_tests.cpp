@@ -735,3 +735,164 @@ TEST_CASE("occluded offset readout cannot steal another panel's input", "[fronte
     view.input_occluded = false;
     expect_inline(worm_ui_nuklear_begin_inline_offset(state, view));
 }
+
+TEST_CASE("SDL Compose wheel units preserve fractions at whole magnitude boundaries",
+          "[compose][wheel-units]") {
+    for (const bool flipped : {false,true}) {
+        for (const double magnitude : {0.01,0.99,1.0,1.01,2.5}) {
+            const auto device_sign=flipped?1.0:-1.0;
+            const auto wheel=worm_ui_nuklear_normalize_compose_wheel(
+                magnitude*device_sign,magnitude*device_sign,12.25,34.5,7,flipped);
+            expect_inline(wheel.has_value());
+            if (!wheel) continue;
+            expect_inline(wheel->delta_x==magnitude);
+            expect_inline(wheel->delta_y==magnitude);
+            expect_inline(wheel->coarse_steps);
+            expect_inline(wheel->mouse_x==12.25);
+            expect_inline(wheel->mouse_y==34.5);
+            expect_inline(wheel->modifiers==7);
+        }
+    }
+}
+TEST_CASE("SDL Compose wheel unit normalization rejects nonfinite input",
+          "[compose][wheel-units]") {
+    const auto bad=std::numeric_limits<double>::quiet_NaN();
+    expect_inline(!worm_ui_nuklear_normalize_compose_wheel(bad,1,2,3,0,false));
+    expect_inline(!worm_ui_nuklear_normalize_compose_wheel(1,bad,2,3,0,false));
+    expect_inline(!worm_ui_nuklear_normalize_compose_wheel(1,2,bad,3,0,false));
+    expect_inline(!worm_ui_nuklear_normalize_compose_wheel(1,2,3,bad,0,false));
+    expect_inline(!worm_ui_nuklear_normalize_compose_wheel(
+        std::numeric_limits<double>::infinity(),1,2,3,0,false));
+    const auto zero=worm_ui_nuklear_normalize_compose_wheel(0,0,2,3,0,false);
+    expect_inline(zero.has_value());
+    if (!zero) return;
+    expect_inline((zero->delta_x==0 && zero->delta_y==0 && zero->coarse_steps));
+}
+
+TEST_CASE("Tab chord emits one page immediately and every 200 milliseconds", "[frontend][tab-repeat]") {
+    worm_ui_nuklear_tab_navigation_t held;
+    const auto page = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+    expect_inline(!held.press_tab(100));
+    expect_inline(held.press_direction(page, 82, 120) == page);
+    expect_inline(!held.press_direction(page, 82, 130));
+    expect_inline(!held.advance(319, true));
+    expect_inline(held.advance(320, true) == page);
+    expect_inline(!held.advance(519, true));
+    expect_inline(held.advance(520, true) == page);
+    expect_inline(held.advance(5'000, true) == page);
+    expect_inline(!held.advance(5'000, true));
+    held.release_direction(81);
+    expect_inline(held.advance(5'200, true) == page);
+    held.release_direction(82);
+    expect_inline(!held.advance(5'400, true));
+}
+
+TEST_CASE("Tab chord handles either press order and discards ownership debt", "[frontend][tab-repeat]") {
+    worm_ui_nuklear_tab_navigation_t held;
+    const auto page = WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD;
+    expect_inline(!held.press_direction(page, 81, 100));
+    expect_inline(held.press_tab(110) == page);
+    expect_inline(!held.press_tab(120));
+    expect_inline(!held.advance(310, false));
+    expect_inline(!held.tab_down && !held.direction);
+    expect_inline(!held.advance(10'000, true));
+    expect_inline(!held.press_tab(10'000));
+    expect_inline(held.press_direction(page, 81, 10'000) == page);
+    held.cancel(); // Tab release, chart switch, text/modal takeover and overflow.
+    expect_inline(!held.advance(10'200, true));
+}
+
+TEST_CASE("Tab chord direction changes restart cadence without stale pulses", "[frontend][tab-repeat]") {
+    worm_ui_nuklear_tab_navigation_t held;
+    const auto forward = WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+    const auto backward = WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD;
+    expect_inline(!held.press_tab(0));
+    expect_inline(held.press_direction(forward, 82, 0) == forward);
+    expect_inline(held.press_direction(backward, 81, 199) == backward);
+    held.release_direction(82);
+    expect_inline(!held.advance(398, true));
+    expect_inline(held.advance(399, true) == backward);
+    held.cancel();
+    expect_inline(!held.press_tab(std::numeric_limits<std::uint64_t>::max() - 1));
+    expect_inline(held.press_direction(forward, 82,
+        std::numeric_limits<std::uint64_t>::max() - 1) == forward);
+    expect_inline(!held.advance(std::numeric_limits<std::uint64_t>::max(), true));
+}
+
+TEST_CASE("Tab wheel speed preserves fractional units and snapshot semantics", "[frontend][tab-wheel]") {
+    worm_ui_nuklear_compose_wheel_event_t event{
+        .delta_x = -0.125, .delta_y = 0.0625, .coarse_steps = false,
+        .tab_speed_modifier = true};
+    expect_inline(worm_ui_nuklear_compose_wheel_speed(event.delta_x, event.tab_speed_modifier) == -0.25);
+    expect_inline(worm_ui_nuklear_compose_wheel_speed(event.delta_y, event.tab_speed_modifier) == 0.125);
+    expect_inline(!event.coarse_steps);
+    expect_inline(worm_ui_nuklear_compose_wheel_speed(event.delta_y, false) == event.delta_y);
+    expect_inline(worm_ui_nuklear_compose_wheel_speed(-1, true) == -2);
+}
+
+TEST_CASE("Pinch ratios preserve begin anchor and end-frame updates", "[frontend][pinch]") {
+    using phase = worm_ui_nuklear_pinch_phase_t;
+    worm_ui_nuklear_pinch_gesture_t gesture;
+    worm_ui_nuklear_pinch_input(gesture, phase::update, 1.2, 1, 2, 7, 9);
+    expect_inline(gesture.count == 0);
+    worm_ui_nuklear_pinch_input(gesture, phase::begin, 0, 120, 240, 7, 9);
+    worm_ui_nuklear_pinch_input(gesture, phase::update, 1.01, 800, 900, 7, 9);
+    worm_ui_nuklear_pinch_input(gesture, phase::update, 0.99, 900, 800, 7, 9);
+    worm_ui_nuklear_pinch_input(gesture, phase::end, 0, 0, 0, 7, 9);
+    expect_inline(!gesture.active && gesture.count == 2);
+    expect_inline(gesture.pending[0].factor == 1.01);
+    expect_inline(gesture.pending[1].factor == 0.99);
+    expect_inline(gesture.pending[0].mouse_x == 120 && gesture.pending[1].mouse_y == 240);
+    gesture.count = 0; // Frame drain preserves lifecycle, not a synthetic new BEGIN.
+    worm_ui_nuklear_pinch_input(gesture, phase::update, 2, 0, 0, 7, 9);
+    expect_inline(gesture.count == 0);
+}
+
+TEST_CASE("Pinch invalid ratios context changes and overflow cancel retained input", "[frontend][pinch]") {
+    using phase = worm_ui_nuklear_pinch_phase_t;
+    const auto invalid = GENERATE(0.0, -1.0, std::numeric_limits<double>::infinity(),
+        std::numeric_limits<double>::quiet_NaN());
+    worm_ui_nuklear_pinch_gesture_t gesture;
+    worm_ui_nuklear_pinch_input(gesture, phase::begin, 0, 10, 20, 7, 9);
+    worm_ui_nuklear_pinch_input(gesture, phase::update, invalid, 0, 0, 7, 9);
+    expect_inline(!gesture.active && gesture.count == 0);
+    worm_ui_nuklear_pinch_input(gesture, phase::begin, 0, 10, 20, 7, 9);
+    worm_ui_nuklear_pinch_input(gesture, phase::update, 1.1, 0, 0, 7, 10);
+    expect_inline(!gesture.active && gesture.count == 0);
+    worm_ui_nuklear_pinch_input(gesture, phase::begin, 0, 10, 20, 7, 9);
+    for (std::size_t i = 0; i < gesture.pending.size(); ++i)
+        worm_ui_nuklear_pinch_input(gesture, phase::update, 1.1, 0, 0, 7, 9);
+    expect_inline(gesture.count == gesture.pending.size());
+    worm_ui_nuklear_pinch_input(gesture, phase::update, 1.1, 0, 0, 7, 9);
+    expect_inline(!gesture.active && gesture.count == 0);
+    worm_ui_nuklear_pinch_input(gesture, phase::begin, 0, 10, 20, 7, 9);
+    worm_ui_nuklear_pinch_input(gesture, phase::update, 1.1, 0, 0, 7, 9);
+    worm_ui_nuklear_pinch_input(gesture, phase::cancel, 0, 0, 0, 7, 9);
+    expect_inline(!gesture.active && gesture.count == 0);
+}
+
+TEST_CASE("Tab range release retires the directional repeat before its deadline", "[frontend][tab-repeat][selection]") {
+    worm_ui_nuklear_compose_state_t state;
+    expect_inline(worm_ui_nuklear_begin_shift_range(state, 3));
+    expect_inline(!state.tab_navigation.press_tab(0));
+    expect_inline(state.tab_navigation.press_direction(
+        WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD, 82, 0).has_value());
+    state.space_range_hold_moved = true;
+    expect_inline(!worm_ui_nuklear_release_shift_range(state, 1));
+    state.tab_navigation.release_direction(82);
+    expect_inline(worm_ui_nuklear_release_shift_range(state, 2));
+    expect_inline(state.space_range_hold_moved);
+    expect_inline(!state.tab_navigation.advance(200, true));
+}
+
+TEST_CASE("Compose zoom anchors use source coordinates in either scroll direction", "[frontend][pinch][zoom-anchor]") {
+    for (const double height : {496.0, 532.0, 713.0}) {
+        expect_inline(worm_ui_nuklear_compose_zoom_anchor(0, height, false) == 0);
+        expect_inline(worm_ui_nuklear_compose_zoom_anchor(0, height, true) == height);
+        expect_inline(worm_ui_nuklear_compose_zoom_anchor(height, height, false) == height);
+        expect_inline(worm_ui_nuklear_compose_zoom_anchor(height, height, true) == 0);
+        const auto source = worm_ui_nuklear_compose_zoom_anchor(37.25, height, true);
+        expect_inline(source + 37.25 == height);
+        expect_inline(worm_ui_nuklear_compose_zoom_anchor(source, height, true) == 37.25);
+    }
+}

@@ -190,6 +190,18 @@ TEST_CASE("first tap in virtual BMS #999 commits geometry and note as one undo s
     CHECK(history.document.charts.front().measures.size() == 1'000);
 }
 
+namespace {
+void check_native_tail_commit(document_history_t& history, std::size_t authored) {
+    const auto& chart = history.document.charts.front();
+    REQUIRE(chart.measures.size() == native_unanchored_virtual_measure_count);
+    CHECK(chart.measures.back().notes.size() == 1);
+    CHECK(history.undo.size() == 1);
+    CHECK(undo_document_command(history));
+    CHECK(history.document.charts.front().measures.size() == authored);
+
+}
+} // namespace
+
 TEST_CASE("native chart without BGM places taps in its virtual tail as one undo step",
           "[unit][core][interaction][virtual-canvas]") {
     auto history = make_document_history(make_song());
@@ -205,11 +217,7 @@ TEST_CASE("native chart without BGM places taps in its virtual tail as one undo 
         history, state, place_virtual_bms_tap_action_t{last->begin_row, lane_id_t{1}});
     REQUIRE(placed);
     const auto& chart = history.document.charts.front();
-    REQUIRE(chart.measures.size() == native_unanchored_virtual_measure_count);
-    CHECK(chart.measures.back().notes.size() == 1);
-    CHECK(history.undo.size() == 1);
-    CHECK(undo_document_command(history));
-    CHECK(history.document.charts.front().measures.size() == authored);
+    check_native_tail_commit(history, authored);
 
     CHECK_FALSE(dispatch_editor_action(
         history, state, place_virtual_bms_tap_action_t{canvas.total_rows, lane_id_t{1}}));
@@ -2574,6 +2582,28 @@ TEST_CASE("Compose wheel direction and first-measure anchor follow field orienta
     }
 }
 
+TEST_CASE("fractional fixed-cursor scrolling keeps the drawn cursor on its screen line",
+          "[unit][core][interaction][viewport][fixed-cursor]") {
+    auto history = make_document_history(make_song());
+    constexpr std::array snaps{std::uint64_t{4}};
+    const auto setup = make_editor_interaction(history, chart_id_t{1}, lane_id_t{1},
+                                               {measure_id_t{1}, 0}, snaps, 4, 192.0);
+    REQUIRE(setup);
+    auto state = *setup.state;
+    const auto& chart = history.document.charts.front();
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto pixels_per_row = state.pixels_per_standard_measure / chart.divisions_per_standard_measure;
+    for (const double pixels : {48.0, 7.3, 0.4, 13.9, 5.55}) {
+        const auto scrolled = dispatch_editor_action(
+            history, state,
+            scroll_editor_view_action_t{pixels, 48.0, editor_field_scroll_direction_t::up});
+        REQUIRE(scrolled);
+        const auto drawn_row = static_cast<double>(*absolute_row(index, state.cursor)) + state.cursor_subrow;
+        CHECK(drawn_row * pixels_per_row - state.viewport_scroll_pixels == Catch::Approx(48.0).margin(0.01));
+        CHECK(scrolled.view->cursor_subrow == state.cursor_subrow);
+    }
+}
+
 TEST_CASE("fixed cursor scrolling follows the snap beneath a stationary viewport line",
           "[unit][core][interaction][viewport][fixed-cursor]") {
     auto history = make_document_history(make_song());
@@ -2973,6 +3003,46 @@ TEST_CASE("preview starts at the cursor time and Compose cursor follows the play
         state.cursor == cursor_after_follow,
     };
     CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
+}
+
+TEST_CASE("Following audio keeps the cursor at the anchor between snaps and edits clear the offset",
+          "[unit][core][interaction][transport]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.viewport_height_pixels = 400.0;
+    const auto& chart = history.document.charts.front();
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto pixels_per_row = state.pixels_per_standard_measure / chart.divisions_per_standard_measure;
+    for (const double row : {600.3, 600.9, 601.5, 613.77, 700.01}) {
+        REQUIRE(sys::follow_compose_playhead(history, state, row, true,
+            {chart.id, history.document.revision, &index}, 0.5));
+        const auto view = std::get<editor_interaction_view_model_t>(inspect_editor_interaction(history, state));
+        const auto cursor_row = static_cast<double>(*absolute_row(index, view.cursor)) + view.cursor_subrow;
+        CHECK(cursor_row * pixels_per_row - view.viewport_scroll_pixels ==
+              Catch::Approx(200.0).margin(0.01));
+    }
+    CHECK(state.cursor_subrow > 0.0);
+    REQUIRE(dispatch_editor_action(history, state, move_edit_cursor_action_t{}));
+    CHECK(state.cursor_subrow == 0.0);
+}
+
+TEST_CASE("Starting playback keeps the cursor where it sits instead of re-anchoring the camera",
+          "[unit][core][interaction][transport]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.viewport_height_pixels = 400.0;
+    const auto& chart = history.document.charts.front();
+    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    // Navigate so the cursor rests well away from the 20 percent margin.
+    REQUIRE(sys::follow_compose_playhead(history, state, 2'400.0, false,
+        {chart.id, history.document.revision, &index}));
+    const auto scroll_before = state.viewport_scroll_pixels;
+    sys::inline_preview_cursor_t preview_cursor;
+    preview_cursor.capture_follow_anchor(history, &state);
+    REQUIRE(preview_cursor.follow_anchor_fraction);
+    REQUIRE(sys::follow_compose_playhead(history, state, 2'400.0, true,
+        {chart.id, history.document.revision, &index}, *preview_cursor.follow_anchor_fraction));
+    CHECK(state.viewport_scroll_pixels == Catch::Approx(scroll_before).margin(0.01));
 }
 
 TEST_CASE("Compose playback keeps the playhead anchored 20 percent from the chart start",
@@ -4411,4 +4481,29 @@ TEST_CASE("configured follow publishes its validated margins to scene consumers"
         expect_configured_follow(visible.viewport_scroll_pixels == -400 * anchor);
         expect_configured_follow(history.undo.empty());
     }
+}
+
+namespace {
+auto native_hundred_measure_song() -> song_document_t {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    while (chart.measures.size() < 100) {
+        auto measure = chart.measures.back();
+        measure.id = measure_id_t{chart.measures.size() + 1};
+        measure.notes.clear();
+        chart.measures.push_back(std::move(measure));
+    }
+    return song;
+}
+}
+
+TEST_CASE("native canvas navigation preserves authored measures beyond the virtual minimum",
+          "[unit][core][interaction][integration-fix]") {
+    auto history = make_document_history(native_hundred_measure_song());
+    auto state = make_state(history);
+    CHECK(virtual_tail_measure_limit(history.document.charts.front()) == 100);
+    const auto selected = dispatch_editor_action(history, state, select_bms_canvas_measure_action_t{64});
+    REQUIRE(selected);
+    CHECK(state.cursor.measure == measure_id_t{65});
+    CHECK_FALSE(dispatch_editor_action(history, state, select_bms_canvas_measure_action_t{100}));
 }

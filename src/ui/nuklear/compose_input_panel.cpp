@@ -115,6 +115,9 @@ void append_compose_input(
         state.pointer_navigation_active = false;
         state.keyboard_focus = false;
         state.lane_hold_count = 0;
+        state.tab_navigation.cancel();
+        state.raw_tab_down = false;
+        state.pinch = {};
         state.action_overflowed = true;
         return;
     }
@@ -199,6 +202,9 @@ update_compose_pointer_navigation(WormUiWorkspaceAction* action,
 }
 
 static void cancel_compose_navigation(WormUiWorkspaceAction* action) {
+    state.tab_navigation.cancel();
+    state.raw_tab_down = false;
+    state.pinch = {};
     if (action && (state.navigation_key_active || state.pointer_navigation_active)) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL);
     }
@@ -261,6 +267,9 @@ void queue_compose_key_input(std::uint32_t keycode, std::uint32_t scancode,
     if (state.key_event_count == state.key_events.size()) {
         state.key_event_count = 0;
         state.cancel_pending = true;
+        state.tab_navigation.cancel();
+        state.raw_tab_down = false;
+        state.pinch = {};
         state.pointer_hold_active = false;
         state.note_paint_pointer_active = false;
         state.bmson_razor_pointer_active = false;
@@ -278,6 +287,8 @@ void queue_compose_key_input(std::uint32_t keycode, std::uint32_t scancode,
         state.lane_hold_count = 0;
         return;
     }
+    if (keycode == static_cast<std::uint32_t>(SDLK_TAB) && !repeat)
+        state.raw_tab_down = down;
     state.key_events[state.key_event_count++] = {
         .keycode = keycode,
         .scancode = scancode,
@@ -293,6 +304,9 @@ void queue_compose_wheel_input(double delta_x, double delta_y, double mouse_x,
     if (state.wheel_event_count == state.wheel_events.size()) {
         state.wheel_event_count = 0;
         state.cancel_pending = true;
+        state.tab_navigation.cancel();
+        state.raw_tab_down = false;
+        state.pinch = {};
         state.key_event_count = 0;
         state.pointer_hold_active = false;
         state.note_paint_pointer_active = false;
@@ -318,7 +332,15 @@ void queue_compose_wheel_input(double delta_x, double delta_y, double mouse_x,
         .mouse_y = mouse_y,
         .modifiers = modifiers,
         .coarse_steps = coarse_steps,
+        .tab_speed_modifier = state.raw_tab_down,
     };
+}
+
+void queue_compose_pinch_input(worm_ui_nuklear_pinch_phase_t phase,
+                               double factor, double mouse_x, double mouse_y) {
+    if (state.cancel_pending) { state.pinch = {}; return; }
+    worm_ui_nuklear_pinch_input(state.pinch, phase, factor, mouse_x, mouse_y,
+                               state.last_project_id, state.last_chart_id);
 }
 
 void queue_compose_middle_click_input(float x, float y) {
@@ -328,6 +350,9 @@ void queue_compose_middle_click_input(float x, float y) {
 }
 
 void compose_handle_focus_lost_input() {
+    state.tab_navigation.cancel();
+    state.raw_tab_down = false;
+    state.pinch = {};
     state.cancel_pending = true;
     state.key_event_count = 0;
     state.wheel_event_count = 0;
@@ -354,6 +379,7 @@ void compose_handle_focus_lost_input() {
 }
 
 void discard_compose_frame_input() {
+    state.pinch = {};
     state.wheel_event_count = 0;
     state.middle_click_pending = false;
 }
@@ -450,6 +476,13 @@ static auto compose_shift_keys(uint16_t modifiers) -> std::uint8_t {
 }
 
 static bool release_compose_key_hold(const auto& key_event, WormUiWorkspaceAction* action) {
+    if (!key_event.down) {
+        if (key_event.keycode == static_cast<std::uint32_t>(SDLK_TAB)) {
+            state.tab_navigation.cancel();
+            return true;
+        }
+        state.tab_navigation.release_direction(key_event.scancode);
+    }
     if (!key_event.down && state.navigation_key_active &&
         key_event.scancode == state.navigation_keycode) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_RELEASE, 0.0, 0.0, 0,
@@ -486,6 +519,59 @@ static bool release_compose_key_hold(const auto& key_event, WormUiWorkspaceActio
     return false;
 }
 
+static void append_tab_navigation_step(WormUiWorkspaceAction* action,
+                                       WormUiComposeNavigationAction navigation,
+                                       std::uint16_t modifiers, const WormUiComposeView& view,
+                                       bool pointer_paint_mode_active) {
+    if (!view.paste_active && !pointer_paint_mode_active && !view.space_range_preview_visible &&
+        worm_ui_nuklear_begin_shift_range(state, compose_shift_keys(modifiers)))
+        append_compose_input(action, WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION);
+    if (state.navigation_key_active || state.pointer_navigation_active)
+        append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL);
+    state.navigation_key_active = false;
+    state.navigation_keycode = 0;
+    state.pointer_navigation_active = false;
+    append_compose_input(action, WORM_UI_COMPOSE_INPUT_NAVIGATION_STEP, 0.0, 0.0, 0, false,
+                         WORM_UI_COMPOSE_SELECTION_REPLACE, navigation);
+    if (!state.action_overflowed && state.space_range_hold_active)
+        state.space_range_hold_moved = true;
+}
+
+static auto compose_page_navigation(WormUiComposeNavigationAction action)
+    -> WormUiComposeNavigationAction {
+    return action == WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD ||
+                   action == WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD
+               ? WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD
+               : WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+}
+
+static bool process_compose_tab_key(const auto& event, const WormUiComposeView& view,
+                                    WormUiWorkspaceAction* action, bool pointer_paint_mode_active) {
+    if (event.keycode != static_cast<std::uint32_t>(SDLK_TAB)) return false;
+    state.raw_tab_down = true;
+    const auto step = state.tab_navigation.press_tab(SDL_GetTicks());
+    if (step) append_tab_navigation_step(action, *step, event.modifiers, view,
+                                         pointer_paint_mode_active);
+    return true;
+}
+
+static bool process_compose_horizontal_tab_key(const auto& event,
+                                               const WormUiComposeView& view,
+                                               WormUiWorkspaceAction* action,
+                                               bool pointer_paint_mode_active) {
+    if (event.keycode != static_cast<std::uint32_t>(SDLK_LEFT) &&
+        event.keycode != static_cast<std::uint32_t>(SDLK_RIGHT)) return false;
+    const auto navigation = event.keycode == static_cast<std::uint32_t>(SDLK_LEFT)
+                                ? WORM_UI_COMPOSE_NAVIGATION_PAGE_BACKWARD
+                                : WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
+    const auto step = state.tab_navigation.press_direction(navigation, event.scancode,
+                                                           SDL_GetTicks());
+    if (!state.tab_navigation.tab_down) return false;
+    if (step) append_tab_navigation_step(action, *step, event.modifiers, view,
+                                         pointer_paint_mode_active);
+    return true;
+}
+
 static bool process_compose_navigation_key(const auto& key_event,
                                            const WormUiComposeView* view,
                                            WormUiWorkspaceAction* action,
@@ -503,6 +589,13 @@ static bool process_compose_navigation_key(const auto& key_event,
     } else {
         compose_navigation_action_for_key(key, key_event.modifiers, view->downscroll,
                                           &navigation_action);
+    }
+    const auto step = state.tab_navigation.press_direction(
+        compose_page_navigation(navigation_action), key_event.scancode, SDL_GetTicks());
+    if (state.tab_navigation.tab_down) {
+        if (step) append_tab_navigation_step(action, *step, key_event.modifiers, *view,
+                                             pointer_paint_mode_active);
+        return true;
     }
     if (!view->paste_active && !pointer_paint_mode_active && !view->space_range_preview_visible &&
         worm_ui_nuklear_begin_shift_range(
@@ -533,6 +626,7 @@ static bool process_compose_escape(const auto& key_event,
                                            const WormUiComposeView* view,
                                            WormUiWorkspaceAction* action) {
     if (key_event.keycode == static_cast<uint32_t>(SDLK_ESCAPE)) {
+        cancel_compose_navigation(action);
         cancel_compose_pointer_selection(action);
         cancel_beat_fit_drag(action);
         cancel_offset_fit_drag(action);
@@ -619,6 +713,8 @@ static void process_compose_key_event(const auto& key_event, const WormUiCompose
     }
     if (process_compose_escape(key_event, view, action)) return;
     if (compose_shortcut_modifier(key_event.modifiers)) return;
+    if (process_compose_tab_key(key_event, *view, action, pointer_paint_mode_active)) return;
+    if (process_compose_horizontal_tab_key(key_event, *view, action, pointer_paint_mode_active)) return;
     if (process_compose_navigation_key(key_event, view, action, pointer_paint_mode_active)) return;
     if (pointer_paint_mode_active || view->paste_active) return;
     if ((key_event.modifiers & (SDL_KMOD_ALT | SDL_KMOD_GUI | SDL_KMOD_CTRL | SDL_KMOD_MODE |
@@ -702,11 +798,13 @@ void process_compose_key_events(struct nk_context* context, const WormUiComposeV
     if (process_go_to_measure_keys(context, *view, action, window_focused,
                                    ime_composition_active)) {
         cancel_compose_shift_range(action);
+        cancel_compose_navigation(action);
         release_discarded_compose_keys(action);
         state.key_event_count = 0;
         return;
     }
     if (state.inline_timing_open) {
+        cancel_compose_navigation(action);
         state.inline_timing_input_consumed = true;
         for (size_t index = 0; index < state.key_event_count; ++index) {
             const auto& event = state.key_events[index];
@@ -738,6 +836,11 @@ void process_compose_key_events(struct nk_context* context, const WormUiComposeV
         process_compose_key_event(key_event, view, action, keyboard_ready,
                                   pointer_paint_mode_active);
     });
+    const auto step = state.tab_navigation.advance(SDL_GetTicks(), keyboard_ready &&
+                                                   !state.action_overflowed &&
+                                                   !compose_area_capture_active());
+    if (step) append_tab_navigation_step(action, *step, SDL_GetModState(), *view,
+                                         pointer_paint_mode_active);
 }
 
 static void cancel_pending_compose_panel_actions(WormUiWorkspaceAction* action) {
@@ -855,7 +958,7 @@ void prepare_compose_panel_input(const WormUiComposeView* view, bool compose_tab
         action->compose_input_chart_id = view->chart_id;
         action->compose_input_document_revision = view->document_revision;
         action->compose_input_viewport_width_pixels = view->viewport_width_pixels;
-        if (!view->scene_available) {
+        if (!view->scene_available || view->input_occluded || !window_focused) {
             cancel_compose_navigation(action);
         }
         if (state.cancel_pending) cancel_pending_compose_panel_actions(action);
@@ -984,7 +1087,8 @@ static bool append_beat_fit_snap_wheel(const ComposeViewportInputContext& input,
 
 static void append_compose_wheel_inputs(const ComposeViewportInputContext& input) {
     const auto& view = *input.view;
-    if (!state.action_overflowed && view.scene_available && input.window_focused) {
+    if (!state.action_overflowed && view.scene_available && !view.input_occluded &&
+        input.window_focused) {
         for (size_t index = 0; index < state.wheel_event_count; ++index) {
             const auto& wheel = state.wheel_events[index];
             if (wheel.mouse_x < input.viewport.x || wheel.mouse_x >= input.input_right ||
@@ -993,20 +1097,60 @@ static void append_compose_wheel_inputs(const ComposeViewportInputContext& input
             }
             if (append_beat_fit_snap_wheel(input, wheel)) continue;
             const auto zoom_modifier = (wheel.modifiers & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0;
+            if (input.action->compose_viewport_input_count >= WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY)
+                break;
+            const auto visual_y = (wheel.mouse_y - input.viewport.y) * view.viewport_height_pixels /
+                                  input.viewport.h;
             input.action->compose_viewport_inputs[input.action->compose_viewport_input_count++] = {
                 .kind = wheel.coarse_steps ? WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL
                                            : WORM_UI_COMPOSE_VIEWPORT_INPUT_SMOOTH_WHEEL,
                 .zoom_modifier = zoom_modifier,
-                .delta_x = wheel.delta_x,
-                .delta_y = wheel.delta_y,
+                .delta_x = worm_ui_nuklear_compose_wheel_speed(wheel.delta_x, wheel.tab_speed_modifier && !zoom_modifier),
+                .delta_y = worm_ui_nuklear_compose_wheel_speed(wheel.delta_y, wheel.tab_speed_modifier && !zoom_modifier),
                 .cursor_x_pixels =
                     (wheel.mouse_x - input.viewport.x) * view.viewport_width_pixels / input.viewport.w,
-                .cursor_y_pixels =
-                    (wheel.mouse_y - input.viewport.y) * view.viewport_height_pixels / input.viewport.h,
+                .cursor_y_pixels = zoom_modifier
+                    ? worm_ui_nuklear_compose_zoom_anchor(visual_y, view.viewport_height_pixels, view.downscroll)
+                    : visual_y,
             };
         }
     }
     state.wheel_event_count = 0;
+}
+
+static void append_compose_pinch_inputs(const ComposeViewportInputContext& input,
+                                        bool competing_capture) {
+    const auto& view = *input.view;
+    if (competing_capture || !input.context || !view.scene_available || view.input_occluded ||
+        !input.window_focused || compose_text_owned(input.context) || state.inline_timing_open ||
+        state.go_to_measure_open || state.pinch.project_id != view.project_id ||
+        state.pinch.chart_id != view.chart_id || !(input.viewport.w > 0) || !(input.viewport.h > 0)) {
+        state.pinch = {};
+        return;
+    }
+    for (std::size_t index = 0; index < state.pinch.count; ++index) {
+        const auto& update = state.pinch.pending[index];
+        if (update.mouse_x < input.viewport.x || update.mouse_x >= input.input_right ||
+            update.mouse_y < input.viewport.y || update.mouse_y > input.viewport.y + input.viewport.h) {
+            state.pinch = {};
+            return;
+        }
+        if (input.action->compose_viewport_input_count >= WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY) {
+            state.pinch = {};
+            return;
+        }
+        const auto visual_y = (update.mouse_y - input.viewport.y) * view.viewport_height_pixels /
+                              input.viewport.h;
+        input.action->compose_viewport_inputs[input.action->compose_viewport_input_count++] = {
+            .kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_PINCH_ZOOM,
+            .cursor_x_pixels = (update.mouse_x - input.viewport.x) * view.viewport_width_pixels /
+                               input.viewport.w,
+            .cursor_y_pixels = worm_ui_nuklear_compose_zoom_anchor(visual_y,
+                                   view.viewport_height_pixels, view.downscroll),
+            .zoom_factor = update.factor,
+        };
+    }
+    state.pinch.count = 0;
 }
 
 ComposeViewportCursor collect_compose_viewport_inputs(
@@ -1025,6 +1169,7 @@ ComposeViewportCursor collect_compose_viewport_inputs(
                                   input.input_right, input.window_focused);
     const auto cursor = update_compose_viewport_pointer(input);
     append_compose_wheel_inputs(input);
+    append_compose_pinch_inputs(input, competing_capture);
     return cursor;
 }
 

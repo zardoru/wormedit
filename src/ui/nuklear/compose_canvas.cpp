@@ -258,7 +258,9 @@ static auto compose_tile_request(const ComposePaintContext& paint, unsigned pass
         static_cast<std::uint64_t>(view.bms_measure_labels) |
         (static_cast<std::uint64_t>(view.waveform_row_count!=0)<<1) |
         (static_cast<std::uint64_t>(view.waveform_timing_locked)<<2) |
-        (static_cast<std::uint64_t>(view.lane_key_legend_visible)<<3)};
+        (static_cast<std::uint64_t>(view.lane_key_legend_visible)<<3) |
+        // Snap changes the grid lines without bumping the document revision.
+        (view.area_snap_denominator<<8)};
     request.key.identity={view.project_id,view.chart_id,view.document_revision,
         std::bit_cast<std::uint64_t>(view.pixels_per_standard_measure),
         std::bit_cast<std::uint64_t>(view.viewport_width_pixels),

@@ -12,6 +12,18 @@
 #include <string_view>
 #include <utility>
 
+auto worm_ui_nuklear_normalize_compose_wheel(double x, double y, double mouse_x,
+    double mouse_y, std::uint16_t modifiers, bool flipped)
+    -> std::optional<worm_ui_nuklear_compose_wheel_event_t> {
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(mouse_x) ||
+        !std::isfinite(mouse_y)) return std::nullopt;
+    const auto sign = flipped ? 1.0 : -1.0;
+    return worm_ui_nuklear_compose_wheel_event_t{
+        .delta_x = x * sign, .delta_y = y * sign,
+        .mouse_x = mouse_x, .mouse_y = mouse_y, .modifiers = modifiers,
+        .coarse_steps = true};
+}
+
 auto worm_ui_nuklear_compose_canvas_input_available(const WormUiComposeView* view,
     bool window_focused, bool text_owned, bool ime_owned) -> bool {
     return view && view->visible && view->scene_available && window_focused &&
@@ -483,4 +495,29 @@ auto worm_ui_nuklear_overview_gesture(worm_ui_nuklear_overview_gesture_t& gestur
     if (!down) { gesture.active = false; return event::click; }
     if (std::abs(x - gesture.anchor) >= 4.0) gesture.dragged = true;
     return gesture.dragged ? event::scroll : event::none;
+}
+
+void worm_ui_nuklear_pinch_input(worm_ui_nuklear_pinch_gesture_t& gesture,
+    worm_ui_nuklear_pinch_phase_t phase, double factor, double mouse_x,
+    double mouse_y, std::uint64_t project_id, std::uint64_t chart_id) {
+    using phase_t = worm_ui_nuklear_pinch_phase_t;
+    if (phase == phase_t::cancel) { gesture = {}; return; }
+    if (phase == phase_t::end) { gesture.active = false; return; }
+    if (phase == phase_t::begin) {
+        if (!std::isfinite(mouse_x) || !std::isfinite(mouse_y) ||
+            project_id == 0 || chart_id == 0) { gesture = {}; return; }
+        if (gesture.project_id != project_id || gesture.chart_id != chart_id)
+            gesture = {};
+        gesture.active = true;
+        gesture.mouse_x = mouse_x;
+        gesture.mouse_y = mouse_y;
+        gesture.project_id = project_id;
+        gesture.chart_id = chart_id;
+        return;
+    }
+    if (!gesture.active) return;
+    if (!std::isfinite(factor) || factor <= 0.0 ||
+        gesture.project_id != project_id || gesture.chart_id != chart_id ||
+        gesture.count == gesture.pending.size()) { gesture = {}; return; }
+    gesture.pending[gesture.count++] = {factor, gesture.mouse_x, gesture.mouse_y};
 }

@@ -670,6 +670,9 @@ struct branch_tree_analysis_t {
     bool has_branches{};
     bool has_branch_timing{};
     bool has_unmodeled_root_statement{};
+    // Root comments and unknown headers (source order, exact source text) that no
+    // model field owns; normalized output re-emits them verbatim in source order.
+    std::vector<std::pair<std::size_t, std::string>> root_unmodeled_lines;
     std::set<std::size_t> branch_source_orders;
     std::set<std::size_t> root_source_orders;
     std::set<std::size_t> retained_timing_source_orders;
@@ -851,6 +854,7 @@ void analyze_root_raw_statement(const bms_control_node_t& node, std::string_view
     }
     if (!safe_metadata_token(token) && !generated_or_channel_token(token)) {
         result.has_unmodeled_root_statement = true;
+        result.root_unmodeled_lines.emplace_back(node.source_order, node.original_text);
     }
 }
 
@@ -908,6 +912,8 @@ auto analyze_branch_tree(const bms_control_node_t& root) -> branch_tree_analysis
         result.retained_timing_source_orders.clear();
     }
     std::ranges::stable_sort(result.preserved_lines, {},
+                             [](const auto& line) { return line.first; });
+    std::ranges::stable_sort(result.root_unmodeled_lines, {},
                              [](const auto& line) { return line.first; });
     return result;
 }
@@ -1022,6 +1028,12 @@ auto branch_measure_length_edits(
     return edits;
 }
 
+// Comments and unknown headers are copied byte for byte, so only single-line
+// UTF-8 text is safe to place in the normalized (UTF-8) output.
+auto can_emit_unmodeled_root_line(const std::string& text) -> bool {
+    return !text.empty() && !has_line_break_or_nul(text) && valid_utf8(text);
+}
+
 auto prepare_branch_write_state(const song_document_t& song, const chart_document_t& chart,
                                 const bms_write_options_t& options,
                                 std::vector<bms_write_diagnostic_t>& diagnostics)
@@ -1059,9 +1071,12 @@ auto prepare_branch_write_state(const song_document_t& song, const chart_documen
              "timing edits are applied in place",
              "$.charts[].bms_control_tree");
     }
-    if (state.tree.has_unmodeled_root_statement) {
+    if (std::ranges::any_of(state.tree.root_unmodeled_lines, [](const auto& line) {
+            return !can_emit_unmodeled_root_line(line.second);
+        })) {
         warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
-             "unmodeled root-level raw source lines were omitted from normalized BMS output",
+             "unmodeled root-level raw source lines that are not single-line UTF-8 were "
+             "omitted from normalized BMS output",
              "$.charts[].bms_control_tree");
     }
     return state;
@@ -2655,12 +2670,25 @@ auto metadata_field_output(metadata_output_context_t& context, std::size_t group
 auto emit_metadata_header(metadata_output_context_t context) -> std::vector<std::string> {
     if (!has_retained_root_player(context) && !context.has_branch_player)
         context.output.emplace_back("#PLAYER " + std::string(context.player));
+    std::size_t next_unmodeled = 0;
+    const auto& unmodeled = context.tree.root_unmodeled_lines;
+    // Copies comments and unknown headers that precede `before` in the source.
+    const auto flush_unmodeled = [&](std::size_t before) {
+        while (next_unmodeled < unmodeled.size() && unmodeled[next_unmodeled].first < before) {
+            if (can_emit_unmodeled_root_line(unmodeled[next_unmodeled].second))
+                context.output.push_back(unmodeled[next_unmodeled].second);
+            ++next_unmodeled;
+        }
+    };
     for (std::size_t group = 0; group < context.groups.size(); ++group) {
+        const auto& orders = context.groups[group]->ordered_field_source_orders;
         for (std::size_t field = 0; field < context.groups[group]->ordered_fields.size(); ++field) {
+            if (field < orders.size()) flush_unmodeled(orders[field]);
             if (auto line = metadata_field_output(context, group, field))
                 context.output.push_back(std::move(*line));
         }
     }
+    flush_unmodeled(std::numeric_limits<std::size_t>::max());
     if (!context.title_emitted && !context.title.empty() && !context.title_is_branch)
         context.output.emplace_back("#TITLE " + std::string(context.title));
     if (!context.artist_emitted && !context.artist.empty() && !context.artist_is_branch)

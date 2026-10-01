@@ -16,6 +16,8 @@
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
+#include <array>
+#include <limits>
 #include <cmath>
 #include <filesystem>
 #include <SDL3/SDL_timer.h>
@@ -971,6 +973,7 @@ void compare_follow_step(document_history_t& history, const measure_index_t& ind
     if (std::abs(*target - expected.viewport_scroll_pixels) >= 0.001)
         REQUIRE(dispatch_editor_action(history, expected,
             scroll_editor_view_action_t{.vertical_pixels = *target - expected.viewport_scroll_pixels}));
+    expected.cursor_subrow = static_cast<double>(bounded - snapped_row);
     REQUIRE(follow_compose_playhead(history, actual, row, anchored,
         {chart.id, history.document.revision, &index}));
     compare_follow_state(actual, expected);
@@ -2403,4 +2406,91 @@ TEST_CASE("Compose semantic arena text remains stable across 1000 warmed frames"
     }
     INFO("Semantic narrow fixture remaining projection allocations: " << allocations);
     expect_compose_test(stable);
+}
+
+namespace {
+auto pinch_dispatch_action(compose_test_fixture_t& fixture, double factor,
+                           double anchor) -> WormUiWorkspaceAction {
+    WormUiWorkspaceAction action{};
+    action.shortcut_window_focused = true;
+    action.compose_input_chart_id = fixture.interaction->chart.value;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    action.compose_viewport_input_count = 1;
+    action.compose_viewport_inputs[0] = {.kind = WORM_UI_COMPOSE_VIEWPORT_INPUT_PINCH_ZOOM,
+        .cursor_x_pixels = 100, .cursor_y_pixels = anchor, .zoom_factor = factor};
+    return action;
+}
+void start_pinch_test_motion(viewport_input_controller_t& controller, bool autoscroll) {
+    if (autoscroll) {
+        controller.middle_click(viewport_pane_t::chart, 20, 30);
+        controller.update_autoscroll_pointer(20, 130);
+    } else {
+        controller.begin_momentum(viewport_pane_t::chart, 0, 200);
+    }
+}
+}
+TEST_CASE("Compose pinch dispatch preserves anchor and cancels prior viewport motion",
+          "[sys][compose-pinch]") {
+    for (const bool autoscroll : {false, true}) {
+        compose_test_fixture_t fixture(dense_song());
+        fixture.project();
+        fixture.interaction->viewport_scroll_pixels = 800;
+        const auto before = *fixture.interaction;
+        const auto revision = fixture.history.document.revision;
+        constexpr double anchor = 123;
+        auto action = pinch_dispatch_action(fixture, 1.25, anchor);
+        viewport_input_controller_t viewport;
+        editor_navigation_input_controller_t navigation;
+        start_pinch_test_motion(viewport, autoscroll);
+        expect_compose_test(viewport.momentum_active() || viewport.autoscroll_active());
+        const auto status = dispatch_compose_input_action(action, fixture.history,
+            *fixture.binding.workspace, *fixture.interaction, viewport, navigation,
+            fixture.application, fixture.cache, 0.016);
+        INFO(status);
+        const auto& after = *fixture.interaction;
+        expect_compose_test(std::abs(after.pixels_per_standard_measure -
+            before.pixels_per_standard_measure * 1.25) < 1e-9);
+        expect_compose_test(std::abs((after.viewport_scroll_pixels + anchor) /
+            after.pixels_per_standard_measure - (before.viewport_scroll_pixels + anchor) /
+            before.pixels_per_standard_measure) < 1e-9);
+        expect_compose_test(after.cursor == before.cursor);
+        expect_compose_test(after.selected_objects == before.selected_objects);
+        expect_compose_test(after.selected_notes == before.selected_notes);
+        expect_compose_test(fixture.history.document.revision == revision && fixture.history.undo.empty());
+        expect_compose_test(!viewport.momentum_active() && !viewport.autoscroll_active());
+        expect_compose_test(viewport.advance(0.016).empty());
+    }
+}
+TEST_CASE("Compose pinch rejects invalid ratios and anchors before motion cancellation",
+          "[sys][compose-pinch]") {
+    const std::array<std::pair<double, double>, 7> inputs{{
+        {0, 123}, {-1, 123}, {std::numeric_limits<double>::infinity(), 123},
+        {std::numeric_limits<double>::quiet_NaN(), 123}, {1.25, -1},
+        {1.25, std::numeric_limits<double>::quiet_NaN()}, {1.25, 1e9}}};
+    for (const auto& [factor, anchor] : inputs) {
+        for (const bool autoscroll : {false, true}) {
+            compose_test_fixture_t fixture(dense_song());
+            fixture.project();
+            fixture.interaction->viewport_scroll_pixels = 800;
+            const auto before = *fixture.interaction;
+            const auto revision = fixture.history.document.revision;
+            auto action = pinch_dispatch_action(fixture, factor, anchor);
+            viewport_input_controller_t viewport;
+            editor_navigation_input_controller_t navigation;
+            start_pinch_test_motion(viewport, autoscroll);
+            const auto status = dispatch_compose_input_action(action, fixture.history,
+                *fixture.binding.workspace, *fixture.interaction, viewport, navigation,
+                fixture.application, fixture.cache, 0);
+            expect_compose_test(status.find("invalid scale or anchor") != std::string::npos);
+            expect_compose_test(fixture.interaction->viewport_scroll_pixels == before.viewport_scroll_pixels);
+            expect_compose_test(fixture.interaction->pixels_per_standard_measure == before.pixels_per_standard_measure);
+            expect_compose_test(fixture.interaction->cursor == before.cursor);
+            expect_compose_test(fixture.interaction->selected_objects == before.selected_objects);
+            expect_compose_test(fixture.interaction->selected_notes == before.selected_notes);
+            expect_compose_test(fixture.history.document.revision == revision && fixture.history.undo.empty());
+            expect_compose_test(viewport.autoscroll_active() == autoscroll);
+            expect_compose_test(viewport.momentum_active() == !autoscroll);
+        }
+    }
 }

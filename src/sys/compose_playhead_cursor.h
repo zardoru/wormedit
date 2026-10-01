@@ -94,7 +94,8 @@ namespace wormedit::sys {
     if (!target_scroll) return false;
     return static_cast<bool>(follow_editor_playhead(history, state, geometry, position,
                                                    *target_scroll, anchored ? following_anchor_fraction
-                                                       : state.viewport_minimum_margin_fraction));
+                                                       : state.viewport_minimum_margin_fraction,
+                                                   static_cast<double>(bounded_row - row)));
 }
 
 } // namespace wormedit::sys

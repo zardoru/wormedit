@@ -2,6 +2,7 @@
 #include "sys/compose_area_actions.h"
 #include "sys/application_edit_helpers.h"
 #include "sys/compose_resource_presenter.h"
+#include "sys/compose_scroll_geometry.h"
 #include "ui/frontend.h"
 #include "wormedit/audio.h"
 
@@ -164,7 +165,10 @@ std::optional<std::string> dispatch_compose_view_action_group(compose_action_con
         result = dispatch_editor_action(
             history, state,
             scroll_editor_view_action_t{direction * std::max(64.0, viewport_height * 0.75),
-                                        viewport_height * 0.5, scroll_direction});
+                                        compose_cursor_screen_anchor(
+                                            viewport_height,
+                                            scroll_direction == editor_field_scroll_direction_t::down),
+                                        scroll_direction});
         status = direction < 0.0 ? "Compose field scrolled up." : "Compose field scrolled down.";
         break;
     }

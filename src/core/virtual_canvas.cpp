@@ -43,7 +43,8 @@ auto virtual_canvas_t::measure_containing(std::uint64_t row) const
 auto virtual_tail_measure_limit(const chart_document_t& chart) -> std::size_t {
     if (chart.source_family == format_family_t::bms)
         return bms_addressable_measure_count;
-    return static_cast<std::size_t>(chart.virtual_tail_measures);
+    return chart.virtual_tail_measures == 0 ? 0
+        : std::max(chart.measures.size(), static_cast<std::size_t>(chart.virtual_tail_measures));
 }
 
 auto chart_has_virtual_tail(const chart_document_t& chart) -> bool {

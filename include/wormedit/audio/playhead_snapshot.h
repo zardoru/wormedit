@@ -16,8 +16,9 @@ struct playhead_state_t {
 
 // Single-writer seqlock for the playhead. publish() must be serialized by the caller
 // (the session mutex); read() takes no lock and never blocks the writer. A reader that
-// keeps hitting writes retries a bounded number of times and then reports its previous
-// successful result, so the returned state is never torn.
+// keeps hitting writes retries a bounded number of times and then tries a shared best-effort
+// cache of successful reads. That cache may be stale; contention can return an empty
+// inactive state. It is not a per-reader previous-result or monotonicity guarantee.
 class playhead_snapshot_t {
   public:
     static constexpr int maximum_read_attempts = 64;
@@ -53,7 +54,7 @@ class playhead_snapshot_t {
   private:
     // Readers record each consistent result in a second seqlock-protected copy. It is
     // consulted only after the bounded retries fail, and a reader that cannot store
-    // simply skips the update, so a whole (possibly stale) state is always returned.
+    // simply skips the update, so a whole (possibly stale or empty) state is returned.
     void remember(const playhead_state_t& state) const noexcept {
         const auto sequence = last_sequence_.load(std::memory_order_relaxed);
         if ((sequence & 1U) != 0) return;  // another reader is storing; skip
@@ -62,6 +63,7 @@ class playhead_snapshot_t {
                                                     std::memory_order_acquire)) {
             return;
         }
+        std::atomic_thread_fence(std::memory_order_release);
         last_active_.store(state.active, std::memory_order_relaxed);
         last_timeline_frame_.store(state.timeline_frame, std::memory_order_relaxed);
         last_start_frame_.store(state.start_frame, std::memory_order_relaxed);

@@ -532,41 +532,47 @@ T-296–T-303 are short-term priority work, before the ordinary backlog. They su
 
 - **Result:** Full cached BGM presence chooses a stable upper bar without BGM or a lower minimap with BGM; missing audio displays a disabled lower diagnostic. Isolated Xvfb/SDL-dummy captures verified empty, populated, offscreen and horizontally hidden BGM, playback/navigation and 47/49-second audio-tail seeks. Configured tidy on all three changed C++ files passed without owned warnings; coordinated app build passed, focused tests 15/15 and full suite 1188/1188 passed (55.79 s). The separate 35-percent anchor scene-validation gap is tracked by T-306.
 
-## T-300 Repeat Tab navigation every 200 milliseconds while held
+## T-300 Add Tab-modified measure navigation and double-speed wheel scrolling
 
-- **Status:** ready
-- **Outcome:** Holding Tab repeats its existing cursor displacement at a 200 ms interval after the initial action; releasing it, focus loss or an input-owning dialog stops repetition.
+- **Status:** done (real measure navigation, fractional wheel modifier and inclusive Shift selection verified)
+- **Outcome:** Tab plus arrows or Page Up/Down moves the cursor one measure and repeats every 200 ms; Tab plus wheel doubles ordinary scrolling. Tab alone does not navigate.
 - **Read first:** `src/ui/nuklear/frontend.cpp`, `src/sys/compose_input.cpp`.
-- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/sys/compose_input.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`.
-- **Steps:** 1. Retain the current Tab action and direction. 2. Use monotonic repeat timing independent of OS key-repeat rate. 3. Verify deterministic held/released/focus-loss traces, including Shift range navigation.
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/sys/compose_input.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_state.h`.
+- **Steps:** 1. Add Tab-modified one-measure keyboard navigation and apply the user-confirmed double-speed wheel modifier once per event. 2. Use monotonic 200 ms keyboard repeat timing independent of OS key-repeat rate. 3. Verify deterministic held/released/focus-loss traces, both modifier press orders, fractional wheel deltas and Shift range navigation.
 - **Invariants:** Text widgets retain Tab ownership; no queued repeat survives focus loss or a chart change.
 - **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; isolated Xvfb/SDL-dummy checks for UI/audio behavior.
 - **Out of scope:** unrelated rendering and preferences work.
 
+- **Result:** Tab plus all four arrows or Page Up/Down emits one-measure steps with independent monotonic 200 ms repeats; left/right use chart order and vertical keys respect downscroll. Tab alone does not navigate. Tab-wheel snapshots double ordinary fractional scrolling once; beat-fit and modifier zoom retain their existing behavior. Isolated real SDL/Xvfb gates measured 48 px ordinary versus 96 px with Tab in both directions, held cursor 7→9 (upscroll) and 5→3 (downscroll) over 440 ms, stable after release, and exact inclusive nine-note Shift ranges. Configured tidy introduces no complexity violations; coordinated final build and full suite 1288/1288 passed (85.12 s).
+
 ## T-301 Fix slow macOS trackpad navigation
 
-- **Status:** ready
-- **Outcome:** Trackpad navigation retains precise scroll deltas and responds without avoidable per-event chart reconstruction or artificial low-frequency gating; screen-space movement respects macOS natural scrolling consistently in upscroll and downscroll, without double direction inversion.
+- **Status:** done (isolated SDL/Xvfb verification; physical macOS confirmation pending)
+- **Outcome:** Trackpad navigation retains precise fractional wheel units without integer-boundary speed jumps or artificial low-frequency gating; screen-space movement respects macOS natural scrolling consistently in upscroll and downscroll, without double direction inversion. Per-event chart reconstruction remains in the paused performance backlog.
 - **Read first:** `src/ui/nuklear/frontend.cpp`, `src/sys/compose_input.cpp`, `src/sys/frame_timing.h`.
-- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
-- **Steps:** 1. Trace wheel precision, SDL flipped-direction normalization, upscroll/downscroll screen movement, event delivery and navigation work before changing behavior. 2. Correct the measured bottleneck using shared navigation paths. 3. Verify fractional/rapid synthetic event traces and report isolated measurements; actual macOS confirmation remains required evidence when a Mac is available.
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_state.cpp`.
+- **Steps:** 1. Trace wheel precision, SDL flipped-direction normalization, upscroll/downscroll screen movement, event delivery and navigation work before changing behavior. 2. Correct the measured wheel-scaling discontinuity using shared navigation paths. 3. Verify fractional/rapid synthetic event traces and report isolated measurements; actual macOS confirmation remains required evidence when a Mac is available.
 - **Invariants:** No guessed speed multiplier; normalize device direction once, preserve intuitive screen-space movement, cursor bounds and input ownership.
 - **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; isolated Xvfb/SDL-dummy checks for UI/audio behavior.
 - **Out of scope:** unrelated rendering and preferences work.
 
+- **Result:** SDL wheel deltas now retain fractional wheel units through one shared normalizer instead of switching integer events to 48 px and fractional events to raw pixels. Actual isolated SDL input at magnitudes 0.99/1/1.01 moved common projected notes 47.52000046/48/48.47999954 px in upscroll and downscroll; normal/flipped reversal was verified. No event coalescing or per-event chart-reconstruction performance gain is claimed. Configured tidy and final full suite 1288/1288 passed (85.12 s). Physical macOS trackpad confirmation remains pending because no Mac was available.
+
 ## T-302 Support macOS trackpad pinch zoom
 
-- **Status:** ready
+- **Status:** done (isolated SDL/Xvfb verification; physical macOS confirmation pending)
 - **Outcome:** SDL pinch gestures zoom the chart around the gesture focus using the same bounded zoom transform as existing controls.
 - **Read first:** `src/ui/nuklear/frontend.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_scroll_geometry.h`.
-- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_scroll_geometry.h`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_scroll_geometry.h`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_state.cpp`, `src/ui/nuklear/compose_input_panel.h`.
 - **Steps:** 1. Handle available SDL pinch begin/update/end events with version-compatible builds. 2. Reuse existing zoom bounds and coordinate anchoring, with focus/gesture cancellation. 3. Test scale accumulation, reversal, invalid scales and input occlusion; document actual macOS confirmation separately.
 - **Invariants:** Pinch does not edit notes or offset; missing pinch support in older SDL keeps existing zoom controls.
 - **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; isolated Xvfb/SDL-dummy checks for UI/audio behavior.
 - **Out of scope:** unrelated rendering and preferences work.
+
+- **Result:** SDL >=3.4 pinch BEGIN/UPDATE/END queues bounded positive incremental ratios around a begin-latched pointer anchor; older-header builds retain existing zoom controls behind the version guard. Shared cancellation retires gestures on ownership, chart/revision, focus or capacity changes. Zoom uses the existing bounded transform and cancels prior viewport motion. Isolated actual SDL gates in both directions measured 192→232.32001007→192.00001153 px/measure and verified emitted anchors match the invariant source point (226.31451612903226 upscroll, 305.68548387096774 downscroll). Production-linked tests verify anchor preservation, momentum/autoscroll cancellation and invalid-input rejection. Configured tidy and final full suite 1288/1288 passed (85.12 s). Physical macOS pinch confirmation remains pending; no older-SDL compilation was performed.
 
 ## T-303 Prioritize the Compose note canvas without a focus click
 

@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
 #include "ui/frontend.h"
+#include "sys/frame_timing.h"
 #include <array>
 #include <cmath>
 #include <vector>
@@ -367,4 +368,92 @@ TEST_CASE("SDL overview preserves production logical stretch pixels and state", 
         expect_backend(SDL_GetRenderScale(backend.renderer, &sx, &sy));
         expect_backend(sx == 1 && sy == 1);
     }
+}
+
+namespace {
+void counted_window(nk_context* context, const char* name, struct nk_rect bounds) {
+    if (nk_begin(context, name, bounds, NK_WINDOW_NO_SCROLLBAR)) {
+        auto* canvas = nk_window_get_canvas(context);
+        nk_fill_rect(canvas, nk_rect(bounds.x + 4, bounds.y + 4, 20, 10), 3, nk_rgb(90, 140, 200));
+        nk_layout_row_dynamic(context, 18, 1);
+        nk_label(context, name, NK_TEXT_LEFT);
+    }
+    nk_end(context);
+}
+void diagnostic_window(nk_context* context) {
+    const diagnostic_window_scope_t diagnostic{context};
+    if (nk_begin(context, "diagnostics", nk_rect(64, 0, 64, 128),
+                 NK_WINDOW_BORDER | NK_WINDOW_TITLE)) {
+        nk_layout_row_dynamic(context, 18, 1);
+        nk_label(context, "frame", NK_TEXT_LEFT);
+        const float points[]{70, 90, 90, 60, 110, 100, 120, 70};
+        nk_stroke_polyline(nk_window_get_canvas(context), points, 4, 1, nk_rgb(240, 200, 60));
+        nk_fill_rect(nk_window_get_canvas(context), nk_rect(70, 104, 50, 20), 0,
+                     nk_rgb(250, 20, 20));
+    }
+    nk_end(context);
+}
+struct measured_work_t {
+    WormUiFrameGpuWork application{};
+    WormUiFrameGpuWork diagnostic{};
+    bool diagnostic_available{};
+};
+auto measured_frame(backend_fixture_t& backend, bool diagnostics) -> measured_work_t {
+    SDL_SetRenderDrawColor(backend.renderer, 0, 0, 0, 255);
+    SDL_RenderClear(backend.renderer);
+    nk_input_begin(backend.context);
+    nk_input_end(backend.context);
+    counted_window(backend.context, "before", nk_rect(0, 0, 64, 64));
+    if (diagnostics) diagnostic_window(backend.context);
+    counted_window(backend.context, "after", nk_rect(0, 64, 64, 64));
+    auto& timer = wormedit::sys::frame_timing();
+    timer.begin_frame();
+    render_sdl_backend(backend.context, NK_ANTI_ALIASING_ON);
+    timer.end_frame();
+    const auto view = worm_ui_frame_timing_view();
+    expect_backend(view.gpu_work_available);
+    return {view.gpu_work_latest, view.diagnostic_gpu_work_latest,
+            view.diagnostic_gpu_work_available != 0};
+}
+auto red_pixels(const std::vector<unsigned char>& pixels) -> std::size_t {
+    std::size_t count = 0;
+    for (std::size_t index = 0; index + 3 < pixels.size(); index += 4)
+        count += pixels[index] > 200 && pixels[index + 1] < 60 && pixels[index + 2] < 60;
+    return count;
+}
+void expect_same_geometry(const WormUiFrameGpuWork& left, const WormUiFrameGpuWork& right) {
+    INFO("vertices " << left.vertices << " vs " << right.vertices << ", indices " << left.indices
+         << " vs " << right.indices << ", draws " << left.draw_calls << " vs " << right.draw_calls);
+    expect_backend(left.vertices == right.vertices);
+    expect_backend(left.indices == right.indices);
+    expect_backend(left.draw_calls == right.draw_calls);
+}
+} // namespace
+
+TEST_CASE("SDL backend records diagnostic window GPU work apart from the application",
+          "[ui][sdl-backend]") {
+    backend_fixture_t backend;
+    // First frame: the diagnostic window sits between the application ones in z-order.
+    const auto between = measured_frame(backend, true);
+    expect_backend(red_pixels(backend_pixels(backend)) > 0);
+    measured_frame(backend, false);
+    const auto plain = measured_frame(backend, false);
+    expect_backend(plain.application.vertices > 0 && plain.application.draw_calls > 0);
+    expect_backend(!plain.diagnostic_available);
+    expect_backend(red_pixels(backend_pixels(backend)) == 0);
+    // Reopened, it is last in z-order; both orders leave the application counts unchanged.
+    const auto last = measured_frame(backend, true);
+    expect_backend(red_pixels(backend_pixels(backend)) > 0);
+    expect_same_geometry(between.application, plain.application);
+    expect_same_geometry(last.application, plain.application);
+    for (const auto& frame : {between, last}) {
+        expect_backend(frame.diagnostic_available);
+        expect_backend(frame.diagnostic.vertices > 0 && frame.diagnostic.indices > 0);
+        expect_backend(frame.diagnostic.draw_calls > 0);
+    }
+    expect_same_geometry(between.diagnostic, last.diagnostic);
+    // Each pass tracks its own clip and texture state from its own first draw.
+    expect_backend(last.diagnostic.clip_rect_changes < last.diagnostic.draw_calls);
+    expect_backend(last.application.clip_rect_changes == plain.application.clip_rect_changes);
+    expect_backend(last.application.texture_switches == plain.application.texture_switches);
 }

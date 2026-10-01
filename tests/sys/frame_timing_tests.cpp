@@ -849,6 +849,45 @@ TEST_CASE("GPU workload distinguishes unrendered frames from measured empty fram
     expect_gpu_work(timer.sample(2).gpu_work.values[0] == 0);
 }
 
+TEST_CASE("Diagnostic GPU work is recorded and summarized apart from application work", "[sys][frame-timing][gpu-work]") {
+    frame_timing_t timer;
+    timer.begin_frame();
+    timer.record_gpu_work({{100, 300, 5, 4, 3}, true});
+    timer.record_gpu_work({{40, 60, 2, 1, 1}, true}, frame_gpu_work_source_t::diagnostic);
+    timer.end_frame();
+    timer.begin_frame();
+    timer.record_gpu_work({{200, 500, 7, 6, 5}, true});
+    timer.end_frame();
+    const auto& first = timer.sample(0);
+    expect_gpu_work(first.gpu_work.values[0] == 100 && first.diagnostic_gpu_work.values[0] == 40);
+    expect_gpu_work(!timer.sample(1).diagnostic_gpu_work.measured);
+    expect_gpu_work(&frame_timing_t::gpu_work(first, frame_gpu_work_source_t::diagnostic) ==
+                    &first.diagnostic_gpu_work);
+    expect_gpu_work(timer.gpu_work_summary(0).count == 2);
+    expect_gpu_work(timer.gpu_work_summary(0).average == 150);
+    const auto diagnostic = timer.gpu_work_summary(2, frame_gpu_work_source_t::diagnostic);
+    expect_gpu_work(diagnostic.count == 1 && diagnostic.average == 2 && diagnostic.p99 == 2);
+}
+
+TEST_CASE("Frame timing view exposes application and diagnostic GPU work separately", "[sys][frame-timing][gpu-work]") {
+    auto& timer = frame_timing();
+    timer.begin_frame();
+    worm_ui_frame_timing_record_gpu_work({1000, 3000, 50, 20, 10});
+    worm_ui_frame_timing_record_diagnostic_gpu_work({400, 700, 3, 2, 1});
+    timer.end_frame();
+    auto view = worm_ui_frame_timing_view();
+    expect_gpu_work(view.gpu_work_available && view.diagnostic_gpu_work_available);
+    expect_gpu_work(view.gpu_work_latest.vertices == 1000 && view.gpu_work_latest.draw_calls == 50);
+    expect_gpu_work(view.diagnostic_gpu_work_latest.vertices == 400);
+    expect_gpu_work(view.diagnostic_gpu_work_latest.texture_switches == 1);
+    expect_gpu_work(view.diagnostic_gpu_work[0].count >= 1);
+    timer.begin_frame();
+    worm_ui_frame_timing_record_gpu_work({1000, 3000, 50, 20, 10});
+    timer.end_frame();
+    view = worm_ui_frame_timing_view();
+    expect_gpu_work(view.gpu_work_available && !view.diagnostic_gpu_work_available);
+}
+
 TEST_CASE("Render convert submit and present child phases retain inclusive parent timing", "[sys][frame-timing][gpu-work]") {
     auto& timer = frame_timing();
     timer.begin_frame();

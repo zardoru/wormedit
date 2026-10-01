@@ -102,6 +102,18 @@ void report_heap_allocations(std::FILE* output, const frame_timing_t& timer) {
         frame.average, frame.p99, frame.count);
     report_phase_heap_allocations(output, timer);
 }
+void report_gpu_work(std::FILE* output, const frame_timing_t& timer,
+                     frame_gpu_work_source_t source, const char* heading) {
+    std::fprintf(output, "%s\n", heading);
+    for (std::size_t metric = 0; metric < frame_gpu_work_count; ++metric) {
+        const auto summary = timer.gpu_work_summary(metric, source);
+        if (summary.count == 0)
+            std::fprintf(output, "%s: N/A\n", frame_gpu_work_names[metric]);
+        else
+            std::fprintf(output, "%s: average %.3f, p99 %.0f (%zu samples)\n",
+                frame_gpu_work_names[metric], summary.average, summary.p99, summary.count);
+    }
+}
 auto milliseconds(std::uint64_t ticks) -> double {
     return static_cast<double>(ticks) * 1000.0 / static_cast<double>(SDL_GetPerformanceFrequency());
 }
@@ -128,15 +140,10 @@ void report_if_requested(const frame_timing_t& timer) {
                          summary.count);
     }
     report_heap_allocations(output, timer);
-    std::fprintf(output, "GPU work per frame:\n");
-    for (std::size_t metric = 0; metric < frame_gpu_work_count; ++metric) {
-        const auto summary = timer.gpu_work_summary(metric);
-        if (summary.count == 0)
-            std::fprintf(output, "%s: N/A\n", frame_gpu_work_names[metric]);
-        else
-            std::fprintf(output, "%s: average %.3f, p99 %.0f (%zu samples)\n",
-                frame_gpu_work_names[metric], summary.average, summary.p99, summary.count);
-    }
+    report_gpu_work(output, timer, frame_gpu_work_source_t::application,
+                    "GPU work per frame (application, excluding diagnostics):");
+    report_gpu_work(output, timer, frame_gpu_work_source_t::diagnostic,
+                    "GPU work per frame (diagnostic windows):");
     std::fclose(output);
 }
 } // namespace
@@ -241,15 +248,23 @@ void frame_timing_t::record(const frame_timing_sample_t& sample) {
     next_ = (next_ + 1) % frame_timing_capacity;
     size_ = std::min(size_ + 1, frame_timing_capacity);
 }
-void frame_timing_t::record_gpu_work(const frame_gpu_work_t& work) {
-    if (active_) current_.gpu_work = work;
+auto frame_timing_t::gpu_work(const frame_timing_sample_t& sample, frame_gpu_work_source_t source)
+    -> const frame_gpu_work_t& {
+    return source == frame_gpu_work_source_t::diagnostic ? sample.diagnostic_gpu_work
+                                                         : sample.gpu_work;
 }
-auto frame_timing_t::gpu_work_summary(std::size_t metric) const -> frame_counter_summary_t {
+void frame_timing_t::record_gpu_work(const frame_gpu_work_t& work, frame_gpu_work_source_t source) {
+    if (!active_) return;
+    if (source == frame_gpu_work_source_t::diagnostic) current_.diagnostic_gpu_work = work;
+    else current_.gpu_work = work;
+}
+auto frame_timing_t::gpu_work_summary(std::size_t metric, frame_gpu_work_source_t source) const
+    -> frame_counter_summary_t {
     frame_counter_summary_t result;
     if (metric >= frame_gpu_work_count) return result;
     std::array<double, frame_timing_capacity> sorted{};
     for (std::size_t frame = 0; frame < size_; ++frame) {
-        const auto& work = sample(frame).gpu_work;
+        const auto& work = gpu_work(sample(frame), source);
         if (!work.measured) continue;
         const auto value = static_cast<double>(work.values[metric]);
         sorted[result.count++] = value;
@@ -313,6 +328,29 @@ frame_phase_scope_t::~frame_phase_scope_t() {
 }
 } // namespace wormedit::sys
 
+namespace {
+using wormedit::sys::frame_gpu_work_count;
+static_assert(WORM_UI_FRAME_GPU_WORK_COUNT == frame_gpu_work_count);
+void view_gpu_work(const wormedit::sys::frame_timing_t& timer,
+                   wormedit::sys::frame_gpu_work_source_t source, uint32_t& available,
+                   WormUiFrameGpuWork& latest,
+                   WormUiFrameGpuWorkStats (&stats)[WORM_UI_FRAME_GPU_WORK_COUNT]) {
+    if (timer.size() != 0) {
+        const auto& work = wormedit::sys::frame_timing_t::gpu_work(timer.sample(timer.size() - 1), source);
+        available = work.measured;
+        latest = {work.values[0], work.values[1], work.values[2], work.values[3], work.values[4]};
+    }
+    for (std::size_t metric = 0; metric < frame_gpu_work_count; ++metric) {
+        const auto summary = timer.gpu_work_summary(metric, source);
+        stats[metric] = {summary.count, summary.average, summary.p99};
+    }
+}
+auto gpu_work_sample(const WormUiFrameGpuWork& work) -> wormedit::sys::frame_gpu_work_t {
+    return {{work.vertices, work.indices, work.draw_calls, work.clip_rect_changes,
+             work.texture_switches}, true};
+}
+} // namespace
+
 WormUiFrameTimingView worm_ui_frame_timing_view() {
     using namespace wormedit::sys;
     const auto& timer = frame_timing();
@@ -343,23 +381,22 @@ WormUiFrameTimingView worm_ui_frame_timing_view() {
                                           allocation_count.p99};
     result.projection_heap_bytes = {allocation_bytes.count, allocation_bytes.average,
                                     allocation_bytes.p99};
-    static_assert(WORM_UI_FRAME_GPU_WORK_COUNT == frame_gpu_work_count);
-    if (timer.size() != 0) {
-        const auto& work = timer.sample(timer.size() - 1).gpu_work;
-        result.gpu_work_available = work.measured;
-        result.gpu_work_latest = {work.values[0], work.values[1], work.values[2], work.values[3], work.values[4]};
-    }
-    for (std::size_t metric = 0; metric < frame_gpu_work_count; ++metric) {
-        const auto summary = timer.gpu_work_summary(metric);
+    for (std::size_t metric = 0; metric < frame_gpu_work_count; ++metric)
         result.gpu_work_names[metric] = frame_gpu_work_names[metric];
-        result.gpu_work[metric] = {summary.count, summary.average, summary.p99};
-    }
+    view_gpu_work(timer, frame_gpu_work_source_t::application, result.gpu_work_available,
+                  result.gpu_work_latest, result.gpu_work);
+    view_gpu_work(timer, frame_gpu_work_source_t::diagnostic, result.diagnostic_gpu_work_available,
+                  result.diagnostic_gpu_work_latest, result.diagnostic_gpu_work);
     return result;
 }
 
 void worm_ui_frame_timing_record_gpu_work(WormUiFrameGpuWork work) {
-    wormedit::sys::frame_timing().record_gpu_work({
-        {work.vertices, work.indices, work.draw_calls, work.clip_rect_changes, work.texture_switches}, true});
+    wormedit::sys::frame_timing().record_gpu_work(gpu_work_sample(work));
+}
+
+void worm_ui_frame_timing_record_diagnostic_gpu_work(WormUiFrameGpuWork work) {
+    wormedit::sys::frame_timing().record_gpu_work(
+        gpu_work_sample(work), wormedit::sys::frame_gpu_work_source_t::diagnostic);
 }
 
 uint32_t worm_ui_frame_render_phase_begin(WormUiFrameRenderPhase phase) {

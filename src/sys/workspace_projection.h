@@ -163,11 +163,8 @@ struct flattened_workspace_t {
             std::array<std::string, WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY> name;
         } semantic_layer;
         struct {
-            std::array<WormUiComposeBranchRowView, WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY> row{};
-            std::array<WormUiComposeBranchChoiceView, WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY>
-                choice{};
-            std::array<std::string, WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY> text;
-            std::array<std::string, WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY> diagnostic;
+            frame_span<WormUiComposeBranchRowView> row;
+            frame_span<WormUiComposeBranchChoiceView> choice;
         } branch;
         struct {
             frame_span<WormUiComposeResourceView> view;

@@ -684,6 +684,104 @@ void populate_compose_resources(const workspace_projection_context_t& projection
     }
 }
 
+void populate_compose_branch_rows(flattened_workspace_t& result,
+                                  const wormedit::workspace_bms_branch_outline_t& outline) {
+    auto& view = result.view.compose;
+    const auto count = std::min(outline.rows.size(),
+        static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY));
+    view.branch_rows_truncated = outline.rows_truncated || count < outline.rows.size();
+    if (count == 0) return;
+    auto* arena = result.arena();
+    result.compose.branch.row = arena ? arena_array<WormUiComposeBranchRowView>(*arena, count)
+                                     : frame_span<WormUiComposeBranchRowView>{};
+    view.branch_rows = result.compose.branch.row.data();
+    if (result.compose.branch.row.capacity() != count) {
+        view.branch_rows_truncated = true;
+        return;
+    }
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& row = outline.rows[index];
+        const auto* text = arena_string(*arena, row.display_text);
+        if (!text) {
+            view.branch_rows_truncated = true;
+            view.branch_display_text_truncated = true;
+            break;
+        }
+        if (!result.compose.branch.row.push_back({.display_text = text, .depth = row.depth,
+                .active = row.active, .selected = row.selected,
+                .display_text_truncated = row.display_text_truncated,
+                .has_source_order = row.source_order.has_value(),
+                .source_order = row.source_order.value_or(0)})) {
+            view.branch_rows_truncated = true;
+            break;
+        }
+        view.branch_row_count = result.compose.branch.row.size();
+    }
+}
+auto compose_branch_choice_view(const wormedit::workspace_bms_branch_choice_t& choice)
+    -> WormUiComposeBranchChoiceView {
+    return {.branch_id = choice.id.value,
+        .kind = choice.kind == wormedit::bms_control_kind_t::switch_block
+            ? WORM_UI_COMPOSE_BRANCH_SWITCH : WORM_UI_COMPOSE_BRANCH_RANDOM,
+        .has_source_order = choice.source_order.has_value(),
+        .source_order = choice.source_order.value_or(0), .active = choice.active,
+        .editable = choice.editable, .has_selected_value = choice.selected_value.has_value(),
+        .selected_value = choice.selected_value.value_or(0),
+        .has_previous_value = choice.previous_value.has_value(),
+        .previous_value = choice.previous_value.value_or(0),
+        .has_next_value = choice.next_value.has_value(), .next_value = choice.next_value.value_or(0),
+        .can_clear = choice.can_clear};
+}
+void populate_compose_branch_choices(flattened_workspace_t& result,
+                                     const wormedit::workspace_bms_branch_outline_t& outline) {
+    auto& view = result.view.compose;
+    const auto count = std::min(outline.choices.size(),
+        static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY));
+    view.branch_choices_truncated = outline.choices_truncated || count < outline.choices.size();
+    if (count == 0) return;
+    auto* arena = result.arena();
+    result.compose.branch.choice = arena ? arena_array<WormUiComposeBranchChoiceView>(*arena, count)
+                                        : frame_span<WormUiComposeBranchChoiceView>{};
+    view.branch_choices = result.compose.branch.choice.data();
+    if (result.compose.branch.choice.capacity() != count) {
+        view.branch_choices_truncated = true;
+        return;
+    }
+    for (std::size_t index = 0; index < count; ++index) {
+        if (!result.compose.branch.choice.push_back(compose_branch_choice_view(outline.choices[index]))) {
+            view.branch_choices_truncated = true;
+            break;
+        }
+        view.branch_choice_count = result.compose.branch.choice.size();
+    }
+}
+void populate_compose_branch_diagnostics(flattened_workspace_t& result,
+                                        const wormedit::workspace_bms_branch_outline_t& outline) {
+    auto& view = result.view.compose;
+    const auto count = std::min(outline.diagnostics.size(),
+        static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY));
+    view.branch_diagnostics_truncated = outline.diagnostics_truncated || count < outline.diagnostics.size();
+    if (count == 0) return;
+    auto* arena = result.arena();
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto* text = arena ? arena_string(*arena, outline.diagnostics[index].message) : nullptr;
+        if (!text) {
+            view.branch_diagnostics_truncated = true;
+            break;
+        }
+        view.branch_diagnostics[view.branch_diagnostic_count++] = text;
+    }
+}
+void populate_compose_branch_outline(flattened_workspace_t& result,
+                                    const wormedit::workspace_bms_branch_outline_t& outline) {
+    auto& view = result.view.compose;
+    view.branch_outline_available = outline.available;
+    view.branch_display_text_truncated = outline.display_text_truncated;
+    populate_compose_branch_rows(result, outline);
+    populate_compose_branch_choices(result, outline);
+    populate_compose_branch_diagnostics(result, outline);
+}
+
 void populate_compose_tab(const workspace_projection_context_t& projection, const wormedit::workspace_compose_view_t& tab) {
     auto& result = projection.result;
     const auto& source = projection.source;
@@ -697,70 +795,7 @@ void populate_compose_tab(const workspace_projection_context_t& projection, cons
                     source.selected_visual_asset.value_or(wormedit::asset_id_t{}).value;
                 populate_compose_resources(projection);
                 populate_compose_output_groups(projection, tab.chart);
-                compose.branch_outline_available = outline.available;
-                compose.branch_rows_truncated = outline.rows_truncated;
-                compose.branch_choices_truncated = outline.choices_truncated;
-                compose.branch_display_text_truncated = outline.display_text_truncated;
-                compose.branch_diagnostics_truncated = outline.diagnostics_truncated;
-                compose.branch_row_count =
-                    std::min(outline.rows.size(),
-                             static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY));
-                compose.branch_rows_truncated =
-                    compose.branch_rows_truncated || compose.branch_row_count < outline.rows.size();
-                for (std::size_t row_index = 0; row_index < compose.branch_row_count; ++row_index) {
-                    const auto& row = outline.rows[row_index];
-                    result.compose.branch.text[row_index] = row.display_text;
-                    result.compose.branch.row[row_index] = {
-                        .display_text = result.compose.branch.text[row_index].c_str(),
-                        .depth = row.depth,
-                        .active = row.active,
-                        .selected = row.selected,
-                        .display_text_truncated = row.display_text_truncated,
-                        .has_source_order = row.source_order.has_value(),
-                        .source_order = row.source_order.value_or(0),
-                    };
-                }
-                compose.branch_rows = result.compose.branch.row.data();
-                compose.branch_choice_count =
-                    std::min(outline.choices.size(),
-                             static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY));
-                compose.branch_choices_truncated =
-                    compose.branch_choices_truncated ||
-                    compose.branch_choice_count < outline.choices.size();
-                for (std::size_t choice_index = 0; choice_index < compose.branch_choice_count;
-                     ++choice_index) {
-                    const auto& choice = outline.choices[choice_index];
-                    result.compose.branch.choice[choice_index] = {
-                        .branch_id = choice.id.value,
-                        .kind = choice.kind == wormedit::bms_control_kind_t::switch_block
-                                    ? WORM_UI_COMPOSE_BRANCH_SWITCH
-                                    : WORM_UI_COMPOSE_BRANCH_RANDOM,
-                        .has_source_order = choice.source_order.has_value(),
-                        .source_order = choice.source_order.value_or(0),
-                        .active = choice.active,
-                        .editable = choice.editable,
-                        .has_selected_value = choice.selected_value.has_value(),
-                        .selected_value = choice.selected_value.value_or(0),
-                        .has_previous_value = choice.previous_value.has_value(),
-                        .previous_value = choice.previous_value.value_or(0),
-                        .has_next_value = choice.next_value.has_value(),
-                        .next_value = choice.next_value.value_or(0),
-                        .can_clear = choice.can_clear,
-                    };
-                }
-                compose.branch_choices = result.compose.branch.choice.data();
-                compose.branch_diagnostic_count =
-                    std::min(outline.diagnostics.size(),
-                             static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY));
-                compose.branch_diagnostics_truncated =
-                    compose.branch_diagnostics_truncated ||
-                    compose.branch_diagnostic_count < outline.diagnostics.size();
-                for (std::size_t diagnostic_index = 0;
-                     diagnostic_index < compose.branch_diagnostic_count; ++diagnostic_index) {
-                    auto& diagnostic = result.compose.branch.diagnostic[diagnostic_index];
-                    diagnostic = outline.diagnostics[diagnostic_index].message;
-                    compose.branch_diagnostics[diagnostic_index] = diagnostic.c_str();
-                }
+                populate_compose_branch_outline(result, outline);
                 append_workspace_format(projection, "Measures: %zu", static_cast<std::size_t>(tab.measure_count));
                 append_workspace_format(projection, "Notes: %zu", static_cast<std::size_t>(tab.note_count));
                 append_workspace_format(projection, "Layout segments: %zu", static_cast<std::size_t>(tab.layout_segment_count));
@@ -862,13 +897,7 @@ void flattened_workspace_t::rebind_view_pointers() {
     compose_view.resources = compose.resource.view.data();
     compose_view.output_groups = compose.output_group.view.data();
     compose_view.branch_rows = compose.branch.row.data();
-    for (std::size_t index = 0; index < compose_view.branch_row_count; ++index) {
-        compose.branch.row[index].display_text = compose.branch.text[index].c_str();
-    }
     compose_view.branch_choices = compose.branch.choice.data();
-    for (std::size_t index = 0; index < compose_view.branch_diagnostic_count; ++index) {
-        compose_view.branch_diagnostics[index] = compose.branch.diagnostic[index].c_str();
-    }
 
     view.audio_slices.asset_ids = audio.asset.data();
 }

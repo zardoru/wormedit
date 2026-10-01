@@ -1197,3 +1197,203 @@ TEST_CASE("Compose resource external arena reset republishes updated text",
         "updated.wav") == 0);
     check_frame_storage(!second.view.compose.resources_truncated);
 }
+
+namespace {
+auto branch_arena_model(std::size_t count = 3) -> wormedit::workspace_view_t {
+    wormedit::workspace_view_t model;
+    model.active_tab = wormedit::workspace_tab_t::compose;
+    wormedit::workspace_compose_view_t tab{.chart = wormedit::chart_id_t{1}};
+    auto& outline = tab.bms_branch_outline;
+    outline.available = true;
+    for (std::size_t index = 0; index < count; ++index) {
+        outline.rows.push_back({.depth = index, .source_order = index == 0
+            ? std::optional<std::size_t>{} : std::optional<std::size_t>{index + 7},
+            .active = index % 2 == 0, .selected = index == 1,
+            .display_text = std::string(128, char('a' + index % 26)),
+            .display_text_truncated = index == 2});
+        outline.choices.push_back({.id = wormedit::branch_id_t{index + 11},
+            .kind = index % 2 == 0 ? wormedit::bms_control_kind_t::random
+                                  : wormedit::bms_control_kind_t::switch_block,
+            .source_order = index == 0 ? std::optional<std::size_t>{}
+                                      : std::optional<std::size_t>{index + 30},
+            .active = index % 2 == 0, .editable = index != 2,
+            .selected_value = index == 0 ? std::optional<std::int64_t>{}
+                                        : std::optional<std::int64_t>{-7},
+            .previous_value = -9, .next_value = index == 2
+                ? std::optional<std::int64_t>{} : std::optional<std::int64_t>{-3},
+            .can_clear = index == 1});
+    }
+    outline.diagnostics.push_back({.message = std::string(128, 'd')});
+    outline.diagnostics.push_back({.message = std::string(128, 'e')});
+    model.tab_view = std::move(tab);
+    return model;
+}
+auto project_branch_arena(const wormedit::workspace_view_t& model, frame_arena_t* arena = nullptr)
+    -> flattened_workspace_t {
+    return flatten_workspace(model, {}, "ready", {}, false, {}, arena);
+}
+auto branch_outline(wormedit::workspace_view_t& model) -> wormedit::workspace_bms_branch_outline_t& {
+    return std::get<wormedit::workspace_compose_view_t>(model.tab_view).bms_branch_outline;
+}
+void check_branch_choice(const WormUiComposeBranchChoiceView& view,
+                         const wormedit::workspace_bms_branch_choice_t& source) {
+    check_frame_storage(view.branch_id == source.id.value);
+    check_frame_storage(view.kind == (source.kind == wormedit::bms_control_kind_t::switch_block
+        ? WORM_UI_COMPOSE_BRANCH_SWITCH : WORM_UI_COMPOSE_BRANCH_RANDOM));
+    check_frame_storage(view.has_source_order == source.source_order.has_value());
+    check_frame_storage(view.source_order == source.source_order.value_or(0));
+    check_frame_storage(view.active == source.active && view.editable == source.editable);
+    check_frame_storage(view.has_selected_value == source.selected_value.has_value());
+    check_frame_storage(view.selected_value == source.selected_value.value_or(0));
+    check_frame_storage(view.has_previous_value == source.previous_value.has_value());
+    check_frame_storage(view.previous_value == source.previous_value.value_or(0));
+    check_frame_storage(view.has_next_value == source.next_value.has_value());
+    check_frame_storage(view.next_value == source.next_value.value_or(0));
+    check_frame_storage(view.can_clear == source.can_clear);
+}
+void check_branch_row(const WormUiComposeBranchRowView& view,
+                      const wormedit::workspace_bms_branch_row_t& source) {
+    REQUIRE(view.display_text);
+    check_frame_storage(std::strcmp(view.display_text, source.display_text.c_str()) == 0);
+    check_frame_storage(view.depth == source.depth && view.active == source.active && view.selected == source.selected);
+    check_frame_storage(view.has_source_order == source.source_order.has_value());
+    check_frame_storage(view.source_order == source.source_order.value_or(0));
+    check_frame_storage(view.display_text_truncated == source.display_text_truncated);
+}
+void check_branch_prefix(const WormUiComposeView& view,
+                         const wormedit::workspace_bms_branch_outline_t& source) {
+    for (std::size_t index = 0; index < view.branch_row_count; ++index)
+        check_branch_row(view.branch_rows[index], source.rows[index]);
+    for (std::size_t index = 0; index < view.branch_choice_count; ++index)
+        check_branch_choice(view.branch_choices[index], source.choices[index]);
+    for (std::size_t index = 0; index < view.branch_diagnostic_count; ++index) {
+        REQUIRE(view.branch_diagnostics[index]);
+        check_frame_storage(std::strcmp(view.branch_diagnostics[index], source.diagnostics[index].message.c_str()) == 0);
+    }
+}
+void check_branch_in_arena(const flattened_workspace_t& frame, std::uintptr_t begin, std::uintptr_t end) {
+    const auto contains = [&](const void* data, std::size_t bytes) {
+        const auto address = reinterpret_cast<std::uintptr_t>(data);
+        return address >= begin && address + bytes <= end;
+    };
+    const auto& view = frame.view.compose;
+    check_frame_storage(contains(view.branch_rows, view.branch_row_count * sizeof(*view.branch_rows)));
+    check_frame_storage(contains(view.branch_choices, view.branch_choice_count * sizeof(*view.branch_choices)));
+    for (std::size_t index = 0; index < view.branch_row_count; ++index)
+        check_frame_storage(contains(view.branch_rows[index].display_text, std::strlen(view.branch_rows[index].display_text) + 1));
+    for (std::size_t index = 0; index < view.branch_diagnostic_count; ++index)
+        check_frame_storage(contains(view.branch_diagnostics[index], std::strlen(view.branch_diagnostics[index]) + 1));
+}
+}
+
+TEST_CASE("Compose branch arena preserves source values independently through move", "[sys][frame-arena][compose-branch]") {
+    auto model = branch_arena_model();
+    const auto expected = branch_outline(model);
+    auto frame = project_branch_arena(model);
+    REQUIRE(frame.view.compose.branch_row_count == 3);
+    REQUIRE(frame.view.compose.branch_choice_count == 3);
+    REQUIRE(frame.view.compose.branch_diagnostic_count == 2);
+    check_frame_storage(frame.view.compose.branch_outline_available);
+    branch_outline(model).rows[0].display_text.assign(256, 'x');
+    branch_outline(model).diagnostics[0].message.assign(256, 'y');
+    auto moved = std::move(frame);
+    moved.rebind_view_pointers();
+    check_branch_prefix(moved.view.compose, expected);
+    check_frame_storage(!moved.view.compose.branch_rows_truncated && !moved.view.compose.branch_choices_truncated);
+    check_frame_storage(!moved.view.compose.branch_diagnostics_truncated && !moved.view.compose.branch_display_text_truncated);
+}
+
+TEST_CASE("Compose branch spans and diagnostic strings belong to supplied arena", "[sys][frame-arena][compose-branch]") {
+    auto model = branch_arena_model();
+    frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    const auto first = arena.allocate_bytes(1, 1);
+    auto frame = project_branch_arena(model, &arena);
+    const auto last = arena.allocate_bytes(1, 1);
+    REQUIRE((first && last));
+    check_branch_in_arena(frame, reinterpret_cast<std::uintptr_t>(first.data), reinterpret_cast<std::uintptr_t>(last.data));
+    check_frame_storage(frame.view.compose.branch_rows == frame.compose.branch.row.data());
+    check_frame_storage(frame.view.compose.branch_choices == frame.compose.branch.choice.data());
+    frame = {};
+    arena.reset();
+    auto& outline = branch_outline(model);
+    outline.rows[0].display_text = "updated row";
+    outline.diagnostics[0].message = "updated diagnostic";
+    const auto next = project_branch_arena(model, &arena);
+    check_branch_prefix(next.view.compose, outline);
+}
+
+TEST_CASE("Compose branch caps retain document order and existing truncation flags", "[sys][frame-arena][compose-branch]") {
+    auto model = branch_arena_model(97);
+    auto& outline = branch_outline(model);
+    outline.display_text_truncated = true;
+    outline.diagnostics.resize(5, {.message = "extra diagnostic"});
+    const auto frame = project_branch_arena(model);
+    REQUIRE(frame.view.compose.branch_row_count == 96);
+    REQUIRE(frame.view.compose.branch_choice_count == 96);
+    REQUIRE(frame.view.compose.branch_diagnostic_count == 4);
+    check_branch_prefix(frame.view.compose, outline);
+    check_frame_storage(frame.view.compose.branch_rows_truncated && frame.view.compose.branch_choices_truncated);
+    check_frame_storage(frame.view.compose.branch_display_text_truncated && frame.view.compose.branch_diagnostics_truncated);
+    check_frame_storage(outline.rows.size() == 97 && outline.choices.size() == 97 && outline.diagnostics.size() == 5);
+}
+
+TEST_CASE("Compose empty branch outlines preserve availability and source flags", "[sys][frame-arena][compose-branch]") {
+    auto model = branch_arena_model(0);
+    auto& outline = branch_outline(model);
+    outline.diagnostics.clear();
+    for (const bool marked : {false, true}) {
+        outline.available = marked;
+        outline.rows_truncated = marked; outline.choices_truncated = marked;
+        outline.display_text_truncated = marked; outline.diagnostics_truncated = marked;
+        const auto frame = project_branch_arena(model);
+        const auto& view = frame.view.compose;
+        check_frame_storage(view.branch_row_count == 0 && view.branch_choice_count == 0 && view.branch_diagnostic_count == 0);
+        check_frame_storage(view.branch_rows == nullptr && view.branch_choices == nullptr);
+        check_frame_storage(view.branch_outline_available == marked && view.branch_rows_truncated == marked);
+        check_frame_storage(view.branch_choices_truncated == marked && view.branch_display_text_truncated == marked && view.branch_diagnostics_truncated == marked);
+    }
+}
+
+TEST_CASE("Compose branch storage exhaustion retains complete row and diagnostic prefixes", "[sys][frame-arena][compose-branch]") {
+    const auto model = branch_arena_model();
+    const auto& source = std::get<wormedit::workspace_compose_view_t>(model.tab_view).bms_branch_outline;
+    bool row_prefix = false, diagnostic_prefix = false, zero_choice = false;
+    for (std::size_t limit = 32; limit <= 1400; limit += 8) {
+        frame_arena_t arena({.chunk_bytes = limit, .maximum_bytes = limit});
+        const auto frame = project_branch_arena(model, &arena);
+        const auto& view = frame.view.compose;
+        check_branch_prefix(view, source);
+        if (view.branch_row_count != 3) check_frame_storage(view.branch_rows_truncated);
+        if (view.branch_choice_count != 3) check_frame_storage(view.branch_choices_truncated);
+        if (view.branch_diagnostic_count != 2) check_frame_storage(view.branch_diagnostics_truncated);
+        row_prefix = row_prefix || (view.branch_row_count == 1 && view.branch_display_text_truncated);
+        diagnostic_prefix = diagnostic_prefix || view.branch_diagnostic_count == 1;
+        zero_choice = zero_choice || view.branch_choice_count == 0;
+    }
+    check_frame_storage(row_prefix && diagnostic_prefix && zero_choice);
+    check_frame_storage(source.rows[0].display_text == std::string(128, 'a'));
+}
+
+TEST_CASE("Warmed Compose branch projection remains stable for 1000 arena resets", "[sys][frame-arena][compose-branch]") {
+    const auto model = branch_arena_model();
+    frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    (void)project_branch_arena(model, &arena);
+    const auto used = arena.used_bytes(), committed = arena.committed_bytes();
+    arena.reset();
+    const auto before = frame_heap_allocation_snapshot();
+    (void)project_branch_arena(model, &arena);
+    const auto remaining = frame_heap_allocation_snapshot().count - before.count;
+    bool stable = true;
+    for (int iteration = 0; iteration < 1000; ++iteration) {
+        arena.reset();
+        const auto start = frame_heap_allocation_snapshot();
+        const auto frame = project_branch_arena(model, &arena);
+        stable = stable && frame_heap_allocation_snapshot().count - start.count == remaining &&
+            arena.used_bytes() == used && arena.committed_bytes() == committed &&
+            frame.view.compose.branch_row_count == 3 && frame.view.compose.branch_choice_count == 3 &&
+            frame.view.compose.branch_diagnostic_count == 2 && !frame.view.compose.branch_rows_truncated;
+    }
+    INFO("Remaining actual flatten allocations=" << remaining << ", used=" << used << ", committed=" << committed);
+    check_frame_storage(stable);
+    check_frame_storage(remaining == 0);
+}

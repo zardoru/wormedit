@@ -22,6 +22,8 @@
 namespace wormedit {
 namespace {
 
+struct json_member_t;
+
 struct json_value_t {
     enum class kind_t { null_value, boolean, number, string, array, object } kind{kind_t::null_value};
     std::size_t begin{};
@@ -29,7 +31,12 @@ struct json_value_t {
     bool boolean{};
     std::string text;
     std::vector<json_value_t> array;
-    std::vector<std::pair<std::string, json_value_t>> object;
+    std::vector<json_member_t> object;
+};
+
+struct json_member_t {
+    std::string first;
+    json_value_t second;
 };
 
 auto valid_utf8(std::string_view source) -> std::optional<std::size_t> {
@@ -87,7 +94,7 @@ auto wrap_json(const nlohmann::ordered_json& source_value, std::string_view sour
         value.kind = json_value_t::kind_t::object;
         value.object.reserve(source_value.size());
         for (auto item = source_value.begin(); item != source_value.end(); ++item) {
-            value.object.emplace_back(item.key(), wrap_json(item.value(), source));
+            value.object.push_back({item.key(), wrap_json(item.value(), source)});
         }
     } else if (source_value.is_array()) {
         value.kind = json_value_t::kind_t::array;

@@ -4,6 +4,8 @@
 
 ## Immediate work
 
+User priority (2026-10-01), short term: [T-296–T-303](../../docs/chart-editor-plan/tasks/compose-ux.md): Shift cursor-range selection and Space Play/Stop; inline offset and padlock; conditional upper overview; held-Tab repeat (200 ms); macOS navigation and pinch; first-gesture priority for the Compose note canvas without a focus click. Finish the already verified cut and prioritize these before the ordinary backlog.
+
 Work is executed as [task cards](../../docs/chart-editor-plan/tasks.md). Take the first card whose status is `ready`; do not start a blocked or `deferred` card.
 
 1. [Compose panel split](../../docs/chart-editor-plan/tasks/compose-split.md): T-01 canvas, T-02 toolbar, T-03 inspector, and T-04 input are done.

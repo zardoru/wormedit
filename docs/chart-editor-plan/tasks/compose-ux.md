@@ -474,3 +474,104 @@ conditional optimization remains unproven.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^frontend-state\.'`; `ctest --test-dir build --output-on-failure -R '^documentation\.'`; `clang-tidy -p build src/ui/nuklear/compose_panel.cpp`; `clang-tidy -p build src/ui/nuklear/compose_state.cpp`; `clang-tidy -p build src/ui/nuklear/compose_inspector.cpp`; `clang-tidy -p build src/ui/nuklear/compose_input_panel.cpp`; `clang-tidy -p build src/ui/nuklear/frontend.cpp`; `clang-tidy -p build tests/ui/nuklear_compose_state_tests.cpp`; `clang-tidy -p build tests/ui/nuklear_popup_combo_tests.cpp`; `scripts/smoke-compose-virtual-x.sh /tmp/wormedit-t279-compose.png compose`, then inspect the PNG. Any automated window interaction uses isolated Xvfb and SDL dummy audio, never the user's Niri desktop.
 - **Evidence:** application/state/popup build passed; frontend-state 44/44 passed. Isolated Xvfb/SDL-dummy verification checked new and existing BPM/SV immediate typing, Enter, invalid-draft correction, popup blur, window focus loss, Escape, and the first subsequent Project-menu click; saved native values and counts matched. Literal Compose smoke PNG inspected after repairing its stale Create-button hit coordinate and selecting only the test process window. All new functions pass the cognitive complexity gate; unchanged legacy and third-party test warnings remain. Logs, native fixture, scripts, and PNGs: `/tmp/wormedit-t279/`; smoke PNG: `/tmp/wormedit-t279-compose.png`.
 - **Out of scope:** timing values, snap behavior, other text fields, audio, waveform rendering, preferences.
+
+
+## Immediate UX priority (user, 2026-10-01)
+
+T-296–T-303 are short-term priority work, before the ordinary backlog. They supersede historical Space-selection and pause descriptions; completed historical verification remains evidence of the earlier behavior.
+
+## T-296 Use Shift navigation for ranges and Space for Play/Stop
+
+- **Status:** ready
+- **Outcome:** Shift plus cursor navigation selects the exact inclusive area range; Space starts playback or invokes hard Stop, never Pause. Focused tap timing uses T; text/IME and modal input retain ownership.
+- **Read first:** `include/wormedit/core/interaction.h`, `src/sys/compose_input.cpp`, `src/core/command_registry.cpp`.
+- **Files owned:** `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/sys/compose_input.cpp`, `src/sys/application_commands.h/.cpp`, `src/sys/application_command_dispatch.cpp/.h`, `src/sys/transport_player_actions.cpp/.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `tests/core/interaction_tests.cpp`, `tests/core/command_registry_tests.cpp`, `tests/sys/application_commands_tests.cpp`.
+- **Steps:** 1. Replace Space range recognition with Shift plus keyboard cursor movement, preserving the shared exact range controller. 2. Route Space through Play/hard Stop and suppress repeated toggles. 3. Verify range reversal, cancellation, text focus and immediate audio stop in isolated tests.
+- **Invariants:** Shift mouse dragging keeps its offset behavior; navigation alone never edits document data.
+- **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
+- **Verify:** standard build/test; configured clang-tidy on changed C++; isolated Xvfb/SDL-dummy checks for UI/audio behavior.
+- **Out of scope:** unrelated rendering and preferences work.
+
+## T-297 Edit the audio offset inline on double click
+
+- **Status:** ready
+- **Outcome:** Double-clicking the displayed audio offset opens a focused inline numeric editor; Enter commits one exact undoable offset edit, Escape cancels, and losing focus closes it.
+- **Read first:** `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `include/wormedit/core/audio_offset_editor.h`.
+- **Files owned:** `src/sys/compose_view.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/compose_actions.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`.
+- **Steps:** 1. Reuse the inline numeric editor and offset command. 2. Focus and select its text on double click and close it on blur. 3. Verify signed values, invalid input, undo, keyboard ownership and isolated actual typing.
+- **Invariants:** Audio offset sign, units and exact representation retain the existing command semantics.
+- **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
+- **Verify:** standard build/test; configured clang-tidy on changed C++; isolated Xvfb/SDL-dummy checks for UI/audio behavior.
+- **Out of scope:** unrelated rendering and preferences work.
+
+## T-298 Lock audio offset changes beside its tools
+
+- **Status:** ready
+- **Outcome:** A visible padlock beside the offset tools prevents offset changes from numeric edits, nudges and drag gestures while locked.
+- **Read first:** `src/sys/compose_actions.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_toolbar.cpp`.
+- **Files owned:** `src/sys/compose_view.cpp/.h`, `src/ui/frontend.h`, `src/ui/nuklear/compose_toolbar.cpp`, `src/sys/compose_actions.cpp`, `src/sys/compose_input.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
+- **Steps:** 1. Add one shared offset-lock state and display its padlock near the offset tools. 2. Enforce it at offset action and gesture boundaries, cancelling any pending offset preview when locking. 3. Verify every editing entry point rejects without mutation.
+- **Invariants:** Locking offset does not prevent navigation, BPM editing or playback; unlocking does not replay a rejected edit.
+- **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
+- **Verify:** standard build/test; configured clang-tidy on changed C++; isolated Xvfb/SDL-dummy checks for UI/audio behavior.
+- **Out of scope:** unrelated rendering and preferences work.
+
+## T-299 Use the upper progress bar only when no BGM exists
+
+- **Status:** ready
+- **Outcome:** The progress bar above the toolbar replaces the lower minimap only for charts without BGM; charts with BGM retain the lower minimap as the authoritative overview.
+- **Read first:** `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/frontend.cpp`, `src/sys/compose_view.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_view.cpp/.h`, `src/ui/frontend.h`, `tests/sys/frame_timing_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`.
+- **Steps:** 1. Project actual BGM presence independently of viewport visibility. 2. Select exactly one overview location with stable layout. 3. Verify empty/populated/offscreen BGM charts, navigation and audio-tail seeking in isolated captures.
+- **Invariants:** An offscreen or hidden BGM event still requires the minimap; existing exact seek behavior is preserved.
+- **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
+- **Verify:** standard build/test; configured clang-tidy on changed C++; isolated Xvfb/SDL-dummy checks for UI/audio behavior.
+- **Out of scope:** unrelated rendering and preferences work.
+
+## T-300 Repeat Tab navigation every 200 milliseconds while held
+
+- **Status:** ready
+- **Outcome:** Holding Tab repeats its existing cursor displacement at a 200 ms interval after the initial action; releasing it, focus loss or an input-owning dialog stops repetition.
+- **Read first:** `src/ui/nuklear/frontend.cpp`, `src/sys/compose_input.cpp`.
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/sys/compose_input.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`.
+- **Steps:** 1. Retain the current Tab action and direction. 2. Use monotonic repeat timing independent of OS key-repeat rate. 3. Verify deterministic held/released/focus-loss traces, including Shift range navigation.
+- **Invariants:** Text widgets retain Tab ownership; no queued repeat survives focus loss or a chart change.
+- **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
+- **Verify:** standard build/test; configured clang-tidy on changed C++; isolated Xvfb/SDL-dummy checks for UI/audio behavior.
+- **Out of scope:** unrelated rendering and preferences work.
+
+## T-301 Fix slow macOS trackpad navigation
+
+- **Status:** ready
+- **Outcome:** Trackpad navigation retains precise scroll deltas and responds without avoidable per-event chart reconstruction or artificial low-frequency gating.
+- **Read first:** `src/ui/nuklear/frontend.cpp`, `src/sys/compose_input.cpp`, `src/sys/frame_timing.h`.
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
+- **Steps:** 1. Trace wheel precision, event delivery and navigation work before changing behavior. 2. Correct the measured bottleneck using shared navigation paths. 3. Verify fractional/rapid synthetic event traces and report isolated measurements; actual macOS confirmation remains required evidence when a Mac is available.
+- **Invariants:** No guessed speed multiplier; preserve navigation direction, cursor bounds and input ownership.
+- **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
+- **Verify:** standard build/test; configured clang-tidy on changed C++; isolated Xvfb/SDL-dummy checks for UI/audio behavior.
+- **Out of scope:** unrelated rendering and preferences work.
+
+## T-302 Support macOS trackpad pinch zoom
+
+- **Status:** ready
+- **Outcome:** SDL pinch gestures zoom the chart around the gesture focus using the same bounded zoom transform as existing controls.
+- **Read first:** `src/ui/nuklear/frontend.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_scroll_geometry.h`.
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_scroll_geometry.h`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
+- **Steps:** 1. Handle available SDL pinch begin/update/end events with version-compatible builds. 2. Reuse existing zoom bounds and coordinate anchoring, with focus/gesture cancellation. 3. Test scale accumulation, reversal, invalid scales and input occlusion; document actual macOS confirmation separately.
+- **Invariants:** Pinch does not edit notes or offset; missing pinch support in older SDL keeps existing zoom controls.
+- **Reject/failure behavior:** invalid or stale input leaves the document and selection unchanged; unsupported input is diagnosed.
+- **Verify:** standard build/test; configured clang-tidy on changed C++; isolated Xvfb/SDL-dummy checks for UI/audio behavior.
+- **Out of scope:** unrelated rendering and preferences work.
+
+## T-303 Prioritize the Compose note canvas without a focus click
+
+- **Status:** ready
+- **Outcome:** while Compose is visible, the note-editing canvas accepts the first wheel/scroll, pan, object-insertion and edit gesture without requiring previous panel focus; keyboard navigation and insertion target the canvas when no actual text/IME/dialog owner is active.
+- **Read first:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/sys/compose_input.cpp`.
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_state.cpp/.h`, `src/sys/compose_input.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`, `tests/ui/nuklear_options_state_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
+- **Steps:** 1. Reproduce first-gesture loss after focusing toolbar/inspector/another panel. 2. Share one input-ownership decision that prioritizes the note canvas independently of stale toolkit panel focus. 3. Verify first wheel, pan and object insertion, keyboard navigation, matching releases and text/modal occlusion.
+- **Invariants:** the note canvas has highest editing priority; actual text/IME entry and occluding dialogs retain their input. The first gesture is neither dropped nor applied twice, and hidden Compose does not consume other tabs' events.
+- **Reject/failure behavior:** blocked or invalid gestures leave the document and selection unchanged; focus/capture loss retires held inputs.
+- **Verify:** standard build/test; configured clang-tidy; isolated real-window checks after focusing inspector and toolbar, plus text/Options/history occlusion regressions.
+- **Out of scope:** changing note-editing command semantics.

@@ -63,12 +63,13 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 - **Status:** ready
 - **Outcome:** View → Notifications (and command `view.notifications`) opens a modeless panel listing entries newest-first with severity filter, repeat counts, relative time, expandable detail, Copy details (to the OS clipboard), Go to (for targets), Dismiss, and Clear all; opening it marks entries read.
 - **Read first:** `include/wormedit/core/notifications.h`, `src/core/command_registry.cpp`, `src/ui/nuklear/frontend.cpp`.
-- **Files owned:** new `src/ui/nuklear/notification_panel.cpp/.h`, `src/ui/frontend.h`, `src/core/command_registry.cpp`, `src/sys/main.cpp` (dispatch only), `src/sys/application_command_dispatch.cpp`, `CMakeLists.txt`.
+- **Files owned:** new `src/ui/nuklear/notification_panel.cpp/.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, `src/core/command_registry.cpp`, `src/sys/main.cpp` (history ownership, projection, and dispatch), `src/sys/application_commands.h/.cpp`, `src/sys/application_command_dispatch.cpp/.h`, new `src/sys/notification_history_runtime.cpp/.h`, new `tests/sys/notification_history_runtime_tests.cpp`, new `tests/ui/nuklear_notification_panel_tests.cpp`, `tests/core/command_registry_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Steps:** 1. Bounded view of up to 256 rows. 2. Go to reuses the existing cursor-jump path (chart select + exact position). 3. Register the command with a default chord that does not conflict (check `diagnose_shortcut_conflicts`).
 - **Invariants:** opening the panel does not change tool, selection, or cursor.
 - **Reject/failure behavior:** a Go to target whose chart or object no longer exists shows "Target no longer exists".
 - **Verify:** standard build/test; smoke PNG with the panel open.
 - **Out of scope:** persisting history across sessions.
+- **Approved decisions (2026-10-01):** the user approved the integration/test scope above and navigation policy: valid targets without an exact chart position have disabled Go to with “Sin posición en el chart”; positional targets navigate exactly; a deleted previously valid target rejects with “Target no longer exists”.
 
 ## T-221 Route the global status string through notifications
 

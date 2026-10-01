@@ -313,3 +313,94 @@ TEST_CASE("Timing recipe arena arrays publish exact normalized candidate and out
     check_frame_storage(recipe.composed_points[1].row_fraction == 1.0);
     check_frame_storage(recipe.composed_points[1].value_fraction == 1.0);
 }
+
+TEST_CASE("Timing status text reuses warmed arena bytes without C++ new",
+          "[sys][frame-arena][timing-text]") {
+    const auto history = arena_timing_history();
+    const wormedit::workspace_controller_t workspace;
+    timing_scene_cache_t cache;
+    frame_arena_t arena({.chunk_bytes = 1024, .maximum_bytes = 4096});
+    auto project = [&] {
+        arena.reset();
+        flattened_workspace_t frame(&arena);
+        fill_arena_timing(frame, history, workspace, cache);
+        return frame;
+    };
+    const auto warm = project();
+    const auto used = arena.used_bytes();
+    const auto before = frame_heap_allocation_snapshot();
+    bool exact = true;
+    for (int iteration = 0; iteration < 1000; ++iteration) {
+        const auto frame = project();
+        exact = exact && std::strcmp(frame.view.timing.status_text,
+            "Choose a difficulty to display its timing lanes.") == 0;
+    }
+    const auto after = frame_heap_allocation_snapshot();
+    check_frame_storage(exact);
+    check_frame_storage(after.count == before.count);
+    check_frame_storage(arena.used_bytes() == used);
+}
+
+TEST_CASE("Standalone Timing owns copied cache diagnostics through source mutation and move",
+          "[sys][frame-arena][timing-text]") {
+    const auto history = arena_timing_history();
+    auto binding = wormedit::make_workspace_controller(history);
+    REQUIRE(binding.workspace);
+    binding.workspace->selected_chart = wormedit::chart_id_t{1};
+    const std::string diagnostic = "A long retained timing diagnostic that must not borrow its source cache storage.";
+    timing_scene_cache_t cache;
+    cache.chart = wormedit::chart_id_t{1};
+    cache.revision = history.document.revision;
+    cache.attempted = true;
+    cache.status = diagnostic;
+    flattened_workspace_t frame;
+    fill_arena_timing(frame, history, *binding.workspace, cache);
+    cache.status.assign(200, 'x');
+    auto moved = std::move(frame);
+    check_frame_storage(std::strcmp(moved.view.timing.status_text, diagnostic.c_str()) == 0);
+}
+
+TEST_CASE("Timing text exhaustion publishes an immutable diagnostic",
+          "[sys][frame-arena][timing-text]") {
+    const auto history = arena_timing_history();
+    const wormedit::workspace_controller_t workspace;
+    timing_scene_cache_t cache;
+    frame_arena_t arena({.chunk_bytes = 8, .maximum_bytes = 8});
+    flattened_workspace_t frame(&arena);
+    fill_arena_timing(frame, history, workspace, cache);
+    check_frame_storage(frame.view.timing.truncated);
+    check_frame_storage(std::strcmp(frame.view.timing.status_text,
+        "Timing display text truncated (frame storage limit).") == 0);
+    arena.reset();
+    check_frame_storage(std::strcmp(frame.view.timing.status_text,
+        "Timing display text truncated (frame storage limit).") == 0);
+}
+
+TEST_CASE("Timing recipe owns diagnostic text independently of the preview",
+          "[sys][frame-arena][timing-text]") {
+    const auto history = arena_timing_history();
+    auto binding = wormedit::make_workspace_controller(history);
+    REQUIRE(binding.workspace);
+    binding.workspace->selected_chart = wormedit::chart_id_t{1};
+    timing_scene_cache_t cache;
+    timing_grid_state_t grid;
+    grid.active_denominator = 4;
+    wormedit::sv_recipe_draft_t draft;
+    draft.status = wormedit::sv_recipe_draft_status_t::editing;
+    draft.chart = wormedit::chart_id_t{1};
+    draft.document_revision = history.document.revision;
+    draft.candidate.range = {{wormedit::measure_id_t{1}, 0}, {wormedit::measure_id_t{1}, 960}};
+    const std::string diagnostic = "A long transient recipe diagnostic whose bytes belong to the frame projection.";
+    wormedit::sv_recipe_draft_preview_t preview;
+    preview.diagnostics.push_back({.message = diagnostic});
+    flattened_workspace_t frame;
+    frame.view.timing.visible = true;
+    populate_timing_view(frame, history, *binding.workspace, cache, 1280, 980, grid,
+                         nullptr, &draft, &preview, false);
+    preview.diagnostics.front().message.assign(200, 'x');
+    auto retained = std::move(frame);
+    check_frame_storage(retained.view.timing.sv_recipe.active);
+    check_frame_storage(!retained.view.timing.sv_recipe.valid);
+    check_frame_storage(std::strcmp(retained.view.timing.sv_recipe.status_text,
+                                   diagnostic.c_str()) == 0);
+}

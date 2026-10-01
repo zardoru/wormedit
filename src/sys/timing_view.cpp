@@ -31,6 +31,14 @@ auto allocate_timing_rows(flattened_workspace_t& flattened, frame_span<T>& rows,
     return true;
 }
 
+auto timing_display_text(flattened_workspace_t& flattened, std::string_view text)
+    -> const char* {
+    auto* arena = flattened.arena();
+    if (const auto* owned = arena ? arena_string(*arena, text) : nullptr) return owned;
+    flattened.view.timing.truncated = true;
+    return "Timing display text truncated (frame storage limit).";
+}
+
 auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) -> double {
     float recovery_height = 0.0f;
     if (view.recovery_panel_visible) {
@@ -273,21 +281,22 @@ void populate_timing_recipe_view(flattened_workspace_t& flattened,
                         candidate.sampling.max_points);
 
     if (!preview) {
-        flattened.timing.recipe_status = "The transient recipe preview is unavailable.";
-        view.status_text = flattened.timing.recipe_status.c_str();
+        view.status_text = timing_display_text(flattened,
+            "The transient recipe preview is unavailable.");
         return;
     }
     view.valid = preview->diagnostics.empty();
+    std::string_view recipe_status;
     if (!preview->diagnostics.empty()) {
-        flattened.timing.recipe_status = preview->diagnostics.front().message;
+        recipe_status = preview->diagnostics.front().message;
     } else if (!preview->candidate_points.tolerance_met) {
-        flattened.timing.recipe_status =
+        recipe_status =
             "Adaptive sampling reached its point cap before meeting tolerance.";
     } else {
-        flattened.timing.recipe_status =
+        recipe_status =
             "Preview is transient; Apply stores only the editable recipe.";
     }
-    view.status_text = flattened.timing.recipe_status.c_str();
+    view.status_text = timing_display_text(flattened, recipe_status);
 
     long double minimum = 0.0L;
     long double maximum = 1.0L;
@@ -493,8 +502,8 @@ void populate_timing_stage_view(
             },
             stage->value);
         if (!stage->diagnostics.empty()) {
-            flattened.timing.status = stage->diagnostics.front().message;
-            view.stage_status_text = flattened.timing.status.c_str();
+            view.stage_status_text = timing_display_text(flattened,
+                stage->diagnostics.front().message);
         }
     }
 }
@@ -516,10 +525,9 @@ auto populate_timing_grid_and_speeds(flattened_workspace_t& flattened,
                                         static_cast<double>(cache.total_rows),
          .maximum_line_count = WORM_UI_TIMING_GRID_CAPACITY});
     if (!grid) {
-        flattened.timing.status = grid.diagnostics.empty()
-                                              ? "The timing grid could not be composed."
-                                              : grid.diagnostics.front().message;
-        view.status_text = flattened.timing.status.c_str();
+        view.status_text = timing_display_text(flattened, grid.diagnostics.empty()
+            ? std::string_view{"The timing grid could not be composed."}
+            : std::string_view{grid.diagnostics.front().message});
         return false;
     }
     if (!allocate_timing_rows(flattened, flattened.timing.grid, grid.lines.size(),
@@ -788,15 +796,13 @@ void populate_timing_view(flattened_workspace_t& flattened,
     view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
     if (!workspace.selected_chart) {
-        flattened.timing.status = "Choose a difficulty to display its timing lanes.";
-        view.status_text = flattened.timing.status.c_str();
+        view.status_text = timing_display_text(flattened, "Choose a difficulty to display its timing lanes.");
         return;
     }
     const auto chart_it = std::ranges::find(history.document.charts, *workspace.selected_chart,
                                             &wormedit::chart_document_t::id);
     if (chart_it == history.document.charts.end()) {
-        flattened.timing.status = "The selected difficulty is no longer available.";
-        view.status_text = flattened.timing.status.c_str();
+        view.status_text = timing_display_text(flattened, "The selected difficulty is no longer available.");
         return;
     }
     const auto& chart = *chart_it;
@@ -809,13 +815,11 @@ void populate_timing_view(flattened_workspace_t& flattened,
     view.speed_total_count = chart.speeds.size();
     populate_speed_cache(cache, chart, history.document.revision);
     if (!cache.status.empty()) {
-        flattened.timing.status = cache.status;
-        view.status_text = flattened.timing.status.c_str();
+        view.status_text = timing_display_text(flattened, cache.status);
         return;
     }
     if (cache.total_rows == 0) {
-        flattened.timing.status = "This difficulty has no timing rows to display.";
-        view.status_text = flattened.timing.status.c_str();
+        view.status_text = timing_display_text(flattened, "This difficulty has no timing rows to display.");
         return;
     }
     view.total_rows = cache.total_rows;

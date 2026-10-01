@@ -116,8 +116,6 @@ struct flattened_workspace_t {
         } output_group;
     } metadata;
     struct {
-        std::string status;
-        std::string recipe_status;
         frame_span<WormUiTimingSpeedView> speed;
         frame_span<WormUiTimingMarkerView> marker;
         frame_span<WormUiTimingGridLineView> grid;

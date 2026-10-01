@@ -25,6 +25,7 @@ Work is executed as [task cards](../../docs/chart-editor-plan/tasks.md). Take th
 17. Bug: status bar flickers during playback (minimap column toggles the row layout) — [T-266](../../docs/chart-editor-plan/tasks/compose-ux.md).
 18. Audio: generic chunked arena library first (frame and append policies; storyboard moves onto it) — [T-271](../../docs/chart-editor-plan/tasks/resources-audio.md); then keep keysounds decoded in memory instead of re-decoding (audition cache is 2 MiB / 512 KiB per asset) — [T-267](../../docs/chart-editor-plan/tasks/resources-audio.md); iBMSC-style "play sound on click" toggle — T-268.
 19. Note and lane colors by instrument key (scratch red, black keys darker, PMS buttons) with an iBMSC-style green selection outline — [T-269](../../docs/chart-editor-plan/tasks/compose-ux.md) (profile data), then T-270 (drawing).
+20. [Live transport frame time](../../docs/chart-editor-plan/tasks/live-transport.md) (T-272–T-278): T-272 arena-allocates the flattened view in fill order after T-271 (today it reallocates 29 containers per frame); ready now are T-273 (stop opening a decoder per audio asset synchronously at load and after Save As), T-276 (lock-free playhead), T-278 (thread priorities); then T-274 (start keysound preload right after parsing), T-275 (revision-cached projection), T-277 (throttling and present-time playhead).
 
 ## Handoff rule
 

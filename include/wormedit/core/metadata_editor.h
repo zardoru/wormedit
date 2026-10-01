@@ -38,6 +38,18 @@ struct set_chart_metadata_action_t {
     std::optional<signed_rational_t> rating;
 };
 
+struct batch_chart_metadata_action_t {
+    std::vector<chart_id_t> charts;
+    std::optional<std::string> author;
+    bool edit_rating{};
+    std::optional<signed_rational_t> rating; // nullopt explicitly clears when edit_rating is true.
+};
+
+// One undoable transaction for 1..256 selected charts; every ID must exist and occur exactly once.
+[[nodiscard]] auto apply_batch_chart_metadata_edit(document_history_t& history,
+    std::uint64_t expected_revision, const batch_chart_metadata_action_t& action,
+    metadata_edit_limits_t limits = {}) -> document_command_result_t;
+
 struct set_output_group_path_action_t {
     std::size_t group_index{};
     std::string relative_output_path;

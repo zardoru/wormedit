@@ -330,3 +330,72 @@ TEST_CASE("metadata edits synchronize scoped copies of one retained source field
               .metadata.format_groups.front()
               .ordered_field_source_orders == std::vector<std::size_t>{11, 12});
 }
+
+namespace {
+void expect_metadata_batch(bool value) { CHECK(value); }
+void require_metadata_batch(bool value) { REQUIRE(value); }
+}
+
+TEST_CASE("Chart metadata batch commits selected charts once and preserves names and retained fields", "[unit][core][metadata-editor]") {
+    auto song = metadata_song();
+    song.charts.push_back({.id = chart_id_t{6}, .metadata = {.name = "Hard", .author = "Other"},
+        .measures = {{.id = measure_id_t{7}}},
+        .lane_layouts = {{.id = object_id_t{8}, .position = {measure_id_t{7}, 0},
+            .layout = {.profile_id = "metadata-test", .lanes = {{.id = lane_id_t{9}, .name = "Lane"}}}}}});
+    auto history = make_document_history(song);
+    const batch_chart_metadata_action_t action{.charts = {chart_id_t{2}, chart_id_t{6}},
+        .author = "Batch author", .edit_rating = true, .rating = signed_rational_t{7, 2}};
+    require_metadata_batch(static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, action)));
+    expect_metadata_batch(static_cast<bool>(history.document.revision == 5));
+    expect_metadata_batch(static_cast<bool>(history.undo.size() == 1));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[0].metadata.name == "Normal"));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[1].metadata.name == "Hard"));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[0].metadata.author == "Batch author"));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[1].metadata.author == "Batch author"));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[0].metadata.rating == signed_rational_t{7, 2}));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[1].metadata.rating == signed_rational_t{7, 2}));
+    expect_metadata_batch(static_cast<bool>(history.document.metadata.format_groups[0].ordered_fields == song.metadata.format_groups[0].ordered_fields));
+    require_metadata_batch(static_cast<bool>(undo_document_command(history)));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[0].metadata.author == "Mapper"));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[1].metadata.author == "Other"));
+    expect_metadata_batch(!static_cast<bool>(history.document.charts[0].metadata.rating));
+    require_metadata_batch(static_cast<bool>(redo_document_command(history)));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[1].metadata.author == "Batch author"));
+}
+
+TEST_CASE("Chart metadata batch rejects the whole selection on invalid target or value", "[unit][core][metadata-editor]") {
+    auto history = make_document_history(metadata_song());
+    batch_chart_metadata_action_t action{.charts = {chart_id_t{2}, chart_id_t{999}}, .author = "Changed"};
+    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, action)));
+    action.charts = {chart_id_t{2}, chart_id_t{2}};
+    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, action)));
+    action.charts = {chart_id_t{2}};
+    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, 3, action)));
+    action.author = std::string{"bad\0text", 8};
+    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, action)));
+    action.author = "Changed";
+    action.edit_rating = true;
+    action.rating = signed_rational_t{3, 0};
+    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, action)));
+    action.rating = signed_rational_t{3, 2};
+    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, action, {.maximum_total_metadata_bytes = 1})));
+    expect_metadata_batch(static_cast<bool>(history.document.revision == 4));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[0].metadata.author == "Mapper"));
+    expect_metadata_batch(!static_cast<bool>(history.document.charts[0].metadata.rating));
+    expect_metadata_batch(static_cast<bool>(history.undo.empty()));
+    expect_metadata_batch(static_cast<bool>(history.redo.empty()));
+}
+
+TEST_CASE("Chart metadata batch supports explicit rating clearing and preserves omitted fields", "[unit][core][metadata-editor]") {
+    auto song = metadata_song();
+    song.charts[0].metadata.rating = signed_rational_t{11, 3};
+    auto history = make_document_history(song);
+    require_metadata_batch(static_cast<bool>(apply_batch_chart_metadata_edit(history, 4, {.charts = {chart_id_t{2}}, .author = "New author"})));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[0].metadata.rating == signed_rational_t{11, 3}));
+    require_metadata_batch(static_cast<bool>(apply_batch_chart_metadata_edit(history, 5, {.charts = {chart_id_t{2}}, .edit_rating = true})));
+    expect_metadata_batch(!static_cast<bool>(history.document.charts[0].metadata.rating));
+    expect_metadata_batch(static_cast<bool>(history.document.charts[0].metadata.author == "New author"));
+    expect_metadata_batch(!static_cast<bool>(apply_batch_chart_metadata_edit(history, 6, {.charts = {chart_id_t{2}}, .edit_rating = true})));
+    expect_metadata_batch(static_cast<bool>(history.document.revision == 6));
+    expect_metadata_batch(static_cast<bool>(history.undo.size() == 2));
+}

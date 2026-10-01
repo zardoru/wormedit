@@ -175,6 +175,32 @@ void remove_memberships(song_document_t& document, chart_id_t id) {
 
 } // namespace
 
+auto apply_new_chart_command(document_history_t& history, std::uint64_t revision,
+    lane_input_profile_t profile, format_family_t source_family) -> duplicate_chart_result_t {
+    if (history.document.revision != revision)
+        return {.command = reject(history, "chart command revision is stale")};
+    const auto ceiling = history_id_ceiling(history);
+    if (ceiling == std::numeric_limits<std::uint64_t>::max())
+        return {.command = reject(history, "chart ID sequence is exhausted")};
+    chart_document_t chart{
+        .id = chart_id_t{1}, .metadata = {.name = "New Difficulty"},
+        .source_family = source_family, .measures = {{.id = measure_id_t{1}}},
+        .lane_layouts = {{.id = object_id_t{1}, .position = {measure_id_t{1}, 0},
+                          .layout = std::move(profile.layout)}},
+        .input_profile = std::move(profile.input),
+        .bpms = {{.id = object_id_t{2}, .position = {measure_id_t{1}, 0},
+                  .beats_per_minute = {120, 1}}}};
+    chart_id_remap_t remap{.next = ceiling + 1};
+    visit_chart_ids(chart, remap);
+    if (remap.exhausted) return {.command = reject(history, "chart ID sequence is exhausted")};
+    const auto id = chart.id;
+    auto proposed = history.document;
+    proposed.charts.push_back(std::move(chart));
+    auto result = commit_document_command(history, std::move(proposed), "New chart");
+    const auto applied = result.applied;
+    return {.command = std::move(result), .chart = applied ? std::optional{id} : std::nullopt};
+}
+
 auto apply_duplicate_chart_command(document_history_t& history, std::uint64_t revision,
                                    chart_id_t id) -> duplicate_chart_result_t {
     if (auto invalid = check_chart(history, revision, id)) return {.command = std::move(*invalid)};

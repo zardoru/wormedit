@@ -438,6 +438,43 @@ auto make_chart_rating_metadata_edit(chart_id_t chart, bool unset, std::string_v
     return chart_rating_edit_t{chart, rating};
 }
 
+auto apply_batch_chart_metadata_edit(document_history_t& history, std::uint64_t expected_revision,
+    const batch_chart_metadata_action_t& action, metadata_edit_limits_t limits)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision};
+    const auto reject = [&](std::string message) {
+        result.diagnostics.push_back(error(diagnostic_code_t::invalid_id, std::move(message)));
+        return result;
+    };
+    if (expected_revision != history.document.revision) return reject("metadata editor document revision is stale");
+    if (action.charts.empty() || action.charts.size() > 256) return reject("select between 1 and 256 charts");
+    if ((action.author && !valid_text(*action.author, limits.maximum_chart_text_bytes)) ||
+        (action.edit_rating && action.rating && action.rating->denominator == 0))
+        return reject("batch metadata has invalid author text or rating");
+    auto proposed = history.document;
+    std::vector<chart_id_t> seen;
+    bool changed{};
+    for (const auto id : action.charts) {
+        if (std::ranges::find(seen, id) != seen.end()) return reject("batch metadata repeats a chart");
+        seen.push_back(id);
+        const auto chart = std::ranges::find(proposed.charts, id, &chart_document_t::id);
+        if (chart == proposed.charts.end()) return reject("batch metadata refers to an unknown chart");
+        auto& metadata = chart->metadata;
+        if (action.author) {
+            changed = changed || metadata.author != *action.author;
+            metadata.author = *action.author;
+        }
+        if (action.edit_rating) {
+            changed = changed || metadata.rating != action.rating;
+            metadata.rating = action.rating;
+        }
+    }
+    if (!changed) return result;
+    if (limits.maximum_total_metadata_bytes == 0 || !metadata_fits(proposed, limits))
+        return reject("document metadata exceeds its total byte cap");
+    return commit_document_command(history, std::move(proposed), "Edit chart metadata batch");
+}
+
 auto apply_metadata_edit(document_history_t& history, std::uint64_t expected_revision,
                          const metadata_edit_action_t& action, metadata_edit_limits_t limits)
     -> document_command_result_t {

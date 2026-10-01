@@ -204,3 +204,60 @@ TEST_CASE("Chart duplication does not reuse IDs retained by undo and redo histor
     expect_chart(history.redo.empty());
     expect_chart(validate_document(history.document).empty());
 }
+
+TEST_CASE("New chart creates an empty valid profile with fresh history-safe identities", "[unit][core][chart-editor]") {
+    auto history = make_document_history(chart_song());
+    const auto original = history.document;
+    const auto result = apply_new_chart_command(history, 4);
+    require_chart(static_cast<bool>(result));
+    const auto& chart = history.document.charts.back();
+    expect_chart(result.chart == chart.id && chart.id.value > 51);
+    expect_chart(validate_document(history.document).empty());
+    expect_chart(chart.measures.size() == 1 && chart.measures[0].notes.empty() && chart.measures[0].bgm_events.empty());
+    expect_chart(chart.lane_layouts[0].layout.profile_id == make_bms_7k_profile().layout.profile_id);
+    expect_chart(chart.input_profile.bindings.size() == make_bms_7k_profile().input.bindings.size());
+    expect_chart(chart.bpms.size() == 1 && chart.bpms[0].beats_per_minute == signed_rational_t{120, 1});
+    expect_chart(chart.sound_channels.empty() && chart.semantic_layers.empty() && !chart.bms_control_tree);
+    expect_chart(chart.metadata.author.empty() && !chart.metadata.rating && chart.metadata.format_groups.empty());
+    expect_chart(history.document.output_groups[0].charts == original.output_groups[0].charts);
+    expect_chart(history.document.resources.size() == original.resources.size());
+    const auto first_id = chart.id;
+    require_chart(static_cast<bool>(undo_document_command(history)));
+    const auto second = apply_new_chart_command(history, history.document.revision);
+    require_chart(static_cast<bool>(second));
+    expect_chart(second.chart->value > first_id.value);
+}
+
+TEST_CASE("New chart rejects stale invalid and exhausted requests without changing history", "[unit][core][chart-editor]") {
+    auto history = make_document_history(chart_song());
+    const auto original = history.document;
+    expect_chart(!apply_new_chart_command(history, 3));
+    auto invalid = make_bms_7k_profile();
+    invalid.layout.lanes[0].id = lane_id_t{};
+    expect_chart(!apply_new_chart_command(history, 4, std::move(invalid)));
+    expect_chart(history.document.revision == original.revision && history.document.charts.size() == 1);
+    expect_chart(history.undo.empty() && history.redo.empty());
+    history.document.audio_assets[0].id = asset_id_t{std::numeric_limits<std::uint64_t>::max()};
+    expect_chart(!apply_new_chart_command(history, 4));
+    expect_chart(history.undo.empty() && history.document.charts.size() == 1);
+}
+
+TEST_CASE("New chart accepts explicit profiles beyond the bounded project table", "[unit][core][chart-editor]") {
+    song_document_t song{.id = song_id_t{1}, .revision = 4};
+    for (std::uint64_t index = 0; index < 257; ++index) {
+        const auto base = 10 + index * 4;
+        song.charts.push_back({.id = chart_id_t{base}, .metadata = {.name = "Difficulty"},
+            .measures = {{.id = measure_id_t{base + 1}}},
+            .lane_layouts = {{.id = object_id_t{base + 2}, .position = {measure_id_t{base + 1}, 0},
+                .layout = {.profile_id = "test", .lanes = {{.id = lane_id_t{base + 3}, .name = "Key"}}}}}});
+    }
+    require_chart(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    const auto added = apply_new_chart_command(history, 4, make_bms_14k_profile(), format_family_t::bms);
+    require_chart(static_cast<bool>(added));
+    expect_chart(history.document.charts.size() == 258);
+    expect_chart(added.chart == history.document.charts.back().id);
+    expect_chart(history.document.charts.back().source_family == format_family_t::bms);
+    expect_chart(history.document.charts.back().lane_layouts[0].layout.split_stage);
+    expect_chart(validate_document(history.document).empty());
+}

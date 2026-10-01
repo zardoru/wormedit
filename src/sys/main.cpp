@@ -27,6 +27,7 @@
 #include "sys/platform_recovery.h"
 #include "sys/platform_shortcut_profile.h"
 #include "sys/external_player.h"
+#include "sys/preferences_runtime.h"
 #include "sys/tap_timing_runtime.h"
 #include <SDL3/SDL_filesystem.h>
 #include <wormedit/core/virtual_canvas.h>
@@ -1493,19 +1494,52 @@ void refresh_transport_rate_commands(wormedit::command_registry_t& registry,
 struct external_player_runtime_t {
     wormedit::sys::external_player_t player;
     wormedit::sys::external_player_preferences_t preferences = wormedit::sys::default_external_player_preferences();
-    std::filesystem::path preference_path;
+    wormedit::sys::program_preferences_runtime_t* program_preferences{};
     std::filesystem::path source_path;
     bool visible{};
     std::uint64_t revision{};
     std::vector<WormUiExternalPlayerDefinitionView> views;
 };
 
-void initialize_external_player(external_player_runtime_t& runtime, std::string& status) {
-    const auto path = wormedit::prepare_platform_shortcut_profile_path();
-    if (!path) { status += " External-player preferences directory unavailable."; return; }
-    runtime.preference_path = path.path.parent_path() / "external-players.conf";
-    const auto error = wormedit::sys::load_external_player_preferences(runtime.preference_path, runtime.preferences);
-    if (!error.empty()) status += " " + error;
+void initialize_program_preferences(wormedit::sys::program_preferences_runtime_t& preferences,
+    external_player_runtime_t& player, application_command_state_t& state, std::string& status) {
+    player.program_preferences = &preferences;
+    player.preferences = preferences.preferences.players;
+    state.minimap_click_moves_paused_playhead = preferences.preferences.minimap.click_moves_paused_playhead;
+    for (const auto& warning : preferences.warnings) status += " " + warning;
+}
+
+void initialize_preferred_transport(const wormedit::program_preferences_t& preferences,
+    application_command_state_t& state) {
+    const auto& rates = wormedit::audio::playback_rates;
+    const auto found = std::find(rates.begin(), rates.end(), preferences.audio.playback_rate);
+    if (found != rates.end())
+        (void)wormedit::sys::set_transport_rate(state, static_cast<std::size_t>(found - rates.begin()));
+    if (state.transport_set_keep_pitch && state.transport_set_keep_pitch(preferences.audio.keep_pitch))
+        state.transport_keep_pitch = preferences.audio.keep_pitch;
+}
+
+auto load_preferred_shortcuts(const wormedit::sys::program_preferences_runtime_t& preferences,
+    wormedit::command_registry_t& registry) -> wormedit::shortcut_profile_startup_result_t {
+    if (preferences.path.empty()) return {};
+    auto path = std::filesystem::path{preferences.preferences.general.shortcut_profile_path};
+    if (path.is_relative()) path = preferences.path.parent_path() / path;
+    return wormedit::load_shortcut_profile_for_startup(path, registry);
+}
+
+void persist_session_preferences(wormedit::sys::program_preferences_runtime_t& runtime,
+    const application_command_state_t& state, std::string& status) {
+    auto candidate = runtime.preferences;
+    candidate.minimap.click_moves_paused_playhead = state.minimap_click_moves_paused_playhead;
+    if (state.transport_keep_pitch_available && state.transport_set_playback_rate)
+        candidate.audio.playback_rate = wormedit::audio::playback_rates[
+            std::min(state.transport_rate_index, wormedit::audio::playback_rates.size() - 1)];
+    if (state.transport_keep_pitch_available) candidate.audio.keep_pitch = state.transport_keep_pitch;
+    if (candidate == runtime.preferences) return;
+    const auto error = wormedit::sys::apply_program_preferences(runtime, std::move(candidate));
+    if (!error.empty()) status = error;
+    else if (status == "Minimap paused-click preference changed for this session.")
+        status = "Minimap paused-click preference saved.";
 }
 
 auto external_source_measure(const wormedit::chart_document_t& chart,
@@ -1590,11 +1624,13 @@ auto edit_external_player_preferences(external_player_runtime_t& runtime,
         break;
     default: return {};
     }
-    if (runtime.preference_path.empty()) return "External-player preferences directory unavailable.";
-    const auto error = wormedit::sys::save_external_player_preferences(runtime.preference_path, candidate);
-    if (!error.empty()) return error;
+    if (!wormedit::valid_external_player_preferences(candidate)) return "External-player preferences are invalid.";
+    auto program = runtime.program_preferences->preferences;
+    program.players = candidate;
+    const auto error = wormedit::sys::apply_program_preferences(*runtime.program_preferences, std::move(program));
     runtime.preferences = std::move(candidate);
     ++runtime.revision;
+    if (!error.empty()) return error;
     return "External-player preferences saved.";
 }
 
@@ -3064,7 +3100,8 @@ int main(int argc, char** argv) {
     wormedit::editor_navigation_input_controller_t compose_navigation_input;
     application_command_state_t application_command_state;
     external_player_runtime_t external_player_runtime;
-    initialize_external_player(external_player_runtime, status);
+    auto program_preferences = wormedit::sys::load_program_preferences_runtime();
+    initialize_program_preferences(program_preferences, external_player_runtime, application_command_state, status);
     application_command_state.external_player = [&](wormedit::sys::external_player_action_t action) {
         return launch_external_player(external_player_runtime, action, history, workspace,
                                       compose_interaction_state, asset_base);
@@ -3077,6 +3114,7 @@ int main(int argc, char** argv) {
                                  audition_session, preview_session, preview_state, audition_sources,
                                  preview_metronome_bindings, audition_output, preview_output);
 #endif
+    initialize_preferred_transport(program_preferences.preferences, application_command_state);
     wormedit::sys::tap_timing_runtime_t tap_runtime;
     std::optional<wormedit::sys::tap_timing_assist_publication_t> published_assist;
     const auto publish_tap_assist = [&] {
@@ -3102,7 +3140,7 @@ int main(int argc, char** argv) {
                 invocation, history, workspace, compose_interaction_state, timing_edit.stage,
                 application_command_state, status, tap_runtime, tap_clock, tap_event_ns);
         });
-    const auto shortcut_startup = wormedit::load_platform_shortcut_profile(command_registry);
+    const auto shortcut_startup = load_preferred_shortcuts(program_preferences, command_registry);
     append_shortcut_startup_diagnostic(status, shortcut_startup);
     bool running = true;
     metadata_drop_state_t metadata_drop;
@@ -3368,6 +3406,7 @@ int main(int argc, char** argv) {
             }
         }
 
+        persist_session_preferences(program_preferences, application_command_state, status);
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::render);
         wormedit::sys::render_application_frame(window);
         wormedit::sys::frame_timing().end_frame();

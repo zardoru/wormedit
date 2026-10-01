@@ -1,0 +1,321 @@
+#include <wormedit/core/preferences.h>
+#include <wormedit/audio/playback_rate.h>
+
+#include <nlohmann/json.hpp>
+
+#include <algorithm>
+#include <array>
+#include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <limits>
+#include <stdexcept>
+
+namespace wormedit {
+namespace {
+using json_t = nlohmann::json;
+
+auto valid_string(std::string_view value) -> bool {
+    return value.size() <= maximum_preference_string_bytes && value.find('\0') == std::string_view::npos;
+}
+auto supported_rate(rational_t rate) -> bool {
+    return std::ranges::find(audio::playback_rates, rate) != audio::playback_rates.end();
+}
+
+struct preference_reader_t {
+    preferences_parse_result_t& result;
+    bool unknown{};
+    void warn(std::string message) {
+        if (result.warnings.size() < 128) result.warnings.push_back(std::move(message));
+    }
+    void check_keys(const json_t& object, std::initializer_list<std::string_view> keys) {
+        for (const auto& item : object.items())
+            if (std::ranges::find(keys, item.key()) == keys.end()) unknown = true;
+    }
+    auto section(const json_t& root, std::string_view key) -> const json_t& {
+        static const json_t empty = json_t::object();
+        const auto found = root.find(std::string{key});
+        if (found == root.end()) return empty;
+        if (!found->is_object()) { warn(std::string{key} + " must be an object; defaults retained."); return empty; }
+        return *found;
+    }
+    void boolean(const json_t& object, const char* key, bool& value) {
+        const auto found = object.find(key);
+        if (found == object.end()) return;
+        if (!found->is_boolean()) { warn(std::string{key} + " must be boolean; default retained."); return; }
+        value = found->get<bool>();
+    }
+    template<class Integer>
+    void integer(const json_t& object, const char* key, Integer& value,
+                 std::uint64_t minimum, std::uint64_t maximum) {
+        const auto found = object.find(key);
+        if (found == object.end()) return;
+        if (!found->is_number_integer() ||
+            (!found->is_number_unsigned() && found->get<std::int64_t>() < 0)) {
+            warn(std::string{key} + " must be a bounded integer; default retained."); return;
+        }
+        const auto candidate = found->get<std::uint64_t>();
+        if (candidate < minimum || candidate > maximum) {
+            warn(std::string{key} + " is out of range; default retained."); return;
+        }
+        value = static_cast<Integer>(candidate);
+    }
+    void string(const json_t& object, const char* key, std::string& value) {
+        const auto found = object.find(key);
+        if (found == object.end()) return;
+        if (!found->is_string() || !valid_string(found->get_ref<const std::string&>())) {
+            warn(std::string{key} + " must be a bounded string without NUL; default retained."); return;
+        }
+        value = found->get<std::string>();
+    }
+};
+
+void read_general(preference_reader_t& reader, const json_t& root) {
+    const auto& section = reader.section(root, "general");
+    auto& value = reader.result.preferences.general;
+    reader.check_keys(section, {"autosave_minutes", "recent_files_count", "confirm_unsaved_close", "shortcut_profile_path"});
+    reader.integer(section, "autosave_minutes", value.autosave_minutes, 1, 30);
+    reader.integer(section, "recent_files_count", value.recent_files_count, 1, 100);
+    reader.boolean(section, "confirm_unsaved_close", value.confirm_unsaved_close);
+    reader.string(section, "shortcut_profile_path", value.shortcut_profile_path);
+    if (value.shortcut_profile_path.empty()) {
+        value.shortcut_profile_path = "shortcuts.json";
+        reader.warn("shortcut_profile_path cannot be empty; default retained.");
+    }
+}
+
+void read_editor_audio(preference_reader_t& reader, const json_t& root) {
+    const auto& editor = reader.section(root, "editor");
+    auto& values = reader.result.preferences;
+    reader.check_keys(editor, {"default_snap"});
+    reader.integer(editor, "default_snap", values.editor.default_snap, 1, 1920);
+    const auto& audio = reader.section(root, "audio");
+    reader.check_keys(audio, {"playback_rate", "keep_pitch"});
+    reader.boolean(audio, "keep_pitch", values.audio.keep_pitch);
+    const auto& rate = reader.section(audio, "playback_rate");
+    reader.check_keys(rate, {"numerator", "denominator"});
+    reader.integer(rate, "numerator", values.audio.playback_rate.numerator, 1, std::numeric_limits<std::uint64_t>::max());
+    reader.integer(rate, "denominator", values.audio.playback_rate.denominator, 1, std::numeric_limits<std::uint64_t>::max());
+    if (!supported_rate(values.audio.playback_rate)) {
+        values.audio.playback_rate = {1, 1};
+        reader.warn("playback_rate is unsupported; default retained.");
+    }
+}
+
+void read_display_minimap_layout(preference_reader_t& reader, const json_t& root) {
+    auto& values = reader.result.preferences;
+    const auto& display = reader.section(root, "display");
+    reader.check_keys(display, {"theme", "ui_scale_percent", "frame_timing_overlay"});
+    reader.string(display, "theme", values.display.theme);
+    reader.integer(display, "ui_scale_percent", values.display.ui_scale_percent, 0, 200);
+    reader.boolean(display, "frame_timing_overlay", values.display.frame_timing_overlay);
+    if (values.display.ui_scale_percent != 0 && values.display.ui_scale_percent < 100) {
+        values.display.ui_scale_percent = 0;
+        reader.warn("ui_scale_percent must be automatic or 100..200; default retained.");
+    }
+    const auto& minimap = reader.section(root, "minimap");
+    reader.check_keys(minimap, {"click_moves_paused_playhead"});
+    reader.boolean(minimap, "click_moves_paused_playhead", values.minimap.click_moves_paused_playhead);
+    const auto& layout = reader.section(root, "layout");
+    reader.check_keys(layout, {"dock_layout"});
+    reader.string(layout, "dock_layout", values.layout.dock_layout);
+}
+
+auto read_player(preference_reader_t& reader, const json_t& item, std::size_t index)
+    -> external_player_definition_t {
+    const auto defaults = default_external_player_preferences();
+    auto value = index < defaults.players.size() ? defaults.players[index]
+        : external_player_definition_t{"New player", "", "\"<filename>\"", "-s <measure> \"<filename>\"", "-t"};
+    if (!item.is_object()) { reader.warn("Invalid player entry; defaults retained."); return value; }
+    reader.check_keys(item, {"name", "path", "start_arguments", "here_arguments", "stop_arguments"});
+    reader.string(item, "name", value.name); reader.string(item, "path", value.path);
+    reader.string(item, "start_arguments", value.start_arguments);
+    reader.string(item, "here_arguments", value.here_arguments);
+    reader.string(item, "stop_arguments", value.stop_arguments);
+    return value;
+}
+
+void read_players(preference_reader_t& reader, const json_t& root) {
+    const auto& section = reader.section(root, "players");
+    reader.check_keys(section, {"selected", "definitions"});
+    auto& value = reader.result.preferences.players;
+    const auto definitions = section.find("definitions");
+    if (definitions != section.end()) {
+        if (!definitions->is_array() || definitions->empty() || definitions->size() > maximum_external_players)
+            reader.warn("Player collection must contain 1..64 entries; defaults retained.");
+        else {
+            value.players.clear();
+            for (const auto& item : *definitions) value.players.push_back(read_player(reader, item, value.players.size()));
+        }
+    }
+    reader.integer(section, "selected", value.selected, 0, value.players.size() - 1);
+}
+
+auto valid_preferences(const program_preferences_t& value) -> bool {
+    return value.general.autosave_minutes >= 1 && value.general.autosave_minutes <= 30 &&
+        value.general.recent_files_count >= 1 && value.general.recent_files_count <= 100 &&
+        valid_string(value.general.shortcut_profile_path) && !value.general.shortcut_profile_path.empty() &&
+        value.editor.default_snap >= 1 && value.editor.default_snap <= 1920 &&
+        supported_rate(value.audio.playback_rate) && valid_string(value.display.theme) &&
+        (value.display.ui_scale_percent == 0 ||
+            (value.display.ui_scale_percent >= 100 && value.display.ui_scale_percent <= 200)) &&
+        valid_external_player_preferences(value.players) && valid_string(value.layout.dock_layout);
+}
+
+auto preferences_json(const program_preferences_t& value) -> json_t {
+    auto players = json_t::array();
+    for (const auto& player : value.players.players) players.push_back({
+        {"name", player.name}, {"path", player.path}, {"start_arguments", player.start_arguments},
+        {"here_arguments", player.here_arguments}, {"stop_arguments", player.stop_arguments}});
+    return {{"version", 1},
+        {"general", {{"autosave_minutes", value.general.autosave_minutes},
+            {"recent_files_count", value.general.recent_files_count},
+            {"confirm_unsaved_close", value.general.confirm_unsaved_close},
+            {"shortcut_profile_path", value.general.shortcut_profile_path}}},
+        {"editor", {{"default_snap", value.editor.default_snap}}},
+        {"audio", {{"playback_rate", {{"numerator", value.audio.playback_rate.numerator},
+            {"denominator", value.audio.playback_rate.denominator}}}, {"keep_pitch", value.audio.keep_pitch}}},
+        {"display", {{"theme", value.display.theme}, {"ui_scale_percent", value.display.ui_scale_percent},
+            {"frame_timing_overlay", value.display.frame_timing_overlay}}},
+        {"players", {{"selected", value.players.selected}, {"definitions", std::move(players)}}},
+        {"minimap", {{"click_moves_paused_playhead", value.minimap.click_moves_paused_playhead}}},
+        {"layout", {{"dock_layout", value.layout.dock_layout}}}};
+}
+} // namespace
+
+auto default_external_player_preferences() -> external_player_preferences_t {
+    return {.players = {
+        {"mBMplay", "", "\"<filename>\"", "-s <measure> \"<filename>\"", "-t"},
+        {"uBMplay", "", "-P -N0 \"<filename>\"", "-P -N<measure> \"<filename>\"", "-S"},
+        {"o2play", "", "-P -N0 \"<filename>\"", "-P -N<measure> \"<filename>\"", "-S"}}};
+}
+auto default_program_preferences() -> program_preferences_t { return {}; }
+auto valid_external_player_preferences(const external_player_preferences_t& value) -> bool {
+    if (value.players.empty() || value.players.size() > maximum_external_players || value.selected >= value.players.size())
+        return false;
+    return std::ranges::all_of(value.players, [](const auto& player) {
+        return valid_string(player.name) && valid_string(player.path) && valid_string(player.start_arguments) &&
+            valid_string(player.here_arguments) && valid_string(player.stop_arguments);
+    });
+}
+
+auto parse_program_preferences(std::string_view bytes) -> preferences_parse_result_t {
+    preferences_parse_result_t result{.preferences = default_program_preferences()};
+    if (bytes.size() > maximum_preferences_bytes) {
+        result.warnings.push_back("Preferences exceed the 1 MiB limit; defaults retained."); return result;
+    }
+    try {
+        std::size_t nodes{};
+        const auto callback = [&](int depth, json_t::parse_event_t, json_t&) {
+            if (depth > static_cast<int>(maximum_preferences_depth) || ++nodes > 65536)
+                throw std::runtime_error("Preferences exceed nesting or node limits.");
+            return true;
+        };
+        const auto root = json_t::parse(bytes.begin(), bytes.end(), callback);
+        if (!root.is_object()) throw std::runtime_error("Preferences root must be an object.");
+        const auto version = root.find("version");
+        if (version != root.end() && (!version->is_number_integer() || *version != 1))
+            throw std::runtime_error("Unsupported preferences version.");
+        preference_reader_t reader{result};
+        reader.check_keys(root, {"version", "general", "editor", "audio", "display", "players", "minimap", "layout"});
+        read_general(reader, root); read_editor_audio(reader, root);
+        read_display_minimap_layout(reader, root); read_players(reader, root);
+        if (reader.unknown) reader.warn("Unknown preference keys were ignored.");
+        result.parsed = true;
+    } catch (const std::exception&) {
+        result.preferences = default_program_preferences();
+        result.warnings = {"Preferences are corrupt, unsupported, or exceed limits; defaults retained."};
+    }
+    return result;
+}
+
+auto serialize_program_preferences(const program_preferences_t& value) -> std::optional<std::string> {
+    if (!valid_preferences(value)) return std::nullopt;
+    try {
+        auto bytes = preferences_json(value).dump(2);
+        if (bytes.size() > maximum_preferences_bytes) return std::nullopt;
+        return bytes;
+    } catch (const std::exception&) { return std::nullopt; }
+}
+
+auto load_program_preferences(const std::filesystem::path& path) -> preferences_load_result_t {
+    preferences_load_result_t result{.contents = {.preferences = default_program_preferences()}};
+    std::error_code error;
+    const auto status = std::filesystem::status(path, error);
+    if (error == std::errc::no_such_file_or_directory || status.type() == std::filesystem::file_type::not_found) {
+        result.missing = true;
+        return result;
+    }
+    if (error || !std::filesystem::is_regular_file(status)) {
+        result.contents.warnings = {"Preferences are not a readable regular file; defaults retained."};
+        return result;
+    }
+    const auto size = std::filesystem::file_size(path, error);
+    if (error || size > maximum_preferences_bytes) {
+        result.contents.warnings = {"Preferences are unreadable or exceed the 1 MiB limit; defaults retained."};
+        return result;
+    }
+    std::ifstream stream(path, std::ios::binary);
+    std::string bytes(static_cast<std::size_t>(size), '\0');
+    if (!stream || (!bytes.empty() && !stream.read(bytes.data(), static_cast<std::streamsize>(bytes.size())))) {
+        result.contents.warnings = {"Preferences could not be read completely; defaults retained."};
+        return result;
+    }
+    char extra{};
+    if (stream.get(extra) || !stream.eof()) {
+        result.contents.warnings = {"Preferences changed while being read; defaults retained."};
+        return result;
+    }
+    result.contents = parse_program_preferences(bytes);
+    return result;
+}
+
+auto save_program_preferences_atomic(const std::filesystem::path& path,
+    const program_preferences_t& value) -> atomic_file_save_result_t {
+    const auto bytes = serialize_program_preferences(value);
+    if (!bytes) return {.error = "Preferences contain invalid or oversized values."};
+    return save_file_atomic(path, *bytes, maximum_preferences_bytes);
+}
+auto load_legacy_external_player_preferences(const std::filesystem::path& path,
+    external_player_preferences_t& preferences) -> std::string {
+    std::error_code error;
+    if (!std::filesystem::exists(path, error))
+        return error ? "Cannot inspect external-player preferences." : std::string{};
+    const auto size = std::filesystem::file_size(path, error);
+    if (error || size > maximum_external_players * maximum_preference_string_bytes * 6)
+        return "External-player preferences are unreadable or too large.";
+    std::ifstream input(path);
+    std::string magic;
+    std::size_t count{};
+    external_player_preferences_t candidate;
+    if (!(input >> magic >> candidate.selected >> count) || magic != "wormedit-external-players-v1" ||
+        count == 0 || count > maximum_external_players) return "Invalid external-player preferences header.";
+    candidate.players.resize(count);
+    for (auto& player : candidate.players) {
+        if (!(input >> std::quoted(player.name) >> std::quoted(player.path) >>
+              std::quoted(player.start_arguments) >> std::quoted(player.here_arguments) >>
+              std::quoted(player.stop_arguments))) return "Invalid external-player preferences entry.";
+    }
+    input >> std::ws;
+    if (!input.eof() || !valid_external_player_preferences(candidate)) return "Invalid external-player preferences.";
+    preferences = std::move(candidate);
+    return {};
+}
+
+auto load_program_preferences_for_startup(const std::filesystem::path& path,
+    const std::filesystem::path& legacy_player_path) -> preferences_load_result_t {
+    auto result = load_program_preferences(path);
+    if (!result.missing) return result;
+    std::error_code error;
+    const bool legacy_exists = std::filesystem::exists(legacy_player_path, error);
+    if (error) result.contents.warnings.push_back("Cannot inspect legacy external-player preferences.");
+    if (legacy_exists && !error) {
+        const auto failure = load_legacy_external_player_preferences(legacy_player_path, result.contents.preferences.players);
+        if (!failure.empty()) result.contents.warnings.push_back(failure);
+        else result.migrated = true;
+    }
+    const auto saved = save_program_preferences_atomic(path, result.contents.preferences);
+    if (!saved) result.contents.warnings.push_back("Preferences could not be saved: " + saved.error);
+    return result;
+}
+} // namespace wormedit

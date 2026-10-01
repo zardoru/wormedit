@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/preferences.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -12,20 +13,8 @@ struct SDL_Process;
 
 namespace wormedit::sys {
 
-struct external_player_definition_t {
-    std::string name;
-    std::string path;
-    std::string start_arguments;
-    std::string here_arguments;
-    std::string stop_arguments;
-    auto operator==(const external_player_definition_t&) const -> bool = default;
-};
-
-struct external_player_preferences_t {
-    std::vector<external_player_definition_t> players;
-    std::size_t selected{};
-    auto operator==(const external_player_preferences_t&) const -> bool = default;
-};
+using external_player_definition_t = wormedit::external_player_definition_t;
+using external_player_preferences_t = wormedit::external_player_preferences_t;
 
 struct external_player_arguments_t {
     std::vector<std::string> arguments;

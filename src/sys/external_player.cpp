@@ -179,36 +179,12 @@ auto expand_external_player_arguments(std::string_view text, std::string_view ap
 }
 
 auto default_external_player_preferences() -> external_player_preferences_t {
-    return {.players = {
-        {"mBMplay", "", "\"<filename>\"", "-s <measure> \"<filename>\"", "-t"},
-        {"uBMplay", "", "-P -N0 \"<filename>\"", "-P -N<measure> \"<filename>\"", "-S"},
-        {"o2play", "", "-P -N0 \"<filename>\"", "-P -N<measure> \"<filename>\"", "-S"}}};
+    return wormedit::default_external_player_preferences();
 }
 
 auto load_external_player_preferences(const std::filesystem::path& path,
     external_player_preferences_t& preferences) -> std::string {
-    std::error_code error;
-    if (!std::filesystem::exists(path, error))
-        return error ? "Cannot inspect external-player preferences." : std::string{};
-    const auto size = std::filesystem::file_size(path, error);
-    if (error || size > maximum_players * maximum_field_bytes * 6)
-        return "External-player preferences are unreadable or too large.";
-    std::ifstream input(path);
-    std::string magic;
-    std::size_t count{};
-    external_player_preferences_t candidate;
-    if (!(input >> magic >> candidate.selected >> count) || magic != "wormedit-external-players-v1" ||
-        count == 0 || count > maximum_players) return "Invalid external-player preferences header.";
-    candidate.players.resize(count);
-    for (auto& player : candidate.players) {
-        if (!(input >> std::quoted(player.name) >> std::quoted(player.path) >>
-              std::quoted(player.start_arguments) >> std::quoted(player.here_arguments) >>
-              std::quoted(player.stop_arguments))) return "Invalid external-player preferences entry.";
-    }
-    input >> std::ws;
-    if (!input.eof() || !valid_preferences(candidate)) return "Invalid external-player preferences.";
-    preferences = std::move(candidate);
-    return {};
+    return wormedit::load_legacy_external_player_preferences(path, preferences);
 }
 
 auto save_external_player_preferences(const std::filesystem::path& path,

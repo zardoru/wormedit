@@ -402,3 +402,56 @@ conditional optimization remains unproven.
 - **Reject/failure behavior:** none.
 - **Verify:** the pasted report.
 - **Out of scope:** implementation.
+
+## T-266 Stop the status bar from flickering during playback
+
+- **Status:** ready
+- **Outcome:** during Ctrl+Space playback the status bar keeps a fixed layout: status text, minimap, clock, and artist/difficulty never jump; the minimap stays visible (or shows a placeholder) instead of appearing and disappearing.
+- **Cause (code reading, 2026-09-30; user screenshot shows the bar without a minimap while playing):** `render_status_bar` in `src/ui/nuklear/frontend.cpp` adds the minimap column only `if (minimap_available)`. When that flag changes between frames, the whole row is laid out differently, so the status text, clock, and minimap jump each frame. `status_minimap_available` needs `waveform_overview_row_count != 0` **and** `worm_ui_nuklear_compose_view_valid(&view)`, which rejects the entire Compose view if any per-frame value is out of range, including `compose_waveform_overview_valid` (visible fractions must stay in `[0, 1]`). Likely trigger: when the following view extends past the end of the audio, `project_waveform_overview` (`src/audio/aligned_waveform.cpp`) either fails on `frame_at(..., total_frames)` (`invalid_timing`, so zero overview rows) or yields an end fraction above 1; either way the minimap and the row layout toggle. Confirm in step 1 before fixing.
+- **Read first:** `src/ui/nuklear/frontend.cpp` (`render_status_bar`, `status_minimap_available`, `workspace_status_line`), `src/ui/nuklear/compose_panel.cpp` (`worm_ui_nuklear_compose_view_valid`, `compose_waveform_overview_valid`), `src/audio/aligned_waveform.cpp` (`project_waveform_overview`), `src/sys/waveform_view_projection.cpp`.
+- **Files owned:** `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_panel.cpp`, `src/audio/aligned_waveform.cpp`, `src/sys/waveform_view_projection.cpp`, `tests/core/audio_aligned_waveform_tests.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`.
+- **Steps:**
+  1. Confirm: temporarily count, per frame, which predicate makes `status_minimap_available` false (overview rows empty, overview projection status, or which clause of the view validation) while playing past the end of the audio and at the start; record the result in the report.
+  2. Stable layout: always reserve the minimap column while Compose is visible; when data is missing, draw an empty overview background. Give the status text a fixed share of the row and elide long text with "…" instead of letting it resize neighbors.
+  3. Overview projection: clamp the visible range to the audio (end fraction ≤ 1, begin ≥ 0) instead of failing when the viewport extends past the last audio frame; keep beat-zero outside `[0, 1]` as "not visible" rather than invalid.
+  4. Keep the last successful overview rows for the same waveform key and document revision so a transient failure does not blank the minimap.
+  5. Validation scope: make overview problems invalidate only the minimap, not the whole Compose view; in debug builds, log the first failing clause of `worm_ui_nuklear_compose_view_valid` once per distinct cause.
+  6. Tests: a viewport extending past the audio end returns a projected overview with end fraction 1.0; the status-bar template has the same column count with and without overview data (state test).
+- **Invariants:** minimap click/drag behavior (T-15, T-241) unchanged.
+- **Reject/failure behavior:** none.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.|^frontend-state\.'`; manual: play to the end of the song with Ctrl+Space and watch the status bar.
+- **Out of scope:** the notification system (T-218–T-224), which later replaces the single status line.
+
+## T-269 Give every lane a key color class in its profile
+
+- **Status:** ready
+- **Outcome:** each lane definition carries a `lane_key_color_t` (white, black, scratch, foot_pedal, free_zone, pms_white, pms_yellow, pms_green, pms_blue, pms_red, generic) set by the built-in profiles, and Compose views expose it per lane and per note, so colors follow the instrument instead of display-order parity.
+- **Current behavior (2026-09-30):** `compose_lane_color` in `src/ui/nuklear/compose_canvas.cpp` picks lane backgrounds from the role plus `display_order & 1` ("alternate"), which does not match white/black keys once a scratch lane shifts the order, and has no PMS button colors; note fills ignore the lane entirely (`compose_note_style` uses one light blue, or cyan when selected).
+- **Read first:** `include/wormedit/core/document.h` (`lane_definition_t`, `lane_role_t`), `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp` (every `make_*_profile`), `src/formats/native_project.cpp` (lane definition JSON), `src/sys/compose_view.cpp` (note and lane projection).
+- **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, `include/wormedit/core/lane_profiles.h`, `src/core/lane_profiles.cpp`, `tests/core/lane_profile_tests.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/native_project_tests.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`.
+- **Steps:**
+  1. Add the enum and field (default `generic`); native projects store it, older projects derive it on load from the profile id when known, otherwise from role (scratch, foot pedal, free zone) and leave the rest `generic`.
+  2. Set it in every built-in profile: BMS/BME 5K/7K/10K/14K keys 1, 3, 5, 7 white and 2, 4, 6 black, scratch lanes scratch, pedals foot_pedal, free zones free_zone; PMS 9K buttons 1–9 white, yellow, green, blue, red, blue, green, yellow, white; generic 24K/48K piano banks white/black by note name; osu!mania and StepMania lanes `generic`.
+  3. Project `key_color` into lane and note views.
+  4. Tests: 7K with scratch on the left and on the right gives the expected sequence; PMS 9K sequence; native round trip; older project load.
+- **Invariants:** exported charts unchanged; detection and lane identities unchanged.
+- **Reject/failure behavior:** unknown values in native JSON reject like other enums.
+- **Verify:** `ctest --test-dir build --output-on-failure -R 'lane_profile|native_project|^core\.'`.
+- **Out of scope:** drawing (T-270).
+
+## T-270 Color notes by their lane and select with a green outline
+
+- **Status:** blocked-on T-269
+- **Outcome:** tile notes (BMS/BMSON/osu!/PMS lanes) fill with their lane's key color: scratch notes a strong red matching the scratch lane, black-key notes a deeper blue, white-key notes light neutral, PMS buttons their button color; each lane background is a dark shade of the same hue so note and lane read as a pair; selected notes keep their fill and get a 2 px green outline (iBMSC style) instead of turning cyan. Arrow lanes keep the snap colors from T-204.
+- **Read first:** `src/ui/nuklear/compose_canvas.cpp` (`compose_note_style`, `compose_lane_color`, hold body drawing), `assets/themes/compose-field.json`, `src/ui/nuklear/theme.cpp`, `docs/chart-editor-plan/tasks/panels-menus.md` (T-225 design reference: Tailwind-style scales from the octet.design palette).
+- **Files owned:** `assets/themes/compose-field.json`, `src/ui/nuklear/theme.cpp/.h`, `src/ui/nuklear/compose_canvas.cpp`, `tests/ui/nuklear_compose_state_tests.cpp`.
+- **Steps:**
+  1. Theme: replace `lane_backgrounds` and `note_accents` with one entry per key color holding `note` (about shade 400), `note_border` (about 700), `lane` (about 950), `lane_alt` (about 900), and `hold_body` (note color at reduced alpha), expressed as `$scale.shade` tokens; add `red`, `yellow`, and `green` scales to the theme file if missing; add a `selection_outline` role (green, about shade 400) and keep the existing hover color.
+  2. `compose_lane_color` uses `lane`/`lane_alt` by key color, dropping the display-order parity rule.
+  3. `compose_note_style`: fill from the note's key color; selected → same fill plus a 2 px `selection_outline` ring drawn outside the tile; hover keeps its ring; semantic-layer color, when visible, becomes a 3 px inner stripe on the left edge so lane color and layer both stay readable (T-207 still works).
+  4. Hold bodies use the same hue.
+  5. State test for the color lookup per key color and selection state.
+- **Invariants:** hit areas unchanged; arrow glyph lanes unchanged; colors come only from the theme file.
+- **Reject/failure behavior:** a theme missing an entry falls back to `generic`.
+- **Verify:** standard build/test; smoke PNGs of a 7K BMS fixture (scratch left), a PMS fixture, and an SM chart, with a few notes selected.
+- **Out of scope:** the field renderer move (T-248 will reuse these colors).

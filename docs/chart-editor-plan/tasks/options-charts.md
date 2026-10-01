@@ -42,7 +42,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-253 Add a unified preferences store
 
-- **Status:** ready
+- **Status:** done (768/768 core and external-player tests; 16 preference cases; isolated two-start SDL dummy GUI persistence verified)
 - **Outcome:** one versioned `preferences.json` in the SDL preference directory holds all per-user settings in sections (general, editor, audio, display, players, minimap, layout); it loads once at startup, saves atomically on change, and migrates the existing external-player file on first run. Shortcut profiles stay in their own file, referenced by path.
 - **Read first:** `src/sys/external_player.cpp` (`load_external_player_preferences`, `valid_preferences`), `src/core/shortcut_profile_storage.cpp` (atomic save pattern), `src/sys/platform_shortcut_profile.cpp` (`SDL_GetPrefPath`), `src/sys/compose_input.cpp` (`consume_minimap_preferences`).
 - **Files owned:** new `include/wormedit/core/preferences.h`, new `src/core/preferences.cpp`, new `tests/core/preferences_tests.cpp`, new `src/sys/preferences_runtime.cpp/.h`, `src/sys/external_player.cpp/.h`, `src/sys/main.cpp` (load/save wiring only), `CMakeLists.txt`, `tests/CMakeLists.txt`; user-approved atomic-helper extensions: new `include/wormedit/core/atomic_file_storage.h`, new `src/core/atomic_file_storage.cpp`, `include/wormedit/core/shortcut_profile_storage.h`, `src/core/shortcut_profile_storage.cpp`.
@@ -58,7 +58,7 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-254 Build the Options window shell
 
-- **Status:** blocked-on T-253
+- **Status:** ready
 - **Outcome:** program scope only. File → Options… and `workspace.options` (default Ctrl+, / ⌘,) open a modeless Options window with a category list on the left and the selected page on the right; each page edits a draft copy with Apply, Revert, and Restore defaults; Apply validates and saves through T-253.
 - **Read first:** `include/wormedit/core/preferences.h`, `src/ui/nuklear/external_player_panel.cpp` (existing modeless panel), `src/core/command_registry.cpp`, `src/ui/nuklear/chrome.h`.
 - **Files owned:** new `src/ui/nuklear/options_window.cpp/.h`, new `src/sys/options_runtime.cpp/.h`, `src/ui/frontend.h`, `src/core/command_registry.cpp`, `src/sys/main.cpp` (dispatch/view only), `CMakeLists.txt`, new `tests/ui/nuklear_options_state_tests.cpp`, `tests/CMakeLists.txt`.

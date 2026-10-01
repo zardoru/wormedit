@@ -42,7 +42,7 @@ which submits its own batches, then Nuklear drawing continues, so menus and
 popups still appear above the field.
 
 Order: T-246 (measure) → T-247 (own backend) → T-248 (field renderer without AA)
-→ T-249 (waveform meshes) → T-250 (tile cache) → T-251 (native-resolution
+→ T-249 (circular waveform texture) → T-250 (static field tile cache) → T-251 (native-resolution
 rendering). Apply the stale-plan check (rule 9) first.
 
 ## T-246 Count GPU work per frame
@@ -143,6 +143,7 @@ Application builds pass; coordinated full suite 919/919 and focused backend test
 - **Read first:** `src/ui/nuklear/compose_canvas.cpp` (all `draw_compose_*` functions), `src/ui/nuklear/arrow_glyph.h`, `src/ui/nuklear/sdl_backend.h` (T-247), `docs/references/ui-backend-boundary.md`, the file-header decision above.
 - **Files owned:** new `src/ui/field/field_renderer.cpp/.h` (SDL-only, no Nuklear includes), new `src/ui/field/field_glyphs.cpp/.h` (arrow polygons and a small glyph-atlas text path reusing the Nuklear font atlas texture), `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/sdl_backend.cpp/.h` (header extension approved by user), `src/ui/nuklear/compose_area_menu.cpp/.h` (user-approved migration of the existing field band drawing helper), `CMakeLists.txt`, `cmake/check_ui_boundary.cmake` (allow `src/ui/field` to include SDL but not Nuklear), new `tests/ui/field_renderer_tests.cpp`, `tests/CMakeLists.txt`.
 - **Steps:**
+  0. Keep per-frame vertex scratch in a `frame_arena_t` (T-271) or persistent vectors; never allocate per primitive.
   1. Renderer API on plain types: `begin(viewport_px, scale)`, `rect(layer, rect, rgba8)`, `hline/vline(layer, …)`, `polygon(layer, points, rgba8, aa_fringe)`, `text(layer, pos, utf8, rgba8)`, `submit(SDL_Renderer*)`. Batches are persistent vectors, reused each frame; rectangles are pixel-snapped.
   2. Reserve the field in Nuklear with one empty widget and one `nk_push_custom` command whose callback (run by the T-247 backend in stream order) calls `submit`, with the field clip rect applied.
   3. Move each `draw_compose_*` layer to the renderer one at a time (grid → lanes → notes/holds → BGM → timing tiles → overlays), comparing smoke screenshots after each move; delete the Nuklear version once matched.
@@ -169,22 +170,28 @@ The handful-of-field-draws target is met. The 5× vertex target is not met: tota
 
 Coordinated full build and integrated tests pass 965/965 (47.42 seconds), including all 9 field tests. Regressions cover culling, snapped subpixel lines, UTF-8/UV clipping, known geometry counts, layer/submission order, canonical arrows in all four directions, rounded shared outlines, no allocation after warm-up, and interleaved solid/text atlas batching. Owned production/test functions pass cognitive-complexity checks; vendored Nuklear implementation warnings remain unchanged. Captures, diffs, counts, build/test/tidy logs and the pre-migration binaries are in `/tmp/wormedit-t248/`.
 
-## T-249 Draw the waveform as meshes
+## T-249 Cache the envelope waveform in a circular GPU texture
 
 - **Status:** ready
-- **Outcome:** the envelope waveform is four triangle strips (RMS and peak, left and right) with two vertices per row and no AA; sample mode is two line strips (one per channel) drawn as thin quads, one quad per segment; worst case drops from ~130,000 to under 35,000 vertices.
-- **Read first:** `src/ui/nuklear/compose_canvas.cpp` (`draw_compose_waveform`, `draw_compose_waveform_samples`, `draw_compose_channel_waveform`), `src/ui/field/field_renderer.h`.
-- **Files owned:** `src/ui/nuklear/compose_canvas.cpp`, `src/ui/field/field_renderer.cpp/.h`, `tests/ui/field_renderer_tests.cpp`.
-- **Steps:** 1. Strip builder: for rows sorted by y, emit (center, y) and (center ± value × half_width, y). 2. Same for the BGM channel waveform. 3. Test vertex counts for 4,096 rows.
-- **Invariants:** same colors and alpha as today; matches T-240's stable style rules.
-- **Reject/failure behavior:** rows with non-finite values are skipped.
-- **Verify:** standard build/test; T-246 counts; smoke PNGs at normal and maximum zoom.
-- **Out of scope:** caching (T-250).
+- **Outcome:** RMS and peak envelopes use a bounded circular render-target texture and one or two wrapped textured quads; CPU projection and target refill process only newly exposed stable world rows during scroll following. Exact PCM sample mode retains two thin-quad curves and stays below 35,000 vertices for 4,096 rows.
+- **Read first:** `src/ui/nuklear/compose_canvas.cpp` (waveform drawing), `src/ui/field/field_renderer.h`, `src/sys/waveform_view_projection.cpp`, `src/sys/bmson_waveform_projection.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_canvas.cpp`, `src/ui/field/field_renderer.cpp/.h`, `tests/ui/field_renderer_tests.cpp`; user-approved scope extensions: `src/ui/nuklear/sdl_backend.cpp/.h`, `src/sys/waveform_view_projection.cpp`, `src/sys/bmson_waveform_projection.cpp`, `src/sys/compose_view.h`, `tests/sys/frame_timing_tests.cpp`.
+- **Steps:**
+  1. Build plain bounded world-row ring planning with generation, content fingerprint, head and wrapped ranges; test forward/reverse movement, seeks, invalidation, detail changes and warm allocation reuse.
+  2. Reuse CPU envelope projections in the application cache, projecting missing contiguous stable world spans; asynchronous data arrival retries incomplete rows without discarding resolved rows.
+  3. Raster new or changed envelope scanlines into the circular SDL render target, then composite one or two quads in the existing field order. Retain direct fallback and exact PCM sample quads.
+  4. Verify stable-grid pixels and the original fractional phase separately; record CPU projection/refill counters, T-246 vertex counts and isolated normal/maximum/PCM captures.
+- **Invariants:** semantic colors, alpha, source timing and T-240 stable style rules remain; only envelope display uses an integer world-pixel origin, differing from the previous fractional phase by less than one logical pixel. PCM, other field geometry, cursor and playhead keep their existing coordinates. Target compositing may differ from direct sequential blending by one RGB level; report the measured difference rather than claiming pixel identity.
+- **Reject/failure behavior:** non-finite rows are skipped; unavailable targets or failed refill use current direct geometry without displaying stale envelopes. Source/revision/zoom/size/style changes and large seeks invalidate the matching cache.
+- **Verify:** standard build/test and affected-file clang-tidy; delta projection/raster and wrap regressions; T-246 counts; isolated smoke PNGs at normal and maximum zoom including actual PCM mode.
+- **Out of scope:** caching other static field layers (T-250), SDL_GPU migration. A future SDL_GPU path may use a mapped transfer buffer; this does not promise directly mapped VRAM.
+
+Decision (user, 2026-09-30): replace per-row RMS geometry with a circular GPU texture, update only exposed rows as the view follows the centered playhead, and cache CPU RMS projection work too. The original strips-only design and its no-caching restriction are superseded for envelopes. Stable world-pixel sampling is necessary for retained rows; exact sample mode stays separate. The six application/backend scope extensions above were explicitly approved in two bundles.
 
 ## T-250 Cache static field layers in tiles
 
 - **Status:** blocked-on T-249, T-213
-- **Outcome:** lane backgrounds, grid, notes, BGM, timing tiles, and the waveform are rendered into cached render-target tiles (for example 512 logical px tall) keyed by document revision, chart, zoom, layout width, theme, and tile index; while only the scroll changes (playback following), a frame composites a few textured quads plus the dynamic overlays (playhead, cursor, hover, selection, ghosts, preview), so both CPU scene work and GPU vertex work stay near constant regardless of chart density.
+- **Outcome:** lane backgrounds, grid, notes, BGM, timing tiles, are rendered into cached render-target tiles (for example 512 logical px tall) keyed by document revision, chart, zoom, layout width, theme, and tile index; while only the scroll changes (playback following), a frame composites a few textured quads plus the dynamic overlays (playhead, cursor, hover, selection, ghosts, preview), so both CPU scene work and GPU vertex work stay near constant regardless of chart density.
 - **Read first:** `src/ui/field/field_renderer.h`, `src/sys/compose_view.cpp` (T-213's scroll-only reuse), `src/ui/nuklear/player_preview_texture.cpp` (existing texture LRU pattern), SDL3 `SDL_SetRenderTarget`.
 - **Files owned:** new `src/ui/field/field_tile_cache.cpp/.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/field/field_renderer.cpp`, `CMakeLists.txt`, new `tests/ui/field_tile_cache_tests.cpp`, `tests/CMakeLists.txt`.
 - **Steps:**
@@ -195,7 +202,7 @@ Coordinated full build and integrated tests pass 965/965 (47.42 seconds), includ
 - **Invariants:** screenshots identical to direct drawing; device-loss/resize recreates tiles.
 - **Reject/failure behavior:** if render targets are unsupported, keep direct drawing.
 - **Verify:** standard build/test; T-246 numbers during Ctrl+Space before/after; smoke PNGs.
-- **Out of scope:** Timing tab.
+- **Out of scope:** Timing tab; the independently bounded envelope ring completed by T-249.
 
 ## T-251 Render at native resolution instead of a stretched logical target
 

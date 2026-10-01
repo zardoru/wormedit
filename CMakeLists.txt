@@ -76,6 +76,8 @@ add_library(wormedit_core
     src/core/scroll_speed_editor.cpp
     src/core/semantic_layer_editor.cpp
     src/core/shortcut_profile_storage.cpp
+    src/core/atomic_file_storage.cpp
+    src/core/preferences.cpp
     src/core/shortcut_profile_startup.cpp
     src/core/sound_slice.cpp
     src/core/storyboard.cpp
@@ -313,6 +315,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/workspace_frame_view.cpp
         src/sys/transport_player_actions.cpp
         src/sys/external_player.cpp
+        src/sys/preferences_runtime.cpp
         src/sys/tap_timing_runtime.cpp
         src/sys/platform_recovery.cpp
         src/sys/platform_shortcut_profile.cpp

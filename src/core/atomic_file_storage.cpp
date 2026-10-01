@@ -26,7 +26,7 @@ namespace wormedit {
 namespace {
 #ifdef _WIN32
 using native_file_t = HANDLE;
-constexpr auto invalid_file = INVALID_HANDLE_VALUE;
+const auto invalid_file = INVALID_HANDLE_VALUE;
 #else
 using native_file_t = int;
 constexpr auto invalid_file = -1;

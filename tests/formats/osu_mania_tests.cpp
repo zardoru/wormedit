@@ -341,7 +341,7 @@ TEST_CASE("osu!mania version profiles preserve stable-v14 and lazer-v128 time se
     };
     std::size_t previous_field_index{};
     for (const auto& expected : expected_lazer_fields) {
-        const auto found = std::ranges::find(lazer_fields, expected);
+        const auto found = std::ranges::find(lazer_fields, std::pair<std::string, std::string>{expected});
         CAPTURE(expected.first, expected.second);
         REQUIRE(found != lazer_fields.end());
         const auto field_index = static_cast<std::size_t>(found - lazer_fields.begin());
@@ -377,7 +377,7 @@ TEST_CASE("osu!mania version profiles preserve stable-v14 and lazer-v128 time se
     const auto& reparsed_fields = lazer_reparsed.song->metadata.format_groups.front().ordered_fields;
     for (const auto& expected : expected_lazer_fields) {
         CAPTURE(expected.first, expected.second);
-        CHECK(std::ranges::find(reparsed_fields, expected) != reparsed_fields.end());
+        CHECK(std::ranges::find(reparsed_fields, std::pair<std::string, std::string>{expected}) != reparsed_fields.end());
     }
 
     auto edited_lazer = *lazer.song;

@@ -118,6 +118,9 @@ target_link_libraries(wormedit_core PRIVATE nlohmann_json::nlohmann_json)
 find_package(Threads REQUIRED)
 target_link_libraries(wormedit_core PUBLIC Threads::Threads)
 
+if(WIN32)
+    # Keep <windows.h> from defining min/max macros that break std::min/std::max.
+    target_compile_definitions(wormedit_core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
 # Headless converter: the editor's conversion service behind a JSON request.
 add_executable(wormedit-convert
     src/tools/wormedit_convert.cpp

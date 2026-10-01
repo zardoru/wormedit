@@ -726,6 +726,32 @@ void flattened_workspace_t::rebind_view_pointers() {
     view.audio_slices.asset_ids = audio.asset.data();
 }
 
+auto project_notification_view(const notification_center_t& center, notification_time_t now)
+    -> WormUiNotificationView {
+    WormUiNotificationView result{};
+    if (const auto* current = center.current_line()) {
+        result.current_text = current->message.c_str();
+        result.current_severity = static_cast<WormUiNotificationSeverity>(current->severity);
+    }
+    const auto unread = center.unread_counts();
+    result.unread_warnings = unread.warnings;
+    result.unread_errors = unread.errors;
+    const auto entries = center.borrowed_snapshot(notification_capacity);
+    for (auto entry = entries.rbegin(); entry != entries.rend(); ++entry) {
+        if (entry->severity != notification_severity_t::warning &&
+            entry->severity != notification_severity_t::error)
+            continue;
+        if (entry->severity == notification_severity_t::warning &&
+            now - entry->timestamp >= std::chrono::seconds{8})
+            continue;
+        auto& toast = result.toasts[result.toast_count++];
+        toast = {entry->id, static_cast<WormUiNotificationSeverity>(entry->severity),
+                 entry->message.c_str(), entry->count};
+        if (result.toast_count == WORM_UI_NOTIFICATION_TOAST_CAPACITY) break;
+    }
+    return result;
+}
+
 auto flatten_workspace(const wormedit::workspace_view_t& source,
                        const wormedit::song_document_t& document, const std::string& status,
                        const wormedit::native_project_recovery_controller_view_t& recovery,

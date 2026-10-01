@@ -43,10 +43,10 @@ and a history panel. Existing strings migrate in batches without behavior loss.
 
 ## T-219 Show notifications in the status bar and as toasts
 
-- **Status:** ready
+- **Status:** done
 - **Outcome:** the application owns one `notification_center_t`; the status bar shows the current line and an unread badge; warnings/errors show as toasts with a dismiss button; Escape dismisses the newest toast when no edit gesture or text field has focus.
 - **Read first:** `src/ui/nuklear/frontend.cpp` (`render_status_bar`), `src/ui/frontend.h` (`WormUiWorkspaceView::status_text`), `src/sys/workspace_projection.cpp` (`flatten_workspace`).
-- **Files owned:** `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, new `src/ui/nuklear/notification_toasts.cpp/.h`, `src/sys/workspace_projection.cpp/.h`, `src/sys/main.cpp` (ownership, drain, and view only), `CMakeLists.txt`, `tests/ui/nuklear_compose_state_tests.cpp` or a new `tests/ui/nuklear_notification_state_tests.cpp`.
+- **Files owned:** `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, new `src/ui/nuklear/notification_toasts.cpp/.h`, `src/ui/nuklear/sdl_backend.cpp/.h` (isolated overlay context submission), `src/sys/workspace_projection.cpp/.h`, `src/sys/main.cpp` (ownership, drain, and view only), `CMakeLists.txt`, `tests/CMakeLists.txt` (user-approved test wiring extension), `tests/ui/nuklear_compose_state_tests.cpp` or a new `tests/ui/nuklear_notification_state_tests.cpp`.
 - **Steps:**
   1. Scalar view: current line (text, severity), badge counts, up to 3 toasts (id, severity, message, count).
   2. Color by severity from the theme; toasts drawn in a `nk_begin` window anchored bottom-right, above the status bar.
@@ -54,12 +54,13 @@ and a history panel. Existing strings migrate in batches without behavior loss.
   4. Keep `status_text` working during migration: if no notification is current, show it as today.
 - **Invariants:** toasts never take keyboard focus or intercept chart input outside their rectangle.
 - **Reject/failure behavior:** none.
-- **Verify:** standard build/test; smoke PNG with one warning and one error posted at startup through a debug hook.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `clang-tidy -p build <changed .cpp>`; isolated Xvfb/SDL-dummy smoke PNG with `WORMEDIT_NOTIFICATION_SMOKE=1` (one warning and one error), and `WORMEDIT_NOTIFICATION_SMOKE_LONG=1` for the fixed 200-byte detail fixture.
+- **Evidence:** integrated build passed; full suite 1096/1096 passed in 51.13 seconds (`/tmp/wormedit-t219-final-full-ctest.log`); focused notification/central-combo guard checks passed 38/38. The real pinned-Nuklear renderer tests cover primary active-window/ROM and queued text preservation, allocation-failure input passthrough, editor-owned popup lifetime, and wrapped text/scissor bounds in normal and 400×200 viewports. Actual isolated captures show startup warning/error and unread counts, eight-second warning expiry with persistent error, inline typing 177→hover→8 retaining 1778, and editor-first Escape leaving the error toast visible. The fixed 200-byte message is visibly contained in its bounded hover detail (`/tmp/wormedit-t219/verified-hover-editor-typed.png`, `/tmp/wormedit-t219/verified-editor-escape-first.png`). Configured clang-tidy reports no new owned-source complexity violations. Six affected staged C++ sources also pass syntax checks against HEAD plus the selective cut, without the uncommitted preference/rendering changes (`/tmp/wormedit-t219/staged-syntax.log`). The final actual Xvfb lifecycle gate exited 0: body-to-close release leaves the error intact, while a genuine close dismisses it persistently (`/tmp/wormedit-t219/gui-lifecycle.log`). History remains out of scope: the readable unread counts retain an explicitly unavailable history action until T-220.
 - **Out of scope:** history panel.
 
 ## T-220 Add the notification history panel
 
-- **Status:** blocked-on T-219
+- **Status:** ready
 - **Outcome:** View → Notifications (and command `view.notifications`) opens a modeless panel listing entries newest-first with severity filter, repeat counts, relative time, expandable detail, Copy details (to the OS clipboard), Go to (for targets), Dismiss, and Clear all; opening it marks entries read.
 - **Read first:** `include/wormedit/core/notifications.h`, `src/core/command_registry.cpp`, `src/ui/nuklear/frontend.cpp`.
 - **Files owned:** new `src/ui/nuklear/notification_panel.cpp/.h`, `src/ui/frontend.h`, `src/core/command_registry.cpp`, `src/sys/main.cpp` (dispatch only), `src/sys/application_command_dispatch.cpp`, `CMakeLists.txt`.

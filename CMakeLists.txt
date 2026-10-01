@@ -327,6 +327,7 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/audio_panel.cpp
         src/ui/nuklear/external_player_panel.cpp
         src/ui/nuklear/options_window.cpp
+        src/ui/nuklear/notification_toasts.cpp
         src/ui/nuklear/tap_timing_panel.cpp
         src/ui/nuklear/audio_state.cpp
         src/ui/nuklear/bms_branch_panel.cpp

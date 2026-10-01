@@ -61,9 +61,9 @@ static nk_flags convert_nuklear_commands(nk_context* context, nk_buffer* command
                                          const nk_convert_config* config) {
     const RenderSubphaseScope convert_phase{WORM_UI_FRAME_RENDER_CONVERT};
     const auto result = nk_convert(context, commands, vertices, indices, config);
-    g_gpu_submission.work.vertices =
+    g_gpu_submission.work.vertices +=
         config->vertex_size == 0 ? 0 : vertices->allocated / config->vertex_size;
-    g_gpu_submission.work.indices = indices->allocated / sizeof(nk_draw_index);
+    g_gpu_submission.work.indices += indices->allocated / sizeof(nk_draw_index);
     return result;
 }
 
@@ -288,7 +288,7 @@ static void submit_field_marker(nk_sdl* sdl, const ComposeFieldMarker& marker) {
                                                 render_nuklear_geometry_raw};
     sdl->field->geometry.submit_range(sdl->renderer, marker.first_index, marker.index_count, hooks);
 }
-static void submit_sdl_draw_list(nk_sdl* sdl) {
+static void submit_sdl_draw_list(nk_context* context, nk_sdl* sdl) {
     if (sdl->field->marker_count != 0) {
         const auto work = sdl->field->geometry.workload();
         g_gpu_submission.work.vertices += work.vertices;
@@ -296,7 +296,7 @@ static void submit_sdl_draw_list(nk_sdl* sdl) {
     }
     wormedit::ui::nuklear::sdl_draw_batcher_t batches;
     const nk_draw_command* command;
-    nk_draw_foreach(command, &sdl->ctx, &sdl->ogl.cmds) {
+    nk_draw_foreach(command, context, &sdl->ogl.cmds) {
         if (const auto* marker = field_marker(sdl, command)) {
             if (const auto pending = batches.finish())
                 submit_sdl_batch(sdl, *pending);
@@ -321,12 +321,6 @@ NK_API void nk_sdl_render(struct nk_context* ctx, enum nk_anti_aliasing AA) {
     NK_ASSERT(ctx);
     sdl = (struct nk_sdl*)ctx->userdata.ptr;
     NK_ASSERT(sdl);
-
-    { /* setup internal delta time that Nuklear needs for animations */
-        const Uint64 ticks = SDL_GetTicks();
-        ctx->delta_time_seconds = (float)(ticks - sdl->last_render) / 1000.0f;
-        sdl->last_render = ticks;
-    }
 
     {
         SDL_Rect saved_clip;
@@ -356,11 +350,11 @@ NK_API void nk_sdl_render(struct nk_context* ctx, enum nk_anti_aliasing AA) {
         /* convert shapes into vertices */
         nk_buffer_clear(&vbuf);
         nk_buffer_clear(&ebuf);
-        nk_convert(&sdl->ctx, &sdl->ogl.cmds, &vbuf, &ebuf, &config);
+        nk_convert(ctx, &sdl->ogl.cmds, &vbuf, &ebuf, &config);
 
         clipping_enabled = SDL_RenderClipEnabled(sdl->renderer);
         SDL_GetRenderClipRect(sdl->renderer, &saved_clip);
-        submit_sdl_draw_list(sdl);
+        submit_sdl_draw_list(ctx, sdl);
 
         SDL_SetRenderClipRect(sdl->renderer, &saved_clip);
         if (!clipping_enabled) {
@@ -368,7 +362,7 @@ NK_API void nk_sdl_render(struct nk_context* ctx, enum nk_anti_aliasing AA) {
         }
 
         sdl->field->marker_count = 0;
-        nk_clear(&sdl->ctx);
+        nk_clear(ctx);
         nk_buffer_clear(&sdl->ogl.cmds);
     }
 }
@@ -941,9 +935,15 @@ void insert_compose_field(nk_context* context, nk_command_buffer* canvas, struct
     frame.next_index = end;
     nk_push_custom(canvas, viewport, convert_field_marker, nk_handle_ptr(&marker));
 }
-void render_sdl_backend(nk_context* context, nk_anti_aliasing anti_aliasing) {
+void render_sdl_backend(nk_context* context, nk_anti_aliasing anti_aliasing, nk_context* overlay) {
     g_gpu_submission = {};
+    auto* sdl = static_cast<nk_sdl*>(context->userdata.ptr);
+    const auto ticks = SDL_GetTicks();
+    context->delta_time_seconds = static_cast<float>(ticks - sdl->last_render) / 1000.0f;
+    sdl->last_render = ticks;
+    if (overlay) overlay->delta_time_seconds = context->delta_time_seconds;
     nk_sdl_render(context, anti_aliasing);
+    if (overlay) nk_sdl_render(overlay, anti_aliasing);
     worm_ui_frame_timing_record_gpu_work(g_gpu_submission.work);
 }
 } // namespace wormedit::ui::nuklear

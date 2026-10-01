@@ -211,16 +211,18 @@ Actual legacy screen-stroke comparison is deliberately separate from the canonic
 - **Status:** ready
 - **Outcome:** lane backgrounds, grid, notes, BGM, timing tiles, are rendered into cached render-target tiles (for example 512 logical px tall) keyed by document revision, chart, zoom, layout width, theme, and tile index; while only the scroll changes (playback following), a frame composites a few textured quads plus the dynamic overlays (playhead, cursor, hover, selection, ghosts, preview), so both CPU scene work and GPU vertex work stay near constant regardless of chart density.
 - **Read first:** `src/ui/field/field_renderer.h`, `src/sys/compose_view.cpp` (T-213's scroll-only reuse), `src/ui/nuklear/player_preview_texture.cpp` (existing texture LRU pattern), SDL3 `SDL_SetRenderTarget`.
-- **Files owned:** new `src/ui/field/field_tile_cache.cpp/.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/field/field_renderer.cpp`, `CMakeLists.txt`, new `tests/ui/field_tile_cache_tests.cpp`, `tests/CMakeLists.txt`.
+- **Files owned:** new `src/ui/field/field_tile_cache.cpp/.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/field/field_renderer.cpp`, `src/ui/field/field_renderer.h` (user-approved API extension, 2026-09-30), `CMakeLists.txt`, new `tests/ui/field_tile_cache_tests.cpp`, `tests/CMakeLists.txt`; user-approved exact semantic-filter generation extension (2026-09-30): `src/ui/frontend.h`, `src/sys/compose_view.h`, `src/sys/compose_view.cpp`, `tests/sys/frame_timing_tests.cpp`.
 - **Steps:**
   1. Split the field into static layers (tile-cached) and dynamic overlays (drawn every frame).
   2. Tile LRU with a byte budget (for example 64 MiB); render missing tiles at most two per frame, falling back to direct drawing for tiles not ready.
   3. Invalidate on revision, zoom, width, theme, DPI, lane layout, or visibility-toggle changes.
   4. Tests for key invalidation and budget eviction (logic only, no GPU).
-- **Invariants:** screenshots identical to direct drawing; device-loss/resize recreates tiles.
+- **Invariants:** preserve layer order, colors, aspect, and dynamic cursor/playhead coordinates; retained texture translation may vary edge coverage by at most one logical pixel. Interior premultiplied composition differs by at most one RGB level. Device-loss/resize recreates tiles.
 - **Reject/failure behavior:** if render targets are unsupported, keep direct drawing.
 - **Verify:** standard build/test; T-246 numbers during Ctrl+Space before/after; smoke PNGs.
 - **Out of scope:** Timing tab; the independently bounded envelope ring completed by T-249.
+
+Decision (user, 2026-09-30): permit at most one pixel of static-layer raster variation and extend `field_renderer.h` for the retained tile API. The isolated OpenGL prototype established why exact fractional translation is incompatible with individually truncated authored arrow points. No additional quantization is applied to cursor, playhead, PCM, or the T-249 envelope contract. Completion requires separate interior-color and edge-coverage gates, actual fractional forward/reverse/zoom/reset verification, and measured CPU/GPU work; implementation is not yet verified.
 
 ## T-251 Render at native resolution instead of a stretched logical target
 

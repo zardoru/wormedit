@@ -120,6 +120,7 @@
 #include <charconv>
 #include <cctype>
 #include <chrono>
+#include <cstdlib>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -2788,16 +2789,53 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
         }
 }
 
+auto notification_frame_time() -> wormedit::notification_time_t {
+    return std::chrono::duration_cast<wormedit::notification_time_t>(
+        std::chrono::steady_clock::now().time_since_epoch());
+}
+
+auto project_application_notifications(const wormedit::notification_center_t& center,
+    wormedit::notification_time_t now,
+    const std::optional<wormedit::editor_interaction_state_t>& interaction)
+    -> WormUiNotificationView {
+    auto view = wormedit::sys::project_notification_view(center, now);
+    view.edit_gesture_active = interaction && editor_interaction_has_pending_gesture(*interaction);
+    return view;
+}
+
+void seed_notification_smoke(wormedit::notification_center_t& center) {
+    const auto* enabled = std::getenv("WORMEDIT_NOTIFICATION_SMOKE");
+    if (!enabled || std::strcmp(enabled, "1") != 0) return;
+    center.post(wormedit::notification_severity_t::warning,
+                wormedit::notification_source_t::system, "Example notification warning");
+    const auto* long_fixture = std::getenv("WORMEDIT_NOTIFICATION_SMOKE_LONG");
+    const char* error_message = long_fixture && std::strcmp(long_fixture, "1") == 0
+        ? "Example notification error: This bounded 200-byte message checks wrapping near the bottom-right edge. Every word stays visible in the hover detail while typing and editor Escape keep their same owner."
+        : "Example notification error";
+    center.post(wormedit::notification_severity_t::error,
+                wormedit::notification_source_t::system, error_message);
+}
+
+void begin_notification_frame(wormedit::notification_center_t& center,
+                              WormUiNotificationAction& pending, wormedit::notification_time_t now) {
+    if (pending.kind == WORM_UI_NOTIFICATION_ACTION_DISMISS) (void)center.dismiss(pending.id);
+    pending = {};
+    center.drain_inbox(now);
+}
+
 template <typename Model>
 auto handle_workspace_view_error(const Model& model, std::string& status, bool& running,
                                  wormedit::document_history_t& history,
-                                 wormedit::workspace_controller_t& workspace) -> bool {
+                                 wormedit::workspace_controller_t& workspace,
+                                 const WormUiNotificationView& notifications,
+                                 WormUiNotificationAction& pending_notification) -> bool {
     if (model) {
         return false;
     }
     status = model.diagnostics.empty() ? "Workspace view unavailable"
                                        : model.diagnostics.front().message;
-    const auto recovery_action = worm_ui_frontend_workspace_error(status.c_str());
+    const auto recovery_action = worm_ui_frontend_workspace_error(status.c_str(), &notifications);
+    pending_notification = recovery_action.notifications;
     if (recovery_action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
         running = false;
     } else if (recovery_action.kind == WORM_UI_WORKSPACE_ACTION_SWITCH_TAB) {
@@ -3092,6 +3130,9 @@ int main(int argc, char** argv) {
         startup.primary_version, initial_autosave_sequence);
     std::string status = wormedit::sys::select_initial_application_status(
         startup.loaded_primary, requested_primary_path, platform_recovery);
+    wormedit::notification_center_t notifications;
+    WormUiNotificationAction pending_notification{};
+    seed_notification_smoke(notifications);
     bool session_loaded = startup.loaded_primary;
     bool native_project_loaded = startup.loaded_primary;
     bool fresh_blank_project = false;
@@ -3360,6 +3401,8 @@ int main(int argc, char** argv) {
 #endif
     };
     while (running) {
+        const auto notification_now = notification_frame_time();
+        begin_notification_frame(notifications, pending_notification, notification_now);
         wormedit::sys::frame_timing().begin_frame();
         wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::events);
         if (!wormedit::sys::poll_frontend_events(
@@ -3415,7 +3458,10 @@ int main(int argc, char** argv) {
             model = wormedit::make_workspace_view(workspace, history.document);
         }
         timing_edit.cancel_if_stale(history, workspace, application_command_state);
-        if (!handle_workspace_view_error(model, status, running, history, workspace)) {
+        const auto notification_view = project_application_notifications(
+            notifications, notification_now, compose_interaction_state);
+        if (!handle_workspace_view_error(model, status, running, history, workspace,
+                                         notification_view, pending_notification)) {
             prepare_bound_workspace_frame(history, workspace, application_command_state,
                                           timing_grid, audio_offset_drag, audio_offset_drag_tab,
                                           compose_scene_cache);
@@ -3462,6 +3508,7 @@ int main(int argc, char** argv) {
             flattened.view.transport_rate_available = static_cast<bool>(application_command_state.transport_set_playback_rate);
             flattened.view.transport_keep_pitch = application_command_state.transport_keep_pitch;
             flattened.view.transport_keep_pitch_available = application_command_state.transport_keep_pitch_available;
+            flattened.view.notifications = notification_view;
             flattened.view.options = wormedit::sys::options_view(options_runtime);
             project_external_player_view(external_player_runtime, flattened.view);
             wormedit::sys::project_chart_view(project_chart_runtime, history.document, flattened.view.setup);
@@ -3475,6 +3522,7 @@ int main(int argc, char** argv) {
             flattened.rebind_view_pointers();
             const auto frame_nuklear_previous = wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::nuklear);
             auto action = worm_ui_frontend_compose(&flattened.view);
+            pending_notification = action.notifications;
             wormedit::sys::frame_timing().restore(frame_nuklear_previous);
             {
                 wormedit::sys::frame_phase_scope_t actions(

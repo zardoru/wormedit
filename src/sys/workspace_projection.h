@@ -3,6 +3,7 @@
 #include "ui/frontend.h"
 
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/notifications.h>
 #include <wormedit/core/grid.h>
 #include <wormedit/core/recovery_controller.h>
 #include <wormedit/formats/conversion.h>
@@ -148,5 +149,11 @@ struct flattened_workspace_t {
                                      bool recovery_scan_configured,
                                      const stepmania_export_policy_t& stepmania_policy)
     -> flattened_workspace_t;
+
+// Borrowed notification strings remain valid until the center's next frame-
+// thread mutation. Project after draining, then draw before dispatching actions.
+[[nodiscard]] auto project_notification_view(const notification_center_t& center,
+                                             notification_time_t now)
+    -> WormUiNotificationView;
 
 } // namespace wormedit::sys

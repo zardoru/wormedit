@@ -108,7 +108,8 @@ class sdl_draw_batcher_t {
     std::optional<sdl_draw_batch_t> pending_;
     std::size_t next_index_{};
 };
-void render_sdl_backend(nk_context* context, nk_anti_aliasing anti_aliasing);
+void render_sdl_backend(nk_context* context, nk_anti_aliasing anti_aliasing,
+                        nk_context* overlay = nullptr);
 auto begin_compose_field(nk_context* context, SDL_FRect viewport)
     -> wormedit::ui::field::renderer_t&;
 auto compose_field(nk_context* context) -> wormedit::ui::field::renderer_t&;

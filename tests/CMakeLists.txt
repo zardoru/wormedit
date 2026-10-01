@@ -394,6 +394,9 @@ endif()
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_frame_timing_tests
         sys/frame_timing_tests.cpp
+        ui/nuklear_notification_state_tests.cpp
+        ../src/ui/nuklear/notification_toasts.cpp
+        ../src/ui/nuklear/theme.cpp
         ../src/sys/frame_timing.cpp
         ../src/sys/compose_area_actions.cpp
         ../src/sys/compose_view.cpp
@@ -405,6 +408,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     target_include_directories(wormedit_frame_timing_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/generated")
     target_link_libraries(wormedit_frame_timing_tests PRIVATE
+        wormedit::ui_frontend
+        nlohmann_json::nlohmann_json
         wormedit::core SDL3::SDL3 Catch2::Catch2WithMain)
     if(TARGET wormedit_audio_decoder)
         target_sources(wormedit_frame_timing_tests PRIVATE

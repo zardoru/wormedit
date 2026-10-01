@@ -1342,7 +1342,47 @@ typedef struct WormUiOptionsAction {
     char text[WORM_UI_OPTIONS_TEXT_CAPACITY];
 } WormUiOptionsAction;
 
+#define WORM_UI_NOTIFICATION_TOAST_CAPACITY 3
+
+typedef enum WormUiNotificationSeverity {
+    WORM_UI_NOTIFICATION_HINT = 0,
+    WORM_UI_NOTIFICATION_INFO,
+    WORM_UI_NOTIFICATION_SUCCESS,
+    WORM_UI_NOTIFICATION_WARNING,
+    WORM_UI_NOTIFICATION_ERROR
+} WormUiNotificationSeverity;
+
+typedef struct WormUiNotificationToastView {
+    uint64_t id;
+    WormUiNotificationSeverity severity;
+    const char* message;
+    uint32_t repeat_count;
+} WormUiNotificationToastView;
+
+typedef struct WormUiNotificationView {
+    bool edit_gesture_active;
+    bool history_available;
+    const char* current_text;
+    WormUiNotificationSeverity current_severity;
+    size_t unread_warnings;
+    size_t unread_errors;
+    size_t toast_count;
+    WormUiNotificationToastView toasts[WORM_UI_NOTIFICATION_TOAST_CAPACITY];
+} WormUiNotificationView;
+
+typedef enum WormUiNotificationActionKind {
+    WORM_UI_NOTIFICATION_ACTION_NONE = 0,
+    WORM_UI_NOTIFICATION_ACTION_DISMISS,
+    WORM_UI_NOTIFICATION_ACTION_OPEN_HISTORY
+} WormUiNotificationActionKind;
+
+typedef struct WormUiNotificationAction {
+    WormUiNotificationActionKind kind;
+    uint64_t id;
+} WormUiNotificationAction;
+
 typedef struct WormUiWorkspaceView {
+    WormUiNotificationView notifications;
     WormUiOptionsView options;
     WormUiTapTimingView tap_timing;
     bool project_loaded;
@@ -1596,6 +1636,7 @@ typedef enum WormUiMetadataEditKind {
 } WormUiMetadataEditKind;
 
 typedef struct WormUiWorkspaceAction {
+    WormUiNotificationAction notifications;
     WormUiOptionsAction options;
     WormUiProjectChartAction project_chart;
     WormUiTapTimingAction tap_timing;
@@ -1751,7 +1792,8 @@ WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_i
 void worm_ui_frontend_end_input(void);
 WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view);
 // Draw a recoverable workspace error when the model could not produce a view.
-WormUiWorkspaceAction worm_ui_frontend_workspace_error(const char* diagnostic);
+WormUiWorkspaceAction worm_ui_frontend_workspace_error(
+    const char* diagnostic, const WormUiNotificationView* notifications);
 void worm_ui_frontend_resource_placed(uint64_t placed_resource_id, uint64_t next_resource_id);
 void worm_ui_frontend_render(int window_width, int window_height);
 

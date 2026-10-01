@@ -731,3 +731,177 @@ TEST_CASE("Metadata frame text keeps stable warmed storage across 1000 projectio
     check_frame_storage(consistent);
     INFO("Filesystem generic formatting still allocates " << allocations << " per projection");
 }
+
+namespace {
+auto setup_arena_model() -> wormedit::workspace_view_t {
+    wormedit::workspace_view_t model;
+    model.active_tab = wormedit::workspace_tab_t::setup;
+    model.tab_view = wormedit::workspace_setup_view_t{};
+    return model;
+}
+auto recovery_arena_model() -> wormedit::native_project_recovery_controller_view_t {
+    using action = wormedit::native_project_recovery_action_t;
+    wormedit::native_project_recovery_controller_view_t recovery;
+    recovery.rows.push_back({.target = {.scan_generation = 9, .row_index = 4, .candidate_index = 3},
+        .path_label = "/tmp/a-long-inactive-recovery-path.wormedit",
+        .status = wormedit::native_project_recovery_candidate_status_t::invalid,
+        .comparison = wormedit::native_project_recovery_comparison_t::older_revision,
+        .version = wormedit::native_project_document_version_t{.revision = 42},
+        .recovery_session_sequence = 0});
+    recovery.rows.push_back({.target = {.scan_generation = 9, .row_index = 2, .candidate_index = 8},
+        .path_label = "/tmp/a-long-actionable-recovery-path.wormedit",
+        .status = wormedit::native_project_recovery_candidate_status_t::valid,
+        .comparison = wormedit::native_project_recovery_comparison_t::newer_revision,
+        .available_actions = {action::inspect_read_only, action::recover_into_session,
+            action::save_as_new_project, action::discard, action::quarantine}});
+    recovery.preferred_recovery_row = 0;
+    recovery.diagnostics.push_back({.severity = wormedit::diagnostic_severity_t::warning,
+        .message = "First retained recovery diagnostic", .path = "recovery/candidate.wormedit"});
+    recovery.diagnostics.push_back({.message = "Second retained recovery diagnostic"});
+    return recovery;
+}
+auto project_setup_recovery(const wormedit::native_project_recovery_controller_view_t& recovery,
+                            frame_arena_t* arena = nullptr,
+                            const wormedit::stepmania_export_policy_t& policy = {})
+    -> flattened_workspace_t {
+    return flatten_workspace(setup_arena_model(), {}, "ready", recovery, true, policy, arena);
+}
+void check_recovery_arena_rows(const WormUiWorkspaceView& view) {
+    REQUIRE(view.recovery_candidate_count == 2);
+    const auto& active = view.recovery_candidates[0];
+    check_frame_storage(std::strcmp(active.path_label, "/tmp/a-long-actionable-recovery-path.wormedit") == 0);
+    check_frame_storage(std::strcmp(active.summary, "valid · newer") == 0);
+    check_frame_storage(active.disabled_reason == nullptr);
+    check_frame_storage(active.action_mask == (WORM_UI_RECOVERY_ACTION_INSPECT |
+        WORM_UI_RECOVERY_ACTION_RECOVER | WORM_UI_RECOVERY_ACTION_SAVE_AS |
+        WORM_UI_RECOVERY_ACTION_DISCARD | WORM_UI_RECOVERY_ACTION_QUARANTINE));
+    check_frame_storage(active.scan_generation == 9 && active.row_index == 2 && active.candidate_index == 8);
+    const auto& inactive = view.recovery_candidates[1];
+    check_frame_storage(std::strcmp(inactive.summary,
+        "invalid · older · revision 42 · session 0 · recommended recovery") == 0);
+    check_frame_storage(std::strcmp(inactive.disabled_reason,
+        "No safe action is available for this candidate.") == 0);
+    check_frame_storage(inactive.action_mask == 0);
+    check_frame_storage(inactive.scan_generation == 9 && inactive.row_index == 4 && inactive.candidate_index == 3);
+}
+}
+
+TEST_CASE("Setup and Recovery arena text preserves source-independent ordering and action tokens",
+          "[sys][frame-arena][setup-recovery]") {
+    auto recovery = recovery_arena_model();
+    auto frame = project_setup_recovery(recovery);
+    recovery.rows.clear();
+    recovery.diagnostics.clear();
+    auto moved = std::move(frame);
+    moved.rebind_view_pointers();
+    check_recovery_arena_rows(moved.view);
+    check_frame_storage(moved.view.recovery_has_actionable_candidate);
+    check_frame_storage(moved.view.recovery_panel_visible);
+    check_frame_storage(!moved.view.recovery_rows_truncated);
+    REQUIRE(moved.view.recovery_diagnostic_count == 2);
+    check_frame_storage(std::strcmp(moved.view.recovery_diagnostics[0],
+        "First retained recovery diagnostic (recovery/candidate.wormedit)") == 0);
+    check_frame_storage(std::strcmp(moved.view.recovery_diagnostics[1],
+        "Second retained recovery diagnostic") == 0);
+    check_frame_storage(moved.view.setup.stepmania_policy_valid);
+    check_frame_storage(std::strcmp(moved.view.setup.stepmania_policy_status,
+        "Compatible StepMania export policy.") == 0);
+}
+
+TEST_CASE("Setup arena text preserves warnings and rejected policy semantics",
+          "[sys][frame-arena][setup-recovery]") {
+    flattened_workspace_t hidden;
+    hidden.rebind_view_pointers();
+    auto moved_hidden = std::move(hidden);
+    moved_hidden.rebind_view_pointers();
+    REQUIRE(moved_hidden.view.setup.stepmania_policy_status);
+    check_frame_storage(!moved_hidden.view.setup.visible);
+    check_frame_storage(moved_hidden.view.setup.stepmania_policy_status[0] == '\0');
+    wormedit::stepmania_export_policy_t policy;
+    policy.file_profile = wormedit::stepmania_profile_t::sm;
+    auto warning = project_setup_recovery({}, nullptr, policy);
+    check_frame_storage(warning.view.setup.stepmania_policy_valid);
+    check_frame_storage(std::strcmp(warning.view.setup.stepmania_policy_status,
+        "Valid syntax policy; SM charts containing warps require a legacy encoding instead.") == 0);
+    policy.timing_syntax = wormedit::stepmania_timing_syntax_t::unspecified;
+    auto rejected = project_setup_recovery({}, nullptr, policy);
+    auto moved = std::move(rejected);
+    moved.rebind_view_pointers();
+    check_frame_storage(!moved.view.setup.stepmania_policy_valid);
+    check_frame_storage(std::strcmp(moved.view.setup.stepmania_policy_status,
+        "Select a StepMania timing syntax explicitly") == 0);
+}
+
+TEST_CASE("Recovery arena summaries retain maximum numeric values and disabled action reasons",
+          "[sys][frame-arena][setup-recovery]") {
+    auto recovery = recovery_arena_model();
+    auto& active = recovery.rows[1];
+    active.version = wormedit::native_project_document_version_t{
+        .revision = std::numeric_limits<std::uint64_t>::max()};
+    active.recovery_session_sequence = std::numeric_limits<std::uint64_t>::max();
+    active.available_actions = {wormedit::native_project_recovery_action_t::inspect_read_only};
+    const auto frame = project_setup_recovery(recovery);
+    check_frame_storage(std::strcmp(frame.view.recovery_candidates[0].summary,
+        "valid · newer · revision 18446744073709551615 · session 18446744073709551615") == 0);
+    check_frame_storage(std::strcmp(frame.view.recovery_candidates[0].disabled_reason,
+        "Unavailable actions are disabled by the recovery controller's safety checks.") == 0);
+    check_frame_storage(frame.view.recovery_candidates[0].action_mask == WORM_UI_RECOVERY_ACTION_INSPECT);
+    recovery.rows.resize(WORM_UI_RECOVERY_ROW_CAPACITY + 1, active);
+    recovery.diagnostics.resize(WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY + 1, recovery.diagnostics.front());
+    const auto bounded = project_setup_recovery(recovery);
+    check_frame_storage(bounded.view.recovery_candidate_count == WORM_UI_RECOVERY_ROW_CAPACITY);
+    check_frame_storage(bounded.view.recovery_rows_truncated);
+    check_frame_storage(bounded.view.recovery_diagnostic_count == WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY);
+}
+
+TEST_CASE("Setup and Recovery exhaustion retains immutable notices and only complete rows",
+          "[sys][frame-arena][setup-recovery]") {
+    const auto recovery = recovery_arena_model();
+    frame_arena_t tiny({.chunk_bytes = 8, .maximum_bytes = 8});
+    const auto failed = project_setup_recovery(recovery, &tiny);
+    check_frame_storage(failed.view.recovery_candidate_count == 0);
+    check_frame_storage(failed.view.recovery_rows_truncated);
+    check_frame_storage(failed.setup.text_truncated);
+    check_frame_storage(failed.view.setup.stepmania_policy_valid);
+    const auto* notice = failed.view.recovery_notice;
+    const auto* diagnostic = failed.view.recovery_diagnostics[0];
+    const auto* setup = failed.view.setup.stepmania_policy_status;
+    tiny.reset();
+    check_frame_storage(std::strcmp(notice, "Recovery display text truncated (frame storage limit).") == 0);
+    check_frame_storage(std::strcmp(diagnostic, "Recovery display text truncated (frame storage limit).") == 0);
+    check_frame_storage(std::strcmp(setup, "Setup display text truncated (frame storage limit).") == 0);
+    auto prefix_model = recovery_arena_model();
+    prefix_model.rows[0].path_label.assign(4096, 'p');
+    frame_arena_t limited({.chunk_bytes = 512, .maximum_bytes = 512});
+    const auto prefix = project_setup_recovery(prefix_model, &limited);
+    check_frame_storage(prefix.view.recovery_candidate_count == 1);
+    check_frame_storage(prefix.view.recovery_rows_truncated);
+    check_frame_storage(prefix.view.recovery_candidates[0].candidate_index == 8);
+}
+
+TEST_CASE("Warmed Setup and Recovery arena copies allocate no heap across 1000 projections",
+          "[sys][frame-arena][setup-recovery]") {
+    auto recovery = recovery_arena_model();
+    recovery.diagnostics[0].path.clear();
+    const auto model = setup_arena_model();
+    const wormedit::song_document_t document;
+    const std::string status = "ready";
+    frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    auto project = [&] { return flatten_workspace(model, document, status, recovery, true, {}, &arena); };
+    (void)project();
+    const auto used = arena.used_bytes();
+    const auto committed = arena.committed_bytes();
+    bool stable = true;
+    bool zero_new = true;
+    for (int iteration = 0; iteration < 1000; ++iteration) {
+        arena.reset();
+        const auto start = frame_heap_allocation_snapshot();
+        const auto frame = project();
+        const auto finish = frame_heap_allocation_snapshot();
+        zero_new = zero_new && finish.count == start.count;
+        stable = stable && arena.used_bytes() == used && arena.committed_bytes() == committed &&
+            frame.view.recovery_candidate_count == 2 && !frame.setup.text_truncated;
+    }
+    check_frame_storage(zero_new);
+    check_frame_storage(stable);
+}

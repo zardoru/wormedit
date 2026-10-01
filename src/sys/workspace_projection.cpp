@@ -197,30 +197,45 @@ auto recovery_action_mask(const std::vector<wormedit::native_project_recovery_ac
     return mask;
 }
 
-void populate_recovery_candidate(
+auto recovery_number_suffix(const char* label, std::optional<std::uint64_t> value)
+    -> std::array<char, 64> {
+    std::array<char, 64> suffix{};
+    if (value) std::snprintf(suffix.data(), suffix.size(), " · %s %llu", label,
+                             static_cast<unsigned long long>(*value));
+    return suffix;
+}
+
+auto recovery_summary(frame_arena_t& arena,
+                      const wormedit::native_project_recovery_banner_row_t& row,
+                      bool recommended) -> const char* {
+    const auto revision = recovery_number_suffix("revision", row.version
+        ? std::optional<std::uint64_t>{row.version->revision} : std::nullopt);
+    const auto session = recovery_number_suffix("session", row.recovery_session_sequence);
+    return arena_format(arena, "%s · %s%s%s%s", recovery_status_name(row.status).data(),
+        recovery_comparison_name(row.comparison).data(), revision.data(), session.data(),
+        recommended ? " · recommended recovery" : "");
+}
+
+auto populate_recovery_candidate(
     flattened_workspace_t& result,
     const wormedit::native_project_recovery_controller_view_t& recovery,
-    std::size_t source_index, std::size_t index) {
+    std::size_t source_index, std::size_t index) -> bool {
     const auto& row = recovery.rows[source_index];
-    result.recovery.path[index] = row.path_label;
-    auto& summary = result.recovery.summary[index];
-    summary = std::string(recovery_status_name(row.status)) + " · " +
-              std::string(recovery_comparison_name(row.comparison));
-    if (row.version) {
-        summary += " · revision " + std::to_string(row.version->revision);
+    auto* arena = result.arena();
+    const auto* path = arena ? arena_string(*arena, row.path_label) : nullptr;
+    const auto* summary = arena ? recovery_summary(*arena, row,
+        recovery.preferred_recovery_row == source_index) : nullptr;
+    if (!path || !summary) {
+        result.view.recovery_rows_truncated = true;
+        result.view.recovery_notice = "Recovery display text truncated (frame storage limit).";
+        return false;
     }
-    if (row.recovery_session_sequence) {
-        summary += " · session " + std::to_string(*row.recovery_session_sequence);
-    }
-    if (recovery.preferred_recovery_row == source_index) {
-        summary += " · recommended recovery";
-    }
-    auto& disabled_reason = result.recovery.disabled_reason[index];
     const auto action_mask = recovery_action_mask(row.available_actions);
     constexpr auto all_recovery_actions =
         WORM_UI_RECOVERY_ACTION_INSPECT | WORM_UI_RECOVERY_ACTION_RECOVER |
         WORM_UI_RECOVERY_ACTION_SAVE_AS | WORM_UI_RECOVERY_ACTION_DISCARD |
         WORM_UI_RECOVERY_ACTION_QUARANTINE;
+    const char* disabled_reason = nullptr;
     if (row.available_actions.empty()) {
         disabled_reason = "No safe action is available for this candidate.";
     } else if (action_mask != all_recovery_actions) {
@@ -228,27 +243,29 @@ void populate_recovery_candidate(
             "Unavailable actions are disabled by the recovery controller's safety checks.";
     }
     result.view.recovery_candidates[index] = {
-        .path_label = result.recovery.path[index].c_str(),
-        .summary = summary.c_str(),
-        .disabled_reason = disabled_reason.empty() ? nullptr : disabled_reason.c_str(),
+        .path_label = path, .summary = summary, .disabled_reason = disabled_reason,
         .action_mask = action_mask,
         .scan_generation = row.target.scan_generation,
         .row_index = row.target.row_index,
         .candidate_index = row.target.candidate_index,
     };
+    return true;
 }
 
 void populate_bounded_recovery_candidates(
     flattened_workspace_t& result,
     const wormedit::native_project_recovery_controller_view_t& recovery) {
-    std::size_t index{};
+    const auto capacity = result.view.recovery_candidate_count;
+    result.view.recovery_candidate_count = 0;
     // Keep actionable rows ahead of inactive rows without changing action tokens.
     for (const bool actionable : {true, false}) {
         for (std::size_t source_index = 0; source_index < recovery.rows.size(); ++source_index) {
-            if (index == result.view.recovery_candidate_count) return;
+            if (result.view.recovery_candidate_count == capacity) return;
             const bool row_actionable = !recovery.rows[source_index].available_actions.empty();
             if (row_actionable != actionable) continue;
-            populate_recovery_candidate(result, recovery, source_index, index++);
+            if (!populate_recovery_candidate(result, recovery, source_index,
+                                              result.view.recovery_candidate_count)) return;
+            ++result.view.recovery_candidate_count;
         }
     }
 }
@@ -282,14 +299,19 @@ void populate_recovery_view(
     const auto recovery_diagnostic_count =
         std::min(recovery.diagnostics.size(),
                  static_cast<std::size_t>(WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY));
-    result.view.recovery_diagnostic_count = recovery_diagnostic_count;
+    auto* arena = result.arena();
     for (std::size_t index = 0; index < recovery_diagnostic_count; ++index) {
-        auto& diagnostic = result.recovery.diagnostic[index];
-        diagnostic = recovery.diagnostics[index].message;
-        if (!recovery.diagnostics[index].path.empty()) {
-            diagnostic += " (" + recovery.diagnostics[index].path.generic_string() + ")";
+        const auto& diagnostic = recovery.diagnostics[index];
+        const auto* text = arena ? (diagnostic.path.empty()
+            ? arena_string(*arena, diagnostic.message)
+            : arena_format(*arena, "%s (%s)", diagnostic.message.c_str(),
+                           diagnostic.path.generic_string().c_str())) : nullptr;
+        result.view.recovery_diagnostics[result.view.recovery_diagnostic_count++] = text
+            ? text : "Recovery display text truncated (frame storage limit).";
+        if (!text) {
+            result.view.recovery_rows_truncated = true;
+            break;
         }
-        result.view.recovery_diagnostics[index] = diagnostic.c_str();
     }
 }
 
@@ -348,18 +370,21 @@ void populate_setup_tab(const workspace_projection_context_t& projection, const 
                     ui_stepmania_implementation(stepmania_policy.implementation_profile);
                 const auto resolved = wormedit::resolve_stepmania_export_policy(stepmania_policy);
                 setup.stepmania_policy_valid = static_cast<bool>(resolved);
-                if (resolved) {
-                    result.setup.policy_status =
+                const auto status = resolved
+                    ? std::string_view{
                         stepmania_policy.file_profile == wormedit::stepmania_profile_t::sm &&
                                 stepmania_policy.timing_syntax ==
                                     wormedit::stepmania_timing_syntax_t::native_warps
                             ? "Valid syntax policy; SM charts containing warps require a legacy "
                               "encoding instead."
-                            : "Compatible StepMania export policy.";
-                } else {
-                    result.setup.policy_status = resolved.message;
-                }
-                setup.stepmania_policy_status = result.setup.policy_status.c_str();
+                            : "Compatible StepMania export policy."}
+                    : std::string_view{resolved.message};
+                auto* arena = result.arena();
+                const auto* copied = arena ? arena_string(*arena, status) : nullptr;
+                result.setup.text_truncated = !copied;
+                result.setup.policy_status = copied ? copied :
+                    "Setup display text truncated (frame storage limit).";
+                setup.stepmania_policy_status = result.setup.policy_status;
 
 }
 
@@ -788,19 +813,7 @@ void flattened_workspace_t::rebind_view_pointers() {
         view.summary_lines[index] = summary.lines[index];
     }
 
-    for (std::size_t index = 0; index < view.recovery_candidate_count; ++index) {
-        auto& candidate = view.recovery_candidates[index];
-        candidate.path_label = recovery.path[index].c_str();
-        candidate.summary = recovery.summary[index].c_str();
-        candidate.disabled_reason = recovery.disabled_reason[index].empty()
-                                        ? nullptr
-                                        : recovery.disabled_reason[index].c_str();
-    }
-    for (std::size_t index = 0; index < view.recovery_diagnostic_count; ++index) {
-        view.recovery_diagnostics[index] = recovery.diagnostic[index].c_str();
-    }
-
-    view.setup.stepmania_policy_status = setup.policy_status.c_str();
+    view.setup.stepmania_policy_status = setup.policy_status;
 
     auto& metadata_view = view.metadata;
     metadata_view.search_tags = metadata_view.search_tags_editable

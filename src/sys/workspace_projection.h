@@ -89,13 +89,8 @@ struct flattened_workspace_t {
         bool truncated{};
     } summary;
     struct {
-        std::array<std::string, WORM_UI_RECOVERY_ROW_CAPACITY> path;
-        std::array<std::string, WORM_UI_RECOVERY_ROW_CAPACITY> summary;
-        std::array<std::string, WORM_UI_RECOVERY_ROW_CAPACITY> disabled_reason;
-        std::array<std::string, WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY> diagnostic;
-    } recovery;
-    struct {
-        std::string policy_status;
+        const char* policy_status{""};
+        bool text_truncated{};
     } setup;
     struct {
         frame_span<const char*> search_tag;

@@ -2,6 +2,8 @@
 
 #include <wormedit/core/virtual_canvas.h>
 
+#include "wide_math.h"
+
 #include <algorithm>
 #include <cmath>
 #include <ranges>
@@ -9,6 +11,10 @@
 
 namespace wormedit::interaction_detail {
 namespace {
+
+constexpr auto remainder_rounds_up(std::uint64_t remainder, std::uint64_t capacity) -> bool {
+    return remainder > capacity - remainder;
+}
 
 auto error(diagnostic_code_t code, std::string message) -> diagnostic_t {
     return {.severity = diagnostic_severity_t::error,
@@ -224,16 +230,17 @@ auto page_edit_cursor(cursor_navigation_context_t& context,
     if (!target_measure)
         return diagnostic_result(context.history, context.state,
             {error(diagnostic_code_t::row_out_of_range, "cursor page target is unavailable")});
-    const auto scaled = static_cast<unsigned __int128>(context.absolute - source->begin_row) *
-                        target_measure->row_capacity;
-    const auto quotient = scaled / source->row_capacity;
-    const auto remainder = scaled % source->row_capacity;
-    const auto rounded = quotient + (remainder > source->row_capacity - remainder ? 1U : 0U);
-    if (rounded >= target_measure->row_capacity)
+    const auto scaled = wide_math::multiply(context.absolute - source->begin_row,
+                                            target_measure->row_capacity);
+    const auto division = wide_math::divide(scaled, {0, source->row_capacity});
+    const auto rounded = wide_math::add(
+        division.quotient,
+        remainder_rounds_up(division.remainder.low, source->row_capacity) ? 1U : 0U);
+    if (!wide_math::fits_u64(rounded) || rounded.low >= target_measure->row_capacity)
         return diagnostic_result(context.history, context.state,
             {error(diagnostic_code_t::row_out_of_range,
                    "cursor page target cannot represent its fractional row")});
-    const auto row = target_measure->begin_row + static_cast<std::uint64_t>(rounded);
+    const auto row = target_measure->begin_row + rounded.low;
     const auto target = target_measure->authored ? position_at(context.index, row) : std::nullopt;
     return apply_cursor_navigation_target(context, target, row, "cursor paging");
 }

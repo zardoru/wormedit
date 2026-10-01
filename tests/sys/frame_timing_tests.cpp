@@ -18,6 +18,7 @@
 #include <SDL3/SDL_timer.h>
 #include <cstdlib>
 #include <new>
+#include <source_location>
 
 // The real Compose input selector is linked below. Its unrelated UI-only
 // resource-placement notification has no recipient in this headless harness.
@@ -123,6 +124,38 @@ auto dense_song() -> song_document_t {
     song.charts.push_back(std::move(chart));
     return song;
 }
+void expect_compose_test(bool condition,
+                         std::source_location source = std::source_location::current()) {
+    INFO("Compose expectation at " << source.line());
+    REQUIRE(condition);
+}
+auto compose_test_song() -> song_document_t {
+    auto song = dense_song();
+    song.charts.front().measures.resize(1);
+    song.charts.front().measures.front().notes.resize(8);
+    return song;
+}
+struct compose_test_fixture_t {
+    document_history_t history;
+    decltype(make_workspace_controller(history)) binding;
+    compose_scene_cache_t cache;
+    application_command_state_t application;
+    std::optional<editor_interaction_state_t> interaction;
+    flattened_workspace_t flattened;
+    explicit compose_test_fixture_t(song_document_t song = compose_test_song())
+        : history(make_document_history(std::move(song))), binding(make_workspace_controller(history)) {
+        expect_compose_test(binding.workspace.has_value());
+        binding.workspace->active_tab = workspace_tab_t::compose;
+        binding.workspace->selected_chart = chart_id_t{1};
+    }
+    void project() {
+        flattened = {};
+        flattened.view.compose.visible = true;
+        populate_compose_view(flattened, history, *binding.workspace, cache, 1280, 980,
+                              interaction, application, nullptr);
+        expect_compose_test(flattened.view.compose.scene_available);
+    }
+};
 }
 
 void project_follow_frame(document_history_t& history, workspace_controller_t& workspace,

@@ -547,3 +547,17 @@ TEST_CASE("Plain Space plays or stops once and respects input owners", "[unit][c
           command_dispatch_status_t::focus_consumed);
     CHECK(calls->size() == 1);
 }
+
+TEST_CASE("Primary V starts paste only for the Compose input owner", "[unit][commands][clipboard]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    const auto registry = make_default_editor_command_registry(make_invoker(calls));
+    auto focus = focus_for_compose();
+    const shortcut_event_t event{.chord = {.key = shortcut_key_t::v,
+                                          .modifiers = static_cast<shortcut_modifiers_t>(shortcut_modifier_t::control)}};
+    CHECK(dispatch_shortcut(registry, event, focus, shortcut_primary_modifier_t::control).command ==
+          command_id_t{"edit.paste"});
+    focus.text_entry_active = true;
+    CHECK(dispatch_shortcut(registry, event, focus, shortcut_primary_modifier_t::control).status ==
+          command_dispatch_status_t::focus_consumed);
+    CHECK(calls->size() == 1);
+}

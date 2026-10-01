@@ -504,7 +504,7 @@ static bool process_compose_navigation_key(const auto& key_event,
         compose_navigation_action_for_key(key, key_event.modifiers, view->downscroll,
                                           &navigation_action);
     }
-    if (!pointer_paint_mode_active && !view->space_range_preview_visible &&
+    if (!view->paste_active && !pointer_paint_mode_active && !view->space_range_preview_visible &&
         worm_ui_nuklear_begin_shift_range(
             state, compose_shift_keys(key_event.modifiers))) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION);
@@ -609,10 +609,18 @@ static void process_compose_key_event(const auto& key_event, const WormUiCompose
     if (key_event.down && state.space_range_hold_active)
         state.shift_range_keys |= compose_shift_key(key_event.keycode);
     if (!keyboard_ready || !key_event.down || key_event.repeat) return;
+    if (view->paste_active && key_event.keycode == static_cast<uint32_t>(SDLK_RETURN)) {
+        append_compose_input(action, WORM_UI_COMPOSE_INPUT_PASTE_COMMIT);
+        return;
+    }
+    if (view->paste_active && key_event.keycode == static_cast<uint32_t>(SDLK_ESCAPE)) {
+        append_compose_input(action, WORM_UI_COMPOSE_INPUT_PASTE_CANCEL);
+        return;
+    }
     if (process_compose_escape(key_event, view, action)) return;
     if (compose_shortcut_modifier(key_event.modifiers)) return;
     if (process_compose_navigation_key(key_event, view, action, pointer_paint_mode_active)) return;
-    if (pointer_paint_mode_active) return;
+    if (pointer_paint_mode_active || view->paste_active) return;
     if ((key_event.modifiers & (SDL_KMOD_ALT | SDL_KMOD_GUI | SDL_KMOD_CTRL | SDL_KMOD_MODE |
                                 SDL_KMOD_LEVEL5)) != 0)
         return;
@@ -1173,7 +1181,7 @@ static void update_active_beat_fit_drag(const ComposeBeatFitInput& input) {
 }
 
 bool process_compose_beat_fit_pointer(const ComposeBeatFitInput& input) {
-    if (compose_area_pointer_consumed()) return true;
+    if (input.view->paste_active || compose_area_pointer_consumed()) return true;
     if (state.offset_fit_drag_active) {
         update_active_offset_fit_drag(input);
         return true;
@@ -1385,7 +1393,7 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
 bool process_compose_double_clicks(const ComposeDoubleClickContext& input,
                                           bool compose_pointer_captured,
                                           bool window_focused) {
-    if (compose_area_pointer_consumed()) return true;
+    if (input.view->paste_active || compose_area_pointer_consumed()) return true;
     if (compose_pointer_captured || !window_focused || !input.view->scene_available) return false;
     bool note_double_click_in_view = false;
     for (size_t click_index = 0; click_index < input.click_count; ++click_index) {
@@ -1775,6 +1783,7 @@ auto process_semantic_layer_paint_pointer(const ComposePointerEventContext& inpu
 
 void process_note_paint_pointer(const ComposePointerEventContext& input,
                                        bool& paint_pointer_consumed) {
+    if (input.view->paste_active) { paint_pointer_consumed = true; return; }
     if (compose_area_pointer_consumed()) return;
     const auto& view = *input.view;
     auto* action = input.action;
@@ -1932,6 +1941,7 @@ static auto update_area_selection_active(const ComposePointerEventContext& input
 
 void process_compose_drag_gestures(const ComposePointerEventContext& input,
                                           bool paint_pointer_consumed) {
+    if (input.view->paste_active) return;
     if (compose_area_pointer_consumed()) return;
     if (update_note_move_candidate(input, paint_pointer_consumed)) return;
     if (update_note_move_active(input, paint_pointer_consumed)) return;
@@ -2161,6 +2171,17 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
 
 void process_compose_pointer_actions(const ComposePointerEventContext& input,
                                            bool paint_pointer_consumed) {
+    if (input.view->paste_active) {
+        if (input.window_focused && input.pointer_inside && input.pointer_in_note_field) {
+            const auto delta = input.context->input.mouse.delta;
+            if (delta.x != 0.0f || delta.y != 0.0f || input.left_released)
+                append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_PASTE_UPDATE,
+                                     input.pointer_x, input.pointer_y);
+            if (input.left_released && input.pointer_started_in_view)
+                append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_PASTE_COMMIT);
+        }
+        return;
+    }
     if (compose_area_pointer_consumed()) return;
     if (handle_compose_measure_click(input, paint_pointer_consumed)) return;
     if (handle_compose_alt_pointer(input, paint_pointer_consumed)) return;

@@ -781,6 +781,8 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
                 command_focus_scope_t::tab, {chord(shortcut_key_t::c, primary())}, false, compose);
     add_builtin(registry, invoker, "edit.cut", "Cut", command_category_t::edit,
                 command_focus_scope_t::tab, {chord(shortcut_key_t::x, primary())}, true, compose);
+    add_builtin(registry, invoker, "edit.paste", "Paste", command_category_t::edit,
+                command_focus_scope_t::tab, {chord(shortcut_key_t::v, primary())}, false, compose);
     add_builtin(registry, invoker, "edit.delete", "Delete", command_category_t::edit,
                 command_focus_scope_t::tab,
                 {chord(shortcut_key_t::delete_key), chord(shortcut_key_t::backspace)}, true,

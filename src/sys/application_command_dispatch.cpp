@@ -34,6 +34,11 @@ auto clear_selection_or_cancel_preview(wormedit::document_history_t& history,
                                        application_command_state_t& application_state,
                                        std::string& status)
     -> wormedit::command_invocation_result_t {
+    if (application_state.paste_session) {
+        application_state.paste_session.reset();
+        status = "Paste preview cancelled.";
+        return {.accepted = true};
+    }
     if (application_state.transport_inline_active &&
         application_state.transport_inline_active() &&
         application_state.transport_cancel_restore) {
@@ -194,6 +199,14 @@ auto transport_command(command_context_t& context) -> std::optional<command_resu
 
 auto clipboard_commands(command_context_t& context) -> std::optional<command_result_t> {
     const auto kind = context.command.kind;
+    if (kind == command_kind_t::edit_paste) {
+        const auto* state = context.compose();
+        if (!state) return reject_application_command(context.status,
+            "Paste requires the active Compose chart.");
+        const bool accepted = begin_compose_paste(context.application_state,
+            context.history.document, *state, context.status);
+        return command_result_t{.accepted = accepted};
+    }
     if (kind != command_kind_t::edit_copy && kind != command_kind_t::edit_cut)
         return std::nullopt;
     auto* state = context.compose();

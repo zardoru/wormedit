@@ -25,6 +25,7 @@
 #include <string>
 #include <string_view>
 #include <tuple>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -32,6 +33,107 @@
 #include <vector>
 
 namespace wormedit::sys {
+
+namespace {
+auto paste_anchor(application_command_state_t::paste_session_t& session,
+                  wormedit::local_position_t cursor) -> wormedit::local_position_t {
+    if (session.pointer_cursor && *session.pointer_cursor == cursor) return session.anchor;
+    session.pointer_cursor.reset();
+    return cursor;
+}
+
+auto paste_geometry(const wormedit::chart_document_t& source,
+                    const wormedit::chart_paste_proposal_t& proposal) -> wormedit::chart_document_t {
+    wormedit::chart_document_t chart;
+    chart.id = source.id;
+    chart.source_family = source.source_family;
+    chart.divisions_per_standard_measure = source.divisions_per_standard_measure;
+    chart.lane_layouts = source.lane_layouts;
+    chart.input_profile = source.input_profile;
+    chart.semantic_layers = source.semantic_layers;
+    chart.bgm_source_lanes = source.bgm_source_lanes;
+    chart.active_branch_selection = source.active_branch_selection;
+    for (const auto& measure : source.measures)
+        chart.measures.push_back({.id = measure.id, .definition = measure.definition});
+    for (const auto& object : proposal.objects) {
+        std::visit([&chart](const auto& value) {
+            const auto found = std::ranges::find(chart.measures, value.position.measure,
+                                                 &wormedit::measure_chunk_t::id);
+            if (found == chart.measures.end()) return;
+            using value_t = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<value_t, wormedit::note_t>) found->notes.push_back(value);
+            else found->bgm_events.push_back(value);
+        }, object);
+    }
+    return chart;
+}
+} // namespace
+
+auto update_compose_paste(application_command_state_t& application_state,
+    const wormedit::song_document_t& document, wormedit::chart_id_t chart,
+    wormedit::local_position_t anchor) -> bool {
+    auto& session = application_state.paste_session;
+    if (!session) return false;
+    if (session->proposal.chart != chart || session->proposal.revision != document.revision) {
+        session.reset();
+        return false;
+    }
+    if (session->anchor == anchor && session->index) return true;
+    const auto source = std::ranges::find(document.charts, chart, &wormedit::chart_document_t::id);
+    if (source == document.charts.end()) { session.reset(); return false; }
+    session->anchor = anchor;
+    session->anchor_available = true;
+    session->proposal = wormedit::propose_chart_paste(document, chart, session->clipboard,
+                                                    anchor, document.revision);
+    session->geometry = paste_geometry(*source, session->proposal);
+    const auto indexed = wormedit::build_editor_field_scene_index(session->geometry, document.revision);
+    const auto* index = std::get_if<wormedit::editor_field_scene_index_t>(&indexed);
+    session->index = index ? std::optional{*index} : std::nullopt;
+    return true;
+}
+
+auto begin_compose_paste(application_command_state_t& application_state,
+    const wormedit::song_document_t& document, const wormedit::editor_interaction_state_t& state,
+    std::string& status) -> bool {
+    if (!application_state.chart_clipboard || editor_interaction_has_pending_gesture(state)) {
+        status = "Paste requires a copied selection and no pending gesture.";
+        return false;
+    }
+    application_command_state_t::paste_session_t session;
+    session.clipboard = *application_state.chart_clipboard;
+    session.proposal.chart = state.chart;
+    session.proposal.revision = document.revision;
+    application_state.note_paint_mode_active = false;
+    application_state.semantic_layer_paint_mode_active = false;
+    application_state.paste_session = std::move(session);
+    const bool accepted = update_compose_paste(application_state, document, state.chart, state.cursor);
+    status = accepted ? "Paste preview: click or Enter to commit; Escape to cancel."
+                      : "The paste chart is unavailable.";
+    return accepted;
+}
+
+auto commit_compose_paste(application_command_state_t& application_state,
+    wormedit::document_history_t& history, wormedit::editor_interaction_state_t& state,
+    std::string& status) -> bool {
+    const auto anchor = application_state.paste_session
+        ? paste_anchor(*application_state.paste_session, state.cursor) : state.cursor;
+    if (!update_compose_paste(application_state, history.document, state.chart, anchor)) {
+        status = "The paste preview is stale.";
+        return false;
+    }
+    auto& session = *application_state.paste_session;
+    if (!session.anchor_available) { status = session.anchor_error; return false; }
+    if (!session.proposal.valid) { status = session.proposal.error; return false; }
+    const auto applied = wormedit::paste_chart_clipboard(history, state.chart, session.clipboard,
+                                                       session.anchor, session.proposal.revision);
+    if (!applied.applied) {
+        status = applied.diagnostics.empty() ? "Paste failed." : applied.diagnostics.front().message;
+        return false;
+    }
+    application_state.paste_session.reset();
+    status = "Selection pasted.";
+    return true;
+}
 
 auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) -> double {
     float recovery_height = 0.0f;
@@ -2278,10 +2380,44 @@ void cache_area_object_geometry(const compose_final_projection_context_t& input)
     cache.area_object_geometry = std::move(snapshot);
 }
 
+void populate_compose_paste_projection(const compose_final_projection_context_t& input) {
+    auto& application = input.application_state;
+    if (!input.retained_state || !application.paste_session) return;
+    const auto anchor = paste_anchor(*application.paste_session, input.retained_state->cursor);
+    if (!update_compose_paste(application, input.history.document, input.chart.id, anchor)) return;
+    auto& session = *application.paste_session;
+    auto& view = input.view;
+    view.paste_active = true;
+    view.paste_valid = session.anchor_available && session.proposal.valid;
+    view.paste_diagnostic = session.anchor_available ? session.proposal.error.c_str()
+                                                     : session.anchor_error.c_str();
+    session.ghosts.clear();
+    if (!session.index) return;
+    const auto composed = wormedit::make_editor_field_scene(session.geometry, *session.index,
+        input.interaction_view, input.cache.preview_scene_request);
+    if (!composed.scene) return;
+    const auto append = [&session](const auto& object, std::uint8_t kind, std::uint8_t glyph = 0) {
+        const auto& b = object.bounds;
+        session.ghosts.push_back({{b.left, b.top, b.right, b.bottom}, kind, glyph});
+    };
+    for (const auto& hold : composed.scene->hold_bodies) append(hold, 1);
+    for (const auto& note : composed.scene->note_endpoints)
+        append(note, 0, static_cast<std::uint8_t>(note.glyph));
+    for (const auto& event : composed.scene->bgm_events) append(event, 2);
+    view.paste_ghosts = session.ghosts.data();
+    view.paste_ghost_count = session.ghosts.size();
+}
+
 void populate_compose_final_projection(const compose_final_projection_context_t& input) {
+    input.view.clipboard_copy_available = input.retained_state &&
+        !editor_interaction_has_pending_gesture(*input.retained_state) &&
+        (!input.retained_state->selected_objects.empty() || !input.retained_state->selected_notes.empty());
+    input.view.clipboard_paste_available = input.application_state.chart_clipboard.has_value() &&
+        input.retained_state && !editor_interaction_has_pending_gesture(*input.retained_state);
     const auto rows = prepare_compose_projection_state(input);
     populate_compose_pending_previews(input);
     (void)compose_project_scene(input, rows);
+    populate_compose_paste_projection(input);
     cache_area_object_geometry(input);
 }
 

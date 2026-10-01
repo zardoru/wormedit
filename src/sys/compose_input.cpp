@@ -2498,10 +2498,47 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
     return selection;
 }
 
+auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
+                                  compose_input_context_t& context)
+    -> std::optional<std::string> {
+    auto& application = context.application_state;
+    if (input.kind == WORM_UI_COMPOSE_INPUT_PASTE_CANCEL) {
+        application.paste_session.reset();
+        return "Paste preview cancelled.";
+    }
+    if (input.kind == WORM_UI_COMPOSE_INPUT_PASTE_COMMIT) {
+        std::string status;
+        if (commit_compose_paste(application, context.history, context.state, status))
+            (void)wormedit::rebind_workspace(context.workspace, context.history);
+        return status;
+    }
+    if (input.kind != WORM_UI_COMPOSE_INPUT_PASTE_UPDATE) return std::nullopt;
+    if (!application.paste_session || !context.input_chart) return std::string{};
+    const auto view = compose_view_for_state(context.history, context.state);
+    if (!view) return "The paste field is unavailable.";
+    const auto raw = context.position_at_compose_y(*context.input_chart, *view, input.y_pixels);
+    const auto position = raw ? wormedit::resolve_resource_placement_position(
+        *context.input_chart, *raw, context.state.active_snap_denominator) : std::nullopt;
+    if (!position) {
+        application.paste_session->anchor_available = false;
+        application.paste_session->anchor_error = "The paste anchor is outside the chart.";
+        return application.paste_session->anchor_error;
+    }
+    application.paste_session->anchor_available = true;
+    application.paste_session->pointer_cursor = context.state.cursor;
+    (void)update_compose_paste(application, context.history.document, context.state.chart, *position);
+    return std::string{};
+}
+
 auto dispatch_compose_input_event(const WormUiComposeInputAction& input,
                                   compose_input_context_t& context,
                                   wormedit::editor_interaction_result_t& result,
                                   std::string_view& accepted) -> compose_input_family_result_t {
+    if (const auto pasted = dispatch_compose_paste_input(input, context)) {
+        if (input.kind == WORM_UI_COMPOSE_INPUT_PASTE_UPDATE)
+            return compose_input_family_result_t::continue_batch(*pasted);
+        return compose_input_family_result_t{*pasted};
+    }
     const auto family = dispatch_compose_input_families(input, context, result, accepted);
     return family.handled ? family
                           : dispatch_unhandled_compose_input(input, context, result, accepted);

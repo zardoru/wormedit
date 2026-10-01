@@ -976,6 +976,23 @@ static void render_project_menu(const WormUiWorkspaceView* view,
     nk_menu_end(g_context);
 }
 
+static void render_clipboard_menu(const WormUiWorkspaceView* view,
+                                  WormUiWorkspaceAction* action) {
+    if (!nk_menu_begin_label(g_context, "Edit", NK_TEXT_LEFT, nk_vec2(190, 120))) return;
+    const bool text_owner = nuklear_text_entry_active() || g_ime_composition_active;
+    const auto item = [&](const char* label, bool enabled, WormUiClipboardAction kind) {
+        nk_layout_row_dynamic(g_context, 25, 1);
+        if (!enabled) nk_widget_disable_begin(g_context);
+        const bool chosen = nk_menu_item_label(g_context, label, NK_TEXT_LEFT) != 0;
+        if (!enabled) nk_widget_disable_end(g_context);
+        if (chosen && enabled) action->clipboard = kind;
+    };
+    item("Copy", !text_owner && view->compose.clipboard_copy_available, WORM_UI_CLIPBOARD_COPY);
+    item("Cut", !text_owner && view->compose.clipboard_copy_available, WORM_UI_CLIPBOARD_CUT);
+    item("Paste", !text_owner && view->compose.clipboard_paste_available, WORM_UI_CLIPBOARD_PASTE);
+    nk_menu_end(g_context);
+}
+
 static void render_view_menu(const WormUiWorkspaceView* view,
                              WormUiWorkspaceAction* action) {
     if (!nk_menu_begin_label(g_context, "View", NK_TEXT_LEFT, nk_vec2(230, 160))) return;
@@ -1025,11 +1042,13 @@ static void render_title_bar(const WormUiWorkspaceView* view,
     nk_layout_row_template_push_dynamic(g_context);
     nk_layout_row_template_push_static(g_context, 76);
     nk_layout_row_template_push_static(g_context, 56);
+    nk_layout_row_template_push_static(g_context, 56);
     if (custom_controls) wormedit::ui::chrome::IconButton::layout_columns(g_context, 3);
     nk_layout_row_template_end(g_context);
     nk_labelf(g_context, NK_TEXT_LEFT, "  %s%s", view->project_title,
               view->dirty ? " *" : "");
     render_project_menu(view, action);
+    render_clipboard_menu(view, action);
     render_view_menu(view, action);
     if (custom_controls) {
         if (wormedit::ui::chrome::IconButton{Glyph::minus, "Minimize window"}.render(g_context))

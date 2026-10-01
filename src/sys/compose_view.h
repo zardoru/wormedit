@@ -140,6 +140,18 @@ enum class external_player_action_t;
 
 struct application_command_state_t {
     std::optional<wormedit::chart_clipboard_t> chart_clipboard;
+    struct paste_session_t {
+        wormedit::chart_clipboard_t clipboard;
+        wormedit::local_position_t anchor;
+        bool anchor_available{true};
+        std::string anchor_error;
+        std::optional<wormedit::local_position_t> pointer_cursor;
+        wormedit::chart_paste_proposal_t proposal;
+        wormedit::chart_document_t geometry;
+        std::optional<wormedit::editor_field_scene_index_t> index;
+        std::vector<WormUiComposePasteGhostView> ghosts;
+    };
+    std::optional<paste_session_t> paste_session;
     wormedit::editor_preferences_t editor_preferences;
     struct bmson_marker_draft_t {
         wormedit::chart_id_t chart;
@@ -258,6 +270,16 @@ auto compose_snap_preferences(const application_command_state_t& state, wormedit
     -> std::array<std::uint64_t, chart_snap_preferences.size() + 1>;
 auto editor_interaction_has_pending_gesture(
     const wormedit::editor_interaction_state_t& state) -> bool;
+
+auto begin_compose_paste(application_command_state_t& application_state,
+    const wormedit::song_document_t& document, const wormedit::editor_interaction_state_t& state,
+    std::string& status) -> bool;
+auto update_compose_paste(application_command_state_t& application_state,
+    const wormedit::song_document_t& document, wormedit::chart_id_t chart,
+    wormedit::local_position_t anchor) -> bool;
+auto commit_compose_paste(application_command_state_t& application_state,
+    wormedit::document_history_t& history, wormedit::editor_interaction_state_t& state,
+    std::string& status) -> bool;
 
 void populate_compose_view(flattened_workspace_t& flattened,
                            wormedit::document_history_t& history,

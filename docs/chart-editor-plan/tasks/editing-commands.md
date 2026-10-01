@@ -186,7 +186,7 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-62 Paste the internal clipboard with a ghost preview
 
-- **Status:** ready
+- **Status:** done (exact owned ghost geometry, keyboard/click atomic commit, red collisions and Escape; full 1180/1180 plus isolated saved-object/undo gates passed)
 - **Outcome:** `edit.paste` shows the snippet as ghosts at the cursor; click or Enter commits, Escape cancels; collisions show red ghosts and block commit.
 - **Read first:** `include/wormedit/core/chart_clipboard.h`, `src/core/interaction.cpp` (move-proposal ghosts), `src/sys/compose_input.cpp`.
 - **Files owned:** `src/core/chart_clipboard.cpp`, `include/wormedit/core/chart_clipboard.h`, `src/sys/compose_input.cpp`, `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `tests/core/chart_clipboard_tests.cpp`.
@@ -264,7 +264,7 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-304 Connect the internal chart clipboard to Compose commands
 
-- **Status:** ready
+- **Status:** done (typed Primary+C/X/V and Edit menu; configured tidy, full 1180/1180, standalone cut syntax and isolated exact paste/undo/cancel gates passed)
 - **Outcome:** Primary+C/X invoke the exact T-61 clipboard through typed application commands; the retained snippet survives selection changes, failures preserve it, and the T-62 paste preview is connected to Primary+V and the Edit menu.
 - **Read first:** `include/wormedit/core/chart_clipboard.h`, `src/sys/application_command_dispatch.cpp`, `src/sys/compose_view.h`, `src/ui/nuklear/frontend.cpp`.
 - **Files owned:** `src/core/command_registry.cpp` (Primary+V registration), `src/sys/application_commands.h/.cpp`, `src/sys/application_command_dispatch.cpp/.h`, `src/sys/compose_view.h/.cpp`, `src/sys/compose_input.cpp/.h`, `src/sys/main.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/core/command_registry_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `tests/CMakeLists.txt`.

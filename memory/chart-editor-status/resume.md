@@ -8,7 +8,7 @@ User priority (2026-10-01), short term: [T-296–T-303](../../docs/chart-editor-
 T-303 is done: shared actual input ownership accepts the first keyboard/pointer gesture after inspector focus, preserves FIFO press/release edges, and defers to text/IME/occlusion; actual isolated saved-note checks and the complete 1151-test checkpoint verify the cut.
 T-296 is done: Shift navigation selects exact inclusive ranges; plain Space starts or hard-stops without repeat; actual text-owner, reversal, cancellation and saved-note gates passed.
 T-297 is done: exact inline audio offset editing focuses on double click, commits once, and cancels on Escape or blur; isolated typing/occlusion/shutdown gates and full 1175/1175 passed. Next offset tool is T-298.
-Clipboard T-61/T-62 plus their UI integration are immediate usability priorities alongside performance; do not postpone them behind the ordinary backlog.
+T-61/T-62/T-304 are done: exact Copy/Cut and typed Primary+V/Edit-menu paste retain owned ghost geometry; amber/red arrow previews, keyboard/click commit, cancellation and one-command undo passed isolated saved-object gates and full 1180/1180.
 Performance strategy (user steering 2026-10-01): prioritize T-272 flattened-workspace arena reuse and evaluate T-305, a reusable minimap texture analogous to the RMS texture before further static-layer grouping; measure CPU projection, allocations, vertices and submission separately. T-271 is done, so T-272 is ready.
 
 Work is executed as [task cards](../../docs/chart-editor-plan/tasks.md). Take the first card whose status is `ready`; do not start a blocked or `deferred` card.

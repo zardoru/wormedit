@@ -1756,6 +1756,11 @@ auto play_stop_available(const wormedit::chart_document_t* chart,
            state.transport_stop;
 }
 
+auto paste_target_available(bool compose_ready, bool pending,
+                            const application_command_state_t& state) -> bool {
+    return compose_ready && !pending && state.chart_clipboard.has_value();
+}
+
 void refresh_application_command_states(
     wormedit::command_registry_t& registry, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
@@ -1791,9 +1796,11 @@ void refresh_application_command_states(
     const bool clipboard_selection = has_clipboard_selection(compose_ready, pending, compose_state);
     set("edit.copy", clipboard_selection);
     set("edit.cut", clipboard_selection);
+    set("edit.paste", paste_target_available(compose_ready, pending, application_state));
     refresh_note_kind_commands(registry, chart, compose_state, compose_ready, pending);
 
     set("selection.clear", compose_ready && (inline_preview_active(application_state) ||
+                                            application_state.paste_session.has_value() ||
                                             pending || !compose_state->selected_objects.empty() ||
                                              application_state.note_paint_mode_active ||
                                              application_state.semantic_layer_paint_mode_active));
@@ -2834,6 +2841,20 @@ auto dispatch_recovery_workspace_action(Context& context,
 }
 
 template <typename Context>
+auto dispatch_clipboard_menu(Context& context, const WormUiWorkspaceAction& action) -> bool {
+    if (action.clipboard == WORM_UI_CLIPBOARD_NONE) return false;
+    const auto id = action.clipboard == WORM_UI_CLIPBOARD_COPY ? "edit.copy"
+                  : action.clipboard == WORM_UI_CLIPBOARD_CUT ? "edit.cut" : "edit.paste";
+    auto& registry = context.command_registry_ref;
+    refresh_application_command_states(registry, context.history_ref, context.workspace_ref,
+        context.compose_interaction_state_ref, context.application_command_state_ref);
+    const auto result = wormedit::invoke_command(registry, {id},
+        application_command_focus(action, context.workspace_ref));
+    if (!result.diagnostics.empty()) context.status_ref = result.diagnostics.front().message;
+    return true;
+}
+
+template <typename Context>
 void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceAction& action,
                                      bool shortcut_handled,
                                      std::optional<std::uint32_t> sample_rate,
@@ -2867,6 +2888,8 @@ void dispatch_workspace_frame_action(Context& context, const WormUiWorkspaceActi
         } else if (shortcut_handled) {
             // Registry commands take precedence over widget actions emitted
             // by the same input frame, preventing duplicate mutations.
+        } else if (dispatch_clipboard_menu(context, action)) {
+            // Clipboard menu actions use the same typed registry as shortcuts.
         } else if (action.audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
             status = dispatch_audio_offset_drag_action(
                 action, history, workspace, application_command_state.timing_locked,

@@ -30,6 +30,7 @@ constexpr command_name_t command_names[]{
     {"edit.delete", application_command_kind_t::edit_delete},
     {"edit.copy", application_command_kind_t::edit_copy},
     {"edit.cut", application_command_kind_t::edit_cut},
+    {"edit.paste", application_command_kind_t::edit_paste},
     {"selection.clear", application_command_kind_t::selection_clear},
     {"selection.select_all", application_command_kind_t::selection_select_all},
     {"selection.invert", application_command_kind_t::selection_invert},

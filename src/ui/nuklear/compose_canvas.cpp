@@ -1302,9 +1302,39 @@ static void draw_compose_bgm_tooltip(const ComposePaintContext& paint,
                  nk_rgb(12, 16, 24), nk_rgb(245, 227, 255), 5);
 }
 
+static bool draw_compose_paste_arrow(const ComposePaintContext& paint,
+                                     const WormUiComposePasteGhostView& ghost,
+                                     struct nk_rect tile, nk_color color) {
+    if (ghost.kind != 0 || ghost.glyph < 2 || ghost.glyph > 5 || tile.w < 10.0f) return false;
+    const auto authored = wormedit::ui::arrow_polygon(
+        ghost.glyph, tile.x, tile.y + (tile.h - tile.w) * .5f, tile.w);
+    std::array<SDL_FPoint, 7> points{};
+    for (std::size_t index = 0; index < authored.size(); ++index)
+        points[index] = {std::trunc(authored[index].x), std::trunc(authored[index].y)};
+    auto& field = wormedit::ui::nuklear::compose_field(paint.context);
+    field.polygon(5, points, field_color(color), 1);
+    color.a = 255;
+    field.stroke_polygon(5, points, 2.0f, field_color(color), 1);
+    return true;
+}
+
+static void draw_compose_paste_ghosts(const ComposePaintContext& paint) {
+    const auto& view = *paint.view;
+    const auto color = view.paste_valid ? nk_rgba(240, 171, 71, 130)
+                                       : nk_rgba(242, 70, 83, 155);
+    for (size_t index = 0; index < view.paste_ghost_count; ++index) {
+        const auto& ghost = view.paste_ghosts[index];
+        const auto rect = compose_screen_rect(&ghost.bounds, &view, paint.viewport);
+        if (draw_compose_paste_arrow(paint, ghost, rect, color)) continue;
+        field_rect(paint, rect, 0.0f, color, 5);
+        field_stroke_rect(paint, rect, 0.0f, 2.0f, color, 5);
+    }
+}
+
 static void draw_compose_editor_overlays(const ComposePaintContext& paint,
                                          const ComposeHoveredBgm& hovered) {
     const auto& view = *paint.view;
+    draw_compose_paste_ghosts(paint);
     draw_compose_space_range_preview(paint);
     if (view.area_selection_preview_visible) {
         draw_compose_selection_preview(paint, view.area_selection_preview_bounds,
@@ -1318,6 +1348,9 @@ static void draw_compose_editor_overlays(const ComposePaintContext& paint,
 
 auto compose_editor_status_hint(const WormUiComposeView* view,
                                        const WormUiTimingView* timing_view) -> const char* {
+    if (view && view->paste_active)
+        return view->paste_valid ? "Paste preview · click or Enter commits · Esc cancels"
+                                : (view->paste_diagnostic ? view->paste_diagnostic : "Paste collision");
     if (state.timing_stage_drag_active)
         return "Move timing event · release to keep staged position · Apply to commit";
     if (state.beat_fit_drag_active)

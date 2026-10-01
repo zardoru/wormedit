@@ -361,6 +361,12 @@ typedef struct WormUiComposeRect {
     double bottom;
 } WormUiComposeRect;
 
+typedef struct WormUiComposePasteGhostView {
+    WormUiComposeRect bounds;
+    uint8_t kind; /* 0 note endpoint, 1 hold body, 2 BGM event */
+    uint8_t glyph;
+} WormUiComposePasteGhostView;
+
 typedef struct WormUiComposeBandView {
     WormUiComposeRect bounds;
     bool split_stage;
@@ -761,6 +767,13 @@ typedef struct WormUiComposeView {
     double viewport_autoscroll_anchor_y_pixels;
     double viewport_autoscroll_pointer_x_pixels;
     double viewport_autoscroll_pointer_y_pixels;
+    bool clipboard_copy_available;
+    bool clipboard_paste_available;
+    bool paste_active;
+    bool paste_valid;
+    const WormUiComposePasteGhostView* paste_ghosts;
+    size_t paste_ghost_count;
+    const char* paste_diagnostic;
     const WormUiComposeBandView* bands;
     size_t band_count;
     const WormUiComposeLaneView* lanes;
@@ -1570,6 +1583,9 @@ typedef enum WormUiComposeActionKind {
 
 typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_NONE = 0,
+    WORM_UI_COMPOSE_INPUT_PASTE_UPDATE,
+    WORM_UI_COMPOSE_INPUT_PASTE_COMMIT,
+    WORM_UI_COMPOSE_INPUT_PASTE_CANCEL,
     WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND,
     WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_BACKWARD,
     WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD,
@@ -1687,7 +1703,15 @@ typedef enum WormUiMetadataEditKind {
     WORM_UI_METADATA_EDIT_OUTPUT_PATH,
 } WormUiMetadataEditKind;
 
+typedef enum WormUiClipboardAction {
+    WORM_UI_CLIPBOARD_NONE = 0,
+    WORM_UI_CLIPBOARD_COPY,
+    WORM_UI_CLIPBOARD_CUT,
+    WORM_UI_CLIPBOARD_PASTE,
+} WormUiClipboardAction;
+
 typedef struct WormUiWorkspaceAction {
+    WormUiClipboardAction clipboard;
     WormUiNotificationAction notifications;
     WormUiOptionsAction options;
     WormUiCloseDecision close_decision;

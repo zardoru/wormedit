@@ -30,6 +30,7 @@ auto valid_voice(const transport_voice_t& voice) -> bool {
 
 struct transport_mix_context_t {
     decoded_block_cache_t& block_cache;
+    const resident_snapshot_t* resident;
     std::uint64_t first_timeline_frame;
     std::uint64_t callback_end;
     std::span<float> interleaved_stereo;
@@ -43,22 +44,48 @@ struct transport_block_window_t {
     float gain;
 };
 
-auto mix_block_samples(std::span<float> output, const decoded_audio_block_t& block,
-                       const transport_block_window_t& window) -> std::size_t {
-    if (window.offset_in_block >= block.frame_count) {
+auto mix_pcm_samples(std::span<float> output, std::span<const float> pcm,
+                     const transport_block_window_t& window) -> std::size_t {
+    const auto frame_count = pcm.size() / output_channel_count;
+    if (window.offset_in_block >= frame_count) {
         return 0;
     }
-    const auto available = std::min(window.requested, block.frame_count - window.offset_in_block);
+    const auto available = std::min(window.requested, frame_count - window.offset_in_block);
     for (std::size_t frame = 0; frame < available; ++frame) {
         for (std::size_t channel = 0; channel < output_channel_count; ++channel) {
             const auto input_index =
                 (window.offset_in_block + frame) * output_channel_count + channel;
             const auto output_index =
                 (window.output_offset + frame) * output_channel_count + channel;
-            output[output_index] += block.interleaved_stereo[input_index] * window.gain;
+            output[output_index] += pcm[input_index] * window.gain;
         }
     }
     return available;
+}
+
+auto mix_block_samples(std::span<float> output, const decoded_audio_block_t& block,
+                       const transport_block_window_t& window) -> std::size_t {
+    const auto pcm = std::span<const float>{block.interleaved_stereo}.first(
+        std::min(block.interleaved_stereo.size(), block.frame_count * output_channel_count));
+    return mix_pcm_samples(output, pcm, window);
+}
+
+// Resident samples win over the block cache; a miss in both drops the voice.
+auto mix_source_block(transport_mix_context_t& context, const transport_voice_t& voice,
+                      std::uint64_t block_index, const transport_block_window_t& window)
+    -> std::size_t {
+    const audio_block_key_t key{.source = voice.source, .block_index = block_index};
+    if (context.resident != nullptr) {
+        const auto pcm = context.resident->block(key);
+        if (!pcm.empty()) {
+            return mix_pcm_samples(context.interleaved_stereo, pcm, window);
+        }
+    }
+    std::size_t available{};
+    const auto found = context.block_cache.with_block(key, [&](const decoded_audio_block_t& block) {
+        available = mix_block_samples(context.interleaved_stereo, block, window);
+    });
+    return found ? available : 0;
 }
 
 auto mix_voice(transport_mix_context_t& context, const transport_voice_t& voice) -> bool {
@@ -83,13 +110,8 @@ auto mix_voice(transport_mix_context_t& context, const transport_voice_t& voice)
                 overlap_end - timeline_frame, maximum_read_frames - offset_in_block)),
             .gain = voice.gain,
         };
-        std::size_t available{};
-        const auto found = context.block_cache.with_block(
-            {.source = voice.source, .block_index = block_index},
-            [&](const decoded_audio_block_t& block) {
-                available = mix_block_samples(context.interleaved_stereo, block, window);
-            });
-        if (!found || available != window.requested) {
+        const auto available = mix_source_block(context, voice, block_index, window);
+        if (available != window.requested) {
             ++context.result.missing_blocks;
             ++context.result.dropped_voices;
             if (voice.kind == voice_kind_t::music)
@@ -174,6 +196,36 @@ auto transport_t::decode_block(decoder_t& decoder, session_token_t token, audio_
     return result;
 }
 
+void transport_t::set_resident_snapshot(resident_snapshot_ptr_t snapshot) {
+    {
+        const std::scoped_lock lock(mutex_);
+        resident_.swap(snapshot);
+    }
+    // `snapshot` now holds the previous value and is released here, off the lock.
+}
+
+auto transport_t::resident_block_hit(session_token_t token, const audio_block_key_t& key)
+    -> std::optional<block_decode_result_t> {
+    resident_snapshot_ptr_t snapshot;
+    {
+        const std::scoped_lock lock(mutex_);
+        snapshot = resident_;
+    }
+    if (!snapshot) {
+        return std::nullopt;
+    }
+    const auto pcm = snapshot->block(key);
+    if (pcm.empty()) {
+        return std::nullopt;
+    }
+    if (!is_current(token)) {
+        return block_decode_result_t{.status = block_decode_status_t::stale_generation};
+    }
+    return block_decode_result_t{.status = block_decode_status_t::cache_hit,
+                                 .frames = pcm.size() / output_channel_count,
+                                 .decoder_status = read_status_t::success};
+}
+
 auto transport_t::schedule_voice(session_token_t token, transport_voice_t voice)
     -> voice_schedule_status_t {
     return schedule_voices(token, std::span<const transport_voice_t>{&voice, 1});
@@ -242,7 +294,7 @@ auto transport_t::mix(session_token_t token, std::uint64_t first_timeline_frame,
             return;
         }
         result.status = transport_mix_status_t::mixed;
-        transport_mix_context_t context{block_cache_, first_timeline_frame, callback_end,
+        transport_mix_context_t context{block_cache_, resident_.get(), first_timeline_frame, callback_end,
                                         interleaved_stereo, result};
         const auto clicks_enabled = clicks_enabled_.load(std::memory_order_acquire);
         for (auto& entry : scheduled_voices_) {

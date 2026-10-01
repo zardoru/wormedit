@@ -80,6 +80,9 @@ struct flattened_workspace_t {
     // Application frames borrow the resettable arena. Standalone/persistent
     // projections lazily own a separate arena whose lifetime follows copies.
     [[nodiscard]] auto arena() noexcept -> frame_arena_t*;
+    [[nodiscard]] auto owned_arena_committed_bytes() const noexcept -> std::size_t {
+        return owned_arena_ ? owned_arena_->committed_bytes() : 0;
+    }
     WormUiWorkspaceView view{};
     // Refresh pointers into inline storage after flatten_workspace returns or this object moves.
     void rebind_view_pointers();
@@ -126,8 +129,8 @@ struct flattened_workspace_t {
                 section{};
             std::array<std::string, WORM_UI_COMPOSE_AUDIO_MARKER_CAPACITY> section_label;
         } audio_marker;
-        std::vector<WormUiComposeBandView> band;
-        std::vector<WormUiComposeLaneView> lane;
+        frame_span<WormUiComposeBandView> band;
+        frame_span<WormUiComposeLaneView> lane;
         struct {
             std::vector<WormUiComposeGridLineView> line;
             std::vector<wormedit::exact_chart_row_t> row;
@@ -137,9 +140,9 @@ struct flattened_workspace_t {
         std::vector<WormUiTimingMarkerView> timing_preview_marker;
         std::vector<WormUiTimingMarkerView> timing_marker;
         std::vector<std::pair<std::string, std::string>> timing_marker_labels;
-        std::vector<WormUiComposeDifferenceView> difference;
-        std::vector<WormUiComposeHoldView> hold;
-        std::vector<WormUiComposeNoteView> note;
+        frame_span<WormUiComposeDifferenceView> difference;
+        frame_span<WormUiComposeHoldView> hold;
+        frame_span<WormUiComposeNoteView> note;
         std::unordered_map<std::uint64_t, std::pair<std::string, std::string>> sound_labels;
         struct {
             std::vector<WormUiComposeBgmLaneView> lane;

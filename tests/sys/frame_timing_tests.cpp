@@ -1765,7 +1765,7 @@ TEST_CASE("Persistent Compose static source owns geometry across frame arena res
     const auto generation = fixture.cache.static_scene_source_generation;
     check_static_source_owned_geometry(*stored);
     expect_compose_test(!stored->compose.note.empty());
-    const auto before = stored->compose.note.front();
+    const auto before = stored->compose.note[0];
     const std::string label = before.sound_label;
     const std::string detail = before.sound_detail;
     expect_compose_test(!stored->compose.timing_marker.empty());
@@ -1777,10 +1777,10 @@ TEST_CASE("Persistent Compose static source owns geometry across frame arena res
     const auto overwritten = arena.allocate_bytes(4096, alignof(char));
     expect_compose_test(static_cast<bool>(overwritten));
     std::memset(overwritten.data, 0xA5, 4096);
-    expect_compose_test(stored->compose.note.front().note_id == before.note_id);
-    expect_compose_test(stored->compose.note.front().bounds.top == before.bounds.top);
-    expect_compose_test(std::strcmp(stored->compose.note.front().sound_label, label.c_str()) == 0);
-    expect_compose_test(std::strcmp(stored->compose.note.front().sound_detail, detail.c_str()) == 0);
+    expect_compose_test(stored->compose.note[0].note_id == before.note_id);
+    expect_compose_test(stored->compose.note[0].bounds.top == before.bounds.top);
+    expect_compose_test(std::strcmp(stored->compose.note[0].sound_label, label.c_str()) == 0);
+    expect_compose_test(std::strcmp(stored->compose.note[0].sound_detail, detail.c_str()) == 0);
     expect_compose_test(std::strcmp(stored->compose.timing_marker.front().short_label, timing_label.c_str()) == 0);
     expect_compose_test(std::strcmp(stored->compose.timing_marker.front().detail, timing_detail.c_str()) == 0);
     fixture.interaction->viewport_scroll_pixels = 0.5;
@@ -1793,4 +1793,214 @@ TEST_CASE("Persistent Compose static source owns geometry across frame arena res
     expect_compose_test(fixture.cache.static_scene_storage != stored);
     expect_compose_test(fixture.cache.static_scene_source_generation > generation);
     check_static_source_owned_geometry(*fixture.cache.static_scene_storage);
+}
+
+namespace {
+auto geometry_arena_song() -> song_document_t {
+    auto song = compose_test_song();
+    auto& hold = song.charts.front().measures.front().notes[1];
+    hold.kind = note_kind_t::hold;
+    hold.end = local_position_t{measure_id_t{1}, 360};
+    return song;
+}
+void project_geometry_arena(compose_test_fixture_t& fixture, wormedit::frame_arena_t& arena,
+                            int height = 980) {
+    fixture.flattened = flattened_workspace_t{&arena};
+    fixture.flattened.view.compose.visible = true;
+    populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.workspace,
+        fixture.cache, 1280, height, fixture.interaction, fixture.application, nullptr);
+}
+void check_geometry_view_spans(const flattened_workspace_t& frame) {
+    const auto& view = frame.view.compose;
+    expect_compose_test(view.bands == frame.compose.band.data() && view.band_count == frame.compose.band.size());
+    expect_compose_test(view.lanes == frame.compose.lane.data() && view.lane_count == frame.compose.lane.size());
+    expect_compose_test(view.differences == frame.compose.difference.data() && view.difference_count == frame.compose.difference.size());
+    expect_compose_test(view.hold_bodies == frame.compose.hold.data() && view.hold_body_count == frame.compose.hold.size());
+    expect_compose_test(view.note_endpoints == frame.compose.note.data() && view.note_endpoint_count == frame.compose.note.size());
+    expect_compose_test(view.band_count <= WORM_UI_COMPOSE_BAND_CAPACITY);
+    expect_compose_test(view.lane_count <= WORM_UI_COMPOSE_LANE_CAPACITY);
+    expect_compose_test(view.difference_count <= WORM_UI_COMPOSE_DIFFERENCE_CAPACITY);
+    expect_compose_test(view.hold_body_count <= WORM_UI_COMPOSE_HOLD_CAPACITY);
+    expect_compose_test(view.note_endpoint_count <= WORM_UI_COMPOSE_NOTE_CAPACITY);
+}
+template<class Rows>
+void check_geometry_between(const Rows& rows, std::uintptr_t begin, std::uintptr_t end) {
+    if (rows.empty()) return;
+    const auto address = reinterpret_cast<std::uintptr_t>(rows.data());
+    expect_compose_test(address >= begin && address + rows.size() * sizeof(rows[0]) <= end);
+}
+void compare_geometry_rect(const WormUiComposeRect& a, const WormUiComposeRect& b) {
+    expect_compose_test(a.left == Catch::Approx(b.left));
+    expect_compose_test(a.top == Catch::Approx(b.top));
+    expect_compose_test(a.right == Catch::Approx(b.right));
+    expect_compose_test(a.bottom == Catch::Approx(b.bottom));
+}
+void compare_geometry_note(const WormUiComposeNoteView& a, const WormUiComposeNoteView& b) {
+    compare_geometry_rect(a.bounds, b.bounds);
+    expect_compose_test(a.note_id == b.note_id && a.lane_id == b.lane_id && a.display_lane_number == b.display_lane_number);
+    expect_compose_test(a.glyph == b.glyph && a.kind == b.kind && a.snap_class == b.snap_class && a.tail == b.tail);
+    expect_compose_test(a.selected == b.selected && a.proposal_origin == b.proposal_origin && a.proposal_ghost == b.proposal_ghost);
+    expect_compose_test(a.semantic_color_visible == b.semantic_color_visible && a.semantic_red == b.semantic_red &&
+        a.semantic_green == b.semantic_green && a.semantic_blue == b.semantic_blue && a.semantic_alpha == b.semantic_alpha);
+    expect_compose_test(a.paint_preview == b.paint_preview && a.paint_erase_preview == b.paint_erase_preview && a.paint_invalid_preview == b.paint_invalid_preview);
+    expect_compose_test(std::strcmp(a.sound_label, b.sound_label) == 0);
+    expect_compose_test(std::strcmp(a.sound_detail, b.sound_detail) == 0);
+}
+void compare_geometry_hold(const WormUiComposeHoldView& a, const WormUiComposeHoldView& b) {
+    compare_geometry_rect(a.bounds, b.bounds);
+    expect_compose_test(a.note_id == b.note_id && a.lane_id == b.lane_id && a.display_lane_number == b.display_lane_number);
+    expect_compose_test(a.selected == b.selected && a.proposal_origin == b.proposal_origin && a.proposal_ghost == b.proposal_ghost);
+    expect_compose_test(a.semantic_color_visible == b.semantic_color_visible && a.semantic_red == b.semantic_red &&
+        a.semantic_green == b.semantic_green && a.semantic_blue == b.semantic_blue && a.semantic_alpha == b.semantic_alpha);
+}
+void compare_geometry_frames(const WormUiComposeView& a, const WormUiComposeView& b) {
+    expect_compose_test(a.band_count == b.band_count && a.lane_count == b.lane_count && a.difference_count == b.difference_count);
+    expect_compose_test(a.note_endpoint_count == b.note_endpoint_count && a.hold_body_count == b.hold_body_count);
+    for (std::size_t i = 0; i < a.band_count; ++i) {
+        compare_geometry_rect(a.bands[i].bounds, b.bands[i].bounds);
+        expect_compose_test(a.bands[i].split_stage == b.bands[i].split_stage);
+    }
+    for (std::size_t i = 0; i < a.lane_count; ++i) {
+        compare_geometry_rect(a.lanes[i].bounds, b.lanes[i].bounds);
+        expect_compose_test(a.lanes[i].lane_id == b.lanes[i].lane_id && a.lanes[i].display_order == b.lanes[i].display_order);
+        expect_compose_test(a.lanes[i].stage == b.lanes[i].stage && a.lanes[i].role == b.lanes[i].role && a.lanes[i].glyph == b.lanes[i].glyph);
+    }
+    for (std::size_t i = 0; i < a.note_endpoint_count; ++i) compare_geometry_note(a.note_endpoints[i], b.note_endpoints[i]);
+    for (std::size_t i = 0; i < a.hold_body_count; ++i) compare_geometry_hold(a.hold_bodies[i], b.hold_bodies[i]);
+}
+void check_fresh_reused_geometry(std::uint32_t direction, format_family_t family) {
+    auto song = geometry_arena_song();
+    song.charts.front().source_family = family;
+    compose_test_fixture_t reused(song), fresh(song);
+    reused.application.editor_preferences.scroll_directions.fill(direction);
+    fresh.application.editor_preferences.scroll_directions.fill(direction);
+    wormedit::frame_arena_t reused_arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    wormedit::frame_arena_t fresh_arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    project_geometry_arena(reused, reused_arena);
+    project_geometry_arena(fresh, fresh_arena);
+    const auto source = reused.cache.static_scene_storage;
+    expect_compose_test(source != nullptr);
+    for (const bool legend : {false, true}) {
+        reused.application.editor_preferences.lane_key_legend_visible = legend;
+        fresh.application.editor_preferences.lane_key_legend_visible = legend;
+        reused.interaction->viewport_scroll_pixels = 0.5;
+        fresh.interaction->viewport_scroll_pixels = 0.5;
+        reused_arena.reset();
+        fresh_arena.reset();
+        fresh.cache = {};
+        project_geometry_arena(reused, reused_arena);
+        project_geometry_arena(fresh, fresh_arena);
+        expect_compose_test(reused.flattened.view.compose.scene_available && fresh.flattened.view.compose.scene_available);
+        compare_geometry_frames(reused.flattened.view.compose, fresh.flattened.view.compose);
+        reused_arena.reset();
+        project_geometry_arena(reused, reused_arena);
+        expect_compose_test(reused.cache.static_projection_reused_frames > 0);
+        compare_geometry_frames(reused.flattened.view.compose, fresh.flattened.view.compose);
+    }
+}
+}
+
+TEST_CASE("Compose geometry spans live in the supplied arena and account independent static chunks",
+          "[sys][frame-arena][compose-geometry]") {
+    flattened_workspace_t untouched;
+    expect_compose_test(untouched.owned_arena_committed_bytes() == 0);
+    compose_test_fixture_t fixture(geometry_arena_song());
+    wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    const auto begin = arena.allocate_bytes(1, alignof(char));
+    project_geometry_arena(fixture, arena);
+    const auto end = arena.allocate_bytes(1, alignof(char));
+    expect_compose_test(static_cast<bool>(begin) && static_cast<bool>(end));
+    expect_compose_test(fixture.flattened.view.compose.scene_available && !fixture.flattened.view.compose.truncated);
+    check_geometry_view_spans(fixture.flattened);
+    const auto first = reinterpret_cast<std::uintptr_t>(begin.data);
+    const auto last = reinterpret_cast<std::uintptr_t>(end.data);
+    check_geometry_between(fixture.flattened.compose.band, first, last);
+    check_geometry_between(fixture.flattened.compose.lane, first, last);
+    check_geometry_between(fixture.flattened.compose.hold, first, last);
+    check_geometry_between(fixture.flattened.compose.note, first, last);
+    expect_compose_test(!fixture.flattened.compose.hold.empty() && !fixture.flattened.compose.note.empty());
+    expect_compose_test(fixture.flattened.owned_arena_committed_bytes() == 0);
+    const auto source = fixture.cache.static_scene_storage;
+    expect_compose_test(source != nullptr);
+    expect_compose_test(source->owned_arena_committed_bytes() > 0);
+    expect_compose_test(source->compose.note.data() != fixture.flattened.compose.note.data());
+    expect_compose_test(fixture.cache.static_scene_accounted_bytes >= sizeof(*source) + source->owned_arena_committed_bytes());
+    expect_compose_test(fixture.cache.static_scene_accounted_bytes <= 16 * 1024 * 1024);
+}
+
+TEST_CASE("Compose geometry arena fresh and reused primitives agree in both directions and label modes",
+          "[sys][frame-arena][compose-geometry]") {
+    for (const auto direction : {1U, 2U})
+        for (const auto family : {format_family_t::native_project, format_family_t::bms})
+            check_fresh_reused_geometry(direction, family);
+}
+
+TEST_CASE("Compose geometry exhaustion retains bounded preceding arrays without a persistent source",
+          "[sys][frame-arena][compose-geometry]") {
+    compose_test_fixture_t fixture(geometry_arena_song());
+    const auto revision = fixture.history.document.revision;
+    wormedit::frame_arena_t tiny({.chunk_bytes = 8, .maximum_bytes = 8});
+    project_geometry_arena(fixture, tiny);
+    expect_compose_test(fixture.flattened.view.compose.truncated);
+    expect_compose_test(fixture.flattened.view.compose.band_count == 0 && fixture.flattened.view.compose.lane_count == 0);
+    expect_compose_test(fixture.flattened.view.compose.note_endpoint_count == 0 && fixture.flattened.view.compose.hold_body_count == 0);
+    expect_compose_test(!fixture.flattened.view.compose.static_scene);
+    check_geometry_view_spans(fixture.flattened);
+    wormedit::frame_arena_t limited({.chunk_bytes = 128, .maximum_bytes = 128});
+    fixture.cache = {};
+    project_geometry_arena(fixture, limited);
+    expect_compose_test(fixture.flattened.view.compose.truncated);
+    expect_compose_test(fixture.flattened.view.compose.band_count > 0 && fixture.flattened.view.compose.lane_count > 0);
+    expect_compose_test(fixture.flattened.view.compose.hold_body_count == 0 && fixture.flattened.view.compose.note_endpoint_count == 0);
+    expect_compose_test(!fixture.flattened.view.compose.static_scene);
+    expect_compose_test(fixture.history.document.revision == revision && fixture.history.undo.empty());
+    check_geometry_view_spans(fixture.flattened);
+}
+
+TEST_CASE("Warmed Compose geometry arena stays bounded through 1000 actual cached projections",
+          "[sys][frame-arena][compose-geometry]") {
+    compose_test_fixture_t fixture(geometry_arena_song());
+    wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    project_geometry_arena(fixture, arena);
+    arena.reset();
+    project_geometry_arena(fixture, arena);
+    const auto used = arena.used_bytes();
+    const auto committed = arena.committed_bytes();
+    const auto source = fixture.cache.static_scene_storage;
+    const auto static_committed = source->owned_arena_committed_bytes();
+    arena.reset();
+    allocations = 0;
+    count_allocations = true;
+    project_geometry_arena(fixture, arena);
+    count_allocations = false;
+    const auto remaining_allocations = allocations;
+    bool stable = true;
+    bool consistent = true;
+    for (int iteration = 0; iteration < 1000; ++iteration) {
+        arena.reset();
+        allocations = 0;
+        count_allocations = true;
+        project_geometry_arena(fixture, arena);
+        count_allocations = false;
+        consistent = consistent && allocations == remaining_allocations;
+        stable = stable && arena.used_bytes() == used && arena.committed_bytes() == committed &&
+            fixture.cache.static_scene_storage == source && source->owned_arena_committed_bytes() == static_committed &&
+            !fixture.flattened.view.compose.truncated;
+    }
+    INFO("Remaining actual Compose projection allocations: " << remaining_allocations);
+    expect_compose_test(stable);
+    expect_compose_test(consistent);
+}
+
+TEST_CASE("Compose geometry scene budget rejects dense excess without exceeding published caps",
+          "[sys][frame-arena][compose-geometry]") {
+    compose_test_fixture_t fixture(dense_song());
+    const auto revision = fixture.history.document.revision;
+    wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 16 * 1024 * 1024});
+    project_geometry_arena(fixture, arena, 2000000);
+    expect_compose_test(!fixture.flattened.view.compose.scene_available);
+    expect_compose_test(fixture.flattened.view.compose.status_text != nullptr);
+    expect_compose_test(!fixture.flattened.view.compose.static_scene);
+    expect_compose_test(fixture.history.document.revision == revision && fixture.history.undo.empty());
+    check_geometry_view_spans(fixture.flattened);
 }

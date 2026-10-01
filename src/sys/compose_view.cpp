@@ -542,6 +542,19 @@ auto compose_endpoint_snap_class(const compose_scene_projection_context_t& proje
                                         projection.chart.divisions_per_standard_measure);
 }
 
+template<class T>
+auto prepare_compose_geometry_rows(flattened_workspace_t& flattened, frame_span<T>& rows,
+                                   std::size_t count) -> bool {
+    if (count == 0) { rows = {}; return true; }
+    auto* arena = flattened.arena();
+    rows = arena ? arena_array<T>(*arena, count) : frame_span<T>{};
+    return rows.capacity() == count;
+}
+template<class T>
+void append_compose_geometry_row(frame_span<T>& rows, const T& row, bool& truncated) {
+    if (!rows.push_back(row)) truncated = true;
+}
+
 void project_compose_scene_objects(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.flattened;
     const auto& scene = projection.scene;
@@ -552,18 +565,24 @@ void project_compose_scene_objects(const compose_scene_projection_context_t& pro
     const auto& differences = scene.comparison_differences;
     const auto difference_count =
         std::min(differences.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_DIFFERENCE_CAPACITY));
-    flattened.compose.difference.reserve(difference_count);
+    if (!prepare_compose_geometry_rows(flattened, flattened.compose.difference, difference_count)) {
+        view.truncated = true;
+        return;
+    }
     for (std::size_t index = 0; index < difference_count; ++index) {
-        flattened.compose.difference.push_back(
-            {.bounds = convert_rect(differences[index].bounds)});
+        append_compose_geometry_row(flattened.compose.difference,
+            {.bounds = convert_rect(differences[index].bounds)}, view.truncated);
     }
     const auto& holds = scene.hold_bodies;
     const auto hold_count =
         std::min(holds.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_HOLD_CAPACITY));
-    flattened.compose.hold.reserve(hold_count);
+    if (!prepare_compose_geometry_rows(flattened, flattened.compose.hold, hold_count)) {
+        view.truncated = true;
+        return;
+    }
     for (std::size_t index = 0; index < hold_count; ++index) {
         const auto& hold = holds[index];
-        flattened.compose.hold.push_back(
+        append_compose_geometry_row(flattened.compose.hold,
             {.bounds = convert_rect(hold.bounds),
              .note_id = hold.note.value,
              .lane_id = hold.lane.value,
@@ -579,17 +598,20 @@ void project_compose_scene_objects(const compose_scene_projection_context_t& pro
              .semantic_blue =
                  static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->blue : 0),
              .semantic_alpha =
-                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->alpha : 0)});
+                 static_cast<std::uint8_t>(hold.semantic_color ? hold.semantic_color->alpha : 0)}, view.truncated);
     }
     const auto& endpoints = scene.note_endpoints;
     const auto endpoint_count =
         std::min(endpoints.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_NOTE_CAPACITY));
-    flattened.compose.note.reserve(endpoint_count);
+    if (!prepare_compose_geometry_rows(flattened, flattened.compose.note, endpoint_count)) {
+        view.truncated = true;
+        return;
+    }
     for (std::size_t index = 0; index < endpoint_count; ++index) {
         const auto& endpoint = endpoints[index];
         const auto sound = compose_note_sound_text(endpoint.sound,
                                                    flattened.compose.sound_labels);
-        flattened.compose.note.push_back(
+        append_compose_geometry_row(flattened.compose.note,
             {.bounds = convert_rect(endpoint.bounds),
              .note_id = endpoint.note.value,
              .lane_id = endpoint.lane.value,
@@ -614,7 +636,7 @@ void project_compose_scene_objects(const compose_scene_projection_context_t& pro
                  endpoint.semantic_color ? endpoint.semantic_color->alpha : 0),
              .paint_preview = endpoint.paint_preview,
              .paint_erase_preview = endpoint.paint_erase_preview,
-             .paint_invalid_preview = endpoint.paint_invalid_preview});
+             .paint_invalid_preview = endpoint.paint_invalid_preview}, view.truncated);
     }
     view.truncated = view.truncated || difference_count != differences.size() ||
                      hold_count != holds.size() || endpoint_count != endpoints.size();
@@ -634,27 +656,33 @@ void project_compose_layout_and_notes(const compose_scene_projection_context_t& 
     const auto& bands = scene.layout_bands;
     const auto band_count =
         std::min(bands.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_BAND_CAPACITY));
-    flattened.compose.band.reserve(band_count);
+    if (!prepare_compose_geometry_rows(flattened, flattened.compose.band, band_count)) {
+        view.truncated = true;
+        return;
+    }
     for (std::size_t index = 0; index < band_count; ++index) {
         const auto& band = bands[index];
-        flattened.compose.band.push_back(
+        append_compose_geometry_row(flattened.compose.band,
             {.bounds = {field_left_pixels, band.top_pixels,
                         field_left_pixels + playable_field_width,
                         band.bottom_pixels},
-             .split_stage = band.split_stage});
+             .split_stage = band.split_stage}, view.truncated);
     }
     const auto& lanes = scene.lanes;
     const auto lane_count =
         std::min(lanes.size(), static_cast<std::size_t>(WORM_UI_COMPOSE_LANE_CAPACITY));
-    flattened.compose.lane.reserve(lane_count);
+    if (!prepare_compose_geometry_rows(flattened, flattened.compose.lane, lane_count)) {
+        view.truncated = true;
+        return;
+    }
     for (std::size_t index = 0; index < lane_count; ++index) {
         const auto& lane = lanes[index];
-        flattened.compose.lane.push_back({.bounds = convert_rect(lane.bounds),
+        append_compose_geometry_row(flattened.compose.lane,{.bounds = convert_rect(lane.bounds),
                                                   .lane_id = lane.lane.value,
                                                   .display_order = lane.display_order,
                                                   .role = static_cast<std::uint8_t>(lane.role),
                                                   .stage = static_cast<std::uint8_t>(lane.stage),
-                                                  .glyph = static_cast<std::uint8_t>(lane.glyph)});
+                                                  .glyph = static_cast<std::uint8_t>(lane.glyph)}, view.truncated);
     }
     project_compose_grid_lines(projection);
     project_compose_scene_objects(projection);
@@ -2200,12 +2228,12 @@ auto compose_vector_bytes(const std::vector<T>& values) -> std::size_t {
 }
 auto compose_static_storage_bytes(const flattened_workspace_t& storage) -> std::size_t {
     const auto& data = storage.compose;
-    std::size_t bytes = sizeof(storage) + compose_vector_bytes(data.band) +
-        compose_vector_bytes(data.lane) + compose_vector_bytes(data.grid.line) +
-        compose_vector_bytes(data.grid.row) + compose_vector_bytes(data.hold) +
-        compose_vector_bytes(data.note) + compose_vector_bytes(data.bgm.lane) +
-        compose_vector_bytes(data.bgm.event) + compose_vector_bytes(data.timing_marker) +
-        compose_vector_bytes(data.timing_marker_labels) + compose_vector_bytes(data.difference);
+    // The independently owned arena's committed chunks include all span storage.
+    // Count those chunks once, separately from the remaining heap containers.
+    std::size_t bytes = sizeof(storage) + storage.owned_arena_committed_bytes() +
+        compose_vector_bytes(data.grid.line) + compose_vector_bytes(data.grid.row) +
+        compose_vector_bytes(data.bgm.lane) + compose_vector_bytes(data.bgm.event) +
+        compose_vector_bytes(data.timing_marker) + compose_vector_bytes(data.timing_marker_labels);
     for (const auto& label : data.timing_marker_labels)
         bytes += label.first.capacity() + label.second.capacity() + 2;
     // Include hash buckets, nodes, and owned labels conservatively.
@@ -2417,20 +2445,40 @@ auto scalar_display_lane_number(const auto& record, const wormedit::editor_field
             return lane.display_order + 1;
     return 0;
 }
+template<class T>
+auto prepare_scalar_geometry_output(flattened_workspace_t& flattened, frame_span<T>& output,
+                                    std::size_t count) -> bool {
+    return prepare_compose_geometry_rows(flattened, output, count);
+}
+template<class T>
+auto prepare_scalar_geometry_output(flattened_workspace_t&, std::vector<T>& output,
+                                    std::size_t count) -> bool {
+    output.reserve(count);
+    return true;
+}
+template<class T>
+auto append_scalar_geometry_output(frame_span<T>& output, const T& record) -> bool {
+    return output.push_back(record);
+}
+template<class T>
+auto append_scalar_geometry_output(std::vector<T>& output, const T& record) -> bool {
+    output.push_back(record);
+    return true;
+}
 template <class Records, class Transform>
-auto extract_scalar_rectangles(compose_scene_cache_t& cache, unsigned pass, const Records& source,
+auto extract_scalar_rectangles(compose_scene_cache_t& cache, flattened_workspace_t& flattened,
+                               unsigned pass, const Records& source,
                                Records& output, double begin, double end, double shift,
                                Transform transform) -> bool {
     const auto indices = scalar_projection_query(cache, pass, begin - shift, end - shift);
     if (!indices)
         return false;
-    output.reserve(indices->size());
+    if (!prepare_scalar_geometry_output(flattened, output, indices->size())) return false;
     for (const auto index : *indices) {
         auto record = source[index];
         record.bounds.top += shift;
         record.bounds.bottom += shift;
-        if (transform(record, index))
-            output.push_back(record);
+        if (transform(record, index) && !append_scalar_geometry_output(output, record)) return false;
     }
     return true;
 }
@@ -2474,12 +2522,12 @@ auto extract_scalar_objects(compose_scene_cache_t& cache,
         record.selected = retained.bgm_events[index].selected;
         return record.bounds.bottom >= 0 && record.bounds.top <= height;
     };
-    return extract_scalar_rectangles(cache, 0, source.note, flattened.compose.note, 0, height,
+    return extract_scalar_rectangles(cache, flattened, 0, source.note, flattened.compose.note, 0, height,
                                      shift, note) &&
-           extract_scalar_rectangles(cache, 1, source.hold, flattened.compose.hold,
+           extract_scalar_rectangles(cache, flattened, 1, source.hold, flattened.compose.hold,
                                      metadata.hold_clip_top, metadata.hold_clip_bottom, shift,
                                      hold) &&
-           extract_scalar_rectangles(cache, 2, source.bgm.event, flattened.compose.bgm.event, 0,
+           extract_scalar_rectangles(cache, flattened, 2, source.bgm.event, flattened.compose.bgm.event, 0,
                                      height, shift, bgm) &&
            extract_scalar_grid(cache, scene, flattened, shift);
 }

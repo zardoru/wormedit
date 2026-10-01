@@ -126,7 +126,8 @@ Most remaining format work waits on user decisions; those cards are
 
 ## T-288 Round-trip BMS non-gameplay data robustly
 
-- **Status:** ready
+- **Status:** done (2026-10-01; fixture `tests/fixtures/bms/non-gameplay-roundtrip.bme`, writer test "BMS round trip keeps every non-gameplay construct across a far edit"; core suite 1002/1002 with the two GCC 13 test fixes of PR #5 applied locally)
+- **Gaps found:** every listed construct already survived normalization except the `;` and `//` comment lines and unknown `#` headers, which were dropped with a warning. The writer now re-emits those root-level lines verbatim, interleaved with metadata by source order; text that is not single-line UTF-8 is still omitted with the warning. Non-UTF-8 sources are transcoded like the rest of the file (CP932 test). Untouched files were already byte-identical (`preserve_unchanged_source`); after an edit the normalized channel lines are semantically, not byte, equal.
 - **Outcome:** BMS import → edit → export preserves every non-gameplay construct listed below, verified by paired fixtures: `#BMP`/BGA base, layer, layer2, and poor channels; `#BGA` definitions; `#STAGEFILE`, `#BANNER`, `#BACKBMP`, `#PREVIEW`; `#SUBTITLE`, `#SUBARTIST`, `#GENRE`, `#COMMENT`, `#DIFFICULTY`, `#PLAYLEVEL`, `#RANK`, `#DEFEXRANK`, `#TOTAL`, `#VOLWAV`, `#LNTYPE`/`#LNOBJ`/`#LNMODE`; `;` and `//` comment lines; unknown `#` headers in source order (user decision 2026-09-30, question 4).
 - **Read first:** `src/formats/bms.cpp`, `src/formats/bms_writer.cpp`, `tests/formats/bms_writer_tests.cpp`, `docs/references/bms-command-memo.md`, `tests/fixtures/README.md`.
 - **Files owned:** `src/formats/bms.cpp`, `src/formats/bms_writer.cpp`, `tests/formats/bms_tests.cpp`, `tests/formats/bms_writer_tests.cpp`, new fixtures under `tests/fixtures/bms/`, `tests/fixtures/README.md`, `tests/core/fixture_inventory_tests.cpp`.

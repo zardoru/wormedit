@@ -1421,6 +1421,7 @@ void configure_transport_play_pause(auto& state, auto& history, auto& workspace,
             state.minimap_start_frame.reset();
             inline_preview_cursor.capture(compose_cursor);
         }
+        if (preview_output.playing()) inline_preview_cursor.capture_follow_anchor(history, compose_cursor);
         return result;
     };
 }
@@ -1467,6 +1468,7 @@ void configure_transport_commands(auto& state, auto& history, auto& workspace,
             preview_session, preview_output,
             std::nullopt, true);
         if (starting && preview_output.playing()) inline_preview_cursor.capture(compose_cursor);
+        if (preview_output.playing()) inline_preview_cursor.capture_follow_anchor(history, compose_cursor);
         return result;
     };
     state.transport_seek = [&](std::uint64_t frame) -> std::string {
@@ -3742,7 +3744,8 @@ int main(int argc, char** argv) {
                     *application_command_state.preview_playhead_absolute_row,
                     preview_output.playing(),
                     retained_compose_geometry(compose_scene_cache),
-                    application_command_state.editor_preferences.playhead_anchor_percent / 100.0);
+                    inline_preview_cursor.follow_anchor_fraction.value_or(
+                        application_command_state.editor_preferences.playhead_anchor_percent / 100.0));
             }
 #endif
 

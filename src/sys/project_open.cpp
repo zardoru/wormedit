@@ -18,6 +18,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <unordered_set>
 #include <vector>
 
 namespace wormedit::sys {
@@ -346,7 +347,78 @@ void normalize_empty_input_profiles(song_document_t& document) {
     }
 }
 
+template <typename Object>
+auto rehome_measure_objects(chart_document_t& chart,
+                            std::vector<Object> measure_chunk_t::* member,
+                            std::unordered_set<std::uint64_t>& repaired_ids) -> std::size_t {
+    std::map<measure_id_t, std::size_t> destinations;
+    for (std::size_t index = 0; index < chart.measures.size(); ++index)
+        destinations.emplace(chart.measures[index].id, index);
+    std::vector<std::pair<std::size_t, Object>> moves;
+    for (auto& measure : chart.measures) {
+        auto& objects = measure.*member;
+        std::erase_if(objects, [&](Object& object) {
+            const auto destination = destinations.find(object.position.measure);
+            if (object.position.measure == measure.id || destination == destinations.end())
+                return false;
+            repaired_ids.insert(object.id.value);
+            moves.emplace_back(destination->second, std::move(object));
+            return true;
+        });
+    }
+    for (auto& [destination, object] : moves)
+        (chart.measures[destination].*member).push_back(std::move(object));
+    return moves.size();
+}
+
+auto repair_measure_storage(song_document_t& document,
+                            const diagnostic_list_t& diagnostics) -> std::size_t {
+    auto proposed = document;
+    std::unordered_set<std::uint64_t> repaired_ids;
+    std::size_t repaired_count = 0;
+    for (auto& chart : proposed.charts) {
+        repaired_count += rehome_measure_objects(chart, &measure_chunk_t::notes, repaired_ids);
+        repaired_count += rehome_measure_objects(chart, &measure_chunk_t::bgm_events, repaired_ids);
+    }
+    const auto repairable = [&](const diagnostic_t& diagnostic) {
+        return diagnostic.code == diagnostic_code_t::invalid_measure && diagnostic.object &&
+               repaired_ids.contains(diagnostic.object->value);
+    };
+    if (repaired_ids.empty() || !std::ranges::all_of(diagnostics, repairable) ||
+        !validate_document(proposed).empty()) return 0;
+    document = std::move(proposed);
+    return repaired_count;
+}
+
+auto validation_error(const diagnostic_list_t& diagnostics) -> std::string {
+    std::string result = "Document could not be opened: ";
+    const auto count = std::min<std::size_t>(diagnostics.size(), 3);
+    for (std::size_t index = 0; index < count; ++index) {
+        if (index != 0) result += "; ";
+        result += diagnostics[index].message;
+    }
+    if (diagnostics.size() > count)
+        result += "; " + std::to_string(diagnostics.size() - count) + " more diagnostics";
+    return result;
+}
+
 } // namespace
+
+void validate_opened_document(project_open_result_t& result) {
+    if (!result.document) return;
+    normalize_empty_input_profiles(*result.document);
+    const auto diagnostics = validate_document(*result.document);
+    if (diagnostics.empty()) return;
+    const auto repaired = repair_measure_storage(*result.document, diagnostics);
+    if (repaired != 0) {
+        result.warnings.push_back("Repaired " + std::to_string(repaired) +
+                                  " objects stored in the wrong measure");
+        return;
+    }
+    result.error = validation_error(diagnostics);
+    result.document.reset();
+    result.native_project = false;
+}
 
 auto is_supported_project_file_extension(const std::filesystem::path& path) -> bool {
     return supported_source_limit(lowercase_extension(path)) != 0;
@@ -375,7 +447,7 @@ auto open_project_file(const std::filesystem::path& selected_path,
     result.asset_base = result.source_path.parent_path();
     auto source = read_bounded_file(result.source_path, limit, result.error);
     if (source) parse_selected_file(extension, *source, encoding_override, result);
-    if (result.document) normalize_empty_input_profiles(*result.document);
+    validate_opened_document(result);
     return result;
 }
 

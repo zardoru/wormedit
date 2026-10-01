@@ -1185,20 +1185,24 @@ auto build_measure_index(const chart_document_t& chart)
         add_diagnostic(diagnostics, diagnostic_code_t::invalid_resolution,
                        "chart divisions per standard measure must be positive");
     }
+    std::size_t measure_number = 0;
     for (const auto& measure : chart.measures) {
+        ++measure_number;
         if (!require_id(diagnostics, measure.id, "measure")) {
+            diagnostics.back().message += " (measure " + std::to_string(measure_number) + ")";
             continue;
         }
         if (!measure_ids.insert(measure.id.value).second) {
             add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
-                           "measure ID is duplicated");
+                           "measure " + std::to_string(measure_number) + " ID is duplicated");
             continue;
         }
         const auto validation =
             validate_measure(chart.divisions_per_standard_measure, measure.definition);
         if (!validation) {
             add_diagnostic(diagnostics, diagnostic_code_t::invalid_measure,
-                           measure_error_message(validation.error));
+                           "measure " + std::to_string(measure_number) + ": " +
+                               measure_error_message(validation.error));
             continue;
         }
         index.entries.push_back({
@@ -1209,7 +1213,8 @@ auto build_measure_index(const chart_document_t& chart)
         std::uint64_t total{};
         if (!add_checked(index.total_rows, *validation.row_capacity, total)) {
             add_diagnostic(diagnostics, diagnostic_code_t::invalid_measure,
-                           "measure prefix rows overflow the supported range");
+                           "measure " + std::to_string(measure_number) +
+                               " prefix rows overflow the supported range");
         } else {
             index.total_rows = total;
         }
@@ -1470,6 +1475,100 @@ auto validate_song_output_groups(document_validation_work_t& work) -> void {
     }
 }
 
+struct diagnostic_object_location_t {
+    local_position_t position;
+    lane_id_t lane;
+};
+using diagnostic_locations_t = std::unordered_map<std::uint64_t, diagnostic_object_location_t>;
+
+void collect_marker_diagnostic_locations(diagnostic_locations_t& locations,
+                                         const chart_document_t& chart) {
+    for (const auto& bookmark : chart.bookmarks) {
+        if (bookmark.position)
+            locations.try_emplace(bookmark.id.value,
+                                  diagnostic_object_location_t{*bookmark.position, {}});
+    }
+    for (const auto& section : chart.sections) {
+        if (section.beat_span)
+            locations.try_emplace(section.id.value,
+                                  diagnostic_object_location_t{section.beat_span->begin, {}});
+    }
+}
+
+template <typename Range>
+void collect_diagnostic_locations(diagnostic_locations_t& locations, const Range& objects) {
+    for (const auto& object : objects) {
+        lane_id_t lane{};
+        if constexpr (requires { object.lane; }) lane = object.lane;
+        if constexpr (requires { object.position; })
+            locations.try_emplace(object.id.value, diagnostic_object_location_t{object.position, lane});
+        else
+            locations.try_emplace(object.id.value, diagnostic_object_location_t{object.span.begin, lane});
+    }
+}
+
+auto diagnostic_locations(const chart_document_t& chart) -> diagnostic_locations_t {
+    diagnostic_locations_t locations;
+    collect_marker_diagnostic_locations(locations, chart);
+    for (const auto& measure : chart.measures) {
+        collect_diagnostic_locations(locations, measure.notes);
+        collect_diagnostic_locations(locations, measure.bgm_events);
+    }
+    collect_diagnostic_locations(locations, chart.lane_layouts);
+    collect_diagnostic_locations(locations, chart.bpms);
+    collect_diagnostic_locations(locations, chart.pauses);
+    collect_diagnostic_locations(locations, chart.warps);
+    collect_diagnostic_locations(locations, chart.scrolls);
+    collect_diagnostic_locations(locations, chart.speeds);
+    collect_diagnostic_locations(locations, chart.kiai);
+    collect_diagnostic_locations(locations, chart.timing_anchors);
+    collect_diagnostic_locations(locations, chart.bga_events);
+    for (const auto& channel : chart.sound_channels)
+        collect_diagnostic_locations(locations, channel.events);
+    return locations;
+}
+
+auto diagnostic_chart_name(const chart_document_t& chart) -> std::string {
+    if (!chart.metadata.name.empty()) return chart.metadata.name;
+    for (const auto& group : chart.metadata.format_groups) {
+        const auto difficulty = std::ranges::find(group.ordered_fields, std::string{"DIFFICULTY"},
+                                                  &std::pair<std::string, std::string>::first);
+        if (difficulty != group.ordered_fields.end()) return difficulty->second;
+    }
+    return "unnamed";
+}
+
+auto diagnostic_location_text(const chart_document_t& chart,
+                              const diagnostic_object_location_t& location) -> std::string {
+    const auto measure = std::ranges::find(chart.measures, location.position.measure,
+                                           &measure_chunk_t::id);
+    auto text = measure == chart.measures.end()
+        ? ", unknown measure id " + std::to_string(location.position.measure.value)
+        : ", measure " + std::to_string(std::distance(chart.measures.begin(), measure) + 1) +
+          " (id " + std::to_string(location.position.measure.value) + ")";
+    text += ", row " + std::to_string(location.position.row);
+    if (location.lane) text += ", lane " + std::to_string(location.lane.value);
+    return text;
+}
+
+void contextualize_chart_diagnostics(const chart_document_t& chart,
+                                     diagnostic_list_t& diagnostics, std::size_t begin) {
+    if (begin == diagnostics.size()) return;
+    const auto locations = diagnostic_locations(chart);
+    const auto chart_text = "Chart \"" + diagnostic_chart_name(chart) + "\" (id " +
+                            std::to_string(chart.id.value) + ")";
+    for (std::size_t index = begin; index < diagnostics.size(); ++index) {
+        auto text = chart_text;
+        const auto& object = diagnostics[index].object;
+        if (object) {
+            const auto location = locations.find(object->value);
+            if (location != locations.end()) text += diagnostic_location_text(chart, location->second);
+            text += ", object " + std::to_string(object->value);
+        }
+        diagnostics[index].message = text + ": " + diagnostics[index].message;
+    }
+}
+
 } // namespace
 
 auto validate_document(const song_document_t& song) -> diagnostic_list_t {
@@ -1479,8 +1578,10 @@ auto validate_document(const song_document_t& song) -> diagnostic_list_t {
     collect_song_assets(work);
     validate_song_resources(work);
     for (const auto& chart : song.charts) {
+        const auto first_diagnostic = diagnostics.size();
         validate_chart(chart, work.resource_ids, work.resource_assets, work.audio_asset_ids,
                        diagnostics);
+        contextualize_chart_diagnostics(chart, diagnostics, first_diagnostic);
     }
     validate_song_recipes(work);
     validate_song_output_groups(work);

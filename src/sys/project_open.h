@@ -28,6 +28,11 @@ struct project_open_result_t {
     [[nodiscard]] explicit operator bool() const noexcept { return document.has_value(); }
 };
 
+// Applies load-time normalization and graph validation before a parsed document
+// can replace a session. Repairs change storage only; rejection clears the
+// proposed document and leaves its caller's active session untouched.
+void validate_opened_document(project_open_result_t& result);
+
 // Reads and parses a selected project or chart without changing the active
 // workspace. Only an opened .wormedit is an existing saved native project;
 // imported charts are new unsaved sessions rooted at their source directory.

@@ -10,7 +10,9 @@
 #include <wormedit/core/command.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <array>
 #include <filesystem>
@@ -485,4 +487,127 @@ TEST_CASE("project opening keeps imported BMS lane profiles", "[project-open][de
     REQUIRE(opened.document);
     check_preserved_input_profile(parsed.song->charts.front().input_profile,
                                   opened.document->charts.front().input_profile);
+}
+
+namespace {
+auto load_validation_fixture() -> wormedit::sys::project_open_result_t {
+    auto opened = wormedit::sys::open_project_file(fixture("stepmania", "matched-timing.sm"));
+    REQUIRE(opened.document);
+    opened.document->charts.front().metadata.name = "Hard validation fixture";
+    return opened;
+}
+
+auto native_bytes(const wormedit::song_document_t& document) -> std::string {
+    const auto saved = wormedit::write_native_project(document);
+    REQUIRE(saved.bytes);
+    return *saved.bytes;
+}
+
+void misfile_last_note(wormedit::song_document_t& document) {
+    auto& measures = document.charts.front().measures;
+    REQUIRE(measures.size() >= 2);
+    REQUIRE_FALSE(measures.front().notes.empty());
+    auto note = std::move(measures.front().notes.back());
+    measures.front().notes.pop_back();
+    measures.back().notes.push_back(std::move(note));
+}
+
+void check_repaired_document(const wormedit::sys::project_open_result_t& opened,
+                             const std::string& before) {
+    REQUIRE(opened.document);
+    CHECK(opened.error.empty());
+    CHECK(native_bytes(*opened.document) == before);
+    REQUIRE(opened.warnings.size() == 1);
+    CHECK(opened.warnings.front() == "Repaired 1 objects stored in the wrong measure");
+}
+
+void check_contextual_validation_message(const std::string& message) {
+    CHECK(message.find("Hard validation fixture") != std::string::npos);
+    CHECK(message.find("measure 1") != std::string::npos);
+    CHECK(message.find("row ") != std::string::npos);
+    CHECK(message.find("lane ") != std::string::npos);
+    CHECK(message.find("object ") != std::string::npos);
+}
+}
+
+TEST_CASE("project_open validates and safely rehomes parsed notes without changing positions",
+          "[project-open][validation]") {
+    auto opened = load_validation_fixture();
+    const auto before = native_bytes(*opened.document);
+    misfile_last_note(*opened.document);
+    REQUIRE_FALSE(wormedit::validate_document(*opened.document).empty());
+    wormedit::sys::validate_opened_document(opened);
+    check_repaired_document(opened, before);
+}
+
+TEST_CASE("project_open refuses mixed storage and unrepairable graph errors",
+          "[project-open][validation]") {
+    auto opened = load_validation_fixture();
+    misfile_last_note(*opened.document);
+    opened.document->charts.front().measures.back().notes.back().lane = wormedit::lane_id_t{99999};
+    wormedit::sys::validate_opened_document(opened);
+    CHECK_FALSE(opened.document);
+    CHECK_FALSE(opened.native_project);
+    CHECK(opened.warnings.empty());
+    check_contextual_validation_message(opened.error);
+}
+
+TEST_CASE("project_open validation leaves valid documents and load identity unchanged",
+          "[project-open][validation]") {
+    auto opened = load_validation_fixture();
+    const auto before = native_bytes(*opened.document);
+    opened.native_project = true;
+    opened.warnings.push_back("existing asset warning");
+    const auto source = opened.source_path;
+    wormedit::sys::validate_opened_document(opened);
+    REQUIRE(opened.document);
+    CHECK(native_bytes(*opened.document) == before);
+    CHECK(opened.native_project);
+    CHECK(opened.source_path == source);
+    CHECK(opened.warnings == std::vector<std::string>{"existing asset warning"});
+}
+
+TEST_CASE("project_open rehomes BGM storage without altering authored slots or provenance",
+          "[project-open][validation]") {
+    auto opened = wormedit::sys::open_project_file(fixture("bms", "repeated-bgm-ratio-stop-collision.bms"));
+    REQUIRE(opened.document);
+    const auto before = native_bytes(*opened.document);
+    auto& measures = opened.document->charts.front().measures;
+    const auto source = std::ranges::find_if(measures, [](const auto& measure) {
+        return !measure.bgm_events.empty();
+    });
+    REQUIRE(source != measures.end());
+    auto& target = source == measures.begin() ? measures.back() : measures.front();
+    auto event = std::move(source->bgm_events.back());
+    source->bgm_events.pop_back();
+    target.bgm_events.push_back(std::move(event));
+    wormedit::sys::validate_opened_document(opened);
+    check_repaired_document(opened, before);
+}
+
+TEST_CASE("project_open errors identify another chart and exact object location",
+          "[project-open][validation]") {
+    auto opened = load_validation_fixture();
+    auto history = wormedit::make_document_history(*opened.document);
+    const auto before = native_bytes(history.document);
+    auto proposed = history.document;
+    proposed.charts.front().measures.front().notes.front().lane = wormedit::lane_id_t{99999};
+    const auto rejected = wormedit::commit_document_command(history, proposed, "Invalid proposal");
+    CHECK_FALSE(rejected.applied);
+    REQUIRE_FALSE(rejected.diagnostics.empty());
+    check_contextual_validation_message(rejected.diagnostics.front().message);
+    CHECK(native_bytes(history.document) == before);
+}
+
+TEST_CASE("project_open refuses invalid native files with contextual graph diagnostics",
+          "[project-open][validation]") {
+    const auto source = load_validation_fixture();
+    auto json = nlohmann::json::parse(native_bytes(*source.document));
+    json.at("document").at("charts").at(0).at("measures").at(0).at("notes").at(0)["lane"] = 99999;
+    temporary_project_file_t file{".wormedit"};
+    file.write(json.dump());
+    const auto opened = wormedit::sys::open_project_file(file.path);
+    CHECK_FALSE(opened.document);
+    CHECK_FALSE(opened.native_project);
+    check_contextual_validation_message(opened.error);
 }

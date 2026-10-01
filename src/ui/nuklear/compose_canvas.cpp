@@ -1290,7 +1290,8 @@ static void draw_compose_arrow_outline(const ComposePaintContext& paint,
     if (note.selected || note.proposal_ghost || note.paint_preview ||
         note.paint_erase_preview || note.paint_invalid_preview ||
         (paint.view->hover_note_visible && note.note_id == paint.view->hover_note_id)) {
-        const auto border = note.selected ? nk_rgb(220, 247, 255) : style.border;
+        auto border = note.selected ? nk_rgb(220, 247, 255) : style.border;
+        if (note.proposal_ghost) border.a = 170;
         paint_field(paint.context).stroke_polygon(
             2, points, 2.0f, field_color(border), 1);
     }
@@ -1307,8 +1308,10 @@ static bool draw_compose_note_glyph(const ComposePaintContext& paint,
         points[index] = {std::trunc(authored[index].x), std::trunc(authored[index].y)};
     const auto color = wormedit::ui::arrow_snap_color(note.snap_class);
     auto& field = paint_field(paint.context);
-    field.polygon(2, points, {color.red, color.green, color.blue}, 1);
-    field.stroke_polygon(2, points, 1, {17, 24, 34}, 1);
+    // Proposal ghosts stay translucent so they do not read as materialized notes.
+    const auto alpha = static_cast<std::uint8_t>(note.proposal_ghost ? 120 : 255);
+    field.polygon(2, points, field_color(nk_rgba(color.red, color.green, color.blue, alpha)), 1);
+    field.stroke_polygon(2, points, 1, field_color(nk_rgba(17, 24, 34, alpha)), 1);
     draw_compose_arrow_outline(paint, note, points);
     return true;
 }
@@ -1343,7 +1346,10 @@ static void draw_compose_note(const ComposePaintContext& paint,
                               std::max(2.0f, rect.h));
     if (draw_compose_note_glyph(paint, note, tile)) return;
     field_rect(paint, tile, 0.0f, style.fill, 2);
-    field_stroke_rect(paint, tile, 0.0f, style.border_width, style.border, 2);
+    auto border = style.border;
+    if (note.proposal_ghost) border.a = 170;
+    field_stroke_rect(paint, tile, 0.0f, style.border_width, border, 2);
+    if (note.proposal_ghost) return;
     field_line(paint, tile.x + 1.0f, tile.y + 1.0f,
                    tile.x + tile.w - 1.0f, tile.y + 1.0f, 1.0f,
                    nk_rgba(255, 255, 255, 105), 2);

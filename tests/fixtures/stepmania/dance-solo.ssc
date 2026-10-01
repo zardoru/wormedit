@@ -1,0 +1,21 @@
+#TITLE:Fixture: dance-solo columns;
+#ARTIST:Wormedit fixture authors;
+#MUSIC:fixture.ogg;
+#OFFSET:0.000;
+#BPMS:0.000=120.000;
+#NOTEDATA:;
+#STEPSTYPE:dance-solo;
+#DESCRIPTION:Fixture;
+#DIFFICULTY:Hard;
+#METER:8;
+#RADARVALUES:0,0,0,0,0;
+#NOTES:
+100000
+010000
+001000
+000100
+000010
+000001
+000000
+000000
+;

@@ -17,6 +17,7 @@ BME-style fixtures deliberately overlap BME channel families while retaining but
 | `bme-7k-foot-pedal.bme` | `bme-7k-outside-scratch-foot-pedal` | 9 |
 | `bms-10k-free-zone.bms` | `bms-10k-left-outside-right-outside-free-zone` | 14 |
 | `bms-10k-foot-pedal.bms` | `bms-10k-left-outside-right-outside-foot-pedal` | 14 |
+| `bms-10k-scratchless.bms` | `bms-10k-scratchless` | 10 |
 | `bme-14k.bme` | `bme-14k-left-outside-right-outside` | 16 |
 | `bme-14k-foot-pedal.bme` | `bme-14k-left-outside-right-outside-foot-pedal` | 18 |
 | `pms-5button.pms` | `pms-standard-5button` | 5 |

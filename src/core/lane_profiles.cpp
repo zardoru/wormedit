@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstdint>
 #include <iterator>
 #include <ranges>
@@ -286,9 +287,26 @@ auto make_bms_10k(scratch_placement_t left_scratch, scratch_placement_t right_sc
                 std::make_move_iterator(right.end()));
     auto input = make_two_stage_row_input(left, "bms-10k-stage-rows");
     const auto display_name =
-        auxiliary_role == lane_role_t::free_zone ? "BMS 10K (free zone)" : "BMS 10K (foot pedal)";
+        auxiliary_role == lane_role_t::free_zone ? "BMS DP5 / 10K (free zone)"
+                                                 : "BMS DP5 / 10K (foot pedal)";
     return make_profile(profile_id, display_name, std::move(left), std::move(input), true,
                         split_after);
+}
+
+auto make_scratchless_stage(std::uint32_t stage_number,
+                            const std::array<std::string_view, 5>& channels)
+    -> std::vector<lane_definition_t> {
+    std::vector<lane_spec_t> specs;
+    specs.reserve(channels.size());
+    for (std::size_t index = 0; index < channels.size(); ++index) {
+        specs.push_back({
+            .id_offset = static_cast<std::uint32_t>(index + 1),
+            .name = "Key " + std::to_string(index + 1),
+            .role = lane_role_t::playable,
+            .visible_channel = channels[index],
+        });
+    }
+    return make_bms_stage(stage_number, specs);
 }
 
 auto make_pms_profile(std::string profile_id, std::string display_name,
@@ -362,7 +380,7 @@ auto make_bme_14k_profile_impl(scratch_placement_t left_scratch, scratch_placeme
     left.insert(left.end(), std::make_move_iterator(right.begin()),
                 std::make_move_iterator(right.end()));
     auto input = make_14k_input(left);
-    return make_profile(profile_id, foot_pedal ? "BME 14K (foot pedal)" : "BME 14K",
+    return make_profile(profile_id, foot_pedal ? "BME DP7 / 14K (foot pedal)" : "BME DP7 / 14K",
                         std::move(left), std::move(input), true, split_after);
 }
 
@@ -436,6 +454,19 @@ auto make_bms_10k_free_zone_profile(scratch_placement_t left_scratch,
 auto make_bms_10k_foot_pedal_profile(scratch_placement_t left_scratch,
                                      scratch_placement_t right_scratch) -> lane_input_profile_t {
     return make_bms_10k(left_scratch, right_scratch, lane_role_t::foot_pedal);
+}
+
+auto make_bms_10k_scratchless_profile() -> lane_input_profile_t {
+    constexpr std::array<std::string_view, 5> channels_left{"11", "12", "13", "14", "15"};
+    constexpr std::array<std::string_view, 5> channels_right{"21", "22", "23", "24", "25"};
+    auto lanes = make_scratchless_stage(0, channels_left);
+    const auto split_after = static_cast<std::uint32_t>(lanes.size());
+    auto right = make_scratchless_stage(1, channels_right);
+    lanes.insert(lanes.end(), std::make_move_iterator(right.begin()),
+                 std::make_move_iterator(right.end()));
+    auto input = make_two_stage_row_input(lanes, "bms-10k-scratchless-stage-rows");
+    return make_profile("bms-10k-scratchless", "BMS 10K (no scratch)", std::move(lanes),
+                        std::move(input), true, split_after);
 }
 
 auto make_bme_7k_profile(scratch_placement_t scratch) -> lane_input_profile_t {
@@ -616,6 +647,9 @@ auto built_in_bms_lane_profiles() -> std::span<const bms_lane_profile_descriptor
         // Split layout is an editor presentation choice for this one-player mode.
         bms_lane_profile_descriptor_t{make_pms_bme_style_18k_profile(),
                                       bms_lane_profile_family_t::popn, false, false},
+        // Chosen only explicitly: its channels are also a subset of every 10K profile.
+        bms_lane_profile_descriptor_t{make_bms_10k_scratchless_profile(),
+                                      bms_lane_profile_family_t::special, true, false},
         bms_lane_profile_descriptor_t{make_bms_double_scratch_profile(),
                                       bms_lane_profile_family_t::special, false, false},
         bms_lane_profile_descriptor_t{make_bms_octave_fp_profile(),
@@ -659,6 +693,72 @@ auto default_input_profile_for(const lane_layout_t& layout) -> std::optional<inp
     auto single_stage = layout;
     for (auto& lane : single_stage.lanes) lane.stage = stage_group_t::left;
     return make_number_row_input_profile(single_stage, 0, "number-row-default");
+}
+
+namespace {
+
+constexpr std::array<stepmania_lane_spec_t, 5> pump_single_specs{{
+    {"Down Left", lane_glyph_t::arrow_down_left},
+    {"Up Left", lane_glyph_t::arrow_up_left},
+    {"Center", lane_glyph_t::arrow_center},
+    {"Up Right", lane_glyph_t::arrow_up_right},
+    {"Down Right", lane_glyph_t::arrow_down_right},
+}};
+
+constexpr std::array<stepmania_lane_spec_t, 6> dance_solo_specs{{
+    {"Left", lane_glyph_t::arrow_left},
+    {"Up Left", lane_glyph_t::arrow_up_left},
+    {"Down", lane_glyph_t::arrow_down},
+    {"Up", lane_glyph_t::arrow_up},
+    {"Up Right", lane_glyph_t::arrow_up_right},
+    {"Right", lane_glyph_t::arrow_right},
+}};
+
+auto make_stepmania_profile(std::string_view step_type,
+                            std::span<const stepmania_lane_spec_t> specs, std::string display_name)
+    -> lane_input_profile_t {
+    std::vector<lane_definition_t> lanes;
+    lanes.reserve(specs.size());
+    for (std::size_t index = 0; index < specs.size(); ++index) {
+        lanes.push_back({.id = lane_id_t{index + 1},
+                         .name = std::string(specs[index].name),
+                         .role = lane_role_t::playable,
+                         .stage = stage_group_t::left,
+                         .display_order = static_cast<std::uint32_t>(index),
+                         .glyph = specs[index].glyph});
+    }
+    input_profile_t input{
+        .profile_id = "number-row-single-stage",
+        .bindings = make_number_row_bindings(lanes, 0),
+        .stage_count = 1,
+        .requires_focused_stage = false,
+    };
+    return make_profile("stepmania:" + std::string(step_type), std::move(display_name),
+                        std::move(lanes), std::move(input));
+}
+
+} // namespace
+
+auto stepmania_lane_specs(std::string_view step_type) -> std::span<const stepmania_lane_spec_t> {
+    const auto same = [&](std::string_view name) {
+        return std::ranges::equal(step_type, name, [](char left, char right) {
+            return std::tolower(static_cast<unsigned char>(left)) ==
+                   std::tolower(static_cast<unsigned char>(right));
+        });
+    };
+    if (same("pump-single"))
+        return pump_single_specs;
+    if (same("dance-solo"))
+        return dance_solo_specs;
+    return {};
+}
+
+auto make_stepmania_pump_single_profile() -> lane_input_profile_t {
+    return make_stepmania_profile("pump-single", pump_single_specs, "Pump 5K (pump-single)");
+}
+
+auto make_stepmania_dance_solo_profile() -> lane_input_profile_t {
+    return make_stepmania_profile("dance-solo", dance_solo_specs, "Solo 6K (dance-solo)");
 }
 
 auto make_bmson_generic_24k_profile() -> lane_input_profile_t {

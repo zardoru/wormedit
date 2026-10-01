@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <ranges>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -274,6 +275,35 @@ auto apply_note_label_edit(document_history_t& history, std::uint64_t expected_r
     return commit_document_command(history, std::move(proposed),
                                    action.label.has_value() ? "Set note label"
                                                             : "Clear note label");
+}
+
+auto find_notes_by_label(const chart_document_t& chart, std::string_view text)
+    -> std::vector<object_id_t> {
+    std::vector<object_id_t> found;
+    if (text.empty()) {
+        return found;
+    }
+    const auto lower = [](char value) {
+        return value >= 'A' && value <= 'Z' ? static_cast<char>(value - 'A' + 'a') : value;
+    };
+    const auto same = [&](char left, char right) { return lower(left) == lower(right); };
+    for (const auto& measure : chart.measures) {
+        std::vector<const note_t*> matches;
+        for (const auto& note : measure.notes) {
+            if (note.label.has_value() &&
+                !std::ranges::search(*note.label, text, same).empty()) {
+                matches.push_back(&note);
+            }
+        }
+        std::ranges::stable_sort(matches, [](const auto* left, const auto* right) {
+            return std::tie(left->position.row, left->id.value) <
+                   std::tie(right->position.row, right->id.value);
+        });
+        for (const auto* note : matches) {
+            found.push_back(note->id);
+        }
+    }
+    return found;
 }
 
 } // namespace wormedit

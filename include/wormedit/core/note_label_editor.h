@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace wormedit {
@@ -32,5 +33,11 @@ struct set_note_label_action_t {
 apply_note_label_edit(document_history_t& history, std::uint64_t expected_revision,
                       const set_note_label_action_t& action, note_label_edit_limits_t limits = {})
     -> document_command_result_t;
+
+// Notes whose label contains `text`, compared ASCII case-insensitively, in chart
+// order (measure order, then row, then id). An empty search matches nothing.
+// Never mutates the document.
+[[nodiscard]] auto find_notes_by_label(const chart_document_t& chart, std::string_view text)
+    -> std::vector<object_id_t>;
 
 } // namespace wormedit

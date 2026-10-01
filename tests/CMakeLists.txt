@@ -49,6 +49,8 @@ add_executable(wormedit_core_tests
     core/interaction_tests.cpp
     core/chart_clipboard_tests.cpp
     core/lane_profile_tests.cpp
+    core/lane_transform_tests.cpp
+    core/time_shift_tests.cpp
     core/marker_editor_tests.cpp
     core/marker_navigation_tests.cpp
     core/metadata_editor_tests.cpp

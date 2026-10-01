@@ -155,6 +155,12 @@ enum class lane_glyph_t {
     arrow_down,
     arrow_up,
     arrow_right,
+    // Appended after the cardinal arrows so stored values keep their meaning.
+    arrow_up_left,
+    arrow_up_right,
+    arrow_down_left,
+    arrow_down_right,
+    arrow_center,
 };
 
 struct midi_destination_t {

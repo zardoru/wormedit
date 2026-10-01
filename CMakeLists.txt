@@ -66,6 +66,7 @@ add_library(wormedit_core
     src/core/chart_editor.cpp
     src/core/measure.cpp
     src/core/measure_editor.cpp
+    src/core/lane_transform.cpp
     src/core/note_label_editor.cpp
     src/core/pause_warp_editor.cpp
     src/core/player_preview.cpp
@@ -88,6 +89,7 @@ add_library(wormedit_core
     src/core/sv_recipe.cpp
     src/core/startup_session.cpp
     src/core/task_graph.cpp
+    src/core/time_shift.cpp
     src/core/tap_tempo.cpp
     src/core/timing.cpp
     src/core/timing_discontinuity.cpp

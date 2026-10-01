@@ -651,7 +651,7 @@ auto valid_chart_layout_domains(const chart_document_t& chart) -> bool {
         for (const auto& lane : segment.layout.lanes) {
             if (!enum_at_most(lane.role, lane_role_t::foot_pedal) ||
                 !enum_at_most(lane.stage, stage_group_t::right) ||
-                !enum_at_most(lane.glyph, lane_glyph_t::arrow_right)) {
+                !enum_at_most(lane.glyph, lane_glyph_t::arrow_center)) {
                 return false;
             }
         }

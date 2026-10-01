@@ -98,12 +98,10 @@ struct flattened_workspace_t {
         std::string policy_status;
     } setup;
     struct {
-        std::vector<const char*> search_tag;
-        std::vector<std::size_t> search_tag_length;
-        std::array<WormUiMetadataFormatFieldView, WORM_UI_METADATA_FORMAT_FIELD_CAPACITY>
-            format_field{};
-        std::array<WormUiMetadataFormatTargetView, WORM_UI_METADATA_FORMAT_TARGET_CAPACITY>
-            format_target{};
+        frame_span<const char*> search_tag;
+        frame_span<std::size_t> search_tag_length;
+        frame_span<WormUiMetadataFormatFieldView> format_field;
+        frame_span<WormUiMetadataFormatTargetView> format_target;
         std::string project_directory;
         std::string music_source;
         std::string copy_preview_source;

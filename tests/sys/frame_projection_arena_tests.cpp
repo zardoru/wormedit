@@ -404,3 +404,178 @@ TEST_CASE("Timing recipe owns diagnostic text independently of the preview",
     check_frame_storage(std::strcmp(retained.view.timing.sv_recipe.status_text,
                                    diagnostic.c_str()) == 0);
 }
+
+namespace {
+auto metadata_arena_model(std::size_t tags = 2) -> wormedit::workspace_view_t {
+    wormedit::workspace_view_t model;
+    model.active_tab = wormedit::workspace_tab_t::metadata;
+    wormedit::workspace_metadata_view_t tab;
+    tab.title = "Title";
+    tab.artist = "Artist";
+    tab.search_tags.assign(tags, "tag");
+    tab.selected_difficulty = wormedit::workspace_chart_option_t{
+        .id = wormedit::chart_id_t{1}, .difficulty_name = "Hard"};
+    tab.format_fields.push_back({.chart_scoped = true,
+        .family = wormedit::format_family_t::bms, .first_group_for_family = true,
+        .group_index = 2, .field_index = 3, .group_field_count = 4,
+        .name = "field-name", .value = "field-value", .source_order = 17});
+    model.tab_view = std::move(tab);
+    return model;
+}
+auto metadata_arena_document() -> wormedit::song_document_t {
+    wormedit::song_document_t document;
+    document.charts.push_back({.id = wormedit::chart_id_t{1}});
+    document.charts.front().source_family = wormedit::format_family_t::bms;
+    document.metadata.format_groups.push_back({.family = wormedit::format_family_t::bms,
+                                               .ordered_fields = {{"song", "value"}}});
+    document.charts.front().metadata.format_groups.push_back({
+        .family = wormedit::format_family_t::bmson, .ordered_fields = {{"chart", "value"}}});
+    return document;
+}
+auto project_metadata_arena(const wormedit::workspace_view_t& model,
+                            const wormedit::song_document_t& document,
+                            frame_arena_t* arena = nullptr) -> flattened_workspace_t {
+    return flatten_workspace(model, document, "ready", {}, false, {}, arena);
+}
+void check_metadata_fields(const WormUiMetadataFormatFieldView& field) {
+    check_frame_storage(field.chart_scoped);
+    check_frame_storage(field.family == static_cast<std::uint8_t>(wormedit::format_family_t::bms));
+    check_frame_storage(field.first_group_for_family);
+    check_frame_storage(field.group_index == 2);
+    check_frame_storage(field.field_index == 3);
+    check_frame_storage(field.group_field_count == 4);
+    check_frame_storage(std::strcmp(field.name, "field-name") == 0);
+    check_frame_storage(std::strcmp(field.value, "field-value") == 0);
+    check_frame_storage(field.name_bytes == 10);
+    check_frame_storage(field.value_bytes == 11);
+    check_frame_storage(field.has_source_order && field.source_order == 17);
+}
+}
+
+TEST_CASE("Metadata arena lists own source text and preserve field and target identities",
+          "[sys][frame-arena][metadata]") {
+    auto model = metadata_arena_model();
+    const auto document = metadata_arena_document();
+    auto frame = project_metadata_arena(model, document);
+    auto& tab = std::get<wormedit::workspace_metadata_view_t>(model.tab_view);
+    tab.search_tags[0].assign(100, 'x');
+    tab.format_fields[0].name.assign(100, 'n');
+    tab.format_fields[0].value.assign(100, 'v');
+    auto moved = std::move(frame);
+    moved.rebind_view_pointers();
+    const auto& view = moved.view.metadata;
+    REQUIRE(view.search_tags_editable);
+    REQUIRE(view.search_tag_count == 2);
+    check_frame_storage(std::strcmp(view.search_tags[0], "tag") == 0);
+    check_frame_storage(view.search_tag_bytes[0] == 3);
+    REQUIRE(view.format_field_count == 1);
+    check_metadata_fields(view.format_fields[0]);
+    REQUIRE(view.format_target_count == 14);
+    check_frame_storage(view.format_targets[1].family == static_cast<std::uint8_t>(wormedit::format_family_t::bms));
+    check_frame_storage(view.format_targets[1].group_exists);
+    check_frame_storage(!view.format_targets[1].chart_scoped);
+    check_frame_storage(view.format_targets[11].group_exists);
+    check_frame_storage(view.format_targets[11].chart_scoped);
+}
+
+TEST_CASE("Metadata tags retain exact count and byte rejection boundaries",
+          "[sys][frame-arena][metadata]") {
+    const auto document = metadata_arena_document();
+    auto model = metadata_arena_model(WORM_UI_METADATA_SEARCH_TAG_CAPACITY);
+    auto accepted = project_metadata_arena(model, document);
+    check_frame_storage(accepted.view.metadata.search_tags_editable);
+    check_frame_storage(accepted.view.metadata.search_tag_count == WORM_UI_METADATA_SEARCH_TAG_CAPACITY);
+    auto& tab = std::get<wormedit::workspace_metadata_view_t>(model.tab_view);
+    tab.search_tags.push_back("overflow");
+    auto rejected_count = project_metadata_arena(model, document);
+    check_frame_storage(!rejected_count.view.metadata.search_tags_editable);
+    check_frame_storage(!rejected_count.view.metadata.song_fields_editable);
+    check_frame_storage(rejected_count.view.metadata.search_tags == nullptr);
+    check_frame_storage(rejected_count.view.metadata.search_tag_count == WORM_UI_METADATA_SEARCH_TAG_CAPACITY + 1);
+    tab.search_tags = {std::string(WORM_UI_METADATA_SEARCH_TAG_BYTES, 'a')};
+    auto accepted_bytes = project_metadata_arena(model, document);
+    check_frame_storage(accepted_bytes.view.metadata.search_tags_editable);
+    check_frame_storage(accepted_bytes.view.metadata.search_tag_bytes[0] == WORM_UI_METADATA_SEARCH_TAG_BYTES);
+    tab.search_tags.front().push_back('a');
+    auto rejected_bytes = project_metadata_arena(model, document);
+    check_frame_storage(!rejected_bytes.view.metadata.search_tags_editable);
+    check_frame_storage(rejected_bytes.view.metadata.search_tags == nullptr);
+}
+
+TEST_CASE("Metadata arena exhaustion publishes only complete fields and no partial tag list",
+          "[sys][frame-arena][metadata]") {
+    auto model = metadata_arena_model();
+    const auto document = metadata_arena_document();
+    frame_arena_t tiny({.chunk_bytes = 8, .maximum_bytes = 8});
+    auto rejected = project_metadata_arena(model, document, &tiny);
+    check_frame_storage(!rejected.view.metadata.search_tags_editable);
+    check_frame_storage(rejected.view.metadata.search_tags == nullptr);
+    check_frame_storage(rejected.view.metadata.search_tag_bytes == nullptr);
+    check_frame_storage(rejected.view.metadata.format_fields_truncated);
+    check_frame_storage(rejected.view.metadata.format_field_count == 0);
+    check_frame_storage(rejected.view.metadata.selected_chart_source_family ==
+        static_cast<std::uint8_t>(wormedit::format_family_t::bms));
+    auto& tab = std::get<wormedit::workspace_metadata_view_t>(model.tab_view);
+    tab.search_tags.clear();
+    auto second = tab.format_fields.front();
+    second.value.assign(1024, 'v');
+    tab.format_fields.push_back(std::move(second));
+    frame_arena_t limited({.chunk_bytes = 512, .maximum_bytes = 512});
+    auto prefix = project_metadata_arena(model, document, &limited);
+    REQUIRE(prefix.view.metadata.format_field_count == 1);
+    check_frame_storage(prefix.view.metadata.format_field_total_count == 2);
+    check_frame_storage(prefix.view.metadata.format_fields_truncated);
+    check_metadata_fields(prefix.view.metadata.format_fields[0]);
+}
+
+TEST_CASE("Metadata fields retain 128-entry limit and full source total",
+          "[sys][frame-arena][metadata]") {
+    auto model = metadata_arena_model();
+    const auto document = metadata_arena_document();
+    auto& tab = std::get<wormedit::workspace_metadata_view_t>(model.tab_view);
+    tab.format_fields.resize(WORM_UI_METADATA_FORMAT_FIELD_CAPACITY, tab.format_fields.front());
+    auto accepted = project_metadata_arena(model, document);
+    check_frame_storage(!accepted.view.metadata.format_fields_truncated);
+    check_frame_storage(accepted.view.metadata.format_field_count == WORM_UI_METADATA_FORMAT_FIELD_CAPACITY);
+    tab.format_fields.push_back(tab.format_fields.front());
+    auto capped = project_metadata_arena(model, document);
+    check_frame_storage(capped.view.metadata.format_fields_truncated);
+    check_frame_storage(capped.view.metadata.format_field_count == WORM_UI_METADATA_FORMAT_FIELD_CAPACITY);
+    check_frame_storage(capped.view.metadata.format_field_total_count == WORM_UI_METADATA_FORMAT_FIELD_CAPACITY + 1);
+    check_metadata_fields(capped.view.metadata.format_fields[WORM_UI_METADATA_FORMAT_FIELD_CAPACITY - 1]);
+}
+
+TEST_CASE("Metadata arena list storage stays bounded through 1000 dense resets",
+          "[sys][frame-arena][metadata]") {
+    const auto document = metadata_arena_document();
+    const auto smaller = metadata_arena_model(1000);
+    const auto dense = metadata_arena_model(WORM_UI_METADATA_SEARCH_TAG_CAPACITY);
+    frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    auto project = [&](const auto& model) {
+        arena.reset();
+        return project_metadata_arena(model, document, &arena);
+    };
+    (void)project(dense);
+    const auto before_small = frame_heap_allocation_snapshot();
+    (void)project(smaller);
+    const auto small_count = frame_heap_allocation_snapshot().count - before_small.count;
+    (void)project(dense);
+    const auto used = arena.used_bytes();
+    const auto committed = arena.committed_bytes();
+    bool exact = true;
+    bool stable = true;
+    bool allocation_count_independent = true;
+    for (int iteration = 0; iteration < 1000; ++iteration) {
+        const auto before = frame_heap_allocation_snapshot();
+        const auto frame = project(dense);
+        const auto after = frame_heap_allocation_snapshot();
+        exact = exact && frame.view.metadata.search_tags_editable &&
+            frame.view.metadata.search_tag_count == WORM_UI_METADATA_SEARCH_TAG_CAPACITY;
+        stable = stable && arena.used_bytes() == used && arena.committed_bytes() == committed;
+        allocation_count_independent = allocation_count_independent && after.count - before.count == small_count;
+    }
+    check_frame_storage(exact);
+    check_frame_storage(stable);
+    check_frame_storage(allocation_count_independent);
+    INFO("Metadata projection still allocates " << small_count << " outside the converted lists");
+}

@@ -363,6 +363,71 @@ void populate_setup_tab(const workspace_projection_context_t& projection, const 
 
 }
 
+template<class T>
+auto metadata_rows(flattened_workspace_t& result, std::size_t count) -> frame_span<T> {
+    auto* arena = result.arena();
+    return arena ? arena_array<T>(*arena, count) : frame_span<T>{};
+}
+
+void populate_metadata_search_tags(flattened_workspace_t& result,
+                                   const wormedit::workspace_metadata_view_t& tab,
+                                   WormUiMetadataView& metadata) {
+    if (!metadata.search_tags_editable) return;
+    if (std::ranges::any_of(tab.search_tags, [](const auto& tag) {
+        return tag.size() > WORM_UI_METADATA_SEARCH_TAG_BYTES;
+    })) {
+        metadata.search_tags_editable = false;
+        return;
+    }
+    result.metadata.search_tag = metadata_rows<const char*>(result, tab.search_tags.size());
+    result.metadata.search_tag_length = metadata_rows<std::size_t>(result, tab.search_tags.size());
+    auto* arena = result.arena();
+    metadata.search_tags_editable = arena &&
+        result.metadata.search_tag.capacity() == tab.search_tags.size() &&
+        result.metadata.search_tag_length.capacity() == tab.search_tags.size();
+    if (!metadata.search_tags_editable) return;
+    for (const auto& tag : tab.search_tags) {
+        const auto* text = arena_string(*arena, tag);
+        if (!text) { metadata.search_tags_editable = false; return; }
+        (void)result.metadata.search_tag.push_back(text);
+        (void)result.metadata.search_tag_length.push_back(tag.size());
+    }
+}
+
+void populate_metadata_format_fields(flattened_workspace_t& result,
+                                     const wormedit::workspace_metadata_view_t& tab,
+                                     WormUiMetadataView& metadata) {
+    metadata.format_field_total_count = tab.format_fields.size();
+    const auto count = std::min<std::size_t>(tab.format_fields.size(),
+                                            WORM_UI_METADATA_FORMAT_FIELD_CAPACITY);
+    metadata.format_fields_truncated = count != tab.format_fields.size();
+    result.metadata.format_field = metadata_rows<WormUiMetadataFormatFieldView>(result, count);
+    auto* arena = result.arena();
+    if (!arena || result.metadata.format_field.capacity() != count) {
+        metadata.format_fields_truncated = true;
+        return;
+    }
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& field = tab.format_fields[index];
+        const auto* name = arena_string(*arena, field.name);
+        const auto* value = arena_string(*arena, field.value);
+        if (!name || !value) { metadata.format_fields_truncated = true; break; }
+        (void)result.metadata.format_field.push_back({
+            .chart_scoped = field.chart_scoped,
+            .family = static_cast<std::uint8_t>(field.family),
+            .first_group_for_family = field.first_group_for_family,
+            .group_index = field.group_index, .field_index = field.field_index,
+            .group_field_count = field.group_field_count,
+            .name = name, .value = value,
+            .name_bytes = field.name.size(), .value_bytes = field.value.size(),
+            .has_source_order = field.source_order.has_value(),
+            .source_order = field.source_order.value_or(0),
+        });
+    }
+    metadata.format_field_count = result.metadata.format_field.size();
+    metadata.format_fields = result.metadata.format_field.data();
+}
+
 void append_metadata_format_targets(flattened_workspace_t& result, auto& metadata,
                                     const auto& groups, bool chart_scoped) {
     constexpr std::array format_families{
@@ -382,14 +447,14 @@ void append_metadata_format_targets(flattened_workspace_t& result, auto& metadat
     for (const auto family : format_families) {
         const auto family_index = static_cast<std::size_t>(family);
         const auto* found = first_groups[family_index];
-        const auto index = metadata.format_target_count++;
-        result.metadata.format_target[index] = {
+        (void)result.metadata.format_target.push_back({
             .chart_scoped = chart_scoped,
             .family = static_cast<std::uint8_t>(family),
             .group_exists = found != nullptr,
             .group_index = found == nullptr ? 0 : first_group_indices[family_index],
             .field_count = found == nullptr ? 0 : found->ordered_fields.size(),
-        };
+        });
+        metadata.format_target_count = result.metadata.format_target.size();
     }
 }
 
@@ -398,12 +463,19 @@ void populate_metadata_format_targets(const workspace_projection_context_t& proj
                                       auto& metadata) {
     const auto& document = projection.document;
     auto& result = projection.result;
+    const auto selected = tab.selected_difficulty
+        ? std::ranges::find(document.charts, tab.selected_difficulty->id,
+                            &wormedit::chart_document_t::id) : document.charts.end();
+    if (selected != document.charts.end())
+        metadata.selected_chart_source_family = static_cast<std::uint8_t>(selected->source_family);
+    const auto count = selected == document.charts.end() ? 7u : 14u;
+    result.metadata.format_target = metadata_rows<WormUiMetadataFormatTargetView>(result, count);
+    if (result.metadata.format_target.capacity() != count) {
+        metadata.format_fields_truncated = true;
+        return;
+    }
     append_metadata_format_targets(result, metadata, document.metadata.format_groups, false);
-    if (!tab.selected_difficulty) return;
-    const auto selected = std::ranges::find(document.charts, tab.selected_difficulty->id,
-                                            &wormedit::chart_document_t::id);
     if (selected == document.charts.end()) return;
-    metadata.selected_chart_source_family = static_cast<std::uint8_t>(selected->source_family);
     append_metadata_format_targets(result, metadata, selected->metadata.format_groups, true);
 }
 
@@ -427,17 +499,7 @@ void populate_metadata_tab(const workspace_projection_context_t& projection, con
                     tab.search_tags.size() <= WORM_UI_METADATA_SEARCH_TAG_CAPACITY;
                 metadata.search_tags_editable =
                     tab.search_tags.size() <= WORM_UI_METADATA_SEARCH_TAG_CAPACITY;
-                if (metadata.search_tags_editable) {
-                    result.metadata.search_tag.reserve(tab.search_tags.size());
-                    result.metadata.search_tag_length.reserve(tab.search_tags.size());
-                    for (const auto& tag : tab.search_tags) {
-                        result.metadata.search_tag.push_back(tag.c_str());
-                        result.metadata.search_tag_length.push_back(tag.size());
-                        metadata.search_tags_editable =
-                            metadata.search_tags_editable &&
-                            tag.size() <= WORM_UI_METADATA_SEARCH_TAG_BYTES;
-                    }
-                }
+                populate_metadata_search_tags(result, tab, metadata);
                 metadata.search_tags = metadata.search_tags_editable
                                            ? result.metadata.search_tag.data()
                                            : nullptr;
@@ -469,30 +531,7 @@ void populate_metadata_tab(const workspace_projection_context_t& projection, con
                     metadata.audio_offset_denominator =
                         tab.beat_zero_audio_offset_seconds.denominator;
                 }
-                metadata.format_fields_truncated =
-                    tab.format_fields.size() > WORM_UI_METADATA_FORMAT_FIELD_CAPACITY;
-                metadata.format_field_total_count = tab.format_fields.size();
-                metadata.format_field_count =
-                    std::min(tab.format_fields.size(),
-                             static_cast<std::size_t>(WORM_UI_METADATA_FORMAT_FIELD_CAPACITY));
-                for (std::size_t index = 0; index < metadata.format_field_count; ++index) {
-                    const auto& field = tab.format_fields[index];
-                    result.metadata.format_field[index] = {
-                        .chart_scoped = field.chart_scoped,
-                        .family = static_cast<std::uint8_t>(field.family),
-                        .first_group_for_family = field.first_group_for_family,
-                        .group_index = field.group_index,
-                        .field_index = field.field_index,
-                        .group_field_count = field.group_field_count,
-                        .name = field.name.c_str(),
-                        .value = field.value.c_str(),
-                        .name_bytes = field.name.size(),
-                        .value_bytes = field.value.size(),
-                        .has_source_order = field.source_order.has_value(),
-                        .source_order = field.source_order.value_or(0),
-                    };
-                }
-                metadata.format_fields = result.metadata.format_field.data();
+                populate_metadata_format_fields(result, tab, metadata);
                 populate_metadata_format_targets(projection, tab, metadata);
                 metadata.format_targets = result.metadata.format_target.data();
                 append("Song title: " + tab.title);

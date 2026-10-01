@@ -905,3 +905,136 @@ TEST_CASE("Warmed Setup and Recovery arena copies allocate no heap across 1000 p
     check_frame_storage(zero_new);
     check_frame_storage(stable);
 }
+
+namespace {
+auto compose_output_group_document() -> wormedit::song_document_t {
+    wormedit::song_document_t document;
+    document.output_groups.push_back({.name = "Excluded chart output",
+        .charts = {wormedit::chart_id_t{2}}, .relative_output_path = "ignored/chart.bms"});
+    document.output_groups.push_back({.name = "Independently owned Compose output group",
+        .charts = {wormedit::chart_id_t{1}}, .relative_output_path = "exports/chart.bms"});
+    return document;
+}
+auto project_compose_output_groups(const wormedit::song_document_t& document,
+                                   frame_arena_t* arena = nullptr) -> flattened_workspace_t {
+    wormedit::workspace_view_t model;
+    model.active_tab = wormedit::workspace_tab_t::compose;
+    model.tab_view = wormedit::workspace_compose_view_t{.chart = wormedit::chart_id_t{1}};
+    return flatten_workspace(model, document, "ready", {}, false, {}, arena);
+}
+void check_compose_output_group(const WormUiComposeOutputGroupView& group) {
+    check_frame_storage(group.document_index == 1);
+    check_frame_storage(std::strcmp(group.name, "Independently owned Compose output group") == 0);
+    check_frame_storage(std::strcmp(group.relative_output_path, "exports/chart.bms") == 0);
+    check_frame_storage(std::strcmp(group.relative_asset_directory, "exports/assets") == 0);
+}
+}
+
+TEST_CASE("Compose output group arena text retains source-independent moves and chart filtering",
+          "[sys][frame-arena][compose-output-group]") {
+    auto document = compose_output_group_document();
+    auto frame = project_compose_output_groups(document);
+    document.output_groups.clear();
+    auto moved = std::move(frame);
+    moved.rebind_view_pointers();
+    REQUIRE(moved.view.compose.output_group_count == 1);
+    check_frame_storage(!moved.view.compose.output_groups_truncated);
+    check_compose_output_group(moved.view.compose.output_groups[0]);
+    check_frame_storage(moved.view.compose.output_groups == moved.compose.output_group.view.data());
+}
+
+TEST_CASE("Compose output group arena retains count limits and existing path display semantics",
+          "[sys][frame-arena][compose-output-group]") {
+    auto document = compose_output_group_document();
+    const auto selected = document.output_groups[1];
+    document.output_groups.resize(WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY + 1, selected);
+    document.output_groups.insert(document.output_groups.begin() + 2, document.output_groups.front());
+    auto exact = project_compose_output_groups(document);
+    check_frame_storage(exact.view.compose.output_group_count == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY);
+    check_frame_storage(!exact.view.compose.output_groups_truncated);
+    check_frame_storage(exact.view.compose.output_groups[WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY - 1].document_index == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY + 1);
+    document.output_groups.push_back(selected);
+    auto truncated = project_compose_output_groups(document);
+    check_frame_storage(truncated.view.compose.output_group_count == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY);
+    check_frame_storage(truncated.view.compose.output_groups_truncated);
+    document.output_groups.resize(2);
+    document.output_groups[1].relative_output_path = "/absolute/chart.bms";
+    auto absolute = project_compose_output_groups(document);
+    REQUIRE(absolute.view.compose.output_group_count == 1);
+    check_frame_storage(std::strcmp(absolute.view.compose.output_groups[0].relative_output_path,
+                                   "/absolute/chart.bms") == 0);
+    check_frame_storage(absolute.view.compose.output_groups[0].relative_asset_directory[0] == '\0');
+    document.output_groups[1].charts = {wormedit::chart_id_t{2}};
+    auto unmatched = project_compose_output_groups(document);
+    check_frame_storage(unmatched.view.compose.output_group_count == 0);
+    check_frame_storage(!unmatched.view.compose.output_groups_truncated);
+    document.output_groups.clear();
+    auto empty = project_compose_output_groups(document);
+    check_frame_storage(empty.view.compose.output_group_count == 0);
+    check_frame_storage(!empty.view.compose.output_groups_truncated);
+}
+
+TEST_CASE("Compose output group exhaustion publishes no partial row or fake path",
+          "[sys][frame-arena][compose-output-group]") {
+    auto document = compose_output_group_document();
+    frame_arena_t tiny({.chunk_bytes = 8, .maximum_bytes = 8});
+    auto failed = project_compose_output_groups(document, &tiny);
+    check_frame_storage(failed.view.compose.output_group_count == 0);
+    check_frame_storage(failed.view.compose.output_groups_truncated);
+    check_frame_storage(failed.view.compose.output_groups == nullptr);
+    auto second = document.output_groups[1];
+    second.name.assign(4096, 'x');
+    document.output_groups.push_back(std::move(second));
+    frame_arena_t limited({.chunk_bytes = 512, .maximum_bytes = 512});
+    auto prefix = project_compose_output_groups(document, &limited);
+    REQUIRE(prefix.view.compose.output_group_count == 1);
+    check_frame_storage(prefix.view.compose.output_groups_truncated);
+    check_compose_output_group(prefix.view.compose.output_groups[0]);
+}
+
+TEST_CASE("Compose output group arena keeps stable storage across 1000 warmed frames",
+          "[sys][frame-arena][compose-output-group]") {
+    const auto document = compose_output_group_document();
+    frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    (void)project_compose_output_groups(document, &arena);
+    const auto used = arena.used_bytes();
+    const auto committed = arena.committed_bytes();
+    arena.reset();
+    const auto before = frame_heap_allocation_snapshot();
+    (void)project_compose_output_groups(document, &arena);
+    const auto allocations = frame_heap_allocation_snapshot().count - before.count;
+    bool stable = true;
+    bool consistent = true;
+    for (int iteration = 0; iteration < 1000; ++iteration) {
+        arena.reset();
+        const auto start = frame_heap_allocation_snapshot();
+        const auto frame = project_compose_output_groups(document, &arena);
+        const auto finish = frame_heap_allocation_snapshot();
+        stable = stable && arena.used_bytes() == used && arena.committed_bytes() == committed &&
+            frame.view.compose.output_group_count == 1 && !frame.view.compose.output_groups_truncated;
+        consistent = consistent && finish.count - start.count == allocations;
+    }
+    INFO("Unconverted catalog/branch and generic path formatting allocations: " << allocations);
+    check_frame_storage(stable);
+    check_frame_storage(consistent);
+}
+
+TEST_CASE("Compose output group external arena reset republishes current document text",
+          "[sys][frame-arena][compose-output-group]") {
+    auto document = compose_output_group_document();
+    frame_arena_t arena({.chunk_bytes = 1024, .maximum_bytes = 1024});
+    {
+        auto frame = project_compose_output_groups(document, &arena);
+        auto moved = std::move(frame);
+        moved.rebind_view_pointers();
+        REQUIRE(moved.view.compose.output_group_count == 1);
+        check_compose_output_group(moved.view.compose.output_groups[0]);
+    }
+    arena.reset();
+    document.output_groups[1].name = "Updated second frame group";
+    auto current = project_compose_output_groups(document, &arena);
+    REQUIRE(current.view.compose.output_group_count == 1);
+    check_frame_storage(std::strcmp(current.view.compose.output_groups[0].name,
+                                   "Updated second frame group") == 0);
+    check_frame_storage(!current.view.compose.output_groups_truncated);
+}

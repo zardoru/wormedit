@@ -173,11 +173,7 @@ struct flattened_workspace_t {
             std::array<std::string, WORM_UI_COMPOSE_RESOURCE_CAPACITY> path;
         } resource;
         struct {
-            std::array<WormUiComposeOutputGroupView, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY>
-                view{};
-            std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY> name;
-            std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY> path;
-            std::array<std::string, WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY> asset_directory;
+            frame_span<WormUiComposeOutputGroupView> view;
         } output_group;
         std::array<WormUiComposeLaneKeyBinding, WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY>
             lane_key{};

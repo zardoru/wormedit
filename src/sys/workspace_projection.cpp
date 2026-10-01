@@ -592,6 +592,54 @@ void populate_timing_tab(const workspace_projection_context_t& projection, const
                        std::to_string(tab.bookmark_count + tab.section_count));
 
 }
+auto append_compose_output_group(flattened_workspace_t& result, frame_arena_t& arena,
+                                 const wormedit::output_group_t& group,
+                                 std::size_t document_index) -> bool {
+    const auto* name = arena_string(arena, group.name);
+    const auto* path = arena_string(arena, group.relative_output_path.generic_string());
+    const auto directory = wormedit::export_asset_directory(group.relative_output_path);
+    const auto* assets = arena_string(arena,
+        directory ? directory->generic_string() : std::string{});
+    if (!name || !path || !assets) return false;
+    if (!result.compose.output_group.view.push_back({
+        .document_index = document_index, .name = name, .relative_output_path = path,
+        .relative_asset_directory = assets})) return false;
+    result.view.compose.output_group_count = result.compose.output_group.view.size();
+    return true;
+}
+
+void populate_compose_output_groups(const workspace_projection_context_t& projection,
+                                    wormedit::chart_id_t chart) {
+    auto& result = projection.result;
+    auto& view = result.view.compose;
+    const auto& groups = projection.document.output_groups;
+    const auto selected_count = std::ranges::count_if(groups, [&](const auto& group) {
+        return std::ranges::find(group.charts, chart) != group.charts.end();
+    });
+    const auto count = std::min(static_cast<std::size_t>(selected_count),
+                                std::size_t{WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY});
+    auto* arena = result.arena();
+    result.compose.output_group.view = arena
+        ? arena_array<WormUiComposeOutputGroupView>(*arena, count)
+        : frame_span<WormUiComposeOutputGroupView>{};
+    view.output_groups = result.compose.output_group.view.data();
+    view.output_group_count = 0;
+    view.output_groups_truncated = static_cast<std::size_t>(selected_count) > count;
+    if (result.compose.output_group.view.capacity() != count) {
+        view.output_groups_truncated = true;
+        return;
+    }
+    if (!arena) return;
+    for (std::size_t index = 0; index < groups.size(); ++index) {
+        if (std::ranges::find(groups[index].charts, chart) == groups[index].charts.end()) continue;
+        if (view.output_group_count == count) break;
+        if (!append_compose_output_group(result, *arena, groups[index], index)) {
+            view.output_groups_truncated = true;
+            break;
+        }
+    }
+}
+
 void populate_compose_tab(const workspace_projection_context_t& projection, const wormedit::workspace_compose_view_t& tab) {
     auto& result = projection.result;
     const auto& source = projection.source;
@@ -610,34 +658,7 @@ void populate_compose_tab(const workspace_projection_context_t& projection, cons
                 compose.resource_count = resource_catalog.entries.size();
                 compose.resource_total_count = resource_catalog.total_count;
                 compose.resources_truncated = resource_catalog.truncated;
-                compose.output_groups = result.compose.output_group.view.data();
-                compose.output_group_count = 0;
-                compose.output_groups_truncated = false;
-                for (std::size_t group_index = 0; group_index < document.output_groups.size();
-                     ++group_index) {
-                    const auto& group = document.output_groups[group_index];
-                    if (std::ranges::find(group.charts, tab.chart) == group.charts.end())
-                        continue;
-                    if (compose.output_group_count >= WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY) {
-                        compose.output_groups_truncated = true;
-                        continue;
-                    }
-                    const auto slot = compose.output_group_count++;
-                    result.compose.output_group.name[slot] = group.name;
-                    result.compose.output_group.path[slot] =
-                        group.relative_output_path.generic_string();
-                    const auto asset_directory =
-                        wormedit::export_asset_directory(group.relative_output_path);
-                    result.compose.output_group.asset_directory[slot] =
-                        asset_directory ? asset_directory->generic_string() : std::string{};
-                    result.compose.output_group.view[slot] = {
-                        .document_index = group_index,
-                        .name = result.compose.output_group.name[slot].c_str(),
-                        .relative_output_path =
-                            result.compose.output_group.path[slot].c_str(),
-                        .relative_asset_directory =
-                            result.compose.output_group.asset_directory[slot].c_str()};
-                }
+                populate_compose_output_groups(projection, tab.chart);
                 for (std::size_t index = 0; index < resource_catalog.entries.size(); ++index) {
                     const auto& resource = resource_catalog.entries[index];
                     std::uint8_t roles{};
@@ -834,13 +855,6 @@ void flattened_workspace_t::rebind_view_pointers() {
         resource.source_name = compose.resource.path[index].c_str();
     }
     compose_view.output_groups = compose.output_group.view.data();
-    for (std::size_t index = 0; index < compose_view.output_group_count; ++index) {
-        auto& output_group = compose.output_group.view[index];
-        output_group.name = compose.output_group.name[index].c_str();
-        output_group.relative_output_path = compose.output_group.path[index].c_str();
-        output_group.relative_asset_directory =
-            compose.output_group.asset_directory[index].c_str();
-    }
     compose_view.branch_rows = compose.branch.row.data();
     for (std::size_t index = 0; index < compose_view.branch_row_count; ++index) {
         compose.branch.row[index].display_text = compose.branch.text[index].c_str();

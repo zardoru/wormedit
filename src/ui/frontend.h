@@ -822,6 +822,7 @@ typedef struct WormUiComposeView {
     uint64_t channel_waveform_source_lane_id;
     const WormUiComposeWaveformOverviewRowView* waveform_overview_rows;
     size_t waveform_overview_row_count;
+    uint64_t waveform_overview_generation;
     double waveform_overview_visible_begin_fraction;
     double waveform_overview_visible_end_fraction;
     bool waveform_beat_zero_visible;

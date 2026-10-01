@@ -28,6 +28,12 @@
 #include <limits>
 #include <cmath>
 #include <utility>
+#include <algorithm>
+#include <vector>
+#include <chrono>
+#include <span>
+#include <new>
+#include <stdexcept>
 
 class RenderSubphaseScope {
   public:
@@ -123,6 +129,39 @@ struct nk_sdl_vertex {
     float col[4];
 };
 
+struct OverviewKey {
+    std::uint64_t generation{}, renderer_generation{};
+    std::array<float, 10> geometry{};
+    std::array<unsigned char, 8> colors{};
+    int output_width{}, output_height{}, logical_width{}, logical_height{};
+    SDL_RendererLogicalPresentation logical_mode{SDL_LOGICAL_PRESENTATION_DISABLED};
+    float nominal_scale_x{1}, nominal_scale_y{1};
+    auto operator==(const OverviewKey&) const -> bool = default;
+};
+struct OverviewCache {
+    SDL_Texture* texture{};
+    SDL_Surface* (*readback)(SDL_Renderer*, const SDL_Rect*) = SDL_RenderReadPixels;
+    OverviewKey key{};
+    SDL_Rect interior{}, clip{};
+    float scale_x{1}, scale_y{1};
+    std::vector<nk_sdl_vertex> vertices;
+    std::vector<nk_draw_index> outside_indices;
+    std::size_t first_index{};
+    int begin_marker{}, end_marker{}, warm_marker{};
+    bool pending{}, valid{};
+    std::uint64_t renderer_generation{};
+    wormedit::ui::nuklear::overview_work_t work{};
+    void invalidate() {
+        SDL_DestroyTexture(texture);
+        texture = nullptr;
+        valid = pending = false;
+        std::vector<nk_sdl_vertex>{}.swap(vertices);
+        std::vector<nk_draw_index>{}.swap(outside_indices);
+        work.texture_bytes = work.geometry_bytes = 0;
+    }
+    ~OverviewCache() { SDL_DestroyTexture(texture); }
+};
+
 struct ComposeFieldMarker {
     std::size_t first_index{}, index_count{};
 };
@@ -134,6 +173,7 @@ struct ComposeFieldFrame {
 
 struct nk_sdl {
     ComposeFieldFrame* field;
+    OverviewCache* overview;
     SDL_Window* win;
     SDL_Renderer* renderer;
     struct nk_user_font* debug_font;
@@ -288,6 +328,206 @@ static void submit_field_marker(nk_sdl* sdl, const ComposeFieldMarker& marker) {
                                                 render_nuklear_geometry_raw};
     sdl->field->geometry.submit_range(sdl->renderer, marker.first_index, marker.index_count, hooks);
 }
+static auto overview_intersection(SDL_Rect first, SDL_Rect second) -> SDL_Rect {
+    SDL_Rect result{};
+    SDL_GetRectIntersection(&first, &second, &result);
+    return result;
+}
+static void compact_overview_edges(OverviewCache& cache) {
+    std::vector<nk_sdl_vertex> compact;
+    std::vector<nk_draw_index> mapping(cache.vertices.size(), std::numeric_limits<nk_draw_index>::max());
+    compact.reserve(cache.outside_indices.size());
+    for (auto& index : cache.outside_indices) {
+        auto& translated = mapping[index];
+        if (translated == std::numeric_limits<nk_draw_index>::max()) {
+            translated = static_cast<nk_draw_index>(compact.size());
+            compact.push_back(cache.vertices[index]);
+        }
+        index = translated;
+    }
+    cache.work.transient_bytes = std::max(cache.work.transient_bytes,
+        cache.vertices.capacity() * sizeof(nk_sdl_vertex) + compact.capacity() * sizeof(nk_sdl_vertex) +
+        mapping.capacity() * sizeof(nk_draw_index) + cache.outside_indices.capacity() * sizeof(nk_draw_index));
+    cache.vertices = std::move(compact);
+    cache.vertices.shrink_to_fit();
+    cache.outside_indices.shrink_to_fit();
+}
+
+static bool overview_triangle_visible(const OverviewCache& cache,
+                                      std::span<const nk_draw_index> triangle,
+                                      nk_draw_index minimum) {
+    float left = std::numeric_limits<float>::max(), top = left;
+    float right = std::numeric_limits<float>::lowest(), bottom = right;
+    for (const auto index : triangle) {
+        const auto& point = cache.vertices[index - minimum].position;
+        left = std::min(left, point[0]);
+        right = std::max(right, point[0]);
+        top = std::min(top, point[1]);
+        bottom = std::max(bottom, point[1]);
+    }
+    return left < cache.clip.x + cache.clip.w && right > cache.clip.x &&
+        top < cache.clip.y + cache.clip.h && bottom > cache.clip.y;
+}
+
+static void retain_overview_edges(nk_sdl* sdl, std::size_t end) {
+    auto& cache = *sdl->overview;
+    const auto* source = static_cast<const nk_draw_index*>(nk_buffer_memory_const(&sdl->ogl.indices));
+    const auto* vertices = static_cast<const nk_sdl_vertex*>(nk_buffer_memory_const(&sdl->ogl.vertices));
+    if (end <= cache.first_index || end - cache.first_index > 16'000) return;
+    if (!source || !vertices || end > sdl->ogl.indices.allocated / sizeof(nk_draw_index)) return;
+    const auto range = std::span{source + cache.first_index, end - cache.first_index};
+    const auto [minimum, maximum] = std::minmax_element(range.begin(), range.end());
+    if (*maximum - *minimum >= 4096 ||
+        *maximum >= sdl->ogl.vertices.allocated / sizeof(nk_sdl_vertex)) return;
+    cache.vertices.assign(vertices + *minimum, vertices + *maximum + 1);
+    cache.work.cold_vertices = cache.vertices.size();
+    for (auto& vertex : cache.vertices) {
+        vertex.position[0] *= cache.scale_x;
+        vertex.position[1] *= cache.scale_y;
+    }
+    for (std::size_t index = 0; index + 2 < range.size(); index += 3) {
+        bool outside = false;
+        for (std::size_t corner = 0; corner < 3; ++corner) {
+            const auto& vertex = cache.vertices[range[index + corner] - *minimum];
+            outside |= vertex.position[0] < cache.interior.x ||
+                vertex.position[0] > cache.interior.x + cache.interior.w ||
+                vertex.position[1] < cache.interior.y ||
+                vertex.position[1] > cache.interior.y + cache.interior.h;
+        }
+        if (outside && overview_triangle_visible(cache, range.subspan(index, 3), *minimum))
+            for (std::size_t corner = 0; corner < 3; ++corner)
+                cache.outside_indices.push_back(range[index + corner] - *minimum);
+    }
+    compact_overview_edges(cache);
+    cache.work.geometry_bytes = cache.vertices.capacity() * sizeof(nk_sdl_vertex) +
+        cache.outside_indices.capacity() * sizeof(nk_draw_index);
+}
+static bool overview_renderer_matches(nk_sdl* sdl) {
+    const auto& key = sdl->overview->key;
+    int width{}, height{}, logical_width{}, logical_height{};
+    float sx{}, sy{};
+    SDL_RendererLogicalPresentation mode{};
+    SDL_GetRenderOutputSize(sdl->renderer, &width, &height);
+    SDL_GetRenderLogicalPresentation(sdl->renderer, &logical_width, &logical_height, &mode);
+    SDL_GetRenderScale(sdl->renderer, &sx, &sy);
+    return width == key.output_width && height == key.output_height &&
+        logical_width == key.logical_width && logical_height == key.logical_height &&
+        mode == key.logical_mode && sx == key.nominal_scale_x && sy == key.nominal_scale_y;
+}
+static void capture_overview_pixels_impl(nk_sdl* sdl, std::size_t end) {
+    auto& cache = *sdl->overview;
+    if (!cache.pending) return;
+    cache.pending = false;
+    if (!overview_renderer_matches(sdl)) { cache.invalidate(); return; }
+    retain_overview_edges(sdl, end);
+    if (cache.vertices.empty()) return;
+    const auto begin = std::chrono::steady_clock::now();
+    ++cache.work.readbacks;
+    auto* surface = cache.readback(sdl->renderer, &cache.interior);
+    cache.work.cold_readback_ns += std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - begin).count();
+    if (!surface) { ++cache.work.failures; cache.invalidate(); return; }
+    cache.work.transient_bytes = std::max(cache.work.transient_bytes,
+        static_cast<std::size_t>(surface->pitch) * surface->h + cache.work.geometry_bytes);
+    if (surface->w != cache.interior.w || surface->h != cache.interior.h ||
+        SDL_BYTESPERPIXEL(surface->format) != 4 || surface->pitch < surface->w * 4 ||
+        static_cast<std::size_t>(surface->pitch) * surface->h > 4096U * 256U * 4U) {
+        SDL_DestroySurface(surface);
+        ++cache.work.failures;
+        cache.invalidate();
+        return;
+    }
+    cache.texture = SDL_CreateTexture(sdl->renderer, surface->format, SDL_TEXTUREACCESS_STATIC,
+        surface->w, surface->h);
+    const bool success = cache.texture && SDL_SetTextureBlendMode(cache.texture, SDL_BLENDMODE_NONE) &&
+        SDL_SetTextureScaleMode(cache.texture, SDL_SCALEMODE_NEAREST) &&
+        SDL_UpdateTexture(cache.texture, nullptr, surface->pixels, surface->pitch);
+    SDL_DestroySurface(surface);
+    if (!success) { ++cache.work.failures; cache.invalidate(); return; }
+    cache.valid = true;
+    ++cache.work.rebuilds;
+    ++cache.work.uploads;
+    cache.work.texture_bytes = static_cast<std::size_t>(cache.interior.w) * cache.interior.h * 4;
+    cache.work.uploaded_bytes += cache.work.texture_bytes;
+}
+static void capture_overview_pixels(nk_sdl* sdl, std::size_t end) {
+    try {
+        capture_overview_pixels_impl(sdl, end);
+    } catch (const std::bad_alloc&) {
+        ++sdl->overview->work.failures;
+        sdl->overview->invalidate();
+    } catch (const std::length_error&) {
+        ++sdl->overview->work.failures;
+        sdl->overview->invalidate();
+    }
+}
+static void submit_overview_edge_clip(nk_sdl* sdl, SDL_Rect clip) {
+    auto& cache = *sdl->overview;
+    clip = overview_intersection(clip, cache.clip);
+    if (clip.w <= 0 || clip.h <= 0 || cache.outside_indices.empty()) return;
+    set_nuklear_clip_rect(sdl->renderer, &clip);
+    g_gpu_submission.work.indices += cache.outside_indices.size();
+    cache.work.warm_vertices += cache.vertices.size();
+    cache.work.warm_indices += cache.outside_indices.size();
+    const auto& first = cache.vertices.front();
+    render_nuklear_geometry_raw(sdl->renderer, static_cast<SDL_Texture*>(sdl->ogl.tex_null.texture.ptr),
+        first.position, sizeof(nk_sdl_vertex), reinterpret_cast<const SDL_FColor*>(first.col),
+        sizeof(nk_sdl_vertex), first.uv, sizeof(nk_sdl_vertex), cache.vertices.size(),
+        cache.outside_indices.data(), cache.outside_indices.size(), sizeof(nk_draw_index));
+}
+static void submit_cached_overview(nk_sdl* sdl) {
+    auto& cache = *sdl->overview;
+    if (!cache.valid) return;
+    cache.work.warm_vertices = 4;
+    cache.work.warm_indices = 6;
+    const auto calls_before = g_gpu_submission.work.draw_calls;
+    SDL_Rect viewport{}, previous_clip{};
+    SDL_GetRenderViewport(sdl->renderer, &viewport);
+    const bool clipped = SDL_RenderClipEnabled(sdl->renderer);
+    SDL_GetRenderClipRect(sdl->renderer, &previous_clip);
+    SDL_SetRenderLogicalPresentation(sdl->renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
+    SDL_SetRenderScale(sdl->renderer, 1, 1);
+    SDL_SetRenderViewport(sdl->renderer, nullptr);
+    set_nuklear_clip_rect(sdl->renderer, &cache.clip);
+    const auto& rect = cache.interior;
+    const SDL_FRect destination{static_cast<float>(rect.x), static_cast<float>(rect.y),
+        static_cast<float>(rect.w), static_cast<float>(rect.h)};
+    const SDL_Vertex quad[] = {
+        {{destination.x, destination.y}, {1, 1, 1, 1}, {0, 0}},
+        {{destination.x + destination.w, destination.y}, {1, 1, 1, 1}, {1, 0}},
+        {{destination.x + destination.w, destination.y + destination.h}, {1, 1, 1, 1}, {1, 1}},
+        {{destination.x, destination.y + destination.h}, {1, 1, 1, 1}, {0, 1}}};
+    const nk_draw_index quad_indices[]{0, 1, 2, 0, 2, 3};
+    render_nuklear_geometry_raw(sdl->renderer, cache.texture, &quad[0].position.x, sizeof(SDL_Vertex),
+        &quad[0].color, sizeof(SDL_Vertex), &quad[0].tex_coord.x, sizeof(SDL_Vertex),
+        4, quad_indices, 6, sizeof(nk_draw_index));
+    g_gpu_submission.work.vertices += 4;
+    g_gpu_submission.work.indices += 6;
+    const auto& clip = cache.clip;
+    submit_overview_edge_clip(sdl, {clip.x, clip.y, rect.x - clip.x, clip.h});
+    submit_overview_edge_clip(sdl, {rect.x + rect.w, clip.y,
+        clip.x + clip.w - rect.x - rect.w, clip.h});
+    submit_overview_edge_clip(sdl, {rect.x, clip.y, rect.w, rect.y - clip.y});
+    submit_overview_edge_clip(sdl, {rect.x, rect.y + rect.h, rect.w,
+        clip.y + clip.h - rect.y - rect.h});
+    g_gpu_submission.work.vertices += cache.vertices.size();
+    SDL_SetRenderLogicalPresentation(sdl->renderer, cache.key.logical_width, cache.key.logical_height,
+        cache.key.logical_mode);
+    SDL_SetRenderScale(sdl->renderer, cache.key.nominal_scale_x, cache.key.nominal_scale_y);
+    SDL_SetRenderViewport(sdl->renderer, nullptr);
+    set_nuklear_clip_rect(sdl->renderer, clipped ? &previous_clip : nullptr);
+    ++cache.work.reused_frames;
+    cache.work.warm_draw_calls = g_gpu_submission.work.draw_calls - calls_before;
+}
+static bool submit_overview_marker(nk_sdl* sdl, const nk_draw_command* command,
+                                    std::size_t offset) {
+    auto& cache = *sdl->overview;
+    if (command->userdata.ptr == &cache.begin_marker) { cache.first_index = offset; return true; }
+    if (command->userdata.ptr == &cache.end_marker) { capture_overview_pixels(sdl, offset); return true; }
+    if (command->userdata.ptr == &cache.warm_marker) { submit_cached_overview(sdl); return true; }
+    return false;
+}
+
 static void submit_sdl_draw_list(nk_context* context, nk_sdl* sdl) {
     if (sdl->field->marker_count != 0) {
         const auto work = sdl->field->geometry.workload();
@@ -296,6 +536,7 @@ static void submit_sdl_draw_list(nk_context* context, nk_sdl* sdl) {
     }
     wormedit::ui::nuklear::sdl_draw_batcher_t batches;
     const nk_draw_command* command;
+    std::size_t index_offset = 0;
     nk_draw_foreach(command, context, &sdl->ogl.cmds) {
         if (const auto* marker = field_marker(sdl, command)) {
             if (const auto pending = batches.finish())
@@ -303,6 +544,14 @@ static void submit_sdl_draw_list(nk_context* context, nk_sdl* sdl) {
             submit_field_marker(sdl, *marker);
             continue;
         }
+        if (sdl->overview && (command->userdata.ptr == &sdl->overview->begin_marker ||
+            command->userdata.ptr == &sdl->overview->end_marker ||
+            command->userdata.ptr == &sdl->overview->warm_marker)) {
+            if (const auto pending = batches.finish()) submit_sdl_batch(sdl, *pending);
+            submit_overview_marker(sdl, command, index_offset);
+            continue;
+        }
+        index_offset += command->elem_count;
         const SDL_Rect clip{
             static_cast<int>(command->clip_rect.x), static_cast<int>(command->clip_rect.y),
             static_cast<int>(command->clip_rect.w), static_cast<int>(command->clip_rect.h)};
@@ -432,6 +681,7 @@ NK_API struct nk_context* nk_sdl_init(SDL_Window* win, SDL_Renderer* renderer,
     NK_ASSERT(sdl);
     SDL_zerop(sdl);
     sdl->field = new ComposeFieldFrame;
+    sdl->overview = new (std::nothrow) OverviewCache;
     sdl->allocator.userdata = allocator.userdata;
     sdl->allocator.alloc = allocator.alloc;
     sdl->allocator.free = allocator.free;
@@ -642,6 +892,18 @@ static int handle_sdl_key(nk_context* ctx, nk_sdl* sdl, const SDL_Event& event) 
     return 1;
 }
 
+static auto handle_sdl_renderer_reset(nk_sdl* sdl, const SDL_Event& event) -> std::optional<int> {
+    if (event.type != SDL_EVENT_RENDER_TARGETS_RESET && event.type != SDL_EVENT_RENDER_DEVICE_RESET)
+        return std::nullopt;
+    if (event.render.windowID != 0 && event.render.windowID != SDL_GetWindowID(sdl->win)) return 0;
+    sdl->field->geometry.invalidate_envelopes();
+    if (sdl->overview) {
+        sdl->overview->invalidate();
+        ++sdl->overview->renderer_generation;
+    }
+    return 1;
+}
+
 NK_API int nk_sdl_handle_event(struct nk_context* ctx, SDL_Event* evt) {
     struct nk_sdl* sdl;
 
@@ -651,16 +913,13 @@ NK_API int nk_sdl_handle_event(struct nk_context* ctx, SDL_Event* evt) {
     sdl = (struct nk_sdl*)ctx->userdata.ptr;
     NK_ASSERT(sdl);
 
+    if (const auto reset = handle_sdl_renderer_reset(sdl, *evt)) return *reset;
     /* We only care about Window currently used by Nuklear */
     if (sdl->win != SDL_GetWindowFromEvent(evt)) {
         return 0;
     }
 
     switch (evt->type) {
-    case SDL_EVENT_RENDER_TARGETS_RESET:
-    case SDL_EVENT_RENDER_DEVICE_RESET:
-        sdl->field->geometry.invalidate_envelopes();
-        return 1;
     case SDL_EVENT_KEY_UP:
     case SDL_EVENT_KEY_DOWN:
         return handle_sdl_key(ctx, sdl, *evt);
@@ -716,6 +975,7 @@ void nk_sdl_shutdown(struct nk_context* ctx) {
     }
 
     delete sdl->field;
+    delete sdl->overview;
     nk_free(ctx);
     sdl->allocator.free(sdl->allocator.userdata, sdl->debug_font);
     sdl->allocator.free(sdl->allocator.userdata, sdl);
@@ -878,6 +1138,113 @@ static void convert_field_marker(void* canvas, short, short, unsigned short, uns
     // Reserve a separate ordinary command: later texture changes may rewrite
     // empty commands, but must never overwrite the field's ordering barrier.
     nk_draw_list_push_command(list, list->clip_rect, list->config.tex_null.texture);
+}
+static auto overview_key(nk_sdl* sdl, nk_command_buffer* canvas, const WormUiComposeView& view,
+                         struct nk_rect bounds, nk_color background, nk_color peak) -> OverviewKey {
+    OverviewKey key{.generation = view.waveform_overview_generation,
+        .renderer_generation = sdl->overview->renderer_generation};
+    float sx{}, sy{};
+    SDL_GetRenderScale(sdl->renderer, &sx, &sy);
+    key.nominal_scale_x = sx;
+    key.nominal_scale_y = sy;
+    SDL_GetRenderOutputSize(sdl->renderer, &key.output_width, &key.output_height);
+    SDL_GetRenderLogicalPresentation(sdl->renderer, &key.logical_width, &key.logical_height,
+        &key.logical_mode);
+    if (key.logical_mode == SDL_LOGICAL_PRESENTATION_STRETCH &&
+        key.logical_width > 0 && key.logical_height > 0) {
+        sx *= static_cast<float>(key.output_width) / key.logical_width;
+        sy *= static_cast<float>(key.output_height) / key.logical_height;
+    }
+    key.geometry = {bounds.x, bounds.y, bounds.w, bounds.h, canvas->clip.x, canvas->clip.y,
+        canvas->clip.w, canvas->clip.h, sx, sy};
+    key.colors = {background.r, background.g, background.b, background.a,
+        peak.r, peak.g, peak.b, peak.a};
+    SDL_GetRenderOutputSize(sdl->renderer, &key.output_width, &key.output_height);
+    return key;
+}
+static auto overview_physical_rect(struct nk_rect logical, float sx, float sy,
+                                   bool interior) -> SDL_Rect {
+    const auto left = interior ? std::ceil(std::trunc(logical.x) * sx) + 1 : std::floor(logical.x * sx);
+    const auto top = interior ? std::ceil(std::trunc(logical.y) * sy) + 1 : std::floor(logical.y * sy);
+    const auto right = interior ? std::floor((std::trunc(logical.x) + std::trunc(logical.w)) * sx) - 1
+                               : std::ceil((logical.x + logical.w) * sx);
+    const auto bottom = interior ? std::floor((std::trunc(logical.y) + std::trunc(logical.h)) * sy) - 1
+                                : std::ceil((logical.y + logical.h) * sy);
+    return {static_cast<int>(left), static_cast<int>(top),
+        static_cast<int>(right - left), static_cast<int>(bottom - top)};
+}
+static bool prepare_overview_cache(nk_sdl* sdl, nk_command_buffer* canvas,
+                                   const WormUiComposeView& view, OverviewKey key) {
+    auto& cache = *sdl->overview;
+    cache.invalidate();
+    if (key.colors[3] != 255 || key.generation == 0 || !view.waveform_overview_rows ||
+        view.waveform_overview_row_count > 512 ||
+        (key.logical_mode != SDL_LOGICAL_PRESENTATION_DISABLED &&
+         key.logical_mode != SDL_LOGICAL_PRESENTATION_STRETCH)) return false;
+    for (const auto value : key.geometry)
+        if (!std::isfinite(value) || std::abs(value) > 1'000'000) return false;
+    const auto sx = key.geometry[8], sy = key.geometry[9];
+    if (sx <= 0 || sy <= 0 || sx > 8 || sy > 8) return false;
+    SDL_Rect viewport{};
+    SDL_GetRenderViewport(sdl->renderer, &viewport);
+    if (viewport.x != 0 || viewport.y != 0 || SDL_RenderViewportSet(sdl->renderer) ||
+        SDL_GetRenderTarget(sdl->renderer)) return false;
+    for (std::size_t row = 0; row < view.waveform_overview_row_count; ++row)
+        if (!std::isfinite(view.waveform_overview_rows[row].audio_fraction) ||
+            !std::isfinite(view.waveform_overview_rows[row].absolute_peak)) return false;
+    cache.scale_x = sx;
+    cache.scale_y = sy;
+    cache.clip = overview_intersection({
+        static_cast<int>(std::floor(std::trunc(canvas->clip.x) * sx)),
+        static_cast<int>(std::floor(std::trunc(canvas->clip.y) * sy)),
+        static_cast<int>(std::ceil(std::trunc(canvas->clip.w) * sx)),
+        static_cast<int>(std::ceil(std::trunc(canvas->clip.h) * sy))},
+        {0, 0, key.output_width, key.output_height});
+    cache.interior = overview_intersection(overview_physical_rect(
+        nk_rect(key.geometry[0], key.geometry[1], key.geometry[2], key.geometry[3]), sx, sy, true), cache.clip);
+    if (cache.interior.w <= 0 || cache.interior.h <= 0 ||
+        cache.interior.w > 4096 || cache.interior.h > 256) return false;
+    cache.key = key;
+    cache.pending = true;
+    return true;
+}
+auto begin_compose_overview(nk_context* context, nk_command_buffer* canvas,
+                            const WormUiComposeView& view, struct nk_rect bounds,
+                            nk_color background, nk_color peak) -> bool {
+    if (!context || !canvas || !context->userdata.ptr || !view.waveform_overview_generation) return false;
+    auto* sdl = static_cast<nk_sdl*>(context->userdata.ptr);
+    if (!sdl->overview) return false;
+    auto& cache = *sdl->overview;
+    if (SDL_RenderViewportSet(sdl->renderer) || SDL_GetRenderTarget(sdl->renderer)) {
+        cache.invalidate();
+        return false;
+    }
+    const auto key = overview_key(sdl, canvas, view, bounds, background, peak);
+    if (cache.valid && cache.key == key) {
+        nk_push_custom(canvas, bounds, convert_field_marker, nk_handle_ptr(&cache.warm_marker));
+        return true;
+    }
+    if (prepare_overview_cache(sdl, canvas, view, key))
+        nk_push_custom(canvas, bounds, convert_field_marker, nk_handle_ptr(&cache.begin_marker));
+    return false;
+}
+void end_compose_overview(nk_context* context, nk_command_buffer* canvas, struct nk_rect bounds) {
+    if (!context || !context->userdata.ptr) return;
+    auto* overview = static_cast<nk_sdl*>(context->userdata.ptr)->overview;
+    if (!overview) return;
+    auto& cache = *overview;
+    if (cache.pending)
+        nk_push_custom(canvas, bounds, convert_field_marker, nk_handle_ptr(&cache.end_marker));
+}
+auto compose_overview_work(nk_context* context) -> overview_work_t {
+    const auto* cache = static_cast<nk_sdl*>(context->userdata.ptr)->overview;
+    return cache ? cache->work : overview_work_t{};
+}
+
+void set_compose_overview_readback_for_testing(nk_context* context,
+    SDL_Surface* (*readback)(SDL_Renderer*, const SDL_Rect*)) {
+    auto* cache = static_cast<nk_sdl*>(context->userdata.ptr)->overview;
+    if (cache) cache->readback = readback ? readback : SDL_RenderReadPixels;
 }
 auto compose_field(nk_context* context) -> wormedit::ui::field::renderer_t& {
     return static_cast<nk_sdl*>(context->userdata.ptr)->field->geometry;

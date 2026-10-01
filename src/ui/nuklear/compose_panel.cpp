@@ -1,5 +1,6 @@
 #include "ui/nuklear/compose_panel.h"
 #include "ui/nuklear/theme.h"
+#include "ui/nuklear/sdl_backend.h"
 #include "sys/compose_scroll_geometry.h"
 #include "ui/nuklear/bms_branch_panel.h"
 #include "ui/nuklear/compose_markers.h"
@@ -593,16 +594,21 @@ static void render_compose_waveform_overview(const ComposeOverviewContext& overv
     const auto& view = *overview.view;
     const auto bounds = overview.bounds;
     auto* canvas = overview.canvas;
-    nk_fill_rect(canvas, bounds, 0.0f,
-                 wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::overview));
-    const auto center = bounds.y + bounds.h * 0.5f;
-    const auto half_height = bounds.h * 0.43f;
-    for (size_t index = 0; index < view.waveform_overview_row_count; ++index) {
-        const auto& row = view.waveform_overview_rows[index];
-        const auto x = bounds.x + static_cast<float>(row.audio_fraction) * bounds.w;
-        nk_stroke_line(canvas, x, center - row.absolute_peak * half_height,
-                       x, center + row.absolute_peak * half_height, 1.0f,
-                       nk_rgba(114, 222, 239, 190));
+    const auto background = wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::overview);
+    if (!wormedit::ui::nuklear::begin_compose_overview(overview.context, canvas, view,
+            bounds, background, nk_rgba(114, 222, 239, 190))) {
+        nk_fill_rect(canvas, bounds, 0.0f,
+                     wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::overview));
+        const auto center = bounds.y + bounds.h * 0.5f;
+        const auto half_height = bounds.h * 0.43f;
+        for (size_t index = 0; index < view.waveform_overview_row_count; ++index) {
+            const auto& row = view.waveform_overview_rows[index];
+            const auto x = bounds.x + static_cast<float>(row.audio_fraction) * bounds.w;
+            nk_stroke_line(canvas, x, center - row.absolute_peak * half_height,
+                           x, center + row.absolute_peak * half_height, 1.0f,
+                           nk_rgba(114, 222, 239, 190));
+        }
+        wormedit::ui::nuklear::end_compose_overview(overview.context, canvas, bounds);
     }
     const auto thumb_left = bounds.x +
         static_cast<float>(view.waveform_overview_visible_begin_fraction) * bounds.w;

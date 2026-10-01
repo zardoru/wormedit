@@ -4,6 +4,7 @@
 #include <wormedit/audio/aligned_waveform.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 
 namespace wormedit::sys {
@@ -31,8 +32,7 @@ auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_ca
     auto& view = flattened.view.compose;
     const auto& timing = *cache.marker_timing_index;
     if (!cache.waveform_overview_key || *cache.waveform_overview_key != waveform.key ||
-        cache.waveform_overview_identity != &waveform ||
-        cache.waveform_overview_revision != cache.revision) {
+        cache.waveform_overview_identity != &waveform) {
         const auto overview = audio::project_waveform_overview(waveform, timing, request);
         if (!overview) return false;
         cache.waveform_overview_rows.clear();
@@ -41,8 +41,10 @@ auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_ca
                                                    std::clamp(row.absolute_peak, 0.0f, 1.0f)});
         cache.waveform_overview_key = waveform.key;
         cache.waveform_overview_identity = &waveform;
-        cache.waveform_overview_revision = cache.revision;
+        static std::atomic<std::uint64_t> next_generation{1};
+        cache.waveform_overview_generation = next_generation.fetch_add(1, std::memory_order_relaxed);
     }
+    cache.waveform_overview_revision = cache.revision;
     const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
                                request.pixels_per_standard_measure;
     const auto begin = overview_fraction(waveform, timing,
@@ -55,6 +57,7 @@ auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_ca
     flattened.compose.waveform.overview_row = cache.waveform_overview_rows;
     view.waveform_overview_rows = flattened.compose.waveform.overview_row.data();
     view.waveform_overview_row_count = flattened.compose.waveform.overview_row.size();
+    view.waveform_overview_generation = cache.waveform_overview_generation;
     view.waveform_overview_visible_begin_fraction = *begin;
     view.waveform_overview_visible_end_fraction = *end;
     const auto zero = timing_at(timing, 0, timing_boundary_side_t::before_delays);

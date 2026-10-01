@@ -1392,3 +1392,87 @@ TEST_CASE("Configured anchor projects a short chart through audio-tail rows stop
         }
     }
 }
+
+namespace {
+struct overview_generation_fixture_t {
+    song_document_t song = dense_song();
+    compose_scene_cache_t cache;
+    flattened_workspace_t flattened;
+    editor_interaction_state_t interaction;
+    audio::waveform_analysis_result_t analysis = overview_analysis(.25f);
+    overview_generation_fixture_t() {
+        update_timing();
+        flattened.view.compose.visible = true;
+        flattened.view.compose.scene_available = true;
+        flattened.view.compose.viewport_height_pixels = 200;
+        flattened.view.compose.pixels_per_standard_measure = 200;
+    }
+    void update_timing() {
+        auto timing = build_timing_index(song.charts.front());
+        expect_compose_test(timing.index.has_value());
+        cache.marker_timing_index = std::move(timing.index);
+    }
+    auto project(flattened_workspace_t& output,
+                 const audio::waveform_analysis_result_t* selected = nullptr) -> std::uint64_t {
+        expect_compose_test(populate_compose_waveform_projection(output, cache,
+            selected ? selected : &analysis, false, true, &interaction));
+        expect_compose_test(output.view.compose.waveform_overview_generation != 0);
+        return output.view.compose.waveform_overview_generation;
+    }
+    auto project() -> std::uint64_t { return project(flattened); }
+};
+}
+TEST_CASE("Compose overview generation ignores playback scroll timing offsets and snapshot row pointers",
+          "[sys][waveform-projection][overview-generation]") {
+    overview_generation_fixture_t fixture;
+    const auto generation = fixture.project();
+    const auto fraction = fixture.flattened.view.compose.waveform_overview_visible_begin_fraction;
+    fixture.flattened.view.compose.source_playhead_available = true;
+    fixture.flattened.view.compose.source_playhead_frame = 96'000;
+    fixture.flattened.view.compose.waveform_offset_drag_active = true;
+    expect_compose_test(fixture.project() == generation);
+    fixture.interaction.viewport_scroll_pixels = 200;
+    expect_compose_test(fixture.project() == generation);
+    expect_compose_test(fixture.flattened.view.compose.waveform_overview_visible_begin_fraction > fraction);
+    ++fixture.cache.revision;
+    fixture.song.charts.front().beat_zero_audio_offset_seconds = {1, 10};
+    fixture.update_timing();
+    expect_compose_test(fixture.project() == generation);
+    expect_compose_test(fixture.cache.waveform_overview_revision == fixture.cache.revision);
+    flattened_workspace_t second;
+    second.view.compose = fixture.flattened.view.compose;
+    expect_compose_test(fixture.project(second) == generation);
+    expect_compose_test(second.view.compose.waveform_overview_rows !=
+        fixture.flattened.view.compose.waveform_overview_rows);
+}
+TEST_CASE("Compose overview source revision changes generation even when waveform address is reused",
+          "[sys][waveform-projection][overview-generation]") {
+    overview_generation_fixture_t fixture;
+    const auto before = fixture.project();
+    const auto* identity = fixture.cache.waveform_overview_identity;
+    fixture.analysis.waveform->key.source.source_identity = "content:v2";
+    for (auto& bin : fixture.analysis.waveform->bins) bin.absolute_peak = {.75f, .75f};
+    const auto replacement = fixture.project();
+    expect_compose_test(fixture.cache.waveform_overview_identity == identity);
+    expect_compose_test(replacement > before);
+    expect_compose_test(fixture.flattened.compose.waveform.overview_row.front().absolute_peak == .75f);
+    expect_compose_test(fixture.project() == replacement);
+}
+TEST_CASE("Compose overview detail identity and cleared cache publish unique generations",
+          "[sys][waveform-projection][overview-generation]") {
+    overview_generation_fixture_t fixture;
+    const auto initial = fixture.project();
+    fixture.analysis.waveform->key.frames_per_bin = 128;
+    fixture.analysis.waveform->total_frames = 128 * 4096;
+    for (auto& bin : fixture.analysis.waveform->bins) bin.frame_count = 128;
+    const auto detail = fixture.project();
+    expect_compose_test(detail > initial);
+    auto replacement = fixture.analysis;
+    const auto identity = fixture.project(fixture.flattened, &replacement);
+    expect_compose_test(identity > detail);
+    fixture.cache = {};
+    fixture.update_timing();
+    const auto cleared = fixture.project(fixture.flattened, &replacement);
+    expect_compose_test(cleared > identity);
+    expect_compose_test(fixture.project(fixture.flattened, &replacement) == cleared);
+}

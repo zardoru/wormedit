@@ -90,7 +90,20 @@ NK_API struct nk_allocator nk_sdl_allocator(void);
  * ===============================================================
  */
 
+struct WormUiComposeView;
 namespace wormedit::ui::nuklear {
+struct overview_work_t {
+    std::uint64_t rebuilds{}, uploads{}, uploaded_bytes{}, reused_frames{}, readbacks{}, failures{};
+    std::uint64_t cold_readback_ns{};
+    std::size_t texture_bytes{}, geometry_bytes{}, transient_bytes{};
+    std::size_t cold_vertices{}, warm_vertices{}, warm_indices{}, warm_draw_calls{};
+};
+auto begin_compose_overview(nk_context*, nk_command_buffer*, const WormUiComposeView&,
+    struct nk_rect, nk_color background, nk_color peak) -> bool;
+void end_compose_overview(nk_context*, nk_command_buffer*, struct nk_rect);
+auto compose_overview_work(nk_context*) -> overview_work_t;
+void set_compose_overview_readback_for_testing(nk_context*,
+    SDL_Surface* (*)(SDL_Renderer*, const SDL_Rect*));
 // Draw-list indices stay contiguous; batching never reorders geometry.
 struct sdl_draw_batch_t {
     SDL_Texture* texture{};

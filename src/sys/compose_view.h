@@ -118,6 +118,7 @@ struct compose_scene_cache_t {
     std::optional<wormedit::audio::waveform_key_t> waveform_overview_key;
     const void* waveform_overview_identity{};
     std::uint64_t waveform_overview_revision{};
+    std::uint64_t waveform_overview_generation{};
     std::vector<WormUiComposeWaveformOverviewRowView> waveform_overview_rows;
 #endif
     std::uint64_t waveform_overview_total_frames{};

@@ -243,4 +243,25 @@ auto bmson_pulse_for_row(
     return pulse;
 }
 
+auto suggest_meters(const rational_t& length) -> std::vector<meter_t>
+{
+    std::vector<meter_t> meters;
+    if (length.numerator == 0 || length.denominator == 0) {
+        return meters;
+    }
+    const auto reduced = normalize(length.numerator, length.denominator);
+    for (const std::uint32_t denominator : {4U, 8U, 16U}) {
+        std::uint64_t scaled{};
+        if (!checked_multiply(reduced.numerator, denominator, scaled)
+            || scaled % reduced.denominator != 0) {
+            continue;
+        }
+        const auto numerator = scaled / reduced.denominator;
+        if (numerator <= std::numeric_limits<std::uint32_t>::max()) {
+            meters.push_back({static_cast<std::uint32_t>(numerator), denominator});
+        }
+    }
+    return meters;
+}
+
 } // namespace wormedit

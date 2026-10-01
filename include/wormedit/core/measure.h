@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 namespace wormedit {
 
@@ -65,6 +66,11 @@ struct bmson_grid_t {
 };
 
 [[nodiscard]] auto parse_measure_length(std::string_view text) -> measure_parse_result_t;
+// Candidate meters for a measure length, using denominators 4, 8 and 16 in
+// that order. A candidate exists only when length * denominator is a positive
+// integer that fits a meter numerator, so the list holds at most three entries
+// and is empty when no such signature represents the length exactly.
+[[nodiscard]] auto suggest_meters(const rational_t& length) -> std::vector<meter_t>;
 [[nodiscard]] auto validate_measure(
     std::uint64_t divisions_per_standard_measure,
     const measure_definition_t& measure) -> measure_validation_t;

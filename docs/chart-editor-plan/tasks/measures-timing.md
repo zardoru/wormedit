@@ -59,6 +59,7 @@ stale-plan check (rule 9) first.
 ## T-73 Suggest time signatures from a measure length
 
 - **Status:** ready
+- **Implementation notes (2026-10-01):** steps 1 and 2 are done: `suggest_meters(rational_t) -> std::vector<meter_t>` in `include/wormedit/core/measure.h` (denominators 4, 8, 16 in order; at most three entries; empty when no exact candidate or for zero/overflowing input) with tests for 1, 3/4, 5/4, 7/8, 1/3 and degenerate inputs in `tests/core/measure_tests.cpp`. Step 3 (buttons in the meter form) remains and touches UI files.
 - **Outcome:** when a measure length is entered, the meter form lists candidate signatures (for example length 3/4 → 3/4, 6/8) and fills the chosen one.
 - **Read first:** `docs/chart-editor-plan/document-model.md` (measure length paragraph), `include/wormedit/core/measure.h`, `src/ui/nuklear/timing_panel.cpp` (meter form).
 - **Files owned:** `include/wormedit/core/measure.h`, `src/core/measure.cpp`, `tests/core/measure_tests.cpp`, `src/sys/timing_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/timing_panel.cpp`.
@@ -114,6 +115,7 @@ stale-plan check (rule 9) first.
 ## T-77 Project audio-time bookmarks onto beats for navigation
 
 - **Status:** ready
+- **Implementation notes (2026-10-01):** steps 1 and 2 are done in core: the beat `navigate_markers` overload takes an optional trailing `const timing_index_t*`; audio-time bookmarks and section boundaries are projected by `musical_position_at` (warp side = entry), floored to the containing row, and returned with both `beat_position` and `audio_milliseconds`. Out-of-range markers are skipped with a warning diagnostic naming the object, and an unusable index falls back to beat markers with one warning (status stays `found`, so callers check `status`, not `operator bool`). Without an index behavior is unchanged. Tests in `tests/core/marker_navigation_tests.cpp`. Step 3 (build the index in `src/sys/main.cpp`, pass it in, and enable the commands when any marker kind exists) remains and touches `main.cpp`.
 - **Outcome:** Previous/Next marker navigation also stops at audio-time bookmarks and section boundaries, converted to exact rows through the timing index.
 - **Read first:** `include/wormedit/core/marker_navigation.h`, `include/wormedit/core/timing.h` (`musical_position_at`), `tests/core/marker_navigation_tests.cpp`.
 - **Files owned:** `include/wormedit/core/marker_navigation.h`, `src/core/marker_navigation.cpp`, `tests/core/marker_navigation_tests.cpp`, `src/sys/main.cpp` (enablement condition only).

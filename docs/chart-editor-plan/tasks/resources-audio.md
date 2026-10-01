@@ -72,7 +72,8 @@ stale-plan check (rule 9) first.
 
 ## T-105 Audit BMSON slice collision and final-slice rules
 
-- **Status:** ready
+- **Status:** done
+- **Implementation notes (2026-10-01):** all steps done: `tests/core/sound_slice_rules_tests.cpp` has eight `sound_slice rule N` cases (restart wins at a shared pulse; continue keeps the source position; one slice and polyphony one per pulse; open-ended final slice and its bounds by decoded length or clip end; BGM note discarded when a playable note shares the pulse, on import and export; unequal fused hold lengths rejected on export; equal lengths accepted; duplicate lane/pulse notes in one channel rejected). Every rule passes against current production code, so no gap is recorded and no follow-up card is needed. Run them with `ctest --test-dir build --output-on-failure -R sound_slice`.
 - **Outcome:** a test file proves each rule in the BMSON slicing reference (same-pulse restart/continue conflict, collision layering, open-ended final slice) or the report lists the rule that fails.
 - **Read first:** `docs/references/bmsone-slicing.md`, `include/wormedit/core/sound_slice.h`, `tests/core/bmson_sound_channel_editor_tests.cpp`, `tests/fixtures/bmson/`.
 - **Files owned:** new `tests/core/sound_slice_rules_tests.cpp`, `tests/CMakeLists.txt`.

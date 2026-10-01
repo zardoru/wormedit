@@ -1,0 +1,74 @@
+osu file format v14
+
+[General]
+AudioFilename: roundtrip.mp3
+AudioLeadIn: 1200
+PreviewTime: 15000
+Countdown: 2
+SampleSet: Drum
+StackLeniency: 0.7
+Mode: 3
+SpecialStyle: 1
+WidescreenStoryboard: 1
+FutureGeneralKey: kept-verbatim
+
+[Editor]
+Bookmarks: 2000,6000
+DistanceSpacing: 1.1
+BeatDivisor: 4
+GridSize: 8
+TimelineZoom: 1.5
+
+[Metadata]
+Title:Non-gameplay round trip
+TitleUnicode:Non-gameplay round trip
+Artist:Wormedit fixture authors
+ArtistUnicode:Wormedit fixture authors
+Creator:Wormedit
+Version:4K non-gameplay
+Source:hand-authored
+Tags:roundtrip events colours
+BeatmapID:0
+BeatmapSetID:-1
+
+[Difficulty]
+HPDrainRate:5
+CircleSize:4
+OverallDifficulty:7
+ApproachRate:9
+SliderMultiplier:1.4
+SliderTickRate:1
+
+[Events]
+//Background and Video events
+0,0,"first-background.jpg",10,20
+Video,500,"intro-video.mp4",5,6
+//Break Periods
+2,3000,4000
+2,8000,9000
+//Storyboard Layer 0 (Background)
+Sprite,Background,Centre,"layer0.png",320,240
+ F,0,0,1000,0,1
+//Storyboard Layer 3 (Foreground)
+Sprite,Foreground,TopLeft,"layer3.png",0,0
+//Storyboard Sound Samples
+Sample,5000,0,"storyboard-hit.wav",80
+
+[TimingPoints]
+0,500,4,1,0,60,1,0
+1000,-50,4,3,4,80,0,9
+2500,-100,4,2,3,70,0,1
+4000,500,4,2,3,65,1,0
+5000,-80,4,1,0,50,0,8
+8000,400,3,2,1,90,1,0
+
+[Colours]
+Combo1 : 255,128,0
+Combo2 : 0,255,128
+SliderBorder : 10,20,30
+
+[HitObjects]
+64,192,2000,1,0,0:0:0:0:
+192,192,2500,1,2,1:2:3:40:chime.wav
+320,192,3000,128,4,5000:2:0:0:55:slider.wav
+448,192,5500,1,8,3:3:2:100:

@@ -36,6 +36,7 @@ constexpr std::array fixture_paths{
     "osu/negative-non-mania.osu",
     "osu/versioned-stable-v14.osu",
     "osu/lazer-v128-fractional.osu",
+    "osu/non-gameplay-roundtrip.osu",
     "bmson/conflicting-continuation-flags.bmson",
     "bmson/negative-fractional-pulse-position.bmson",
     "bmson/negative-overflow-pulse-position.bmson",

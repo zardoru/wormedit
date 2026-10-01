@@ -1055,7 +1055,7 @@ Sprite,Foreground,Centre,"sprites/second.png",320,240
     CHECK(count_text(*written.text, "[Events]") == 1);
     CHECK(written.text->find("0,0,\"background.jpg\",0,0") != std::string::npos);
     CHECK(written.text->find("Video,2000,\"preview.mp4\",0,0") != std::string::npos);
-    CHECK(written.text->find("Sample,500,1,\"clap.wav\",100") != std::string::npos);
+    CHECK(written.text->find("Sample,500,0,\"clap.wav\",100") != std::string::npos);
     const auto written_again = write_inline(song);
     REQUIRE(written_again.text.has_value());
     CHECK(*written_again.text == *written.text);
@@ -1579,4 +1579,97 @@ TEST_CASE("osu mania imports bind lanes without changing exported chart bytes", 
     parsed.song->charts.front().input_profile = {};
     const auto unbound = write_inline(*parsed.song);
     CHECK(bound.text == unbound.text);
+}
+
+namespace {
+
+auto text_lines(const std::string& text) -> std::vector<std::string> {
+    std::vector<std::string> lines;
+    std::size_t begin = 0;
+    while (begin < text.size()) {
+        const auto end = text.find('\n', begin);
+        lines.push_back(text.substr(begin, end == std::string::npos ? end : end - begin));
+        if (end == std::string::npos) break;
+        begin = end + 1;
+    }
+    return lines;
+}
+
+auto line_index(const std::vector<std::string>& lines, std::string_view wanted) -> std::ptrdiff_t {
+    const auto found = std::ranges::find(lines, wanted);
+    return found == lines.end() ? -1 : found - lines.begin();
+}
+
+auto has_line(const std::vector<std::string>& lines, std::string_view wanted) -> bool {
+    return line_index(lines, wanted) >= 0;
+}
+
+} // namespace
+
+TEST_CASE("osu!mania keeps events, samples, colours and unknown keys through an edit",
+          "[unit][format][osu-mania][writer][round-trip][non-gameplay]") {
+    auto parsed = fixture("non-gameplay-roundtrip.osu");
+    REQUIRE(parsed.song.has_value());
+    REQUIRE_FALSE(parsed.has_errors());
+
+    // Edit: move the first tap to the last lane. Nothing else changes.
+    auto& measures = parsed.song->charts.front().measures;
+    const auto with_notes = std::ranges::find_if(
+        measures, [](const auto& measure) { return !measure.notes.empty(); });
+    REQUIRE(with_notes != measures.end());
+    auto& first_note = with_notes->notes.front();
+    REQUIRE(first_note.kind == wormedit::note_kind_t::tap);
+    first_note.lane = wormedit::lane_id_t{4};
+
+    const auto written = write_inline(*parsed.song);
+    REQUIRE(written.text.has_value());
+    const auto lines = text_lines(*written.text);
+
+    SECTION("general, colours and unknown keys") {
+        for (const auto wanted :
+             {"AudioLeadIn:1200", "PreviewTime:15000", "Countdown:2", "SampleSet:Drum",
+              "SpecialStyle:1", "WidescreenStoryboard:1", "FutureGeneralKey:kept-verbatim",
+              "Combo1:255,128,0", "Combo2:0,255,128", "SliderBorder:10,20,30"})
+            CHECK(has_line(lines, wanted));
+    }
+
+    SECTION("events keep offsets, breaks, sample layer and volume, and storyboard order") {
+        CHECK(has_line(lines, "0,0,\"first-background.jpg\",10,20"));
+        CHECK(has_line(lines, "Video,500,\"intro-video.mp4\",5,6"));
+        CHECK(has_line(lines, "2,3000,4000"));
+        CHECK(has_line(lines, "2,8000,9000"));
+        CHECK(has_line(lines, "Sample,5000,0,\"storyboard-hit.wav\",80"));
+        const auto background = line_index(lines, "Sprite,Background,Centre,\"layer0.png\",320,240");
+        const auto foreground = line_index(lines, "Sprite,Foreground,TopLeft,\"layer3.png\",0,0");
+        REQUIRE(background >= 0);
+        REQUIRE(foreground >= 0);
+        CHECK(background < foreground);
+        CHECK(lines[static_cast<std::size_t>(background) + 1] == " F,0,0,1000,0,1");
+    }
+
+    SECTION("timing points keep sample sets, volumes and effects, and synthesized lines inherit") {
+        for (const auto wanted :
+             {"0,500,4,1,0,60,1,0", "1000,-50,4,3,4,80,0,9", "2500,-100,4,2,3,70,0,1",
+              "4000,500,4,2,3,65,1,0", "5000,-80,4,1,0,50,0,8", "8000,400,3,2,1,90,1,0"})
+            CHECK(has_line(lines, wanted));
+        // Measure starts without a source red line reuse the active point's mix.
+        CHECK(has_line(lines, "2000,500,4,3,4,80,1,1"));
+        CHECK(has_line(lines, "6000,500,4,1,0,50,1,0"));
+    }
+
+    SECTION("hit samples and the edited note") {
+        CHECK(has_line(lines, "448,192,2000,1,0,"));
+        CHECK(has_line(lines, "192,192,2500,1,2,\"1:2:3:40:chime.wav\""));
+        CHECK(has_line(lines, "320,192,3000,128,4,\"5000:2:0:0:55:slider.wav\""));
+        CHECK(has_line(lines, "448,192,5500,1,8,\"3:3:2:100:\""));
+    }
+
+    SECTION("the exported file re-imports and re-exports byte for byte") {
+        const auto reparsed = wormedit::parse_osu_mania_bytes(bytes(*written.text));
+        REQUIRE(reparsed.song.has_value());
+        REQUIRE_FALSE(reparsed.has_errors());
+        const auto again = write_inline(*reparsed.song);
+        REQUIRE(again.text.has_value());
+        CHECK(*again.text == *written.text);
+    }
 }

@@ -100,6 +100,7 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 ## T-56 Add a Quantize Selection command
 
 - **Status:** ready
+- **Implementation notes (2026-10-01):** core `apply_quantize_command` and `quantize_chart_exact` already exist and are tested, so only the dry-run projection and inspector UI remain.
 - **Outcome:** the Compose inspector offers **Quantize selection** to the active snap with a preview count of moved/colliding notes, then commits through `apply_quantize_command`.
 - **Read first:** `include/wormedit/core/quantize.h`, `include/wormedit/core/command.h` (`apply_quantize_command`), `docs/chart-editor-plan/editing/interactions.md` (quantization paragraph), `src/ui/nuklear/compose_inspector.cpp`.
 - **Files owned:** `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_inspector.cpp`, `tests/core/quantize_tests.cpp`.

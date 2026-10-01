@@ -133,6 +133,43 @@ auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
     return result;
 }
 
+auto apply_redivision_command(document_history_t& history, std::uint64_t expected_revision,
+                              chart_id_t chart_id, std::uint64_t new_resolution)
+    -> redivision_command_result_t {
+    redivision_command_result_t result;
+    result.command.revision = history.document.revision;
+    if (history.document.revision != expected_revision) {
+        result.command.diagnostics.push_back(
+            error(diagnostic_code_t::invalid_id, "redivision command targets a stale revision"));
+        return result;
+    }
+    const auto chart = std::ranges::find_if(
+        history.document.charts, [chart_id](const auto& item) { return item.id == chart_id; });
+    if (chart == history.document.charts.end()) {
+        result.command.diagnostics.push_back(
+            error(diagnostic_code_t::invalid_id, "redivision command refers to an unknown chart"));
+        return result;
+    }
+    if (chart->divisions_per_standard_measure == new_resolution) {
+        return result;
+    }
+
+    auto proposal = redivide_chart_exact(*chart, new_resolution);
+    if (!proposal) {
+        result.command.diagnostics = std::move(proposal.diagnostics);
+        return result;
+    }
+    result.moves = std::move(proposal.moves);
+
+    auto proposed_document = history.document;
+    const auto proposed_chart = std::ranges::find_if(
+        proposed_document.charts, [chart_id](const auto& item) { return item.id == chart_id; });
+    *proposed_chart = std::move(*proposal.chart);
+    result.command =
+        commit_document_command(history, std::move(proposed_document), "Change chart resolution");
+    return result;
+}
+
 auto undo_document_command(document_history_t& history) -> bool {
     if (history.undo.empty()) {
         return false;

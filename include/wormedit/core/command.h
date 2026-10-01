@@ -47,6 +47,15 @@ struct quantize_command_result_t {
     }
 };
 
+struct redivision_command_result_t {
+    document_command_result_t command;
+    std::vector<redivision_move_t> moves;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return static_cast<bool>(command);
+    }
+};
+
 // Starts a bounded history at a caller-owned document snapshot. A zero source
 // revision is promoted to the first usable revision.
 [[nodiscard]] auto make_document_history(song_document_t document,
@@ -66,6 +75,14 @@ void mark_document_saved(document_history_t& history) noexcept;
                                           chart_id_t chart,
                                           const quantize_request_t& request)
     -> quantize_command_result_t;
+
+// Exact global redivision of one chart as a single undoable command. Rounds
+// nothing: any inexact position rejects the whole command and leaves history
+// untouched. Redividing to the current resolution is a no-op without an entry.
+[[nodiscard]] auto apply_redivision_command(document_history_t& history,
+                                            std::uint64_t expected_revision, chart_id_t chart,
+                                            std::uint64_t new_resolution)
+    -> redivision_command_result_t;
 
 [[nodiscard]] auto undo_document_command(document_history_t& history) -> bool;
 [[nodiscard]] auto redo_document_command(document_history_t& history) -> bool;

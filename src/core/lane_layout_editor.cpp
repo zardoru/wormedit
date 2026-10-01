@@ -1,0 +1,210 @@
+#include <wormedit/core/lane_layout_editor.h>
+
+#include <algorithm>
+#include <limits>
+#include <optional>
+#include <string>
+#include <utility>
+#include <variant>
+#include <vector>
+
+namespace wormedit {
+namespace {
+
+void reject(document_command_result_t& result, diagnostic_code_t code, std::string message) {
+    result.diagnostics.push_back({.severity = diagnostic_severity_t::error,
+                                  .code = code,
+                                  .message = std::move(message),
+                                  .object = {}});
+}
+
+auto next_chart_object_id(const chart_document_t& chart) -> std::optional<object_id_t> {
+    std::uint64_t largest{};
+    const auto scan = [&](const auto& values) {
+        for (const auto& value : values) largest = std::max(largest, value.id.value);
+    };
+    scan(chart.bgm_source_lanes);
+    scan(chart.lane_layouts);
+    scan(chart.bpms);
+    scan(chart.pauses);
+    scan(chart.warps);
+    scan(chart.scrolls);
+    scan(chart.speeds);
+    scan(chart.kiai);
+    scan(chart.timing_anchors);
+    scan(chart.bookmarks);
+    scan(chart.sections);
+    scan(chart.bga_events);
+    scan(chart.sound_channels);
+    for (const auto& channel : chart.sound_channels) scan(channel.events);
+    for (const auto& measure : chart.measures) {
+        scan(measure.notes);
+        scan(measure.bgm_events);
+    }
+    if (largest == std::numeric_limits<std::uint64_t>::max()) return std::nullopt;
+    return object_id_t{largest + 1};
+}
+
+struct located_segment_t {
+    std::uint64_t row{};
+    const lane_layout_segment_t* segment{};
+};
+
+// Segments ordered by absolute start row; nullopt when a position is invalid.
+auto ordered_segments(const chart_document_t& chart, const measure_index_t& index)
+    -> std::optional<std::vector<located_segment_t>> {
+    std::vector<located_segment_t> ordered;
+    for (const auto& segment : chart.lane_layouts) {
+        const auto row = absolute_row(index, segment.position);
+        if (!row) return std::nullopt;
+        ordered.push_back({*row, &segment});
+    }
+    std::ranges::sort(ordered, {}, &located_segment_t::row);
+    return ordered;
+}
+
+auto has_lane(const lane_layout_t& layout, lane_id_t lane) -> bool {
+    return std::ranges::any_of(layout.lanes,
+                               [lane](const auto& definition) { return definition.id == lane; });
+}
+
+// Notes whose lane is missing from the layout active at their position.
+auto count_unmapped_notes(const chart_document_t& chart) -> std::optional<std::size_t> {
+    const auto built = build_measure_index(chart);
+    const auto* index = std::get_if<measure_index_t>(&built);
+    if (index == nullptr) return std::nullopt;
+    const auto segments = ordered_segments(chart, *index);
+    if (!segments) return std::nullopt;
+    std::size_t unmapped{};
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            const auto row = absolute_row(*index, note.position);
+            if (!row) return std::nullopt;
+            const located_segment_t* active{};
+            for (const auto& entry : *segments) {
+                if (entry.row <= *row) active = &entry;
+            }
+            if (active == nullptr || !has_lane(active->segment->layout, note.lane)) ++unmapped;
+        }
+    }
+    return unmapped;
+}
+
+struct layout_edit_context_t {
+    chart_document_t& chart;
+    lane_layout_change_policy_t policy;
+    document_command_result_t& result;
+    std::string label;
+};
+
+auto position_allowed(const layout_edit_context_t& context, local_position_t position) -> bool {
+    if (context.policy == lane_layout_change_policy_t::measure_boundaries_only &&
+        position.row != 0) {
+        reject(context.result, diagnostic_code_t::invalid_measure,
+               "lane layout changes must start on a measure boundary");
+        return false;
+    }
+    const auto built = build_measure_index(context.chart);
+    const auto* index = std::get_if<measure_index_t>(&built);
+    if (index == nullptr || !absolute_row(*index, position)) {
+        reject(context.result, diagnostic_code_t::row_out_of_range,
+               "lane layout change lies outside the chart");
+        return false;
+    }
+    return true;
+}
+
+auto find_segment(layout_edit_context_t& context, object_id_t id)
+    -> std::vector<lane_layout_segment_t>::iterator {
+    const auto found = std::ranges::find(context.chart.lane_layouts, id, &lane_layout_segment_t::id);
+    if (!id || found == context.chart.lane_layouts.end()) {
+        reject(context.result, diagnostic_code_t::invalid_id,
+               "lane layout edit refers to an unknown segment");
+        return context.chart.lane_layouts.end();
+    }
+    return found;
+}
+
+void apply_edit(layout_edit_context_t& context, const insert_lane_layout_action_t& edit) {
+    if (!position_allowed(context, edit.position)) return;
+    const auto occupied = std::ranges::any_of(context.chart.lane_layouts, [&](const auto& segment) {
+        return segment.position == edit.position;
+    });
+    if (occupied) {
+        reject(context.result, diagnostic_code_t::duplicate_id,
+               "a lane layout segment already starts at this position");
+        return;
+    }
+    const auto id = next_chart_object_id(context.chart);
+    if (!id) {
+        reject(context.result, diagnostic_code_t::invalid_id, "object ID sequence is exhausted");
+        return;
+    }
+    context.chart.lane_layouts.push_back({.id = *id, .position = edit.position, .layout = edit.layout});
+    context.label = "Insert lane layout";
+}
+
+void apply_edit(layout_edit_context_t& context, const update_lane_layout_action_t& edit) {
+    const auto found = find_segment(context, edit.segment);
+    if (found == context.chart.lane_layouts.end()) return;
+    found->layout = edit.layout;
+    context.label = "Update lane layout";
+}
+
+void apply_edit(layout_edit_context_t& context, const delete_lane_layout_action_t& edit) {
+    const auto found = find_segment(context, edit.segment);
+    if (found == context.chart.lane_layouts.end()) return;
+    const auto built = build_measure_index(context.chart);
+    const auto* index = std::get_if<measure_index_t>(&built);
+    const auto row = index == nullptr ? std::nullopt : absolute_row(*index, found->position);
+    if (!row || *row == 0) {
+        reject(context.result, diagnostic_code_t::invalid_measure,
+               "the lane layout at the chart start cannot be removed");
+        return;
+    }
+    context.chart.lane_layouts.erase(found);
+    context.label = "Delete lane layout";
+}
+
+void sort_segments(chart_document_t& chart) {
+    const auto built = build_measure_index(chart);
+    const auto* index = std::get_if<measure_index_t>(&built);
+    if (index == nullptr) return;
+    std::ranges::stable_sort(chart.lane_layouts, {}, [&](const auto& segment) {
+        return absolute_row(*index, segment.position).value_or(0);
+    });
+}
+
+} // namespace
+
+auto apply_lane_layout_edit(document_history_t& history, std::uint64_t expected_revision,
+                            const lane_layout_action_t& action, lane_layout_change_policy_t policy)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id, "lane layout editor revision is stale");
+        return result;
+    }
+    const auto chart_id = std::visit([](const auto& edit) { return edit.chart; }, action);
+    auto proposed = history.document;
+    const auto chart = std::ranges::find(proposed.charts, chart_id, &chart_document_t::id);
+    if (!chart_id || chart == proposed.charts.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "lane layout edit refers to an unknown chart");
+        return result;
+    }
+    layout_edit_context_t context{*chart, policy, result, {}};
+    std::visit([&context](const auto& edit) { apply_edit(context, edit); }, action);
+    if (!result.diagnostics.empty()) return result;
+
+    sort_segments(*chart);
+    const auto unmapped = count_unmapped_notes(*chart);
+    if (unmapped && *unmapped > 0) {
+        reject(result, diagnostic_code_t::invalid_id,
+               std::to_string(*unmapped) +
+                   " note(s) would sit on a lane the new layout does not define");
+        return result;
+    }
+    return commit_document_command(history, std::move(proposed), std::move(context.label));
+}
+
+} // namespace wormedit

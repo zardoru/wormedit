@@ -239,3 +239,92 @@ TEST_CASE("measure editor validates revisions IDs definitions indexes and caps",
     CHECK(history.document.revision == 5);
     CHECK(history.undo.empty());
 }
+
+namespace {
+
+auto removal_song() -> song_document_t {
+    auto song = measure_song();
+    auto& chart = song.charts.front();
+    chart.bms_measure_length_projections.clear();
+    chart.measures[0].notes.push_back({.id = object_id_t{40},
+                                       .position = {measure_id_t{10}, 240},
+                                       .lane = lane_id_t{20},
+                                       .kind = note_kind_t::hold,
+                                       .end = local_position_t{measure_id_t{11}, 480}});
+    chart.measures[1].notes.push_back(
+        {.id = object_id_t{41}, .position = {measure_id_t{11}, 100}, .lane = lane_id_t{20}});
+    chart.bpms.push_back({.id = object_id_t{42},
+                          .position = {measure_id_t{11}, 480},
+                          .beats_per_minute = {150, 1}});
+    REQUIRE(validate_document(song).empty());
+    return song;
+}
+
+} // namespace
+
+TEST_CASE("measure removal proposal counts contents without mutating",
+          "[core][measure-editor][removal]") {
+    const auto song = removal_song();
+    const auto& chart = song.charts.front();
+    const auto proposal = propose_measure_removal(chart, measure_id_t{11});
+    REQUIRE(proposal);
+    CHECK(proposal.deleted_notes == 1);
+    CHECK(proposal.deleted_bgm_events == 0);
+    CHECK(proposal.shortened_holds == 1);
+    CHECK(proposal.moved_positions == 1);
+    CHECK(chart.measures.size() == 3);
+    CHECK(chart.measures[1].notes.size() == 1);
+}
+
+TEST_CASE("removing a measure with contents is one undoable command",
+          "[core][measure-editor][removal]") {
+    auto history = make_document_history(removal_song());
+    const auto applied = apply_measure_edit(
+        history, history.document.revision,
+        remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{11}});
+    REQUIRE(applied);
+
+    const auto& chart = history.document.charts.front();
+    REQUIRE(chart.measures.size() == 2);
+    CHECK(chart.measures[0].notes.size() == 1);
+    CHECK(chart.measures[0].notes.front().end == local_position_t{measure_id_t{12}, 0});
+    CHECK(chart.measures[1].notes.front().id == object_id_t{30});
+    const auto moved = std::ranges::find(chart.bpms, object_id_t{42}, &bpm_event_t::id);
+    REQUIRE(moved != chart.bpms.end());
+    CHECK(moved->position == local_position_t{measure_id_t{12}, 0});
+
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().measures.size() == 3);
+    CHECK(history.document.charts.front().measures[1].notes.size() == 1);
+}
+
+TEST_CASE("measure removal rejects stale, last-measure timing and sole measures",
+          "[core][measure-editor][removal][negative]") {
+    auto history = make_document_history(removal_song());
+    const auto revision = history.document.revision;
+    const remove_measure_with_contents_action_t remove_middle{chart_id_t{2}, measure_id_t{11}};
+    CHECK_FALSE(apply_measure_edit(history, revision + 1, remove_middle));
+    CHECK_FALSE(apply_measure_edit(history, revision,
+                                   remove_measure_with_contents_action_t{chart_id_t{2},
+                                                                         measure_id_t{99}}));
+
+    auto proposed = history.document;
+    proposed.charts.front().bpms.push_back({.id = object_id_t{50},
+                                            .position = {measure_id_t{12}, 480},
+                                            .beats_per_minute = {90, 1}});
+    REQUIRE(commit_document_command(history, std::move(proposed), "Add BPM"));
+    const auto last = apply_measure_edit(
+        history, history.document.revision,
+        remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{12}});
+    CHECK_FALSE(last);
+    CHECK(has_code(last, diagnostic_code_t::invalid_measure));
+    CHECK(history.document.charts.front().measures.size() == 3);
+
+    song_document_t sole = measure_song();
+    sole.charts.front().measures.resize(1);
+    sole.charts.front().bms_measure_length_projections.clear();
+    auto sole_history = make_document_history(std::move(sole));
+    CHECK_FALSE(apply_measure_edit(
+        sole_history, sole_history.document.revision,
+        remove_measure_with_contents_action_t{chart_id_t{2}, measure_id_t{10}}));
+}

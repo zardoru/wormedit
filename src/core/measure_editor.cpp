@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <type_traits>
@@ -86,6 +87,150 @@ void shift_projections_for_delete(chart_document_t& chart, std::size_t removed_i
             --projection.measure_index;
         }
     }
+}
+
+enum class free_position_kind_t { hold_end, other };
+
+// Visits every positioned object that is stored outside the per-measure note and
+// BGM buckets, plus the hold ends of the bucketed notes.
+template <typename Visit>
+void for_each_free_position(chart_document_t& chart, Visit&& visit) {
+    for (auto& measure : chart.measures) {
+        for (auto& note : measure.notes) {
+            if (note.end) visit(*note.end, free_position_kind_t::hold_end);
+        }
+    }
+    const auto other = [&](auto& values) {
+        for (auto& value : values) visit(value.position, free_position_kind_t::other);
+    };
+    other(chart.bpms);
+    other(chart.pauses);
+    other(chart.scrolls);
+    other(chart.speeds);
+    other(chart.kiai);
+    other(chart.timing_anchors);
+    other(chart.bga_events);
+    for (auto& warp : chart.warps) {
+        visit(warp.span.begin, free_position_kind_t::other);
+        visit(warp.span.end, free_position_kind_t::other);
+    }
+    for (auto& bookmark : chart.bookmarks) {
+        if (bookmark.position) visit(*bookmark.position, free_position_kind_t::other);
+    }
+    for (auto& section : chart.sections) {
+        if (!section.beat_span) continue;
+        visit(section.beat_span->begin, free_position_kind_t::other);
+        visit(section.beat_span->end, free_position_kind_t::other);
+    }
+    for (auto& channel : chart.sound_channels) {
+        for (auto& event : channel.events) {
+            visit(event.position, free_position_kind_t::other);
+            if (event.end) visit(*event.end, free_position_kind_t::other);
+        }
+    }
+}
+
+auto retains_bms_control_flow(const chart_document_t& chart) -> bool {
+    return chart.bms_control_tree.has_value() || !chart.bms_bpm_projections.empty() ||
+           !chart.bms_pause_projections.empty();
+}
+
+// Rejects removals that would silently drop linked or branch-owned content.
+auto removal_blocker(const chart_document_t& chart, const measure_chunk_t& measure)
+    -> const char* {
+    if (retains_bms_control_flow(chart))
+        return "measure removal is not supported on a chart with retained BMS control flow";
+    const auto linked = [](const auto& value) {
+        return value.branch.has_value();
+    };
+    if (std::ranges::any_of(measure.notes, linked) ||
+        std::ranges::any_of(measure.bgm_events, linked))
+        return "measure removal cannot delete branch-owned objects";
+    const auto sound_linked = [](const bgm_event_t& event) {
+        return event.sound_channel_event.has_value();
+    };
+    if (std::ranges::any_of(measure.bgm_events, sound_linked))
+        return "measure removal cannot delete events linked to a sound channel";
+    return nullptr;
+}
+
+// Moves a segment off the removed measure; a following segment wins a clash.
+void retarget_layouts(chart_document_t& chart, measure_id_t removed,
+                      std::optional<measure_id_t> next, measure_removal_proposal_t& proposal) {
+    auto& layouts = chart.lane_layouts;
+    const auto at_removed = [&](const auto& segment) { return segment.position.measure == removed; };
+    if (!next) {
+        if (std::ranges::any_of(layouts, at_removed))
+            proposal.diagnostics.push_back(error(
+                diagnostic_code_t::invalid_measure,
+                "the last measure holds a lane layout change that has no later measure to move to"));
+        return;
+    }
+    const auto clash = std::ranges::any_of(layouts, [&](const auto& segment) {
+        return segment.position.measure == *next && segment.position.row == 0;
+    });
+    if (clash) {
+        std::erase_if(layouts, at_removed);
+        return;
+    }
+    for (auto& segment : layouts) {
+        if (at_removed(segment)) {
+            segment.position = {*next, 0};
+            ++proposal.moved_positions;
+        }
+    }
+}
+
+void retarget_free_positions(chart_document_t& chart, measure_id_t removed,
+                             std::optional<measure_id_t> next,
+                             measure_removal_proposal_t& proposal) {
+    for_each_free_position(chart, [&](local_position_t& position, free_position_kind_t kind) {
+        if (position.measure != removed) return;
+        if (!next) {
+            proposal.diagnostics.push_back(error(
+                diagnostic_code_t::invalid_measure,
+                "the last measure holds positioned objects that have no later measure to move to"));
+            return;
+        }
+        if (kind == free_position_kind_t::hold_end && position.row > 0)
+            ++proposal.shortened_holds;
+        else
+            ++proposal.moved_positions;
+        position = {*next, 0};
+    });
+}
+
+// Applies the removal to `chart` in place; the proposal says what happened or
+// why the chart must be discarded.
+auto remove_measure_contents(chart_document_t& chart, measure_id_t id)
+    -> measure_removal_proposal_t {
+    measure_removal_proposal_t proposal;
+    const auto found = std::ranges::find(chart.measures, id, &measure_chunk_t::id);
+    if (!id || found == chart.measures.end()) {
+        proposal.diagnostics.push_back(
+            error(diagnostic_code_t::invalid_id, "measure edit refers to an unknown measure"));
+        return proposal;
+    }
+    if (chart.measures.size() == 1) {
+        proposal.diagnostics.push_back(error(diagnostic_code_t::invalid_measure,
+                                             "a chart must retain at least one measure"));
+        return proposal;
+    }
+    if (const auto* blocker = removal_blocker(chart, *found)) {
+        proposal.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature, blocker));
+        return proposal;
+    }
+    const auto index = static_cast<std::size_t>(std::distance(chart.measures.begin(), found));
+    std::optional<measure_id_t> next;
+    if (index + 1 < chart.measures.size()) next = chart.measures[index + 1].id;
+    proposal.deleted_notes = found->notes.size();
+    proposal.deleted_bgm_events = found->bgm_events.size();
+    retarget_layouts(chart, id, next, proposal);
+    retarget_free_positions(chart, id, next, proposal);
+    if (!proposal.diagnostics.empty()) return proposal;
+    chart.measures.erase(chart.measures.begin() + static_cast<std::ptrdiff_t>(index));
+    shift_projections_for_delete(chart, index);
+    return proposal;
 }
 
 struct measure_edit_context_t {
@@ -189,7 +334,30 @@ auto apply_measure_action(measure_edit_context_t& context,
     context.changed = true;
 }
 
+auto apply_measure_action(measure_edit_context_t& context,
+                          const remove_measure_with_contents_action_t& edit) -> void {
+    auto* chart = target_measure_chart(context, edit.chart);
+    if (chart == nullptr) {
+        return;
+    }
+    auto proposal = remove_measure_contents(*chart, edit.measure);
+    if (!proposal) {
+        for (auto& diagnostic : proposal.diagnostics) {
+            context.result.diagnostics.push_back(std::move(diagnostic));
+        }
+        return;
+    }
+    context.label = "Remove measure with contents";
+    context.changed = true;
+}
+
 } // namespace
+
+auto propose_measure_removal(const chart_document_t& chart, measure_id_t measure)
+    -> measure_removal_proposal_t {
+    auto scratch = chart;
+    return remove_measure_contents(scratch, measure);
+}
 
 auto apply_measure_edit(document_history_t& history, std::uint64_t expected_revision,
                         const measure_edit_action_t& action, measure_edit_limits_t limits)

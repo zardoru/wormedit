@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/audio/block_cache.h>
+#include <wormedit/audio/resident_samples.h>
 
 #include <array>
 #include <atomic>
@@ -98,6 +99,14 @@ class transport_t {
 
     [[nodiscard]] auto decode_block(decoder_t& decoder, session_token_t token,
                                     audio_block_key_t key) -> block_decode_result_t;
+    // Control/worker threads only. The mixer reads the published snapshot under
+    // the transport lock; the replaced snapshot is released after the lock drops,
+    // never on the audio callback.
+    void set_resident_snapshot(resident_snapshot_ptr_t snapshot);
+    // A block served from resident samples needs no decoder: returns a cache-hit
+    // style result for it, nullopt when the block is not resident.
+    [[nodiscard]] auto resident_block_hit(session_token_t token, const audio_block_key_t& key)
+        -> std::optional<block_decode_result_t>;
     [[nodiscard]] auto schedule_voice(session_token_t token, transport_voice_t voice)
         -> voice_schedule_status_t;
     // Validates the complete batch before publishing any voice. This keeps a
@@ -124,6 +133,7 @@ class transport_t {
     };
 
     decoded_block_cache_t& block_cache_;
+    resident_snapshot_ptr_t resident_;
     decode_session_t decode_session_;
     std::size_t maximum_scheduled_voices_{};
     mutable std::mutex mutex_;

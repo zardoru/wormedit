@@ -90,7 +90,8 @@ measurements. Apply the stale-plan check (rule 9) first.
 
 ## T-274 Start keysound preloading as soon as the chart is parsed
 
-- **Status:** blocked-on T-273, T-267
+- **Status:** done (2026-10-01; `resident_sample_loader_t` in `src/sys/audio_source_registration.{h,cpp}`, `decoded_source_registry_t::preload_head`; headless `audio.` suite 126/126. The real application was not built or run in this session (no SDL3), so the "open a large BMS and press Ctrl+Space at once" check is pending)
+- **Implementation notes:** `reset_project_runtime_state` already calls `reconcile_audition_sources` right after the document is replaced, so the loader starts there, before the first frame, and `project_open.cpp` needed no change. Order: sources longer than the residency limit get their first 10 s decoded into the preview block cache (at most four), then keysounds in first-use order of the first chart. `prioritize()` re-orders the remaining queue, but nothing in the UI calls it yet (the cursor-jump trigger needs compose state). Waveform analysis is not part of this loader and still starts on its own. The status line shows "Loading keysounds n/m"; missing files are skipped and reported once through the probe-failure line.
 - **Outcome:** right after a BMS (or any chart) finishes parsing, before the first frame of the new project is drawn, the background preload starts: the song's first seconds and waveform analysis, then keysounds into the resident arena in first-use order from the cursor; playback started early uses whatever is resident and streams the rest.
 - **Read first:** `src/sys/project_open.cpp`, `src/sys/main.cpp` (`reset_project_runtime_state`), `src/sys/waveform_analysis_runtime.cpp` (`waveform_job_.request`), T-267 and T-273.
 - **Files owned:** `src/sys/project_open.cpp/.h`, `src/sys/audio_source_registration.cpp`, `src/sys/main.cpp` (ordering only), `src/audio/resident_samples.cpp`, `tests/sys/project_open_tests.cpp`.

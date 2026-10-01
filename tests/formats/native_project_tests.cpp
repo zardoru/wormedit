@@ -658,3 +658,69 @@ TEST_CASE("native projects store lane key colors, derive them for older files, a
     const auto rejected = wormedit::parse_native_project(invalid.dump());
     CHECK_FALSE(rejected.song.has_value());
 }
+
+namespace {
+
+// A project as saved before BGM columns: one lane per `#mmm01` line, plus a
+// sound-less event for a `00` slot.
+auto legacy_bgm_song() -> wormedit::song_document_t {
+    constexpr std::string_view source =
+        "#PLAYER 1\n#TITLE Legacy BGM\n#BPM 120\n#WAV01 a.wav\n#WAV02 b.wav\n"
+        "#00001:0100\n#00001:0002\n#00101:01\n";
+    const auto bytes = std::vector<std::byte>(
+        reinterpret_cast<const std::byte*>(source.data()),
+        reinterpret_cast<const std::byte*>(source.data()) + source.size());
+    auto parsed = wormedit::parse_bms_bytes(bytes, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(parsed.song.has_value());
+    auto song = std::move(*parsed.song);
+    auto& chart = song.charts.front();
+    REQUIRE(chart.bgm_source_lanes.size() == 2);
+    chart.bgm_source_lanes[0].name = "BGM source #00001 (line 6)";
+    chart.bgm_source_lanes[1].name = "BGM source #00001 (line 7)";
+    const auto third = wormedit::object_id_t{9001};
+    chart.bgm_source_lanes.push_back(
+        {.id = third, .name = "BGM source #00101 (line 8)", .source_order = 7});
+    chart.measures[1].bgm_events.front().source_lane = third;
+    auto zero = chart.measures[0].bgm_events.front();
+    zero.id = wormedit::object_id_t{9002};
+    zero.sound.reset();
+    zero.position.row = chart.divisions_per_standard_measure / 2;
+    zero.structural_slot = 1;
+    zero.provenance.source_field = "01 slot 1 object 00";
+    chart.measures[0].bgm_events.push_back(zero);
+    return song;
+}
+
+} // namespace
+
+TEST_CASE("native projects saved with per-line BGM lanes and 00 events load as columns",
+          "[unit][format][native-project][bgm-columns]") {
+    const auto written = wormedit::write_native_project(legacy_bgm_song());
+    REQUIRE(written.bytes.has_value());
+    const auto parsed = wormedit::parse_native_project(*written.bytes);
+    REQUIRE(parsed.song.has_value());
+    const auto& chart = parsed.song->charts.front();
+
+    REQUIRE(chart.bgm_source_lanes.size() == 2);
+    CHECK(chart.bgm_source_lanes[0].name == "BGM 1");
+    CHECK(chart.bgm_source_lanes[1].name == "BGM 2");
+    CHECK(chart.bgm_source_lanes[0].source_order < chart.bgm_source_lanes[1].source_order);
+    REQUIRE(chart.measures[0].bgm_events.size() == 2);
+    CHECK(std::ranges::none_of(chart.measures[0].bgm_events,
+                               [](const auto& event) { return !event.sound.has_value(); }));
+    REQUIRE(chart.measures[1].bgm_events.size() == 1);
+    // The measure's only line starts again at column 1.
+    CHECK(chart.measures[1].bgm_events.front().source_lane == chart.bgm_source_lanes[0].id);
+    CHECK(chart.measures[0].bgm_events[1].source_lane == chart.bgm_source_lanes[1].id);
+
+    auto again = *parsed.song;
+    CHECK_FALSE(wormedit::native_project_internal::normalize_legacy_bms_bgm(again));
+}
+
+TEST_CASE("current BGM columns and non-BMS lanes pass through the load repair untouched",
+          "[unit][format][native-project][bgm-columns]") {
+    auto song = rich_bmson_song();
+    const auto before = song.charts.front().bgm_source_lanes;
+    CHECK_FALSE(wormedit::native_project_internal::normalize_legacy_bms_bgm(song));
+    CHECK(song.charts.front().bgm_source_lanes.size() == before.size());
+}

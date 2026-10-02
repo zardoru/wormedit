@@ -91,6 +91,7 @@ stale-plan check (rule 9) first.
 ## T-75 Expose lane-layout changes in Compose
 
 - **Status:** ready
+- **Implementation notes (2026-10-02, UI uncompiled):** a profile switch for the layout active at the cursor landed instead of the full segment form: core `apply_lane_profile_switch` (`src/core/lane_profile_switch.cpp`, tested headless) keeps lane IDs, stages and notes and swaps profile id, names, glyphs and key colors for profiles with the same lane count (osu!mania Nk, pump-single, pump-double, dance-solo). Compose inspector has a "Lane profile" combo. Inserting or removing segments is still open. New projects from the wizard now start as `osu-mania-Nk` layouts (10K gets `wbwbgybwbw`); `pump-double` gained arrow glyphs in `stepmania_lane_specs`.
 - **Outcome:** right side of the measure rail shows layout segments; an inspector form inserts or edits one at the cursor measure.
 - **Read first:** `include/wormedit/core/lane_layout_editor.h`, `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_inspector.cpp`.
 - **Files owned:** `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_inspector.cpp`, `src/ui/nuklear/compose_canvas.cpp`.

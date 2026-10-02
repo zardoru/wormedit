@@ -42,26 +42,10 @@ auto step_type(std::uint32_t count) -> std::string_view {
     }
 }
 
+// New projects start as osu!mania key layouts (arrow styles are one profile switch away).
 auto make_playable_profile(std::uint32_t count) -> lane_input_profile_t {
-    lane_input_profile_t result;
-    const auto selected_step_type = step_type(count);
-    result.layout.profile_id = selected_step_type.empty()
-                                   ? "audio-" + std::to_string(count) + "k"
-                                   : "stepmania:" + std::string(selected_step_type);
-    result.layout.display_name = std::to_string(count) + "K";
-    result.layout.lanes.reserve(count);
-    for (std::uint32_t index = 0; index < count; ++index) {
-        result.layout.lanes.push_back({.id = lane_id_t{index + 1},
-                                       .name = "Key " + std::to_string(index + 1),
-                                       .role = lane_role_t::playable,
-                                       .stage = stage_group_t::left,
-                                       .display_order = index});
-    }
-    if (const auto input = make_number_row_input_profile(result.layout))
-        result.input = *input;
-    else
-        result.input.profile_id = "unbound-" + std::to_string(count) + "k";
-    return result;
+    if (auto profile = make_osu_mania_profile(count)) return std::move(*profile);
+    return {};
 }
 
 auto make_initial_chart(lane_input_profile_t profile, format_family_t source_family)

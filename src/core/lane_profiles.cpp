@@ -717,6 +717,19 @@ constexpr std::array<stepmania_lane_spec_t, 6> dance_solo_specs{{
     {"Right", lane_glyph_t::arrow_right},
 }};
 
+constexpr std::array<stepmania_lane_spec_t, 10> pump_double_specs{{
+    {"Down Left", lane_glyph_t::arrow_down_left},
+    {"Up Left", lane_glyph_t::arrow_up_left},
+    {"Center", lane_glyph_t::arrow_center},
+    {"Up Right", lane_glyph_t::arrow_up_right},
+    {"Down Right", lane_glyph_t::arrow_down_right},
+    {"Down Left 2", lane_glyph_t::arrow_down_left},
+    {"Up Left 2", lane_glyph_t::arrow_up_left},
+    {"Center 2", lane_glyph_t::arrow_center},
+    {"Up Right 2", lane_glyph_t::arrow_up_right},
+    {"Down Right 2", lane_glyph_t::arrow_down_right},
+}};
+
 auto make_stepmania_profile(std::string_view step_type,
                             std::span<const stepmania_lane_spec_t> specs, std::string display_name)
     -> lane_input_profile_t {
@@ -753,11 +766,37 @@ auto stepmania_lane_specs(std::string_view step_type) -> std::span<const stepman
         return pump_single_specs;
     if (same("dance-solo"))
         return dance_solo_specs;
+    if (same("pump-double"))
+        return pump_double_specs;
     return {};
 }
 
 auto make_stepmania_pump_single_profile() -> lane_input_profile_t {
     return make_stepmania_profile("pump-single", pump_single_specs, "Pump 5K (pump-single)");
+}
+
+auto make_stepmania_profile_for(std::string_view step_type) -> std::optional<lane_input_profile_t> {
+    const auto specs = stepmania_lane_specs(step_type);
+    if (specs.empty()) return std::nullopt;
+    return make_stepmania_profile(step_type, specs, std::string(step_type));
+}
+
+auto make_osu_mania_profile(std::uint32_t keys) -> std::optional<lane_input_profile_t> {
+    if (keys < 1 || keys > 18) return std::nullopt;
+    std::vector<lane_definition_t> lanes;
+    lanes.reserve(keys);
+    for (std::uint32_t index = 0; index < keys; ++index) {
+        lanes.push_back({.id = lane_id_t{index + 1},
+                         .name = "Key " + std::to_string(index + 1),
+                         .role = lane_role_t::playable,
+                         .stage = stage_group_t::left,
+                         .display_order = index});
+    }
+    // The number row binds at most ten lanes; wider layouts start unbound.
+    auto input = make_number_row_input_profile(lane_layout_t{.lanes = lanes})
+                     .value_or(input_profile_t{.profile_id = "unbound-" + std::to_string(keys) + "k"});
+    const auto id = "osu-mania-" + std::to_string(keys) + "k";
+    return make_profile(id, std::to_string(keys) + "K", std::move(lanes), std::move(input));
 }
 
 auto make_stepmania_dance_solo_profile() -> lane_input_profile_t {

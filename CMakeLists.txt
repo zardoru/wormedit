@@ -76,6 +76,7 @@ add_library(wormedit_core
     src/core/rational.cpp
     src/core/recovery_controller.cpp
     src/core/bgm_columns.cpp
+    src/core/lane_profile_switch.cpp
     src/core/resource_assignment.cpp
     src/core/resource_file_copy.cpp
     src/core/scroll_speed_editor.cpp

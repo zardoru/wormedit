@@ -31,6 +31,8 @@ typedef struct SDL_Window SDL_Window;
 #define WORM_UI_COMPOSE_HOLD_CAPACITY 32768
 #define WORM_UI_COMPOSE_NOTE_CAPACITY 32768
 #define WORM_UI_COMPOSE_BGM_LANE_CAPACITY 4096
+#define WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY 4
+#define WORM_UI_COMPOSE_LANE_PROFILE_NAME_BYTES 48
 #define WORM_UI_COMPOSE_BGM_EVENT_CAPACITY 32768
 #define WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY 4096
 #define WORM_UI_COMPOSE_CHANNEL_WAVEFORM_ROW_CAPACITY 4096
@@ -695,6 +697,11 @@ typedef struct WormUiComposeView {
     // BMS charts only: the BGM source column count and whether the toolbar may change it.
     uint32_t bgm_column_count;
     bool bgm_column_count_editable;
+    // Lane profiles the layout at the cursor can switch to (0 = none); the current one is marked.
+    uint8_t lane_profile_choice_count;
+    int8_t lane_profile_current;
+    char lane_profile_names[WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY]
+                           [WORM_UI_COMPOSE_LANE_PROFILE_NAME_BYTES];
     bool downscroll;
     bool bms_measure_labels;
     uint64_t compose_measure_count;
@@ -1532,6 +1539,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_AREA_DELETE,
     WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE,
     WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT,
+    WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE,
     WORM_UI_COMPOSE_ACTION_ZOOM_IN,
     WORM_UI_COMPOSE_ACTION_ZOOM_OUT,
     WORM_UI_COMPOSE_ACTION_SCROLL_UP,
@@ -1808,6 +1816,7 @@ typedef struct WormUiWorkspaceAction {
     bool compose_area_clear_requested;
     uint64_t compose_measure_number;
     uint32_t compose_bgm_column_count;
+    uint32_t compose_lane_profile_index;
     int64_t compose_audio_offset_numerator;
     uint64_t compose_audio_offset_denominator;
     uint64_t compose_input_chart_id;

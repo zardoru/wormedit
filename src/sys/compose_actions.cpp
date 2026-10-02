@@ -15,6 +15,7 @@
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/grid.h>
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/marker_editor.h>
 #include <wormedit/core/marker_navigation.h>
 #include <wormedit/core/note_label_editor.h>
@@ -132,6 +133,32 @@ std::optional<std::string> dispatch_compose_bgm_column_count(compose_action_cont
                                            : rebound.diagnostics.front().message;
     return "BGM column count set to " + std::to_string(context.action.compose_bgm_column_count) +
            ".";
+}
+
+std::optional<std::string> dispatch_compose_lane_profile(compose_action_context_t& context) {
+    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE)
+        return std::nullopt;
+    if (editor_interaction_has_pending_gesture(context.state))
+        return "Finish or cancel the active Compose gesture before changing the lane profile.";
+    const auto* chart = selected_chart(context.history, context.workspace);
+    const auto* segment = chart ? wormedit::active_lane_layout_segment(*chart, context.state.cursor)
+                                : nullptr;
+    if (!segment) return "No lane layout is active at the cursor.";
+    const auto choices = wormedit::lane_profile_choices(segment->layout.lanes.size());
+    if (context.action.compose_lane_profile_index >= choices.size())
+        return "Choose a lane profile first.";
+    const auto& target = choices[context.action.compose_lane_profile_index].layout;
+    const auto applied = wormedit::apply_lane_profile_switch(
+        context.history, context.action.compose_input_document_revision, context.state.chart,
+        context.state.cursor, target);
+    if (!applied.applied)
+        return applied.diagnostics.empty() ? "Lane profile unchanged."
+                                           : applied.diagnostics.front().message;
+    const auto rebound = wormedit::rebind_workspace(context.workspace, context.history);
+    if (!rebound)
+        return rebound.diagnostics.empty() ? "Lane profile changed, but workspace rebinding failed."
+                                           : rebound.diagnostics.front().message;
+    return "Lane profile set to " + target.display_name + ".";
 }
 
 std::optional<std::string> dispatch_compose_audio_offset(compose_action_context_t& context) {
@@ -1831,6 +1858,7 @@ auto dispatch_compose_view_action(
     if (auto response = dispatch_compose_audio_offset(context)) return *response;
     if (auto response = dispatch_compose_measure_navigation(context)) return *response;
     if (auto response = dispatch_compose_bgm_column_count(context)) return *response;
+    if (auto response = dispatch_compose_lane_profile(context)) return *response;
     if (auto response = dispatch_compose_view_action_group(context)) return *response;
     if (auto response = dispatch_compose_resource_action(context)) return *response;
     if (auto response = dispatch_compose_bmson_action(context)) return *response;

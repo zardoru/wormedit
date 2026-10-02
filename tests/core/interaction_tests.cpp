@@ -4651,3 +4651,17 @@ TEST_CASE("a hold may end inside a warp but not begin there",
                                        commit_hold_action_t{{measure_id_t{2}, 720}}));
     CHECK(note_count(fresh) == 0);
 }
+
+TEST_CASE("a fake hold keeps its kind and may begin inside a warp",
+          "[unit][core][interaction][dead-span]") {
+    auto history = warp_history();
+    auto state = make_state(history);
+    state.armed_note_kind = note_kind_t::fake;
+    REQUIRE(dispatch_editor_action(history, state, begin_hold_action_t{{measure_id_t{2}, 480}}));
+    REQUIRE(dispatch_editor_action(history, state,
+                                   commit_hold_action_t{{measure_id_t{2}, 720}}));
+    REQUIRE(note_count(history) == 1);
+    const auto& note = history.document.charts.front().measures.back().notes.front();
+    CHECK(note.kind == note_kind_t::fake);
+    CHECK(note.end.has_value());
+}

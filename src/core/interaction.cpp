@@ -707,9 +707,14 @@ auto hold_placement_preview(const hold_placement_plan_t& plan) -> pending_hold_p
             .adds_note = plan.adds_note};
 }
 
+// The kind a note takes once it has a tail: rolls and fakes keep their kind, all else is a hold.
+auto held_note_kind(note_kind_t armed) -> note_kind_t {
+    return armed == note_kind_t::roll || armed == note_kind_t::fake ? armed : note_kind_t::hold;
+}
+
 auto plan_hold_placement(const chart_document_t& chart, const measure_index_t& index,
                          lane_id_t lane, local_position_t anchor, local_position_t moving,
-                         std::optional<note_kind_t> committed_kind = std::nullopt)
+                         note_kind_t armed_kind = note_kind_t::hold, bool committing = false)
     -> std::variant<hold_placement_plan_t, diagnostic_list_t> {
     const auto anchor_row = absolute_row(index, anchor);
     const auto moving_row = absolute_row(index, moving);
@@ -724,9 +729,9 @@ auto plan_hold_placement(const chart_document_t& chart, const measure_index_t& i
     auto rows = std::get<hold_row_plan_t>(std::move(planned));
     // A real hold has a playable head; a single row is judged by the kind about to be committed
     // (previews pass none, so a gesture may start inside a warp and end on a row outside it).
-    const auto head_kind = rows.head_row == rows.tail_row ? committed_kind
-                                                          : std::optional{note_kind_t::hold};
-    if (head_kind && head_blocked_by_warp(chart, index, rows.head_row, *head_kind))
+    const auto single_row = rows.head_row == rows.tail_row;
+    const auto head_kind = single_row ? armed_kind : held_note_kind(armed_kind);
+    if ((committing || !single_row) && head_blocked_by_warp(chart, index, rows.head_row, head_kind))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                        "playable note heads cannot sit inside a warp")};
     const auto head = position_at(index, rows.head_row);
@@ -2978,7 +2983,7 @@ auto update_hold_preview(hold_gesture_context_t& context, local_position_t posit
             {error(diagnostic_code_t::unknown_lane,
                    "hold lane is unavailable at the previewed endpoint")});
     const auto plan = plan_hold_placement(context.chart, context.index, pending.lane,
-                                          pending.position, *snapped);
+                                          pending.position, *snapped, state.armed_note_kind);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
         return diagnostic_result(history, state, *diagnostics);
     state.pending_hold->preview_end = *snapped == pending.position
@@ -3020,7 +3025,7 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position)
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_hold, "Move to a different row to finish the Hold or Roll gesture.")});
     const auto plan = plan_hold_placement(context.chart, context.index, pending.lane,
-                                          pending.position, *snapped, state.armed_note_kind);
+                                          pending.position, *snapped, state.armed_note_kind, true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
         return diagnostic_result(history, state, *diagnostics);
     auto proposed = history.document;
@@ -3046,7 +3051,7 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position)
         measure->notes.push_back({.id = *id, .position = placement.head,
                                   .lane = pending.lane,
                                   .kind = placement.tail
-                                      ? (state.armed_note_kind == note_kind_t::roll ? note_kind_t::roll : note_kind_t::hold)
+                                      ? held_note_kind(state.armed_note_kind)
                                       : state.armed_note_kind,
                                   .end = placement.tail});
     }
@@ -3471,7 +3476,7 @@ auto commit_virtual_hold(virtual_note_context_t& context,
                                         "virtual hold lane is unavailable at an endpoint")});
     }
     const auto planned = plan_hold_placement(*chart, index, action.lane, *anchor, *end,
-                                         context.state.armed_note_kind);
+                                         context.state.armed_note_kind, true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, context.state, *diagnostics);
     const auto& placement = std::get<hold_placement_plan_t>(planned);
@@ -3489,7 +3494,7 @@ auto commit_virtual_hold(virtual_note_context_t& context,
                                               &measure_chunk_t::id);
         target->notes.push_back({.id = *id, .position = placement.head, .lane = action.lane,
                                  .kind = placement.tail
-                                     ? (context.state.armed_note_kind == note_kind_t::roll ? note_kind_t::roll : note_kind_t::hold)
+                                     ? held_note_kind(context.state.armed_note_kind)
                                      : context.state.armed_note_kind,
                                  .end = placement.tail});
     }

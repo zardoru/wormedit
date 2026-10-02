@@ -834,9 +834,11 @@ auto validate_chart_note(chart_object_validation_t& context, measure_id_t measur
         }
     }
     const auto requires_end = note.kind == note_kind_t::hold || note.kind == note_kind_t::roll;
-    if (requires_end != note.end.has_value()) {
+    const auto may_have_end = requires_end || note.kind == note_kind_t::fake;
+    if (requires_end ? !note.end.has_value() : (note.end.has_value() && !may_have_end)) {
         add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_hold,
-                       "hold/roll notes require an end and other note kinds prohibit one", note.id);
+                       "hold/roll notes require an end and only fake notes may otherwise carry one",
+                       note.id);
     } else if (note.end.has_value()) {
         const auto end =
             position_row_or_diagnostic(context.index, *note.end, context.diagnostics, note.id);

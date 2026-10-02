@@ -39,9 +39,12 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; `ctest --test-dir build -R '^documentation\.'`; isolated Xvfb check of Compose when UI changes.
 - **Out of scope:** the other cards in this file and unrelated rendering work.
 
+- **Progress (2026-10-02):** Done and compiled in the full app build: `WormUiComposeDeadSpanView` and `dead_spans` in `frontend.h`; per-frame projection in `compose_view.cpp` from the T-313 projection (stop band after its row, delay band before it, 14 px; warp covers its rows; downscroll aware); validation in `compose_panel.cpp`; hatched, labeled bands drawn over the waveform and under notes in `compose_canvas.cpp`; pointer placement blocked inside a band (`hit_target_at` and `position_at_compose_y` in `compose_input.cpp`; timing-marker drags stay unrestricted). Unit-tested: band geometry for up/downscroll and scrolling (`tests/sys/compose_dead_spans_tests.cpp`). Full app suite passed except one load-sensitive performance test that passes alone.
+- **Remaining:** visual confirmation in Xvfb (a project opened from the command line shows "Player preview view data is invalid" before Compose renders, an uninitialized-preview-view problem that predates this card; the Debug build also asserts in the Nuklear Compose toolbar at `nk_layout_row_template_push_static`); keyboard placement (lane keys at the cursor) is not yet blocked inside a warp; input tests for blocking.
+
 ## T-315 Skip warp audio visually and in playback
 
-- **Status:** ready
+- **Status:** done (already implemented: src/audio/aligned_waveform.cpp:56, row mapping by exact time; regression test added)
 - **Outcome:** A Warp's span shows as a blank gap in the waveform and the audio is omitted there; playback and seeking never map real audio time into the warped rows.
 - **Read first:** `src/sys/compose_waveform_overlays.cpp`, `src/audio/aligned_waveform.cpp`, `src/audio/channel_waveform.cpp`, `src/sys/audio_transport_frame.cpp`, `src/sys/compose_dead_spans.h` (T-313).
 - **Files owned:** `src/sys/compose_waveform_overlays.cpp`, `src/audio/aligned_waveform.cpp`, `src/audio/channel_waveform.cpp`, `src/sys/audio_transport_frame.cpp`, `tests/audio/*waveform*_tests.cpp`, `tests/sys/frame_timing_tests.cpp`.
@@ -50,6 +53,8 @@ T-318 → T-319 → T-320 → T-321. Apply the stale-plan check (rule 9) first.
 - **Reject/failure behavior:** Invalid spans leave the waveform unchanged and report a diagnostic.
 - **Verify:** standard build/test; configured clang-tidy on changed C++; `ctest --test-dir build -R '^documentation\.'`; isolated Xvfb check of Compose when UI changes.
 - **Out of scope:** the other cards in this file and unrelated rendering work.
+
+- **Result:** The aligned waveform already maps audio columns to rows through `musical_position_at`, and a warp consumes no time, so its rows receive no columns and show as a blank gap with contiguous audio on both sides. `tests/core/audio_aligned_waveform_tests.cpp` now locks this (rows 482–958 empty, rows before and after populated; the same chart without the warp is populated). Playback and seeking use the same timing index. The hatched warp band is drawn by T-314.
 
 ## T-316 Project Kiai on/off events as merged span pseudonotes
 

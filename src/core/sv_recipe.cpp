@@ -1,3 +1,4 @@
+#include <wormedit/core/snap.h>
 #include <wormedit/core/sv_recipe.h>
 
 #include <algorithm>
@@ -79,20 +80,14 @@ auto snapped_position(const chart_document_t& chart, const measure_index_t& inde
     if (!absolute || denominator == 0 || chart.divisions_per_standard_measure % denominator != 0) {
         return std::nullopt;
     }
-    const auto step = chart.divisions_per_standard_measure / denominator;
-    if (step == 0) {
-        return std::nullopt;
-    }
     if (*absolute == index.total_rows) {
         return position_at_row(index, index.total_rows, true);
     }
-    const auto remainder = *absolute % step;
-    auto snapped = *absolute - remainder;
-    const auto distance_up = step - remainder;
-    if (remainder > distance_up &&
-        distance_up <= std::numeric_limits<std::uint64_t>::max() - *absolute) {
-        snapped = *absolute + distance_up;
+    const auto rounded = snap_absolute_row(chart, *absolute, denominator);
+    if (!rounded) {
+        return std::nullopt;
     }
+    auto snapped = *rounded;
     if (snapped > index.total_rows) {
         snapped = index.total_rows;
     }

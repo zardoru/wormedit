@@ -886,6 +886,8 @@ typedef struct WormUiComposeView {
     uint64_t area_canvas_rows;
     uint64_t area_rows_per_measure;
     uint64_t area_snap_denominator;
+    // False while pointer edits land on the finest chart row instead of the active grid.
+    bool edit_snap_enabled;
     double area_scroll_pixels;
     bool beat_section_selection_span_available;
     uint64_t beat_section_selection_begin_measure_number;
@@ -1638,6 +1640,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE,
     WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY,
     WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS,
+    WORM_UI_COMPOSE_ACTION_TOGGLE_EDIT_SNAP,
     WORM_UI_COMPOSE_ACTION_RATE_SLOWER,
     WORM_UI_COMPOSE_ACTION_RATE_FASTER,
     WORM_UI_COMPOSE_ACTION_SELECT_RESOURCE_USES,

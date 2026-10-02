@@ -1,4 +1,5 @@
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/snap.h>
 
 #include "interaction_cursor.h"
 
@@ -74,19 +75,7 @@ auto bms_branch_source_orders(const chart_document_t& chart)
 
 auto position_at(const measure_index_t& index, std::uint64_t absolute)
     -> std::optional<local_position_t> {
-    if (absolute >= index.total_rows) {
-        return std::nullopt;
-    }
-    const auto after = std::ranges::upper_bound(index.entries, absolute, {},
-                                                &measure_index_entry_t::absolute_begin_row);
-    if (after == index.entries.begin()) {
-        return std::nullopt;
-    }
-    const auto entry = std::prev(after);
-    return local_position_t{
-        .measure = entry->id,
-        .row = absolute - entry->absolute_begin_row,
-    };
+    return position_at_absolute_row(index, absolute);
 }
 
 struct hold_row_plan_t {
@@ -618,6 +607,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .virtual_bms_cursor_row = state.virtual_bms_cursor_row,
         .cursor_subrow = state.cursor_subrow,
         .active_snap_denominator = state.active_snap_denominator,
+        .snap_enabled = state.snap_enabled,
         .supported_snap_denominators = state.supported_snap_denominators,
         .document_revision = history.document.revision,
         .pixels_per_standard_measure = state.pixels_per_standard_measure,
@@ -699,23 +689,7 @@ auto next_object_id(const chart_document_t& chart) -> std::optional<object_id_t>
 auto snapped_position(const chart_document_t& chart, const measure_index_t& index,
                       local_position_t target, std::uint64_t denominator)
     -> std::optional<local_position_t> {
-    const auto absolute = absolute_row(index, target);
-    if (!absolute.has_value() || denominator == 0 ||
-        chart.divisions_per_standard_measure % denominator != 0) {
-        return std::nullopt;
-    }
-    const auto step = chart.divisions_per_standard_measure / denominator;
-    if (step == 0) {
-        return std::nullopt;
-    }
-    const auto remainder = *absolute % step;
-    auto snapped = *absolute - remainder;
-    const auto distance_up = step - remainder;
-    if (remainder > distance_up &&
-        distance_up <= std::numeric_limits<std::uint64_t>::max() - *absolute) {
-        snapped = *absolute + distance_up;
-    }
-    return position_at(index, snapped);
+    return snap_position(chart, index, target, denominator);
 }
 
 struct hold_placement_plan_t {
@@ -2167,7 +2141,7 @@ auto update_note_duration_gesture(note_gesture_context_t& context,
             {error(diagnostic_code_t::invalid_id,
                    "duration gesture reference note no longer exists", pending.reference_note)});
     auto snapped_end = snapped_position(context.chart, context.index, requested_end,
-                                        state.active_snap_denominator);
+                                        edit_snap_denominator(context.chart, state));
     if (!snapped_end)
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::row_out_of_range,
@@ -2368,7 +2342,7 @@ auto append_note_paint_target(note_paint_context_t& context, lane_id_t lane,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "note paint gesture is stale after a document edit")});
     const auto target = snapped_position(context.chart, context.index, position,
-                                         state.active_snap_denominator);
+                                         edit_snap_denominator(context.chart, state));
     if (!target)
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::row_out_of_range,
@@ -2381,7 +2355,7 @@ auto append_note_paint_target(note_paint_context_t& context, lane_id_t lane,
                                         "paint gesture lies outside chart geometry")});
     const auto same_lane = lane == pending.last_lane;
     const auto step = context.chart.divisions_per_standard_measure /
-                      state.active_snap_denominator;
+                      edit_snap_denominator(context.chart, state);
     const auto row_distance = *target_row >= *previous_row ? *target_row - *previous_row
                                                            : *previous_row - *target_row;
     const auto path_cells = same_lane ? row_distance / step + 1 : 1;
@@ -2448,7 +2422,7 @@ auto begin_note_paint_gesture(note_paint_context_t& context, lane_id_t lane,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "another editor gesture is already active")});
     const auto target = snapped_position(context.chart, context.index, position,
-                                         state.active_snap_denominator);
+                                         edit_snap_denominator(context.chart, state));
     if (!target)
         return diagnostic_result(context.history, state,
                                  {error(diagnostic_code_t::row_out_of_range,
@@ -2755,7 +2729,7 @@ auto remove_note_for_keyboard_hold(hold_gesture_context_t& context, lane_id_t la
     -> std::optional<editor_interaction_result_t> {
     auto& state = context.state;
     const auto snapped = snapped_position(context.chart, context.index, position,
-                                          state.active_snap_denominator);
+                                          edit_snap_denominator(context.chart, state));
     if (!snapped || !find_active_lane(context.chart, context.index, *snapped, lane))
         return std::nullopt;
     const auto plan = plan_hold_placement(context.chart, context.index, lane, *snapped, *snapped);
@@ -2838,7 +2812,7 @@ auto update_hold_gesture(hold_gesture_context_t& context, hold_gesture_source_t 
                                  {error(diagnostic_code_t::invalid_hold,
                                         "pending hold gesture is stale after a document edit")});
     const auto target = snapped_position(context.chart, context.index, position,
-                                         state.active_snap_denominator);
+                                         edit_snap_denominator(context.chart, state));
     state.pending_hold->gesture_source.reset();
     auto result = context.dispatch_action(update_hold_preview_action_t{target.value_or(position)});
     if (state.pending_hold)
@@ -2870,7 +2844,7 @@ auto release_hold_gesture(hold_gesture_context_t& context, hold_gesture_source_t
                                  {error(diagnostic_code_t::invalid_hold,
                                         "hold gesture release does not match the active input")});
     const auto target = snapped_position(context.chart, context.index, position,
-                                         state.active_snap_denominator);
+                                         edit_snap_denominator(context.chart, state));
     state.pending_hold->gesture_source.reset();
     auto result = context.dispatch_action(commit_hold_action_t{target.value_or(position)});
     if (state.pending_hold)
@@ -2896,7 +2870,7 @@ auto begin_hold_action(hold_gesture_context_t& context, local_position_t positio
     auto& history = context.history;
     auto& state = context.state;
     const auto snapped = snapped_position(context.chart, context.index, position,
-                                          state.active_snap_denominator);
+                                          edit_snap_denominator(context.chart, state));
     if (!snapped)
         return diagnostic_result(
             history, state,
@@ -2927,7 +2901,7 @@ auto validate_pending_hold_start(const hold_gesture_context_t& context,
     -> std::optional<editor_interaction_result_t> {
     if (pending.document_revision == context.history.document.revision &&
         snapped_position(context.chart, context.index, pending.position,
-                         context.state.active_snap_denominator) == pending.position)
+                         edit_snap_denominator(context.chart, context.state)) == pending.position)
         return std::nullopt;
     return diagnostic_result(
         context.history, context.state,
@@ -2947,7 +2921,7 @@ auto update_hold_preview(hold_gesture_context_t& context, local_position_t posit
     if (auto stale = validate_pending_hold_start(context, pending))
         return *stale;
     const auto snapped = snapped_position(context.chart, context.index, position,
-                                          state.active_snap_denominator);
+                                          edit_snap_denominator(context.chart, state));
     if (!snapped)
         return diagnostic_result(
             history, state,
@@ -2985,7 +2959,7 @@ auto commit_hold(hold_gesture_context_t& context, local_position_t position)
     if (auto stale = validate_pending_hold_start(context, pending))
         return *stale;
     const auto snapped = snapped_position(context.chart, context.index, position,
-                                          state.active_snap_denominator);
+                                          edit_snap_denominator(context.chart, state));
     if (!snapped)
         return diagnostic_result(
             history, state,
@@ -3694,7 +3668,7 @@ auto place_tap(tap_placement_context_t& context, const place_tap_action_t& actio
     auto& history = context.history;
     auto& state = context.state;
     const auto snapped = snapped_position(context.chart, context.index, action.position,
-                                          state.active_snap_denominator);
+                                          edit_snap_denominator(context.chart, state));
     if (!snapped)
         return diagnostic_result(
             history, state,
@@ -4524,13 +4498,13 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
     const auto make_duration_plan = [&](std::vector<object_id_t> targets, object_id_t reference,
                                         local_position_t end, bool exact_end = false) {
         return plan_duration_resize(*chart, index, std::move(targets), reference, end,
-                                    state.active_snap_denominator, exact_end);
+                                    edit_snap_denominator(*chart, state), exact_end);
     };
     const auto make_move_plan = [&](std::vector<object_id_t> targets, object_id_t reference,
                                     local_position_t position, lane_id_t lane,
                                     bool exact_position = false) {
         return plan_note_move(*chart, index, std::move(targets), reference, position, lane,
-                              state.active_snap_denominator, exact_position);
+                              edit_snap_denominator(*chart, state), exact_position);
     };
     const auto apply_duration_plan = [&](const duration_resize_plan_t& plan) {
         return apply_duration_resize_plan(history, state, plan);

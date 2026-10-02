@@ -164,6 +164,12 @@ begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart
                                                       bool timing_locked)
     -> document_command_result_t;
 
+// Deletes a bounded selection of timing markers as one atomic undoable command. The fixed
+// initial BPM is skipped when other markers are selected; a lock or stale revision rejects all.
+[[nodiscard]] auto delete_timing_lane_event_group(
+    document_history_t& history, chart_id_t chart, std::span<const timing_lane_event_ref_t> events,
+    std::uint64_t expected_revision, bool timing_locked) -> document_command_result_t;
+
 void cancel_timing_lane_pseudonote(timing_lane_pseudonote_preview_t& preview) noexcept;
 
 } // namespace wormedit

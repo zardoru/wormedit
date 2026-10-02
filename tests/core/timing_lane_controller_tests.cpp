@@ -750,6 +750,31 @@ TEST_CASE("existing timing markers move as transient previews and delete through
     CHECK(has_code(locked, diagnostic_code_t::unsupported_feature));
 }
 
+TEST_CASE("timing group deletion is atomic, undoable and keeps the initial BPM",
+          "[unit][core][timing-lane-controller][delete]") {
+    auto history = make_document_history(timing_edit_song());
+    const auto revision = history.document.revision;
+    const std::array events{timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{11}},
+                            timing_lane_event_ref_t{timing_lane_kind_t::stop, object_id_t{40}},
+                            timing_lane_event_ref_t{timing_lane_kind_t::delay, object_id_t{41}}};
+    const auto stale = delete_timing_lane_event_group(history, chart_id_t{2}, events, revision + 1, false);
+    CHECK_FALSE(stale);
+    const auto locked = delete_timing_lane_event_group(history, chart_id_t{2}, events, revision, true);
+    CHECK_FALSE(locked);
+    CHECK(history.document.revision == revision);
+
+    const auto initial_only = std::array{events[0]};
+    CHECK_FALSE(delete_timing_lane_event_group(history, chart_id_t{2}, initial_only, revision, false));
+
+    const auto bpm_count = history.document.charts.front().bpms.size();
+    const auto deleted = delete_timing_lane_event_group(history, chart_id_t{2}, events, revision, false);
+    REQUIRE(deleted);
+    CHECK(history.document.charts.front().pauses.empty());
+    CHECK(history.document.charts.front().bpms.size() == bpm_count);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().pauses.size() == 2);
+}
+
 TEST_CASE("the effective initial BPM cannot leave chart row zero",
           "[unit][core][timing-lane-controller][initial-bpm]") {
     auto history = make_document_history(timing_song());

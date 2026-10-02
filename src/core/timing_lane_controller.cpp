@@ -1005,4 +1005,56 @@ auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t c
     return result;
 }
 
+auto delete_timing_lane_event_group(document_history_t& history, chart_id_t chart_id,
+                                    std::span<const timing_lane_event_ref_t> events,
+                                    std::uint64_t expected_revision, bool timing_locked)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision};
+    constexpr std::size_t maximum_group_events = 4096;
+    if (timing_locked) {
+        result.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+                                    "timing is locked; timing group deletion is unavailable")};
+        return result;
+    }
+    if (expected_revision != history.document.revision) {
+        result.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                    "timing group deletion uses a stale document revision")};
+        return result;
+    }
+    if (events.empty() || events.size() > maximum_group_events) {
+        result.diagnostics = {error(diagnostic_code_t::invalid_resolution,
+                                    "timing group must contain 1 to 4096 events")};
+        return result;
+    }
+    const auto* chart = chart_for(history.document, chart_id);
+    if (chart == nullptr) {
+        result.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                    "timing group deletion refers to an unknown chart")};
+        return result;
+    }
+    // The fixed initial BPM stays; the rest of a mixed selection is still deleted.
+    std::vector<timing_lane_event_ref_t> doomed;
+    doomed.reserve(events.size());
+    for (const auto& event : events) {
+        if (event.kind == timing_lane_kind_t::bpm && is_fixed_initial_bpm(*chart, event.event))
+            continue;
+        doomed.push_back(event);
+    }
+    if (doomed.empty()) {
+        result.diagnostics = {error(diagnostic_code_t::unsupported_feature,
+                                    "the initial BPM cannot be deleted")};
+        return result;
+    }
+    auto staged = make_document_history(history.document);
+    for (const auto& event : doomed) {
+        auto deleted = delete_existing_timing_lane_event(staged, chart_id, event.kind, event.event,
+                                                         staged.document.revision, false);
+        if (!deleted) {
+            result.diagnostics = std::move(deleted.diagnostics);
+            return result;
+        }
+    }
+    return commit_document_command(history, std::move(staged.document), "Delete timing markers");
+}
+
 } // namespace wormedit

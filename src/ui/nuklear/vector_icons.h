@@ -46,4 +46,20 @@ inline void timer(struct nk_command_buffer* canvas, struct nk_rect bounds, struc
                    thickness, tint);
 }
 
+// Lucide "grid-3x3": snapping to the edit grid.
+inline void grid(struct nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
+    const auto frame = Frame::fit(bounds);
+    const auto thickness = frame.stroke();
+    nk_stroke_rect(canvas, nk_rect(frame.px(3.0f), frame.py(3.0f), 18.0f * frame.scale,
+                                   18.0f * frame.scale), 2.0f * frame.scale, thickness, tint);
+    nk_stroke_line(canvas, frame.px(3.0f), frame.py(9.0f), frame.px(21.0f), frame.py(9.0f),
+                   thickness, tint);
+    nk_stroke_line(canvas, frame.px(3.0f), frame.py(15.0f), frame.px(21.0f), frame.py(15.0f),
+                   thickness, tint);
+    nk_stroke_line(canvas, frame.px(9.0f), frame.py(3.0f), frame.px(9.0f), frame.py(21.0f),
+                   thickness, tint);
+    nk_stroke_line(canvas, frame.px(15.0f), frame.py(3.0f), frame.px(15.0f), frame.py(21.0f),
+                   thickness, tint);
+}
+
 } // namespace wormedit::ui::vector_icons

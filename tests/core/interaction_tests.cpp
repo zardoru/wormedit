@@ -687,6 +687,25 @@ TEST_CASE("BMS measure rail selects #999 without materializing it",
     CHECK(history.document.charts.front().measures.size() == 2);
 }
 
+TEST_CASE("turning edit snap off places taps on the exact pointer row",
+          "[unit][core][interaction][snap]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.snap_enabled = false;
+    const auto placed =
+        dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{2}, 121}});
+    REQUIRE(placed);
+    REQUIRE(note_count(history) == 1);
+    CHECK(history.document.charts.front().measures.back().notes.front().position ==
+          local_position_t{measure_id_t{2}, 121});
+
+    state.snap_enabled = true;
+    const auto snapped =
+        dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{2}, 241}});
+    REQUIRE(snapped);
+    CHECK(history.document.charts.front().measures.back().notes.size() == 2);
+}
+
 TEST_CASE(
     "headless editor actions cycle exact snaps, step across measures, and place undoable taps",
     "[unit][core][interaction]") {

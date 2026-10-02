@@ -20,7 +20,8 @@ other unless a card says otherwise. Apply the stale-plan check (rule 9) first.
 
 ## T-141 Add a Transform menu for selections
 
-- **Status:** ready
+- **Status:** done (2026-10-02; `src/sys/compose_selection_transform.cpp/.h`, `tests/sys/compose_selection_transform_tests.cpp`)
+- **Implementation notes (2026-10-02, Claude):** a collapsible **Transform** section in the Compose inspector (not a popup) with Mirror lanes, Rotate lanes left/right (a one-place cyclic remap per stage, built by `rotate_lane_permutation`) and Shift earlier/later by one active-snap step. A custom remap editor is not part of this card. Disabled with an empty selection; core messages go to the status line.
 - **Outcome:** Compose has a Transform popup with Mirror, Remap, and Shift rows (T-142) acting on the selection.
 - **Read first:** `include/wormedit/core/lane_transform.h`, `src/ui/nuklear/compose_toolbar.cpp`, `src/sys/compose_actions.cpp`.
 - **Files owned:** `src/ui/nuklear/compose_toolbar.cpp`, `src/sys/compose_actions.cpp`, `src/ui/frontend.h`.
@@ -57,7 +58,8 @@ other unless a card says otherwise. Apply the stale-plan check (rule 9) first.
 
 ## T-144 Search notes by label
 
-- **Status:** ready
+- **Status:** done (2026-10-02; `src/sys/compose_label_search.cpp/.h`, `tests/sys/compose_label_search_tests.cpp`)
+- **Implementation notes (2026-10-02, Claude):** inspector **Find label** field with Select (selects every match and jumps to the earliest), Previous and Next (move the cursor to the match before/after it, wrapping). No match gives a status message. Search text travels in `compose_note_label`.
 - **Implementation notes (2026-10-01):** step 1 is done: `find_notes_by_label(chart, text)` in `include/wormedit/core/note_label_editor.h` (ASCII case-insensitive, chart order, empty text matches nothing) with a test in `tests/core/note_label_editor_tests.cpp`. Step 2 (field, Next/Previous, status message) remains and touches the compose files.
 - **Outcome:** a search field selects every note whose label contains the text (case-insensitive) and jumps to the first; Next/Previous cycle.
 - **Read first:** `include/wormedit/core/note_label_editor.h`, `src/ui/nuklear/compose_inspector.cpp` (note label field), `src/sys/compose_actions.cpp`.

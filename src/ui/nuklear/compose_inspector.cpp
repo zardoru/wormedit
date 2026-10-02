@@ -270,6 +270,31 @@ void render_compose_label_search(const ComposeInspectorContext& inspector) {
     if (disabled) nk_widget_disable_end(context);
 }
 
+void render_compose_transform_section(const ComposeInspectorContext& inspector) {
+    const auto* view = inspector.view;
+    auto* context = inspector.context;
+    auto* action = inspector.action;
+    if (!nk_tree_push(context, NK_TREE_TAB, "Transform", NK_MINIMIZED)) return;
+    const auto enabled = view->scene_available && view->selected_note_count != 0;
+    if (!enabled) nk_widget_disable_begin(context);
+    const auto entry = [&](const char* title, WormUiComposeActionKind kind) {
+        nk_layout_row_dynamic(context, 24, 1);
+        if (!nk_button_label(context, title) ||
+            action->compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+            return;
+        action->compose_action = kind;
+        action->compose_input_chart_id = view->chart_id;
+        action->compose_input_document_revision = view->document_revision;
+    };
+    entry("Mirror lanes", WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR);
+    entry("Rotate lanes left", WORM_UI_COMPOSE_ACTION_TRANSFORM_ROTATE_LEFT);
+    entry("Rotate lanes right", WORM_UI_COMPOSE_ACTION_TRANSFORM_ROTATE_RIGHT);
+    entry("Shift earlier by one snap", WORM_UI_COMPOSE_ACTION_TRANSFORM_SHIFT_EARLIER);
+    entry("Shift later by one snap", WORM_UI_COMPOSE_ACTION_TRANSFORM_SHIFT_LATER);
+    if (!enabled) nk_widget_disable_end(context);
+    nk_tree_pop(context);
+}
+
 void render_compose_quantize_section(const ComposeInspectorContext& inspector) {
     const auto* view = inspector.view;
     auto* context = inspector.context;

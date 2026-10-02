@@ -131,7 +131,7 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 
 ## T-307 Skip the playhead with the navigation keys and wheel while playing
 
-- **Status:** ready
+- **Status:** done (2026-10-02; `src/sys/compose_playhead_skip.cpp/.h`, `tests/sys/compose_playhead_skip_tests.cpp`, wired in `compose_input.cpp`; see the note below)
 - **Outcome:** while chart preview plays in Compose, Up/Down move the playhead one active snap, PageUp/PageDown one measure, and the mouse wheel by the rows it would scroll, all in screen direction (downscroll flips them); playback continues from the new point and the following view jumps with it. Paused or stopped, these inputs keep moving the edit cursor and view as today.
 - **Request (user, 2026-10-01):** "skip the playhead ahead and back while I am playing"; "obey pageup/dn, mwheel and arrows".
 - **Current behavior (2026-10-01):** during playback Up/Down/PageUp/PageDown dispatch `move_edit_cursor_action_t` / `page_edit_cursor_action_t` (`dispatch_compose_navigation_actions`, `src/sys/compose_input.cpp`) and the wheel scrolls the view (`…_VIEWPORT_INPUT_COARSE_WHEEL` / `…_SMOOTH_WHEEL`), but the playhead-following scroll overrides both at once, so they appear to do nothing.

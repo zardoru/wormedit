@@ -99,7 +99,8 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 
 ## T-56 Add a Quantize Selection command
 
-- **Status:** ready
+- **Status:** done (2026-10-02; `src/sys/compose_quantize_preview.cpp/.h`, `tests/sys/compose_quantize_preview_tests.cpp`)
+- **Implementation notes (2026-10-02, Claude):** the dry run is `preview_quantize_selection` (moved, unchanged, blocked counts and the first diagnostic), cached per chart, revision, selection and snap in `compose_scene_cache_t::quantize_preview`. The inspector shows the counts and a **Quantize to snap** button, disabled on any collision or when nothing would move; it dispatches the existing `WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE`. The area menu entry is unchanged.
 - **Implementation notes (2026-10-01):** core `apply_quantize_command` and `quantize_chart_exact` already exist and are tested, so only the dry-run projection and inspector UI remain.
 - **Outcome:** the Compose inspector offers **Quantize selection** to the active snap with a preview count of moved/colliding notes, then commits through `apply_quantize_command`.
 - **Read first:** `include/wormedit/core/quantize.h`, `include/wormedit/core/command.h` (`apply_quantize_command`), `docs/chart-editor-plan/editing/interactions.md` (quantization paragraph), `src/ui/nuklear/compose_inspector.cpp`.

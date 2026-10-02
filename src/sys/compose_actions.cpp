@@ -1,5 +1,6 @@
 #include "sys/compose_actions.h"
 #include "sys/compose_label_search.h"
+#include "sys/compose_selection_transform.h"
 #include "sys/compose_area_actions.h"
 #include "sys/application_edit_helpers.h"
 #include "sys/compose_resource_presenter.h"
@@ -1335,7 +1336,31 @@ std::string search_selected_note_labels(compose_action_context_t& context) {
     return run_label_search(context.history, context.state, context.action.compose_note_label, step);
 }
 
+auto selection_transform_for(WormUiComposeActionKind kind) -> std::optional<selection_transform_t> {
+    switch (kind) {
+    case WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR: return selection_transform_t::mirror;
+    case WORM_UI_COMPOSE_ACTION_TRANSFORM_ROTATE_LEFT: return selection_transform_t::rotate_left;
+    case WORM_UI_COMPOSE_ACTION_TRANSFORM_ROTATE_RIGHT: return selection_transform_t::rotate_right;
+    case WORM_UI_COMPOSE_ACTION_TRANSFORM_SHIFT_EARLIER: return selection_transform_t::shift_earlier;
+    case WORM_UI_COMPOSE_ACTION_TRANSFORM_SHIFT_LATER: return selection_transform_t::shift_later;
+    default: return std::nullopt;
+    }
+}
+
+std::string transform_selected_notes(compose_action_context_t& context,
+                                     selection_transform_t transform) {
+    if (editor_interaction_has_pending_gesture(context.state))
+        return "Finish or cancel the active Compose gesture before transforming notes.";
+    if (context.history.document.revision != context.action.compose_input_document_revision)
+        return "Transform ignored because the document changed.";
+    auto status = apply_selection_transform(context.history, context.state, transform);
+    const auto rebound = rebind_workspace(context.workspace, context.history);
+    return rebound ? status : "Transform applied, but workspace rebinding failed.";
+}
+
 std::optional<std::string> dispatch_compose_marker_action(compose_action_context_t& context) {
+    if (const auto transform = selection_transform_for(context.action.compose_action))
+        return transform_selected_notes(context, *transform);
     switch (context.action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_SEARCH_NOTE_LABEL:
     case WORM_UI_COMPOSE_ACTION_SEARCH_NEXT_NOTE_LABEL:

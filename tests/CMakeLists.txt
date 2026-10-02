@@ -282,6 +282,23 @@ if(TARGET wormedit_video_decoder AND TARGET wormedit_visual_decoder)
     )
 endif()
 
+add_executable(wormedit_player_preview_status_tests
+    sys/player_preview_status_tests.cpp
+    ../src/sys/player_preview_presenter.cpp
+)
+target_include_directories(wormedit_player_preview_status_tests PRIVATE
+    "${CMAKE_SOURCE_DIR}/src"
+)
+target_link_libraries(wormedit_player_preview_status_tests PRIVATE
+    wormedit::core
+    Catch2::Catch2WithMain
+)
+catch_discover_tests(wormedit_player_preview_status_tests
+    TEST_PREFIX "player-preview-status."
+    PROPERTIES LABELS "unit;sys"
+    DISCOVERY_MODE PRE_TEST
+)
+
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_options_state_tests
         ui/nuklear_options_state_tests.cpp

@@ -346,7 +346,10 @@ template <typename Context>
 auto prepare_player_preview_frame(const Context& context)
     -> std::optional<player_preview_frame_t<decltype(advance_player_preview(context))>> {
     auto& state = context.state;
-    if (!prepare_player_preview_index(context)) return std::nullopt;
+    if (!prepare_player_preview_index(context)) {
+        fail_player_preview(context, state.status);
+        return std::nullopt;
+    }
     (void)prepare_player_preview_storyboards(context);
     if (!state.index || !state.visual_schedule || !state.visual_queue || !state.visual_token ||
         !state.status.empty()) {

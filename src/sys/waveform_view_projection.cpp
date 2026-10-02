@@ -76,11 +76,22 @@ auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_ca
 void clear_frame_waveform_publication(flattened_workspace_t& flattened) {
     flattened.compose.waveform.row = {};
     flattened.compose.waveform.overview_row = {};
+    flattened.compose.waveform.bar_row = {};
+    flattened.compose.waveform.bar_mark = {};
+    flattened.compose.waveform.bar_bookmark = {};
     auto& view = flattened.view.compose;
     view.waveform_rows = nullptr;
     view.waveform_row_count = 0;
     view.waveform_overview_rows = nullptr;
     view.waveform_overview_row_count = 0;
+    view.bgm_bar_rows = nullptr;
+    view.bgm_bar_row_count = 0;
+    view.bgm_bar_begin_fraction = 0;
+    view.bgm_bar_end_fraction = 1;
+    view.bgm_bar_marks = nullptr;
+    view.bgm_bar_mark_count = 0;
+    view.bgm_bar_bookmarks = nullptr;
+    view.bgm_bar_bookmark_count = 0;
     view.waveform_overview_generation = 0;
     view.waveform_overview_total_frames = 0;
     view.waveform_overview_sample_rate = 0;
@@ -96,9 +107,19 @@ auto prepare_frame_waveform_storage(flattened_workspace_t& flattened) -> bool {
         WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY);
     auto overview = arena_array<WormUiComposeWaveformOverviewRowView>(*arena,
         WORM_UI_COMPOSE_WAVEFORM_OVERVIEW_CAPACITY);
-    if (rows.capacity() == 0 || overview.capacity() == 0) return false;
+    auto bar_rows = arena_array<WormUiComposeWaveformOverviewRowView>(*arena,
+        WORM_UI_COMPOSE_BGM_BAR_ROW_CAPACITY);
+    auto bar_marks = arena_array<WormUiComposeBgmBarMarkView>(*arena,
+        WORM_UI_COMPOSE_BGM_BAR_MARK_CAPACITY);
+    auto bar_bookmarks = arena_array<WormUiComposeBgmBarBookmarkView>(*arena,
+        WORM_UI_COMPOSE_BGM_BAR_BOOKMARK_CAPACITY);
+    if (rows.capacity() == 0 || overview.capacity() == 0 || bar_rows.capacity() == 0 ||
+        bar_marks.capacity() == 0 || bar_bookmarks.capacity() == 0) return false;
     flattened.compose.waveform.row = rows;
     flattened.compose.waveform.overview_row = overview;
+    flattened.compose.waveform.bar_row = bar_rows;
+    flattened.compose.waveform.bar_mark = bar_marks;
+    flattened.compose.waveform.bar_bookmark = bar_bookmarks;
     return true;
 }
 struct envelope_projection_context_t {
@@ -258,6 +279,99 @@ void orient_compose_waveform_rows(frame_span<WormUiComposeWaveformRowView>& rows
     for (auto& row : rows)
         row.y_pixels = compose_source_y(row.y_pixels, view.viewport_height_pixels, view.downscroll);
 }
+// Rows are cached per (source, window): projecting the whole song is the costly case.
+auto refresh_bgm_bar_rows(compose_scene_cache_t::bgm_bar_cache_t& bar,
+                          const audio::waveform_t& waveform, bgm_bar_range_t range) -> bool {
+    if (bar.key && *bar.key == waveform.key && bar.identity == &waveform && bar.rows_range == range)
+        return true;
+    const auto projected = audio::project_waveform_range(waveform, range.begin, range.end,
+                                                         WORM_UI_COMPOSE_BGM_BAR_ROW_CAPACITY);
+    if (!projected) return false;
+    bar.rows.clear();
+    for (const auto& row : projected.rows)
+        bar.rows.push_back({row.audio_fraction, std::clamp(row.absolute_peak, 0.0f, 1.0f)});
+    bar.key = waveform.key;
+    bar.identity = &waveform;
+    bar.rows_range = range;
+    return true;
+}
+void refresh_bgm_bar_marks(compose_scene_cache_t& cache, const audio::waveform_t& waveform,
+                           bgm_bar_range_t range) {
+    auto& bar = cache.bgm_bar;
+    if (bar.marks_valid && bar.marks_revision == cache.revision &&
+        bar.marks_total_frames == waveform.total_frames && bar.marks_range == range) return;
+    bar.marks.clear();
+    bar.marks_valid = true;
+    bar.marks_revision = cache.revision;
+    bar.marks_total_frames = waveform.total_frames;
+    bar.marks_range = range;
+    if (!cache.cached_measure_index || !cache.marker_timing_index) return;
+    for (const auto& mark : bgm_bar_measure_marks(*cache.cached_measure_index,
+             *cache.marker_timing_index, waveform.sample_rate, waveform.total_frames, range,
+             WORM_UI_COMPOSE_BGM_BAR_MARK_CAPACITY))
+        bar.marks.push_back({mark.audio_fraction, mark.measure});
+}
+// Beat bookmarks sit at a chart row, audio bookmarks at a song time; both land on the bar at
+// their fraction of the song. Bookmarks outside the window are left out.
+void populate_bgm_bar_bookmarks(flattened_workspace_t& flattened, const compose_scene_cache_t& cache,
+                                const audio::waveform_t& waveform, bgm_bar_range_t range) {
+    auto& view = flattened.view.compose;
+    auto& out = flattened.compose.waveform.bar_bookmark;
+    const auto add = [&](double fraction, const char* label, bool audio) {
+        if (std::isfinite(fraction) && fraction >= range.begin && fraction <= range.end)
+            (void)out.push_back({fraction, label, audio});
+    };
+    const auto frames_to_fraction = [&](long double seconds) {
+        return static_cast<double>(seconds * waveform.sample_rate / waveform.total_frames);
+    };
+    if (cache.marker_timing_index) {
+        for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
+            const auto& bookmark = view.beat_bookmarks[index];
+            const auto time = timing_at(*cache.marker_timing_index, bookmark.chart_row,
+                                        timing_boundary_side_t::before_delays);
+            if (!time.seconds || time.seconds->denominator == 0) continue;
+            add(frames_to_fraction(static_cast<long double>(time.seconds->numerator) /
+                                   time.seconds->denominator),
+                bookmark.label, false);
+        }
+    }
+    for (std::size_t index = 0; index < view.audio_bookmark_count; ++index) {
+        const auto& bookmark = view.audio_bookmarks[index];
+        add(frames_to_fraction(static_cast<long double>(bookmark.audio_milliseconds) / 1000.0L),
+            bookmark.label, true);
+    }
+    view.bgm_bar_bookmarks = out.data();
+    view.bgm_bar_bookmark_count = out.size();
+}
+// Publishes the BGM bar rows and measure marks for the requested song window.
+void populate_bgm_bar(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+                      const audio::waveform_t& waveform, bgm_bar_range_t requested) {
+    const auto range = bgm_bar_fit(requested, bgm_bar_minimum_span(waveform.total_frames));
+    if (!refresh_bgm_bar_rows(cache.bgm_bar, waveform, range)) return;
+    refresh_bgm_bar_marks(cache, waveform, range);
+    auto& waveform_views = flattened.compose.waveform;
+    for (const auto& row : cache.bgm_bar.rows) {
+        if (!waveform_views.bar_row.push_back(row)) {
+            waveform_views.bar_row.clear();
+            return;
+        }
+    }
+    for (const auto& mark : cache.bgm_bar.marks) {
+        if (!waveform_views.bar_mark.push_back(mark)) {
+            waveform_views.bar_mark.clear();
+            waveform_views.bar_row.clear();
+            return;
+        }
+    }
+    auto& view = flattened.view.compose;
+    view.bgm_bar_rows = waveform_views.bar_row.data();
+    view.bgm_bar_row_count = waveform_views.bar_row.size();
+    view.bgm_bar_begin_fraction = range.begin;
+    view.bgm_bar_end_fraction = range.end;
+    view.bgm_bar_marks = waveform_views.bar_mark.data();
+    view.bgm_bar_mark_count = waveform_views.bar_mark.size();
+    populate_bgm_bar_bookmarks(flattened, cache, waveform, range);
+}
 } // namespace
 
 
@@ -317,7 +431,7 @@ auto populate_compose_waveform_projection(
     const wormedit::editor_interaction_state_t* interaction_state,
     const audio::waveform_analysis_result_t* detail_analysis,
     audio::decoded_block_cache_t* decoded_blocks,
-    const audio::aligned_waveform_style_t* stable_style) -> bool {
+    const audio::aligned_waveform_style_t* stable_style, bgm_bar_range_t bgm_bar_range) -> bool {
     cache.waveform_overview_total_frames = 0;
     cache.waveform_overview_sample_rate = 0;
     auto& compose = flattened.view.compose;
@@ -372,6 +486,7 @@ auto populate_compose_waveform_projection(
     compose.waveform_overview_total_frames = waveform.total_frames;
     cache.waveform_overview_total_frames = waveform.total_frames;
     cache.waveform_overview_sample_rate = waveform.sample_rate;
+    populate_bgm_bar(flattened, cache, waveform, bgm_bar_range);
     return true;
 }
 

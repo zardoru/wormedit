@@ -156,7 +156,9 @@ auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) 
         }
     }
     const auto content_height =
-        window_height > 300 ? static_cast<float>(window_height) - 132.0f - recovery_height : 80.0f;
+        window_height > 300 ? static_cast<float>(window_height) - 132.0f -
+                                  (view.compose.bgm_bar_reserved ? WORM_UI_BGM_BAR_CHROME_HEIGHT : 0.0f) -
+                                  recovery_height : 80.0f;
     const auto& compose = view.compose;
     const auto rows_shown = std::min<std::size_t>(compose.branch_row_count, 4);
     const auto diagnostics_shown = std::min<std::size_t>(compose.branch_diagnostic_count, 2);
@@ -941,6 +943,8 @@ bool initialize_compose_view_state(
         return false;
     }
     view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
+    view.bgm_bar_available = cache.bgm_bar_audio_seen;
+    view.bgm_bar_reserved = cache.bgm_bar_audio_seen && !application_state.bgm_bar_hidden;
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
     view.playable_field_left_pixels = compose_measure_rail_width_pixels;
     view.playable_field_right_pixels = view.viewport_width_pixels;
@@ -986,6 +990,12 @@ bool initialize_compose_view_state(
     view.waveform_beat_zero_fraction = 0.0;
     view.waveform_overview_total_frames = 0;
     view.waveform_overview_sample_rate = 0;
+    view.bgm_bar_rows = nullptr;
+    view.bgm_bar_row_count = 0;
+    view.bgm_bar_begin_fraction = 0.0;
+    view.bgm_bar_end_fraction = 1.0;
+    view.bgm_bar_marks = nullptr;
+    view.bgm_bar_mark_count = 0;
     view.audio_offset_editable = false;
     view.audio_offset_locked = application_state.audio_offset_locked;
     view.waveform_audio_offset_numerator = 0;

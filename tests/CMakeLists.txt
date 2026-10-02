@@ -28,6 +28,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_minimap_navigation.cpp
     ../src/sys/compose_bookmark_commands.cpp
     ../src/sys/compose_playhead_skip.cpp
+    ../src/sys/compose_bgm_bar.cpp
     ../src/sys/compose_measure_commands.cpp
     ../src/sys/compose_selection_transform.cpp
     ../src/sys/compose_label_search.cpp
@@ -50,6 +51,7 @@ add_executable(wormedit_core_tests
     sys/application_commands_tests.cpp
     sys/compose_bookmark_commands_tests.cpp
     sys/compose_playhead_skip_tests.cpp
+    sys/compose_bgm_bar_tests.cpp
     sys/compose_measure_commands_tests.cpp
     sys/compose_selection_transform_tests.cpp
     sys/compose_label_search_tests.cpp
@@ -315,6 +317,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ui/nuklear_audio_state_tests.cpp
         ui/arrow_glyph_tests.cpp
         ui/compose_bookmark_label_tests.cpp
+        ui/content_margin_tests.cpp
         ui/nuklear_compose_state_tests.cpp
         ui/nuklear_metadata_state_tests.cpp
         ui/nuklear_setup_state_tests.cpp
@@ -443,6 +446,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/frame_timing.cpp
         ../src/sys/compose_area_actions.cpp
         ../src/sys/compose_view.cpp
+        ../src/sys/compose_quantize_preview.cpp
         ../src/common/static_interval_index.cpp
         ../src/ui/nuklear/arrow_glyph.cpp
         ../src/sys/compose_resource_presenter.cpp
@@ -463,7 +467,10 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/waveform_analysis_runtime.cpp
             ../src/sys/bmson_waveform_projection.cpp
             ../src/sys/compose_input.cpp
-            ../src/sys/compose_minimap_navigation.cpp)
+            ../src/sys/compose_minimap_navigation.cpp
+            ../src/sys/compose_bookmark_commands.cpp
+            ../src/sys/compose_playhead_skip.cpp
+            ../src/sys/compose_bgm_bar.cpp)
         target_compile_definitions(wormedit_frame_timing_tests PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1)
         target_link_libraries(wormedit_frame_timing_tests PRIVATE wormedit::audio_decoder)
     endif()

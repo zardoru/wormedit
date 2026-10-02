@@ -1343,22 +1343,39 @@ bool process_compose_beat_fit_pointer(const ComposeBeatFitInput& input) {
     return start_compose_beat_fit_drag(input);
 }
 
+// A zoomed overview spans only part of the song, so a pixel is fewer frames.
+static std::uint64_t overview_window_frames(std::uint64_t total_frames, double span) {
+    if (!std::isfinite(span) || span <= 0.0 || span >= 1.0) return total_frames;
+    return std::max<std::uint64_t>(1, static_cast<std::uint64_t>(
+        std::llround(static_cast<long double>(total_frames) * span)));
+}
+
+// Position of an audio fraction inside the overview rectangle, if the window shows it.
+static std::optional<double> overview_window_x(const ComposeOverviewInput& input, double fraction) {
+    const auto span = input.window_end - input.window_begin;
+    if (!(span > 0.0) || fraction < input.window_begin || fraction > input.window_end)
+        return std::nullopt;
+    return input.overview.x + (fraction - input.window_begin) / span * input.overview.w;
+}
+
 static std::int64_t waveform_offset_drag_delta(const ComposeOverviewInput& input) {
     return worm_ui_nuklear_overview_frame_delta(
         input.context->input.mouse.pos.x, state.waveform_beat_zero_drag_anchor_x,
-        state.waveform_beat_zero_drag_width, state.waveform_beat_zero_drag_total_frames);
+        state.waveform_beat_zero_drag_width,
+        overview_window_frames(state.waveform_beat_zero_drag_total_frames,
+                               state.waveform_beat_zero_drag_span));
 }
 
 static void start_waveform_beat_zero_drag(const ComposeOverviewInput& input) {
     const auto& view = *input.view;
     const auto& left_button = input.context->input.mouse.buttons[NK_BUTTON_LEFT];
+    const auto zero_x = overview_window_x(input, view.waveform_beat_zero_fraction);
     if (state.action_overflowed || !input.available || !input.pressed ||
         !input.window_focused || !view.scene_available ||
         !view.waveform_beat_zero_visible || view.waveform_timing_locked || view.audio_offset_locked ||
         view.waveform_offset_drag_active ||
         input.action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE ||
-        std::abs(static_cast<double>(left_button.clicked_pos.x) -
-                 (input.overview.x + view.waveform_beat_zero_fraction * input.overview.w)) > 7.0) {
+        !zero_x || std::abs(static_cast<double>(left_button.clicked_pos.x) - *zero_x) > 7.0) {
         return;
     }
     state.waveform_overview_drag_active = false;
@@ -1366,6 +1383,7 @@ static void start_waveform_beat_zero_drag(const ComposeOverviewInput& input) {
     state.waveform_beat_zero_drag_anchor_x = left_button.clicked_pos.x;
     state.waveform_beat_zero_drag_width = input.overview.w;
     state.waveform_beat_zero_drag_left = input.overview.x;
+    state.waveform_beat_zero_drag_span = input.window_end - input.window_begin;
     state.waveform_beat_zero_drag_total_frames = view.waveform_overview_total_frames;
     state.waveform_beat_zero_drag_chart_id = view.chart_id;
     state.waveform_beat_zero_drag_revision = view.document_revision;
@@ -1438,8 +1456,10 @@ static void update_waveform_overview_seek(const ComposeOverviewInput& input) {
     append_compose_input(input.action, event == worm_ui_nuklear_overview_event_t::click
         ? WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK : WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK);
     auto& emitted = input.action->compose_inputs[input.action->compose_input_count - 1];
-    emitted.audio_fraction = worm_ui_nuklear_overview_fraction(input.context->input.mouse.pos.x,
-        input.overview.x, input.overview.w).value_or(0.0);
+    emitted.audio_fraction = input.window_begin +
+        worm_ui_nuklear_overview_fraction(input.context->input.mouse.pos.x,
+            input.overview.x, input.overview.w).value_or(0.0) *
+        (input.window_end - input.window_begin);
     const auto modifiers = SDL_GetModState();
     emitted.overview_shift = (modifiers & SDL_KMOD_SHIFT) != 0;
 #ifdef __APPLE__

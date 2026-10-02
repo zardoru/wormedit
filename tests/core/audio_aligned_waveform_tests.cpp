@@ -396,3 +396,51 @@ TEST_CASE("aligned waveform retains covering detail and retries a rejected repla
     CHECK(simulation.discarded == 0);
     CHECK(simulation.requests >= 4);
 }
+
+TEST_CASE("waveform range projection zooms into an absolute audio span",
+          "[unit][audio][waveform][aligned][range]") {
+    const auto waveform = pulse_waveform();
+    using namespace wormedit::audio;
+
+    const auto whole = project_waveform_range(waveform, 0.0, 1.0, 200);
+    REQUIRE(whole);
+    CHECK(whole.visible_begin_fraction == 0.0);
+    CHECK(whole.visible_end_fraction == 1.0);
+    const auto whole_loudest = std::ranges::max_element(
+        whole.rows, {}, &waveform_overview_row_t::absolute_peak);
+    CHECK(whole_loudest->audio_fraction >= 0.49);
+    CHECK(whole_loudest->audio_fraction <= 0.51);
+
+    const auto zoomed = project_waveform_range(waveform, 0.4, 0.6, 50);
+    REQUIRE(zoomed);
+    REQUIRE_FALSE(zoomed.rows.empty());
+    CHECK(zoomed.rows.size() <= 50);
+    for (const auto& row : zoomed.rows) {
+        CHECK(row.audio_fraction >= 0.4);
+        CHECK(row.audio_fraction <= 0.6);
+    }
+    const auto zoomed_loudest = std::ranges::max_element(
+        zoomed.rows, {}, &waveform_overview_row_t::absolute_peak);
+    CHECK(zoomed_loudest->absolute_peak == 1.0f);
+    CHECK(zoomed_loudest->audio_fraction >= 0.49);
+    CHECK(zoomed_loudest->audio_fraction <= 0.51);
+
+    const auto away = project_waveform_range(waveform, 0.0, 0.25, 50);
+    REQUIRE(away);
+    CHECK(std::ranges::all_of(away.rows, [](const auto& row) { return row.absolute_peak == 0.0f; }));
+}
+
+TEST_CASE("waveform range projection rejects invalid spans and capacity",
+          "[unit][audio][waveform][aligned][range]") {
+    const auto waveform = pulse_waveform();
+    using namespace wormedit::audio;
+    CHECK(project_waveform_range(waveform, 0.5, 0.5, 10).status == aligned_waveform_status_t::invalid_request);
+    CHECK(project_waveform_range(waveform, 0.6, 0.4, 10).status == aligned_waveform_status_t::invalid_request);
+    CHECK(project_waveform_range(waveform, -0.1, 0.4, 10).status == aligned_waveform_status_t::invalid_request);
+    CHECK(project_waveform_range(waveform, 0.0, 1.5, 10).status == aligned_waveform_status_t::invalid_request);
+    CHECK(project_waveform_range(waveform, 0.0, 1.0, 0).status == aligned_waveform_status_t::invalid_request);
+    CHECK(project_waveform_range(waveform, 0.0, 1.0, maximum_waveform_range_rows + 1).status ==
+          aligned_waveform_status_t::capacity_exceeded);
+    waveform_t empty;
+    CHECK(project_waveform_range(empty, 0.0, 1.0, 10).status == aligned_waveform_status_t::invalid_waveform);
+}

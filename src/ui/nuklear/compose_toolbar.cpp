@@ -46,6 +46,24 @@ static void update_compose_note_label_cache(const WormUiComposeView* view) {
     state.label_note_id = view->selected_note_label_note_id;
 }
 
+// Shows or hides the song bar under the seek bar; unavailable while the song has no audio.
+static void render_compose_bgm_bar_toggle(const ComposeToolbarContext& toolbar) {
+    auto* context = toolbar.context;
+    const auto* view = toolbar.view;
+    auto* action = toolbar.action;
+    if (!view->bgm_bar_available) nk_widget_disable_begin(context);
+    const bool clicked = wormedit::ui::chrome::IconButton{
+        Glyph::audio_lines, view->bgm_bar_reserved ? "Hide song bar" : "Show song bar",
+        view->bgm_bar_reserved}.render(context);
+    if (!view->bgm_bar_available) nk_widget_disable_end(context);
+    if (!clicked || !view->bgm_bar_available ||
+        action->compose_input_count >= WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY)
+        return;
+    auto& input = action->compose_inputs[action->compose_input_count++];
+    input = {};
+    input.kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE;
+}
+
 static void render_compose_view_controls(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
     const auto* view = toolbar.view;
@@ -71,6 +89,7 @@ static void render_compose_view_controls(const ComposeToolbarContext& toolbar) {
                                          state.inspector_visible ? "Hide inspector" : "Show inspector",
                                          state.inspector_visible}.render(context))
         state.inspector_visible = !state.inspector_visible;
+    render_compose_bgm_bar_toggle(toolbar);
 }
 
 static void render_compose_bgm_column_count_controls(const ComposeToolbarContext& toolbar);
@@ -286,7 +305,7 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     nk_layout_row_template_begin(context, 27);
     wormedit::ui::chrome::IconButton::layout_columns(context, 3);
     nk_layout_row_template_push_static(context, 12);
-    wormedit::ui::chrome::IconButton::layout_columns(context, 2);
+    wormedit::ui::chrome::IconButton::layout_columns(context, 3);
     // Offset padlock, nudges and optional readout, then the BPM snap controls.
     wormedit::ui::chrome::IconButton::layout_columns(context);
     wormedit::ui::chrome::IconButton::layout_columns(context, 2);

@@ -315,6 +315,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ui/nuklear_audio_state_tests.cpp
         ui/arrow_glyph_tests.cpp
         ui/compose_bookmark_label_tests.cpp
+        ui/content_margin_tests.cpp
         ui/nuklear_compose_state_tests.cpp
         ui/nuklear_metadata_state_tests.cpp
         ui/nuklear_setup_state_tests.cpp

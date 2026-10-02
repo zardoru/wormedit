@@ -10,6 +10,7 @@
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/compose_input_panel.h"
 #include "ui/nuklear/chrome.h"
+#include "ui/nuklear/content_margin.h"
 #include "ui/nuklear/image_quad.h"
 #include "ui/nuklear/metadata_panel.h"
 #include "ui/nuklear/metadata_state.h"
@@ -1456,17 +1457,18 @@ static bool options_owns_content_input(const WormUiWorkspaceView& view) {
     return nk_window_is_active(g_context, "Options") && nuklear_text_entry_active();
 }
 
-static constexpr float metadata_side_margin = 40.0f;
-
 static void render_workspace_content(const WormUiWorkspaceView& view,
                                      WormUiWorkspaceAction& action) {
     prepare_workspace_content_scroll(g_context, view.compose.visible);
-    // Metadata rows stretch across the window; side padding keeps label and control close together.
-    const bool padded = view.metadata.visible && !view.setup.visible;
+    // Form screens stretch rows across the window; a centered column keeps label and control close.
+    const bool padded = view.metadata.visible || view.setup.visible;
     if (padded) {
         const auto padding = g_context->style.window.group_padding;
         nk_style_push_vec2(g_context, &g_context->style.window.group_padding,
-                           nk_vec2(metadata_side_margin, padding.y));
+                           nk_vec2(wormedit::ui::layout::form_side_margin(
+                                       static_cast<float>(g_last_window_width),
+                                       static_cast<float>(g_last_window_height)),
+                                   padding.y));
     }
     const bool open = nk_group_begin(g_context, "workspace-content",
                                      workspace_content_flags(view.compose.visible)) != 0;

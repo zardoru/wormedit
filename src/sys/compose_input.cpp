@@ -2081,7 +2081,9 @@ auto select_or_place_virtual_pointer(const WormUiComposeInputAction& input,
         context.virtual_bms_hit_at(chart, view, input.x_pixels, input.y_pixels);
     if (!virtual_hit)
         return "Click inside an editable lane to select a note or position.";
-    if (mode == editor_area_selection_mode_t::replace) {
+    const auto notes_editable =
+        wormedit::ui::compose_notes_editable(compose_mode_of(context.application_state));
+    if (mode == editor_area_selection_mode_t::replace && notes_editable) {
         place_virtual_note_from_pointer(context, virtual_hit->first, virtual_hit->second, result, accepted);
         return std::nullopt;
     }
@@ -2115,14 +2117,17 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
     const auto target = context.hit_target_at(*chart, *view, input.x_pixels, input.y_pixels);
     if (!target)
         return select_or_place_virtual_pointer(input, context, *chart, *view, *mode, result, accepted);
-    if (*mode == editor_area_selection_mode_t::replace &&
+    const auto notes_editable =
+        wormedit::ui::compose_notes_editable(compose_mode_of(context.application_state));
+    if (*mode == editor_area_selection_mode_t::replace && notes_editable &&
         finish_virtual_hold_at_authored_row(context, *chart, target->position, target->lane, result, accepted))
         return std::nullopt;
     context.state.active_lane = target->lane;
     place_cursor_at(context.state, target->position);
     const bool clicked_hold_end = context.state.pending_hold &&
                                   !context.state.pending_hold->gesture_source;
-    if (*mode == editor_area_selection_mode_t::replace && (!target->note || clicked_hold_end)) {
+    if (*mode == editor_area_selection_mode_t::replace && notes_editable &&
+        (!target->note || clicked_hold_end)) {
         place_note_from_pointer(context, *target, result, accepted);
         return std::nullopt;
     }

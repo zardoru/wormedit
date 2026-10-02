@@ -1586,19 +1586,20 @@ static void render_transport_seek_bar(const WormUiWorkspaceView& view,
 }
 
 // Flat stand-in for the BGM bar on tabs and charts without BGM audio.
-static void render_bgm_bar_placeholder() {
+static void render_bgm_bar_placeholder(bool compose_visible) {
     struct nk_rect bounds{};
     if (nk_widget(&bounds, g_context) == NK_WIDGET_INVALID) return;
     auto* canvas = nk_window_get_canvas(g_context);
     nk_fill_rect(canvas, bounds, 0.0f,
                  wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::overview));
     const auto* font = g_context->style.font;
-    constexpr char text[] = "BGM bar: available in Compose with BGM audio";
+    const char* text = compose_visible ? "No BGM audio in this chart" : "BGM bar (Compose)";
     if (!font) return;
-    const auto width = font->width(font->userdata, font->height, text, sizeof(text) - 1);
+    const auto length = static_cast<int>(std::strlen(text));
+    const auto width = font->width(font->userdata, font->height, text, length);
     nk_draw_text(canvas, nk_rect(bounds.x + (bounds.w - width) * 0.5f,
                                  bounds.y + (bounds.h - font->height) * 0.5f, width, font->height),
-                 text, sizeof(text) - 1, font, nk_rgba(0, 0, 0, 0),
+                 text, length, font, nk_rgba(0, 0, 0, 0),
                  wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::text_muted));
 }
 
@@ -1608,7 +1609,7 @@ static void render_transport_seek_control(const WormUiWorkspaceView& view,
     // The row is always reserved so the layout never shifts between tabs or charts.
     nk_layout_row_dynamic(g_context, bgm_bar_row_height, 1);
     if (status_minimap_available(view.compose)) render_status_minimap(view, &action, true);
-    else render_bgm_bar_placeholder();
+    else render_bgm_bar_placeholder(view.compose.visible);
 }
 
 static void render_empty_project_content(const WormUiWorkspaceView& view,

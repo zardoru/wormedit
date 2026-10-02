@@ -104,7 +104,7 @@ stale-plan check (rule 9) first.
 
 ## T-76 Use the active snap for Timing-pane insertion
 
-- **Status:** done (2026-10-02; `timing_stage_grid_step` in `src/sys/main.cpp`)
+- **Status:** done (2026-10-02; `timing_stage_grid_step` in `src/sys/main.cpp` and `src/sys/timing_view.cpp`)
 - **Implementation notes (2026-10-02, Claude):** the Timing pane already snapped to the active Compose snap (`timing_position_from_fraction`); the missing part was the documented fallback, so an unrepresentable snap now uses one standard measure instead of rejecting. The helper lives in `main.cpp`, so no automated test covers it; verify by double-clicking a Timing lane with a snap the chart's resolution does not divide.
 - **Outcome:** double-clicking an empty Timing-lane row snaps to the active Compose snap instead of the fixed quarter beat, falling back to one measure only if the resolution cannot represent it.
 - **Read first:** `src/sys/timing_view.cpp`, `src/sys/timing_edit_runtime.cpp`, `include/wormedit/core/grid.h`.

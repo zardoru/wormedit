@@ -983,6 +983,10 @@ typedef struct WormUiComposeView {
     double sv_graph_minimum;
     double sv_graph_maximum;
     double sv_graph_one_fraction; /* negative when 1.0x is outside the visible range */
+    /* Interpolated speed curve; same format as the SV graph, drawn in the speed lane. */
+    const WormUiComposeSvGraphPointView* speed_graph_points;
+    size_t speed_graph_point_count;
+    double speed_graph_one_fraction;
     uint8_t timing_lane_visibility_mask;
     // Compose mode specialization; see ui/compose_mode.h. The mask above is
     // already the effective one for this mode.

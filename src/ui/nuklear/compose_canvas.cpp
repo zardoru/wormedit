@@ -1354,26 +1354,40 @@ static void draw_compose_speed_spans(const ComposePaintContext& paint) {
     }
 }
 
-static void draw_compose_sv_graph(const ComposePaintContext& paint) {
-    const auto extent = compose_timing_lane_inner_extent(*paint.view, WORM_UI_TIMING_LANE_SCROLL);
-    if (!extent || paint.view->sv_graph_point_count < 2) return;
+// A value curve inside one timing lane: a faint 1.0x reference line, then the polyline.
+static void draw_compose_value_graph(const ComposePaintContext& paint, WormUiTimingLaneKind lane,
+                                     const WormUiComposeSvGraphPointView* points, size_t count,
+                                     double one_fraction, struct nk_color color) {
+    const auto extent = compose_timing_lane_inner_extent(*paint.view, lane);
+    if (!extent || count < 2) return;
     const auto x_of = [&](double fraction) {
         const WormUiComposeRect probe{extent->first + (extent->second - extent->first) * fraction, 0.0,
                                       extent->first + (extent->second - extent->first) * fraction, 1.0};
         return compose_screen_rect(&probe, paint.view, paint.viewport).x;
     };
-    if (paint.view->sv_graph_one_fraction >= 0.0) {
-        const auto x = x_of(paint.view->sv_graph_one_fraction);
+    if (one_fraction >= 0.0) {
+        const auto x = x_of(one_fraction);
         field_line(paint, x, paint.viewport.y, x, paint.viewport.y + paint.viewport.h, 1.0f,
                    nk_rgba(160, 170, 190, 70), 10);
     }
-    for (size_t index = 1; index < paint.view->sv_graph_point_count; ++index) {
-        const auto& from = paint.view->sv_graph_points[index - 1];
-        const auto& to = paint.view->sv_graph_points[index];
+    for (size_t index = 1; index < count; ++index) {
+        const auto& from = points[index - 1];
+        const auto& to = points[index];
         field_line(paint, x_of(from.x_fraction), compose_projected_y(paint, from.y_pixels),
-                   x_of(to.x_fraction), compose_projected_y(paint, to.y_pixels), 1.5f,
-                   nk_rgb(110, 222, 236), 10);
+                   x_of(to.x_fraction), compose_projected_y(paint, to.y_pixels), 1.5f, color, 10);
     }
+}
+
+static void draw_compose_sv_graph(const ComposePaintContext& paint) {
+    draw_compose_value_graph(paint, WORM_UI_TIMING_LANE_SCROLL, paint.view->sv_graph_points,
+                             paint.view->sv_graph_point_count, paint.view->sv_graph_one_fraction,
+                             nk_rgb(110, 222, 236));
+}
+
+static void draw_compose_speed_graph(const ComposePaintContext& paint) {
+    draw_compose_value_graph(paint, WORM_UI_TIMING_LANE_SPEED, paint.view->speed_graph_points,
+                             paint.view->speed_graph_point_count,
+                             paint.view->speed_graph_one_fraction, nk_rgb(137, 207, 239));
 }
 
 static void draw_compose_timing_layer(const ComposePaintContext& paint,
@@ -1382,6 +1396,7 @@ static void draw_compose_timing_layer(const ComposePaintContext& paint,
     draw_compose_speed_spans(paint);
     draw_compose_recipe_areas(paint);
     draw_compose_sv_graph(paint);
+    draw_compose_speed_graph(paint);
     draw_compose_proposed_grid(paint);
     draw_compose_beat_fit_overlay(paint);
     draw_compose_offset_fit_overlay(paint);

@@ -40,13 +40,20 @@ TEST_CASE("A selected Kiai area and speed marker are copied and cut together",
     REQUIRE(static_cast<bool>(copied));
     CHECK(copied.clipboard->objects.size() == 3);
 
+    const auto undo_before = history.undo.size();
     const auto error = delete_cut_selection(history, state, kiai_head, false);
     CHECK(error.empty());
+    CHECK(history.undo.size() == undo_before + 1);
     CHECK(kiai_head == 0);
     const auto& chart = history.document.charts.front();
     CHECK(chart.speeds.empty());
     CHECK(chart.kiai.empty());
     CHECK(chart.bpms.size() == 1);
+
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().speeds.size() == 1);
+    CHECK(history.document.charts.front().kiai.size() == 2);
+    REQUIRE(redo_document_command(history));
 
     const auto pasted = paste_chart_clipboard(history, chart_id_t{1}, *copied.clipboard,
                                               {measure_id_t{2}, 0}, history.document.revision);

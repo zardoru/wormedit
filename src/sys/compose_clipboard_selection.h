@@ -38,9 +38,9 @@ namespace wormedit::sys {
     return state;
 }
 
-// Removes what a cut copied: the selected Kiai area, then the selected timing markers, then
-// notes and BGM events. Returns an error message, empty on success.
-[[nodiscard]] inline auto delete_cut_selection(document_history_t& history,
+// The commands behind a cut: the selected Kiai area, then the selected timing markers, then notes
+// and BGM events. Returns an error message, empty on success.
+[[nodiscard]] inline auto delete_cut_pieces(document_history_t& history,
                                                editor_interaction_state_t& state,
                                                std::uint64_t& kiai_head, bool timing_locked)
     -> std::string {
@@ -62,6 +62,19 @@ namespace wormedit::sys {
     if (state.selected_objects.empty() && state.selected_notes.empty()) return {};
     const auto deleted = dispatch_editor_action(history, state, delete_editor_selection_action_t{});
     return deleted ? std::string{} : std::string{"The selection could not be cut."};
+}
+
+// Removes what a cut copied as one undo step. Returns an error message, empty on success.
+[[nodiscard]] inline auto delete_cut_selection(document_history_t& history,
+                                               editor_interaction_state_t& state,
+                                               std::uint64_t& kiai_head, bool timing_locked)
+    -> std::string {
+    const auto first_revision = history.next_revision;
+    auto error = delete_cut_pieces(history, state, kiai_head, timing_locked);
+    // One cut is one undo step, however many commands it took.
+    merge_recent_undo_records(
+        history, static_cast<std::size_t>(history.next_revision - first_revision), "Cut selection");
+    return error;
 }
 
 } // namespace wormedit::sys

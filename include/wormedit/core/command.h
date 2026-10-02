@@ -35,6 +35,10 @@ struct document_command_result_t {
     }
 };
 
+// Folds the newest `count` undo records into one so a multi-command gesture undoes in a single
+// step. Does nothing for fewer than two records or when older ones were already trimmed away.
+void merge_recent_undo_records(document_history_t& history, std::size_t count, std::string label);
+
 struct quantize_command_result_t {
     document_command_result_t command;
     std::vector<redivision_move_t> resolution_moves;

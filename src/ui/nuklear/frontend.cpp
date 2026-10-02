@@ -1181,13 +1181,19 @@ static auto workspace_status_line(const WormUiWorkspaceView& view) -> std::strin
 
 static void render_transport_rate(const WormUiWorkspaceView& view, WormUiWorkspaceAction* action) {
     static const char* labels[]{"1×", "0.9×", "0.8×", "0.75×", "0.5×", "0.33×", "0.25×", "0.2×", "0.1×"};
-    const int index = view.transport_rate_index < 9 ? 8 - view.transport_rate_index : 0;
+    const int index = view.transport_rate_index < 9 ? view.transport_rate_index : 8;
+    const int label_index = 8 - index;
+    int target = index;
     if (!view.transport_rate_available) nk_widget_disable_begin(g_context);
-    const int selected = wormedit::ui::chrome::safe_combo(g_context, labels, 9, index, 24, nk_vec2(100, 250));
+    if (wormedit::ui::chrome::IconButton{Glyph::chevron_left, "Slower playback rate"}.render(g_context) &&
+        index > 0) target = index - 1;
+    nk_label(g_context, labels[label_index], NK_TEXT_CENTERED);
+    if (wormedit::ui::chrome::IconButton{Glyph::chevron_right, "Faster playback rate"}.render(g_context) &&
+        index < 8) target = index + 1;
     if (!view.transport_rate_available) nk_widget_disable_end(g_context);
-    if (view.transport_rate_available && selected != index && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
+    if (view.transport_rate_available && target != index && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
         action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
-        action->transport_rate_index = static_cast<uint8_t>(8 - selected);
+        action->transport_rate_index = static_cast<uint8_t>(target);
     }
     if (!view.transport_keep_pitch_available) nk_widget_disable_begin(g_context);
     if (wormedit::ui::chrome::mode_button(g_context, "Keep pitch", "Preserve pitch at reduced speed", view.transport_keep_pitch) &&
@@ -1250,7 +1256,9 @@ static void render_status_bar(const WormUiWorkspaceView* view,
     const bool snap_label_visible = view->compose.visible && view->compose.area_snap_denominator != 0;
     nk_layout_row_template_begin(g_context, 30);
     wormedit::ui::chrome::IconButton::layout_columns(g_context, 4);
-    nk_layout_row_template_push_static(g_context, 80);
+    wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);
+    nk_layout_row_template_push_static(g_context, 54);
+    wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);
     nk_layout_row_template_push_static(g_context, 100);
     if (snap_label_visible) nk_layout_row_template_push_static(g_context, 64);
     nk_layout_row_template_push_dynamic(g_context);
@@ -1448,12 +1456,22 @@ static bool options_owns_content_input(const WormUiWorkspaceView& view) {
     return nk_window_is_active(g_context, "Options") && nuklear_text_entry_active();
 }
 
+static constexpr float metadata_side_margin = 40.0f;
+
 static void render_workspace_content(const WormUiWorkspaceView& view,
                                      WormUiWorkspaceAction& action) {
     prepare_workspace_content_scroll(g_context, view.compose.visible);
-    if (!nk_group_begin(g_context, "workspace-content",
-                        workspace_content_flags(view.compose.visible)))
-        return;
+    // Metadata rows stretch across the window; side padding keeps label and control close together.
+    const bool padded = view.metadata.visible && !view.setup.visible;
+    if (padded) {
+        const auto padding = g_context->style.window.group_padding;
+        nk_style_push_vec2(g_context, &g_context->style.window.group_padding,
+                           nk_vec2(metadata_side_margin, padding.y));
+    }
+    const bool open = nk_group_begin(g_context, "workspace-content",
+                                     workspace_content_flags(view.compose.visible)) != 0;
+    if (padded) nk_style_pop_vec2(g_context);
+    if (!open) return;
     if (view.setup.visible) {
         worm_ui_nuklear_render_setup_panel(g_context, &view.setup, &action);
         (void)render_recovery_panel(view, action);

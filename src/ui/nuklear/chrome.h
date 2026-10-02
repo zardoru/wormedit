@@ -131,6 +131,58 @@ inline auto mode_button(nk_context* context, const char* label, const char* tool
     return clicked;
 }
 
+// Dropdowns, context menus and popups share one surface language with the buttons:
+// surface fill, 1px border, 4px rounding and the same hover/active ramp.
+inline void apply_dropdown_theme(nk_context* context) {
+    auto& style = context->style;
+    const auto surface = nk_style_item_color(color(UiColor::surface));
+    const auto hover = nk_style_item_color(color(UiColor::surface_hover));
+    const auto active = nk_style_item_color(color(UiColor::surface_active));
+    style.window.combo_border_color = color(UiColor::border_hover);
+    style.window.contextual_border_color = color(UiColor::border_hover);
+    style.window.menu_border_color = color(UiColor::border_hover);
+    style.window.popup_border_color = color(UiColor::border_hover);
+    style.window.combo_border = style.window.contextual_border = 1.0f;
+    style.window.menu_border = style.window.popup_border = 1.0f;
+    style.window.popup_padding = style.window.combo_padding = nk_vec2(4.0f, 4.0f);
+    style.window.contextual_padding = style.window.menu_padding = nk_vec2(4.0f, 4.0f);
+    style.combo.normal = surface;
+    style.combo.hover = hover;
+    style.combo.active = active;
+    style.combo.border_color = color(UiColor::border);
+    style.combo.label_normal = color(UiColor::text);
+    style.combo.label_hover = color(UiColor::text_bright);
+    style.combo.label_active = color(UiColor::text_bright);
+    style.combo.symbol_normal = color(UiColor::text_muted);
+    style.combo.symbol_hover = color(UiColor::text_bright);
+    style.combo.symbol_active = color(UiColor::text_bright);
+    style.combo.border = 1.0f;
+    style.combo.rounding = 4.0f;
+    for (auto* button : {&style.combo.button, &style.contextual_button, &style.menu_button}) {
+        button->normal = surface;
+        button->hover = hover;
+        button->active = active;
+        button->border_color = nk_rgba(0, 0, 0, 0);
+        button->text_normal = color(UiColor::text);
+        button->text_hover = color(UiColor::text_bright);
+        button->text_active = color(UiColor::text_bright);
+        button->rounding = 4.0f;
+    }
+    style.selectable.normal = nk_style_item_color(nk_rgba(0, 0, 0, 0));
+    style.selectable.hover = hover;
+    style.selectable.pressed = active;
+    style.selectable.normal_active = nk_style_item_color(color(UiColor::selected));
+    style.selectable.hover_active = nk_style_item_color(color(UiColor::selected));
+    style.selectable.pressed_active = nk_style_item_color(color(UiColor::selected));
+    style.selectable.text_normal = color(UiColor::text);
+    style.selectable.text_hover = color(UiColor::text_bright);
+    style.selectable.text_pressed = color(UiColor::text_bright);
+    style.selectable.text_normal_active = color(UiColor::selected_text);
+    style.selectable.text_hover_active = color(UiColor::selected_text);
+    style.selectable.text_pressed_active = color(UiColor::selected_text);
+    style.selectable.rounding = 3.0f;
+}
+
 inline void apply_theme(nk_context* context) {
     nk_style_default(context);
     context->style.window.background = color(UiColor::background);
@@ -147,6 +199,7 @@ inline void apply_theme(nk_context* context) {
     context->style.button.text_active = color(UiColor::text_bright);
     context->style.button.rounding = 4.0f;
     context->style.tab.background = nk_style_item_color(color(UiColor::surface));
+    apply_dropdown_theme(context);
 }
 
 } // namespace wormedit::ui::chrome

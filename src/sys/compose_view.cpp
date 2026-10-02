@@ -271,10 +271,6 @@ auto compose_project_y(long double row, double pixels_per_row, double scroll,
     return static_cast<double>(downscroll ? viewport_height - offset : offset);
 }
 
-auto compose_source_y(double viewport_y, double viewport_height, bool downscroll) -> double {
-    return downscroll ? viewport_height - viewport_y : viewport_y;
-}
-
 auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::size_t {
     std::size_t result{};
     for (const auto& segment : chart.lane_layouts)
@@ -1027,6 +1023,9 @@ bool initialize_compose_view_state(
     view.sv_graph_points = nullptr;
     view.sv_graph_point_count = 0;
     view.sv_graph_one_fraction = -1.0;
+    view.speed_graph_points = nullptr;
+    view.speed_graph_point_count = 0;
+    view.speed_graph_one_fraction = -1.0;
     view.waveform_proposed_beat_zero_visible = false;
     view.waveform_proposed_beat_zero_fraction = 0.0;
     view.waveform_proposed_audio_offset_numerator = 0;
@@ -2001,11 +2000,29 @@ void populate_compose_speed_spans(flattened_workspace_t& flattened, const compos
                                   const wormedit::editor_interaction_view_model_t& interaction_view,
                                   WormUiComposeView& view, bool downscroll, double pixels_per_row) {
     flattened.compose.speed_span.clear();
+    flattened.compose.speed_graph_point.clear();
     view.speed_spans = nullptr;
     view.speed_span_count = 0;
+    view.speed_graph_points = nullptr;
+    view.speed_graph_point_count = 0;
+    view.speed_graph_one_fraction = -1.0;
     if (!cache.speed_spans || !(pixels_per_row > 0.0)) return;
     const auto scroll = interaction_view.viewport_scroll_pixels;
     const auto height = view.viewport_height_pixels;
+    if (!cache.speed_spans->spans.empty()) {
+        const auto graph = wormedit::sys::build_speed_graph(
+            *cache.speed_spans, std::max(0.0, scroll / pixels_per_row),
+            (scroll + height) / pixels_per_row, [&](double row) {
+                return compose_project_y(row, pixels_per_row, scroll, height, downscroll);
+            });
+        for (const auto& point : graph.points) {
+            if (flattened.compose.speed_graph_point.size() >= WORM_UI_COMPOSE_SV_GRAPH_CAPACITY) break;
+            flattened.compose.speed_graph_point.push_back({point.x, point.y});
+        }
+        view.speed_graph_points = flattened.compose.speed_graph_point.data();
+        view.speed_graph_point_count = flattened.compose.speed_graph_point.size();
+        view.speed_graph_one_fraction = graph.one_x;
+    }
     for (const auto& span : cache.speed_spans->spans) {
         const auto begin_y = compose_project_y(span.begin_row, pixels_per_row, scroll, height, downscroll);
         const auto end_y = compose_project_y(span.end_row, pixels_per_row, scroll, height, downscroll);
@@ -2471,6 +2488,7 @@ bool update_compose_snap_preferences(const compose_interaction_population_contex
         retained_state->supported_snap_denominators = snap.supported_denominators;
         retained_state->active_snap_denominator = snap.active_denominator;
         retained_state->active_snap_was_fallback = snap.active_was_fallback;
+        retained_state->snap_enabled = application_state.edit_snap_enabled;
     }
     return true;
 }
@@ -2578,6 +2596,7 @@ std::uint64_t prepare_compose_projection_state(const compose_final_projection_co
     view.area_canvas_rows = canvas_rows;
     view.area_rows_per_measure = chart.divisions_per_standard_measure;
     view.area_snap_denominator = retained_state->active_snap_denominator;
+    view.edit_snap_enabled = retained_state->snap_enabled;
     view.area_scroll_pixels = interaction_view.viewport_scroll_pixels;
     if (view.area_range_available) {
         retained_state->retained_canvas_selection_range = wormedit::canvas_row_span_t{

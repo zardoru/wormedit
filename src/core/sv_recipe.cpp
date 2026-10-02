@@ -1,4 +1,6 @@
+#include <wormedit/core/snap.h>
 #include <wormedit/core/sv_recipe.h>
+#include <wormedit/core/span_manipulation.h>
 
 #include <algorithm>
 #include <cmath>
@@ -79,20 +81,14 @@ auto snapped_position(const chart_document_t& chart, const measure_index_t& inde
     if (!absolute || denominator == 0 || chart.divisions_per_standard_measure % denominator != 0) {
         return std::nullopt;
     }
-    const auto step = chart.divisions_per_standard_measure / denominator;
-    if (step == 0) {
-        return std::nullopt;
-    }
     if (*absolute == index.total_rows) {
         return position_at_row(index, index.total_rows, true);
     }
-    const auto remainder = *absolute % step;
-    auto snapped = *absolute - remainder;
-    const auto distance_up = step - remainder;
-    if (remainder > distance_up &&
-        distance_up <= std::numeric_limits<std::uint64_t>::max() - *absolute) {
-        snapped = *absolute + distance_up;
+    const auto rounded = snap_absolute_row(chart, *absolute, denominator);
+    if (!rounded) {
+        return std::nullopt;
     }
+    auto snapped = *rounded;
     if (snapped > index.total_rows) {
         snapped = index.total_rows;
     }
@@ -1428,38 +1424,18 @@ auto update_sv_recipe_range_drag(const document_history_t& history, sv_recipe_ra
         return false;
     }
 
-    std::uint64_t begin = *original_begin;
-    std::uint64_t end = *original_end;
-    if (drag.handle == sv_recipe_range_handle_t::begin) {
-        begin = std::min(*target, *original_end);
-        end = std::max(*target, *original_end);
-    } else if (drag.handle == sv_recipe_range_handle_t::end) {
-        begin = std::min(*original_begin, *target);
-        end = std::max(*original_begin, *target);
-    } else if (*target >= *anchor) {
-        const auto delta = *target - *anchor;
-        if (delta > std::numeric_limits<std::uint64_t>::max() - end) {
-            reject_drag(drag, diagnostic_code_t::row_out_of_range,
-                        "SV recipe range drag exceeds the chart grid");
-            return false;
-        }
-        begin += delta;
-        end += delta;
-    } else {
-        const auto delta = *anchor - *target;
-        if (delta > begin) {
-            reject_drag(drag, diagnostic_code_t::row_out_of_range,
-                        "SV recipe range drag exceeds the chart grid");
-            return false;
-        }
-        begin -= delta;
-        end -= delta;
-    }
-    if (begin == end) {
+    const auto handle = drag.handle == sv_recipe_range_handle_t::begin ? span_handle_t::begin
+                        : drag.handle == sv_recipe_range_handle_t::end  ? span_handle_t::end
+                                                                         : span_handle_t::body;
+    const auto manipulated = manipulate_span({*original_begin, *original_end}, handle, *anchor,
+                                             *target, index.total_rows);
+    if (!manipulated) {
         reject_drag(drag, diagnostic_code_t::invalid_hold,
-                    "SV recipe range drag cannot produce a zero-width interval");
+                    "SV recipe range drag cannot produce a valid interval");
         return false;
     }
+    const auto begin = manipulated->begin;
+    const auto end = manipulated->end;
     const auto begin_position = position_at_row(index, begin);
     const auto end_position = position_at_row(index, end, true);
     if (!begin_position || !end_position) {

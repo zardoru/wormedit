@@ -1,4 +1,5 @@
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/snap.h>
 
 #include <wormedit/core/virtual_canvas.h>
 
@@ -21,14 +22,7 @@ auto error(diagnostic_code_t code, std::string message,
 
 auto position_at(const measure_index_t& index, std::uint64_t absolute)
     -> std::optional<local_position_t> {
-    if (absolute >= index.total_rows)
-        return std::nullopt;
-    const auto after = std::ranges::upper_bound(index.entries, absolute, {},
-                                                &measure_index_entry_t::absolute_begin_row);
-    if (after == index.entries.begin())
-        return std::nullopt;
-    const auto entry = std::prev(after);
-    return local_position_t{.measure = entry->id, .row = absolute - entry->absolute_begin_row};
+    return position_at_absolute_row(index, absolute);
 }
 
 auto editable_lane(const lane_definition_t& lane) -> bool {

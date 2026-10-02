@@ -1,4 +1,5 @@
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/snap.h>
 
 #include <wormedit/core/rational.h>
 #include <wormedit/core/virtual_canvas.h>
@@ -45,14 +46,7 @@ auto note_kind_label(note_kind_t kind) -> std::string_view {
 
 auto position_at(const measure_index_t& index, std::uint64_t absolute)
     -> std::optional<local_position_t> {
-    if (absolute >= index.total_rows)
-        return std::nullopt;
-    const auto after = std::ranges::upper_bound(index.entries, absolute, {},
-                                                &measure_index_entry_t::absolute_begin_row);
-    if (after == index.entries.begin())
-        return std::nullopt;
-    const auto entry = std::prev(after);
-    return local_position_t{.measure = entry->id, .row = absolute - entry->absolute_begin_row};
+    return position_at_absolute_row(index, absolute);
 }
 
 auto effective_layout(const chart_document_t& chart, const measure_index_t& index,
@@ -81,18 +75,7 @@ auto editable_lane(const lane_definition_t& lane) -> bool {
 auto snapped_position(const chart_document_t& chart, const measure_index_t& index,
                       local_position_t target, std::uint64_t denominator)
     -> std::optional<local_position_t> {
-    const auto absolute = absolute_row(index, target);
-    if (!absolute || denominator == 0 || chart.divisions_per_standard_measure % denominator != 0)
-        return std::nullopt;
-    const auto step = chart.divisions_per_standard_measure / denominator;
-    if (step == 0)
-        return std::nullopt;
-    const auto remainder = *absolute % step;
-    auto snapped = *absolute - remainder;
-    const auto distance_up = step - remainder;
-    if (remainder > distance_up && distance_up <= std::numeric_limits<std::uint64_t>::max() - *absolute)
-        snapped = *absolute + distance_up;
-    return position_at(index, snapped);
+    return snap_position(chart, index, target, denominator);
 }
 
 auto absolute_row_at_y_pixels(const chart_document_t& chart, const measure_index_t& index,

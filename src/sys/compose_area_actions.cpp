@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <ranges>
 #include <utility>
+#include <wormedit/core/snap.h>
 #include <wormedit/core/grid.h>
 #include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/virtual_canvas.h>
@@ -29,14 +30,7 @@ std::string area_result_status(const wormedit::editor_interaction_result_t& resu
 }
 auto snap_area_row(const wormedit::chart_document_t& chart, std::uint64_t row,
                    std::uint64_t denominator) -> std::optional<std::uint64_t> {
-    if (denominator == 0 || chart.divisions_per_standard_measure % denominator != 0)
-        return std::nullopt;
-    const auto step = chart.divisions_per_standard_measure / denominator;
-    if (step == 0)
-        return std::nullopt;
-    const auto earlier = row - row % step;
-    const auto offset = row % step;
-    return offset > step - offset ? earlier + step : earlier;
+    return wormedit::snap_absolute_row(chart, row, denominator);
 }
 
 bool area_quantization_ids_overlap(const wormedit::chart_document_t& chart,
@@ -166,7 +160,7 @@ std::string resize_compose_area(area_action_context_t& context,
         return "The area is outside the chart geometry.";
     if (kind == WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET) {
         auto& moving = context.action.compose_area_begin_edge ? begin : end;
-        const auto snapped = snap_area_row(chart, moving, context.state.active_snap_denominator);
+        const auto snapped = snap_area_row(chart, moving, wormedit::edit_snap_denominator(chart, context.state));
         if (!snapped)
             return "The active grid cannot resize this area.";
         moving = *snapped;

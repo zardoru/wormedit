@@ -93,6 +93,13 @@ static void render_compose_view_controls(const ComposeToolbarContext& toolbar) {
                                               view->timing_focus}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS;
+    if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::grid,
+                                              view->edit_snap_enabled
+                                                  ? "Snap on: edits land on the grid (click to turn off)"
+                                                  : "Snap off: edits use the finest row (click to turn on)",
+                                              view->edit_snap_enabled}.render(context) &&
+        action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_EDIT_SNAP;
     if (!view->scene_available) nk_widget_disable_end(context);
     if (wormedit::ui::chrome::IconButton{compose_inspector_icon(state.inspector_visible),
                                          state.inspector_visible ? "Hide inspector" : "Show inspector",
@@ -328,7 +335,7 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     nk_layout_row_template_begin(context, 27);
     wormedit::ui::chrome::IconButton::layout_columns(context, 3);
     nk_layout_row_template_push_static(context, 12);
-    wormedit::ui::chrome::IconButton::layout_columns(context, 4);
+    wormedit::ui::chrome::IconButton::layout_columns(context, 5);
     // Offset padlock, nudges and optional readout, then the BPM snap controls.
     wormedit::ui::chrome::IconButton::layout_columns(context);
     nk_layout_row_template_push_static(context, 10);

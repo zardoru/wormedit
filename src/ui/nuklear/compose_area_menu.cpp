@@ -1,3 +1,4 @@
+#include "sys/compose_scroll_geometry.h"
 #include "ui/nuklear/compose_area_menu.h"
 #include "wormedit/nuklear_config.h"
 #include <cstring>
@@ -76,7 +77,7 @@ void update_capture(nk_context* context, const WormUiComposeView& view,
         return;
     }
     const auto y = (mouse.pos.y - viewport.y) * view.viewport_height_pixels / viewport.h;
-    const auto source_y = view.downscroll ? view.viewport_height_pixels - y : y;
+    const auto source_y = wormedit::sys::compose_source_y(y, view.viewport_height_pixels, view.downscroll);
     const auto row = std::clamp((source_y + view.area_scroll_pixels) *
                                     static_cast<double>(view.area_rows_per_measure) /
                                     view.pixels_per_standard_measure,

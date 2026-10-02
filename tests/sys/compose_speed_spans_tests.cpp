@@ -74,3 +74,32 @@ TEST_CASE("a chart without speeds has no spans", "[unit][sys][speed-spans]") {
     CHECK(result.spans.empty());
     CHECK_FALSE(result.truncated);
 }
+
+TEST_CASE("speed graph interpolates across each span and then holds the target",
+          "[unit][sys][speed-spans]") {
+    speed_spans_t spans;
+    spans.spans = {{.object = object_id_t{1}, .begin_row = 100.0, .end_row = 200.0, .multiplier = 2.0},
+                   {.object = object_id_t{2}, .begin_row = 400.0, .end_row = 400.0, .multiplier = 0.5}};
+    const auto y_of = [](double row) { return row; };
+    const auto graph = build_speed_graph(spans, 0.0, 600.0, y_of);
+    CHECK(graph.minimum == 0.5);
+    CHECK(graph.maximum == 2.0);
+    // 1.0 until row 100, ramp to 2.0 at row 200, hold, jump to 0.5 at row 400, hold.
+    REQUIRE(graph.points.size() == 6);
+    CHECK(graph.points[0].y == 0.0);
+    CHECK(graph.points[1].y == 100.0);
+    CHECK(graph.points[2].y == 200.0);
+    CHECK(graph.points[2].x == 1.0);
+    CHECK(graph.points[3].y == 400.0);
+    CHECK(graph.points[3].x == 1.0);
+    CHECK(graph.points[4].y == 400.0);
+    CHECK(graph.points[4].x == 0.0);
+
+    // A window inside the ramp starts at the interpolated value.
+    const auto inside = build_speed_graph(spans, 150.0, 250.0, y_of);
+    REQUIRE(inside.points.size() >= 2);
+    CHECK(inside.minimum == 1.5);
+    CHECK(inside.maximum == 2.0);
+
+    CHECK(build_speed_graph(spans, 10.0, 10.0, y_of).points.empty());
+}

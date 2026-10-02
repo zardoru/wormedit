@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/snap.h>
 
 #include <compare>
 #include <cmath>
@@ -616,7 +617,17 @@ struct editor_interaction_state_t {
     std::optional<std::size_t> selected_canvas_measure;
     std::vector<object_id_t> selected_notes;
     std::vector<editor_selection_object_t> selected_objects;
+    // Edit snapping applies to every pointer-driven object class; while off, edits land on the
+    // chart's finest row instead of the active grid (see effective_edit_snap_denominator).
+    bool snap_enabled{true};
 };
+
+// The denominator pointer-driven edits of any object class should snap to.
+[[nodiscard]] inline auto edit_snap_denominator(const chart_document_t& chart,
+                                                const editor_interaction_state_t& state) noexcept
+    -> std::uint64_t {
+    return effective_edit_snap_denominator(chart, state.active_snap_denominator, state.snap_enabled);
+}
 
 struct editor_interaction_view_model_t {
     chart_id_t chart;
@@ -626,6 +637,7 @@ struct editor_interaction_view_model_t {
     std::optional<std::uint64_t> virtual_bms_cursor_row;
     double cursor_subrow{};
     std::uint64_t active_snap_denominator{};
+    bool snap_enabled{true};
     std::vector<std::uint64_t> supported_snap_denominators;
     std::uint64_t document_revision{};
     double pixels_per_standard_measure{default_pixels_per_standard_measure};
@@ -745,6 +757,14 @@ inline void restore_cursor_pose(editor_interaction_state_t& state, const cursor_
 inline void place_cursor_at(editor_interaction_state_t& state, const local_position_t& position) {
     state.cursor = position;
     state.virtual_bms_cursor_row.reset();
+}
+
+// Move the cursor to the row a pointer picked. Unlike place_cursor_at, the drawn sub-row offset
+// (left by a fixed-cursor scroll) is dropped so the cursor is drawn on the clicked row.
+inline void place_cursor_on_picked_row(editor_interaction_state_t& state,
+                                       const local_position_t& position) {
+    place_cursor_at(state, position);
+    state.cursor_subrow = 0.0;
 }
 
 // Clamp the viewport scroll without moving the cursor.

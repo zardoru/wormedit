@@ -1502,6 +1502,15 @@ void process_compose_overview_input(const ComposeOverviewInput& input) {
     update_waveform_overview_seek(input);
 }
 
+// Document fraction under a screen-space y. The document fractions run in source order, so a
+// downscroll field (source row 0 at the bottom) reads the viewport from the other end.
+static auto compose_timing_target(const WormUiComposeView& view, double screen_y)
+    -> WormUiTimingTarget {
+    return WormUiTimingTarget{screen_y, view.viewport_height_pixels,
+                              view.timing_document_begin_fraction,
+                              view.timing_document_end_fraction, view.downscroll};
+}
+
 // Timing lane under a horizontal pixel position, honoring the lane mask in force.
 static auto compose_timing_lane_at_x(const WormUiComposeView& view, double x,
                                      double field_left) -> std::optional<WormUiTimingLaneKind> {
@@ -1543,13 +1552,9 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
     action.timing_object_id = existing_object_id;
     if (existing_object_id == 0) {
         action.timing_has_target_y = true;
-        const auto viewport_fraction =
-            std::clamp(click_y / view.viewport_height_pixels, 0.0, 1.0);
-        action.timing_target_y_fraction = clicked_marker && clicked_marker->fixed_initial
-            ? 0.0
-            : view.timing_document_begin_fraction +
-                  viewport_fraction * (view.timing_document_end_fraction -
-                                       view.timing_document_begin_fraction);
+        action.timing_target = clicked_marker && clicked_marker->fixed_initial
+            ? WormUiTimingTarget{0.0, 1.0, 0.0, 1.0, false}
+            : compose_timing_target(view, click_y);
     }
     if (clicked_marker && existing_object_id != 0) {
         append_compose_input(&action, WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT, click_x,
@@ -1618,18 +1623,13 @@ static void update_active_timing_stage_drag(const ComposePointerEventContext& in
         state.timing_stage_drag_active = false;
     } else if (input.left_down && nk_input_is_mouse_moved(&input.context->input) &&
                action.timing_stage_action == WORM_UI_TIMING_STAGE_NONE) {
-        const auto viewport_fraction =
-            std::clamp(input.pointer_y / view.viewport_height_pixels, 0.0, 1.0);
         action.timing_stage_action = WORM_UI_TIMING_STAGE_MOVE;
         action.timing_chart_id = timing.chart_id;
         action.timing_document_revision = timing.document_revision;
         action.timing_object_id = timing.stage_existing_object_id;
         action.timing_lane = timing.stage_lane;
         action.timing_has_target_y = true;
-        action.timing_target_y_fraction =
-            view.timing_document_begin_fraction +
-            viewport_fraction * (view.timing_document_end_fraction -
-                                 view.timing_document_begin_fraction);
+        action.timing_target = compose_timing_target(view, input.pointer_y);
     }
 }
 
@@ -1680,7 +1680,11 @@ static auto kiai_gesture_blocked(const ComposePointerEventContext& input) -> boo
            state.timing_marker_drag_active || compose_area_pointer_consumed();
 }
 
+static void begin_speed_drag(const ComposePointerEventContext& input);
+static void begin_speed_stretch(const ComposePointerEventContext& input);
+
 static void begin_kiai_drag(const ComposePointerEventContext& input) {
+    state.kiai_drag_speed = false;
     const auto& view = *input.view;
     const auto extent = compose_timing_lane_inner_extent(view, WORM_UI_TIMING_LANE_KIAI);
     const auto x = input.pointer_started_x;
@@ -1688,7 +1692,7 @@ static void begin_kiai_drag(const ComposePointerEventContext& input) {
     if (!extent || x < extent->first || x >= extent->second ||
         compose_timing_marker_at(view, x, y) != nullptr) return;
     const auto tolerance = span_edge_tolerance_pixels * view.viewport_height_pixels / input.viewport.h;
-    state.kiai_drag_edge = 2;
+    state.kiai_drag_edge = WORM_UI_SPAN_HANDLE_CREATE;
     state.kiai_drag_head_id = 0;
     std::uint64_t body_head = 0;
     for (std::size_t index = 0; index < view.kiai_span_count; ++index) {
@@ -1696,10 +1700,10 @@ static void begin_kiai_drag(const ComposePointerEventContext& input) {
         const auto head_y = view.downscroll ? span.bounds.bottom : span.bounds.top;
         const auto tail_y = view.downscroll ? span.bounds.top : span.bounds.bottom;
         if (span.head_visible && std::abs(y - head_y) <= tolerance) {
-            state.kiai_drag_edge = 0;
+            state.kiai_drag_edge = WORM_UI_SPAN_HANDLE_BEGIN;
             state.kiai_drag_head_id = span.head_object_id;
         } else if (span.tail_visible && std::abs(y - tail_y) <= tolerance) {
-            state.kiai_drag_edge = 1;
+            state.kiai_drag_edge = WORM_UI_SPAN_HANDLE_END;
             state.kiai_drag_head_id = span.head_object_id;
         } else if (y > span.bounds.top && y < span.bounds.bottom) {
             body_head = span.head_object_id;
@@ -1710,7 +1714,9 @@ static void begin_kiai_drag(const ComposePointerEventContext& input) {
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_SELECT, x, y, 0, false,
                              WORM_UI_COMPOSE_SELECTION_REPLACE,
                              WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, body_head);
-        return;
+        // The body is selected on press and moves the whole area if it is then dragged.
+        state.kiai_drag_edge = WORM_UI_SPAN_HANDLE_BODY;
+        state.kiai_drag_head_id = body_head;
     }
     state.kiai_drag_active = true;
     state.kiai_drag_moved = false;
@@ -1719,12 +1725,15 @@ static void begin_kiai_drag(const ComposePointerEventContext& input) {
 }
 
 static void commit_kiai_drag(const ComposePointerEventContext& input) {
-    append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT,
+    append_compose_input(input.action,
+                         state.kiai_drag_speed ? WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT
+                                               : WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT,
                          input.pointer_started_x, state.kiai_drag_current_y, 0, false,
                          WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.kiai_drag_head_id, 0,
-                         false, WORM_UI_TIMING_LANE_KIAI, input.timing_view->chart_id,
-                         input.timing_view->document_revision);
+                         false,
+                         state.kiai_drag_speed ? WORM_UI_TIMING_LANE_SPEED : WORM_UI_TIMING_LANE_KIAI,
+                         input.timing_view->chart_id, input.timing_view->document_revision);
     if (input.action->compose_input_count == 0) return;
     auto& queued = input.action->compose_inputs[input.action->compose_input_count - 1];
     queued.span_edge = state.kiai_drag_edge;
@@ -1753,8 +1762,12 @@ void update_kiai_span_drag(const ComposePointerEventContext& input) {
         return;
     }
     if (input.pointer_started_in_view && input.left_down && !input.left_released &&
-        !kiai_gesture_blocked(input))
+        !kiai_gesture_blocked(input)) {
         begin_kiai_drag(input);
+        if (!state.kiai_drag_active) begin_speed_drag(input);
+    } else if (input.pointer_started_in_view && input.left_down && !input.left_released) {
+        begin_speed_stretch(input);
+    }
 }
 
 // SV recipe areas share the Kiai gesture shape: a press on a begin or end edge resizes, a press
@@ -1797,6 +1810,63 @@ static auto recipe_press_at(const WormUiComposeView& view, double x, double y, d
             body = recipe_press_t{area.recipe_id, 2};
     }
     return body;
+}
+
+// A press on the begin or end edge of a Speed span grabs it: the begin edge moves the event, the
+// end edge sets how long it interpolates. Recipe areas sharing the lane keep priority, and the
+// drag reuses the Kiai drag state (kiai_drag_speed marks it).
+static void begin_speed_drag(const ComposePointerEventContext& input) {
+    const auto& view = *input.view;
+    const auto extent = compose_timing_lane_inner_extent(view, WORM_UI_TIMING_LANE_SPEED);
+    const auto x = input.pointer_started_x;
+    const auto y = input.pointer_started_y;
+    if (!extent || x < extent->first || x >= extent->second || state.recipe_drag_active ||
+        compose_timing_marker_at(view, x, y) != nullptr) return;
+    const auto tolerance = span_edge_tolerance_pixels * view.viewport_height_pixels / input.viewport.h;
+    if (recipe_press_at(view, x, y, tolerance)) return;
+    for (std::size_t index = 0; index < view.speed_span_count; ++index) {
+        const auto& span = view.speed_spans[index];
+        const auto begin_y = view.downscroll ? span.bounds.bottom : span.bounds.top;
+        const auto end_y = view.downscroll ? span.bounds.top : span.bounds.bottom;
+        // Of two coincident edges (an instant Speed) the end wins: it is the one that can grow.
+        const bool on_end = std::abs(y - end_y) <= tolerance;
+        const bool on_body = y > span.bounds.top && y < span.bounds.bottom;
+        if (!on_end && std::abs(y - begin_y) > tolerance && !on_body) continue;
+        state.kiai_drag_edge = on_end ? WORM_UI_SPAN_HANDLE_END
+            : on_body && std::abs(y - begin_y) > tolerance ? WORM_UI_SPAN_HANDLE_BODY
+                                                            : WORM_UI_SPAN_HANDLE_BEGIN;
+        state.kiai_drag_head_id = span.object_id;
+        state.kiai_drag_speed = true;
+        state.kiai_drag_active = true;
+        state.kiai_drag_moved = false;
+        state.kiai_drag_anchor_y = y;
+        state.kiai_drag_current_y = y;
+        return;
+    }
+}
+
+// Shift+drag on a Speed marker stretches it into a span: the marker stays where it is and the
+// pointer sets where the transition ends. The marker covers its own edge, so this is the way to
+// grow an instant Speed; it shares the Kiai drag state like the edge grab above.
+static void begin_speed_stretch(const ComposePointerEventContext& input) {
+    constexpr auto other_modifiers = SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI;
+    if (state.kiai_drag_active || !input.window_focused || !input.view->scene_available ||
+        input.shortcut_event_count != 0 || (input.pointer_modifiers & SDL_KMOD_SHIFT) == 0 ||
+        (input.pointer_modifiers & other_modifiers) != 0 || input.timing_view->stage_active ||
+        state.timing_stage_drag_active || state.inline_timing_open || compose_area_pointer_consumed())
+        return;
+    const auto* marker = compose_timing_marker_at(*input.view, input.pointer_started_x,
+                                                  input.pointer_started_y);
+    if (!marker || marker->lane != WORM_UI_TIMING_LANE_SPEED || marker->object_id == 0 ||
+        marker->fixed_initial)
+        return;
+    state.kiai_drag_edge = WORM_UI_SPAN_HANDLE_END;
+    state.kiai_drag_head_id = marker->object_id;
+    state.kiai_drag_speed = true;
+    state.kiai_drag_active = true;
+    state.kiai_drag_moved = false;
+    state.kiai_drag_anchor_y = input.pointer_started_y;
+    state.kiai_drag_current_y = input.pointer_started_y;
 }
 
 static void begin_recipe_drag(const ComposePointerEventContext& input) {
@@ -2429,8 +2499,6 @@ static auto begin_timing_quick_insert(const ComposePointerEventContext& input) -
     if (!allowed || !lane || *lane != wanted || !timing.initial_bpm_editable ||
         timing.stage_active || input.action->timing_stage_action != WORM_UI_TIMING_STAGE_NONE)
         return false;
-    const auto viewport_fraction =
-        std::clamp(input.pointer_started_y / view.viewport_height_pixels, 0.0, 1.0);
     auto& action = *input.action;
     action.timing_stage_action = WORM_UI_TIMING_STAGE_QUICK_INSERT;
     action.timing_chart_id = timing.chart_id;
@@ -2438,9 +2506,7 @@ static auto begin_timing_quick_insert(const ComposePointerEventContext& input) -
     action.timing_lane = wanted;
     action.timing_object_id = 0;
     action.timing_has_target_y = true;
-    action.timing_target_y_fraction =
-        view.timing_document_begin_fraction +
-        viewport_fraction * (view.timing_document_end_fraction - view.timing_document_begin_fraction);
+    action.timing_target = compose_timing_target(view, input.pointer_started_y);
     return true;
 }
 

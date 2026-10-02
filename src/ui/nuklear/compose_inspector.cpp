@@ -38,7 +38,7 @@ static void render_initial_bpm_control(const ComposeInspectorContext& inspector)
         action->timing_lane = WORM_UI_TIMING_LANE_BPM;
         action->timing_object_id = timing_view->initial_bpm_event_id;
         action->timing_has_target_y = timing_view->initial_bpm_event_id == 0;
-        action->timing_target_y_fraction = 0.0;
+        action->timing_target = WormUiTimingTarget{0.0, 1.0, 0.0, 1.0, false};
     }
 }
 

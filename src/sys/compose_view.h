@@ -256,6 +256,8 @@ struct application_command_state_t {
     std::unordered_map<std::uint64_t, double> bgm_horizontal_scroll_pixels;
     std::uint8_t compose_timing_lane_visibility_mask{0xff};
     bool compose_timing_focus{};
+    // Edit snapping for every object class; off lands edits on the chart's finest row.
+    bool edit_snap_enabled{true};
     bool player_preview_visible{};
     wormedit::player_preview_skin_t player_preview_skin{wormedit::player_preview_skin_t::neutral};
     std::size_t transport_rate_index{8};
@@ -328,7 +330,6 @@ auto compose_field_downscroll(const wormedit::chart_document_t& chart,
     const wormedit::editor_preferences_t& preferences) -> bool;
 auto compose_project_y(long double row, double pixels_per_row, double scroll,
                        double viewport_height, bool downscroll) -> double;
-auto compose_source_y(double viewport_y, double viewport_height, bool downscroll) -> double;
 auto compose_horizontal_layout(double viewport_width_pixels, std::size_t lane_count,
                                bool has_bgm_lanes, std::size_t visible_timing_lane_count)
     -> compose_horizontal_layout_t;

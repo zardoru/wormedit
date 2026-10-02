@@ -1,5 +1,6 @@
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/measure_editor.h>
+#include <wormedit/core/snap.h>
 #include <wormedit/core/virtual_canvas.h>
 
 #include <algorithm>
@@ -67,35 +68,13 @@ auto next_chart_object_id(const chart_document_t& chart) -> std::optional<object
 auto snap_placement_position(const chart_document_t& chart, const measure_index_t& index,
                              local_position_t position, std::uint64_t denominator)
     -> std::optional<local_position_t> {
-    const auto absolute = absolute_row(index, position);
-    if (!absolute) {
+    if (!absolute_row(index, position)) {
         return std::nullopt;
     }
     if (denominator == 0) {
         return position;
     }
-    if (chart.divisions_per_standard_measure == 0 ||
-        chart.divisions_per_standard_measure % denominator != 0) {
-        return std::nullopt;
-    }
-    const auto step = chart.divisions_per_standard_measure / denominator;
-    const auto remainder = *absolute % step;
-    auto snapped = *absolute - remainder;
-    const auto distance_up = step - remainder;
-    if (remainder > distance_up &&
-        distance_up <= std::numeric_limits<std::uint64_t>::max() - *absolute) {
-        snapped = *absolute + distance_up;
-    }
-    if (snapped >= index.total_rows) {
-        return std::nullopt;
-    }
-    const auto after = std::ranges::upper_bound(index.entries, snapped, {},
-                                                &measure_index_entry_t::absolute_begin_row);
-    if (after == index.entries.begin()) {
-        return std::nullopt;
-    }
-    const auto entry = std::prev(after);
-    return local_position_t{entry->id, snapped - entry->absolute_begin_row};
+    return snap_position(chart, index, position, denominator);
 }
 
 auto branch_source_orders(const chart_document_t& chart)
@@ -569,19 +548,14 @@ auto apply_virtual_bms_resource_placement(
     }
     auto snapped_row = action.canvas_row;
     if (action.snap_denominator != 0) {
-        const auto step = source_chart->divisions_per_standard_measure /
-                          action.snap_denominator;
-        const auto remainder = snapped_row % step;
-        snapped_row -= remainder;
-        if (remainder > step - remainder) {
-            if (step - remainder >
-                std::numeric_limits<std::uint64_t>::max() - snapped_row) {
-                reject(result, diagnostic_code_t::row_out_of_range,
-                       "virtual resource snap row overflows");
-                return result;
-            }
-            snapped_row += step;
+        const auto rounded =
+            snap_absolute_row(*source_chart, snapped_row, action.snap_denominator);
+        if (!rounded) {
+            reject(result, diagnostic_code_t::row_out_of_range,
+                   "virtual snap row is invalid or overflows");
+            return result;
         }
+        snapped_row = *rounded;
     }
     const auto destination = canvas.measure_containing(snapped_row);
     if (!destination || destination->authored ||
@@ -658,19 +632,14 @@ auto apply_virtual_bms_bgm_event_move(
     }
     auto snapped_row = action.canvas_row;
     if (action.snap_denominator != 0) {
-        const auto step = source_chart->divisions_per_standard_measure /
-                          action.snap_denominator;
-        const auto remainder = snapped_row % step;
-        snapped_row -= remainder;
-        if (remainder > step - remainder) {
-            if (step - remainder >
-                std::numeric_limits<std::uint64_t>::max() - snapped_row) {
-                reject(result, diagnostic_code_t::row_out_of_range,
-                       "virtual BGM move snap row overflows");
-                return result;
-            }
-            snapped_row += step;
+        const auto rounded =
+            snap_absolute_row(*source_chart, snapped_row, action.snap_denominator);
+        if (!rounded) {
+            reject(result, diagnostic_code_t::row_out_of_range,
+                   "virtual snap row is invalid or overflows");
+            return result;
         }
+        snapped_row = *rounded;
     }
     const auto destination = canvas.measure_containing(snapped_row);
     if (!destination || destination->authored ||

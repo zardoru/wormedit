@@ -74,6 +74,9 @@ add_library(wormedit_core
     src/core/pause_warp_editor.cpp
     src/core/player_preview.cpp
     src/core/quantize.cpp
+    src/core/snap.cpp
+    src/core/dead_span_rules.cpp
+    src/core/span_manipulation.cpp
     src/core/rational.cpp
     src/core/recovery_controller.cpp
     src/core/bgm_columns.cpp

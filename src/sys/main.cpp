@@ -12,6 +12,7 @@
 #include "sys/audio_project_import.h"
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose_view.h"
+#include "sys/compose_timing_target.h"
 #include "sys/compose_input.h"
 #include "sys/compose_actions.h"
 #include "sys/application_edit_helpers.h"
@@ -34,6 +35,7 @@
 #include "sys/notification_history_runtime.h"
 #include <SDL3/SDL_clipboard.h>
 #include "sys/project_view.h"
+#include <wormedit/core/snap.h>
 #include <wormedit/core/chart_editor.h>
 #include "sys/tap_timing_runtime.h"
 #include <SDL3/SDL_filesystem.h>
@@ -294,12 +296,10 @@ auto timing_position_from_fraction(const wormedit::chart_document_t& chart, doub
         std::min(std::floor(static_cast<long double>(fraction) * measures->total_rows),
                  static_cast<long double>(measures->total_rows - 1));
     const auto raw_row = static_cast<std::uint64_t>(raw_row_value);
-    const auto remainder = raw_row % step;
-    auto snapped_row = raw_row - remainder;
-    if (remainder >= step - remainder &&
-        snapped_row <= std::numeric_limits<std::uint64_t>::max() - step) {
-        snapped_row += step;
-    }
+    const auto usable_denominator =
+        step == chart.divisions_per_standard_measure ? std::uint64_t{1} : active_denominator;
+    auto snapped_row =
+        wormedit::snap_absolute_row(chart, raw_row, usable_denominator).value_or(raw_row);
     const auto last_valid_row = measures->total_rows - 1;
     if (snapped_row > last_valid_row) {
         snapped_row = last_valid_row - last_valid_row % step;
@@ -366,7 +366,7 @@ auto initial_timing_value_for_stage(const wormedit::chart_document_t& chart,
         return timing_speed_value_t{{1, 1}, {0, 1}, false};
     case timing_lane_kind_t::stop:
     case timing_lane_kind_t::delay:
-        return timing_pause_value_t{{1, 1}, pause_unit_t::seconds};
+        return timing_pause_value_t{{1, 1}, pause_unit_t::beats};
     case timing_lane_kind_t::warp: {
         const auto measures_result = build_measure_index(chart);
         const auto* measures = std::get_if<measure_index_t>(&measures_result);
@@ -418,8 +418,9 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
             const auto target =
                 chart == history.document.charts.end()
                     ? std::optional<local_position_t>{}
-                    : timing_position_from_fraction(*chart, action.timing_target_y_fraction,
-                                                    active_snap_denominator);
+                    : timing_position_from_fraction(
+                          *chart, wormedit::sys::timing_target_fraction(action.timing_target),
+                          active_snap_denominator);
             if (!target ||
                 !move_existing_timing_lane_pseudonote(history, preview, *target, timing_locked)) {
                 return rejected;
@@ -435,8 +436,9 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
     if (found == history.document.charts.end()) {
         return rejected;
     }
-    const auto position = timing_position_from_fraction(*found, action.timing_target_y_fraction,
-                                                        active_snap_denominator);
+    const auto position = timing_position_from_fraction(
+        *found, wormedit::sys::timing_target_fraction(action.timing_target),
+        active_snap_denominator);
     if (!position) {
         return rejected;
     }
@@ -1612,12 +1614,14 @@ void move_staged_timing_event(const WormUiWorkspaceAction& action,
                               wormedit::chart_document_t* chart,
                               wormedit::timing_lane_pseudonote_preview_t& stage,
                               std::string& status) {
-    const auto target = chart == nullptr || !stage.existing_event || !action.timing_has_target_y
-                            ? std::optional<wormedit::local_position_t>{}
-                            : timing_position_from_fraction(*chart, action.timing_target_y_fraction,
-                                                            active_snap_denominator);
-    if (!target || !wormedit::move_existing_timing_lane_pseudonote(
-                       history, stage, *target, timing_locked)) {
+    const auto target =
+        chart == nullptr || !stage.existing_event || !action.timing_has_target_y
+            ? std::optional<wormedit::local_position_t>{}
+            : timing_position_from_fraction(
+                  *chart, wormedit::sys::timing_target_fraction(action.timing_target),
+                  active_snap_denominator);
+    if (!target ||
+        !wormedit::move_existing_timing_lane_pseudonote(history, stage, *target, timing_locked)) {
         status = stage.diagnostics.empty() ? "The timing marker cannot move to that row."
                                            : stage.diagnostics.front().message;
     } else {
@@ -1755,9 +1759,17 @@ bool dispatch_timing_workspace_action(
     application_command_state_t& application_state, timing_grid_state_t& timing_grid,
     timing_edit_t& timing_edit, std::string& status) {
     if (action.timing_stage_action != WORM_UI_TIMING_STAGE_NONE) {
+        const auto chart = std::ranges::find(history.document.charts,
+                                             wormedit::chart_id_t{action.timing_chart_id},
+                                             &wormedit::chart_document_t::id);
+        const auto denominator =
+            chart == history.document.charts.end()
+                ? timing_grid.active_denominator
+                : wormedit::effective_edit_snap_denominator(
+                      *chart, timing_grid.active_denominator, application_state.edit_snap_enabled);
         dispatch_timing_stage_action(action, history, workspace,
-                                     application_state.timing_locked,
-                                     timing_grid.active_denominator, timing_edit, status);
+                                     application_state.timing_locked, denominator, timing_edit,
+                                     status);
         return true;
     }
     return false;

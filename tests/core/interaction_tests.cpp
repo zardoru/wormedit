@@ -687,6 +687,25 @@ TEST_CASE("BMS measure rail selects #999 without materializing it",
     CHECK(history.document.charts.front().measures.size() == 2);
 }
 
+TEST_CASE("turning edit snap off places taps on the exact pointer row",
+          "[unit][core][interaction][snap]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.snap_enabled = false;
+    const auto placed =
+        dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{2}, 121}});
+    REQUIRE(placed);
+    REQUIRE(note_count(history) == 1);
+    CHECK(history.document.charts.front().measures.back().notes.front().position ==
+          local_position_t{measure_id_t{2}, 121});
+
+    state.snap_enabled = true;
+    const auto snapped =
+        dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{2}, 241}});
+    REQUIRE(snapped);
+    CHECK(history.document.charts.front().measures.back().notes.size() == 2);
+}
+
 TEST_CASE(
     "headless editor actions cycle exact snaps, step across measures, and place undoable taps",
     "[unit][core][interaction]") {
@@ -3755,6 +3774,41 @@ TEST_CASE("editor deletion removes a cursor note or selected notes atomically",
     CHECK(note_count(history) == 3);
 }
 
+TEST_CASE("Delete removes selected bookmarks and sections together with notes",
+          "[unit][core][interaction][selection][delete][markers]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.measures.front().notes.push_back(
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 840}, .lane = lane_id_t{1}});
+    chart.bookmarks.push_back({.id = object_id_t{300},
+                               .anchor = marker_anchor_t::beat,
+                               .position = local_position_t{measure_id_t{1}, 120}});
+    chart.sections.push_back({.id = object_id_t{301},
+                              .label = "intro",
+                              .anchor = marker_anchor_t::beat,
+                              .beat_span = position_span_t{{measure_id_t{1}, 0},
+                                                           {measure_id_t{1}, 480}}});
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{{{editor_selection_object_kind_t::bookmark, object_id_t{300}},
+                                        {editor_selection_object_kind_t::section, object_id_t{301}},
+                                        {editor_selection_object_kind_t::note, object_id_t{101}}}}));
+    const auto deleted =
+        dispatch_editor_action(history, state, delete_editor_selection_action_t{});
+    REQUIRE(deleted);
+    CHECK(deleted.document_changed);
+    CHECK(history.document.charts.front().bookmarks.empty());
+    CHECK(history.document.charts.front().sections.empty());
+    CHECK(note_count(history) == 0);
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().bookmarks.size() == 1);
+    CHECK(history.document.charts.front().sections.size() == 1);
+}
+
 TEST_CASE("Delete uses typed BGM selection instead of removing a cursor note",
           "[unit][core][interaction][selection][delete][bgm]") {
     auto song = make_song();
@@ -4541,4 +4595,103 @@ TEST_CASE("Cursor pose helpers round-trip every cursor field",
     place_cursor_at(state, pose.cursor);
     CHECK_FALSE(state.virtual_bms_cursor_row);
     CHECK(state.cursor_subrow == 2.25);
+}
+
+namespace {
+
+auto warp_history() -> document_history_t {
+    auto song = make_song();
+    song.charts.front().warps.push_back(
+        {.id = object_id_t{900}, .span = {{measure_id_t{2}, 240}, {measure_id_t{2}, 720}}});
+    return make_document_history(std::move(song));
+}
+
+} // namespace
+
+TEST_CASE("a warp refuses playable heads but takes fakes and mines",
+          "[unit][core][interaction][dead-span]") {
+    auto history = warp_history();
+    auto state = make_state(history);
+    const local_position_t inside{measure_id_t{2}, 480};
+
+    CHECK_FALSE(dispatch_editor_action(history, state, place_tap_action_t{inside}));
+    CHECK(note_count(history) == 0);
+
+    state.armed_note_kind = note_kind_t::fake;
+    CHECK(dispatch_editor_action(history, state, place_tap_action_t{inside}));
+    state.armed_note_kind = note_kind_t::mine;
+    CHECK(dispatch_editor_action(history, state,
+                                 place_tap_action_t{{measure_id_t{2}, 240}}));
+    CHECK(note_count(history) == 2);
+
+    state.armed_note_kind = note_kind_t::tap;
+    // The warp's own first and last rows take playable notes.
+    CHECK(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{2}, 720}}));
+    auto edge = warp_history();
+    auto edge_state = make_state(edge);
+    CHECK(dispatch_editor_action(edge, edge_state, place_tap_action_t{{measure_id_t{2}, 240}}));
+    CHECK(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{2}, 0}}));
+}
+
+TEST_CASE("a hold may end inside a warp but not begin there",
+          "[unit][core][interaction][dead-span]") {
+    auto history = warp_history();
+    auto state = make_state(history);
+    state.armed_note_kind = note_kind_t::hold;
+
+    REQUIRE(dispatch_editor_action(history, state, begin_hold_action_t{{measure_id_t{2}, 0}}));
+    const auto ended = dispatch_editor_action(
+        history, state, commit_hold_action_t{{measure_id_t{2}, 480}});
+    REQUIRE(ended);
+    REQUIRE(note_count(history) == 1);
+    CHECK(history.document.charts.front().measures.back().notes.front().end.has_value());
+
+    auto fresh = warp_history();
+    auto fresh_state = make_state(fresh);
+    fresh_state.armed_note_kind = note_kind_t::hold;
+    REQUIRE(dispatch_editor_action(fresh, fresh_state,
+                                   begin_hold_action_t{{measure_id_t{2}, 480}}));
+    CHECK_FALSE(dispatch_editor_action(fresh, fresh_state,
+                                       commit_hold_action_t{{measure_id_t{2}, 720}}));
+    CHECK(note_count(fresh) == 0);
+}
+
+TEST_CASE("a fake hold keeps its kind and may begin inside a warp",
+          "[unit][core][interaction][dead-span]") {
+    auto history = warp_history();
+    auto state = make_state(history);
+    state.armed_note_kind = note_kind_t::fake;
+    REQUIRE(dispatch_editor_action(history, state, begin_hold_action_t{{measure_id_t{2}, 480}}));
+    REQUIRE(dispatch_editor_action(history, state,
+                                   commit_hold_action_t{{measure_id_t{2}, 720}}));
+    REQUIRE(note_count(history) == 1);
+    const auto& note = history.document.charts.front().measures.back().notes.front();
+    CHECK(note.kind == note_kind_t::fake);
+    CHECK(note.end.has_value());
+}
+
+TEST_CASE("a rejected note move into a warp ends the gesture without a ghost",
+          "[unit][core][interaction][dead-span]") {
+    auto history = warp_history();
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{2}, 0}}));
+    const auto id = history.document.charts.front().measures.back().notes.front().id;
+    REQUIRE(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{id}));
+    const auto released = dispatch_editor_action(
+        history, state,
+        release_note_move_gesture_action_t{{measure_id_t{2}, 480}, lane_id_t{1}});
+    CHECK_FALSE(released);
+    CHECK_FALSE(state.pending_note_move_gesture.has_value());
+    CHECK(history.document.charts.front().measures.back().notes.front().position ==
+          local_position_t{measure_id_t{2}, 0});
+}
+
+TEST_CASE("picking a row drops the sub-row offset a fixed-cursor scroll left",
+          "[unit][core][interaction][cursor_write_guard]") {
+    auto history = make_document_history(make_song());
+    auto state = make_state(history);
+    state.cursor_subrow = 2.25;
+    place_cursor_on_picked_row(state, {measure_id_t{2}, 240});
+    CHECK(state.cursor_subrow == 0.0);
+    CHECK((state.cursor == local_position_t{measure_id_t{2}, 240}));
 }

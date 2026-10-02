@@ -750,6 +750,31 @@ TEST_CASE("existing timing markers move as transient previews and delete through
     CHECK(has_code(locked, diagnostic_code_t::unsupported_feature));
 }
 
+TEST_CASE("timing group deletion is atomic, undoable and keeps the initial BPM",
+          "[unit][core][timing-lane-controller][delete]") {
+    auto history = make_document_history(timing_edit_song());
+    const auto revision = history.document.revision;
+    const std::array events{timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{11}},
+                            timing_lane_event_ref_t{timing_lane_kind_t::stop, object_id_t{40}},
+                            timing_lane_event_ref_t{timing_lane_kind_t::delay, object_id_t{41}}};
+    const auto stale = delete_timing_lane_event_group(history, chart_id_t{2}, events, revision + 1, false);
+    CHECK_FALSE(stale);
+    const auto locked = delete_timing_lane_event_group(history, chart_id_t{2}, events, revision, true);
+    CHECK_FALSE(locked);
+    CHECK(history.document.revision == revision);
+
+    const auto initial_only = std::array{events[0]};
+    CHECK_FALSE(delete_timing_lane_event_group(history, chart_id_t{2}, initial_only, revision, false));
+
+    const auto bpm_count = history.document.charts.front().bpms.size();
+    const auto deleted = delete_timing_lane_event_group(history, chart_id_t{2}, events, revision, false);
+    REQUIRE(deleted);
+    CHECK(history.document.charts.front().pauses.empty());
+    CHECK(history.document.charts.front().bpms.size() == bpm_count);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().pauses.size() == 2);
+}
+
 TEST_CASE("the effective initial BPM cannot leave chart row zero",
           "[unit][core][timing-lane-controller][initial-bpm]") {
     auto history = make_document_history(timing_song());
@@ -974,4 +999,33 @@ TEST_CASE("quick insert copies the BPM in force without changing the effective t
     REQUIRE(bpms.size() == 2);
     CHECK(bpms.back().position == position);
     CHECK(bpms.back().beats_per_minute == signed_rational_t{120, 1});
+}
+
+TEST_CASE("a speed span edit moves the begin row and sets the transition in one command",
+          "[unit][core][timing-lane][speed]") {
+    auto history = make_document_history(timing_edit_song());
+    const auto speed = history.document.charts.front().speeds.front().id;
+    const auto undo_count = history.undo.size();
+
+    const auto edited = edit_speed_event_span(
+        history, chart_id_t{2}, speed, {.position = pos(300), .transition = rational_t{3, 1}},
+        false);
+    REQUIRE(edited);
+    CHECK(history.undo.size() == undo_count + 1);
+    const auto& event = history.document.charts.front().speeds.front();
+    CHECK(event.id == speed);
+    CHECK(event.position == pos(300));
+    CHECK(event.transition_beats == rational_t{3, 1});
+    CHECK(event.multiplier == signed_rational_t{2, 1});
+
+    const auto length_only =
+        edit_speed_event_span(history, chart_id_t{2}, speed, {.transition = rational_t{0, 1}}, false);
+    REQUIRE(length_only);
+    CHECK(history.document.charts.front().speeds.front().position == pos(300));
+    CHECK(history.document.charts.front().speeds.front().transition_beats == rational_t{0, 1});
+
+    CHECK_FALSE(edit_speed_event_span(history, chart_id_t{2}, speed, {.transition = rational_t{1, 1}},
+                                      true));
+    CHECK_FALSE(edit_speed_event_span(history, chart_id_t{2}, object_id_t{9999},
+                                      {.transition = rational_t{1, 1}}, false));
 }

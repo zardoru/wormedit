@@ -886,6 +886,8 @@ typedef struct WormUiComposeView {
     uint64_t area_canvas_rows;
     uint64_t area_rows_per_measure;
     uint64_t area_snap_denominator;
+    // False while pointer edits land on the finest chart row instead of the active grid.
+    bool edit_snap_enabled;
     double area_scroll_pixels;
     bool beat_section_selection_span_available;
     uint64_t beat_section_selection_begin_measure_number;
@@ -981,6 +983,10 @@ typedef struct WormUiComposeView {
     double sv_graph_minimum;
     double sv_graph_maximum;
     double sv_graph_one_fraction; /* negative when 1.0x is outside the visible range */
+    /* Interpolated speed curve; same format as the SV graph, drawn in the speed lane. */
+    const WormUiComposeSvGraphPointView* speed_graph_points;
+    size_t speed_graph_point_count;
+    double speed_graph_one_fraction;
     uint8_t timing_lane_visibility_mask;
     // Compose mode specialization; see ui/compose_mode.h. The mask above is
     // already the effective one for this mode.
@@ -1638,6 +1644,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE,
     WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY,
     WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS,
+    WORM_UI_COMPOSE_ACTION_TOGGLE_EDIT_SNAP,
     WORM_UI_COMPOSE_ACTION_RATE_SLOWER,
     WORM_UI_COMPOSE_ACTION_RATE_FASTER,
     WORM_UI_COMPOSE_ACTION_SELECT_RESOURCE_USES,
@@ -1795,6 +1802,9 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_BGM_BAR_RESET,
     // Toolbar toggle: show or hide the whole bar row to win vertical space.
     WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE,
+    // Speed span edge drag: span_edge 0 moves the event to y_pixels, 1 sets its transition length
+    // from the event's row to y_pixels; object_id is the Speed event.
+    WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT,
 } WormUiComposeInputKind;
 
 typedef enum WormUiComposeNavigationAction {
@@ -1827,12 +1837,22 @@ typedef struct WormUiComposeInputAction {
     int64_t beat_fit_snap_step_numerator;
     uint64_t beat_fit_snap_step_denominator;
     /* RECIPE_COMMAND: span_edge is 0 toggle enabled, 1 materialize, 2 delete; object_id is the recipe.
-       KIAI_SPAN_EDIT and RECIPE_RANGE_EDIT: 0 drags the head/begin edge, 1 the tail/end edge, 2 creates (Kiai)
-       or moves the whole span (recipe) by the pointer travel from span_anchor_y_pixels to y_pixels.
+       KIAI_SPAN_EDIT, SPEED_SPAN_EDIT and RECIPE_RANGE_EDIT: span_edge is a WormUiSpanHandle; the body
+       moves by the pointer travel from span_anchor_y_pixels to y_pixels.
        object_id is the area's head event (0 when creating). */
     uint8_t span_edge;
     double span_anchor_y_pixels;
 } WormUiComposeInputAction;
+
+/* Which part of a span (Kiai area, Speed transition, SV recipe) a drag holds; carried in
+   WormUiComposeInputAction::span_edge by KIAI_SPAN_EDIT, SPEED_SPAN_EDIT and RECIPE_RANGE_EDIT.
+   CREATE only applies to Kiai: a new area from the press row to the pointer row. */
+typedef enum WormUiSpanHandle {
+    WORM_UI_SPAN_HANDLE_BEGIN = 0,
+    WORM_UI_SPAN_HANDLE_END = 1,
+    WORM_UI_SPAN_HANDLE_BODY = 2,
+    WORM_UI_SPAN_HANDLE_CREATE = 3,
+} WormUiSpanHandle;
 
 typedef enum WormUiComposeViewportInputKind {
     WORM_UI_COMPOSE_VIEWPORT_INPUT_COARSE_WHEEL = 0,
@@ -1867,6 +1887,17 @@ typedef enum WormUiClipboardAction {
     WORM_UI_CLIPBOARD_CUT,
     WORM_UI_CLIPBOARD_PASTE,
 } WormUiClipboardAction;
+
+/* A pointer press on the timing lanes, as raw as the panel knows it: y is a drawn-orientation
+   viewport pixel row. The viewport height, downscroll flag and visible document slice travel with
+   it so one sys function turns it into a document fraction (and then a row). */
+typedef struct WormUiTimingTarget {
+    double screen_y;
+    double viewport_height_pixels;
+    double document_begin_fraction;
+    double document_end_fraction;
+    bool downscroll;
+} WormUiTimingTarget;
 
 typedef struct WormUiWorkspaceAction {
     WormUiClipboardAction clipboard;
@@ -1991,7 +2022,7 @@ typedef struct WormUiWorkspaceAction {
     uint64_t timing_object_id;
     WormUiTimingLaneKind timing_lane;
     bool timing_has_target_y;
-    double timing_target_y_fraction;
+    WormUiTimingTarget timing_target;
     double timing_value;
     double timing_secondary_value;
     bool timing_transition_is_seconds;

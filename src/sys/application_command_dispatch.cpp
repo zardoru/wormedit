@@ -3,6 +3,7 @@
 #include "sys/compose_bookmark_commands.h"
 #include "sys/compose_input.h"
 #include "sys/compose_scroll_geometry.h"
+#include "sys/compose_timing_delete.h"
 #include "sys/external_player.h"
 #include "sys/transport_player_actions.h"
 #include "ui/frontend.h"
@@ -230,6 +231,20 @@ auto edit_commands(command_context_t& context) -> std::optional<command_result_t
     auto* state = context.compose();
     if (!state)
         return reject_application_command(context.status, "Delete requires the active Compose chart.");
+    // Timing markers (SV, BPM, stops, ...) are deleted through the timing controller.
+    const auto timing = wormedit::sys::delete_selected_timing_markers(
+        context.history, *state, context.application_state.timing_locked);
+    if (timing.handled) {
+        if (!timing.command.applied)
+            return reject_application_command(
+                context.status, timing.command.diagnostics.empty()
+                                    ? "Timing markers were not deleted."
+                                    : timing.command.diagnostics.front().message);
+        context.status = "Timing markers deleted.";
+        const auto rebound = context.rebind();
+        if (!rebound.accepted) return rebound;
+        return command_result_t{.accepted = true};
+    }
     const auto result = wormedit::dispatch_editor_action(
         context.history, *state, wormedit::delete_editor_selection_action_t{});
     auto accepted = accept_editor_command(

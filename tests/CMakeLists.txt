@@ -62,6 +62,7 @@ add_executable(wormedit_core_tests
     sys/compose_selection_transform_tests.cpp
     sys/compose_label_search_tests.cpp
     sys/compose_dead_spans_tests.cpp
+    sys/compose_scroll_geometry_tests.cpp
     sys/compose_kiai_spans_tests.cpp
     sys/compose_sv_graph_tests.cpp
     sys/compose_recipe_areas_tests.cpp
@@ -80,6 +81,8 @@ add_executable(wormedit_core_tests
     core/fixture_inventory_tests.cpp
     core/format_field_schema_tests.cpp
     core/grid_tests.cpp
+    core/snap_tests.cpp
+    core/span_manipulation_tests.cpp
     core/interaction_tests.cpp
     core/cursor_write_guard_tests.cpp
     core/chart_clipboard_tests.cpp

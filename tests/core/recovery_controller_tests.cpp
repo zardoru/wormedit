@@ -38,7 +38,7 @@ auto read_text(const std::filesystem::path& path) -> std::string {
 }
 
 auto valid_song(std::uint64_t revision) -> wormedit::song_document_t {
-    return {.schema_version = 1, .id = wormedit::song_id_t{417}, .revision = revision};
+    return {.schema_version = 2, .id = wormedit::song_id_t{417}, .revision = revision};
 }
 
 auto scan_project(const std::filesystem::path& primary)

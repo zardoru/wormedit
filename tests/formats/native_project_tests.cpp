@@ -381,7 +381,7 @@ TEST_CASE("native project rejects malformed, unsupported, over-limit, and invali
                    wormedit::native_project_diagnostic_code_t::unsupported_version));
 
     auto unsupported_document_json = nlohmann::json::parse(*written.bytes);
-    unsupported_document_json["document"]["schema_version"] = 2;
+    unsupported_document_json["document"]["schema_version"] = 3;
     const auto unsupported_document =
         wormedit::parse_native_project(unsupported_document_json.dump());
     CHECK_FALSE(unsupported_document.song.has_value());
@@ -505,9 +505,9 @@ namespace {
 
 namespace internal = wormedit::native_project_internal;
 
-// Fake legacy v0 shape: a valid v1 document with schema_version 0 and an extra
-// `legacy_title` field that the migration must fold away.
-auto fake_v0_to_v1(nlohmann::json& document) -> std::string {
+// Fake legacy shape: a valid current document stamped schema_version 1 with an extra
+// `legacy_title` field that the injected step must fold away.
+auto fake_legacy_fold(nlohmann::json& document) -> std::string {
     if (!document.contains("legacy_title")) {
         return "missing legacy_title";
     }
@@ -532,40 +532,63 @@ auto failing_migration(nlohmann::json&) -> std::string {
 auto legacy_project_bytes() -> std::string {
     const auto written = wormedit::write_native_project(rich_bmson_song());
     auto root = nlohmann::json::parse(*written.bytes);
-    root["document"]["schema_version"] = 0;
+    root["document"]["schema_version"] = 1;
     root["document"]["legacy_title"] = "old";
     return root.dump();
 }
 
 } // namespace
 
-TEST_CASE("native project migrations: version 1 passes through the default table",
+TEST_CASE("native project migrations: the current schema passes through the default table",
           "[unit][format][native-project][migration]") {
-    CHECK(internal::default_migrations().empty());
+    REQUIRE(internal::default_migrations().size() == 1);
+    CHECK(internal::default_migrations().front().from_version == 1);
     const auto written = wormedit::write_native_project(rich_bmson_song());
     REQUIRE(written.bytes.has_value());
     auto document = nlohmann::json::parse(*written.bytes).at("document");
+    REQUIRE(document.at("schema_version") == 2);
     const auto before = document;
-    const auto outcome = internal::migrate_document(document, 1, internal::default_migrations());
+    const auto outcome = internal::migrate_document(document, 2, internal::default_migrations());
     CHECK(outcome.status == internal::migration_status_t::unchanged);
     CHECK(document == before);
 }
 
-TEST_CASE("native project migrations: a v0 document migrates through the injected table",
+TEST_CASE("native project migrations: schema 1 documents gain an empty expression source",
+          "[unit][format][native-project][migration][sv-recipe]") {
+    const auto written = wormedit::write_native_project(rich_bmson_song());
+    REQUIRE(written.bytes.has_value());
+    auto root = nlohmann::json::parse(*written.bytes);
+    auto& recipe = root["document"]["charts"][0]["sv_recipes"][0];
+    recipe.erase("expression_source");
+    root["document"]["schema_version"] = 1;
+
+    const auto parsed = wormedit::parse_native_project(root.dump());
+    REQUIRE(parsed.song.has_value());
+    CHECK(parsed.song->schema_version == 2);
+    CHECK(parsed.song->charts.front().sv_recipes.front().expression_source.empty());
+    const auto rewritten = wormedit::write_native_project(*parsed.song);
+    REQUIRE(rewritten.bytes.has_value());
+    CHECK(rewritten.bytes == written.bytes);
+
+    // A schema 1 file that already carries the key, or a malformed recipe list, still behaves.
+    auto malformed = root;
+    malformed["document"]["charts"][0]["sv_recipes"] = 5;
+    CHECK_FALSE(wormedit::parse_native_project(malformed.dump()).song.has_value());
+}
+
+TEST_CASE("native project migrations: a legacy document migrates through the injected table",
           "[unit][format][native-project][migration]") {
-    const std::array<internal::migration_t, 1> table{{{0, &fake_v0_to_v1}}};
+    const std::array<internal::migration_t, 1> table{{{1, &fake_legacy_fold}}};
     const auto bytes = legacy_project_bytes();
 
-    // Without the migration the legacy document is rejected.
+    // The released table does not know the extra field, so the legacy document is rejected.
     const auto rejected = wormedit::parse_native_project(bytes);
     CHECK_FALSE(rejected.song.has_value());
-    CHECK(has_code(rejected.diagnostics,
-                   wormedit::native_project_diagnostic_code_t::unsupported_version));
 
     const auto migrated =
-        internal::parse_native_project_with_migrations(bytes, {}, 1, table);
+        internal::parse_native_project_with_migrations(bytes, {}, 2, table);
     REQUIRE(migrated.song.has_value());
-    CHECK(migrated.song->schema_version == 1);
+    CHECK(migrated.song->schema_version == 2);
     const auto rewritten = wormedit::write_native_project(*migrated.song);
     REQUIRE(rewritten.bytes.has_value());
     CHECK(rewritten.bytes == wormedit::write_native_project(rich_bmson_song()).bytes);
@@ -610,16 +633,16 @@ TEST_CASE("native project migrations: future, malformed, and gapped versions rej
 
 TEST_CASE("native project migrations: a failing step publishes no document",
           "[unit][format][native-project][migration][negative]") {
-    const std::array<internal::migration_t, 1> table{{{0, &failing_migration}}};
+    const std::array<internal::migration_t, 1> table{{{1, &failing_migration}}};
     const auto result =
-        internal::parse_native_project_with_migrations(legacy_project_bytes(), {}, 1, table);
+        internal::parse_native_project_with_migrations(legacy_project_bytes(), {}, 2, table);
     CHECK_FALSE(result.song.has_value());
     CHECK(has_code(result.diagnostics,
                    wormedit::native_project_diagnostic_code_t::invalid_document));
 
-    nlohmann::json document{{"schema_version", 0U}, {"keep", true}};
+    nlohmann::json document{{"schema_version", 1U}, {"keep", true}};
     const auto before = document;
-    CHECK(internal::migrate_document(document, 1, table).status ==
+    CHECK(internal::migrate_document(document, 2, table).status ==
           internal::migration_status_t::failed);
     CHECK(document == before);
 }
@@ -723,4 +746,24 @@ TEST_CASE("current BGM columns and non-BMS lanes pass through the load repair un
     const auto before = song.charts.front().bgm_source_lanes;
     CHECK_FALSE(wormedit::native_project_internal::normalize_legacy_bms_bgm(song));
     CHECK(song.charts.front().bgm_source_lanes.size() == before.size());
+}
+
+TEST_CASE("native projects round-trip Lua expression recipes",
+          "[unit][format][native-project][sv-recipe]") {
+    auto song = rich_bmson_song();
+    auto& recipe = song.charts.front().sv_recipes.front();
+    recipe.curve = wormedit::sv_recipe_curve_t::lua_expression;
+    recipe.expression_source = "return 1 + 0.5 * math.sin(t * math.pi)";
+    REQUIRE(wormedit::validate_document(song).empty());
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.bytes.has_value());
+    auto serialized = nlohmann::json::parse(*written.bytes);
+    CHECK(serialized["document"]["charts"][0]["sv_recipes"][0]["expression_source"] ==
+          recipe.expression_source);
+
+    const auto reparsed = wormedit::parse_native_project(*written.bytes);
+    REQUIRE(reparsed.song.has_value());
+    const auto& loaded = reparsed.song->charts.front().sv_recipes.front();
+    CHECK(loaded.curve == wormedit::sv_recipe_curve_t::lua_expression);
+    CHECK(loaded.expression_source == recipe.expression_source);
 }

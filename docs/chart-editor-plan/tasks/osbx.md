@@ -135,7 +135,7 @@ document, and a failed run keeps the last materialized result.
 - **Read first:** `docs/osbx-draft-spec.md` (Parametric scroll and speed generation), `include/wormedit/core/sv_recipe.h` (`sample_sv_recipe`, `compile_sv_recipes`), `include/wormedit/scripting/lua_sandbox.h`.
 - **Files owned:** `include/wormedit/core/sv_recipe.h`, `src/core/sv_recipe.cpp`, new `src/scripting/lua_curve.cpp/.h`, new `tests/lua/lua_curve_tests.cpp`, `tests/core/sv_recipe_tests.cpp`, `src/formats/native_project.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Steps:**
-  1. Add a `lua_function` curve kind to the recipe type with the stored fields above (no bytecode).
+  1. The curve kind already exists as `sv_recipe_curve_t::lua_expression` with an inline `expression_source` (native schema 2, T-319; stored, validated and round-tripped, but sampling rejects it as unsupported). Extend it with the remaining stored fields above (API version, entry point, named parameters, input hashes, seed, optional project-relative source reference) as an additive schema 3 migration, and replace the unsupported rejection in `sample_sv_recipe` with the sampler callback (no bytecode).
   2. A sampler callback interface in core; the Lua implementation lives in `src/scripting` so core stays Lua-free.
   3. Referential transparency check: sample every point twice in different orders; any difference rejects with "stateful curve".
   4. `ctx` is read-only: interval endpoints, baseline effective scroll at `p`, parameters, seed-derived RNG.

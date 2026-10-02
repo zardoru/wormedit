@@ -741,6 +741,8 @@ auto set_timing_recipe_curve_parameters(wormedit::sv_recipe_t& candidate,
                set_parameter(candidate.parameters.bump_length, form.bump_length) &&
                set_parameter(candidate.parameters.bump_x, form.bump_x) &&
                set_parameter(candidate.parameters.bump_y, form.bump_y);
+    case sv_recipe_curve_t::lua_expression:
+        return false;  // the Timing form has no expression editor
     }
     return false;
 }

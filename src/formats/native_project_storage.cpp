@@ -36,6 +36,12 @@ using json = nlohmann::json;
 
 constexpr std::string_view recovery_format = "wormedit-recovery";
 constexpr std::uint64_t recovery_format_version = 1;
+
+// The envelope records the document schema of its payload. The payload is a native project, so any
+// schema the project reader can migrate (1) or read directly (2) is acceptable here.
+constexpr auto recovery_schema_readable(std::uint64_t schema) -> bool {
+    return schema == 1 || schema == 2;
+}
 constexpr std::size_t maximum_diagnostics = 8;
 constexpr std::size_t maximum_diagnostic_message_bytes = 240;
 constexpr std::size_t maximum_recovery_path_bytes = 4096;
@@ -502,7 +508,7 @@ auto parse_recovery_impl(std::string_view bytes, native_project_limits_t limits,
         if (!root.is_object() || root.size() != 13 ||
             root.value("format", std::string{}) != recovery_format ||
             strict_unsigned(root.at("format_version")) != recovery_format_version ||
-            strict_unsigned(root.at("schema_version")) != 1) {
+            !recovery_schema_readable(strict_unsigned(root.at("schema_version")))) {
             add_diagnostic(diagnostics,
                            native_project_storage_diagnostic_code_t::validation_failure,
                            "recovery envelope schema is unsupported or malformed", path);

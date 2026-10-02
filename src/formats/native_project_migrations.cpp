@@ -3,6 +3,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <map>
 #include <set>
 #include <string>
@@ -12,8 +13,30 @@
 
 namespace wormedit::native_project_internal {
 
-auto default_migrations() -> std::span<const migration_t> {
+namespace {
+
+// Schema 2 adds `expression_source` to SV recipes (the reserved Lua expression curve). Every
+// schema 1 recipe gets an empty one, which is what a non-expression curve carries.
+auto migrate_v1_to_v2(nlohmann::json& document) -> std::string {
+    if (!document.contains("charts")) return {};
+    if (!document.at("charts").is_array()) return "document charts must be an array";
+    for (auto& chart : document.at("charts")) {
+        if (!chart.is_object() || !chart.contains("sv_recipes")) continue;
+        if (!chart.at("sv_recipes").is_array()) return "chart sv_recipes must be an array";
+        for (auto& recipe : chart.at("sv_recipes")) {
+            if (!recipe.is_object()) return "sv recipe must be an object";
+            if (!recipe.contains("expression_source")) recipe["expression_source"] = "";
+        }
+    }
     return {};
+}
+
+constexpr std::array<migration_t, 1> released_migrations{{{1, &migrate_v1_to_v2}}};
+
+} // namespace
+
+auto default_migrations() -> std::span<const migration_t> {
+    return released_migrations;
 }
 
 namespace {

@@ -200,6 +200,8 @@ auto curve_value(const sv_recipe_t& recipe, long double p) -> long double {
         return p >= begin && p < end ? rational_number(values.bump_x)
                                      : rational_number(values.bump_y);
     }
+    case sv_recipe_curve_t::lua_expression:
+        break;  // not evaluable yet; sample_sv_recipe rejects the recipe before this is reached
     }
     return std::numeric_limits<long double>::quiet_NaN();
 }
@@ -375,7 +377,7 @@ auto valid_recipe_enum_domains(const sv_recipe_t& recipe, diagnostic_list_t& dia
         static_cast<unsigned int>(recipe.output) <=
             static_cast<unsigned int>(sv_recipe_output_t::speeds) &&
         static_cast<unsigned int>(recipe.curve) <=
-            static_cast<unsigned int>(sv_recipe_curve_t::bump) &&
+            static_cast<unsigned int>(sv_recipe_curve_t::lua_expression) &&
         static_cast<unsigned int>(recipe.sampling.mode) <=
             static_cast<unsigned int>(sv_recipe_sampling_mode_t::adaptive);
     if (!valid) {
@@ -478,6 +480,23 @@ void validate_sampling(const sv_recipe_t& recipe, std::uint64_t span,
     }
 }
 
+constexpr std::size_t maximum_expression_source_bytes = 16 * 1024;
+
+// The expression source belongs to the lua_expression curve alone, bounded and free of NUL bytes.
+void validate_expression_source(const sv_recipe_t& recipe, diagnostic_list_t& diagnostics) {
+    const bool is_expression = recipe.curve == sv_recipe_curve_t::lua_expression;
+    if (!is_expression && !recipe.expression_source.empty()) {
+        reject(diagnostics, diagnostic_code_t::invalid_id,
+               "only a Lua expression SV recipe may carry expression source");
+    }
+    if (is_expression && (recipe.expression_source.empty() ||
+                          recipe.expression_source.size() > maximum_expression_source_bytes ||
+                          recipe.expression_source.find('\0') != std::string::npos)) {
+        reject(diagnostics, diagnostic_code_t::invalid_id,
+               "a Lua expression SV recipe needs 1 to 16384 non-NUL bytes of source");
+    }
+}
+
 void validate_curve_outputs(const sv_recipe_t& recipe, diagnostic_list_t& diagnostics) {
     const auto& params = recipe.parameters;
     if (recipe.curve == sv_recipe_curve_t::constant &&
@@ -541,6 +560,7 @@ auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe
                "exponential SV recipe shape must be between -32 and 32");
     }
     validate_bump_region(recipe, span, diagnostics);
+    validate_expression_source(recipe, diagnostics);
     validate_transition(recipe, diagnostics);
     validate_sampling(recipe, span, diagnostics);
     validate_curve_outputs(recipe, diagnostics);
@@ -711,6 +731,11 @@ auto sample_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe)
     sv_recipe_sample_result_t result;
     result.diagnostics = validate_sv_recipe(chart, recipe);
     if (!result.diagnostics.empty()) {
+        return result;
+    }
+    if (recipe.curve == sv_recipe_curve_t::lua_expression) {
+        reject(result.diagnostics, diagnostic_code_t::unsupported_feature,
+               "Lua expression SV recipes are stored but not evaluated yet");
         return result;
     }
     const auto index_result = build_measure_index(chart);
@@ -1652,6 +1677,52 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
         recipe->range = edit.range;
         context.label = "Move SV recipe range";
     }
+}
+
+// Marks events that came from baking a recipe so they read as materialized, and moves their source
+// order after the chart's existing events so ordering at one row stays deterministic.
+template <typename Event>
+void mark_materialized_events(std::vector<Event>& events, std::size_t first_order) {
+    for (auto& event : events) {
+        if (event.provenance.profile != "sv-recipe-export") continue;
+        event.provenance.profile = "sv-recipe-materialized";
+        event.provenance.source_order += first_order;
+    }
+}
+
+template <typename Event>
+auto next_event_source_order(const std::vector<Event>& events) -> std::size_t {
+    std::size_t next = 0;
+    for (const auto& event : events) next = std::max(next, event.provenance.source_order + 1);
+    return next;
+}
+
+void apply_recipe_operation(sv_recipe_edit_context_t& context,
+                            chart_document_t& chart,
+                            const materialize_sv_recipe_action_t& edit) {
+    const auto* recipe = editable_recipe(context, chart, edit.recipe);
+    if (!recipe)
+        return;
+    // Bake a detached copy holding only this recipe, then adopt its events.
+    auto scratch = chart;
+    scratch.sv_recipes = {*recipe};
+    scratch.sv_recipes.front().enabled = true;
+    auto baked = bake_sv_recipes_for_export(scratch);
+    if (!baked) {
+        context.result.diagnostics.insert(context.result.diagnostics.end(),
+                                          baked.diagnostics.begin(), baked.diagnostics.end());
+        if (context.result.diagnostics.empty())
+            reject(context.result.diagnostics, diagnostic_code_t::invalid_id,
+                   "SV recipe could not be materialized");
+        return;
+    }
+    mark_materialized_events(baked.chart->scrolls, next_event_source_order(chart.scrolls));
+    mark_materialized_events(baked.chart->speeds, next_event_source_order(chart.speeds));
+    chart.scrolls = std::move(baked.chart->scrolls);
+    chart.speeds = std::move(baked.chart->speeds);
+    std::erase_if(chart.sv_recipes, [&](const auto& item) { return item.id == edit.recipe; });
+    context.label = "Materialize SV recipe";
+    context.changed = true;
 }
 
 template <typename Edit>

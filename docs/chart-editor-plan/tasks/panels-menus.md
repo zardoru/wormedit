@@ -131,6 +131,25 @@ Apply the stale-plan check (rule 9) first.
 - **Verify:** standard build/test; smoke PNGs.
 - **Out of scope:** new layer features.
 
+## T-312 Move the note palette into a tall left toolbar in Compose
+
+- **Status:** ready
+- **Outcome:** the note-kind buttons (Tap, Hold, Mine, Invisible, Lift, Fake, Roll) form one vertical column along the left edge of the Compose pane, running the full height of the editor area, in the style of the osu! editor, Affinity, and paint programs; the horizontal palette row under the toolbar is gone, so the chart field gains that row's height.
+- **Request (user, 2026-10-01):** "The note palette should [be] a sort of tall left toolbar a la osu or affinity or paint programs in general"; side confirmed: "Left by default."
+- **Current behavior (2026-10-01):** `render_note_kind_palette` (`src/ui/nuklear/compose_toolbar.cpp`) draws a second toolbar row of 30-px icon buttons when `note_kind_palette_visible` is true.
+- **Stale-plan check:** grep `render_note_kind_palette` in `src/ui/nuklear/compose_panel.cpp`.
+- **Read first:** `src/ui/nuklear/compose_toolbar.cpp` (`render_note_kind_palette`, `render_compose_toolbar`), `src/ui/nuklear/compose_panel.cpp` (the `Compose editor` / `Compose inspector` layout space), `src/ui/nuklear/chrome.h` (`IconButton`).
+- **Files owned:** `src/ui/nuklear/compose_toolbar.cpp/.h`, `src/ui/nuklear/compose_panel.cpp`.
+- **Steps:**
+  1. Expose the palette as `render_compose_note_palette_column(context, view, action)` and stop calling it from `render_compose_toolbar`.
+  2. In the Compose body layout space, when `note_kind_palette_visible`, push a strip 36 px wide at x = 0 for the full body height and move the editor group right by that width; otherwise the editor keeps the whole width.
+  3. Inside the strip, a group without scrollbars or border, one 30 × 30 `IconButton` per allowed kind, top-aligned, same icons, tooltips, order, armed highlight, and `WORM_UI_COMPOSE_INPUT_ARM_NOTE_KIND` input as today.
+  4. Check that pointer input in the field still lands on the right lane, since the field's left edge moved (the canvas uses its own bounds, so expect no change).
+- **Invariants:** arming behavior, Alt+1…Alt+7, and allowed kinds per chart are unchanged; charts that hide the palette lose no width.
+- **Reject/failure behavior:** a window too short for every button clips the column at the bottom; it never overlaps the field.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^frontend-state\.|^documentation\.'`; `clang-tidy -p build` on the changed `.cpp` files; `scripts/smoke-compose-virtual-x.sh /tmp/out.png compose`, then open the PNG and confirm the column sits at the left edge, the old row is gone, and a click on a lane still places a note there.
+- **Out of scope:** a preference to put the column on the right (follow-up; left stays the default), selection or eraser tools in the column, a left dock that hosts other panels, palette customization.
+
 ## T-290 Add a CJK-capable font and UI localization (ja, zh, ko)
 
 - **Status:** deferred (late ambition, user decision 2026-09-30; was: ready)

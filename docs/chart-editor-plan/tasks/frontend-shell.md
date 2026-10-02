@@ -129,6 +129,26 @@ the stale-plan check (rule 9) first; parts of stage 2 already landed.
 - **Verify:** `cmake --build build` passed; 821/821 filtered core/audio/frontend/documentation tests passed; isolated Xvfb smoke `/tmp/wormedit-t234/status.png` inspected with rate dropdown and disabled Keep pitch. Final parent build and full suite 863/863 passed; changed project functions pass clang-tidy complexity checks.
 - **Out of scope:** per-chart saved rates.
 
+## T-307 Skip the playhead with the navigation keys and wheel while playing
+
+- **Status:** ready
+- **Outcome:** while chart preview plays in Compose, Up/Down move the playhead one active snap, PageUp/PageDown one measure, and the mouse wheel by the rows it would scroll, all in screen direction (downscroll flips them); playback continues from the new point and the following view jumps with it. Paused or stopped, these inputs keep moving the edit cursor and view as today.
+- **Request (user, 2026-10-01):** "skip the playhead ahead and back while I am playing"; "obey pageup/dn, mwheel and arrows".
+- **Current behavior (2026-10-01):** during playback Up/Down/PageUp/PageDown dispatch `move_edit_cursor_action_t` / `page_edit_cursor_action_t` (`dispatch_compose_navigation_actions`, `src/sys/compose_input.cpp`) and the wheel scrolls the view (`…_VIEWPORT_INPUT_COARSE_WHEEL` / `…_SMOOTH_WHEEL`), but the playhead-following scroll overrides both at once, so they appear to do nothing.
+- **Stale-plan check:** grep `seek_compose_playhead` in `src/sys/`.
+- **Read first:** `src/sys/compose_input.cpp` (`dispatch_compose_navigation_actions`, wheel viewport inputs), `src/sys/compose_minimap_navigation.cpp` (`navigate_compose_minimap_transport`, T-241 clamp and seek), `src/sys/compose_view.h` (`preview_playhead_absolute_row`, `transport_seek`, `transport_preview_playing`), `include/wormedit/core/timing.h` (`timing_at`).
+- **Files owned:** `src/sys/compose_input.cpp`, new `src/sys/compose_playhead_skip.cpp/.h`, new `tests/sys/compose_playhead_skip_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Steps:**
+  1. `compose_playhead_skip`: given the playhead absolute row, the chart's measure index, the active snap, and a signed step (snaps, measures, or wheel rows), return the target row. One snap goes to the next/previous active-snap row strictly past the playhead, so the first press lands on the grid. One measure goes to the same offset in the next/previous measure, clamped to that measure's length.
+  2. Convert the target row to an output frame with `timing_at` (warp side = entry) and clamp it with T-241 step 7: before the first audible frame becomes that frame (≥ 0); past the compiled end becomes the end.
+  3. In `compose_input.cpp`, when `transport_preview_playing()` is true, send navigation actions and non-zoom wheel inputs to the skip instead of the cursor or view. Sum every such input of one frame (key repeats, wheel and trackpad deltas, with sub-row remainders kept until the next frame) and call `transport_seek` at most once per frame. Primary+wheel keeps zooming.
+  4. Wheel rows: the pixel delta the view would have scrolled, divided by the current pixels per row.
+  5. Tests: snap step from between two rows lands on the next row; measure step across measures of different lengths; downscroll flips direction; both clamps; many inputs in one frame produce one seek; while paused or stopped no seek happens and the cursor moves as today.
+- **Invariants:** skipping never changes the document or playback rate; the seek uses the same frame clock as T-241.
+- **Reject/failure behavior:** if the seek fails, keep playing from the prior position and show the existing seek message (T-241).
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^core\.|^frontend-state\.|^documentation\.|compose_playhead_skip'`; `clang-tidy -p build` on each changed `.cpp`; isolated Xvfb/SDL-dummy check that Down, PageDown, and one wheel notch during playback each advance the reported playhead by the expected rows and playback continues.
+- **Out of scope:** seeking while paused, a fixed-seconds skip, audible scrubbing, marker jumps (T-308).
+
 ## T-46 Render synchronized side-by-side difficulties in Compare/Validate
 
 - **Status:** ready

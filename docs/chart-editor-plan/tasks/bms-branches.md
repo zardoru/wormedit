@@ -156,6 +156,25 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'native_project'`.
 - **Out of scope:** changing the native schema beyond the version bump.
 
+## T-311 Set up BGM columns from the Compose UI
+
+- **Status:** ready
+- **Outcome:** on a BMS chart, the BGM pane header shows "BGM columns: N" with − and + buttons and a number field; raising N appends empty columns named `BGM k`; lowering N removes trailing columns only while they are empty; each change is one undo step.
+- **Request (user, 2026-10-01):** a "set up BGM columns" feature in the chart UI; "it's pretty important."
+- **Current behavior (2026-10-01):** new BMS charts start with 15 columns (`make_bms_initial_chart`, `src/sys/application_defaults.cpp`); BMS import builds columns per measure (T-98); placing onto an occupied cell appends a column (`src/core/resource_assignment.cpp`). There is no way to add, remove, or count columns in the UI.
+- **Stale-plan check:** grep `set_bgm_column_count` in `src/core/`.
+- **Read first:** `src/core/resource_assignment.cpp` (BGM lane append, ID and `source_order` rules), `include/wormedit/core/document.h` (`bgm_source_lane_t`), `src/ui/nuklear/compose_toolbar.cpp` (BGM column scroll controls), `src/sys/compose_view.cpp` (BGM lane projection).
+- **Files owned:** new `include/wormedit/core/bgm_columns.h`, new `src/core/bgm_columns.cpp`, new `tests/core/bgm_columns_tests.cpp`, `src/ui/frontend.h`, `src/sys/compose_actions.cpp`, `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Steps:**
+  1. Core `apply_bgm_column_count(history, expected_revision, chart, count)`: append columns with fresh IDs, the next `source_order`, and names `BGM k`; remove trailing columns that have no BGM events; reject atomically if any column to remove has events, naming the first such column and its event count. Allowed range 1–128 (BMSE's limit, as in T-98).
+  2. Tests: grow, shrink empty, refuse a shrink over events, the range limits, undo/redo, unchanged event IDs and rows.
+  3. Wire it through the standard pattern: the view gets `bgm_column_count` and `bgm_column_count_editable` (true only for BMS charts), the action carries the new count.
+  4. Widget beside the BGM column scroll buttons: label, −, number field (commits on Enter or focus loss), +. Disabled for non-BMS charts.
+- **Invariants:** export unchanged for the same events (the writer already skips empty columns); BMSON sound-channel lanes are untouched.
+- **Reject/failure behavior:** a refused shrink shows the core message and leaves the count and the field at the current value.
+- **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^core\.|bgm_columns|^frontend-state\.|^documentation\.'`; `clang-tidy -p build` on each changed `.cpp`; isolated Xvfb capture of a BMS chart after + and − with the BGM pane visible.
+- **Out of scope:** renaming or reordering columns, deleting a column that has events (moving them elsewhere), BMSON lanes.
+
 ## T-287 Per-chart branch sources and opt-out repair proposals
 
 - **Status:** ready

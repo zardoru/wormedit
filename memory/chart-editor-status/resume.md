@@ -48,6 +48,10 @@ Work is executed as [task cards](../../docs/chart-editor-plan/tasks.md). Take th
 22. Format scope (2026-09-30): robust non-gameplay round-trip for BMS (T-288) and osu!mania (T-289); BMS exports UTF-8 for beatoraja (T-282 step 4); pin the latest osu!mania format (T-291). SM/SSC stays at its current preserved subset.
 23. Freeze, do first: UI stuck in an unbounded swapchain present (`SDL_RenderPresent` → Vulkan acquire) under niri via XWayland — [T-293](../../docs/chart-editor-plan/tasks/rendering.md): the compositor throttled the window to ~1 fps and Nuklear dropped same-frame clicks; prefer native Wayland, non-blocking present with own pacing, split press/release across frames, recover focus from input, stall/throttle watchdog.
 24. The invalid-document “stuck cursor, dead UI” regression is fixed: T-294 stores cross-measure StepMania holds in the head measure; [T-295](../../docs/chart-editor-plan/tasks/persistence-metadata.md) is done and validates every opened document, conservatively repairs misplaced storage, and names chart/measure/object in failures. The earlier T-293 throttling theory remains unconfirmed; its presentation/watchdog work is separate.
+25. Transport QOL (user request 2026-10-01): while playing, Up/Down, PageUp/PageDown and the wheel skip the playhead — [T-307](../../docs/chart-editor-plan/tasks/frontend-shell.md), ready.
+26. Bookmarks (user request 2026-10-01): [T-308](../../docs/chart-editor-plan/tasks/markers.md) Primary+Up/Down jumps, T-309 Primary+B adds at cursor or playhead, T-310 names drawn on bookmark lines; all ready.
+27. BGM columns UI (user: "pretty important", 2026-10-01): set the BMS BGM column count from the BGM pane — [T-311](../../docs/chart-editor-plan/tasks/bms-branches.md), ready.
+28. Compose layout (user request 2026-10-01): the note palette becomes a tall left toolbar — [T-312](../../docs/chart-editor-plan/tasks/panels-menus.md), ready.
 
 ## Handoff rule
 

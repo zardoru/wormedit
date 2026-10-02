@@ -164,6 +164,11 @@ catch_discover_tests(wormedit_core_tests
 )
 
 if(WORMEDIT_ENABLE_AUDIO_DECODER)
+    # Intentionally not discovered by CTest: opt in with [.performance] in Release.
+    add_executable(wormedit_performance_tests core/performance_budget_tests.cpp)
+    target_link_libraries(wormedit_performance_tests
+        PRIVATE wormedit::audio_decoder Catch2::Catch2WithMain)
+
     add_executable(wormedit_audio_tests
         ../src/sys/project_open.cpp
         ../src/sys/application_defaults.cpp

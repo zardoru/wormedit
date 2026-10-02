@@ -54,7 +54,12 @@ auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_ca
         std::ceil((request.viewport_scroll_pixels + request.viewport_height_pixels) * rows_per_pixel),
         timing_boundary_side_t::after_stops, true);
     if (!begin || !end) return false;
-    flattened.compose.waveform.overview_row = cache.waveform_overview_rows;
+    for (const auto& row : cache.waveform_overview_rows) {
+        if (!flattened.compose.waveform.overview_row.push_back(row)) {
+            flattened.compose.waveform.overview_row.clear();
+            return false;
+        }
+    }
     view.waveform_overview_rows = flattened.compose.waveform.overview_row.data();
     view.waveform_overview_row_count = flattened.compose.waveform.overview_row.size();
     view.waveform_overview_generation = cache.waveform_overview_generation;
@@ -66,6 +71,34 @@ auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_ca
           zero.seconds->denominator / waveform.total_frames : -1.0L;
     view.waveform_beat_zero_visible = std::isfinite(zero_fraction) && zero_fraction >= 0 && zero_fraction <= 1;
     view.waveform_beat_zero_fraction = view.waveform_beat_zero_visible ? static_cast<double>(zero_fraction) : 0.0;
+    return true;
+}
+void clear_frame_waveform_publication(flattened_workspace_t& flattened) {
+    flattened.compose.waveform.row = {};
+    flattened.compose.waveform.overview_row = {};
+    auto& view = flattened.view.compose;
+    view.waveform_rows = nullptr;
+    view.waveform_row_count = 0;
+    view.waveform_overview_rows = nullptr;
+    view.waveform_overview_row_count = 0;
+    view.waveform_overview_generation = 0;
+    view.waveform_overview_total_frames = 0;
+    view.waveform_overview_sample_rate = 0;
+    view.waveform_overview_visible_begin_fraction = 0;
+    view.waveform_overview_visible_end_fraction = 0;
+    view.waveform_beat_zero_visible = false;
+    view.waveform_beat_zero_fraction = 0;
+}
+auto prepare_frame_waveform_storage(flattened_workspace_t& flattened) -> bool {
+    auto* arena = flattened.arena();
+    if (!arena) return false;
+    auto rows = arena_array<WormUiComposeWaveformRowView>(*arena,
+        WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY);
+    auto overview = arena_array<WormUiComposeWaveformOverviewRowView>(*arena,
+        WORM_UI_COMPOSE_WAVEFORM_OVERVIEW_CAPACITY);
+    if (rows.capacity() == 0 || overview.capacity() == 0) return false;
+    flattened.compose.waveform.row = rows;
+    flattened.compose.waveform.overview_row = overview;
     return true;
 }
 struct envelope_projection_context_t {
@@ -147,7 +180,7 @@ auto cpu_row_needs_projection(const envelope_projection_ring_t& ring, std::int64
     return row.world_row != world || (row.incomplete && changed);
 }
 auto populate_cpu_envelope(const envelope_projection_context_t& context,
-                            std::vector<WormUiComposeWaveformRowView>& output) -> bool {
+                            frame_span<WormUiComposeWaveformRowView>& output) -> bool {
     const auto& request = context.request;
     if (!std::isfinite(request.viewport_scroll_pixels) || std::abs(request.viewport_scroll_pixels) > 1e12 ||
         !std::isfinite(request.viewport_height_pixels) || request.viewport_height_pixels <= 0 ||
@@ -165,7 +198,6 @@ auto populate_cpu_envelope(const envelope_projection_context_t& context,
             ++index;
         project_cpu_envelope_range(context, first + static_cast<std::int64_t>(begin), index - begin);
     }
-    output.reserve(count);
     for (std::size_t row = 0; row < count; ++row) {
         const auto world = first + static_cast<std::int64_t>(row);
         const auto& stored = ring.rows[cpu_row_slot(world, count)];
@@ -173,12 +205,15 @@ auto populate_cpu_envelope(const envelope_projection_context_t& context,
         auto value = stored.value;
         value.y_pixels -= std::floor(request.viewport_scroll_pixels);
         if (value.y_pixels < 0 || value.y_pixels > request.viewport_height_pixels) continue;
-        output.push_back(value);
+        if (!output.push_back(value)) {
+            output.clear();
+            return false;
+        }
     }
     return true;
 }
 
-void populate_direct_envelope(std::vector<WormUiComposeWaveformRowView>& output,
+void populate_direct_envelope(frame_span<WormUiComposeWaveformRowView>& output,
     const audio::waveform_t& waveform, const audio::waveform_t* selected_waveform,
     const timing_index_t& timing, const audio::aligned_waveform_request_t& request,
     audio::decoded_block_cache_t* decoded_blocks,
@@ -194,9 +229,8 @@ void populate_direct_envelope(std::vector<WormUiComposeWaveformRowView>& output,
     if (!stable_style && (!aligned || aligned.rows.empty()))
         aligned = audio::project_aligned_waveform(*selected_waveform, timing, request);
     if (aligned) {
-        output.reserve(aligned.rows.size());
         for (const auto& row : aligned.rows) {
-            output.push_back({
+            if (!output.push_back({
                 .y_pixels = row.y_pixels,
                 .absolute_peak = {std::clamp(row.absolute_peak[0], 0.0f, 1.0f),
                                   std::clamp(row.absolute_peak[1], 0.0f, 1.0f)},
@@ -204,7 +238,10 @@ void populate_direct_envelope(std::vector<WormUiComposeWaveformRowView>& output,
                         std::clamp(row.rms[1], 0.0f, 1.0f)},
                 .sample_point = row.sample_point,
                 .samples = {row.samples[0], row.samples[1]},
-            });
+            })) {
+                output.clear();
+                return;
+            }
         }
     }
 }
@@ -216,7 +253,7 @@ auto envelope_style(const audio::aligned_waveform_style_t* playback,
     return {.sample_points = window->frames_per_pixel < 1,
             .detail_level = window->frames_per_pixel < 256};
 }
-void orient_compose_waveform_rows(std::vector<WormUiComposeWaveformRowView>& rows,
+void orient_compose_waveform_rows(frame_span<WormUiComposeWaveformRowView>& rows,
                                   const WormUiComposeView& view) {
     for (auto& row : rows)
         row.y_pixels = compose_source_y(row.y_pixels, view.viewport_height_pixels, view.downscroll);
@@ -284,9 +321,7 @@ auto populate_compose_waveform_projection(
     cache.waveform_overview_total_frames = 0;
     cache.waveform_overview_sample_rate = 0;
     auto& compose = flattened.view.compose;
-    flattened.compose.waveform.row.clear();
-    compose.waveform_rows = nullptr;
-    compose.waveform_row_count = 0;
+    clear_frame_waveform_publication(flattened);
     if (!compose.visible || !has_selected_audio_asset)
         return false;
 
@@ -294,6 +329,11 @@ auto populate_compose_waveform_projection(
     if (!compose.scene_available || !interaction_state || !cache.marker_timing_index ||
         !analysis || !analysis->waveform)
         return false;
+
+    if (!prepare_frame_waveform_storage(flattened)) {
+        compose.truncated = true;
+        return false;
+    }
 
     const auto& waveform = *analysis->waveform;
     const audio::aligned_waveform_request_t request{

@@ -39,6 +39,8 @@ class frame_span {
     auto size() const noexcept -> std::size_t { return count_; }
     auto capacity() const noexcept -> std::size_t { return storage_.size(); }
     auto empty() const noexcept -> bool { return count_ == 0; }
+    auto front() noexcept -> T& { return storage_.front(); }
+    auto front() const noexcept -> const T& { return storage_.front(); }
     auto begin() noexcept -> T* { return data(); }
     auto end() noexcept -> T* { return count_ == 0 ? data() : data() + count_; }
     auto begin() const noexcept -> const T* { return data(); }
@@ -151,8 +153,8 @@ struct flattened_workspace_t {
             std::optional<WormUiComposeBgmMovePreviewView> move;
         } bgm;
         struct {
-            std::vector<WormUiComposeWaveformRowView> row;
-            std::vector<WormUiComposeWaveformOverviewRowView> overview_row;
+            frame_span<WormUiComposeWaveformRowView> row;
+            frame_span<WormUiComposeWaveformOverviewRowView> overview_row;
         } waveform;
         std::vector<std::uint64_t> bmson_draft_playable_lane;
         std::vector<std::uint8_t> bmson_draft_restart;

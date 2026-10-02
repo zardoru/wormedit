@@ -489,7 +489,8 @@ void check_waveform_axis(envelope_projection_fixture_t& fixture, bool sample_poi
     auto& view = fixture.flattened.view.compose;
     view.downscroll = false;
     fixture.project();
-    const auto upscroll = fixture.flattened.compose.waveform.row;
+    const auto& source = fixture.flattened.compose.waveform.row;
+    const std::vector<WormUiComposeWaveformRowView> upscroll(source.begin(), source.end());
     expect_gpu_work(!upscroll.empty());
     view.downscroll = true;
     fixture.project();
@@ -2492,5 +2493,148 @@ TEST_CASE("Compose pinch rejects invalid ratios and anchors before motion cancel
             expect_compose_test(viewport.autoscroll_active() == autoscroll);
             expect_compose_test(viewport.momentum_active() == !autoscroll);
         }
+    }
+}
+
+namespace {
+void expect_waveform_arena(bool value, const std::source_location location = std::source_location::current()) {
+    INFO("Waveform arena expectation at " << location.file_name() << ':' << location.line());
+    REQUIRE(value);
+}
+void borrow_waveform_frame(envelope_projection_fixture_t& fixture, frame_arena_t& arena) {
+    const auto view = fixture.flattened.view;
+    fixture.flattened = flattened_workspace_t{&arena};
+    fixture.flattened.view = view;
+}
+auto project_waveform_frame(envelope_projection_fixture_t& fixture) -> bool {
+    return populate_compose_waveform_projection(fixture.flattened, fixture.cache,
+        &fixture.analysis, false, true, &fixture.interaction, nullptr,
+        &fixture.blocks, &fixture.style);
+}
+void check_empty_frame_waveform(const WormUiComposeView& view) {
+    expect_waveform_arena(view.waveform_rows == nullptr && view.waveform_row_count == 0);
+    expect_waveform_arena(view.waveform_overview_rows == nullptr && view.waveform_overview_row_count == 0);
+    expect_waveform_arena(view.waveform_overview_generation == 0);
+    expect_waveform_arena(view.waveform_overview_total_frames == 0 && view.waveform_overview_sample_rate == 0);
+}
+}
+TEST_CASE("Compose waveform arena output preserves persistent source caches across 1000 resets",
+          "[sys][waveform-arena]") {
+    envelope_projection_fixture_t fixture;
+    frame_arena_t arena({.chunk_bytes=1024*1024,.maximum_bytes=2*1024*1024});
+    borrow_waveform_frame(fixture, arena);
+    expect_waveform_arena(project_waveform_frame(fixture));
+    compare_cached_envelope_source(fixture);
+    const auto* persistent_overview = fixture.cache.waveform_overview_rows.data();
+    const auto* persistent_envelope = fixture.cache.waveform_envelope_ring.rows.data();
+    const auto generation = fixture.flattened.view.compose.waveform_overview_generation;
+    const auto projected = fixture.cache.waveform_envelope_ring.projected_rows;
+    const auto used = arena.used_bytes(), committed = arena.committed_bytes();
+    bool stable = true;
+    std::size_t minimum_allocations = std::numeric_limits<std::size_t>::max(), maximum_allocations{};
+    for (int index=0; index<1000; ++index) {
+        arena.reset();
+        borrow_waveform_frame(fixture, arena);
+        allocations = 0; count_allocations = true;
+        const bool available = project_waveform_frame(fixture);
+        count_allocations = false;
+        minimum_allocations = std::min(minimum_allocations, allocations);
+        maximum_allocations = std::max(maximum_allocations, allocations);
+        stable = stable && available && arena.used_bytes() == used && arena.committed_bytes() == committed &&
+            fixture.flattened.view.compose.waveform_overview_generation == generation;
+    }
+    INFO("Remaining core timing factor allocations: " << minimum_allocations << ".." << maximum_allocations);
+    // Exact baseline0ba3ccb fresh-frame producer allocated12 times; two output
+    // allocations are removed. The remaining10 are timing_at factor vectors,
+    // outside this storage unit. A later core optimization may lower this bound.
+    expect_waveform_arena(stable);
+    expect_waveform_arena(maximum_allocations <= 10);
+    expect_waveform_arena(projected > 0);
+    expect_waveform_arena(fixture.cache.waveform_overview_rows.data() == persistent_overview);
+    expect_waveform_arena(fixture.flattened.view.compose.waveform_overview_rows != persistent_overview);
+    expect_waveform_arena(fixture.cache.waveform_envelope_ring.rows.data() == persistent_envelope);
+    expect_waveform_arena(fixture.cache.waveform_envelope_ring.projected_rows == 0);
+    expect_waveform_arena(static_cast<const void*>(fixture.flattened.view.compose.waveform_rows) !=
+        static_cast<const void*>(persistent_envelope));
+    compare_cached_envelope_source(fixture);
+}
+TEST_CASE("Compose waveform arena exhaustion clears both output arrays without changing cached RMS",
+          "[sys][waveform-arena]") {
+    envelope_projection_fixture_t fixture;
+    fixture.project();
+    const auto projected = fixture.cache.waveform_envelope_ring.projected_rows;
+    const auto generation = fixture.cache.waveform_overview_generation;
+    for (const auto limit : {std::size_t{64}, sizeof(WormUiComposeWaveformRowView) * WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY}) {
+        frame_arena_t arena({.chunk_bytes=limit,.maximum_bytes=limit});
+        borrow_waveform_frame(fixture, arena);
+        expect_waveform_arena(!project_waveform_frame(fixture));
+        check_empty_frame_waveform(fixture.flattened.view.compose);
+        expect_waveform_arena(fixture.flattened.view.compose.truncated);
+        expect_waveform_arena(fixture.cache.waveform_envelope_ring.projected_rows == projected);
+        expect_waveform_arena(fixture.cache.waveform_overview_generation == generation);
+    }
+}
+TEST_CASE("Compose waveform unavailable projection removes stale arena pointers after reset",
+          "[sys][waveform-arena]") {
+    envelope_projection_fixture_t fixture;
+    frame_arena_t arena;
+    borrow_waveform_frame(fixture, arena); fixture.project(); arena.reset();
+    expect_waveform_arena(!populate_compose_waveform_projection(fixture.flattened, fixture.cache,
+        &fixture.analysis, false, false, &fixture.interaction));
+    check_empty_frame_waveform(fixture.flattened.view.compose);
+    expect_waveform_arena(fixture.flattened.compose.waveform.row.capacity() == 0);
+    expect_waveform_arena(fixture.flattened.compose.waveform.overview_row.capacity() == 0);
+}
+TEST_CASE("Compose standalone waveform storage survives fixture destruction and move",
+          "[sys][waveform-arena]") {
+    flattened_workspace_t retained;
+    double expected_y{}; float expected_peak{};
+    std::size_t expected_rows{}, expected_overview{};
+    {
+        envelope_projection_fixture_t fixture; fixture.project();
+        expected_y=fixture.flattened.view.compose.waveform_rows[0].y_pixels;
+        expected_peak=fixture.flattened.view.compose.waveform_rows[0].absolute_peak[0];
+        expected_rows=fixture.flattened.view.compose.waveform_row_count;
+        expected_overview=fixture.flattened.view.compose.waveform_overview_row_count;
+        retained=fixture.flattened;
+    }
+    auto moved=std::move(retained);
+    expect_waveform_arena(moved.view.compose.waveform_row_count == expected_rows && expected_rows>0);
+    expect_waveform_arena(moved.view.compose.waveform_overview_row_count == expected_overview && expected_overview>0);
+    expect_waveform_arena(moved.view.compose.waveform_rows[0].y_pixels == expected_y);
+    expect_waveform_arena(moved.view.compose.waveform_rows[0].absolute_peak[0] == expected_peak);
+    expect_waveform_arena(moved.view.compose.waveform_rows == moved.compose.waveform.row.data());
+    expect_waveform_arena(moved.view.compose.waveform_overview_rows == moved.compose.waveform.overview_row.data());
+}
+TEST_CASE("Compose waveform arena preserves every row at the maximum output capacity",
+          "[sys][waveform-arena]") {
+    envelope_projection_fixture_t fixture;
+    fixture.analysis = overview_analysis(.25f);
+    fixture.analysis.waveform->key.frames_per_bin = 1024;
+    fixture.analysis.waveform->total_frames = fixture.analysis.waveform->bins.size() * 1024;
+    for (auto& bin : fixture.analysis.waveform->bins) {
+        bin.frame_count = 1024;
+        bin.rms = {.125f, .125f};
+    }
+    fixture.flattened.view.compose.viewport_height_pixels = WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY;
+    frame_arena_t arena;
+    borrow_waveform_frame(fixture, arena); fixture.project();
+    const auto& view = fixture.flattened.view.compose;
+    const auto reference = audio::project_aligned_waveform(*fixture.analysis.waveform,
+        *fixture.cache.marker_timing_index, {.viewport_scroll_pixels=fixture.interaction.viewport_scroll_pixels,
+            .viewport_height_pixels=view.viewport_height_pixels,
+            .pixels_per_standard_measure=view.pixels_per_standard_measure,
+            .maximum_rows=WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY});
+    expect_waveform_arena(static_cast<bool>(reference));
+    expect_waveform_arena(reference.rows.size() == WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY);
+    expect_waveform_arena(view.waveform_row_count == reference.rows.size());
+    for (std::size_t index=0; index<reference.rows.size(); ++index) {
+        const auto& row = view.waveform_rows[index];
+        const auto& expected = reference.rows[index];
+        expect_waveform_arena(row.y_pixels == expected.y_pixels);
+        expect_waveform_arena(std::ranges::equal(row.absolute_peak, expected.absolute_peak));
+        expect_waveform_arena(std::ranges::equal(row.rms, expected.rms));
+        expect_waveform_arena(row.sample_point == expected.sample_point);
+        expect_waveform_arena(std::ranges::equal(row.samples, expected.samples));
     }
 }

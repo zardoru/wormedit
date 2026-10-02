@@ -6,6 +6,7 @@
 
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/rational.h>
+#include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/timing.h>
@@ -19,6 +20,7 @@
 #include <bit>
 #include <charconv>
 #include <cmath>
+#include <cstdio>
 #include <cstdint>
 #include <iterator>
 #include <limits>
@@ -183,6 +185,35 @@ auto known_mania_key_profile(std::string_view id) -> bool {
     return parsed.ec == std::errc{} && parsed.ptr == digits.data() + digits.size() && keys >= 1 && keys <= 18;
 }
 } // namespace
+// Switchable profiles per lane count, built once: the frame path must not allocate.
+// Only the UI thread builds frames, so the cache needs no lock.
+static const std::vector<wormedit::lane_input_profile_t>& cached_lane_profile_choices(std::size_t lanes) {
+    static std::array<std::optional<std::vector<wormedit::lane_input_profile_t>>, 19> cache;
+    static const std::vector<wormedit::lane_input_profile_t> none;
+    if (lanes >= cache.size()) return none;
+    if (!cache[lanes]) cache[lanes] = wormedit::lane_profile_choices(lanes);
+    return *cache[lanes];
+}
+
+// Fills the switchable-profile list for the layout segment active at the cursor.
+static void populate_lane_profile_choices(WormUiComposeView& view, const wormedit::chart_document_t& chart,
+                                   wormedit::local_position_t cursor) {
+    view.lane_profile_choice_count = 0;
+    view.lane_profile_current = -1;
+    const auto* segment = wormedit::active_lane_layout_segment(chart, cursor);
+    if (!segment) return;
+    const auto& choices = cached_lane_profile_choices(segment->layout.lanes.size());
+    const auto count = std::min<std::size_t>(choices.size(), WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY);
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& layout = choices[index].layout;
+        const auto* prefix = layout.profile_id.starts_with("stepmania:") ? "StepMania " : "osu!mania ";
+        std::snprintf(view.lane_profile_names[index], sizeof(view.lane_profile_names[index]),
+                      "%s%s", prefix, layout.display_name.c_str());
+        if (layout.profile_id == segment->layout.profile_id)
+            view.lane_profile_current = static_cast<std::int8_t>(index);
+    }
+    view.lane_profile_choice_count = static_cast<std::uint8_t>(count);
+}
 auto compose_mode_family(const wormedit::lane_layout_t& layout) -> wormedit::editor_mode_family_t {
     using family = wormedit::editor_mode_family_t;
     const auto& id = layout.profile_id;
@@ -2758,6 +2789,9 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     const auto downscroll = input.downscroll;
     flattened.compose.interaction_view = interaction_view;
     view.bms_measure_labels = chart.source_family == wormedit::format_family_t::bms;
+    view.bgm_column_count = static_cast<std::uint32_t>(chart.bgm_source_lanes.size());
+    view.bgm_column_count_editable = view.bms_measure_labels;
+    populate_lane_profile_choices(view, chart, interaction_view.cursor);
     view.compose_measure_count = chart.measures.size();
     view.selected_bms_measure_number_plus_one =
         interaction_view.selected_canvas_measure

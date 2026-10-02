@@ -52,6 +52,7 @@ Work is executed as [task cards](../../docs/chart-editor-plan/tasks.md). Take th
 26. Bookmarks (user request 2026-10-01): [T-308](../../docs/chart-editor-plan/tasks/markers.md) Primary+Up/Down jumps, T-309 Primary+B adds at cursor or playhead, T-310 names drawn on bookmark lines; all ready.
 27. BGM columns UI (user: "pretty important", 2026-10-01): set the BMS BGM column count from the BGM pane — [T-311](../../docs/chart-editor-plan/tasks/bms-branches.md), ready.
 28. Compose layout (user request 2026-10-01): the note palette becomes a tall left toolbar — [T-312](../../docs/chart-editor-plan/tasks/panels-menus.md), ready.
+29. Compose cluster (2026-10-02, headless tests; SDL-side code uncompiled): 10K osu!mania-style lanes use `wbwbgybwbw` (T-269 note); T-270 green selection outline; T-308/T-309 bookmark commands; T-310 bookmark names; T-311 BGM column count. Each card's implementation notes say what remains to verify with a local build.
 
 ## Handoff rule
 

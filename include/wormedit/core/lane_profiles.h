@@ -139,6 +139,13 @@ struct stepmania_lane_spec_t {
 [[nodiscard]] auto stepmania_lane_specs(std::string_view step_type)
     -> std::span<const stepmania_lane_spec_t>;
 
+// Full profile (layout with arrow glyphs and number-row bindings) of a StepMania step type that
+// has a named layout; nullopt for other step types.
+[[nodiscard]] auto make_stepmania_profile_for(std::string_view step_type)
+    -> std::optional<lane_input_profile_t>;
+// osu!mania key layout: `osu-mania-Nk`, lanes "Key 1"..."Key N", 1 to 18 keys.
+[[nodiscard]] auto make_osu_mania_profile(std::uint32_t keys) -> std::optional<lane_input_profile_t>;
+
 // pump-single: down-left, up-left, center, up-right, down-right.
 [[nodiscard]] auto make_stepmania_pump_single_profile() -> lane_input_profile_t;
 // dance-solo: left, up-left, down, up, up-right, right.

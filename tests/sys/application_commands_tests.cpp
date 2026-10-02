@@ -595,3 +595,16 @@ TEST_CASE("Plain Space transport starts or hard stops without pausing", "[unit][
     expect_play_stop(!play_stop_transport(state));
     expect_play_stop(playing);
 }
+
+TEST_CASE("bookmark commands parse to their application kinds", "[unit][sys][commands]") {
+    using kind = application_command_kind_t;
+    const auto previous = parse_application_command("navigation.previous_bookmark");
+    const auto next = parse_application_command("navigation.next_bookmark");
+    const auto add = parse_application_command("markers.add_bookmark");
+    REQUIRE(previous);
+    REQUIRE(next);
+    REQUIRE(add);
+    CHECK(previous->kind == kind::navigation_previous_bookmark);
+    CHECK(next->kind == kind::navigation_next_bookmark);
+    CHECK(add->kind == kind::markers_add_bookmark);
+}

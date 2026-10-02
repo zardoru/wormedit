@@ -168,7 +168,32 @@ static void render_compose_marker_section(const ComposeInspectorContext& inspect
     nk_tree_pop(context);
 }
 
+// Lets the layout at the cursor switch between profiles with the same lane count.
+static void render_lane_profile_section(const ComposeInspectorContext& inspector) {
+    const auto* view = inspector.view;
+    auto* context = inspector.context;
+    auto* action = inspector.action;
+    if (view->lane_profile_choice_count == 0) return;
+    if (!nk_tree_push(context, NK_TREE_TAB, "Lane profile", NK_MAXIMIZED)) return;
+    std::array<const char*, WORM_UI_COMPOSE_LANE_PROFILE_CAPACITY> names{};
+    for (std::size_t index = 0; index < view->lane_profile_choice_count; ++index)
+        names[index] = view->lane_profile_names[index];
+    const int current = std::max<int>(view->lane_profile_current, 0);
+    nk_layout_row_dynamic(context, 26, 1);
+    const int selected = wormedit::ui::chrome::safe_combo(
+        context, names.data(), static_cast<int>(view->lane_profile_choice_count), current, 24,
+        nk_vec2(220.0f, 120.0f));
+    if (selected != current && action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) {
+        action->compose_action = WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE;
+        action->compose_lane_profile_index = static_cast<uint32_t>(selected);
+        action->compose_input_chart_id = view->chart_id;
+        action->compose_input_document_revision = view->document_revision;
+    }
+    nk_tree_pop(context);
+}
+
 void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
+    render_lane_profile_section(inspector);
     render_initial_bpm_control(inspector);
     render_timing_lane_visibility(inspector);
     if (!state.inline_timing_open && inspector.timing_view->stage_active &&

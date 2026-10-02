@@ -1247,7 +1247,6 @@ static void render_notification_landing_status(const WormUiWorkspaceView& view,
 
 static void render_status_bar(const WormUiWorkspaceView* view,
                               WormUiWorkspaceAction* action) {
-    const bool minimap_available = status_minimap_available(view->compose);
     const bool snap_label_visible = view->compose.visible && view->compose.area_snap_denominator != 0;
     nk_layout_row_template_begin(g_context, 30);
     wormedit::ui::chrome::IconButton::layout_columns(g_context, 4);
@@ -1257,7 +1256,6 @@ static void render_status_bar(const WormUiWorkspaceView* view,
     nk_layout_row_template_push_dynamic(g_context);
     if (notification_badge_visible(view->notifications))
         nk_layout_row_template_push_static(g_context, 180);
-    if (minimap_available) nk_layout_row_template_push_variable(g_context, 120);
     nk_layout_row_template_push_static(g_context, 80);
     nk_layout_row_template_push_dynamic(g_context);
     nk_layout_row_template_end(g_context);
@@ -1294,7 +1292,6 @@ static void render_status_bar(const WormUiWorkspaceView* view,
                       notification_status_color(view->notifications));
     if (notification_badge_visible(view->notifications))
         render_notification_badge(view->notifications, *action);
-    render_status_minimap(*view, action, minimap_available);
     const auto sample_rate = view->transport_sample_rate == 0 ? 1U : view->transport_sample_rate;
     const auto seconds = view->transport_frame / sample_rate;
     nk_labelf(g_context, NK_TEXT_RIGHT, "%llu:%02llu",
@@ -1536,25 +1533,29 @@ static auto workspace_validation_error(const WormUiWorkspaceView& view) -> const
     return nullptr;
 }
 
+// One fixed-height row under the mode tabs, so the layout never shifts between tabs: the
+// chart minimap when the chart has BGM audio, otherwise the transport seek bar.
+static constexpr float preview_row_height = 24.0f;
+
 static void render_transport_seek_control(const WormUiWorkspaceView& view,
                                          WormUiWorkspaceAction& action) {
-    if (view.compose.visible && view.compose.has_bgm_events) return;
-    if (!view.transport_available || view.transport_end_frame == 0) {
-        if (view.compose.visible) {
-            nk_size unavailable_position = 0;
-            nk_layout_row_dynamic(g_context, 16, 1);
-            nk_widget_disable_begin(g_context);
-            nk_progress(g_context, &unavailable_position, 10'000, NK_FIXED);
-            nk_widget_disable_end(g_context);
-        }
+    nk_layout_row_dynamic(g_context, preview_row_height, 1);
+    if (status_minimap_available(view.compose)) {
+        render_status_minimap(view, &action, true);
         return;
     }
     constexpr nk_size seek_steps = 10'000;
+    if (!view.transport_available || view.transport_end_frame == 0) {
+        nk_size unavailable_position = 0;
+        nk_widget_disable_begin(g_context);
+        nk_progress(g_context, &unavailable_position, seek_steps, NK_FIXED);
+        nk_widget_disable_end(g_context);
+        return;
+    }
     const auto bounded_frame = std::min(view.transport_frame, view.transport_end_frame);
     nk_size seek_position = static_cast<nk_size>(
         static_cast<long double>(bounded_frame) /
         static_cast<long double>(view.transport_end_frame) * seek_steps);
-    nk_layout_row_dynamic(g_context, 16, 1);
     if (nk_progress(g_context, &seek_position, seek_steps, NK_MODIFIABLE)) {
         action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK;
         action.transport_seek_frame =
@@ -1867,11 +1868,11 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
                  nk_rect(0, 0, static_cast<float>(frame.width), static_cast<float>(frame.height)),
                  workspace_window_flags(frame.view))) {
         render_title_bar(&view, &action);
-        render_transport_seek_control(view, action);
         render_workspace_tabs(&view, &action);
+        render_transport_seek_control(view, action);
         const float recovery_height = render_recovery_above_content(view, action);
         float content_height = frame.height > 300
-                                  ? static_cast<float>(frame.height) - 132.0f - recovery_height
+                                  ? static_cast<float>(frame.height) - 140.0f - recovery_height
                                   : 80.0f;
         if (content_height < 80.0f) content_height = 80.0f;
         nk_layout_row_dynamic(g_context, content_height, 1);

@@ -388,6 +388,9 @@ TEST_CASE("default registry seeds discoverable editor commands and visible tab r
     CHECK(has_command(registry, "document.new_chart"));
     CHECK(has_command(registry, "navigation.previous_marker"));
     CHECK(has_command(registry, "navigation.next_marker"));
+    CHECK(has_command(registry, "navigation.previous_bookmark"));
+    CHECK(has_command(registry, "navigation.next_bookmark"));
+    CHECK(has_command(registry, "markers.add_bookmark"));
     CHECK(has_command(registry, "navigation.previous_snap"));
     CHECK(has_command(registry, "navigation.next_snap"));
     CHECK(has_command(registry, "history.undo"));

@@ -75,6 +75,8 @@ add_library(wormedit_core
     src/core/quantize.cpp
     src/core/rational.cpp
     src/core/recovery_controller.cpp
+    src/core/bgm_columns.cpp
+    src/core/lane_profile_switch.cpp
     src/core/resource_assignment.cpp
     src/core/resource_file_copy.cpp
     src/core/scroll_speed_editor.cpp
@@ -309,6 +311,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/application_defaults.cpp
         src/sys/application_commands.cpp
         src/sys/compose_minimap_navigation.cpp
+        src/sys/compose_bookmark_commands.cpp
         src/sys/application_command_dispatch.cpp
         src/sys/compose_resource_presenter.cpp
         src/sys/compose_view.cpp
@@ -359,6 +362,7 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/audio_state.cpp
         src/ui/nuklear/bms_branch_panel.cpp
         src/ui/nuklear/arrow_glyph.cpp
+        src/ui/nuklear/compose_bookmark_label.cpp
         src/ui/nuklear/compose_markers.cpp
         src/ui/nuklear/compose_area_menu.cpp
         src/ui/nuklear/compose_canvas.cpp

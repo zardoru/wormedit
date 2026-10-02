@@ -159,6 +159,7 @@ from choice selection. Apply the stale-plan check (rule 9) first.
 ## T-311 Set up BGM columns from the Compose UI
 
 - **Status:** ready
+- **Implementation notes (2026-10-02):** core `apply_bgm_column_count` (`src/core/bgm_columns.cpp`) and its four tests pass. The toolbar widget (`BGM: N`, `-`, `+` buttons, view fields `bgm_column_count*`, action `SET_BGM_COLUMN_COUNT`) is uncompiled here; the number field from step 4 is not done (buttons only).
 - **Outcome:** on a BMS chart, the BGM pane header shows "BGM columns: N" with − and + buttons and a number field; raising N appends empty columns named `BGM k`; lowering N removes trailing columns only while they are empty; each change is one undo step.
 - **Request (user, 2026-10-01):** a "set up BGM columns" feature in the chart UI; "it's pretty important."
 - **Current behavior (2026-10-01):** new BMS charts start with 15 columns (`make_bms_initial_chart`, `src/sys/application_defaults.cpp`); BMS import builds columns per measure (T-98); placing onto an occupied cell appends a column (`src/core/resource_assignment.cpp`). There is no way to add, remove, or count columns in the UI.

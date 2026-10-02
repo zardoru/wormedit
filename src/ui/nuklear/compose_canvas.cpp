@@ -1,6 +1,7 @@
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include "ui/nuklear/compose_area_menu.h"
+#include "ui/nuklear/compose_bookmark_label.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/sdl_backend.h"
@@ -567,13 +568,33 @@ static void draw_compose_beat_sections(const ComposePaintContext& paint) {
     }
 }
 
+// Draws a bookmark name above its line; `previous` keeps earlier labels from being covered.
+static void draw_compose_bookmark_label(const ComposePaintContext& paint, const char* label,
+                                        float line_y, nk_color color,
+                                        std::optional<wormedit::ui::bookmark_label_box_t>& previous) {
+    const auto* font = paint.context->style.font;
+    if (!label || !label[0] || !font) return;
+    const auto width_of = [font](std::string_view text) {
+        return font->width(font->userdata, font->height, text.data(), static_cast<int>(text.size()));
+    };
+    const auto box = wormedit::ui::layout_bookmark_label(
+        label, width_of, font->height, line_y,
+        {paint.viewport.x, paint.viewport.y, paint.viewport.w, paint.viewport.h}, previous);
+    if (!box) return;
+    previous = box;
+    field_text(paint, nk_rect(box->x, box->y, box->w, box->h), box->text.c_str(),
+               static_cast<int>(box->text.size()), font, nk_rgba(0, 0, 0, 0), color, 4);
+}
+
 static void draw_compose_beat_bookmarks(const ComposePaintContext& paint) {
+    std::optional<wormedit::ui::bookmark_label_box_t> previous;
     for (size_t index = 0; index < paint.view->beat_bookmark_count; ++index) {
         const auto& bookmark = paint.view->beat_bookmarks[index];
         if (bookmark.projection_visible) {
             const auto y = compose_projected_y(paint, bookmark.projected_y_pixels);
             field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w,
                            y, 1.3f, nk_rgb(111, 224, 201), 4);
+            draw_compose_bookmark_label(paint, bookmark.label, y, nk_rgb(111, 224, 201), previous);
         }
         if (bookmark.proposed_projection_visible) {
             const auto y = compose_projected_y(paint, bookmark.proposed_y_pixels);
@@ -608,6 +629,7 @@ static void draw_compose_audio_sections(const ComposePaintContext& paint) {
 }
 
 static void draw_compose_audio_bookmarks(const ComposePaintContext& paint) {
+    std::optional<wormedit::ui::bookmark_label_box_t> previous;
     for (size_t index = 0; index < paint.view->audio_bookmark_count; ++index) {
         const auto& bookmark = paint.view->audio_bookmarks[index];
         if (!bookmark.projection_visible) {
@@ -616,6 +638,7 @@ static void draw_compose_audio_bookmarks(const ComposePaintContext& paint) {
         const auto y = compose_projected_y(paint, bookmark.projected_y_pixels);
         field_line(paint, paint.viewport.x, y, paint.viewport.x + paint.viewport.w, y,
                        1.4f, nk_rgb(232, 166, 255), 4);
+        draw_compose_bookmark_label(paint, bookmark.label, y, nk_rgb(232, 166, 255), previous);
     }
 }
 
@@ -1189,6 +1212,8 @@ static void draw_compose_timing_layer(const ComposePaintContext& paint,
     draw_compose_audio_bookmarks(paint);
 }
 
+static struct nk_color compose_selection_outline_color() { return nk_rgb(74, 222, 128); }
+
 static struct nk_color compose_key_hold_fill(std::uint8_t key_color) {
     const auto key = wormedit::ui::theme::compose_key_color(key_color, false);
     if (!key.has_color) return nk_rgb(48, 111, 151);
@@ -1212,11 +1237,10 @@ static void draw_compose_hold_bodies(const ComposePaintContext& paint) {
                                : (hold.semantic_color_visible
                                       ? nk_rgba(hold.semantic_red, hold.semantic_green,
                                                 hold.semantic_blue, hold.semantic_alpha)
-                                      : (hold.selected ? nk_rgb(62, 170, 204)
-                                                       : compose_key_hold_fill(hold.key_color)));
+                                      : compose_key_hold_fill(hold.key_color));
         field_rect(paint, rect, 0.0f, color, 2);
         if (hold.selected) {
-            field_stroke_rect(paint, rect, 0.0f, 1.6f, nk_rgb(220, 247, 255), 2);
+            field_stroke_rect(paint, rect, 0.0f, 2.0f, compose_selection_outline_color(), 2);
         }
         if (paint.view->hover_note_visible && hold.note_id == paint.view->hover_note_id) {
             field_stroke_rect(paint, rect, 0.0f, 2.0f, nk_rgb(255, 235, 148), 2);
@@ -1235,6 +1259,16 @@ struct ComposeNoteStyle {
     float border_width;
 };
 
+// Selection keeps the key-color fill and adds a green outline (iBMSC style), unless a
+// ghost, hover, or paint preview already owns the border.
+static bool compose_note_shows_selection_outline(const WormUiComposeView& view,
+                                                 const WormUiComposeNoteView& note) {
+    const bool hovered = view.hover_note_visible && note.note_id == view.hover_note_id;
+    const bool preview = note.proposal_ghost || note.paint_invalid_preview ||
+                         note.paint_erase_preview || note.paint_preview;
+    return note.selected && !hovered && !preview;
+}
+
 static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
                                            const WormUiComposeNoteView& note) {
     auto fill = note.proposal_origin
@@ -1242,7 +1276,7 @@ static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
                     : (note.semantic_color_visible
                            ? nk_rgba(note.semantic_red, note.semantic_green, note.semantic_blue,
                                      note.semantic_alpha)
-                           : (note.selected ? nk_rgb(111, 221, 236) : compose_key_note_fill(note.key_color)));
+                           : compose_key_note_fill(note.key_color));
     auto border = nk_rgb(17, 24, 34);
     auto border_width = 1.0f;
     if (note.proposal_ghost) {
@@ -1252,9 +1286,6 @@ static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
     } else if (view.hover_note_visible && note.note_id == view.hover_note_id) {
         fill = nk_rgb(255, 226, 127);
         border = nk_rgb(255, 247, 190);
-        border_width = 2.0f;
-    } else if (note.selected && note.semantic_color_visible) {
-        border = nk_rgb(220, 247, 255);
         border_width = 2.0f;
     } else if (note.paint_invalid_preview) {
         fill = nk_rgba(245, 178, 65, 210);
@@ -1274,6 +1305,10 @@ static ComposeNoteStyle compose_note_style(const WormUiComposeView& view,
         fill = nk_rgb(236, 194, 112);
     } else if (note.tail) {
         fill = nk_rgb(113, 201, 216);
+    }
+    if (compose_note_shows_selection_outline(view, note)) {
+        border = compose_selection_outline_color();
+        border_width = 2.0f;
     }
     return {fill, border, border_width};
 }

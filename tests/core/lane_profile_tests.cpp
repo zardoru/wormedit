@@ -533,3 +533,25 @@ TEST_CASE("layouts without stored colors derive them and unknown profiles stay g
     CHECK(std::ranges::count(layout.lanes, lane_key_color_t::scratch, &lane_definition_t::key_color) == 1);
     CHECK(std::ranges::count(layout.lanes, lane_key_color_t::generic, &lane_definition_t::key_color) == 7);
 }
+
+TEST_CASE("osu!mania style 10K uses the canonical wbwbgybwbw key colors",
+          "[unit][core][lane-profile][key-color]") {
+    using color = lane_key_color_t;
+    const std::vector<color> expected{color::white, color::black, color::white, color::black,
+                                      color::pms_green, color::pms_yellow, color::black,
+                                      color::white, color::black, color::white};
+    auto scratchless = make_bms_10k_scratchless_profile().layout;
+    std::ranges::sort(scratchless.lanes, {}, &lane_definition_t::display_order);
+    std::vector<color> actual;
+    for (const auto& lane : scratchless.lanes) actual.push_back(lane.key_color);
+    CHECK(actual == expected);
+
+    lane_layout_t osu;
+    osu.profile_id = "osu-mania-10k";
+    for (std::uint32_t column = 0; column < 10; ++column)
+        osu.lanes.push_back({.id = lane_id_t{column + 1}, .display_order = column});
+    assign_lane_key_colors(osu);
+    actual.clear();
+    for (const auto& lane : osu.lanes) actual.push_back(lane.key_color);
+    CHECK(actual == expected);
+}

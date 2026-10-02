@@ -73,6 +73,8 @@ static void render_compose_view_controls(const ComposeToolbarContext& toolbar) {
         state.inspector_visible = !state.inspector_visible;
 }
 
+static void render_compose_bgm_column_count_controls(const ComposeToolbarContext& toolbar);
+
 static void render_compose_bgm_scroll_controls(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
     const auto* view = toolbar.view;
@@ -97,8 +99,32 @@ static void render_compose_bgm_scroll_controls(const ComposeToolbarContext& tool
                                          "Scroll BGM columns right"}.render(context) && scrollable)
         append_bgm_horizontal_scroll(action, view, 80.0);
     if (!scrollable) nk_widget_disable_end(context);
+    render_compose_bgm_column_count_controls(toolbar);
     nk_labelf(context, NK_TEXT_RIGHT, "%.0f px/measure · %zu lanes",
               view->pixels_per_standard_measure, view->lane_count);
+}
+
+static void request_bgm_column_count(const ComposeToolbarContext& toolbar, uint32_t count) {
+    auto* action = toolbar.action;
+    if (action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    action->compose_action = WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT;
+    action->compose_bgm_column_count = count;
+    action->compose_input_chart_id = toolbar.view->chart_id;
+    action->compose_input_document_revision = toolbar.view->document_revision;
+}
+
+// "BGM columns: N" with minus and plus; the core refuses a shrink over events.
+static void render_compose_bgm_column_count_controls(const ComposeToolbarContext& toolbar) {
+    auto* context = toolbar.context;
+    const auto* view = toolbar.view;
+    const bool editable = view->bgm_column_count_editable;
+    if (!editable) nk_widget_disable_begin(context);
+    nk_labelf(context, NK_TEXT_RIGHT, "BGM: %u", view->bgm_column_count);
+    if (nk_button_label(context, "-") && editable && view->bgm_column_count > 1)
+        request_bgm_column_count(toolbar, view->bgm_column_count - 1);
+    if (nk_button_label(context, "+") && editable && view->bgm_column_count < 128)
+        request_bgm_column_count(toolbar, view->bgm_column_count + 1);
+    if (!editable) nk_widget_disable_end(context);
 }
 
 static void request_toolbar_offset_nudge(WormUiWorkspaceAction* action,
@@ -263,6 +289,9 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     wormedit::ui::chrome::IconButton::layout_columns(context);
     nk_layout_row_template_push_dynamic(context);
     wormedit::ui::chrome::IconButton::layout_columns(context);
+    nk_layout_row_template_push_static(context, 60);
+    nk_layout_row_template_push_static(context, 24);
+    nk_layout_row_template_push_static(context, 24);
     nk_layout_row_template_push_static(context, 215);
     nk_layout_row_template_end(context);
     render_compose_view_controls(toolbar);

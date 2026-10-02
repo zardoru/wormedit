@@ -243,22 +243,34 @@ static void render_compose_offset_toolbar(const ComposeToolbarContext& toolbar) 
     nk_label(toolbar.context, "", NK_TEXT_LEFT);
 }
 
-static void render_note_kind_palette(const ComposeToolbarContext& toolbar) {
+namespace {
+
+constexpr uint32_t note_palette_kinds[]{0, 1, 4, 3, 5, 6, 2};
+
+auto note_palette_kind_allowed(const WormUiComposeView& view, uint32_t kind) -> bool {
+    return (view.allowed_note_kind_mask & (1U << kind)) != 0;
+}
+
+} // namespace
+
+bool compose_note_palette_has_buttons(const WormUiComposeView& view) {
+    return view.note_kind_palette_visible &&
+           std::ranges::any_of(note_palette_kinds, [&](uint32_t kind) {
+               return note_palette_kind_allowed(view, kind);
+           });
+}
+
+void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
     // Stable shortcut order differs from the document enum order.
-    static constexpr uint32_t kinds[]{0, 1, 4, 3, 5, 6, 2};
     static constexpr Glyph icons[]{Glyph::square, Glyph::minus, Glyph::x,
         Glyph::eye, Glyph::chevron_left, Glyph::layers, Glyph::audio_lines};
     static constexpr const char* labels[]{"Tap (Alt+1)", "Hold (Alt+2; click to begin hold gesture)",
         "Mine (Alt+3)", "Invisible (Alt+4)", "Lift (Alt+5)", "Fake (Alt+6)",
         "Roll (Alt+7; click to begin hold gesture)"};
-    unsigned count{};
-    for (const auto kind : kinds)
-        if ((toolbar.view->allowed_note_kind_mask & (1U << kind)) != 0) ++count;
-    if (count == 0) return;
-    nk_layout_row_static(toolbar.context, 27, 30, static_cast<int>(count));
-    for (std::size_t index = 0; index < std::size(kinds); ++index) {
-        const auto kind = kinds[index];
-        if ((toolbar.view->allowed_note_kind_mask & (1U << kind)) == 0) continue;
+    for (std::size_t index = 0; index < std::size(note_palette_kinds); ++index) {
+        const auto kind = note_palette_kinds[index];
+        if (!note_palette_kind_allowed(*toolbar.view, kind)) continue;
+        nk_layout_row_static(toolbar.context, 30, 30, 1);
         if (wormedit::ui::chrome::IconButton{icons[index], labels[index],
                 toolbar.view->armed_note_kind == kind}.render(toolbar.context) &&
             toolbar.action->compose_input_count < WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {
@@ -297,5 +309,4 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     render_compose_view_controls(toolbar);
     render_compose_offset_toolbar(toolbar);
     render_compose_bgm_scroll_controls(toolbar);
-    if (toolbar.view->note_kind_palette_visible) render_note_kind_palette(toolbar);
 }

@@ -1326,9 +1326,11 @@ void refresh_note_kind_commands(wormedit::command_registry_t& registry,
 }
 
 auto has_clipboard_selection(bool compose_ready, bool pending,
-    const std::optional<wormedit::editor_interaction_state_t>& state) -> bool {
+    const std::optional<wormedit::editor_interaction_state_t>& state,
+    std::uint64_t kiai_selected_head) -> bool {
     return compose_ready && !pending &&
-        (!state->selected_objects.empty() || !state->selected_notes.empty());
+        (!state->selected_objects.empty() || !state->selected_notes.empty() ||
+         kiai_selected_head != 0);
 }
 
 auto play_stop_available(const wormedit::chart_document_t* chart,
@@ -1374,7 +1376,8 @@ void refresh_application_command_states(
     set("history.undo", !history.undo.empty());
     set("history.redo", !history.redo.empty());
     set("edit.delete", compose_ready);
-    const bool clipboard_selection = has_clipboard_selection(compose_ready, pending, compose_state);
+    const bool clipboard_selection = has_clipboard_selection(compose_ready, pending, compose_state,
+                                                          application_state.kiai_selected_head);
     set("edit.copy", clipboard_selection);
     set("edit.cut", clipboard_selection);
     set("edit.paste", paste_target_available(compose_ready, pending, application_state));

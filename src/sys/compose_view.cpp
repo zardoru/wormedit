@@ -61,13 +61,18 @@ auto paste_geometry(const wormedit::chart_document_t& source,
     for (const auto& measure : source.measures)
         chart.measures.push_back({.id = measure.id, .definition = measure.definition});
     for (const auto& object : proposal.objects) {
+        // Ghost previews draw notes and BGM events; pasted timing objects have no ghost.
         std::visit([&chart](const auto& value) {
-            const auto found = std::ranges::find(chart.measures, value.position.measure,
-                                                 &wormedit::measure_chunk_t::id);
-            if (found == chart.measures.end()) return;
             using value_t = std::decay_t<decltype(value)>;
-            if constexpr (std::is_same_v<value_t, wormedit::note_t>) found->notes.push_back(value);
-            else found->bgm_events.push_back(value);
+            if constexpr (std::is_same_v<value_t, wormedit::note_t> ||
+                          std::is_same_v<value_t, wormedit::bgm_event_t>) {
+                const auto found = std::ranges::find(chart.measures, value.position.measure,
+                                                     &wormedit::measure_chunk_t::id);
+                if (found == chart.measures.end()) return;
+                if constexpr (std::is_same_v<value_t, wormedit::note_t>)
+                    found->notes.push_back(value);
+                else found->bgm_events.push_back(value);
+            }
         }, object);
     }
     return chart;

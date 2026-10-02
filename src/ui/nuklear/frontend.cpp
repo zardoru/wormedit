@@ -1110,7 +1110,10 @@ static void render_workspace_tabs(const WormUiWorkspaceView* view,
 }
 
 static bool status_minimap_available(const WormUiComposeView& view) {
-    return view.visible && view.scene_available && view.has_bgm_events &&
+    // Any song waveform enables the bar, whether or not the chart has BGM events.
+    const bool has_audio = view.has_bgm_events || view.bgm_bar_row_count != 0 ||
+                           view.waveform_overview_row_count != 0;
+    return view.visible && view.scene_available && has_audio &&
            worm_ui_nuklear_compose_view_valid(&view);
 }
 
@@ -1593,7 +1596,7 @@ static void render_bgm_bar_placeholder(bool compose_visible) {
     nk_fill_rect(canvas, bounds, 0.0f,
                  wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::overview));
     const auto* font = g_context->style.font;
-    const char* text = compose_visible ? "No BGM audio in this chart" : "BGM bar (Compose)";
+    const char* text = compose_visible ? "No song audio in this chart" : "BGM bar (Compose)";
     if (!font) return;
     const auto length = static_cast<int>(std::strlen(text));
     const auto width = font->width(font->userdata, font->height, text, length);

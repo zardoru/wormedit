@@ -1,4 +1,5 @@
 #include "sys/compose_scroll_geometry.h"
+#include "sys/compose_timing_target.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -12,4 +13,11 @@ TEST_CASE("downscroll mirrors screen y into source order", "[unit][sys][compose]
     CHECK(compose_source_fraction(-5.0, 800.0, false) == 0.0);
     CHECK(compose_source_fraction(900.0, 800.0, false) == 1.0);
     CHECK(compose_source_fraction(10.0, 0.0, true) == 0.0);
+}
+
+TEST_CASE("timing target maps raw pointer y to a document fraction", "[unit][sys][compose]") {
+    const WormUiTimingTarget up{200.0, 800.0, 0.5, 1.0, false};
+    CHECK(timing_target_fraction(up) == 0.625);
+    const WormUiTimingTarget down{200.0, 800.0, 0.5, 1.0, true};
+    CHECK(timing_target_fraction(down) == 0.875);
 }

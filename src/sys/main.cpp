@@ -12,6 +12,7 @@
 #include "sys/audio_project_import.h"
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose_view.h"
+#include "sys/compose_timing_target.h"
 #include "sys/compose_input.h"
 #include "sys/compose_actions.h"
 #include "sys/application_edit_helpers.h"
@@ -417,8 +418,9 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
             const auto target =
                 chart == history.document.charts.end()
                     ? std::optional<local_position_t>{}
-                    : timing_position_from_fraction(*chart, action.timing_target_y_fraction,
-                                                    active_snap_denominator);
+                    : timing_position_from_fraction(
+                          *chart, wormedit::sys::timing_target_fraction(action.timing_target),
+                          active_snap_denominator);
             if (!target ||
                 !move_existing_timing_lane_pseudonote(history, preview, *target, timing_locked)) {
                 return rejected;
@@ -434,8 +436,9 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
     if (found == history.document.charts.end()) {
         return rejected;
     }
-    const auto position = timing_position_from_fraction(*found, action.timing_target_y_fraction,
-                                                        active_snap_denominator);
+    const auto position = timing_position_from_fraction(
+        *found, wormedit::sys::timing_target_fraction(action.timing_target),
+        active_snap_denominator);
     if (!position) {
         return rejected;
     }
@@ -1611,12 +1614,14 @@ void move_staged_timing_event(const WormUiWorkspaceAction& action,
                               wormedit::chart_document_t* chart,
                               wormedit::timing_lane_pseudonote_preview_t& stage,
                               std::string& status) {
-    const auto target = chart == nullptr || !stage.existing_event || !action.timing_has_target_y
-                            ? std::optional<wormedit::local_position_t>{}
-                            : timing_position_from_fraction(*chart, action.timing_target_y_fraction,
-                                                            active_snap_denominator);
-    if (!target || !wormedit::move_existing_timing_lane_pseudonote(
-                       history, stage, *target, timing_locked)) {
+    const auto target =
+        chart == nullptr || !stage.existing_event || !action.timing_has_target_y
+            ? std::optional<wormedit::local_position_t>{}
+            : timing_position_from_fraction(
+                  *chart, wormedit::sys::timing_target_fraction(action.timing_target),
+                  active_snap_denominator);
+    if (!target ||
+        !wormedit::move_existing_timing_lane_pseudonote(history, stage, *target, timing_locked)) {
         status = stage.diagnostics.empty() ? "The timing marker cannot move to that row."
                                            : stage.diagnostics.front().message;
     } else {

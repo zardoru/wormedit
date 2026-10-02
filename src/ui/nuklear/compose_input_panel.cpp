@@ -1504,13 +1504,11 @@ void process_compose_overview_input(const ComposeOverviewInput& input) {
 
 // Document fraction under a screen-space y. The document fractions run in source order, so a
 // downscroll field (source row 0 at the bottom) reads the viewport from the other end.
-static auto compose_timing_target_fraction(const WormUiComposeView& view, double screen_y)
-    -> double {
-    const auto viewport_fraction = wormedit::sys::compose_source_fraction(
-        screen_y, view.viewport_height_pixels, view.downscroll);
-    return view.timing_document_begin_fraction +
-           viewport_fraction * (view.timing_document_end_fraction -
-                                view.timing_document_begin_fraction);
+static auto compose_timing_target(const WormUiComposeView& view, double screen_y)
+    -> WormUiTimingTarget {
+    return WormUiTimingTarget{screen_y, view.viewport_height_pixels,
+                              view.timing_document_begin_fraction,
+                              view.timing_document_end_fraction, view.downscroll};
 }
 
 // Timing lane under a horizontal pixel position, honoring the lane mask in force.
@@ -1554,9 +1552,9 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
     action.timing_object_id = existing_object_id;
     if (existing_object_id == 0) {
         action.timing_has_target_y = true;
-        action.timing_target_y_fraction = clicked_marker && clicked_marker->fixed_initial
-            ? 0.0
-            : compose_timing_target_fraction(view, click_y);
+        action.timing_target = clicked_marker && clicked_marker->fixed_initial
+            ? WormUiTimingTarget{0.0, 1.0, 0.0, 1.0, false}
+            : compose_timing_target(view, click_y);
     }
     if (clicked_marker && existing_object_id != 0) {
         append_compose_input(&action, WORM_UI_COMPOSE_INPUT_TIMING_MARKER_SELECT, click_x,
@@ -1631,7 +1629,7 @@ static void update_active_timing_stage_drag(const ComposePointerEventContext& in
         action.timing_object_id = timing.stage_existing_object_id;
         action.timing_lane = timing.stage_lane;
         action.timing_has_target_y = true;
-        action.timing_target_y_fraction = compose_timing_target_fraction(view, input.pointer_y);
+        action.timing_target = compose_timing_target(view, input.pointer_y);
     }
 }
 
@@ -2508,8 +2506,7 @@ static auto begin_timing_quick_insert(const ComposePointerEventContext& input) -
     action.timing_lane = wanted;
     action.timing_object_id = 0;
     action.timing_has_target_y = true;
-    action.timing_target_y_fraction =
-        compose_timing_target_fraction(view, input.pointer_started_y);
+    action.timing_target = compose_timing_target(view, input.pointer_started_y);
     return true;
 }
 

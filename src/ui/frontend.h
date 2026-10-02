@@ -1888,6 +1888,17 @@ typedef enum WormUiClipboardAction {
     WORM_UI_CLIPBOARD_PASTE,
 } WormUiClipboardAction;
 
+/* A pointer press on the timing lanes, as raw as the panel knows it: y is a drawn-orientation
+   viewport pixel row. The viewport height, downscroll flag and visible document slice travel with
+   it so one sys function turns it into a document fraction (and then a row). */
+typedef struct WormUiTimingTarget {
+    double screen_y;
+    double viewport_height_pixels;
+    double document_begin_fraction;
+    double document_end_fraction;
+    bool downscroll;
+} WormUiTimingTarget;
+
 typedef struct WormUiWorkspaceAction {
     WormUiClipboardAction clipboard;
     WormUiNotificationAction notifications;
@@ -2011,7 +2022,7 @@ typedef struct WormUiWorkspaceAction {
     uint64_t timing_object_id;
     WormUiTimingLaneKind timing_lane;
     bool timing_has_target_y;
-    double timing_target_y_fraction;
+    WormUiTimingTarget timing_target;
     double timing_value;
     double timing_secondary_value;
     bool timing_transition_is_seconds;

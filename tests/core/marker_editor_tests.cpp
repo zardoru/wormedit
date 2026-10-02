@@ -398,3 +398,89 @@ TEST_CASE("marker editor rejects ambiguous chart-wide IDs and object allocation 
     CHECK(history.document.charts.front().sections.size() == 1);
     CHECK(history.undo.empty());
 }
+
+namespace {
+
+auto kiai_spans(const document_history_t& history) -> std::vector<kiai_span_t> {
+    const auto& chart = history.document.charts.front();
+    const auto index = build_measure_index(chart);
+    REQUIRE(std::holds_alternative<measure_index_t>(index));
+    return kiai_spans_of(chart, std::get<measure_index_t>(index));
+}
+
+auto edit_kiai(document_history_t& history, kiai_span_edit_t edit) -> document_command_result_t {
+    return apply_marker_edit(history, history.document.revision,
+                             edit_kiai_span_action_t{.chart = chart_id_t{2}, .edit = edit});
+}
+
+} // namespace
+
+TEST_CASE("kiai span edit creates a separate area with fresh events", "[unit][core][marker-editor][kiai]") {
+    auto history = make_document_history(marker_song());
+    REQUIRE(edit_kiai(history, {.rows = {{20, 100}}}));
+    const auto spans = kiai_spans(history);
+    REQUIRE(spans.size() == 2);
+    CHECK(spans[0].begin_row == 20);
+    CHECK(spans[0].end_row == 100);
+    CHECK(spans[1].head == object_id_t{11});
+    CHECK(spans[1].open_ended);
+    CHECK(history.document.charts.front().kiai.size() == 3);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().kiai.size() == 1);
+}
+
+TEST_CASE("kiai span edit merges overlaps and drops the swallowed events",
+          "[unit][core][marker-editor][kiai]") {
+    auto history = make_document_history(marker_song());
+    REQUIRE(edit_kiai(history, {.rows = {{20, 100}}}));
+    // Extend the new area over the open one: everything becomes one open area.
+    const auto first = kiai_spans(history).front();
+    REQUIRE(edit_kiai(history, {.head = first.head, .rows = {{20, 300}}}));
+    const auto spans = kiai_spans(history);
+    REQUIRE(spans.size() == 1);
+    CHECK(spans[0].begin_row == 20);
+    CHECK(spans[0].open_ended);
+    CHECK(history.document.charts.front().kiai.size() == 1);
+    CHECK(history.document.charts.front().kiai.front().id == first.head);
+}
+
+TEST_CASE("dragging a kiai head or tail keeps the event identity and effect bits",
+          "[unit][core][marker-editor][kiai]") {
+    auto history = make_document_history(marker_song());
+    REQUIRE(edit_kiai(history, {.head = object_id_t{11}, .rows = {{240, 600}}}));
+    auto spans = kiai_spans(history);
+    REQUIRE(spans.size() == 1);
+    CHECK(spans[0].end_row == 600);
+    CHECK_FALSE(spans[0].open_ended);
+    const auto tail = spans[0].tail;
+    REQUIRE(edit_kiai(history, {.head = object_id_t{11}, .rows = {{100, 700}}}));
+    spans = kiai_spans(history);
+    REQUIRE(spans.size() == 1);
+    CHECK(spans[0].begin_row == 100);
+    CHECK(spans[0].end_row == 700);
+    CHECK(spans[0].head == object_id_t{11});
+    CHECK(spans[0].tail == tail);
+    const auto& events = history.document.charts.front().kiai;
+    CHECK(std::ranges::find(events, object_id_t{11}, &kiai_event_t::id)->retained_effect_bits == 9);
+}
+
+TEST_CASE("kiai span edit deletes an area and rejects bad input without a revision",
+          "[unit][core][marker-editor][kiai]") {
+    auto history = make_document_history(marker_song());
+    REQUIRE(edit_kiai(history, {.head = object_id_t{11}}));
+    CHECK(kiai_spans(history).empty());
+    CHECK(history.document.charts.front().kiai.empty());
+
+    history = make_document_history(marker_song());
+    const auto revision = history.document.revision;
+    CHECK_FALSE(edit_kiai(history, {.rows = {{100, 100}}}));
+    CHECK_FALSE(edit_kiai(history, {.rows = {{100, 5000}}}));
+    CHECK_FALSE(edit_kiai(history, {.head = object_id_t{99}, .rows = {{1, 2}}}));
+    CHECK_FALSE(edit_kiai(history, {}));
+    CHECK(history.document.revision == revision);
+    CHECK(history.document.charts.front().kiai.size() == 1);
+    // Re-applying the area it already has is a no-op: no revision, no history entry.
+    const auto noop = edit_kiai(history, {.head = object_id_t{11}, .rows = {{240, 960}}});
+    CHECK(noop.diagnostics.empty());
+    CHECK(history.document.revision == revision);
+}

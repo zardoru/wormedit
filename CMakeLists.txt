@@ -62,6 +62,7 @@ add_library(wormedit_core
     src/core/interaction_selection.cpp
     src/core/lane_profiles.cpp
     src/core/marker_editor.cpp
+    src/core/kiai_spans.cpp
     src/core/marker_navigation.cpp
     src/core/metadata_editor.cpp
     src/core/chart_editor.cpp
@@ -322,6 +323,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_label_search.cpp
         src/sys/compose_dead_spans.cpp
         src/sys/compose_kiai_spans.cpp
+        src/sys/compose_sv_graph.cpp
         src/sys/compose_quantize_preview.cpp
         src/sys/application_command_dispatch.cpp
         src/sys/compose_resource_presenter.cpp

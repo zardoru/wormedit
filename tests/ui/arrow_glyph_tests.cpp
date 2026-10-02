@@ -32,10 +32,10 @@ TEST_CASE("Arrow silhouettes remain inside their square and point in each lane d
 TEST_CASE("Arrow snap classes use exact standard-measure rows including tuplets",
           "[frontend-state][arrow]") {
     struct snap_case_t { std::uint64_t row; std::uint64_t divisions; std::uint8_t expected; };
-    const std::array<snap_case_t, 11> cases{{
+    const std::array<snap_case_t, 14> cases{{
         {0, 960, 4}, {240, 960, 4}, {120, 960, 8}, {80, 960, 12},
         {60, 960, 16}, {40, 960, 24}, {30, 960, 32}, {1, 960, 0},
-        {1080, 960, 8}, {0, 0, 0}, {std::numeric_limits<std::uint64_t>::max(), 960, 0}}};
+        {1080, 960, 8}, {20, 960, 48}, {15, 960, 64}, {10, 960, 0}, {0, 0, 0}, {std::uint64_t{1} << 63, 960, 0}}};
     for (const auto& item : cases) {
         CHECK(wormedit::ui::note_snap_class(item.row, item.divisions) == item.expected);
     }
@@ -43,10 +43,10 @@ TEST_CASE("Arrow snap classes use exact standard-measure rows including tuplets"
 
 TEST_CASE("Arrow palette preserves the confirmed snap hues and other fallback",
           "[frontend-state][arrow]") {
-    const std::array<std::uint8_t, 7> classes{4, 8, 12, 16, 24, 32, 0};
-    const std::array<wormedit::ui::arrow_color_t, 7> expected{{
+    const std::array<std::uint8_t, 9> classes{4, 8, 12, 16, 24, 32, 48, 64, 0};
+    const std::array<wormedit::ui::arrow_color_t, 9> expected{{
         {235, 73, 79}, {75, 139, 240}, {170, 98, 223}, {242, 218, 74},
-        {239, 118, 191}, {241, 154, 65}, {155, 163, 175}}};
+        {239, 118, 191}, {241, 154, 65}, {80, 200, 220}, {96, 200, 110}, {155, 163, 175}}};
     for (std::size_t index = 0; index < classes.size(); ++index) {
         const auto color = wormedit::ui::arrow_snap_color(classes[index]);
         CHECK(color.red == expected[index].red);

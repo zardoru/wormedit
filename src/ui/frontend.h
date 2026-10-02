@@ -427,7 +427,7 @@ typedef struct WormUiComposeNoteView {
     const char* sound_label;
     const char* sound_detail;
     uint8_t glyph;
-    uint8_t snap_class; // 4, 8, 12, 16, 24, 32; 0 = other.
+    uint8_t snap_class; // 4, 8, 12, 16, 24, 32, 48, 64; 0 = other.
     uint8_t kind;
     bool tail;
     bool selected;
@@ -1576,6 +1576,9 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_SEARCH_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_SEARCH_NEXT_NOTE_LABEL,
     WORM_UI_COMPOSE_ACTION_SEARCH_PREVIOUS_NOTE_LABEL,
+    WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_BEFORE,
+    WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_AFTER,
+    WORM_UI_COMPOSE_ACTION_REMOVE_EMPTY_MEASURE,
     WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR,
     WORM_UI_COMPOSE_ACTION_TRANSFORM_ROTATE_LEFT,
     WORM_UI_COMPOSE_ACTION_TRANSFORM_ROTATE_RIGHT,

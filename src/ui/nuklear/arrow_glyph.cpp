@@ -5,10 +5,12 @@
 namespace wormedit::ui {
 namespace {
 
-constexpr std::array<std::uint8_t, 6> snap_classes{4, 8, 12, 16, 24, 32};
-constexpr std::array<arrow_color_t, 7> snap_colors{{
+// StepMania/ITG snap palette (4th red, 8th blue, 12th purple, 16th yellow, 24th pink,
+// 32nd orange, 48th cyan, 64th green); the last color is every other division.
+constexpr std::array<std::uint8_t, 8> snap_classes{4, 8, 12, 16, 24, 32, 48, 64};
+constexpr std::array<arrow_color_t, 9> snap_colors{{
     {235, 73, 79}, {75, 139, 240}, {170, 98, 223}, {242, 218, 74},
-    {239, 118, 191}, {241, 154, 65}, {155, 163, 175}}};
+    {239, 118, 191}, {241, 154, 65}, {80, 200, 220}, {96, 200, 110}, {155, 163, 175}}};
 
 auto rotate_arrow_point(arrow_point_t point, std::uint8_t direction) -> arrow_point_t {
     switch (direction) {

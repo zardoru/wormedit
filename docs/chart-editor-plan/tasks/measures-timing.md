@@ -10,7 +10,8 @@ stale-plan check (rule 9) first.
 
 ## T-70 Add Insert/Remove measure controls
 
-- **Status:** ready
+- **Status:** done (2026-10-02; `src/sys/compose_measure_commands.cpp/.h`, `tests/sys/compose_measure_commands_tests.cpp`)
+- **Implementation notes (2026-10-02, Claude):** the three actions are buttons in a **Measure at cursor** inspector section (not the measure-rail context menu). Insert copies the cursor measure's definition; Remove uses `delete_measure_action_t`, shows the core rejection when not empty, and moves the cursor to the neighboring measure's start on success.
 - **Outcome:** Compose's measure-rail context offers **Insert measure before**, **Insert measure after**, and **Remove empty measure**, each one undoable command through `apply_measure_edit`.
 - **Read first:** `include/wormedit/core/measure_editor.h`, `src/sys/main.cpp` (existing meter form handler calling `apply_measure_edit`), `src/ui/nuklear/compose_canvas.cpp` (measure rail), `src/sys/compose_actions.cpp`.
 - **Files owned:** `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_inspector.cpp`, `tests/core/measure_editor_tests.cpp`.

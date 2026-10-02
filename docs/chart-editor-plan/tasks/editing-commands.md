@@ -257,6 +257,7 @@ cards enable them one at a time. Apply the stale-plan check (rule 9) first.
 ## T-286 Use the StepMania/ITG snap color palette
 
 - **Status:** ready
+- **Implementation notes (2026-10-02, Claude):** classification now includes 48 (cyan) and 64 (green) and the tests cover them (arrow tests compiled standalone against `arrow_glyph.cpp`, 162 assertions pass). The palette is still a constant table in `arrow_glyph.cpp`; moving it into `assets/themes/compose-field.json` and `theme.cpp` remains, so this card stays open for that step.
 - **Outcome:** arrow notes use 4th red, 8th blue, 12th purple, 16th yellow, 24th pink, 32nd orange, 48th cyan, 64th green, other grey (user decision 2026-09-30, question 14); the table lives in the compose theme file.
 - **Read first:** `src/ui/nuklear/arrow_glyph.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/sys/compose_view.cpp` (`snap_class` projection), `assets/themes/compose-field.json`.
 - **Files owned:** `src/sys/compose_view.cpp`, `src/ui/frontend.h` (snap class values 48 and 64), `assets/themes/compose-field.json`, `src/ui/nuklear/theme.cpp/.h`, `src/ui/nuklear/compose_canvas.cpp`, `tests/ui/arrow_glyph_tests.cpp`.

@@ -1685,17 +1685,33 @@ struct editor_delete_context_t {
 struct editor_delete_ids_t {
     std::unordered_set<std::uint64_t> notes;
     std::unordered_set<std::uint64_t> bgm_events;
+    // Chart-level objects that are not on a measure; IDs are unique within each family.
+    std::unordered_set<std::uint64_t> bookmarks;
+    std::unordered_set<std::uint64_t> sections;
+    std::unordered_set<std::uint64_t> bga_events;
+
+    [[nodiscard]] auto total() const -> std::size_t {
+        return notes.size() + bgm_events.size() + bookmarks.size() + sections.size() +
+               bga_events.size();
+    }
+    [[nodiscard]] auto family(editor_selection_object_kind_t kind)
+        -> std::unordered_set<std::uint64_t>* {
+        switch (kind) {
+        case editor_selection_object_kind_t::note: return &notes;
+        case editor_selection_object_kind_t::bgm_event: return &bgm_events;
+        case editor_selection_object_kind_t::bookmark: return &bookmarks;
+        case editor_selection_object_kind_t::section: return &sections;
+        case editor_selection_object_kind_t::bga_event: return &bga_events;
+        default: return nullptr;
+        }
+    }
 };
 
 auto collect_delete_object_ids(const std::vector<editor_selection_object_t>& objects)
     -> std::variant<editor_delete_ids_t, diagnostic_list_t> {
     editor_delete_ids_t ids;
     for (const auto object : objects) {
-        auto* family = object.kind == editor_selection_object_kind_t::note
-                           ? &ids.notes
-                       : object.kind == editor_selection_object_kind_t::bgm_event
-                           ? &ids.bgm_events
-                           : nullptr;
+        auto* family = ids.family(object.kind);
         if (family == nullptr) {
             return diagnostic_list_t{error(diagnostic_code_t::unsupported_feature,
                                            "Delete does not support this selected object type",
@@ -1754,7 +1770,7 @@ auto inspect_delete_bgm_events(const chart_document_t& chart, const editor_delet
                 continue;
             ++found_bgm;
             if (event.sound_channel_event) {
-                if (ids.notes.size() + ids.bgm_events.size() != 1) {
+                if (ids.total() != 1) {
                     return diagnostic_list_t{error(
                         diagnostic_code_t::unsupported_feature,
                         "delete linked BMSON markers one at a time", event.id)};
@@ -1819,7 +1835,16 @@ auto delete_editor_selection(editor_delete_context_t context) -> editor_interact
     auto proposed = context.history.document;
     auto* chart = find_chart(proposed, context.state.chart);
     std::size_t removed{};
-    const auto selected = !ids.notes.empty() || !ids.bgm_events.empty();
+    const auto selected = ids.total() != 0;
+    removed += std::erase_if(chart->bookmarks, [&](const auto& bookmark) {
+        return ids.bookmarks.contains(bookmark.id.value);
+    });
+    removed += std::erase_if(chart->sections, [&](const auto& section) {
+        return ids.sections.contains(section.id.value);
+    });
+    removed += std::erase_if(chart->bga_events, [&](const auto& event) {
+        return ids.bga_events.contains(event.id.value);
+    });
     for (auto& measure : chart->measures) {
         if (selected) {
             removed += std::erase_if(measure.notes, [&](const auto& note) {
@@ -1837,7 +1862,7 @@ auto delete_editor_selection(editor_delete_context_t context) -> editor_interact
     }
     if (removed == 0)
         return complete_editor_delete(context, false);
-    if (selected && removed != ids.notes.size() + ids.bgm_events.size()) {
+    if (selected && removed != ids.total()) {
         return diagnostic_result(context.history, context.state,
                                  {error(diagnostic_code_t::invalid_id,
                                         "selected deletion did not resolve every object")});

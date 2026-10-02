@@ -3774,6 +3774,41 @@ TEST_CASE("editor deletion removes a cursor note or selected notes atomically",
     CHECK(note_count(history) == 3);
 }
 
+TEST_CASE("Delete removes selected bookmarks and sections together with notes",
+          "[unit][core][interaction][selection][delete][markers]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.measures.front().notes.push_back(
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 840}, .lane = lane_id_t{1}});
+    chart.bookmarks.push_back({.id = object_id_t{300},
+                               .anchor = marker_anchor_t::beat,
+                               .position = local_position_t{measure_id_t{1}, 120}});
+    chart.sections.push_back({.id = object_id_t{301},
+                              .label = "intro",
+                              .anchor = marker_anchor_t::beat,
+                              .beat_span = position_span_t{{measure_id_t{1}, 0},
+                                                           {measure_id_t{1}, 480}}});
+    REQUIRE(validate_document(song).empty());
+    auto history = make_document_history(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{{{editor_selection_object_kind_t::bookmark, object_id_t{300}},
+                                        {editor_selection_object_kind_t::section, object_id_t{301}},
+                                        {editor_selection_object_kind_t::note, object_id_t{101}}}}));
+    const auto deleted =
+        dispatch_editor_action(history, state, delete_editor_selection_action_t{});
+    REQUIRE(deleted);
+    CHECK(deleted.document_changed);
+    CHECK(history.document.charts.front().bookmarks.empty());
+    CHECK(history.document.charts.front().sections.empty());
+    CHECK(note_count(history) == 0);
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().bookmarks.size() == 1);
+    CHECK(history.document.charts.front().sections.size() == 1);
+}
+
 TEST_CASE("Delete uses typed BGM selection instead of removing a cursor note",
           "[unit][core][interaction][selection][delete][bgm]") {
     auto song = make_song();

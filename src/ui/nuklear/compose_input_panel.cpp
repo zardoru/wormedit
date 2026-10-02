@@ -1683,6 +1683,7 @@ static auto kiai_gesture_blocked(const ComposePointerEventContext& input) -> boo
 }
 
 static void begin_speed_drag(const ComposePointerEventContext& input);
+static void begin_speed_stretch(const ComposePointerEventContext& input);
 
 static void begin_kiai_drag(const ComposePointerEventContext& input) {
     state.kiai_drag_speed = false;
@@ -1764,6 +1765,8 @@ void update_kiai_span_drag(const ComposePointerEventContext& input) {
         !kiai_gesture_blocked(input)) {
         begin_kiai_drag(input);
         if (!state.kiai_drag_active) begin_speed_drag(input);
+    } else if (input.pointer_started_in_view && input.left_down && !input.left_released) {
+        begin_speed_stretch(input);
     }
 }
 
@@ -1837,6 +1840,30 @@ static void begin_speed_drag(const ComposePointerEventContext& input) {
         state.kiai_drag_current_y = y;
         return;
     }
+}
+
+// Shift+drag on a Speed marker stretches it into a span: the marker stays where it is and the
+// pointer sets where the transition ends. The marker covers its own edge, so this is the way to
+// grow an instant Speed; it shares the Kiai drag state like the edge grab above.
+static void begin_speed_stretch(const ComposePointerEventContext& input) {
+    constexpr auto other_modifiers = SDL_KMOD_CTRL | SDL_KMOD_ALT | SDL_KMOD_GUI;
+    if (state.kiai_drag_active || !input.window_focused || !input.view->scene_available ||
+        input.shortcut_event_count != 0 || (input.pointer_modifiers & SDL_KMOD_SHIFT) == 0 ||
+        (input.pointer_modifiers & other_modifiers) != 0 || input.timing_view->stage_active ||
+        state.timing_stage_drag_active || state.inline_timing_open || compose_area_pointer_consumed())
+        return;
+    const auto* marker = compose_timing_marker_at(*input.view, input.pointer_started_x,
+                                                  input.pointer_started_y);
+    if (!marker || marker->lane != WORM_UI_TIMING_LANE_SPEED || marker->object_id == 0 ||
+        marker->fixed_initial)
+        return;
+    state.kiai_drag_edge = 1;
+    state.kiai_drag_head_id = marker->object_id;
+    state.kiai_drag_speed = true;
+    state.kiai_drag_active = true;
+    state.kiai_drag_moved = false;
+    state.kiai_drag_anchor_y = input.pointer_started_y;
+    state.kiai_drag_current_y = input.pointer_started_y;
 }
 
 static void begin_recipe_drag(const ComposePointerEventContext& input) {

@@ -4,6 +4,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <atomic>
+#include <cstdint>
+#include <fstream>
 #include <barrier>
 #include <thread>
 #include <filesystem>
@@ -312,6 +314,52 @@ TEST_CASE("decoding a pending source probes it on demand and bounds idle open de
     CHECK(registry.open_decoder_count() == 4);
     registry.clear();
     CHECK(registry.open_decoder_count() == 0);
+}
+
+namespace {
+// A silent 16-bit mono WAV, just over the long-source threshold.
+auto write_long_wav() -> std::filesystem::path {
+    constexpr std::uint32_t rate = 44'100;
+    constexpr std::uint32_t frames = 31 * rate;
+    constexpr std::uint32_t bytes = frames * 2;
+    const auto path = std::filesystem::temp_directory_path() / "wormedit-long-source-test.wav";
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    const auto u32 = [&](std::uint32_t value) { out.write(reinterpret_cast<const char*>(&value), 4); };
+    const auto u16 = [&](std::uint16_t value) { out.write(reinterpret_cast<const char*>(&value), 2); };
+    out.write("RIFF", 4); u32(36 + bytes); out.write("WAVEfmt ", 8);
+    u32(16); u16(1); u16(1); u32(rate); u32(rate * 2); u16(2); u16(16);
+    out.write("data", 4); u32(bytes);
+    const std::string silence(bytes, '\0');
+    out.write(silence.data(), static_cast<std::streamsize>(silence.size()));
+    return path;
+}
+}
+
+TEST_CASE("long streaming sources keep their decoder open when idle decoders are trimmed",
+          "[unit][audio][source-registry][streaming]") {
+    using namespace wormedit::audio;
+    const auto long_path = write_long_wav();
+    decoded_source_registry_t registry{64, 1};
+    REQUIRE(registry.register_source({.asset = 100, .path = long_path,
+                                      .source = {"fixture:long", "generated-v1:long"}}).status ==
+            source_registration_status_t::registered);
+    decoded_block_cache_t cache;
+    transport_t transport{cache};
+    const auto token = transport.start();
+    REQUIRE(token.has_value());
+    const audio_source_identity_t long_source{"fixture:long", "generated-v1:long"};
+    REQUIRE(registry.decode_block(transport, *token, {long_source, 0}).status ==
+            block_decode_status_t::decoded);
+    for (std::uint64_t asset = 1; asset <= 4; ++asset) {
+        REQUIRE(registry.register_source_pending(pending_registration(asset)).status ==
+                source_registration_status_t::pending);
+        check_pending_decode(registry, transport, *token, asset);
+    }
+    // The cap of one idle decoder trims the short sources but never the long one.
+    CHECK(registry.open_decoder_count() == 1);
+    CHECK(registry.streaming_decoder_count() == 1);
+    registry.clear();
+    std::filesystem::remove(long_path);
 }
 
 namespace {

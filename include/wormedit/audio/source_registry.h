@@ -100,7 +100,11 @@ class decoded_source_registry_t {
     void await_pending() const;
     [[nodiscard]] auto pending_count() const -> std::size_t;
     [[nodiscard]] auto take_probe_failures() -> std::vector<source_probe_failure_t>;
+    // Idle decoders held for short sources, bounded by maximum_open_decoders.
     [[nodiscard]] auto open_decoder_count() const -> std::size_t;
+    // Open decoders of long sources (see long_source_frames). They stay open because
+    // reopening one rescans the file, and they do not count against the bound above.
+    [[nodiscard]] auto streaming_decoder_count() const -> std::size_t;
     [[nodiscard]] auto register_generated_source(generated_source_registration_t registration)
         -> source_registration_result_t;
     [[nodiscard]] auto remove(asset_id_t asset) -> bool;

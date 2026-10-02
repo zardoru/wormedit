@@ -33,6 +33,17 @@ void set_error(std::string* destination, std::string message) {
 // so a short forward gap is cheaper to decode through than to seek over.
 constexpr std::uint64_t maximum_skip_frames = 4U * maximum_read_frames;
 
+// Without a seek table, seeking an MP3 decodes from the start of the file, which takes
+// seconds late in an album-length track. Building the table scans the whole file once at
+// open, so only long sources pay for it. Backends other than MP3 ignore the setting.
+constexpr ma_uint32 mp3_seek_point_count = 4096;
+
+auto seek_point_count_for(std::uint64_t source_frames, std::uint32_t source_rate) -> ma_uint32 {
+    return source_frames >= static_cast<std::uint64_t>(source_rate) * (long_source_frames / output_sample_rate)
+               ? mp3_seek_point_count
+               : 0;
+}
+
 auto skip_decoder_frames(ma_decoder& decoder, std::uint64_t count) -> bool {
     std::vector<float> discard(maximum_read_frames * output_channel_count);
     while (count != 0) {
@@ -80,7 +91,8 @@ decoder_t::~decoder_t() = default;
 decoder_t::decoder_t(decoder_t&&) noexcept = default;
 auto decoder_t::operator=(decoder_t&&) noexcept -> decoder_t& = default;
 
-auto decoder_t::open(const std::filesystem::path& path, std::string* error_message) -> bool {
+auto decoder_t::open(const std::filesystem::path& path, std::string* error_message,
+                     decoder_index_t index) -> bool {
     close();
     if (error_message != nullptr) {
         error_message->clear();
@@ -121,8 +133,9 @@ auto decoder_t::open(const std::filesystem::path& path, std::string* error_messa
     }
 
     auto candidate = std::make_unique<impl_t>();
-    const auto config =
-        ma_decoder_config_init(ma_format_f32, output_channel_count, output_sample_rate);
+    auto config = ma_decoder_config_init(ma_format_f32, output_channel_count, output_sample_rate);
+    if (index == decoder_index_t::build)
+        config.seekPointCount = seek_point_count_for(source_frames, source_rate);
     result = decoder_init_file(path, &config, &candidate->decoder);
     if (result != MA_SUCCESS) {
         set_error(error_message,

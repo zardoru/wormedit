@@ -39,6 +39,7 @@ struct decoded_source_registry_t::entry_t {
     std::size_t in_use{};
     std::uint64_t last_used{};
     bool open{};
+    bool streaming{}; // long source: its decoder stays open and is not counted (set when probed)
     bool counted{};   // contributes to the registry's open-decoder count
     bool detached{};  // removed from the registry; close once the last lease ends
 };
@@ -178,7 +179,7 @@ auto decoded_source_registry_t::probe_entry(const std::shared_ptr<entry_t>& entr
     std::string message;
     std::optional<stream_info_t> info;
     const auto was_open = entry->open;
-    if (entry->open || entry->decoder.open(entry->path, &message)) {
+    if (entry->open || entry->decoder.open(entry->path, &message, decoder_index_t::skip)) {
         entry->open = true;
         info = entry->decoder.info();
         if (!was_open && entry->in_use == 0) {
@@ -210,6 +211,8 @@ auto decoded_source_registry_t::probe_entry(const std::shared_ptr<entry_t>& entr
         .output_frame_count = info->output_frame_count,
     };
     entry->state = probe_state_t::ready;
+    // Reopening a long compressed source rescans it, which a refill cannot afford.
+    entry->streaming = info->output_frame_count >= long_source_frames;
     return {.status = source_registration_status_t::registered,
             .binding = entry->binding,
             .message = {}};
@@ -272,6 +275,18 @@ auto decoded_source_registry_t::open_decoder_count() const -> std::size_t {
     return open_decoders_.load();
 }
 
+auto decoded_source_registry_t::streaming_decoder_count() const -> std::size_t {
+    std::vector<std::shared_ptr<entry_t>> snapshot;
+    {
+        const std::scoped_lock lock(mutex_);
+        snapshot = entries_;
+    }
+    return static_cast<std::size_t>(std::ranges::count_if(snapshot, [](const auto& entry) {
+        const std::scoped_lock lifecycle(entry->lifecycle);
+        return entry->streaming && entry->open;
+    }));
+}
+
 auto decoded_source_registry_t::find_entry(asset_id_t asset) const -> std::shared_ptr<entry_t> {
     const std::scoped_lock lock(mutex_);
     const auto found = std::ranges::find_if(entries_, [asset](const auto& entry) {
@@ -289,7 +304,7 @@ auto decoded_source_registry_t::acquire_lease(const std::shared_ptr<entry_t>& en
             std::string message;
             if (!entry->decoder.open(entry->path, &message)) return {};
             entry->open = true;
-            if (!entry->detached) {
+            if (!entry->detached && !entry->streaming) {
                 entry->counted = true;
                 ++open_decoders_;
             }

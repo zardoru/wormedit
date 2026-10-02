@@ -2750,6 +2750,8 @@ auto consume_minimap_preferences(WormUiWorkspaceAction& action,
         if (input.kind == WORM_UI_COMPOSE_INPUT_SET_MINIMAP_PAUSED_BEHAVIOR) {
             application.minimap_click_moves_paused_playhead = input.overview_primary;
             changed = true;
+        } else if (input.kind == WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE) {
+            application.bgm_bar_hidden = !application.bgm_bar_hidden;
         } else action.compose_inputs[kept++] = input;
     }
     action.compose_input_count = kept;

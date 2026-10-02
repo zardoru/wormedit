@@ -230,6 +230,14 @@ auto project_application_frame(application_frame_projection_context_t context)
         });
     }
 #endif
+    // Sticky across the waveform's analysis flicker: the row only goes away when the song has no audio.
+    if (flattened.view.compose.visible) {
+        context.compose_scene_cache.bgm_bar_audio_seen =
+            flattened.view.compose.has_bgm_events ||
+            context.workspace.transport.audio_asset.has_value() ||
+            flattened.view.compose.bgm_bar_row_count != 0 ||
+            flattened.view.compose.waveform_overview_row_count != 0;
+    }
     return flattened;
 }
 

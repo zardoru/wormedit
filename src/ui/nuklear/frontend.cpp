@@ -1588,15 +1588,15 @@ static void render_transport_seek_bar(const WormUiWorkspaceView& view,
     }
 }
 
-// Flat stand-in for the BGM bar on tabs and charts without BGM audio.
-static void render_bgm_bar_placeholder(bool compose_visible) {
+// Flat stand-in while the song's waveform is still being prepared.
+static void render_bgm_bar_placeholder() {
     struct nk_rect bounds{};
     if (nk_widget(&bounds, g_context) == NK_WIDGET_INVALID) return;
     auto* canvas = nk_window_get_canvas(g_context);
     nk_fill_rect(canvas, bounds, 0.0f,
                  wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::overview));
     const auto* font = g_context->style.font;
-    const char* text = compose_visible ? "No song audio in this chart" : "BGM bar (Compose)";
+    const char* text = "Preparing song waveform…";
     if (!font) return;
     const auto length = static_cast<int>(std::strlen(text));
     const auto width = font->width(font->userdata, font->height, text, length);
@@ -1609,10 +1609,11 @@ static void render_bgm_bar_placeholder(bool compose_visible) {
 static void render_transport_seek_control(const WormUiWorkspaceView& view,
                                          WormUiWorkspaceAction& action) {
     render_transport_seek_bar(view, action);
-    // The row is always reserved so the layout never shifts between tabs or charts.
+    // Without song audio, on other tabs, or when hidden from the toolbar the row does not exist.
+    if (!view.compose.visible || !view.compose.bgm_bar_reserved) return;
     nk_layout_row_dynamic(g_context, bgm_bar_row_height, 1);
     if (status_minimap_available(view.compose)) render_status_minimap(view, &action, true);
-    else render_bgm_bar_placeholder(view.compose.visible);
+    else render_bgm_bar_placeholder();
 }
 
 static void render_empty_project_content(const WormUiWorkspaceView& view,
@@ -1923,7 +1924,9 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
         render_transport_seek_control(view, action);
         const float recovery_height = render_recovery_above_content(view, action);
         float content_height = frame.height > 300
-                                  ? static_cast<float>(frame.height) - 140.0f - WORM_UI_BGM_BAR_CHROME_HEIGHT -
+                                  ? static_cast<float>(frame.height) - 140.0f -
+                                        (view.compose.visible && view.compose.bgm_bar_reserved
+                                             ? WORM_UI_BGM_BAR_CHROME_HEIGHT : 0.0f) -
                                         recovery_height
                                   : 80.0f;
         if (content_height < 80.0f) content_height = 80.0f;

@@ -872,6 +872,10 @@ typedef struct WormUiComposeView {
     double bgm_bar_end_fraction;
     const WormUiComposeBgmBarMarkView* bgm_bar_marks;
     size_t bgm_bar_mark_count;
+    // The bar row exists only for songs with audio and while the toolbar toggle keeps it on:
+    // available = the song has audio, reserved = the row is laid out (and takes vertical space).
+    bool bgm_bar_available;
+    bool bgm_bar_reserved;
     bool source_playhead_available;
     uint64_t source_playhead_asset_id;
     uint64_t source_playhead_frame;
@@ -1714,6 +1718,8 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_BGM_BAR_ZOOM,
     WORM_UI_COMPOSE_INPUT_BGM_BAR_PAN,
     WORM_UI_COMPOSE_INPUT_BGM_BAR_RESET,
+    // Toolbar toggle: show or hide the whole bar row to win vertical space.
+    WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE,
 } WormUiComposeInputKind;
 
 typedef enum WormUiComposeNavigationAction {

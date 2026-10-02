@@ -159,6 +159,8 @@ struct compose_scene_cache_t {
     std::optional<bmson_draft_audition_request_t> draft_audition_request;
     std::unordered_map<std::uint64_t, std::size_t> semantic_layer_membership_counts;
     bool focus_note_label_editor{};
+    // The song has audio (decided last frame; the surface height is needed before the waveform).
+    bool bgm_bar_audio_seen{};
     bool viewport_autoscroll_active{};
     double viewport_autoscroll_anchor_x_pixels{};
     double viewport_autoscroll_anchor_y_pixels{};
@@ -249,6 +251,7 @@ struct application_command_state_t {
     bool minimap_click_moves_paused_playhead{};
     // Session-only window of the BGM bar; zoom and pan never touch the chart.
     bgm_bar_range_t bgm_bar_range;
+    bool bgm_bar_hidden{};
     struct minimap_start_frame_t {
         wormedit::chart_id_t chart;
         std::uint64_t revision{};

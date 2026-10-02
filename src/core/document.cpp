@@ -1174,12 +1174,37 @@ auto conversion_report_t::has_errors() const -> bool {
     });
 }
 
+namespace {
+
+// Flags each measure whose nonzero ID already appeared earlier in chart order. IDs that
+// ascend strictly (the usual case) cannot repeat, so they need no storage at all; the
+// result is then empty. This runs every frame on large charts, so it avoids a node
+// allocation per measure.
+auto later_duplicate_measure_flags(const chart_document_t& chart) -> std::vector<char> {
+    const auto& measures = chart.measures;
+    const auto ascending = std::ranges::adjacent_find(measures, [](const auto& left, const auto& right) {
+                               return left.id.value >= right.id.value;
+                           }) == measures.end();
+    if (ascending) return {};
+    std::vector<std::pair<std::uint64_t, std::size_t>> seen;
+    seen.reserve(measures.size());
+    for (std::size_t position = 0; position < measures.size(); ++position)
+        if (measures[position].id.value != 0) seen.emplace_back(measures[position].id.value, position);
+    std::ranges::sort(seen);
+    std::vector<char> flags(measures.size(), 0);
+    for (std::size_t index = 1; index < seen.size(); ++index)
+        if (seen[index].first == seen[index - 1].first) flags[seen[index].second] = 1;
+    return flags;
+}
+
+} // namespace
+
 auto build_measure_index(const chart_document_t& chart)
     -> std::variant<measure_index_t, diagnostic_list_t> {
     diagnostic_list_t diagnostics;
     measure_index_t index;
     index.entries.reserve(chart.measures.size());
-    std::unordered_set<std::uint64_t> measure_ids;
+    const auto duplicates = later_duplicate_measure_flags(chart);
 
     if (chart.divisions_per_standard_measure == 0) {
         add_diagnostic(diagnostics, diagnostic_code_t::invalid_resolution,
@@ -1192,7 +1217,7 @@ auto build_measure_index(const chart_document_t& chart)
             diagnostics.back().message += " (measure " + std::to_string(measure_number) + ")";
             continue;
         }
-        if (!measure_ids.insert(measure.id.value).second) {
+        if (!duplicates.empty() && duplicates[measure_number - 1] != 0) {
             add_diagnostic(diagnostics, diagnostic_code_t::duplicate_id,
                            "measure " + std::to_string(measure_number) + " ID is duplicated");
             continue;

@@ -158,7 +158,7 @@ inline void apply_dropdown_theme(nk_context* context) {
     style.combo.symbol_active = color(UiColor::text_bright);
     style.combo.border = 1.0f;
     style.combo.rounding = 4.0f;
-    for (auto* button : {&style.combo.button, &style.contextual_button, &style.menu_button}) {
+    for (auto* button : {&style.combo.button, &style.contextual_button}) {
         button->normal = surface;
         button->hover = hover;
         button->active = active;
@@ -168,6 +168,14 @@ inline void apply_dropdown_theme(nk_context* context) {
         button->text_active = color(UiColor::text_bright);
         button->rounding = 4.0f;
     }
+    // Menubar titles (File/Edit/View) sit flat on the bar and only light up on hover.
+    style.menu_button = style.button;
+    style.menu_button.normal = nk_style_item_color(nk_rgba(0, 0, 0, 0));
+    style.menu_button.hover = hover;
+    style.menu_button.active = active;
+    style.menu_button.border = 0.0f;
+    style.menu_button.border_color = nk_rgba(0, 0, 0, 0);
+    style.menu_button.rounding = 4.0f;
     style.selectable.normal = nk_style_item_color(nk_rgba(0, 0, 0, 0));
     style.selectable.hover = hover;
     style.selectable.pressed = active;

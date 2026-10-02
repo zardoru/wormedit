@@ -1310,7 +1310,8 @@ static void render_status_bar(const WormUiWorkspaceView* view,
               view->selected_difficulty);
 }
 
-static auto workspace_content_flags(bool compose_visible) -> nk_flags {
+static auto workspace_content_flags(bool compose_visible, bool form_screen) -> nk_flags {
+    if (form_screen) return 0;
     return compose_visible ? NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR : NK_WINDOW_BORDER;
 }
 
@@ -1471,7 +1472,7 @@ static void render_workspace_content(const WormUiWorkspaceView& view,
                                    padding.y));
     }
     const bool open = nk_group_begin(g_context, "workspace-content",
-                                     workspace_content_flags(view.compose.visible)) != 0;
+                                     workspace_content_flags(view.compose.visible, padded)) != 0;
     if (padded) nk_style_pop_vec2(g_context);
     if (!open) return;
     if (view.setup.visible) {

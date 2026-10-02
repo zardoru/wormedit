@@ -447,6 +447,31 @@ TEST_CASE("Waveform texture ring composites stable RMS pixels with delta rasteri
     compare_envelope_frame(fixture, cached, 1000);
     expect_field(cached.envelope_work().regenerated_rows == 66);
 }
+TEST_CASE("Waveform texture ring regenerates plateau rows whose values change",
+          "[ui][field][sdl][waveform]") {
+    field_submission_fixture_t fixture;
+    renderer_t cached;
+    const auto plateau = [](float amplitude, bool present) {
+        std::vector<envelope_row_t> rows;
+        for (std::int64_t world = -2; world < 67; ++world) {
+            if (present) rows.push_back({static_cast<double>(world) + .5,
+                {amplitude, amplitude}, {amplitude, amplitude}});
+        }
+        return rows;
+    };
+    const auto frame = [&](const std::vector<envelope_row_t>& rows) {
+        cached.begin({0,0,128,64}, {1,1}, {}, fixture.renderer);
+        expect_field(cached.envelope(0, 6, rows.empty() ? envelope_test_rows(1000, 1) : rows,
+            {14,0,100,64}, 0, 1, {{57,137,167,96}, {114,222,239,142}, false}));
+        expect_field(cached.submit(fixture.renderer));
+    };
+    // Rows with equal neighbors, first absent and then present, then another value.
+    frame(plateau(.5f, false));
+    frame(plateau(.5f, true));
+    expect_field(cached.envelope_work().regenerated_rows == 66);
+    frame(plateau(.25f, true));
+    expect_field(cached.envelope_work().regenerated_rows == 66);
+}
 TEST_CASE("Waveform texture ring renders the reversed world axis during downscroll",
           "[ui][field][sdl][waveform]") {
     field_submission_fixture_t fixture;

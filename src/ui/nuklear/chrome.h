@@ -131,6 +131,28 @@ inline auto mode_button(nk_context* context, const char* label, const char* tool
     return clicked;
 }
 
+inline constexpr float menu_padding = 8.0f;
+inline constexpr float menu_radius = 8.0f;
+
+// Call right after a successful nk_menu_begin_*: paints the menu as a rounded panel with a soft
+// drop shadow. The shadow lies outside the popup, so the clip is widened while it is drawn.
+inline void menu_panel(nk_context* context) {
+    auto* popup = context->current;
+    auto* canvas = &popup->buffer;
+    const auto body = popup->bounds;
+    const auto clip = popup->layout->clip;
+    nk_push_scissor(canvas, nk_rect(body.x - 24, body.y - 16, body.w + 48, body.h + 48));
+    for (int step = 1; step <= 8; ++step) {
+        const auto grow = static_cast<float>(step);
+        nk_fill_rect(canvas,
+                     nk_rect(body.x - grow, body.y - grow + 4, body.w + 2 * grow, body.h + 2 * grow),
+                     menu_radius + grow, nk_rgba(0, 0, 0, 9));
+    }
+    nk_fill_rect(canvas, body, menu_radius, color(UiColor::surface));
+    nk_stroke_rect(canvas, body, menu_radius, 1.0f, color(UiColor::border_hover));
+    nk_push_scissor(canvas, clip);
+}
+
 // Dropdowns, context menus and popups share one surface language with the buttons:
 // surface fill, 1px border, 4px rounding and the same hover/active ramp.
 inline void apply_dropdown_theme(nk_context* context) {
@@ -143,9 +165,12 @@ inline void apply_dropdown_theme(nk_context* context) {
     style.window.menu_border_color = color(UiColor::border_hover);
     style.window.popup_border_color = color(UiColor::border_hover);
     style.window.combo_border = style.window.contextual_border = 1.0f;
-    style.window.menu_border = style.window.popup_border = 1.0f;
+    style.window.popup_border = 1.0f;
     style.window.popup_padding = style.window.combo_padding = nk_vec2(4.0f, 4.0f);
-    style.window.contextual_padding = style.window.menu_padding = nk_vec2(4.0f, 4.0f);
+    style.window.contextual_padding = nk_vec2(4.0f, 4.0f);
+    // Menus are framed by menu_panel(); the stock square border stays off.
+    style.window.menu_padding = nk_vec2(menu_padding, menu_padding);
+    style.window.menu_border = 0.0f;
     style.combo.normal = surface;
     style.combo.hover = hover;
     style.combo.active = active;
@@ -168,6 +193,8 @@ inline void apply_dropdown_theme(nk_context* context) {
         button->text_active = color(UiColor::text_bright);
         button->rounding = 4.0f;
     }
+    // Menu items sit flat on the menu panel and only light up on hover.
+    style.contextual_button.normal = nk_style_item_color(nk_rgba(0, 0, 0, 0));
     // Menubar titles (File/Edit/View) sit flat on the bar and only light up on hover.
     style.menu_button = style.button;
     style.menu_button.normal = nk_style_item_color(nk_rgba(0, 0, 0, 0));

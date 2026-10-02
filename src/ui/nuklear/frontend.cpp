@@ -988,21 +988,43 @@ static void render_external_player_menu(const WormUiWorkspaceView& view,
         action.external_player.kind = WORM_UI_EXTERNAL_PLAYER_STOP;
 }
 
+// Menus draw their own rounded panel (chrome::menu_panel), so the stock fill that
+// nk_menu_end paints over the padding must be transparent while one is open.
+static nk_color g_menu_saved_background{};
+
+static bool begin_menu_sized(const char* title, float width, float height) {
+    if (!nk_menu_begin_label(g_context, title, NK_TEXT_LEFT, nk_vec2(width, height))) return false;
+    wormedit::ui::chrome::menu_panel(g_context);
+    g_menu_saved_background = g_context->style.window.background;
+    g_context->style.window.background = nk_rgba(0, 0, 0, 0);
+    return true;
+}
+
+static bool begin_menu(const char* title, float rows) {
+    return begin_menu_sized(title, 210.0f,
+                            rows * 25.0f + (rows - 1.0f) * 4.0f + 2.0f * wormedit::ui::chrome::menu_padding);
+}
+
+static void end_menu() {
+    nk_menu_end(g_context);
+    g_context->style.window.background = g_menu_saved_background;
+}
+
 static void render_project_menu(const WormUiWorkspaceView* view,
                                 WormUiWorkspaceAction* action) {
-    if (!nk_menu_begin_label(g_context, "File", NK_TEXT_LEFT, nk_vec2(250, 540))) return;
+    if (!begin_menu_sized("File", 250.0f, 556.0f)) return;
     render_project_menu_files(view, action);
     render_project_menu_navigation(view, action);
     render_external_player_menu(*view, *action);
     nk_layout_row_dynamic(g_context, 25, 1);
     if (nk_menu_item_label(g_context, "Quit", NK_TEXT_LEFT))
         action->kind = WORM_UI_WORKSPACE_ACTION_QUIT;
-    nk_menu_end(g_context);
+    end_menu();
 }
 
 static void render_clipboard_menu(const WormUiWorkspaceView* view,
                                   WormUiWorkspaceAction* action) {
-    if (!nk_menu_begin_label(g_context, "Edit", NK_TEXT_LEFT, nk_vec2(190, 120))) return;
+    if (!begin_menu("Edit", 3.0f)) return;
     const bool text_owner = nuklear_text_entry_active() || g_ime_composition_active;
     const auto item = [&](const char* label, bool enabled, WormUiClipboardAction kind) {
         nk_layout_row_dynamic(g_context, 25, 1);
@@ -1014,17 +1036,23 @@ static void render_clipboard_menu(const WormUiWorkspaceView* view,
     item("Copy", !text_owner && view->compose.clipboard_copy_available, WORM_UI_CLIPBOARD_COPY);
     item("Cut", !text_owner && view->compose.clipboard_copy_available, WORM_UI_CLIPBOARD_CUT);
     item("Paste", !text_owner && view->compose.clipboard_paste_available, WORM_UI_CLIPBOARD_PASTE);
-    nk_menu_end(g_context);
+    end_menu();
+}
+
+static void render_preview_menu(const WormUiWorkspaceView* view,
+                                WormUiWorkspaceAction* action) {
+    if (!view->project_loaded || !begin_menu("Preview", 1.0f)) return;
+    nk_layout_row_dynamic(g_context, 25, 1);
+    if (nk_menu_item_label(g_context, view->player_preview.visible ? "Hide preview" : "Show preview",
+                           NK_TEXT_LEFT) &&
+        action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
+        action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
+    end_menu();
 }
 
 static void render_view_menu(const WormUiWorkspaceView* view,
                              WormUiWorkspaceAction* action) {
-    if (!nk_menu_begin_label(g_context, "View", NK_TEXT_LEFT, nk_vec2(230, 160))) return;
-    nk_layout_row_dynamic(g_context, 25, 1);
-    if (view->project_loaded && nk_menu_item_label(g_context, view->player_preview.visible ? "Hide preview"
-                                                                 : "Show preview", NK_TEXT_LEFT) &&
-        action->kind == WORM_UI_WORKSPACE_ACTION_NONE)
-        action->kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW;
+    if (!begin_menu("View", view->compose.visible ? 4.0f : 3.0f)) return;
     if (view->compose.visible) {
         nk_layout_row_dynamic(g_context, 25, 1);
         if (nk_menu_item_label(g_context, "Reset editor view", NK_TEXT_LEFT) &&
@@ -1040,7 +1068,7 @@ static void render_view_menu(const WormUiWorkspaceView* view,
     nk_layout_row_dynamic(g_context, 25, 1);
     if (nk_menu_item_label(g_context, "Notifications", NK_TEXT_LEFT) && view->notifications.history_available)
         action->notifications = {WORM_UI_NOTIFICATION_ACTION_OPEN_HISTORY, 0};
-    nk_menu_end(g_context);
+    end_menu();
 }
 
 static void close_unavailable_inline_offset(const WormUiWorkspaceView& view) {
@@ -1057,6 +1085,28 @@ static void close_unavailable_inline_offset(const WormUiWorkspaceView& view) {
     }
 }
 
+// The screen title is centered on the window, not on the room left by the menus.
+static void render_title_label(const WormUiWorkspaceView& view) {
+    struct nk_rect bounds{};
+    if (nk_widget(&bounds, g_context) == NK_WIDGET_INVALID) return;
+    const auto* font = g_context->style.font;
+    if (!font) return;
+    char title[512]{};
+    std::snprintf(title, sizeof(title), "%s%s", view.project_title, view.dirty ? " *" : "");
+    const auto length = static_cast<int>(std::strlen(title));
+    const auto width = font->width(font->userdata, font->height, title, length);
+    const auto window = nk_window_get_bounds(g_context);
+    const float centered = window.x + (window.w - width) * 0.5f;
+    const float x = std::clamp(centered, bounds.x, std::max(bounds.x, bounds.x + bounds.w - width));
+    auto* canvas = nk_window_get_canvas(g_context);
+    const auto previous_clip = canvas->clip;
+    nk_push_scissor(canvas, bounds);
+    nk_draw_text(canvas, nk_rect(x, bounds.y + (bounds.h - font->height) * 0.5f, width, font->height),
+                 title, length, font, nk_rgba(0, 0, 0, 0),
+                 wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::text));
+    nk_push_scissor(canvas, previous_clip);
+}
+
 static void render_title_bar(const WormUiWorkspaceView* view,
                              WormUiWorkspaceAction* action) {
     close_unavailable_inline_offset(*view);
@@ -1066,14 +1116,15 @@ static void render_title_bar(const WormUiWorkspaceView* view,
     nk_layout_row_template_push_static(g_context, 76);
     nk_layout_row_template_push_static(g_context, 56);
     nk_layout_row_template_push_static(g_context, 56);
+    nk_layout_row_template_push_static(g_context, 76);
     nk_layout_row_template_push_dynamic(g_context);
     if (custom_controls) wormedit::ui::chrome::IconButton::layout_columns(g_context, 3);
     nk_layout_row_template_end(g_context);
     render_project_menu(view, action);
     render_clipboard_menu(view, action);
     render_view_menu(view, action);
-    nk_labelf(g_context, NK_TEXT_LEFT, "  %s%s", view->project_title,
-              view->dirty ? " *" : "");
+    render_preview_menu(view, action);
+    render_title_label(*view);
     if (custom_controls) {
         if (wormedit::ui::chrome::IconButton{Glyph::minus, "Minimize window"}.render(g_context))
             SDL_MinimizeWindow(g_window);

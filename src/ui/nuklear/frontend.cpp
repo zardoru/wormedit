@@ -1174,12 +1174,6 @@ static void render_status_minimap(const WormUiWorkspaceView& view,
 static auto workspace_status_line(const WormUiWorkspaceView& view) -> std::string {
     const auto* line = view.notifications.current_text ? view.notifications.current_text : view.status_text;
     std::string status = !g_project_dialog_error.empty() ? g_project_dialog_error : line;
-    if (!view.recovery_has_actionable_candidate && view.recovery_notice &&
-        view.recovery_notice[0]) {
-        if (!status.empty()) status += " · ";
-        status += "Recovery: ";
-        status += view.recovery_notice;
-    }
     return status;
 }
 
@@ -1188,6 +1182,7 @@ static void render_transport_rate(const WormUiWorkspaceView& view, WormUiWorkspa
     const int index = view.transport_rate_index < 9 ? view.transport_rate_index : 8;
     const int label_index = 8 - index;
     int target = index;
+    nk_spacing(g_context, 1);
     if (!view.transport_rate_available) nk_widget_disable_begin(g_context);
     if (wormedit::ui::chrome::IconButton{Glyph::chevron_left, "Slower playback rate"}.render(g_context) &&
         index > 0) target = index - 1;
@@ -1195,6 +1190,7 @@ static void render_transport_rate(const WormUiWorkspaceView& view, WormUiWorkspa
     if (wormedit::ui::chrome::IconButton{Glyph::chevron_right, "Faster playback rate"}.render(g_context) &&
         index < 8) target = index + 1;
     if (!view.transport_rate_available) nk_widget_disable_end(g_context);
+    nk_spacing(g_context, 1);
     if (view.transport_rate_available && target != index && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
         action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
         action->transport_rate_index = static_cast<uint8_t>(target);
@@ -1212,7 +1208,7 @@ static void render_metronome_toggle(const WormUiWorkspaceView& view,
                                     WormUiWorkspaceAction& action) {
     if (!view.transport_metronome_available) nk_widget_disable_begin(g_context);
     const auto hint = view.transport_metronome_enabled ? "Disable metronome" : "Enable metronome";
-    if (wormedit::ui::chrome::IconButton{Glyph::audio_lines, hint,
+    if (wormedit::ui::chrome::IconButton{Glyph::metronome, hint,
                                         view.transport_metronome_enabled}.render(g_context) &&
         view.transport_metronome_available && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
         action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_TOGGLE_METRONOME;
@@ -1260,9 +1256,12 @@ static void render_status_bar(const WormUiWorkspaceView* view,
     const bool snap_label_visible = view->compose.visible && view->compose.area_snap_denominator != 0;
     nk_layout_row_template_begin(g_context, 30);
     wormedit::ui::chrome::IconButton::layout_columns(g_context, 4);
+    // Rate stepper: chevrons hug the value, with a gutter on both sides.
+    nk_layout_row_template_push_static(g_context, 10);
     wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);
-    nk_layout_row_template_push_static(g_context, 54);
+    nk_layout_row_template_push_static(g_context, 40);
     wormedit::ui::chrome::IconButton::layout_columns(g_context, 1);
+    nk_layout_row_template_push_static(g_context, 10);
     nk_layout_row_template_push_static(g_context, 100);
     if (snap_label_visible) nk_layout_row_template_push_static(g_context, 64);
     nk_layout_row_template_push_dynamic(g_context);

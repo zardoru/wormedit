@@ -12,4 +12,4 @@ the subset; the app does not need an SVG renderer at runtime. This script needs
 `rsvg-convert` and Pillow on the development machine.
 
 `chevrons-left`, `chevrons-right`, and `magnet` are used by Compose audio-offset
-nudges and beat-fit BPM snapping.
+nudges and beat-fit BPM snapping. `metronome` is the transport metronome toggle.

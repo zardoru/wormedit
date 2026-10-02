@@ -65,10 +65,11 @@ later covering more bmhelper functions.
 
 ## T-316 Share a zoomable waveform viewport
 
-- **Status:** ready
+- **Status:** done
+- **Implementation notes (2026-10-02):** `waveform_viewport_t` with `fit`, `clamp`, `zoom` (anchored, 1/16 to whole-source frames per pixel), `pan` and `project_waveform_viewport` is in `include/wormedit/audio/waveform_viewport.h`; the 6 cases in `tests/core/audio_waveform_viewport_tests.cpp` pass (audio.* 137/137), including an 80-minute source. clang-tidy could not be run on the new file (include path missing for the new unit in the compile database); the functions are small.
 - **Outcome:** a viewport type (first visible source frame, source frames per pixel) with anchored zoom, drag pan, clamping and fit-to-window, plus a projection helper that picks the pyramid level through `waveform_level_for_zoom` and `project_waveform`; used by the Sounds tab now and available to Compose's stem-cut editor later.
 - **Read first:** `include/wormedit/audio/waveform.h`, `src/audio/waveform.cpp`, `src/sys/waveform_view_projection.cpp`, `src/sys/waveform_analysis_runtime.cpp`.
-- **Files owned:** new `include/wormedit/audio/waveform_viewport.h`, new `src/audio/waveform_viewport.cpp`, new `tests/audio/waveform_viewport_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Files owned:** new `include/wormedit/audio/waveform_viewport.h`, new `src/audio/waveform_viewport.cpp`, new `tests/core/audio_waveform_viewport_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Steps:** 1. Pure arithmetic with 64-bit frames and exact clamping. 2. Zoom about a pixel keeps the frame under it fixed (tested at several levels). 3. Projection wrapper bounded to the visible pixel count. 4. Tests for zero-length, one-frame, 80-minute (about 2.3e8 frames at 48 kHz) sources and extreme zoom.
 - **Invariants:** deterministic, no allocation beyond the output span, no decoder calls.
 - **Reject/failure behavior:** invalid inputs return an empty projection and leave the viewport unchanged.

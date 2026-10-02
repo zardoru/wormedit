@@ -943,3 +943,18 @@ TEST_CASE("timing group moves honor the timing lock",
            history.document.charts.front().scrolls[0].position == pos(120) &&
            history.document.charts.front().bpms[1].position == pos(0)));
 }
+
+TEST_CASE("effective BPM at a position is the latest preceding BPM event", "[timing-lane]") {
+    auto song = timing_song();
+    auto& chart = song.charts.front();
+    chart.measures.push_back({.id = measure_id_t{4}});
+    chart.bpms.push_back({.id = object_id_t{11},
+                          .position = {measure_id_t{3}, 480},
+                          .beats_per_minute = {150, 1},
+                          .provenance = {.source_order = 1}});
+    REQUIRE(validate_document(song).empty());
+    CHECK(effective_bpm_at(chart, {measure_id_t{3}, 0}) == signed_rational_t{120, 1});
+    CHECK(effective_bpm_at(chart, {measure_id_t{3}, 479}) == signed_rational_t{120, 1});
+    CHECK(effective_bpm_at(chart, {measure_id_t{3}, 480}) == signed_rational_t{150, 1});
+    CHECK(effective_bpm_at(chart, {measure_id_t{4}, 0}) == signed_rational_t{150, 1});
+}

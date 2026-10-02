@@ -365,7 +365,8 @@ auto initial_timing_value_for_stage(const wormedit::chart_document_t& chart,
     using namespace wormedit;
     switch (kind) {
     case timing_lane_kind_t::bpm:
-        return timing_bpm_value_t{{120, 1}};
+        return timing_bpm_value_t{
+            effective_bpm_at(chart, position).value_or(signed_rational_t{120, 1})};
     case timing_lane_kind_t::scroll:
         return timing_scroll_value_t{{1, 1}};
     case timing_lane_kind_t::speed:

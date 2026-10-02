@@ -101,6 +101,12 @@ struct timing_lane_pseudonote_preview_t {
 // typed editor command set has no meter-event insertion command. The caller
 // supplies a value resolved either from an explicit default or the effective
 // value at the cursor; this controller does not guess timing projections.
+// BPM in force at an exact position: the latest valid BPM event at or before it
+// (ties broken by source order), or nullopt when the chart has none or the
+// measure index cannot be built. Used as the default for a newly inserted BPM.
+[[nodiscard]] auto effective_bpm_at(const chart_document_t& chart, local_position_t position)
+    -> std::optional<signed_rational_t>;
+
 [[nodiscard]] auto
 begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart,
                              timing_lane_kind_t kind, local_position_t exact_snapped_position,

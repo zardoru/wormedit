@@ -365,7 +365,7 @@ auto initial_timing_value_for_stage(const wormedit::chart_document_t& chart,
         return timing_speed_value_t{{1, 1}, {0, 1}, false};
     case timing_lane_kind_t::stop:
     case timing_lane_kind_t::delay:
-        return timing_pause_value_t{{1, 1}, pause_unit_t::seconds};
+        return timing_pause_value_t{{1, 1}, pause_unit_t::beats};
     case timing_lane_kind_t::warp: {
         const auto measures_result = build_measure_index(chart);
         const auto* measures = std::get_if<measure_index_t>(&measures_result);

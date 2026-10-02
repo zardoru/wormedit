@@ -290,6 +290,8 @@ The sampling context is immutable and contains the interval endpoints, baseline 
 
 Initial built-ins are:
 
+**Reserved storage (native schema 2).** The native project already has a slot for this: an SV recipe may use the curve kind `lua_expression` and carries the Lua source inline in `expression_source` (1 to 16384 bytes, no NUL; every other curve keeps it empty). Schema 2 stores and round-trips it and validates its shape, but nothing evaluates it: sampling, preview, materialization and export report an unsupported-feature diagnostic instead of guessing, so a project that holds one can be saved, reopened and shared safely. The fields listed above that the inline slot lacks (scripting API version, entry-point name, named parameters, asset handles and hashes, seed, project-relative source reference) arrive as an additive schema bump together with the evaluator (T-189).
+
 - `curve.linear { from, to }`, equal to `from + (to - from) * p`;
 - `curve.exponential { from, to, shape }`, using the endpoint-safe normalized form `from + (to - from) * (exp(shape*p)-1)/(exp(shape)-1)`, with `shape = 0` defined as linear;
 - `curve.constant { value }`;

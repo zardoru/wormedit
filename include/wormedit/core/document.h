@@ -434,6 +434,11 @@ enum class sv_recipe_curve_t {
     linear,
     exponential,
     bump,
+    // Reserved for Lua expression curves (see docs/osbx-draft-spec.md): the recipe's relative value
+    // is a Lua function of the normalized position t in [0, 1], kept in expression_source. The
+    // source is stored and round-tripped, but nothing evaluates it yet: sampling and export report
+    // an unsupported-feature diagnostic instead of guessing.
+    lua_expression,
 };
 
 enum class sv_recipe_sampling_mode_t {
@@ -479,6 +484,8 @@ struct sv_recipe_t {
     sv_recipe_curve_t curve{sv_recipe_curve_t::linear};
     sv_recipe_parameters_t parameters;
     sv_recipe_sampling_t sampling;
+    // Lua source for the lua_expression curve; empty for every other curve.
+    std::string expression_source;
     // StepMania SPEEDS transition behavior. It is ignored for SV/SCROLLS.
     std::optional<rational_t> transition_duration;
     std::optional<bool> transition_is_seconds;
@@ -769,7 +776,7 @@ struct song_metadata_t {
 };
 
 struct song_document_t {
-    std::uint32_t schema_version{1};
+    std::uint32_t schema_version{2};
     song_id_t id;
     std::uint64_t revision{};
     song_metadata_t metadata;

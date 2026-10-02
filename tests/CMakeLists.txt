@@ -32,6 +32,12 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_measure_commands.cpp
     ../src/sys/compose_selection_transform.cpp
     ../src/sys/compose_label_search.cpp
+    ../src/sys/compose_dead_spans.cpp
+    ../src/sys/compose_kiai_spans.cpp
+    ../src/sys/compose_sv_graph.cpp
+    ../src/sys/compose_recipe_areas.cpp
+    ../src/sys/compose_speed_spans.cpp
+    ../src/sys/recipe_form.cpp
     ../src/sys/compose_quantize_preview.cpp
     ../src/sys/application_defaults.cpp
     ../src/sys/project_open.cpp
@@ -55,6 +61,12 @@ add_executable(wormedit_core_tests
     sys/compose_measure_commands_tests.cpp
     sys/compose_selection_transform_tests.cpp
     sys/compose_label_search_tests.cpp
+    sys/compose_dead_spans_tests.cpp
+    sys/compose_kiai_spans_tests.cpp
+    sys/compose_sv_graph_tests.cpp
+    sys/compose_recipe_areas_tests.cpp
+    sys/compose_speed_spans_tests.cpp
+    sys/recipe_form_tests.cpp
     sys/compose_quantize_preview_tests.cpp
     sys/project_view_tests.cpp
     sys/tap_timing_runtime_tests.cpp
@@ -339,6 +351,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ui/nuklear_metadata_state_tests.cpp
         ui/nuklear_setup_state_tests.cpp
         ui/nuklear_timing_state_tests.cpp
+        ui/nuklear_meter_state_tests.cpp
         ../src/ui/nuklear/audio_state.cpp
         ../src/ui/nuklear/arrow_glyph.cpp
         ../src/ui/nuklear/compose_bookmark_label.cpp
@@ -346,6 +359,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/metadata_state.cpp
         ../src/ui/nuklear/setup_state.cpp
         ../src/ui/nuklear/timing_state.cpp
+        ../src/ui/nuklear/meter_state.cpp
     )
     target_include_directories(wormedit_frontend_state_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
     target_link_libraries(wormedit_frontend_state_tests
@@ -463,11 +477,17 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/frame_timing.cpp
         ../src/sys/compose_area_actions.cpp
         ../src/sys/compose_view.cpp
+        ../src/sys/compose_dead_spans.cpp
+        ../src/sys/compose_kiai_spans.cpp
+        ../src/sys/compose_sv_graph.cpp
+        ../src/sys/compose_recipe_areas.cpp
+        ../src/sys/compose_speed_spans.cpp
         ../src/sys/compose_quantize_preview.cpp
         ../src/common/static_interval_index.cpp
         ../src/ui/nuklear/arrow_glyph.cpp
         ../src/sys/compose_resource_presenter.cpp
         ../src/sys/timing_view.cpp
+        ../src/sys/recipe_form.cpp
         ../src/sys/workspace_projection.cpp
     )
     target_include_directories(wormedit_frame_timing_tests PRIVATE
@@ -501,6 +521,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/frame_timing.cpp
         ../src/sys/workspace_projection.cpp
         ../src/sys/timing_view.cpp
+        ../src/sys/recipe_form.cpp
         ../src/sys/compose_resource_presenter.cpp
         ../src/sys/metadata_view_projection.cpp
         ../src/sys/metadata_drop_state.cpp

@@ -216,10 +216,19 @@ struct sv_recipe_range_drag_t {
 
 void cancel_sv_recipe_range_drag(sv_recipe_range_drag_t& drag) noexcept;
 
+// Turns one recipe into ordinary scroll or speed events and removes the recipe. The events are the
+// recipe's values multiplied into the authored baseline, exactly what export baking would emit for
+// this recipe alone; other recipes keep composing over the new baseline. Disabled recipes
+// materialize too. A recipe that cannot be evaluated (a Lua expression curve, for now) rejects.
+struct materialize_sv_recipe_action_t {
+    chart_id_t chart;
+    recipe_id_t recipe;
+};
+
 using sv_recipe_edit_action_t =
     std::variant<insert_sv_recipe_action_t, update_sv_recipe_action_t, delete_sv_recipe_action_t,
                  reorder_sv_recipe_action_t, set_sv_recipe_enabled_action_t,
-                 move_sv_recipe_range_action_t>;
+                 move_sv_recipe_range_action_t, materialize_sv_recipe_action_t>;
 
 // Every recipe edit is revision checked and published through shared document
 // history. Range changes are exact chart-grid positions, so dragging previews

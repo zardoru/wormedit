@@ -9,11 +9,13 @@
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/grid.h>
+#include <wormedit/core/kiai_spans.h>
 #include <wormedit/core/marker_editor.h>
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/note_label_editor.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/semantic_layer_editor.h>
+#include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/timing_lane_controller.h>
 #include <wormedit/core/virtual_canvas.h>
@@ -1097,9 +1099,31 @@ struct compose_input_context_t {
         return compose_source_y(y, state.viewport_height_pixels,
                                 input_chart && compose_field_downscroll(*input_chart, application_state.editor_preferences));
     }
+    // Notes cannot sit in a Stop, Delay or Warp: a pointer there targets nothing to place on.
+    auto in_dead_span(const wormedit::chart_document_t& chart,
+                      const wormedit::editor_interaction_view_model_t& view, double y_pixels) const
+        -> bool {
+        if (!scene_cache.dead_spans || chart.divisions_per_standard_measure == 0) return false;
+        const auto pixels_per_row = view.pixels_per_standard_measure /
+                                    static_cast<double>(chart.divisions_per_standard_measure);
+        const auto bands = project_dead_span_bands(
+            *scene_cache.dead_spans, pixels_per_row, view.viewport_scroll_pixels,
+            view.viewport_height_pixels,
+            compose_field_downscroll(chart, application_state.editor_preferences),
+            dead_span_pause_band_pixels);
+        return pointer_in_dead_span(bands, y_pixels);
+    }
     auto hit_target_at(const wormedit::chart_document_t& chart,
                        const wormedit::editor_interaction_view_model_t& view, double x_pixels,
                        double y_pixels) -> std::optional<wormedit::editor_hit_target_t> {
+        auto target = hit_target_unrestricted(chart, view, x_pixels, y_pixels);
+        if (target && !target->note && in_dead_span(chart, view, y_pixels)) return std::nullopt;
+        return target;
+    }
+    auto hit_target_unrestricted(const wormedit::chart_document_t& chart,
+                                 const wormedit::editor_interaction_view_model_t& view,
+                                 double x_pixels, double y_pixels)
+        -> std::optional<wormedit::editor_hit_target_t> {
         if (!scene_cache.hit_test_index) {
             auto built = wormedit::build_editor_hit_test_index(chart, history.document.revision);
             if (!std::holds_alternative<wormedit::editor_hit_test_index_t>(built))
@@ -1118,6 +1142,13 @@ struct compose_input_context_t {
     auto position_at_compose_y(const wormedit::chart_document_t& chart,
                                const wormedit::editor_interaction_view_model_t& view,
                                double y_pixels) const -> std::optional<wormedit::local_position_t> {
+        if (in_dead_span(chart, view, y_pixels)) return std::nullopt;
+        return position_at_compose_y_unrestricted(chart, view, y_pixels);
+    }
+    auto position_at_compose_y_unrestricted(const wormedit::chart_document_t& chart,
+                                            const wormedit::editor_interaction_view_model_t& view,
+                                            double y_pixels) const
+        -> std::optional<wormedit::local_position_t> {
         return wormedit::editor_position_at_y_pixels(
             chart, view,
             compose_source_y(y_pixels, view.viewport_height_pixels,
@@ -1984,7 +2015,7 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
         return "Select the timing marker before dragging it.";
     const auto y = std::clamp(input.y_pixels, 0.0,
                               std::max(0.0, view->viewport_height_pixels - 0.001));
-    const auto position = context.position_at_compose_y(*chart, *view, y);
+    const auto position = context.position_at_compose_y_unrestricted(*chart, *view, y);
     const auto measures = build_measure_index(*chart);
     const auto* index = std::get_if<measure_index_t>(&measures);
     const auto target_row = position && index ? absolute_row(*index, *position) : std::nullopt;
@@ -2013,6 +2044,164 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
     result.diagnostics = moved.diagnostics;
     accepted = "Selected timing markers moved vertically.";
     return std::nullopt;
+}
+
+// The absolute row under a pointer, clamped into the chart's rows.
+auto kiai_pointer_row(compose_input_context_t& context, const wormedit::chart_document_t& chart,
+                      const wormedit::editor_interaction_view_model_t& view,
+                      const wormedit::measure_index_t& index, double y_pixels)
+    -> std::optional<std::uint64_t> {
+    if (!std::isfinite(y_pixels)) return std::nullopt;
+    const auto y = std::clamp(y_pixels, 0.0, std::max(0.0, view.viewport_height_pixels - 0.001));
+    const auto position = context.position_at_compose_y_unrestricted(chart, view, y);
+    return position ? wormedit::absolute_row(index, *position) : std::nullopt;
+}
+
+// Rows an edge drag proposes: the dragged edge goes to the pointer's row, the other edge stays,
+// and crossing the fixed edge swaps them. An empty range proposes nothing.
+auto kiai_dragged_rows(std::uint64_t fixed, std::uint64_t dragged)
+    -> std::optional<std::pair<std::uint64_t, std::uint64_t>> {
+    if (fixed == dragged) return std::nullopt;
+    return std::pair{std::min(fixed, dragged), std::max(fixed, dragged)};
+}
+
+auto edit_compose_kiai_span(const WormUiComposeInputAction& input,
+                            compose_input_context_t& context,
+                            wormedit::editor_interaction_result_t& result,
+                            std::string_view& accepted) -> std::optional<std::string> {
+    using namespace wormedit;
+    const auto* chart = context.chart();
+    const auto view = compose_view_for_state(context.history, context.state);
+    if (!chart || !view || input.timing_chart_id != chart->id.value ||
+        input.timing_document_revision != context.history.document.revision)
+        return "Kiai edit is stale or invalid.";
+    if (context.application_state.timing_locked) return "Timing is locked.";
+    const auto measures = build_measure_index(*chart);
+    const auto* index = std::get_if<measure_index_t>(&measures);
+    const auto row = index ? kiai_pointer_row(context, *chart, *view, *index, input.y_pixels)
+                           : std::nullopt;
+    if (!row) return "Kiai edit has no valid destination row.";
+    kiai_span_edit_t edit;
+    if (input.span_edge == 2) {
+        const auto anchor = kiai_pointer_row(context, *chart, *view, *index, input.span_anchor_y_pixels);
+        edit.rows = anchor ? kiai_dragged_rows(*anchor, *row) : std::nullopt;
+    } else {
+        const auto spans = kiai_spans_of(*chart, *index);
+        const auto found = std::ranges::find(spans, object_id_t{input.object_id}, &kiai_span_t::head);
+        if (found == spans.end()) return "The Kiai area no longer exists.";
+        edit.head = found->head;
+        edit.rows = kiai_dragged_rows(input.span_edge == 0 ? found->end_row : found->begin_row, *row);
+    }
+    if (!edit.rows) {
+        result.accepted = true;
+        accepted = "Kiai area unchanged.";
+        return std::nullopt;
+    }
+    const auto edited = apply_marker_edit(
+        context.history, context.history.document.revision,
+        edit_kiai_span_action_t{.chart = chart->id, .edit = edit});
+    result.accepted = edited.applied;
+    result.document_changed = edited.applied;
+    result.diagnostics = edited.diagnostics;
+    accepted = edited.applied ? "Kiai area edited." : "Kiai area unchanged.";
+    return std::nullopt;
+}
+
+// The recipe a recipe input names, if it still exists in the current chart.
+auto find_input_recipe(const wormedit::chart_document_t& chart, std::uint64_t id)
+    -> const wormedit::sv_recipe_t* {
+    const auto found = std::ranges::find(chart.sv_recipes, wormedit::recipe_id_t{id},
+                                         &wormedit::sv_recipe_t::id);
+    return found == chart.sv_recipes.end() ? nullptr : &*found;
+}
+
+// A recipe's begin edge, end edge, or whole span dragged: the previewed, snapped interval is
+// committed as one history command through the core range drag (stale input and the timing lock
+// reject there).
+auto edit_compose_recipe_range(const WormUiComposeInputAction& input,
+                               compose_input_context_t& context,
+                               wormedit::editor_interaction_result_t& result,
+                               std::string_view& accepted) -> std::optional<std::string> {
+    using namespace wormedit;
+    const auto* chart = context.chart();
+    const auto view = compose_view_for_state(context.history, context.state);
+    if (!chart || !view || input.timing_chart_id != chart->id.value ||
+        input.timing_document_revision != context.history.document.revision)
+        return "SV recipe edit is stale or invalid.";
+    if (!find_input_recipe(*chart, input.object_id)) return "The SV recipe no longer exists.";
+    const auto press = context.position_at_compose_y_unrestricted(
+        *chart, *view, std::clamp(input.span_anchor_y_pixels, 0.0, view->viewport_height_pixels - 0.001));
+    const auto release = context.position_at_compose_y_unrestricted(
+        *chart, *view, std::clamp(input.y_pixels, 0.0, view->viewport_height_pixels - 0.001));
+    if (!press || !release) return "SV recipe edit has no valid destination.";
+    const auto handle = input.span_edge == 0   ? sv_recipe_range_handle_t::begin
+                        : input.span_edge == 1 ? sv_recipe_range_handle_t::end
+                                               : sv_recipe_range_handle_t::whole_span;
+    auto drag = begin_sv_recipe_range_drag(context.history, chart->id, recipe_id_t{input.object_id},
+                                           handle, *press, context.state.active_snap_denominator,
+                                           context.application_state.timing_locked);
+    if (drag.status != sv_recipe_range_drag_status_t::previewing)
+        return drag.diagnostics.empty() ? "SV recipe edit was rejected." : drag.diagnostics.front().message;
+    if (!update_sv_recipe_range_drag(context.history, drag, *release,
+                                     context.application_state.timing_locked))
+        return drag.diagnostics.empty() ? "SV recipe edit was rejected." : drag.diagnostics.front().message;
+    const auto committed = commit_sv_recipe_range_drag(context.history, drag,
+                                                       context.application_state.timing_locked);
+    result.accepted = committed.applied;
+    result.document_changed = committed.applied;
+    result.diagnostics = committed.diagnostics;
+    accepted = committed.applied ? "SV recipe moved." : "SV recipe unchanged.";
+    return std::nullopt;
+}
+
+// Menu and key commands on one recipe: toggle enabled, materialize into events, or delete.
+auto run_compose_recipe_command(std::uint64_t id, std::uint8_t command,
+                                compose_input_context_t& context,
+                                wormedit::editor_interaction_result_t& result,
+                                std::string_view& accepted) -> std::optional<std::string> {
+    using namespace wormedit;
+    const auto* chart = context.chart();
+    const auto* recipe = chart ? find_input_recipe(*chart, id) : nullptr;
+    if (!recipe) return "The SV recipe no longer exists.";
+    if (context.application_state.timing_locked) return "Timing is locked.";
+    const auto recipe_id = recipe->id;
+    const auto chart_id = chart->id;
+    const auto enabled = recipe->enabled;
+    sv_recipe_edit_action_t action = delete_sv_recipe_action_t{chart_id, recipe_id};
+    accepted = "SV recipe deleted.";
+    if (command == 0) {
+        action = set_sv_recipe_enabled_action_t{chart_id, recipe_id, !enabled};
+        accepted = enabled ? "SV recipe disabled." : "SV recipe enabled.";
+    } else if (command == 1) {
+        action = materialize_sv_recipe_action_t{chart_id, recipe_id};
+        accepted = "SV recipe materialized into events.";
+    }
+    const auto edited = apply_sv_recipe_edit(context.history, context.history.document.revision, action);
+    result.accepted = edited.applied;
+    result.document_changed = edited.applied;
+    result.diagnostics = edited.diagnostics;
+    if (!edited.applied) accepted = "SV recipe command rejected.";
+    if (edited.applied && command != 0) context.application_state.recipe_selected = 0;
+    return std::nullopt;
+}
+
+// Deletes the selected Kiai area. Returns false when no area is selected.
+auto delete_selected_compose_kiai_span(compose_input_context_t& context,
+                                       wormedit::editor_interaction_result_t& result,
+                                       std::string_view& accepted) -> bool {
+    using namespace wormedit;
+    const auto head = context.application_state.kiai_selected_head;
+    const auto* chart = context.chart();
+    if (head == 0 || !chart || context.application_state.timing_locked) return false;
+    const auto edited = apply_marker_edit(
+        context.history, context.history.document.revision,
+        edit_kiai_span_action_t{.chart = chart->id, .edit = {.head = object_id_t{head}}});
+    context.application_state.kiai_selected_head = 0;
+    result.accepted = edited.applied;
+    result.document_changed = edited.applied;
+    result.diagnostics = edited.diagnostics;
+    accepted = edited.applied ? "Kiai area deleted." : "No Kiai area to delete.";
+    return true;
 }
 
 auto place_note_from_pointer(compose_input_context_t& context,
@@ -2451,6 +2640,43 @@ auto cancel_compose_gesture(compose_input_context_t& context,
     return compose_input_family_result_t::continue_with_result();
 }
 
+// Kiai area and SV recipe inputs from the timing lanes. Returns nothing for any other input.
+auto dispatch_timing_lane_area_input(const WormUiComposeInputAction& input,
+                                     compose_input_context_t& context,
+                                     wormedit::editor_interaction_result_t& result,
+                                     std::string_view& accepted)
+    -> std::optional<compose_input_family_result_t> {
+    switch (input.kind) {
+    case WORM_UI_COMPOSE_INPUT_KIAI_SPAN_SELECT:
+        context.application_state.kiai_selected_head = input.object_id;
+        result.accepted = true;
+        accepted = input.object_id != 0 ? "Kiai area selected." : "Kiai selection cleared.";
+        return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT:
+        if (const auto error = edit_compose_kiai_span(input, context, result, accepted))
+            return *error;
+        return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_RECIPE_SELECT:
+        if (context.application_state.recipe_selected != input.object_id)
+            context.application_state.recipe_preview.reset();
+        context.application_state.recipe_selected = input.object_id;
+        result.accepted = true;
+        accepted = input.object_id != 0 ? "SV recipe selected." : "SV recipe selection cleared.";
+        return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT:
+        if (const auto error = edit_compose_recipe_range(input, context, result, accepted))
+            return *error;
+        return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND:
+        if (const auto error = run_compose_recipe_command(input.object_id, input.span_edge, context,
+                                                          result, accepted))
+            return *error;
+        return compose_input_family_result_t::continue_with_result();
+    default:
+        return std::nullopt;
+    }
+}
+
 auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
                                       compose_input_context_t& context,
                                       wormedit::editor_interaction_result_t& result,
@@ -2461,6 +2687,8 @@ auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
             input, context.history, context.workspace, context.state, context.application_state,
             context.scene_cache, context.input_chart))
         return *status;
+    if (const auto handled = dispatch_timing_lane_area_input(input, context, result, accepted))
+        return *handled;
     switch (input.kind) {
     case WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK:
         if (const auto error = click_compose_waveform(input, context, result, accepted)) return *error;
@@ -2539,6 +2767,17 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
         !wormedit::ui::compose_notes_editable(compose_mode_of(context.application_state)))
         return compose_input_family_result_t::continue_batch(
             "Note editing is unavailable in Timing focus.");
+    if (input.kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION &&
+        delete_selected_compose_kiai_span(context, result, accepted))
+        return compose_input_family_result_t::continue_with_result();
+    if (input.kind == WORM_UI_COMPOSE_INPUT_DELETE_SELECTION &&
+        context.application_state.recipe_selected != 0) {
+        const auto id = context.application_state.recipe_selected;
+        if (const auto error = run_compose_recipe_command(id, 2, context, result, accepted))
+            return compose_input_family_result_t::continue_with_result();
+        context.application_state.recipe_selected = 0;
+        return compose_input_family_result_t::continue_with_result();
+    }
     const auto keyboard =
         dispatch_compose_keyboard_input(input, context.history, context.workspace, context.state,
                                         context.navigation_input, context.application_state,

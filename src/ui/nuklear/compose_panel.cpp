@@ -11,8 +11,9 @@
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_recipe_form.h"
 #include "ui/nuklear/chrome.h"
-#include "ui/nuklear/timing_panel.h"
+#include "ui/nuklear/timing_stage_editor.h"
 
 #include "wormedit/nuklear_config.h"
 
@@ -174,6 +175,12 @@ static bool compose_geometry_arrays_valid(const WormUiComposeView* view) {
            (view->audio_bookmark_count == 0 || view->audio_bookmarks) &&
            (view->audio_section_count == 0 || view->audio_sections) &&
            (view->timing_marker_count == 0 || view->timing_markers) &&
+           (view->dead_span_count == 0 || view->dead_spans) &&
+           (view->kiai_span_count == 0 || view->kiai_spans) &&
+           (view->recipe_area_count == 0 || view->recipe_areas) &&
+           (view->speed_span_count == 0 || view->speed_spans) &&
+           (view->recipe_graph_point_count == 0 || view->recipe_graph_points) &&
+           (view->sv_graph_point_count == 0 || view->sv_graph_points) &&
            (view->resource_count == 0 || view->resources) &&
            (view->output_group_count == 0 || view->output_groups);
 }
@@ -213,7 +220,57 @@ static bool compose_geometry_grid_elements_valid(const WormUiComposeView* view) 
     return true;
 }
 
-static bool compose_geometry_timing_elements_valid(const WormUiComposeView* view) {    for (size_t index = 0; index < view->timing_preview_rect_count; ++index) {
+static bool compose_dead_spans_valid(const WormUiComposeView* view) {
+    for (size_t index = 0; index < view->dead_span_count; ++index) {
+        const auto& span = view->dead_spans[index];
+        if (!compose_rect_valid(&span.bounds) || span.kind > 2 || !span.label) return false;
+    }
+    return true;
+}
+
+static bool compose_kiai_and_sv_valid(const WormUiComposeView* view) {
+    for (size_t index = 0; index < view->kiai_span_count; ++index) {
+        const auto& span = view->kiai_spans[index];
+        if (!compose_rect_valid(&span.bounds) || span.head_object_id == 0 ||
+            span.end_row <= span.begin_row) return false;
+    }
+    for (size_t index = 0; index < view->sv_graph_point_count; ++index) {
+        const auto& point = view->sv_graph_points[index];
+        if (!std::isfinite(point.x_fraction) || point.x_fraction < 0.0 || point.x_fraction > 1.0 ||
+            !std::isfinite(point.y_pixels)) return false;
+    }
+    return true;
+}
+
+static bool compose_speed_spans_valid(const WormUiComposeView* view) {
+    for (size_t index = 0; index < view->speed_span_count; ++index) {
+        const auto& span = view->speed_spans[index];
+        if (!compose_rect_valid(&span.bounds) || span.object_id == 0 ||
+            !std::isfinite(span.multiplier) || !std::isfinite(span.transition_length)) return false;
+    }
+    return true;
+}
+
+static bool compose_recipe_areas_valid(const WormUiComposeView* view) {
+    for (size_t index = 0; index < view->recipe_area_count; ++index) {
+        const auto& area = view->recipe_areas[index];
+        if (!compose_rect_valid(&area.bounds) || area.recipe_id == 0 || !area.label ||
+            (area.lane != WORM_UI_TIMING_LANE_SCROLL && area.lane != WORM_UI_TIMING_LANE_SPEED) ||
+            area.graph_first > view->recipe_graph_point_count ||
+            area.graph_count > view->recipe_graph_point_count - area.graph_first) return false;
+    }
+    for (size_t index = 0; index < view->recipe_graph_point_count; ++index) {
+        const auto& point = view->recipe_graph_points[index];
+        if (!std::isfinite(point.x_fraction) || point.x_fraction < 0.0 || point.x_fraction > 1.0 ||
+            !std::isfinite(point.y_pixels)) return false;
+    }
+    return true;
+}
+
+static bool compose_geometry_timing_elements_valid(const WormUiComposeView* view) {
+    if (!compose_dead_spans_valid(view) || !compose_kiai_and_sv_valid(view) ||
+        !compose_recipe_areas_valid(view) || !compose_speed_spans_valid(view)) return 0;
+    for (size_t index = 0; index < view->timing_preview_rect_count; ++index) {
         if (!compose_rect_valid(&view->timing_preview_rects[index].bounds) ||
             view->timing_preview_rects[index].kind > 2)
             return 0;
@@ -1109,12 +1166,14 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         left_down, left_released, alt_down, false, false};
     if (!state.inline_timing_open && !state.timing_marker_candidate_active)
         update_timing_stage_drag(pointer_event);
+    update_kiai_span_drag(pointer_event);
+    update_recipe_drag(pointer_event);
     const auto compose_pointer_captured =
         state.inline_timing_open || state.note_paint_pointer_active ||
         state.bmson_razor_pointer_active ||
         state.bmson_marker_move_active || state.semantic_layer_paint_pointer_active ||
         state.pointer_hold_active || state.lane_hold_active || state.note_move_active ||
-        state.area_selection_active || state.timing_stage_drag_active ||
+        state.area_selection_active || state.timing_stage_drag_active || state.kiai_drag_active || state.recipe_drag_active ||
         state.timing_marker_candidate_active || state.timing_marker_drag_active ||
         state.waveform_beat_zero_drag_active || state.waveform_overview_drag_active ||
         beat_fit_pointer_consumed;
@@ -1281,6 +1340,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         if (nk_group_begin(context, "Compose inspector", NK_WINDOW_BORDER)) {
 
     const ComposeInspectorContext inspector{context, view, timing_view, action};
+    render_compose_recipe_form(inspector);
     render_compose_note_label_editor(inspector);
     render_compose_label_search(inspector);
     render_compose_quantize_section(inspector);

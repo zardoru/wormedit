@@ -1,9 +1,10 @@
 #include "ui/nuklear/compose_inspector.h"
+#include "ui/nuklear/meter_state.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/compose_panel_internal.h"
 #include "ui/nuklear/compose_resources.h"
 #include "ui/nuklear/compose_markers.h"
-#include "ui/nuklear/timing_panel.h"
+#include "ui/nuklear/timing_stage_editor.h"
 
 #include <algorithm>
 #include <array>
@@ -25,8 +26,6 @@ static void render_initial_bpm_control(const ComposeInspectorContext& inspector)
         nk_label(context, "BPM: unset", NK_TEXT_LEFT);
     nk_layout_row_push(context, 1.0f - wormedit::ui::chrome::property_label_ratio);
     const auto can_edit_initial_bpm = timing_view->initial_bpm_editable &&
-        !timing_view->stage_active && !timing_view->sv_recipe.active &&
-        !timing_view->sv_recipe.selection_armed &&
         action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE;
     if (!can_edit_initial_bpm) nk_widget_disable_begin(context);
     const auto clicked = nk_button_label(context, "Set BPM");
@@ -194,6 +193,13 @@ static void render_lane_profile_section(const ComposeInspectorContext& inspector
 
 void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
     render_lane_profile_section(inspector);
+    const auto& timing = *inspector.timing_view;
+    nk_layout_row_dynamic(inspector.context, 18, 1);
+    nk_labelf(inspector.context, NK_TEXT_LEFT, "%zu measures · %zu BPM · %zu stop/delay",
+              timing.measure_count, timing.bpm_count, timing.pause_count);
+    nk_layout_row_dynamic(inspector.context, 18, 1);
+    nk_labelf(inspector.context, NK_TEXT_LEFT, "%zu warp · %zu SPEEDS · %zu anchors",
+              timing.warp_count, timing.speed_total_count, timing.anchor_count);
     render_initial_bpm_control(inspector);
     render_timing_lane_visibility(inspector);
     if (!state.inline_timing_open && inspector.timing_view->stage_active &&
@@ -270,6 +276,51 @@ void render_compose_label_search(const ComposeInspectorContext& inspector) {
     if (disabled) nk_widget_disable_end(context);
 }
 
+// Time signature of the cursor measure: typed numerator and denominator, an Apply button and the
+// equal-length signatures the typed one can be written as (3/4 also reads 6/8 and 12/16).
+static void render_compose_meter_control(const ComposeInspectorContext& inspector) {
+    const auto* view = inspector.view;
+    auto* context = inspector.context;
+    auto* action = inspector.action;
+    nk_layout_row_begin(context, NK_DYNAMIC, 24, 5);
+    nk_layout_row_push(context, 0.2f);
+    nk_label(context, "Meter", NK_TEXT_LEFT);
+    nk_layout_row_push(context, 0.2f);
+    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.meter_numerator.data(),
+                                         state.meter_numerator.size(), nk_filter_decimal);
+    nk_layout_row_push(context, 0.06f);
+    nk_label(context, "/", NK_TEXT_CENTERED);
+    nk_layout_row_push(context, 0.2f);
+    (void)nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.meter_denominator.data(),
+                                         state.meter_denominator.size(), nk_filter_decimal);
+    nk_layout_row_push(context, 0.34f);
+    const auto apply = nk_button_label(context, "Apply");
+    nk_layout_row_end(context);
+    const auto suggestions = worm_ui_nuklear_suggest_meters(state.meter_numerator.data(),
+                                                            state.meter_denominator.data());
+    if (suggestions.count != 0) {
+        nk_layout_row_dynamic(context, 24, static_cast<int>(suggestions.count) + 1);
+        nk_label(context, "Suggest", NK_TEXT_LEFT);
+        for (std::size_t index = 0; index < suggestions.count; ++index) {
+            const auto& item = suggestions.items[index];
+            std::array<char, 16> label{};
+            std::snprintf(label.data(), label.size(), "%u/%u", item.numerator, item.denominator);
+            if (!nk_button_label(context, label.data())) continue;
+            std::snprintf(state.meter_numerator.data(), state.meter_numerator.size(), "%u", item.numerator);
+            std::snprintf(state.meter_denominator.data(), state.meter_denominator.size(), "%u",
+                          item.denominator);
+        }
+    }
+    if (!apply || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
+    action->compose_action = WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER;
+    action->compose_input_chart_id = view->chart_id;
+    action->compose_input_document_revision = view->document_revision;
+    std::snprintf(action->timing_meter_numerator_text, sizeof(action->timing_meter_numerator_text), "%s",
+                  state.meter_numerator.data());
+    std::snprintf(action->timing_meter_denominator_text, sizeof(action->timing_meter_denominator_text), "%s",
+                  state.meter_denominator.data());
+}
+
 void render_compose_measure_section(const ComposeInspectorContext& inspector) {
     const auto* view = inspector.view;
     auto* context = inspector.context;
@@ -288,6 +339,7 @@ void render_compose_measure_section(const ComposeInspectorContext& inspector) {
     entry("Insert measure before", WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_BEFORE);
     entry("Insert measure after", WORM_UI_COMPOSE_ACTION_INSERT_MEASURE_AFTER);
     entry("Remove empty measure", WORM_UI_COMPOSE_ACTION_REMOVE_EMPTY_MEASURE);
+    render_compose_meter_control(inspector);
     if (!view->scene_available) nk_widget_disable_end(context);
     nk_tree_pop(context);
 }

@@ -68,7 +68,7 @@ auto arena_format(frame_arena_t& arena, const char* format, ...) noexcept -> con
 namespace {
 
 constexpr std::array<const char*, WORM_UI_WORKSPACE_TAB_COUNT> tab_labels{
-    "Project", "Metadata", "Timing", "Compose", "Storyboard", "Audio / Slices", "Compare / Validate",
+    "Project", "Metadata", nullptr, "Compose", "Storyboard", "Audio / Slices", "Compare / Validate",
 };
 
 auto ui_stepmania_file_profile(wormedit::stepmania_profile_t profile)
@@ -955,7 +955,8 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
             .enabled = wormedit::workspace_tab_enabled(static_cast<wormedit::workspace_tab_t>(tab)),
         };
     }
-    result.view.tab_heading = tab_labels[static_cast<std::size_t>(source.active_tab)];
+    const char* heading = tab_labels[static_cast<std::size_t>(source.active_tab)];
+    result.view.tab_heading = heading ? heading : "Compose";
 
     const workspace_projection_context_t projection{result, source, document, stepmania_policy};
     std::visit(workspace_tab_visitor{projection}, source.tab_view);

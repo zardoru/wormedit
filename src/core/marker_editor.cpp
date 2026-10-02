@@ -539,6 +539,23 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
     context.changed = true;
 }
 
+void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart,
+                         const measure_index_t& index, const edit_kiai_span_action_t& edit) {
+    const auto before = chart.kiai;
+    const auto allocate = [&]() { return allocate_marker_id(context, chart); };
+    if (const auto error = apply_kiai_span_edit(chart, index, edit.edit, allocate,
+                                                context.limits.maximum_kiai_events)) {
+        if (context.result.diagnostics.empty())
+            reject(context.result, diagnostic_code_t::invalid_resolution, *error);
+        return;
+    }
+    const auto same_event = [](const kiai_event_t& left, const kiai_event_t& right) {
+        return left.id == right.id && left.position == right.position && left.enabled == right.enabled;
+    };
+    context.changed = !std::ranges::equal(before, chart.kiai, same_event);
+    context.command_label = "Edit kiai area";
+}
+
 template <typename Edit>
 auto apply_marker_operation(marker_edit_context_t& context, const Edit& edit) -> void {
     auto target = prepare_marker_target(context, edit.chart);

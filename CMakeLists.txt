@@ -62,6 +62,7 @@ add_library(wormedit_core
     src/core/interaction_selection.cpp
     src/core/lane_profiles.cpp
     src/core/marker_editor.cpp
+    src/core/kiai_spans.cpp
     src/core/marker_navigation.cpp
     src/core/metadata_editor.cpp
     src/core/chart_editor.cpp
@@ -320,6 +321,12 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_measure_commands.cpp
         src/sys/compose_selection_transform.cpp
         src/sys/compose_label_search.cpp
+        src/sys/compose_dead_spans.cpp
+        src/sys/compose_kiai_spans.cpp
+        src/sys/compose_sv_graph.cpp
+        src/sys/compose_recipe_areas.cpp
+        src/sys/compose_speed_spans.cpp
+        src/sys/recipe_form.cpp
         src/sys/compose_quantize_preview.cpp
         src/sys/application_command_dispatch.cpp
         src/sys/compose_resource_presenter.cpp
@@ -374,6 +381,8 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/compose_bookmark_label.cpp
         src/ui/nuklear/compose_markers.cpp
         src/ui/nuklear/compose_area_menu.cpp
+        src/ui/nuklear/compose_recipe_menu.cpp
+        src/ui/nuklear/compose_recipe_form.cpp
         src/ui/nuklear/compose_canvas.cpp
         src/ui/nuklear/compose_toolbar.cpp
         src/ui/nuklear/compose_inspector.cpp
@@ -394,8 +403,9 @@ if(WORMEDIT_BUILD_APP)
         src/ui/nuklear/player_preview_texture.cpp
         src/ui/nuklear/setup_panel.cpp
         src/ui/nuklear/setup_state.cpp
-        src/ui/nuklear/timing_panel.cpp
+        src/ui/nuklear/timing_stage_editor.cpp
         src/ui/nuklear/timing_state.cpp
+        src/ui/nuklear/meter_state.cpp
         src/ui/nuklear/theme.cpp
     )
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/assets/fonts")

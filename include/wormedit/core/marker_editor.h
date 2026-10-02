@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/kiai_spans.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -83,11 +84,18 @@ struct delete_kiai_event_action_t {
     object_id_t event;
 };
 
+// Creates, resizes, moves or deletes one whole Kiai area, merging overlaps (see
+// apply_kiai_span_edit). One undoable command.
+struct edit_kiai_span_action_t {
+    chart_id_t chart;
+    kiai_span_edit_t edit;
+};
+
 using marker_edit_action_t =
     std::variant<insert_bookmark_action_t, update_bookmark_action_t, delete_bookmark_action_t,
                  insert_section_action_t, update_section_action_t, delete_section_action_t,
                  insert_kiai_event_action_t, update_kiai_event_action_t,
-                 delete_kiai_event_action_t>;
+                 delete_kiai_event_action_t, edit_kiai_span_action_t>;
 
 // Applies one marker, section, or kiai-state edit through shared document
 // history. Anchor fields must agree exactly with their selected value. New

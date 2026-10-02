@@ -15,6 +15,7 @@
 #include "sys/compose_input.h"
 #include "sys/compose_actions.h"
 #include "sys/application_edit_helpers.h"
+#include "sys/recipe_form.h"
 #include "sys/workspace_projection.h"
 #include "sys/workspace_frame_view.h"
 #include "sys/transport_player_actions.h"
@@ -151,7 +152,6 @@ using wormedit::sys::flattened_workspace_t;
 using wormedit::sys::initial_document;
 using wormedit::sys::new_session_project_id;
 using wormedit::sys::parse_application_command;
-using wormedit::sys::populate_timing_view;
 using wormedit::sys::timing_grid_state_t;
 using wormedit::sys::timing_scene_cache_t;
 using wormedit::sys::runtime::timing_edit_t;
@@ -191,13 +191,6 @@ using wormedit::sys::selected_bmson_waveform_source;
 using wormedit::sys::stage_bmson_bgm_marker;
 using wormedit::sys::selected_chart;
 using wormedit::sys::visible_semantic_layer_by_id;
-
-auto rational_as_long_double(wormedit::signed_rational_t value) -> long double {
-    if (value.denominator == 0) {
-        return 0.0L;
-    }
-    return static_cast<long double>(value.numerator) / static_cast<long double>(value.denominator);
-}
 
 void remember_snap_denominator(application_command_state_t& application_state,
                                wormedit::chart_id_t chart, std::uint64_t denominator) {
@@ -405,9 +398,7 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
     -> wormedit::timing_lane_pseudonote_preview_t {
     using namespace wormedit;
     timing_lane_pseudonote_preview_t rejected{};
-    if ((workspace.active_tab != workspace_tab_t::timing &&
-         workspace.active_tab != workspace_tab_t::compose) ||
-        !workspace.selected_chart || action.timing_chart_id == 0 ||
+    if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart || action.timing_chart_id == 0 ||
         workspace.selected_chart->value != action.timing_chart_id ||
         history.document.revision != action.timing_document_revision) {
         return rejected;
@@ -683,423 +674,6 @@ auto timing_stage_value(const wormedit::timing_lane_pseudonote_preview_t& previe
     }
     return std::nullopt;
 }
-
-auto parse_recipe_rational(const WormUiTimingRecipeRationalText& text)
-    -> std::optional<wormedit::signed_rational_t> {
-    const auto numerator = parse_timing_signed(text.numerator);
-    const auto denominator = parse_timing_unsigned(text.denominator);
-    if (!numerator || !denominator || *denominator == 0) {
-        return std::nullopt;
-    }
-    return wormedit::signed_rational_t{*numerator, *denominator};
-}
-
-auto parse_recipe_unsigned_rational(const WormUiTimingRecipeRationalText& text)
-    -> std::optional<wormedit::rational_t> {
-    const auto numerator = parse_timing_unsigned(text.numerator);
-    const auto denominator = parse_timing_unsigned(text.denominator);
-    if (!numerator || !denominator || *denominator == 0) {
-        return std::nullopt;
-    }
-    return wormedit::rational_t{*numerator, *denominator};
-}
-
-auto timing_recipe_form_valid(const WormUiTimingRecipeForm& form) -> bool {
-    return form.output >= WORM_UI_TIMING_RECIPE_OUTPUT_SV &&
-           form.output <= WORM_UI_TIMING_RECIPE_OUTPUT_SPEEDS &&
-           form.curve >= WORM_UI_TIMING_RECIPE_CURVE_CONSTANT &&
-           form.curve <= WORM_UI_TIMING_RECIPE_CURVE_BUMP &&
-           form.sampling_mode >= WORM_UI_TIMING_RECIPE_SAMPLING_FIXED &&
-           form.sampling_mode <= WORM_UI_TIMING_RECIPE_SAMPLING_ADAPTIVE &&
-           form.fixed_extent >= WORM_UI_TIMING_RECIPE_FIXED_POINT_COUNT &&
-           form.fixed_extent <= WORM_UI_TIMING_RECIPE_FIXED_STEP_ROWS;
-}
-
-auto set_timing_recipe_curve_parameters(wormedit::sv_recipe_t& candidate,
-                                        const WormUiTimingRecipeForm& form) -> bool {
-    using namespace wormedit;
-    const auto set_parameter = [](signed_rational_t& target,
-                                  const WormUiTimingRecipeRationalText& source) {
-        const auto parsed = parse_recipe_rational(source);
-        if (parsed) {
-            target = *parsed;
-        }
-        return parsed.has_value();
-    };
-    switch (candidate.curve) {
-    case sv_recipe_curve_t::constant:
-        return set_parameter(candidate.parameters.value_from, form.value_from);
-    case sv_recipe_curve_t::linear:
-        return set_parameter(candidate.parameters.value_from, form.value_from) &&
-               set_parameter(candidate.parameters.value_to, form.value_to);
-    case sv_recipe_curve_t::exponential:
-        return set_parameter(candidate.parameters.value_from, form.value_from) &&
-               set_parameter(candidate.parameters.value_to, form.value_to) &&
-               set_parameter(candidate.parameters.shape, form.shape);
-    case sv_recipe_curve_t::bump:
-        return set_parameter(candidate.parameters.bump_start, form.bump_start) &&
-               set_parameter(candidate.parameters.bump_length, form.bump_length) &&
-               set_parameter(candidate.parameters.bump_x, form.bump_x) &&
-               set_parameter(candidate.parameters.bump_y, form.bump_y);
-    }
-    return false;
-}
-
-auto set_fixed_timing_recipe_sampling(wormedit::sv_recipe_t& candidate,
-                                      const WormUiTimingRecipeForm& form) -> bool {
-    if (form.fixed_extent == WORM_UI_TIMING_RECIPE_FIXED_POINT_COUNT) {
-        const auto count = parse_timing_unsigned(form.fixed_point_count);
-        if (!count || *count > std::numeric_limits<std::uint32_t>::max()) {
-            return false;
-        }
-        candidate.sampling.fixed_point_count = static_cast<std::uint32_t>(*count);
-        candidate.sampling.fixed_step_rows.reset();
-        return true;
-    }
-    const auto rows = parse_timing_unsigned(form.fixed_step_rows);
-    if (!rows) {
-        return false;
-    }
-    candidate.sampling.fixed_point_count.reset();
-    candidate.sampling.fixed_step_rows = *rows;
-    return true;
-}
-
-auto set_adaptive_timing_recipe_sampling(wormedit::sv_recipe_t& candidate,
-                                         const WormUiTimingRecipeForm& form) -> bool {
-    const auto tolerance = parse_recipe_rational(form.tolerance);
-    const auto max_points = parse_timing_unsigned(form.adaptive_max_points);
-    if (!tolerance || !max_points || *max_points > std::numeric_limits<std::uint32_t>::max()) {
-        return false;
-    }
-    candidate.sampling.fixed_point_count.reset();
-    candidate.sampling.fixed_step_rows.reset();
-    candidate.sampling.tolerance = *tolerance;
-    candidate.sampling.max_points = static_cast<std::uint32_t>(*max_points);
-    return true;
-}
-
-auto set_timing_recipe_sampling(wormedit::sv_recipe_t& candidate,
-                                const WormUiTimingRecipeForm& form) -> bool {
-    candidate.sampling.mode =
-        static_cast<wormedit::sv_recipe_sampling_mode_t>(form.sampling_mode);
-    return candidate.sampling.mode == wormedit::sv_recipe_sampling_mode_t::fixed
-               ? set_fixed_timing_recipe_sampling(candidate, form)
-               : set_adaptive_timing_recipe_sampling(candidate, form);
-}
-
-auto set_timing_recipe_transition(wormedit::sv_recipe_t& candidate,
-                                  const WormUiTimingRecipeForm& form) -> bool {
-    if (candidate.output == wormedit::sv_recipe_output_t::speeds) {
-        const auto transition = parse_recipe_unsigned_rational(form.transition_duration);
-        if (!transition) {
-            return false;
-        }
-        candidate.transition_duration = *transition;
-        candidate.transition_is_seconds = form.transition_is_seconds;
-    } else {
-        candidate.transition_duration.reset();
-        candidate.transition_is_seconds.reset();
-    }
-    return true;
-}
-
-auto recipe_candidate_from_ui(const WormUiTimingRecipeForm& form,
-                              const wormedit::sv_recipe_t& current)
-    -> std::optional<wormedit::sv_recipe_t> {
-    using namespace wormedit;
-    if (!timing_recipe_form_valid(form)) {
-        return std::nullopt;
-    }
-    auto candidate = current;
-    candidate.output = static_cast<sv_recipe_output_t>(form.output);
-    candidate.curve = static_cast<sv_recipe_curve_t>(form.curve);
-    if (!set_timing_recipe_curve_parameters(candidate, form) ||
-        !set_timing_recipe_sampling(candidate, form) ||
-        !set_timing_recipe_transition(candidate, form)) {
-        return std::nullopt;
-    }
-    return candidate;
-}
-
-auto timing_recipe_range_hits(const wormedit::chart_document_t& chart, double begin_fraction,
-                              double end_fraction)
-    -> std::optional<std::pair<wormedit::local_position_t, wormedit::local_position_t>> {
-    if (!std::isfinite(begin_fraction) || !std::isfinite(end_fraction) || begin_fraction < 0.0 ||
-        begin_fraction > 1.0 || end_fraction < 0.0 || end_fraction > 1.0) {
-        return std::nullopt;
-    }
-    const auto built = wormedit::build_measure_index(chart);
-    const auto* index = std::get_if<wormedit::measure_index_t>(&built);
-    if (!index || index->total_rows < 2) {
-        return std::nullopt;
-    }
-    const auto row_at = [&](double fraction) {
-        if (fraction >= 1.0) {
-            return index->total_rows;
-        }
-        const auto scaled = std::floor(static_cast<long double>(fraction) *
-                                       static_cast<long double>(index->total_rows));
-        return std::min(static_cast<std::uint64_t>(std::max(0.0L, scaled)), index->total_rows - 1);
-    };
-    const auto position_at = [&](std::uint64_t row) -> std::optional<wormedit::local_position_t> {
-        if (row == index->total_rows && !index->entries.empty()) {
-            const auto& last = index->entries.back();
-            return wormedit::local_position_t{last.id, last.row_capacity};
-        }
-        return timing_position_at_row(*index, row);
-    };
-    const auto begin = position_at(row_at(begin_fraction));
-    const auto end = position_at(row_at(end_fraction));
-    return begin && end ? std::optional{std::pair{*begin, *end}} : std::nullopt;
-}
-
-auto refresh_timing_recipe_preview(const wormedit::document_history_t& history,
-                                   const wormedit::sv_recipe_draft_t& draft,
-                                   std::optional<wormedit::sv_recipe_draft_preview_t>& preview,
-                                   std::string& status) -> bool {
-    preview = wormedit::preview_sv_recipe_draft(history, draft);
-    if (!preview->diagnostics.empty()) {
-        status = preview->diagnostics.front().message;
-        return false;
-    }
-    status = "SV recipe preview updated; Apply is the only durable step.";
-    return true;
-}
-
-struct TimingRecipeDispatchContext {
-    const WormUiTimingRecipeAction& action;
-    wormedit::document_history_t& history;
-    wormedit::workspace_controller_t& workspace;
-    bool timing_locked;
-    std::uint64_t active_snap_denominator;
-    timing_edit_t& edit;
-    std::string& status;
-};
-
-auto arm_timing_recipe_selection(const TimingRecipeDispatchContext& context) -> bool {
-    using namespace wormedit;
-    auto& selection = context.edit.recipe_selection_binding;
-    if (context.timing_locked || context.workspace.active_tab != workspace_tab_t::timing ||
-        !context.workspace.selected_chart) {
-        context.status = context.timing_locked
-                             ? "Unlock timing before selecting an SV recipe range."
-                             : "SV recipe selection requires the active Timing chart.";
-        return true;
-    }
-    if (context.edit.recipe_draft) {
-        context.status = "Apply or cancel the current SV recipe before selecting another interval.";
-        return true;
-    }
-    selection = std::pair{*context.workspace.selected_chart,
-                          context.history.document.revision};
-    context.status = "Drag over the Scroll / SV lane to select the recipe interval.";
-    return true;
-}
-
-auto expire_timing_recipe_binding(const TimingRecipeDispatchContext& context) -> void {
-    auto& edit = context.edit;
-    if (edit.recipe_draft) {
-        wormedit::cancel_sv_recipe_draft(*edit.recipe_draft);
-    }
-    edit.recipe_draft.reset();
-    edit.recipe_preview.reset();
-    edit.recipe_selection_binding.reset();
-    context.status = "SV recipe editing expired because its chart or revision changed.";
-}
-
-auto begin_timing_recipe_draft(const TimingRecipeDispatchContext& context,
-                               const wormedit::chart_document_t& chart) -> void {
-    using namespace wormedit;
-    auto& selection = context.edit.recipe_selection_binding;
-    if (context.timing_locked) {
-        context.status = "Unlock timing before adding an SV recipe.";
-        return;
-    }
-    if (context.edit.recipe_draft) {
-        context.status = "Apply or cancel the current SV recipe before starting another.";
-        return;
-    }
-    if (!selection || selection->first != chart.id ||
-        selection->second != context.action.document_revision) {
-        selection.reset();
-        context.status = "SV recipe range selection expired before the drag began.";
-        return;
-    }
-    const auto hits = timing_recipe_range_hits(chart, context.action.range_begin_fraction,
-                                               context.action.range_end_fraction);
-    if (!hits) {
-        context.status = "The selected SV recipe interval is outside the chart grid.";
-        selection.reset();
-        return;
-    }
-    auto candidate = sv_recipe_t{.name = "SV function",
-                                 .range = {hits->first, hits->second},
-                                 .output = sv_recipe_output_t::sv,
-                                 .curve = sv_recipe_curve_t::linear};
-    auto next = begin_sv_recipe_draft(context.history, chart.id, std::move(candidate),
-                                      context.timing_locked);
-    if (next.status != sv_recipe_draft_status_t::editing ||
-        !set_sv_recipe_draft_range(context.history, next, hits->first, hits->second,
-                                   context.active_snap_denominator, context.timing_locked)) {
-        context.status = next.diagnostics.empty() ? "The selected interval cannot form an SV recipe."
-                                                  : next.diagnostics.front().message;
-        selection.reset();
-        return;
-    }
-    context.edit.recipe_draft = std::move(next);
-    selection.reset();
-    (void)refresh_timing_recipe_preview(context.history, *context.edit.recipe_draft,
-                                        context.edit.recipe_preview, context.status);
-}
-
-auto reject_invalid_timing_recipe_form(const TimingRecipeDispatchContext& context) -> void {
-    using namespace wormedit;
-    context.edit.recipe_preview = sv_recipe_draft_preview_t{};
-    context.edit.recipe_preview->diagnostics.push_back({
-        .severity = diagnostic_severity_t::error,
-        .code = diagnostic_code_t::invalid_rational,
-        .message = "Enter bounded exact recipe parameters and sampling values.",
-    });
-    context.status = context.edit.recipe_preview->diagnostics.front().message;
-}
-
-auto update_timing_recipe_draft(const TimingRecipeDispatchContext& context) -> bool {
-    auto& draft = *context.edit.recipe_draft;
-    const auto candidate = recipe_candidate_from_ui(context.action.form, draft.candidate);
-    if (!candidate) {
-        reject_invalid_timing_recipe_form(context);
-        return false;
-    }
-    if (!wormedit::update_sv_recipe_draft(context.history, draft, *candidate,
-                                           context.timing_locked)) {
-        context.status = draft.diagnostics.empty() ? "The SV recipe draft could not be updated."
-                                                   : draft.diagnostics.front().message;
-        return false;
-    }
-    return refresh_timing_recipe_preview(context.history, draft, context.edit.recipe_preview,
-                                         context.status);
-}
-
-auto update_timing_recipe_range(const TimingRecipeDispatchContext& context,
-                                const wormedit::chart_document_t& chart) -> bool {
-    using namespace wormedit;
-    auto& draft = *context.edit.recipe_draft;
-    const auto hits = timing_recipe_range_hits(chart, context.action.range_begin_fraction,
-                                               context.action.range_end_fraction);
-    if (!hits || !set_sv_recipe_draft_range(context.history, draft,
-                                             hits ? hits->first : local_position_t{},
-                                             hits ? hits->second : local_position_t{},
-                                             context.active_snap_denominator,
-                                             context.timing_locked)) {
-        context.status = !hits || draft.diagnostics.empty()
-                             ? "The selected interval cannot form an SV recipe."
-                             : draft.diagnostics.front().message;
-        return false;
-    }
-    return update_timing_recipe_draft(context);
-}
-
-auto cancel_timing_recipe_draft(const TimingRecipeDispatchContext& context) -> void {
-    auto& edit = context.edit;
-    if (edit.recipe_draft) {
-        wormedit::cancel_sv_recipe_draft(*edit.recipe_draft);
-    }
-    edit.recipe_draft.reset();
-    edit.recipe_preview.reset();
-    edit.recipe_selection_binding.reset();
-    context.status = "SV recipe editing cancelled; the chart was not changed.";
-}
-
-auto apply_timing_recipe_draft(const TimingRecipeDispatchContext& context) -> void {
-    using namespace wormedit;
-    auto& draft = *context.edit.recipe_draft;
-    const auto result = apply_sv_recipe_draft(context.history, draft, context.timing_locked);
-    if (!result.diagnostics.empty()) {
-        context.status = result.diagnostics.front().message;
-        return;
-    }
-    if (!result.applied) {
-        context.status = "SV recipe did not change the chart.";
-        return;
-    }
-    const auto rebound = rebind_workspace(context.workspace, context.history);
-    if (!rebound) {
-        context.status = rebound.diagnostics.empty()
-                             ? "SV recipe applied, but workspace rebinding failed."
-                             : rebound.diagnostics.front().message;
-        return;
-    }
-    const bool edited_existing = draft.existing_recipe.has_value();
-    context.status = edited_existing ? "SV recipe updated." : "SV recipe added.";
-    context.edit.recipe_draft.reset();
-    context.edit.recipe_preview.reset();
-    context.edit.recipe_selection_binding.reset();
-}
-
-auto dispatch_timing_recipe_action(
-    const WormUiTimingRecipeAction& action, wormedit::document_history_t& history,
-    wormedit::workspace_controller_t& workspace, bool timing_locked,
-    std::uint64_t active_snap_denominator, timing_edit_t& timing_edit,
-    std::string& status) -> bool {
-    using namespace wormedit;
-    const TimingRecipeDispatchContext context{action, history, workspace, timing_locked,
-                                               active_snap_denominator, timing_edit, status};
-    auto& selection = timing_edit.recipe_selection_binding;
-    auto& draft = timing_edit.recipe_draft;
-    auto& preview = timing_edit.recipe_preview;
-    if (action.kind == WORM_UI_TIMING_RECIPE_ACTION_NONE) {
-        return false;
-    }
-    if (action.kind == WORM_UI_TIMING_RECIPE_ACTION_ARM_SELECTION) {
-        return arm_timing_recipe_selection(context);
-    }
-    const bool binding_matches = workspace.active_tab == workspace_tab_t::timing &&
-                                 workspace.selected_chart &&
-                                 workspace.selected_chart->value == action.chart_id &&
-                                 history.document.revision == action.document_revision;
-    if (!binding_matches) {
-        expire_timing_recipe_binding(context);
-        return true;
-    }
-    const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                         &chart_document_t::id);
-    if (chart == history.document.charts.end()) {
-        status = "The selected chart is no longer available.";
-        return true;
-    }
-    if (action.kind == WORM_UI_TIMING_RECIPE_ACTION_BEGIN) {
-        begin_timing_recipe_draft(context, *chart);
-        return true;
-    }
-    if (action.kind == WORM_UI_TIMING_RECIPE_ACTION_CANCEL && !draft) {
-        selection.reset();
-        preview.reset();
-        status = "SV recipe range selection cancelled.";
-        return true;
-    }
-    if (!draft || draft->chart != chart->id ||
-        draft->document_revision != action.document_revision) {
-        status = "There is no matching SV recipe draft to update.";
-        return true;
-    }
-    if (action.kind == WORM_UI_TIMING_RECIPE_ACTION_CANCEL) {
-        cancel_timing_recipe_draft(context);
-        return true;
-    }
-    if (action.kind == WORM_UI_TIMING_RECIPE_ACTION_UPDATE_RANGE) {
-        (void)update_timing_recipe_range(context, *chart);
-        return true;
-    }
-    const auto preview_valid = update_timing_recipe_draft(context);
-    if (action.kind == WORM_UI_TIMING_RECIPE_ACTION_APPLY && preview_valid) {
-        apply_timing_recipe_draft(context);
-    }
-    return true;
-}
-
-
-
 auto first_recovery_diagnostic(
     const wormedit::native_project_recovery_controller_dispatch_result_t& result) -> std::string {
     if (!result.diagnostics.empty()) {
@@ -1832,19 +1406,21 @@ void refresh_application_command_states(
     constexpr std::array<std::pair<std::string_view, workspace_tab_t>, 7> tabs{{
         {"workspace.open_setup", workspace_tab_t::setup},
         {"workspace.open_metadata", workspace_tab_t::metadata},
-        {"workspace.open_timing", workspace_tab_t::timing},
+        {"workspace.open_timing", workspace_tab_t::compose},
         {"workspace.open_compose", workspace_tab_t::compose},
         {"workspace.open_storyboard", workspace_tab_t::storyboard},
         {"workspace.open_audio_slices", workspace_tab_t::audio_slices},
         {"workspace.open_compare_validate", workspace_tab_t::compare_validate},
     }};
     for (const auto& [id, tab] : tabs) {
-        set(std::string{id}, tab != workspace_tab_t::storyboard, workspace.active_tab == tab);
+        const bool timing_alias = id == "workspace.open_timing";
+        set(std::string{id}, tab != workspace_tab_t::storyboard,
+            workspace.active_tab == tab &&
+                timing_alias == application_state.compose_timing_focus);
     }
     set("timing.toggle_lock",
-        workspace.active_tab == workspace_tab_t::timing ||
-            (workspace.active_tab == workspace_tab_t::compose &&
-             application_state.compose_timing_focus),
+        workspace.active_tab == workspace_tab_t::compose &&
+            application_state.compose_timing_focus,
         application_state.timing_locked);
     set("timing.insert_bpm", false);
     set("timing.insert_sv", false);
@@ -1886,7 +1462,7 @@ auto application_command_focus(const WormUiWorkspaceAction& action,
         .workspace_active = action.shortcut_window_focused,
         .active_tab = action.shortcut_notification_history_focused
             ? std::optional<workspace_tab_t>{} : std::optional{workspace.active_tab},
-        .visible_tabs = {workspace_tab_t::setup, workspace_tab_t::metadata, workspace_tab_t::timing,
+        .visible_tabs = {workspace_tab_t::setup, workspace_tab_t::metadata,
                          workspace_tab_t::compose, workspace_tab_t::storyboard,
                          workspace_tab_t::audio_slices, workspace_tab_t::compare_validate},
     };
@@ -2003,8 +1579,7 @@ auto timing_stage_binding_matches(const WormUiWorkspaceAction& action,
                                  const wormedit::document_history_t& history,
                                  const wormedit::workspace_controller_t& workspace,
                                  const wormedit::timing_lane_pseudonote_preview_t& stage) -> bool {
-    return (workspace.active_tab == wormedit::workspace_tab_t::timing ||
-            workspace.active_tab == wormedit::workspace_tab_t::compose) &&
+    return workspace.active_tab == wormedit::workspace_tab_t::compose &&
            workspace.selected_chart && workspace.selected_chart->value == action.timing_chart_id &&
            stage.chart.value == action.timing_chart_id &&
            (stage.existing_event.has_value() ? stage.existing_event->value : std::uint64_t{}) ==
@@ -2102,12 +1677,9 @@ void dispatch_timing_stage_action(
     std::uint64_t active_snap_denominator, timing_edit_t& timing_edit,
     std::string& status) {
     using status_t = wormedit::timing_lane_pseudonote_status_t;
-    const auto recipe_edit_pending = timing_edit.has_pending_recipe_edit();
     auto& timing_stage = timing_edit.stage;
     if (action.timing_stage_action == WORM_UI_TIMING_STAGE_BEGIN) {
-        if (recipe_edit_pending) {
-            status = "Apply or cancel the SV recipe before editing a timing event.";
-        } else if (!timing_stage) {
+        if (!timing_stage) {
             auto candidate = begin_timing_stage(action, history, workspace, timing_locked,
                                                 active_snap_denominator);
             if (candidate.status == status_t::editing) {
@@ -2122,7 +1694,7 @@ void dispatch_timing_stage_action(
             }
         }
     } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_QUICK_INSERT) {
-        if (recipe_edit_pending || timing_stage) {
+        if (timing_stage) {
             status = "Confirm or cancel the open timing edit before inserting another event.";
         } else {
             quick_insert_timing_event(action, history, workspace, timing_locked,
@@ -2137,54 +1709,6 @@ void dispatch_timing_stage_action(
     } else if (timing_stage) {
         dispatch_active_timing_stage_action(action, history, workspace, timing_locked,
                                             active_snap_denominator, timing_edit, status);
-    }
-}
-
-void dispatch_timing_meter_action(const WormUiWorkspaceAction& action,
-                                  wormedit::document_history_t& history,
-                                  wormedit::workspace_controller_t& workspace, bool timing_locked,
-                                  bool timing_edit_pending, std::string& status) {
-    const bool binding_matches = action.timing_meter_action == WORM_UI_TIMING_METER_ACTION_APPLY &&
-                                 workspace.active_tab == wormedit::workspace_tab_t::timing &&
-                                 workspace.selected_chart &&
-                                 workspace.selected_chart->value == action.timing_meter_chart_id &&
-                                 history.document.revision == action.timing_meter_document_revision;
-    const auto measure_number = parse_timing_unsigned(action.timing_meter_measure_text);
-    const auto numerator = parse_timing_unsigned(action.timing_meter_numerator_text);
-    const auto denominator = parse_timing_unsigned(action.timing_meter_denominator_text);
-    const auto chart = workspace.selected_chart
-                           ? std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                               &wormedit::chart_document_t::id)
-                           : history.document.charts.end();
-    if (!binding_matches || timing_locked || timing_edit_pending || !measure_number ||
-        *measure_number == 0 || !numerator || !denominator || *numerator == 0 ||
-        *denominator == 0 || *numerator > std::numeric_limits<std::uint32_t>::max() ||
-        *denominator > std::numeric_limits<std::uint32_t>::max() ||
-        chart == history.document.charts.end() || *measure_number > chart->measures.size()) {
-        status = "Meter change needs a current Timing chart, measure number, and "
-                 "bounded signature.";
-    } else {
-        const auto& target = chart->measures[static_cast<std::size_t>(*measure_number - 1)];
-        const auto result = wormedit::apply_measure_edit(
-            history, action.timing_meter_document_revision,
-            wormedit::update_measure_definition_action_t{
-                .chart = chart->id,
-                .measure = target.id,
-                .definition = {.length = {*numerator, *denominator},
-                               .meter =
-                                   wormedit::meter_t{static_cast<std::uint32_t>(*numerator),
-                                                     static_cast<std::uint32_t>(*denominator)}}});
-        status = result                       ? "Meter updated."
-                 : result.diagnostics.empty() ? "Meter was unchanged."
-                                              : result.diagnostics.front().message;
-        if (result) {
-            const auto rebound = wormedit::rebind_workspace(workspace, history);
-            if (!rebound) {
-                status = rebound.diagnostics.empty()
-                             ? "Meter updated, but workspace rebinding failed."
-                             : rebound.diagnostics.front().message;
-            }
-        }
     }
 }
 
@@ -2225,70 +1749,11 @@ auto dispatch_workspace_selection_action(const WormUiWorkspaceAction& action,
     }
 }
 
-void dispatch_timing_grid_action(const WormUiWorkspaceAction& action,
-                                 const wormedit::document_history_t& history,
-                                 const wormedit::workspace_controller_t& workspace,
-                                 bool timing_edit_pending, timing_grid_state_t& timing_grid,
-                                 application_command_state_t& application_state,
-                                 std::string& status) {
-    const bool binding_matches =
-        action.timing_grid_action == WORM_UI_TIMING_GRID_ACTION_SELECT &&
-        workspace.active_tab == wormedit::workspace_tab_t::timing && workspace.selected_chart &&
-        workspace.selected_chart->value == action.timing_grid_chart_id &&
-        history.document.revision == action.timing_grid_document_revision &&
-        timing_grid.chart.value == action.timing_grid_chart_id;
-    const auto supported = std::ranges::find(timing_grid.supported_denominators,
-                                             action.timing_grid_denominator);
-    if (!binding_matches || timing_edit_pending ||
-        supported == timing_grid.supported_denominators.end()) {
-        status = "Timing grid selection expired or cannot change during a staged edit.";
-        return;
-    }
-
-    remember_snap_denominator(application_state,
-                              wormedit::chart_id_t{action.timing_grid_chart_id},
-                              action.timing_grid_denominator);
-    const auto chart = std::ranges::find(history.document.charts, *workspace.selected_chart,
-                                         &wormedit::chart_document_t::id);
-    if (chart == history.document.charts.end()) {
-        status = "The selected Timing chart is no longer available.";
-        return;
-    }
-    timing_grid = refresh_timing_grid(*chart, application_state);
-    status = "Timing grid set to 1/" + std::to_string(timing_grid.active_denominator) + ".";
-}
-
 bool dispatch_timing_workspace_action(
     const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace,
     application_command_state_t& application_state, timing_grid_state_t& timing_grid,
     timing_edit_t& timing_edit, std::string& status) {
-    if (action.timing_meter_action != WORM_UI_TIMING_METER_ACTION_NONE) {
-        dispatch_timing_meter_action(action, history, workspace,
-                                     application_state.timing_locked,
-                                     timing_edit.has_pending_edit(), status);
-        return true;
-    }
-    if (action.timing_grid_action != WORM_UI_TIMING_GRID_ACTION_NONE) {
-        dispatch_timing_grid_action(action, history, workspace,
-                                    timing_edit.has_pending_edit(), timing_grid,
-                                    application_state, status);
-        return true;
-    }
-    if (action.timing_recipe_action.kind != WORM_UI_TIMING_RECIPE_ACTION_NONE) {
-        const bool starting_recipe =
-            action.timing_recipe_action.kind == WORM_UI_TIMING_RECIPE_ACTION_ARM_SELECTION ||
-            action.timing_recipe_action.kind == WORM_UI_TIMING_RECIPE_ACTION_BEGIN;
-        if (starting_recipe && timing_edit.stage) {
-            status = "Apply or cancel the timing event before adding an SV recipe.";
-        } else {
-            (void)dispatch_timing_recipe_action(
-                action.timing_recipe_action, history, workspace,
-                application_state.timing_locked, timing_grid.active_denominator,
-                timing_edit, status);
-        }
-        return true;
-    }
     if (action.timing_stage_action != WORM_UI_TIMING_STAGE_NONE) {
         dispatch_timing_stage_action(action, history, workspace,
                                      application_state.timing_locked,

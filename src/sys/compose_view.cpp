@@ -1,5 +1,7 @@
 #include "sys/frame_timing.h"
 #include "sys/compose_view.h"
+#include "sys/recipe_form.h"
+#include <wormedit/core/sv_recipe.h>
 #include "ui/nuklear/arrow_glyph.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_resource_presenter.h"
@@ -1012,6 +1014,19 @@ bool initialize_compose_view_state(
     view.timing_preview_rect_count = 0;
     view.timing_preview_markers = nullptr;
     view.timing_preview_marker_count = 0;
+    view.dead_spans = nullptr;
+    view.dead_span_count = 0;
+    view.kiai_spans = nullptr;
+    view.kiai_span_count = 0;
+    view.recipe_areas = nullptr;
+    view.recipe_area_count = 0;
+    view.speed_spans = nullptr;
+    view.speed_span_count = 0;
+    view.recipe_graph_points = nullptr;
+    view.recipe_graph_point_count = 0;
+    view.sv_graph_points = nullptr;
+    view.sv_graph_point_count = 0;
+    view.sv_graph_one_fraction = -1.0;
     view.waveform_proposed_beat_zero_visible = false;
     view.waveform_proposed_beat_zero_fraction = 0.0;
     view.waveform_proposed_audio_offset_numerator = 0;
@@ -1421,6 +1436,15 @@ auto compose_timing_decimal_detail(wormedit::signed_rational_t value) -> std::st
     return decimal + " (exact " + exact + ")";
 }
 
+// " · transition 2 beats" (or seconds) for a SPEEDS event that interpolates; empty when instant.
+auto compose_speed_transition_detail(const wormedit::speed_event_t& event) -> std::string {
+    if (event.transition_beats.numerator == 0 || event.transition_beats.denominator == 0) return {};
+    std::string text = " · transition " + std::to_string(event.transition_beats.numerator);
+    if (event.transition_beats.denominator != 1)
+        text += "/" + std::to_string(event.transition_beats.denominator);
+    return text + (event.transition_is_seconds ? " s" : " beats");
+}
+
 auto compose_pause_unit_label(wormedit::pause_unit_t unit) -> std::string_view {
     switch (unit) {
     case wormedit::pause_unit_t::seconds: return "s";
@@ -1484,7 +1508,8 @@ void append_compose_chart_timing_markers(const wormedit::chart_document_t& chart
         append(chart.speeds[index].position, chart.speeds[index].id.value,
                chart.speeds[index].provenance.source_order, index, WORM_UI_TIMING_LANE_SPEED,
                compose_timing_short_number(chart.speeds[index].multiplier),
-               "Speed " + compose_timing_decimal_detail(chart.speeds[index].multiplier), false);
+               "Speed " + compose_timing_decimal_detail(chart.speeds[index].multiplier) +
+                   compose_speed_transition_detail(chart.speeds[index]), false);
     for (std::size_t index = 0; index < chart.pauses.size(); ++index)
         append(chart.pauses[index].position, chart.pauses[index].id.value,
                chart.pauses[index].provenance.source_order, index,
@@ -1504,11 +1529,8 @@ void append_compose_chart_timing_markers(const wormedit::chart_document_t& chart
                chart.warps[index].provenance.source_order, index, WORM_UI_TIMING_LANE_WARP,
                std::to_string(rows), "Warp " + std::to_string(rows) + " rows", false);
     }
-    for (std::size_t index = 0; index < chart.kiai.size(); ++index)
-        append(chart.kiai[index].position, chart.kiai[index].id.value,
-               chart.kiai[index].provenance.source_order, index, WORM_UI_TIMING_LANE_KIAI,
-               chart.kiai[index].enabled ? "On" : "Off",
-               chart.kiai[index].enabled ? "Kiai on" : "Kiai off", false);
+    // Kiai events are not markers: Compose draws each merged Kiai area instead (see
+    // populate_compose_kiai_and_sv), and edits it as one area.
     for (std::size_t index = 0; index < chart.timing_anchors.size(); ++index)
         append(chart.timing_anchors[index].position, chart.timing_anchors[index].id.value,
                index, index, WORM_UI_TIMING_LANE_ANCHOR,
@@ -1793,6 +1815,252 @@ void populate_compose_timing_markers(
     }
 }
 
+std::string dead_span_label(const wormedit::sys::dead_span_band_t& band) {
+    using wormedit::sys::dead_span_kind_t;
+    if (band.kind == dead_span_kind_t::warp) return "WARP";
+    const auto seconds = static_cast<double>(band.seconds.numerator) /
+                         static_cast<double>(band.seconds.denominator);
+    char text[48]{};
+    std::snprintf(text, sizeof(text), "%s %.3fs", band.kind == dead_span_kind_t::stop ? "STOP" : "DELAY",
+                  seconds);
+    return text;
+}
+
+void populate_compose_dead_spans(flattened_workspace_t& flattened, const compose_scene_cache_t& cache,
+                                 const wormedit::editor_interaction_view_model_t& interaction_view,
+                                 WormUiComposeView& view, bool downscroll, double pixels_per_row) {
+    flattened.compose.dead_span.clear();
+    flattened.compose.dead_span_labels.clear();
+    view.dead_spans = nullptr;
+    view.dead_span_count = 0;
+    if (!cache.dead_spans) return;
+    const auto bands = wormedit::sys::project_dead_span_bands(
+        *cache.dead_spans, pixels_per_row, interaction_view.viewport_scroll_pixels,
+        view.viewport_height_pixels, downscroll,
+        wormedit::sys::dead_span_pause_band_pixels);
+    const auto count = std::min<std::size_t>(bands.size(), WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY);
+    flattened.compose.dead_span.reserve(count);
+    flattened.compose.dead_span_labels.reserve(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto& band = bands[index];
+        const auto& label = flattened.compose.dead_span_labels.emplace_back(dead_span_label(band));
+        flattened.compose.dead_span.push_back({
+            .bounds = {0.0, band.top, view.viewport_width_pixels, band.bottom},
+            .kind = static_cast<std::uint8_t>(band.kind),
+            .object_id = band.object.value,
+            .label = label.c_str()});
+    }
+    view.dead_spans = flattened.compose.dead_span.data();
+    view.dead_span_count = flattened.compose.dead_span.size();
+    if (bands.size() > count) view.truncated = true;
+}
+
+// Kiai areas and the SV step graph as they sit in the current viewport. Both draw inside their
+// timing lane, so only vertical geometry is projected here.
+void populate_compose_kiai_and_sv(flattened_workspace_t& flattened, const compose_scene_cache_t& cache,
+                                  const wormedit::editor_interaction_view_model_t& interaction_view,
+                                  WormUiComposeView& view, bool downscroll, double pixels_per_row,
+                                  std::uint64_t total_rows, std::uint64_t kiai_selected_head) {
+    flattened.compose.kiai_span.clear();
+    flattened.compose.sv_graph_point.clear();
+    view.kiai_spans = nullptr;
+    view.kiai_span_count = 0;
+    view.sv_graph_points = nullptr;
+    view.sv_graph_point_count = 0;
+    view.sv_graph_one_fraction = -1.0;
+    if (!(pixels_per_row > 0.0)) return;
+    const auto scroll = interaction_view.viewport_scroll_pixels;
+    const auto height = view.viewport_height_pixels;
+    const auto row_to_y = [&](std::uint64_t row) {
+        return compose_project_y(static_cast<long double>(row), pixels_per_row, scroll, height,
+                                 downscroll);
+    };
+    if (cache.kiai_spans) {
+        for (const auto& span : cache.kiai_spans->spans) {
+            const auto begin_y = row_to_y(span.begin_row);
+            const auto end_y = row_to_y(span.end_row);
+            const auto top = std::min(begin_y, end_y);
+            const auto bottom = std::max(begin_y, end_y);
+            if (bottom < 0.0 || top > height) continue;
+            flattened.compose.kiai_span.push_back({
+                .bounds = {0.0, top, 0.0, bottom},
+                .head_object_id = span.head.value,
+                .tail_object_id = span.tail.value,
+                .begin_row = span.begin_row,
+                .end_row = span.end_row,
+                .open_ended = span.open_ended,
+                .head_visible = begin_y >= 0.0 && begin_y <= height,
+                .tail_visible = !span.open_ended && end_y >= 0.0 && end_y <= height,
+                .selected = span.head.value == kiai_selected_head});
+            if (flattened.compose.kiai_span.size() >= WORM_UI_COMPOSE_KIAI_SPAN_CAPACITY) break;
+        }
+        view.kiai_spans = flattened.compose.kiai_span.data();
+        view.kiai_span_count = flattened.compose.kiai_span.size();
+    }
+    if (cache.sv_steps && !cache.sv_steps->steps.empty()) {
+        const auto first = static_cast<std::uint64_t>(std::max(0.0, std::floor(scroll / pixels_per_row)));
+        const auto last = std::min<std::uint64_t>(
+            total_rows, static_cast<std::uint64_t>(std::ceil((scroll + height) / pixels_per_row)));
+        const auto graph = wormedit::sys::build_sv_graph(*cache.sv_steps, first, last, row_to_y);
+        for (const auto& point : graph.points) {
+            if (flattened.compose.sv_graph_point.size() >= WORM_UI_COMPOSE_SV_GRAPH_CAPACITY) break;
+            flattened.compose.sv_graph_point.push_back({point.x, point.y});
+        }
+        view.sv_graph_points = flattened.compose.sv_graph_point.data();
+        view.sv_graph_point_count = flattened.compose.sv_graph_point.size();
+        view.sv_graph_minimum = graph.minimum;
+        view.sv_graph_maximum = graph.maximum;
+        view.sv_graph_one_fraction = graph.one_x;
+    }
+}
+
+std::string recipe_area_label(const wormedit::sys::recipe_area_t& area) {
+    std::string label = area.name;
+    if (area.curve == wormedit::sv_recipe_curve_t::lua_expression) label += " (Lua)";
+    if (!area.enabled) label += " (off)";
+    return label;
+}
+
+// Stored SV recipes as areas in the SV (sv/scrolls output) or SPD (speeds output) lane, each with
+// its relative value as a line graph normalized to what is visible.
+void populate_compose_recipe_areas(flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+                                   const compose_scene_cache_t& cache,
+                                   const wormedit::editor_interaction_view_model_t& interaction_view,
+                                   WormUiComposeView& view, bool downscroll, double pixels_per_row,
+                                   std::uint64_t total_rows, std::uint64_t selected_recipe,
+                                   const recipe_form_preview_t* preview) {
+    flattened.compose.recipe_area.clear();
+    flattened.compose.recipe_graph_point.clear();
+    flattened.compose.recipe_area_labels.clear();
+    view.recipe_areas = nullptr;
+    view.recipe_area_count = 0;
+    view.recipe_graph_points = nullptr;
+    view.recipe_graph_point_count = 0;
+    if (!cache.recipe_areas || !(pixels_per_row > 0.0)) return;
+    const auto scroll = interaction_view.viewport_scroll_pixels;
+    const auto height = view.viewport_height_pixels;
+    const auto row_to_y = [&](std::uint64_t row) {
+        return compose_project_y(static_cast<long double>(row), pixels_per_row, scroll, height,
+                                 downscroll);
+    };
+    const auto first = static_cast<std::uint64_t>(std::max(0.0, std::floor(scroll / pixels_per_row)));
+    const auto last = std::min<std::uint64_t>(
+        total_rows, static_cast<std::uint64_t>(std::ceil((scroll + height) / pixels_per_row)));
+    flattened.compose.recipe_area_labels.reserve(cache.recipe_areas->areas.size());
+    for (const auto& stored_area : cache.recipe_areas->areas) {
+        const auto* shown = &stored_area;
+        wormedit::sys::recipe_area_t previewed;
+        const bool previewing = preview && preview->candidate.id == stored_area.recipe;
+        if (previewing) {
+            // The unapplied candidate replaces the stored values in this area's graph.
+            previewed = stored_area;
+            const auto sampled = wormedit::sample_sv_recipe(chart, preview->candidate);
+            previewed.evaluable = static_cast<bool>(sampled) && !sampled.points.empty();
+            previewed.points.clear();
+            for (const auto& point : sampled.points)
+                previewed.points.push_back({point.absolute_row, point.value});
+            shown = &previewed;
+        }
+        const auto& area = *shown;
+        if (area.end_row <= first || area.begin_row >= last) continue;
+        if (flattened.compose.recipe_area.size() >= WORM_UI_COMPOSE_RECIPE_AREA_CAPACITY) break;
+        const auto begin_y = row_to_y(area.begin_row);
+        const auto end_y = row_to_y(area.end_row);
+        const auto graph = wormedit::sys::build_recipe_graph(area, first, last, row_to_y);
+        const auto graph_first = flattened.compose.recipe_graph_point.size();
+        for (const auto& point : graph.points) {
+            if (flattened.compose.recipe_graph_point.size() >= WORM_UI_COMPOSE_RECIPE_GRAPH_CAPACITY) break;
+            flattened.compose.recipe_graph_point.push_back({point.x, point.y});
+        }
+        const auto& label = flattened.compose.recipe_area_labels.emplace_back(recipe_area_label(area));
+        flattened.compose.recipe_area.push_back({
+            .bounds = {0.0, std::min(begin_y, end_y), 0.0, std::max(begin_y, end_y)},
+            .recipe_id = area.recipe.value,
+            .label = label.c_str(),
+            .lane = static_cast<std::uint8_t>(area.output == wormedit::sv_recipe_output_t::speeds
+                                                  ? WORM_UI_TIMING_LANE_SPEED
+                                                  : WORM_UI_TIMING_LANE_SCROLL),
+            .curve = static_cast<std::uint8_t>(area.curve),
+            .enabled = area.enabled,
+            .selected = area.recipe.value == selected_recipe,
+            .evaluable = area.evaluable,
+            .begin_visible = begin_y >= 0.0 && begin_y <= height,
+            .end_visible = end_y >= 0.0 && end_y <= height,
+            .previewing = previewing,
+            .graph_first = graph_first,
+            .graph_count = flattened.compose.recipe_graph_point.size() - graph_first});
+    }
+    view.recipe_areas = flattened.compose.recipe_area.data();
+    view.recipe_area_count = flattened.compose.recipe_area.size();
+    view.recipe_graph_points = flattened.compose.recipe_graph_point.data();
+    view.recipe_graph_point_count = flattened.compose.recipe_graph_point.size();
+}
+
+// SPEEDS transitions as spans in the SPD lane, those that reach the viewport.
+void populate_compose_speed_spans(flattened_workspace_t& flattened, const compose_scene_cache_t& cache,
+                                  const wormedit::editor_interaction_view_model_t& interaction_view,
+                                  WormUiComposeView& view, bool downscroll, double pixels_per_row) {
+    flattened.compose.speed_span.clear();
+    view.speed_spans = nullptr;
+    view.speed_span_count = 0;
+    if (!cache.speed_spans || !(pixels_per_row > 0.0)) return;
+    const auto scroll = interaction_view.viewport_scroll_pixels;
+    const auto height = view.viewport_height_pixels;
+    for (const auto& span : cache.speed_spans->spans) {
+        const auto begin_y = compose_project_y(span.begin_row, pixels_per_row, scroll, height, downscroll);
+        const auto end_y = compose_project_y(span.end_row, pixels_per_row, scroll, height, downscroll);
+        const auto top = std::min(begin_y, end_y);
+        const auto bottom = std::max(begin_y, end_y);
+        if (bottom < 0.0 || top > height) continue;
+        if (flattened.compose.speed_span.size() >= WORM_UI_COMPOSE_SPEED_SPAN_CAPACITY) break;
+        flattened.compose.speed_span.push_back({.bounds = {0.0, top, 0.0, bottom},
+                                                .object_id = span.object.value,
+                                                .multiplier = span.multiplier,
+                                                .transition_length = span.transition_length,
+                                                .transition_is_seconds = span.transition_is_seconds,
+                                                .clipped = span.clipped});
+    }
+    view.speed_spans = flattened.compose.speed_span.data();
+    view.speed_span_count = flattened.compose.speed_span.size();
+}
+
+// A preview belongs to one selected recipe at one document revision; anything else drops it.
+void drop_stale_recipe_preview(application_command_state_t& application_state,
+                               const wormedit::chart_document_t& chart, std::uint64_t revision) {
+    auto& preview = application_state.recipe_preview;
+    if (!preview) return;
+    const bool current = preview->chart == chart.id && preview->revision == revision &&
+                         preview->candidate.id.value == application_state.recipe_selected &&
+                         std::ranges::any_of(chart.sv_recipes, [&](const auto& recipe) {
+                             return recipe.id == preview->candidate.id;
+                         });
+    if (!current) preview.reset();
+}
+
+// The form of the selected recipe as stored; the frontend keeps its own edit buffers on top.
+void populate_compose_recipe_form(flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+                                  const application_command_state_t& application_state,
+                                  WormUiComposeView& view) {
+    flattened.compose.recipe_form_text.clear();
+    view.recipe_form = {};
+    const auto recipe = std::ranges::find(chart.sv_recipes,
+                                          wormedit::recipe_id_t{application_state.recipe_selected},
+                                          &wormedit::sv_recipe_t::id);
+    if (application_state.recipe_selected == 0 || recipe == chart.sv_recipes.end()) return;
+    flattened.compose.recipe_form_text.reserve(3);
+    const auto& name = flattened.compose.recipe_form_text.emplace_back(recipe->name);
+    const auto& source = flattened.compose.recipe_form_text.emplace_back(recipe->expression_source);
+    const auto& status = flattened.compose.recipe_form_text.emplace_back(
+        application_state.recipe_preview ? application_state.recipe_preview->error : std::string{});
+    view.recipe_form.visible = true;
+    view.recipe_form.recipe_id = recipe->id.value;
+    view.recipe_form.enabled = recipe->enabled;
+    view.recipe_form.name = name.c_str();
+    view.recipe_form.expression_source = source.c_str();
+    view.recipe_form.status_text = status.empty() ? nullptr : status.c_str();
+    view.recipe_form.form = wormedit::sys::recipe_form_from_recipe(*recipe);
+}
+
 void populate_compose_selection_preview(
     const compose_scene_cache_t& cache,
     std::optional<wormedit::editor_interaction_state_t>& retained_state,
@@ -2038,6 +2306,11 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
         cache.bgm_rows_by_id.clear();
         cache.hit_test_index.reset();
         cache.marker_timing_index.reset();
+        cache.dead_spans.reset();
+        cache.kiai_spans.reset();
+        cache.sv_steps.reset();
+        cache.recipe_areas.reset();
+        cache.speed_spans.reset();
         cache.proposed_offset_timing_index.reset();
         cache.proposed_offset_seconds.reset();
         cache.beat_fit_drag.reset();
@@ -2072,8 +2345,20 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
             cache.status = diagnostics.empty() ? "The field layout could not be indexed."
                                                : diagnostics.front().message;
         }
+        if (cache.index) {
+            cache.kiai_spans = wormedit::sys::project_kiai_spans(
+                chart, cache.index->measures, WORM_UI_COMPOSE_KIAI_SPAN_CAPACITY);
+            cache.sv_steps = wormedit::sys::project_sv_steps(
+                chart, cache.index->measures, WORM_UI_COMPOSE_SV_GRAPH_CAPACITY);
+            cache.recipe_areas = wormedit::sys::project_recipe_areas(
+                chart, cache.index->measures, WORM_UI_COMPOSE_RECIPE_AREA_CAPACITY);
+        }
         auto timing = wormedit::build_timing_index(chart);
         if (timing) {
+            cache.dead_spans = wormedit::sys::project_dead_spans(
+                chart, cache.index->measures, *timing.index, WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY);
+            cache.speed_spans = wormedit::sys::project_speed_spans(
+                chart, *timing.index, WORM_UI_COMPOSE_SPEED_SPAN_CAPACITY);
             cache.marker_timing_index = std::move(*timing.index);
         }
     }
@@ -2868,6 +3153,17 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
                                 static_cast<double>(chart.divisions_per_standard_measure);
     populate_compose_timing_markers(flattened, chart, cache, interaction_view, view,
                                     downscroll, pixels_per_row, canvas_rows, timing_stage);
+    populate_compose_dead_spans(flattened, cache, interaction_view, view, downscroll,
+                                pixels_per_row);
+    populate_compose_kiai_and_sv(flattened, cache, interaction_view, view, downscroll,
+                                 pixels_per_row, canvas_rows, application_state.kiai_selected_head);
+    populate_compose_speed_spans(flattened, cache, interaction_view, view, downscroll, pixels_per_row);
+    drop_stale_recipe_preview(application_state, chart, history.document.revision);
+    populate_compose_recipe_areas(flattened, chart, cache, interaction_view, view, downscroll,
+                                  pixels_per_row, canvas_rows, application_state.recipe_selected,
+                                  application_state.recipe_preview ? &*application_state.recipe_preview
+                                                                   : nullptr);
+    populate_compose_recipe_form(flattened, chart, application_state, view);
     const auto maximum_bgm_scroll = std::max(
         0.0, static_cast<double>(chart.bgm_source_lanes.size()) * compose_bgm_lane_width_pixels -
                  bgm_pane_width);

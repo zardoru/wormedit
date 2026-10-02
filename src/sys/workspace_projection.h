@@ -109,13 +109,6 @@ struct flattened_workspace_t {
         } output_group;
     } metadata;
     struct {
-        frame_span<WormUiTimingSpeedView> speed;
-        frame_span<WormUiTimingMarkerView> marker;
-        frame_span<WormUiTimingGridLineView> grid;
-        frame_span<WormUiTimingRecipePoint> recipe_candidate;
-        frame_span<WormUiTimingRecipePoint> recipe_composed;
-    } timing;
-    struct {
         std::string status;
         std::string hover_tooltip;
         std::string selected_note_label;
@@ -135,6 +128,15 @@ struct flattened_workspace_t {
         std::vector<WormUiComposeTimingPreviewRectView> timing_preview_rect;
         std::vector<WormUiTimingMarkerView> timing_preview_marker;
         std::vector<WormUiTimingMarkerView> timing_marker;
+        std::vector<WormUiComposeDeadSpanView> dead_span;
+        std::vector<WormUiComposeKiaiSpanView> kiai_span;
+        std::vector<WormUiComposeRecipeAreaView> recipe_area;
+        std::vector<WormUiComposeSpeedSpanView> speed_span;
+        std::vector<std::string> recipe_form_text;
+        std::vector<WormUiComposeSvGraphPointView> recipe_graph_point;
+        std::vector<std::string> recipe_area_labels;
+        std::vector<WormUiComposeSvGraphPointView> sv_graph_point;
+        std::vector<std::string> dead_span_labels;
         std::vector<std::pair<std::string, std::string>> timing_marker_labels;
         frame_span<WormUiComposeDifferenceView> difference;
         frame_span<WormUiComposeHoldView> hold;

@@ -1193,8 +1193,194 @@ static void draw_compose_unbound_lane_keys_hint(const ComposePaintContext& paint
         paint.context->style.font, nk_rgba(18, 21, 29, 255), nk_rgb(255, 221, 108), 4);
 }
 
+// The inner horizontal extent of a visible timing lane in document pixels; empty when the lane is
+// hidden. Same slot arithmetic as the marker rectangles.
+auto compose_timing_lane_inner_extent(const WormUiComposeView& view, WormUiTimingLaneKind lane)
+    -> std::optional<std::pair<double, double>> {
+    const auto ordinal = static_cast<unsigned>(lane);
+    const auto bit = static_cast<std::uint8_t>(1U << ordinal);
+    const auto visible_count = std::popcount(view.timing_lane_visibility_mask);
+    if (ordinal >= WORM_UI_TIMING_LANE_COUNT || visible_count == 0 ||
+        (view.timing_lane_visibility_mask & bit) == 0) return std::nullopt;
+    const auto slot = std::popcount(static_cast<std::uint8_t>(view.timing_lane_visibility_mask & (bit - 1)));
+    const auto width = (view.playable_field_left_pixels - compose_measure_rail_width) / visible_count;
+    const auto left = compose_measure_rail_width + width * slot + 2.0;
+    return std::pair{left, left + std::max(0.0, width - 4.0)};
+}
+
+// While an edge or a new area is dragged, the area it would become follows the pointer.
+static void draw_compose_kiai_drag_preview(const ComposePaintContext& paint,
+                                           const std::pair<double, double>& extent) {
+    if (!state.kiai_drag_active || !state.kiai_drag_moved) return;
+    double fixed_y = state.kiai_drag_anchor_y;
+    if (state.kiai_drag_edge != 2) {
+        const std::span spans(paint.view->kiai_spans, paint.view->kiai_span_count);
+        const auto found = std::ranges::find_if(
+            spans, [](const auto& value) { return value.head_object_id == state.kiai_drag_head_id; });
+        if (found == spans.end()) return;
+        const auto* span = &*found;
+        const bool head_is_top = !paint.view->downscroll;
+        const bool fixed_is_top = state.kiai_drag_edge == 0 ? !head_is_top : head_is_top;
+        fixed_y = fixed_is_top ? span->bounds.top : span->bounds.bottom;
+    }
+    const WormUiComposeRect bounds{extent.first, std::min(fixed_y, state.kiai_drag_current_y),
+                                   extent.second, std::max(fixed_y, state.kiai_drag_current_y)};
+    const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
+    if (rect.w <= 0.0f || rect.h <= 0.0f) return;
+    field_rect(paint, rect, 0.0f, nk_rgba(255, 236, 170, 70), 10);
+    field_stroke_rect(paint, rect, 0.0f, 1.5f, nk_rgb(255, 236, 170), 10);
+}
+
+static void draw_compose_kiai_spans(const ComposePaintContext& paint) {
+    const auto extent = compose_timing_lane_inner_extent(*paint.view, WORM_UI_TIMING_LANE_KIAI);
+    if (!extent) return;
+    draw_compose_kiai_drag_preview(paint, *extent);
+    for (size_t index = 0; index < paint.view->kiai_span_count; ++index) {
+        const auto& span = paint.view->kiai_spans[index];
+        const WormUiComposeRect bounds{extent->first, span.bounds.top, extent->second, span.bounds.bottom};
+        const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
+        if (rect.w <= 0.0f || rect.h <= 0.0f) continue;
+        field_rect(paint, rect, 0.0f, nk_rgba(250, 204, 92, span.selected ? 96 : 60), 10);
+        field_stroke_rect(paint, rect, 0.0f, span.selected ? 2.0f : 1.0f,
+                          span.selected ? nk_rgb(255, 236, 170) : nk_rgba(250, 204, 92, 170), 10);
+        // Head (opening edge) and tail (closing edge) handles, solid so they read as grabbable.
+        const auto head_y = paint.view->downscroll ? rect.y + rect.h : rect.y;
+        const auto tail_y = paint.view->downscroll ? rect.y : rect.y + rect.h;
+        if (span.head_visible)
+            field_line(paint, rect.x, head_y, rect.x + rect.w, head_y, 4.0f, nk_rgb(250, 204, 92), 10);
+        if (span.tail_visible)
+            field_line(paint, rect.x, tail_y, rect.x + rect.w, tail_y, 4.0f, nk_rgb(214, 160, 46), 10);
+    }
+}
+
+// Stored SV recipes: a translucent area over the recipe's rows with its relative value as a
+// continuous line, grabbable begin and end edges, and a muted look when disabled.
+// While a recipe edge or body is dragged, the span it would become follows the pointer.
+static void draw_compose_recipe_drag_preview(const ComposePaintContext& paint) {
+    if (!state.recipe_drag_active || !state.recipe_drag_moved) return;
+    const std::span areas(paint.view->recipe_areas, paint.view->recipe_area_count);
+    const auto found = std::ranges::find_if(
+        areas, [](const auto& area) { return area.recipe_id == state.recipe_drag_id; });
+    if (found == areas.end()) return;
+    const auto extent = compose_timing_lane_inner_extent(
+        *paint.view, static_cast<WormUiTimingLaneKind>(found->lane));
+    if (!extent) return;
+    double top = found->bounds.top, bottom = found->bounds.bottom;
+    const bool begin_is_top = !paint.view->downscroll;
+    if (state.recipe_drag_edge == 2) {
+        const auto travel = state.recipe_drag_current_y - state.recipe_drag_anchor_y;
+        top += travel;
+        bottom += travel;
+    } else {
+        const bool moving_top = (state.recipe_drag_edge == 0) == begin_is_top;
+        const auto fixed = moving_top ? bottom : top;
+        top = std::min(fixed, state.recipe_drag_current_y);
+        bottom = std::max(fixed, state.recipe_drag_current_y);
+    }
+    const WormUiComposeRect bounds{extent->first, top, extent->second, bottom};
+    const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
+    if (rect.w <= 0.0f || rect.h <= 0.0f) return;
+    field_rect(paint, rect, 0.0f, nk_rgba(214, 226, 255, 60), 10);
+    field_stroke_rect(paint, rect, 0.0f, 1.5f, nk_rgb(214, 226, 255), 10);
+}
+
+// The line of one recipe's relative value inside its area rectangle.
+static void draw_compose_recipe_graph(const ComposePaintContext& paint,
+                                      const WormUiComposeRecipeAreaView& area, struct nk_rect rect) {
+    const auto x_of = [&](double fraction) {
+        return rect.x + 2.0f + static_cast<float>(fraction) * std::max(0.0f, rect.w - 4.0f);
+    };
+    const auto color = area.previewing ? nk_rgb(255, 196, 98)
+                       : area.enabled ? nk_rgb(214, 226, 255) : nk_rgb(150, 156, 170);
+    for (size_t vertex = 1; vertex < area.graph_count; ++vertex) {
+        const auto& from = paint.view->recipe_graph_points[area.graph_first + vertex - 1];
+        const auto& to = paint.view->recipe_graph_points[area.graph_first + vertex];
+        field_line(paint, x_of(from.x_fraction), compose_projected_y(paint, from.y_pixels),
+                   x_of(to.x_fraction), compose_projected_y(paint, to.y_pixels), 1.5f, color, 10);
+    }
+}
+
+// Area fill, outline and the grabbable begin and end edges of one recipe.
+static void draw_compose_recipe_frame(const ComposePaintContext& paint,
+                                      const WormUiComposeRecipeAreaView& area, struct nk_rect rect) {
+    const auto base = area.enabled ? nk_rgb(150, 170, 255) : nk_rgb(120, 126, 142);
+    field_rect(paint, rect, 0.0f, nk_rgba(base.r, base.g, base.b, area.selected ? 70 : 38), 10);
+    field_stroke_rect(paint, rect, 0.0f, area.selected ? 2.0f : 1.0f,
+                      nk_rgba(base.r, base.g, base.b, area.enabled ? 210 : 140), 10);
+    const auto begin_y = paint.view->downscroll ? rect.y + rect.h : rect.y;
+    const auto end_y = paint.view->downscroll ? rect.y : rect.y + rect.h;
+    if (area.begin_visible) field_line(paint, rect.x, begin_y, rect.x + rect.w, begin_y, 3.0f, base, 10);
+    if (area.end_visible) field_line(paint, rect.x, end_y, rect.x + rect.w, end_y, 3.0f, base, 10);
+    if (!area.evaluable) {
+        // No graph to draw (a Lua expression, for now): a diagonal says "not evaluated".
+        field_line(paint, rect.x, rect.y, rect.x + rect.w, rect.y + rect.h, 1.0f,
+                   nk_rgba(base.r, base.g, base.b, 120), 10);
+    }
+}
+
+static void draw_compose_recipe_areas(const ComposePaintContext& paint) {
+    draw_compose_recipe_drag_preview(paint);
+    for (size_t index = 0; index < paint.view->recipe_area_count; ++index) {
+        const auto& area = paint.view->recipe_areas[index];
+        const auto extent = compose_timing_lane_inner_extent(
+            *paint.view, static_cast<WormUiTimingLaneKind>(area.lane));
+        if (!extent) continue;
+        const WormUiComposeRect bounds{extent->first, area.bounds.top, extent->second, area.bounds.bottom};
+        const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
+        if (rect.w <= 0.0f || rect.h <= 0.0f) continue;
+        draw_compose_recipe_frame(paint, area, rect);
+        if (area.evaluable) draw_compose_recipe_graph(paint, area, rect);
+    }
+}
+
+// SPEEDS transitions: a faint band over the span a SPEEDS event interpolates across, stronger
+// under the pointer, with its target and length written next to it when there is room.
+static void draw_compose_speed_spans(const ComposePaintContext& paint) {
+    const auto extent = compose_timing_lane_inner_extent(*paint.view, WORM_UI_TIMING_LANE_SPEED);
+    if (!extent) return;
+    for (size_t index = 0; index < paint.view->speed_span_count; ++index) {
+        const auto& span = paint.view->speed_spans[index];
+        const WormUiComposeRect bounds{extent->first, span.bounds.top, extent->second, span.bounds.bottom};
+        auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
+        if (rect.w <= 0.0f) continue;
+        if (rect.h < 3.0f) rect.h = 3.0f;
+        const bool hovered = nk_input_is_mouse_hovering_rect(&paint.context->input, rect);
+        field_rect(paint, rect, 0.0f, nk_rgba(136, 203, 238, hovered ? 84 : 34), 10);
+        field_line(paint, rect.x, rect.y, rect.x + rect.w, rect.y, 1.0f,
+                   hovered ? nk_rgb(137, 207, 239) : nk_rgba(137, 207, 239, 120), 10);
+        field_line(paint, rect.x, rect.y + rect.h, rect.x + rect.w, rect.y + rect.h, 1.0f,
+                   hovered ? nk_rgb(91, 145, 177) : nk_rgba(91, 145, 177, 120), 10);
+    }
+}
+
+static void draw_compose_sv_graph(const ComposePaintContext& paint) {
+    const auto extent = compose_timing_lane_inner_extent(*paint.view, WORM_UI_TIMING_LANE_SCROLL);
+    if (!extent || paint.view->sv_graph_point_count < 2) return;
+    const auto x_of = [&](double fraction) {
+        const WormUiComposeRect probe{extent->first + (extent->second - extent->first) * fraction, 0.0,
+                                      extent->first + (extent->second - extent->first) * fraction, 1.0};
+        return compose_screen_rect(&probe, paint.view, paint.viewport).x;
+    };
+    if (paint.view->sv_graph_one_fraction >= 0.0) {
+        const auto x = x_of(paint.view->sv_graph_one_fraction);
+        field_line(paint, x, paint.viewport.y, x, paint.viewport.y + paint.viewport.h, 1.0f,
+                   nk_rgba(160, 170, 190, 70), 10);
+    }
+    for (size_t index = 1; index < paint.view->sv_graph_point_count; ++index) {
+        const auto& from = paint.view->sv_graph_points[index - 1];
+        const auto& to = paint.view->sv_graph_points[index];
+        field_line(paint, x_of(from.x_fraction), compose_projected_y(paint, from.y_pixels),
+                   x_of(to.x_fraction), compose_projected_y(paint, to.y_pixels), 1.5f,
+                   nk_rgb(110, 222, 236), 10);
+    }
+}
+
 static void draw_compose_timing_layer(const ComposePaintContext& paint,
                                       const ComposeTimingLaneLayout& layout) {
+    draw_compose_kiai_spans(paint);
+    draw_compose_speed_spans(paint);
+    draw_compose_recipe_areas(paint);
+    draw_compose_sv_graph(paint);
     draw_compose_proposed_grid(paint);
     draw_compose_beat_fit_overlay(paint);
     draw_compose_offset_fit_overlay(paint);
@@ -1454,6 +1640,50 @@ static void draw_compose_cursor(const ComposePaintContext& paint) {
                    nk_rgb(255, 243, 174), 5);
     field_line(paint, rect.x, rect.y + rect.h, rect.x + rect.w, rect.y + rect.h, 1.0f,
                    nk_rgb(255, 243, 174), 5);
+}
+
+static nk_color compose_dead_span_color(std::uint8_t kind, std::uint8_t alpha) {
+    switch (kind) {
+    case 0: return nk_rgba(226, 110, 84, alpha);  // stop
+    case 1: return nk_rgba(232, 184, 82, alpha);  // delay
+    default: return nk_rgba(168, 128, 232, alpha); // warp
+    }
+}
+
+// Diagonal hatch clipped to the rectangle: a row of 45 degree strokes whose ends are cut at the
+// rectangle edges, so time that cannot hold a note reads as struck out.
+static void draw_compose_dead_span_hatch(const ComposePaintContext& paint, struct nk_rect rect,
+                                         nk_color color) {
+    constexpr float spacing = 12.0f;
+    const auto reach = rect.h;
+    for (float offset = -reach; offset < rect.w; offset += spacing) {
+        const auto x0 = std::max(rect.x, rect.x + offset);
+        const auto x1 = std::min(rect.x + rect.w, rect.x + offset + reach);
+        if (x1 <= x0) continue;
+        const auto y0 = rect.y + rect.h - (x0 - (rect.x + offset));
+        const auto y1 = rect.y + rect.h - (x1 - (rect.x + offset));
+        field_line(paint, x0, y0, x1, y1, 1.0f, color, 10);
+    }
+}
+
+static void draw_compose_dead_spans(const ComposePaintContext& paint) {
+    for (size_t index = 0; index < paint.view->dead_span_count; ++index) {
+        const auto& span = paint.view->dead_spans[index];
+        const auto rect = compose_screen_rect(&span.bounds, paint.view, paint.viewport);
+        if (rect.w <= 0.0f || rect.h <= 0.0f) continue;
+        field_rect(paint, rect, 0.0f, nk_rgba(14, 16, 22, 150), 10);
+        draw_compose_dead_span_hatch(paint, rect, compose_dead_span_color(span.kind, 70));
+        field_line(paint, rect.x, rect.y, rect.x + rect.w, rect.y, 1.0f,
+                   compose_dead_span_color(span.kind, 200), 10);
+        field_line(paint, rect.x, rect.y + rect.h, rect.x + rect.w, rect.y + rect.h, 1.0f,
+                   compose_dead_span_color(span.kind, 200), 10);
+        if (rect.h >= 12.0f && rect.w >= 60.0f) {
+            const auto text = nk_rect(rect.x + rect.w - 120.0f, rect.y, 116.0f, std::min(rect.h, 16.0f));
+            field_text(paint, text, span.label, static_cast<int>(strlen(span.label)),
+                       paint.context->style.font, nk_rgba(18, 21, 29, 215),
+                       compose_dead_span_color(span.kind, 255), 10);
+        }
+    }
 }
 
 static void draw_compose_foreground_markers(const ComposePaintContext& paint) {
@@ -1902,6 +2132,7 @@ void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* vie
         draw_compose_waveform_layer(paint, timing_layout);
         draw_compose_cached_pass(paint,5,true,view->beat_fit_drag_active ||
             view->selected_bms_measure_number_plus_one!=0,[&](const ComposePaintContext& cached) { draw_compose_grid_lines(cached); });
+        draw_compose_dead_spans(paint);
         draw_compose_area_band(paint);
         draw_compose_timing_layer(paint, timing_layout);
         const bool active_notes=compose_notes_require_direct(*view);

@@ -40,7 +40,7 @@ struct migration_outcome_t {
 };
 
 // Migrations shipped with the reader: one `migrate_vN_to_vN+1` per released
-// schema bump. Schema version 1 is the first release, so the table is empty.
+// schema bump. Schema 2 added `expression_source` to SV recipes.
 [[nodiscard]] auto default_migrations() -> std::span<const migration_t>;
 
 // Repairs BMS BGM data saved before `00` slots stopped being events and BGM

@@ -49,7 +49,7 @@ void write_text(const std::filesystem::path& path, std::string_view bytes) {
 }
 
 auto valid_song(std::uint64_t revision) -> wormedit::song_document_t {
-    return {.schema_version = 1, .id = wormedit::song_id_t{417}, .revision = revision};
+    return {.schema_version = 2, .id = wormedit::song_id_t{417}, .revision = revision};
 }
 
 auto fails_at(wormedit::native_project_storage_stage_t failed_stage)

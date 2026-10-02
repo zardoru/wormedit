@@ -6,6 +6,8 @@
 #include "sys/bmson_waveform_projection.h"
 #include "sys/compose_view.h"
 #include "sys/compose_input.h"
+#include "sys/compose_area_actions.h"
+#include "sys/recipe_form.h"
 #include "sys/compose_playhead_cursor.h"
 #include <wormedit/core/command.h>
 #include <wormedit/core/rational.h>
@@ -240,7 +242,6 @@ void check_inline_timing_fields(const WormUiTimingView& view, std::uint64_t revi
     CHECK(view.stage_valid);
 }
 void check_slim_timing_geometry(const WormUiTimingView& view, const timing_scene_cache_t& cache) {
-    CHECK(view.sv_recipe.selection_armed);
     CHECK(view.grid_line_count == 0);
     CHECK(view.marker_count == 0);
     CHECK(view.speed_count == 0);
@@ -266,14 +267,14 @@ TEST_CASE("Compose timing projection skips whole-chart geometry and preserves in
     stage.position = {measure_id_t{1}, 0};
     stage.valid = true;
     populate_timing_view_for_compose(flattened, history, workspace, cache, 1280, 980,
-                                    grid, &stage, nullptr, nullptr, true);
+                                    grid, &stage);
     const auto& view = flattened.view.timing;
     check_inline_timing_fields(view, history.document.revision);
     check_slim_timing_geometry(view, cache);
     REQUIRE(cache.measures);
     const auto* entries = cache.measures->entries.data();
     populate_timing_view_for_compose(flattened, history, workspace, cache, 1280, 980,
-                                    grid, &stage, nullptr, nullptr, true);
+                                    grid, &stage);
     CHECK(cache.measures->entries.data() == entries);
 }
 
@@ -285,7 +286,7 @@ TEST_CASE("Idle Compose timing projection does not build a measure index", "[sys
     flattened_workspace_t flattened;
     timing_scene_cache_t cache;
     populate_timing_view_for_compose(flattened, history, *binding.workspace, cache,
-                                    1280, 980, {}, nullptr, nullptr, nullptr, false);
+                                    1280, 980, {}, nullptr);
     CHECK_FALSE(cache.measure_attempted);
     CHECK_FALSE(cache.measures);
     CHECK(flattened.view.timing.scene_available);
@@ -1442,6 +1443,317 @@ auto dispatch_paste_pointer(compose_test_fixture_t& fixture, bool commit) -> std
     return dispatch_paste_action(fixture, action);
 }
 }
+namespace {
+auto kiai_test_song() -> song_document_t {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    const auto measure = chart.measures.front().id;
+    chart.kiai = {{.id = object_id_t{9001}, .position = {measure, 240}, .enabled = true,
+                   .provenance = {.source_order = 1}},
+                  {.id = object_id_t{9002}, .position = {measure, 720}, .enabled = false,
+                   .provenance = {.source_order = 2}}};
+    return song;
+}
+auto kiai_screen_y(compose_test_fixture_t& fixture, std::uint64_t row) -> double {
+    const auto& chart = fixture.history.document.charts.front();
+    const auto inspected = inspect_editor_interaction(fixture.history, *fixture.interaction);
+    const auto* view = std::get_if<editor_interaction_view_model_t>(&inspected);
+    expect_compose_test(view != nullptr);
+    const auto y = editor_position_y_pixels(chart, *view, {chart.measures.front().id, row});
+    expect_compose_test(y.has_value());
+    const bool downscroll = compose_field_downscroll(chart, fixture.application.editor_preferences);
+    return compose_source_y(*y, view->viewport_height_pixels, downscroll);
+}
+auto kiai_input(compose_test_fixture_t& fixture, WormUiComposeInputKind kind, std::uint64_t head,
+                std::uint8_t edge = 0, double y = 0.0) -> WormUiWorkspaceAction {
+    const auto& chart = fixture.history.document.charts.front();
+    WormUiWorkspaceAction action{};
+    action.compose_input_chart_id = chart.id.value;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
+    action.compose_inputs[0] = {.kind = kind, .object_id = head, .timing_chart_id = chart.id.value,
+                                .timing_document_revision = fixture.history.document.revision,
+                                .y_pixels = y, .span_edge = edge};
+    action.compose_input_count = 1;
+    return action;
+}
+auto kiai_areas(compose_test_fixture_t& fixture) -> std::vector<kiai_span_t> {
+    const auto& chart = fixture.history.document.charts.front();
+    const auto built = build_measure_index(chart);
+    return kiai_spans_of(chart, std::get<measure_index_t>(built));
+}
+}
+TEST_CASE("Kiai edge drags edit the area, Delete removes the selected area and stale input is rejected",
+          "[sys][kiai-spans]") {
+    compose_test_fixture_t fixture{kiai_test_song()};
+    fixture.project();
+    REQUIRE(kiai_areas(fixture).size() == 1);
+
+    auto stale = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 9001, 1,
+                            kiai_screen_y(fixture, 480));
+    stale.compose_inputs[0].timing_document_revision += 1;
+    CHECK(dispatch_paste_action(fixture, stale) == "Kiai edit is stale or invalid.");
+    CHECK(fixture.history.undo.empty());
+
+    fixture.application.timing_locked = true;
+    auto locked = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 9001, 1,
+                             kiai_screen_y(fixture, 480));
+    CHECK(dispatch_paste_action(fixture, locked) == "Timing is locked.");
+    fixture.application.timing_locked = false;
+
+    auto tail_drag = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 9001, 1,
+                                kiai_screen_y(fixture, 480));
+    CHECK(dispatch_paste_action(fixture, tail_drag) == "Kiai area edited.");
+    auto areas = kiai_areas(fixture);
+    REQUIRE(areas.size() == 1);
+    CHECK(areas[0].begin_row == 240);
+    CHECK(areas[0].end_row == 480);
+    CHECK(areas[0].head == object_id_t{9001});
+    CHECK(fixture.history.undo.size() == 1);
+
+    // Dragging the head past the fixed tail swaps the edges.
+    fixture.project();
+    auto head_drag = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 9001, 0,
+                                kiai_screen_y(fixture, 600));
+    CHECK(dispatch_paste_action(fixture, head_drag) == "Kiai area edited.");
+    areas = kiai_areas(fixture);
+    REQUIRE(areas.size() == 1);
+    CHECK(areas[0].begin_row == 480);
+    CHECK(areas[0].end_row == 600);
+
+    fixture.project();
+    auto select = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_SELECT, 9001);
+    CHECK(dispatch_paste_action(fixture, select) == "Kiai area selected.");
+    CHECK(fixture.application.kiai_selected_head == 9001);
+    auto remove = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_DELETE_SELECTION, 0);
+    CHECK(dispatch_paste_action(fixture, remove) == "Kiai area deleted.");
+    CHECK(kiai_areas(fixture).empty());
+    CHECK(fixture.application.kiai_selected_head == 0);
+    CHECK(fixture.history.undo.size() == 3);
+}
+
+TEST_CASE("A Kiai creation drag adds a merged area and is one undo step", "[sys][kiai-spans]") {
+    compose_test_fixture_t fixture{kiai_test_song()};
+    fixture.project();
+    auto create = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT, 0, 2,
+                             kiai_screen_y(fixture, 120));
+    create.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 360);
+    CHECK(dispatch_paste_action(fixture, create) == "Kiai area edited.");
+    // 120..360 overlaps the existing 240..720 area: one merged area.
+    const auto areas = kiai_areas(fixture);
+    REQUIRE(areas.size() == 1);
+    CHECK(areas[0].begin_row == 120);
+    CHECK(areas[0].end_row == 720);
+    CHECK(fixture.history.undo.size() == 1);
+    REQUIRE(undo_document_command(fixture.history));
+    CHECK(kiai_areas(fixture).front().begin_row == 240);
+}
+
+namespace {
+auto recipe_test_song() -> song_document_t {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    sv_recipe_t recipe{.id = recipe_id_t{7001},
+                       .name = "rise",
+                       .range = {{chart.measures.front().id, 240}, {chart.measures.front().id, 720}},
+                       .output = sv_recipe_output_t::sv,
+                       .curve = sv_recipe_curve_t::linear,
+                       .parameters = {.value_from = {1, 1}, .value_to = {3, 1}}};
+    recipe.sampling.fixed_point_count = 3;
+    chart.sv_recipes.push_back(recipe);
+    return song;
+}
+auto recipe_range_rows(compose_test_fixture_t& fixture) -> std::pair<std::uint64_t, std::uint64_t> {
+    const auto& range = fixture.history.document.charts.front().sv_recipes.front().range;
+    return {range.begin.row, range.end.row};
+}
+}
+TEST_CASE("SV recipe inputs select, resize and move the span, run commands and reject stale input",
+          "[sys][recipe-areas]") {
+    compose_test_fixture_t fixture{recipe_test_song()};
+    fixture.project();
+    REQUIRE(fixture.flattened.view.compose.recipe_area_count == 1);
+
+    auto select = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_SELECT, 7001);
+    CHECK(dispatch_paste_action(fixture, select) == "SV recipe selected.");
+    CHECK(fixture.application.recipe_selected == 7001);
+    fixture.project();
+    CHECK(fixture.flattened.view.compose.recipe_areas[0].selected);
+
+    auto stale = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 1,
+                            kiai_screen_y(fixture, 480));
+    stale.compose_inputs[0].timing_document_revision += 1;
+    CHECK(dispatch_paste_action(fixture, stale) == "SV recipe edit is stale or invalid.");
+
+    // End edge dragged to row 480; the span stays ordered when an edge crosses the other.
+    auto end_drag = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 1,
+                               kiai_screen_y(fixture, 480));
+    end_drag.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 720);
+    CHECK(dispatch_paste_action(fixture, end_drag) == "SV recipe moved.");
+    CHECK(recipe_range_rows(fixture) == std::pair<std::uint64_t, std::uint64_t>{240, 480});
+    CHECK(fixture.history.undo.size() == 1);
+
+    fixture.project();
+    auto cross = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 0,
+                            kiai_screen_y(fixture, 720));
+    cross.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 240);
+    CHECK(dispatch_paste_action(fixture, cross) == "SV recipe moved.");
+    CHECK(recipe_range_rows(fixture) == std::pair<std::uint64_t, std::uint64_t>{480, 720});
+
+    // The body dragged by the pointer travel moves the whole span, keeping its length.
+    fixture.project();
+    auto body = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 2,
+                           kiai_screen_y(fixture, 240));
+    body.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 480);
+    CHECK(dispatch_paste_action(fixture, body) == "SV recipe moved.");
+    CHECK(recipe_range_rows(fixture) == std::pair<std::uint64_t, std::uint64_t>{240, 480});
+
+    // A locked timeline rejects edits and commands without a revision.
+    fixture.project();
+    fixture.application.timing_locked = true;
+    const auto revision = fixture.history.document.revision;
+    auto locked_edit = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT, 7001, 1,
+                                  kiai_screen_y(fixture, 720));
+    locked_edit.compose_inputs[0].span_anchor_y_pixels = kiai_screen_y(fixture, 480);
+    CHECK(dispatch_paste_action(fixture, locked_edit) != "SV recipe moved.");
+    auto locked_command = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7001, 0);
+    CHECK(dispatch_paste_action(fixture, locked_command) == "Timing is locked.");
+    CHECK(fixture.history.document.revision == revision);
+    fixture.application.timing_locked = false;
+
+    auto toggle = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7001, 0);
+    CHECK(dispatch_paste_action(fixture, toggle) == "SV recipe disabled.");
+    CHECK_FALSE(fixture.history.document.charts.front().sv_recipes.front().enabled);
+
+    fixture.project();
+    auto materialize = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7001, 1);
+    CHECK(dispatch_paste_action(fixture, materialize) == "SV recipe materialized into events.");
+    CHECK(fixture.history.document.charts.front().sv_recipes.empty());
+    CHECK_FALSE(fixture.history.document.charts.front().scrolls.empty());
+    CHECK(fixture.application.recipe_selected == 0);
+    auto missing = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 7001, 2);
+    CHECK(dispatch_paste_action(fixture, missing) == "The SV recipe no longer exists.");
+}
+
+TEST_CASE("Delete removes the selected SV recipe and the area menu adds one over the retained area",
+          "[sys][recipe-areas]") {
+    compose_test_fixture_t fixture{recipe_test_song()};
+    fixture.project();
+    fixture.application.recipe_selected = 7001;
+    auto remove = kiai_input(fixture, WORM_UI_COMPOSE_INPUT_DELETE_SELECTION, 0);
+    CHECK(dispatch_paste_action(fixture, remove) == "SV recipe deleted.");
+    CHECK(fixture.history.document.charts.front().sv_recipes.empty());
+    CHECK(fixture.application.recipe_selected == 0);
+    REQUIRE(undo_document_command(fixture.history));
+    CHECK(fixture.history.document.charts.front().sv_recipes.size() == 1);
+
+    fixture.project();
+    const auto measure = fixture.history.document.charts.front().measures.front().id;
+    fixture.interaction->retained_selection_range =
+        position_span_t{{measure, 0}, {measure, 240}};
+    WormUiWorkspaceAction action{};
+    action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE;
+    action.compose_input_chart_id = fixture.history.document.charts.front().id.value;
+    action.compose_input_document_revision = fixture.history.document.revision;
+    const auto status = dispatch_compose_area_action(action, fixture.history, *fixture.interaction);
+    REQUIRE(status.has_value());
+    CHECK(*status == "SV recipe added over the selected area.");
+    const auto& recipes = fixture.history.document.charts.front().sv_recipes;
+    REQUIRE(recipes.size() == 2);
+    CHECK(recipes.back().range.begin.row == 0);
+    CHECK(recipes.back().range.end.row == 240);
+    CHECK(recipes.back().curve == sv_recipe_curve_t::linear);
+
+    action.compose_input_document_revision += 1;
+    const auto stale = dispatch_compose_area_action(action, fixture.history, *fixture.interaction);
+    REQUIRE(stale.has_value());
+    CHECK(stale->find("ignored") != std::string::npos);
+    CHECK(fixture.history.document.charts.front().sv_recipes.size() == 2);
+}
+
+TEST_CASE("Compose projects SPEEDS transitions as spans and names the transition on the marker",
+          "[sys][speed-spans]") {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    const auto measure = chart.measures.front().id;
+    chart.speeds = {{.id = object_id_t{8001},
+                     .position = {measure, 0},
+                     .multiplier = {2, 1},
+                     .transition_beats = {2, 1},
+                     .provenance = {.source_order = 0}},
+                    {.id = object_id_t{8002},
+                     .position = {measure, 720},
+                     .multiplier = {1, 1},
+                     .transition_beats = {1, 2},
+                     .transition_is_seconds = true,
+                     .provenance = {.source_order = 1}}};
+    compose_test_fixture_t fixture{song};
+    fixture.project();
+    const auto& view = fixture.flattened.view.compose;
+    REQUIRE(view.speed_span_count == 2);
+    for (size_t index = 0; index < view.speed_span_count; ++index) {
+        CHECK(view.speed_spans[index].bounds.bottom > view.speed_spans[index].bounds.top);
+        CHECK(view.speed_spans[index].object_id != 0);
+    }
+    CHECK(view.speed_spans[0].multiplier == Catch::Approx(2.0));
+    CHECK_FALSE(view.speed_spans[0].transition_is_seconds);
+    CHECK(view.speed_spans[0].transition_length == Catch::Approx(2.0));
+    CHECK(view.speed_spans[1].transition_is_seconds);
+    bool named = false;
+    for (size_t index = 0; index < view.timing_marker_count; ++index)
+        if (view.timing_markers[index].lane == WORM_UI_TIMING_LANE_SPEED &&
+            std::string(view.timing_markers[index].detail).find("transition 2 beats") != std::string::npos)
+            named = true;
+    CHECK(named);
+}
+
+TEST_CASE("the selected recipe's form and its unapplied preview reach the Compose view",
+          "[sys][recipe-areas][recipe-form]") {
+    compose_test_fixture_t fixture{recipe_test_song()};
+    fixture.project();
+    CHECK_FALSE(fixture.flattened.view.compose.recipe_form.visible);
+    CHECK_FALSE(fixture.flattened.view.compose.recipe_areas[0].previewing);
+
+    fixture.application.recipe_selected = 7001;
+    fixture.project();
+    const auto& form_view = fixture.flattened.view.compose.recipe_form;
+    REQUIRE(form_view.visible);
+    CHECK(form_view.recipe_id == 7001);
+    CHECK(std::string(form_view.name) == "rise");
+    CHECK(form_view.form.curve == WORM_UI_TIMING_RECIPE_CURVE_LINEAR);
+    CHECK(std::string(form_view.form.value_to.numerator) == "3");
+    CHECK(form_view.status_text == nullptr);
+
+    // A preview replaces that recipe's graph until the selection or the document moves on.
+    const auto& chart = fixture.history.document.charts.front();
+    auto form = wormedit::sys::recipe_form_from_recipe(chart.sv_recipes.front());
+    std::snprintf(form.value_to.numerator, sizeof(form.value_to.numerator), "9");
+    fixture.application.recipe_preview = wormedit::sys::preview_recipe_form(
+        chart, fixture.history.document.revision, chart.sv_recipes.front(), form);
+    fixture.project();
+    CHECK(fixture.flattened.view.compose.recipe_areas[0].previewing);
+    CHECK(fixture.flattened.view.compose.recipe_areas[0].graph_count >= 2);
+
+    form.curve = WORM_UI_TIMING_RECIPE_CURVE_EXPONENTIAL;
+    std::snprintf(form.shape.numerator, sizeof(form.shape.numerator), "99");
+    fixture.application.recipe_preview = wormedit::sys::preview_recipe_form(
+        chart, fixture.history.document.revision, chart.sv_recipes.front(), form);
+    fixture.project();
+    REQUIRE(fixture.flattened.view.compose.recipe_form.status_text != nullptr);
+    CHECK_FALSE(std::string(fixture.flattened.view.compose.recipe_form.status_text).empty());
+
+    fixture.application.recipe_selected = 0;
+    fixture.project();
+    CHECK_FALSE(fixture.application.recipe_preview.has_value());
+    CHECK_FALSE(fixture.flattened.view.compose.recipe_form.visible);
+
+    fixture.application.recipe_selected = 7001;
+    fixture.application.recipe_preview = wormedit::sys::preview_recipe_form(
+        chart, fixture.history.document.revision + 5, chart.sv_recipes.front(), form);
+    fixture.project();
+    CHECK_FALSE(fixture.application.recipe_preview.has_value());
+}
+
 TEST_CASE("Pointer paste retains cursor and viewport and FIFO release commits that anchor",
           "[sys][clipboard][paste-preview]") {
     compose_test_fixture_t fixture{paste_preview_song()};

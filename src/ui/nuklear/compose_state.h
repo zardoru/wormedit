@@ -201,6 +201,29 @@ struct worm_ui_nuklear_compose_state_t {
     bool note_move_candidate_active{};
     bool note_move_active{};
     bool timing_stage_drag_active{};
+    // Kiai area edge or creation drag on the canvas; y values are viewport pixels.
+    bool kiai_drag_active{};
+    bool kiai_drag_moved{};
+    std::uint8_t kiai_drag_edge{};
+    std::uint64_t kiai_drag_head_id{};
+    double kiai_drag_anchor_y{};
+    double kiai_drag_current_y{};
+    // Edit buffers of the selected SV recipe's form (see compose_recipe_form.cpp).
+    WormUiTimingRecipeForm recipe_edit_form{};
+    std::uint64_t recipe_edit_id{};
+    std::uint64_t recipe_edit_revision{};
+    bool recipe_edit_dirty{};
+    bool recipe_edit_apply_pending{};
+    // Typed time signature for the cursor measure (Measure at cursor section).
+    std::array<char, 32> meter_numerator{'4'};
+    std::array<char, 32> meter_denominator{'4'};
+    // SV recipe edge or whole-span drag; edge 0 is the begin edge, 1 the end edge, 2 the body.
+    bool recipe_drag_active{};
+    bool recipe_drag_moved{};
+    std::uint8_t recipe_drag_edge{};
+    std::uint64_t recipe_drag_id{};
+    double recipe_drag_anchor_y{};
+    double recipe_drag_current_y{};
     bool timing_marker_candidate_active{};
     bool timing_marker_drag_active{};
     bool timing_missing_initial_selected{};

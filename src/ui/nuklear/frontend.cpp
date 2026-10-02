@@ -17,7 +17,7 @@
 #include "ui/nuklear/player_preview.h"
 #include "ui/nuklear/setup_panel.h"
 #include "ui/nuklear/setup_state.h"
-#include "ui/nuklear/timing_panel.h"
+#include "ui/nuklear/timing_stage_editor.h"
 #include "ui/nuklear/timing_state.h"
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/notification_toasts.h"
@@ -560,15 +560,13 @@ WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_i
 
 static bool notification_document_gesture_active() {
     const auto& compose = worm_ui_nuklear_compose_state();
-    const auto& timing = worm_ui_nuklear_timing_state();
     return g_notification_view.edit_gesture_active || g_audio.offset_drag_active ||
         compose.pointer_hold_active || compose.note_paint_pointer_active ||
         compose.bmson_razor_pointer_active || compose.semantic_layer_paint_pointer_active ||
         compose.lane_hold_active || compose.space_range_hold_active ||
         compose.note_move_candidate_active || compose.note_move_active ||
         compose.timing_stage_drag_active || compose.timing_marker_candidate_active ||
-        compose.timing_marker_drag_active || timing.recipe_range_drag_active ||
-        timing.marker_drag_active || compose_area_capture_active();
+        compose.timing_marker_drag_active || compose_area_capture_active();
 }
 
 static bool notification_editor_gesture_active() {
@@ -817,7 +815,6 @@ static bool handle_workspace_frontend_event(const SDL_Event* event) {
         g_shortcut_event_count = 0;
         g_double_click_count = 0;
         worm_ui_nuklear_compose_handle_focus_lost();
-        worm_ui_nuklear_timing_handle_focus_lost();
         g_ime_composition_active = false;
     } else if (event->type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
         g_window_focused = true;
@@ -902,7 +899,6 @@ static void render_close_confirmation(const WormUiCloseConfirmationView& view,
 static void render_workspace_error(WormUiWorkspaceAction* action, int width, int height,
                                    const char* diagnostic, bool input_blocked = false) {
     worm_ui_nuklear_compose_discard_frame_input();
-    worm_ui_nuklear_reconcile_timing_gestures(nullptr, false, false);
     if (nk_begin(g_context, "wormedit-workspace", nk_rect(0, 0, (float)width, (float)height),
                  NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND | (input_blocked ? NK_WINDOW_NO_INPUT : 0))) {
         nk_layout_row_dynamic(g_context, 30, 1);
@@ -1173,7 +1169,9 @@ static void render_title_bar(const WormUiWorkspaceView* view,
 
 static void render_workspace_tabs(const WormUiWorkspaceView* view,
                                   WormUiWorkspaceAction* action) {
-    nk_layout_row_dynamic(g_context, 32, WORM_UI_WORKSPACE_TAB_COUNT);
+    int visible_tabs = 0;
+    for (const auto& item : view->tabs) visible_tabs += item.label != nullptr;
+    nk_layout_row_dynamic(g_context, 32, visible_tabs);
     for (int tab = 0; tab < WORM_UI_WORKSPACE_TAB_COUNT; ++tab) {
         const auto& item = view->tabs[tab];
         if (!item.label) continue;
@@ -1564,12 +1562,6 @@ static void render_workspace_content(const WormUiWorkspaceView& view,
     } else if (view.metadata.visible) {
         worm_ui_nuklear_render_metadata_panel(g_context, &view.metadata, &action,
                                               g_window_focused);
-    } else if (view.timing.visible) {
-        auto timing = view.timing;
-        timing.input_occluded = options_owns_content_input(view);
-        worm_ui_nuklear_render_timing_panel(g_context, &timing, &action,
-                                            g_window_focused, g_double_clicks.data(),
-                                            g_double_click_count);
     } else if (view.compose.visible) {
         auto compose = view.compose;
         compose.input_occluded = options_owns_content_input(view);
@@ -1624,7 +1616,7 @@ static auto workspace_validation_error(const WormUiWorkspaceView& view) -> const
     if (!workspace_base_view_valid(view)) return "Workspace view data is invalid.";
     if (!worm_ui_nuklear_setup_view_valid(&view.setup)) return "Project view data is invalid.";
     if (!metadata_workspace_view_valid(view.metadata)) return "Metadata view data is invalid.";
-    if ((view.timing.visible || view.compose.visible) &&
+    if (view.compose.visible &&
         !worm_ui_nuklear_timing_view_valid(&view.timing))
         return "Timing view data is invalid.";
     if (view.audio_slices.visible &&
@@ -2082,13 +2074,8 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_NONE;
     action.compose_action = WORM_UI_COMPOSE_ACTION_NONE;
     consume_project_file_dialog(action);
-    const bool timing_tab_active = view && view->project_loaded &&
-                                   view->active_tab == WORM_UI_WORKSPACE_TAB_TIMING;
-    worm_ui_nuklear_reconcile_timing_gestures(view ? &view->timing : nullptr, timing_tab_active,
-                                              g_window_focused);
     if (!g_context || !g_window || !view) {
         worm_ui_nuklear_compose_discard_frame_input();
-        worm_ui_nuklear_reconcile_timing_gestures(nullptr, false, false);
         expose_shortcut_input(&action);
         return action;
     }
@@ -2101,7 +2088,6 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     int height = 0;
     if (!frontend_window_size(&width, &height)) {
         worm_ui_nuklear_compose_discard_frame_input();
-        worm_ui_nuklear_reconcile_timing_gestures(nullptr, false, false);
         expose_shortcut_input(&action);
         return action;
     }
@@ -2120,7 +2106,6 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
 
     if (!view->project_loaded) {
         worm_ui_nuklear_compose_discard_frame_input();
-        worm_ui_nuklear_reconcile_timing_gestures(nullptr, false, false);
         render_workspace_main_window(WorkspaceRenderContext{*view, action, width, height});
         render_auxiliary_windows(WorkspaceRenderContext{*view, action, width, height});
         render_notification_frame(view->notifications, action, width, height, project_modal_active(*view));
@@ -2128,8 +2113,6 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
         g_audio.offset_escape_pending = false;
         return action;
     }
-
-    worm_ui_nuklear_emit_timing_cancellations(&view->timing, timing_tab_active, &action);
 
     const bool compose_tab_active = view->active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE;
     g_compose_area_shortcuts_active = compose_tab_active && view->compose.visible &&

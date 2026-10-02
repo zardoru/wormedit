@@ -436,7 +436,7 @@ TEST_CASE("applying an SV recipe requires rebinding the workspace before its nex
     auto binding = make_workspace_controller(history);
     REQUIRE(binding.workspace);
     auto workspace = *binding.workspace;
-    workspace.active_tab = workspace_tab_t::timing;
+    workspace.active_tab = workspace_tab_t::compose;
     REQUIRE(make_workspace_view(workspace, history.document));
 
     auto candidate = make_constant_recipe({}, measure_id_t{11}, measure_id_t{12}, {2, 1});
@@ -449,7 +449,7 @@ TEST_CASE("applying an SV recipe requires rebinding the workspace before its nex
     REQUIRE(rebind_workspace(workspace, history));
     const auto next_frame = make_workspace_view(workspace, history.document);
     REQUIRE(next_frame);
-    CHECK(next_frame.view->active_tab == workspace_tab_t::timing);
+    CHECK(next_frame.view->active_tab == workspace_tab_t::compose);
     CHECK(next_frame.view->document_revision == history.document.revision);
 }
 
@@ -578,4 +578,91 @@ TEST_CASE("SV recipe drafts reject invalid candidates and stale revisions withou
     CHECK(stale.status == sv_recipe_draft_status_t::cancelled);
     CHECK(history.document.revision == after_external_edit);
     CHECK(history.document.charts.front().sv_recipes.size() == 1);
+}
+
+TEST_CASE("materializing a recipe replaces it with ordinary events in one undo step",
+          "[unit][sv-recipe][materialize]") {
+    auto song = make_recipe_song();
+    auto& chart = song.charts.front();
+    chart.scrolls.push_back({.id = object_id_t{5},
+                             .position = {measure_id_t{11}, 0},
+                             .multiplier = {1, 1},
+                             .provenance = {.source_order = 4}});
+    auto recipe =
+        make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1});
+    recipe.enabled = false;  // a disabled recipe still materializes
+    chart.sv_recipes.push_back(recipe);
+    auto history = make_document_history(song);
+
+    const auto result = apply_sv_recipe_edit(
+        history, history.document.revision,
+        materialize_sv_recipe_action_t{chart_id_t{10}, recipe_id_t{20}});
+    REQUIRE(result);
+    const auto& after = history.document.charts.front();
+    CHECK(after.sv_recipes.empty());
+    REQUIRE(after.scrolls.size() == 3);
+    CHECK((after.scrolls[1].multiplier == signed_rational_t{3, 2}));
+    CHECK(after.scrolls[0].provenance.profile == "sv-recipe-materialized");
+    CHECK(after.scrolls[0].provenance.source_order >= 5);
+    // The materialized events match what export baking produces for the same recipe.
+    auto expected = song.charts.front();
+    expected.sv_recipes.front().enabled = true;
+    const auto baked = bake_sv_recipes_for_export(expected);
+    REQUIRE(baked);
+    for (std::size_t index = 0; index < after.scrolls.size(); ++index) {
+        CHECK(after.scrolls[index].position == baked.chart->scrolls[index].position);
+        CHECK(after.scrolls[index].multiplier == baked.chart->scrolls[index].multiplier);
+    }
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().sv_recipes.size() == 1);
+    CHECK(history.document.charts.front().scrolls.size() == 1);
+}
+
+TEST_CASE("materializing rejects stale, unknown and non-evaluable recipes without a revision",
+          "[unit][sv-recipe][materialize]") {
+    auto song = make_recipe_song();
+    auto recipe =
+        make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1});
+    song.charts.front().sv_recipes.push_back(recipe);
+    auto expression = recipe;
+    expression.id = recipe_id_t{21};
+    expression.name = "wave";
+    expression.curve = sv_recipe_curve_t::lua_expression;
+    expression.expression_source = "return 1 + t";
+    song.charts.front().sv_recipes.push_back(expression);
+    auto history = make_document_history(song);
+    const auto revision = history.document.revision;
+
+    CHECK_FALSE(apply_sv_recipe_edit(history, revision + 1,
+                                     materialize_sv_recipe_action_t{chart_id_t{10}, recipe_id_t{20}}));
+    CHECK_FALSE(apply_sv_recipe_edit(history, revision,
+                                     materialize_sv_recipe_action_t{chart_id_t{10}, recipe_id_t{99}}));
+    const auto unsupported = apply_sv_recipe_edit(
+        history, revision, materialize_sv_recipe_action_t{chart_id_t{10}, recipe_id_t{21}});
+    CHECK_FALSE(unsupported);
+    CHECK(unsupported.diagnostics.front().code == diagnostic_code_t::unsupported_feature);
+    CHECK(history.document.revision == revision);
+    CHECK(history.document.charts.front().sv_recipes.size() == 2);
+}
+
+TEST_CASE("Lua expression recipes are stored and validated but never sampled",
+          "[unit][sv-recipe][lua]") {
+    auto chart = make_recipe_chart();
+    auto recipe =
+        make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1});
+    recipe.curve = sv_recipe_curve_t::lua_expression;
+    CHECK_FALSE(validate_sv_recipe(chart, recipe).empty());  // an expression needs source
+    recipe.expression_source = "return 1 + t";
+    CHECK(validate_sv_recipe(chart, recipe).empty());
+    const auto sampled = sample_sv_recipe(chart, recipe);
+    CHECK_FALSE(sampled);
+    CHECK(sampled.diagnostics.front().code == diagnostic_code_t::unsupported_feature);
+    chart.sv_recipes.push_back(recipe);
+    CHECK_FALSE(bake_sv_recipes_for_export(chart));
+
+    auto stray = make_linear_recipe(recipe_id_t{22}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1});
+    stray.expression_source = "return 2";
+    CHECK_FALSE(validate_sv_recipe(chart, stray).empty());  // source belongs to the expression curve
+    recipe.expression_source.assign(16 * 1024 + 1, 'x');
+    CHECK_FALSE(validate_sv_recipe(chart, recipe).empty());
 }

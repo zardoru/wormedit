@@ -3,6 +3,12 @@
 #include "sys/workspace_projection.h"
 #include "common/static_interval_index.h"
 #include "sys/compose_bgm_bar.h"
+#include "sys/compose_dead_spans.h"
+#include "sys/compose_kiai_spans.h"
+#include "sys/compose_recipe_areas.h"
+#include "sys/compose_speed_spans.h"
+#include "sys/recipe_form.h"
+#include "sys/compose_sv_graph.h"
 #include "sys/compose_quantize_preview.h"
 #include "sys/compose_scroll_geometry.h"
 #include "ui/compose_mode.h"
@@ -105,6 +111,11 @@ struct compose_scene_cache_t {
     std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
     std::shared_ptr<const wormedit::editor_area_geometry_snapshot_t> area_object_geometry;
     std::optional<wormedit::timing_index_t> marker_timing_index;
+    std::optional<dead_span_projection_t> dead_spans;
+    std::optional<kiai_projection_t> kiai_spans;
+    std::optional<sv_steps_t> sv_steps;
+    std::optional<recipe_areas_t> recipe_areas;
+    std::optional<speed_spans_t> speed_spans;
     std::optional<wormedit::timing_index_t> proposed_offset_timing_index;
     std::optional<wormedit::signed_rational_t> proposed_offset_seconds;
     std::optional<wormedit::beat_interval_drag_t> beat_fit_drag;
@@ -215,6 +226,13 @@ struct application_command_state_t {
     };
     std::optional<bmson_marker_move_preview_t> bmson_marker_move_preview;
     bool timing_locked{};
+    // Head event of the Kiai area selected on the canvas (0 when none); Delete removes it.
+    std::uint64_t kiai_selected_head{};
+    // SV recipe selected on the canvas (0 when none).
+    std::uint64_t recipe_selected{};
+    // The unapplied form candidate of the selected recipe, drawn in the lane. It is dropped when
+    // the selection or the document revision changes.
+    std::optional<recipe_form_preview_t> recipe_preview;
     bool audio_offset_locked{};
     [[nodiscard]] bool audio_offset_edits_locked() const noexcept {
         return timing_locked || audio_offset_locked;

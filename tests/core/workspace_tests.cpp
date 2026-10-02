@@ -186,10 +186,12 @@ TEST_CASE("workspace tabs retain chart, transport, and isolated logical focus",
     CHECK(workspace.selected_chart == chart_id_t{1});
     CHECK((workspace.comparison_charts == std::vector{chart_id_t{1}, chart_id_t{2}}));
 
-    REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::timing}));
+    CHECK_FALSE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::timing}));
+    CHECK_FALSE(workspace_tab_enabled(workspace_tab_t::timing));
+    REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::metadata}));
     REQUIRE(apply(
         workspace, song,
-        workspace_set_focus_action_t{workspace_tab_t::timing, "timing.events", object_id_t{5}}));
+        workspace_set_focus_action_t{workspace_tab_t::metadata, "metadata.events", object_id_t{5}}));
     REQUIRE(apply(workspace, song, workspace_select_chart_action_t{chart_id_t{2}}));
     REQUIRE(apply(workspace, song, workspace_select_audio_asset_action_t{asset_id_t{20}}));
     REQUIRE(apply(workspace, song, workspace_select_visual_asset_action_t{asset_id_t{21}}));
@@ -213,16 +215,14 @@ TEST_CASE("workspace tabs retain chart, transport, and isolated logical focus",
     REQUIRE(std::holds_alternative<workspace_compose_view_t>(compose.view->tab_view));
     CHECK(std::get<workspace_compose_view_t>(compose.view->tab_view).note_count == 1);
 
-    REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::timing}));
-    auto timing = make_workspace_view(workspace, song);
-    REQUIRE(timing);
-    CHECK(timing.view->focus.region == "timing.events");
-    CHECK(timing.view->selected_difficulty->id == chart_id_t{2});
-    REQUIRE(timing.view->transport.loop_frames.has_value());
-    CHECK(
-        (*timing.view->transport.loop_frames == std::pair{std::uint64_t{100}, std::uint64_t{900}}));
-    REQUIRE(std::holds_alternative<workspace_timing_view_t>(timing.view->tab_view));
-    CHECK(std::get<workspace_timing_view_t>(timing.view->tab_view).bpm_count == 1);
+    REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::metadata}));
+    auto metadata = make_workspace_view(workspace, song);
+    REQUIRE(metadata);
+    CHECK(metadata.view->focus.region == "metadata.events");
+    CHECK(metadata.view->selected_difficulty->id == chart_id_t{2});
+    REQUIRE(metadata.view->transport.loop_frames.has_value());
+    CHECK((*metadata.view->transport.loop_frames ==
+           std::pair{std::uint64_t{100}, std::uint64_t{900}}));
 
     REQUIRE(apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::audio_slices}));
     REQUIRE(apply(workspace, song, workspace_select_clip_action_t{clip_id_t{4}}));
@@ -233,8 +233,8 @@ TEST_CASE("workspace tabs retain chart, transport, and isolated logical focus",
     CHECK_FALSE(audio.view->transport.playing);
     CHECK(workspace.tab_focus[static_cast<std::size_t>(workspace_tab_t::compose)].region ==
           "compose.field");
-    CHECK(workspace.tab_focus[static_cast<std::size_t>(workspace_tab_t::timing)].region ==
-          "timing.events");
+    CHECK(workspace.tab_focus[static_cast<std::size_t>(workspace_tab_t::metadata)].region ==
+          "metadata.events");
     CHECK((workspace.comparison_charts == std::vector{chart_id_t{1}, chart_id_t{2}}));
 }
 
@@ -258,7 +258,7 @@ TEST_CASE("workspace rejects stale revisions and rebinds stable context atomical
     auto changed = song;
     changed.revision = 8;
     const auto stale_action = apply_workspace_action(
-        workspace, changed, 7, workspace_switch_tab_action_t{workspace_tab_t::timing});
+        workspace, changed, 7, workspace_switch_tab_action_t{workspace_tab_t::compose});
     CHECK_FALSE(stale_action);
     CHECK(has_code(stale_action.diagnostics, diagnostic_code_t::invalid_id));
     CHECK(workspace.active_tab == workspace_tab_t::setup);

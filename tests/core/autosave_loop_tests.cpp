@@ -35,7 +35,7 @@ struct temporary_directory_t {
 };
 
 auto song(std::uint64_t id, std::uint64_t revision) -> wormedit::song_document_t {
-    return {.schema_version = 1,
+    return {.schema_version = 2,
             .id = wormedit::song_id_t{id},
             .revision = revision,
             .metadata = {.title = "project-" + std::to_string(id)}};

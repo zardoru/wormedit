@@ -274,7 +274,14 @@ static void queue_shortcut_key_event(const SDL_KeyboardEvent* event, bool tap_ca
     // These modifiers do not have a corresponding command-registry bit. Drop
     // AltGr/Level5 input rather than accidentally turning it into an unmodified
     // shortcut on layouts where SDL reports it separately from right Alt.
-    if ((event->mod & (SDL_KMOD_MODE | SDL_KMOD_LEVEL5)) != 0) {
+#if defined(__APPLE__)
+    // On macOS Option is the only Alt; layouts with an AltGr level report it as MODE, which
+    // would otherwise drop Option+1 and friends.
+    constexpr auto dropped_modifiers = SDL_KMOD_LEVEL5;
+#else
+    constexpr auto dropped_modifiers = SDL_KMOD_MODE | SDL_KMOD_LEVEL5;
+#endif
+    if ((event->mod & dropped_modifiers) != 0) {
         return;
     }
 
@@ -291,7 +298,12 @@ static void queue_shortcut_key_event(const SDL_KeyboardEvent* event, bool tap_ca
     if ((event->mod & SDL_KMOD_CTRL) != 0) {
         modifiers |= WORM_UI_SHORTCUT_MODIFIER_CONTROL;
     }
-    if ((event->mod & SDL_KMOD_ALT) != 0) {
+#if defined(__APPLE__)
+    constexpr auto alt_modifiers = SDL_KMOD_ALT | SDL_KMOD_MODE;
+#else
+    constexpr auto alt_modifiers = SDL_KMOD_ALT;
+#endif
+    if ((event->mod & alt_modifiers) != 0) {
         modifiers |= WORM_UI_SHORTCUT_MODIFIER_ALT;
     }
     if ((event->mod & SDL_KMOD_GUI) != 0) {

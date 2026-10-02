@@ -1063,17 +1063,17 @@ static void render_title_bar(const WormUiWorkspaceView* view,
     const bool custom_controls = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_BORDERLESS) != 0;
     nk_menubar_begin(g_context);
     nk_layout_row_template_begin(g_context, 32);
-    nk_layout_row_template_push_dynamic(g_context);
     nk_layout_row_template_push_static(g_context, 76);
     nk_layout_row_template_push_static(g_context, 56);
     nk_layout_row_template_push_static(g_context, 56);
+    nk_layout_row_template_push_dynamic(g_context);
     if (custom_controls) wormedit::ui::chrome::IconButton::layout_columns(g_context, 3);
     nk_layout_row_template_end(g_context);
-    nk_labelf(g_context, NK_TEXT_LEFT, "  %s%s", view->project_title,
-              view->dirty ? " *" : "");
     render_project_menu(view, action);
     render_clipboard_menu(view, action);
     render_view_menu(view, action);
+    nk_labelf(g_context, NK_TEXT_LEFT, "  %s%s", view->project_title,
+              view->dirty ? " *" : "");
     if (custom_controls) {
         if (wormedit::ui::chrome::IconButton{Glyph::minus, "Minimize window"}.render(g_context))
             SDL_MinimizeWindow(g_window);

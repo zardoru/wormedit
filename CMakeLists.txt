@@ -323,6 +323,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_bookmark_commands.cpp
         src/sys/compose_playhead_skip.cpp
         src/sys/compose_bgm_bar.cpp
+        src/sys/sound_list_projection.cpp
         src/sys/compose_measure_commands.cpp
         src/sys/compose_selection_transform.cpp
         src/sys/compose_label_search.cpp

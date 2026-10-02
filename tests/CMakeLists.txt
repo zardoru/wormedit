@@ -29,6 +29,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_bookmark_commands.cpp
     ../src/sys/compose_playhead_skip.cpp
     ../src/sys/compose_bgm_bar.cpp
+    ../src/sys/sound_list_projection.cpp
     ../src/sys/compose_measure_commands.cpp
     ../src/sys/compose_selection_transform.cpp
     ../src/sys/compose_label_search.cpp
@@ -58,6 +59,7 @@ add_executable(wormedit_core_tests
     sys/compose_bookmark_commands_tests.cpp
     sys/compose_playhead_skip_tests.cpp
     sys/compose_bgm_bar_tests.cpp
+    sys/sound_list_projection_tests.cpp
     sys/compose_measure_commands_tests.cpp
     sys/compose_selection_transform_tests.cpp
     sys/compose_label_search_tests.cpp
@@ -192,6 +194,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         core/audio_transport_tests.cpp
         core/audio_waveform_tests.cpp
         core/audio_waveform_viewport_tests.cpp
+        core/audio_slice_render_tests.cpp
         core/audio_aligned_waveform_tests.cpp
         core/audio_waveform_job_tests.cpp
     )

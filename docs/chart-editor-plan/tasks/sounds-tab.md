@@ -81,7 +81,8 @@ later covering more bmhelper functions.
 
 ## T-328 Project the sound list and selected-sound properties
 
-- **Status:** ready
+- **Status:** done
+- **Implementation notes (2026-10-02):** `project_sound_list` and `project_sound_properties` (`src/sys/sound_list_projection.h`) are pure and tested headless (4 cases): audio resources only, case-insensitive search and exact tag filter, row windowing with clamped start, use counts from notes and BGM events, inferred kind (stem for music/BGM-only resources). The plain-C view structs in `frontend.h` and the `workspace_frame_view` wiring were left to T-329, which draws them and needs the SDL3 build to check; that avoids adding uncompiled glue now.
 - **Outcome:** the audio-slices view exposes bounded sound rows (name, kind, tags, duration, sample rate, use count, missing flag) filtered by search text and tag, plus the selected sound's properties and its viewport; rows are built only for the visible range.
 - **Read first:** `src/sys/workspace_frame_view.cpp`, `src/sys/waveform_view_projection.cpp`, `src/sys/compose_resource_presenter.cpp`, `src/ui/frontend.h` (`WormUiAudioSlicesView`).
 - **Files owned:** new `src/sys/sound_list_projection.cpp/.h`, new `tests/sys/sound_list_projection_tests.cpp`, `src/sys/workspace_frame_view.cpp`, `src/ui/frontend.h`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -130,7 +131,8 @@ later covering more bmhelper functions.
 
 ## T-334 Render slice ranges to WAV files in a background job
 
-- **Status:** ready
+- **Status:** done
+- **Implementation notes (2026-10-02):** `encode_wav_pcm16` and `render_audio_slices` (`include/wormedit/audio/slice_render.h`) cut the decoder's 44.1 kHz stereo output at `audio_slice_range_t` ranges and publish `<base>_001.wav` files with `save_file_atomic`; they validate the ranges, honor a `std::stop_token`, report progress and delete every published file on failure or cancel (3 audio cases pass against the ogg fixture). Scheduling on the job system is left to T-332, which owns the UI flow; compute the ranges with `sample_rate` 44100.
 - **Outcome:** a bounded job decodes the source once and writes each `audio_slice_range_t` as a 16-bit stereo WAV file into the project, reporting progress and honoring cancellation.
 - **Read first:** `include/wormedit/core/audio_slicer.h`, `include/wormedit/audio/decoder.h`, `include/wormedit/core/resource_file_copy.h`, `src/audio/waveform_job.cpp`.
 - **Files owned:** new `include/wormedit/audio/wav_writer.h`, new `src/audio/wav_writer.cpp`, new `include/wormedit/audio/slice_render_job.h`, new `src/audio/slice_render_job.cpp`, new `tests/core/audio_slice_render_tests.cpp`, `cmake/dependencies/miniaudio.cmake`, `CMakeLists.txt`, `tests/CMakeLists.txt`.

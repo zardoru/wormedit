@@ -1000,3 +1000,32 @@ TEST_CASE("quick insert copies the BPM in force without changing the effective t
     CHECK(bpms.back().position == position);
     CHECK(bpms.back().beats_per_minute == signed_rational_t{120, 1});
 }
+
+TEST_CASE("a speed span edit moves the begin row and sets the transition in one command",
+          "[unit][core][timing-lane][speed]") {
+    auto history = make_document_history(timing_edit_song());
+    const auto speed = history.document.charts.front().speeds.front().id;
+    const auto undo_count = history.undo.size();
+
+    const auto edited = edit_speed_event_span(
+        history, chart_id_t{2}, speed, {.position = pos(300), .transition = rational_t{3, 1}},
+        false);
+    REQUIRE(edited);
+    CHECK(history.undo.size() == undo_count + 1);
+    const auto& event = history.document.charts.front().speeds.front();
+    CHECK(event.id == speed);
+    CHECK(event.position == pos(300));
+    CHECK(event.transition_beats == rational_t{3, 1});
+    CHECK(event.multiplier == signed_rational_t{2, 1});
+
+    const auto length_only =
+        edit_speed_event_span(history, chart_id_t{2}, speed, {.transition = rational_t{0, 1}}, false);
+    REQUIRE(length_only);
+    CHECK(history.document.charts.front().speeds.front().position == pos(300));
+    CHECK(history.document.charts.front().speeds.front().transition_beats == rational_t{0, 1});
+
+    CHECK_FALSE(edit_speed_event_span(history, chart_id_t{2}, speed, {.transition = rational_t{1, 1}},
+                                      true));
+    CHECK_FALSE(edit_speed_event_span(history, chart_id_t{2}, object_id_t{9999},
+                                      {.transition = rational_t{1, 1}}, false));
+}

@@ -170,6 +170,18 @@ begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart
     document_history_t& history, chart_id_t chart, std::span<const timing_lane_event_ref_t> events,
     std::uint64_t expected_revision, bool timing_locked) -> document_command_result_t;
 
+// One speed event as a span: its begin row and the length of its transition. Either part may be
+// left unchanged. Applies as one undoable update that keeps the event's identity and multiplier.
+struct speed_span_edit_t {
+    std::optional<local_position_t> position;
+    // Transition length in the event's own clock (beats, or seconds when it is a seconds clock).
+    std::optional<rational_t> transition;
+};
+
+[[nodiscard]] auto edit_speed_event_span(document_history_t& history, chart_id_t chart,
+                                         object_id_t event, const speed_span_edit_t& edit,
+                                         bool timing_locked) -> document_command_result_t;
+
 void cancel_timing_lane_pseudonote(timing_lane_pseudonote_preview_t& preview) noexcept;
 
 } // namespace wormedit

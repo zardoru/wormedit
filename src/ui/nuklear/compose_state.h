@@ -203,6 +203,8 @@ struct worm_ui_nuklear_compose_state_t {
     bool timing_stage_drag_active{};
     // Kiai area edge or creation drag on the canvas; y values are viewport pixels.
     bool kiai_drag_active{};
+    // The drag grabbed a Speed span edge (kiai_drag_head_id is the Speed event) rather than Kiai.
+    bool kiai_drag_speed{};
     bool kiai_drag_moved{};
     std::uint8_t kiai_drag_edge{};
     std::uint64_t kiai_drag_head_id{};

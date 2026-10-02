@@ -26,6 +26,7 @@
 #include <SDL3/SDL_timer.h>
 
 #include <algorithm>
+#include <numeric>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -2116,6 +2117,73 @@ auto edit_compose_kiai_span(const WormUiComposeInputAction& input,
     return std::nullopt;
 }
 
+// Length of a speed transition from its begin row to `end_row`, in the event's own clock: beats
+// at four per standard measure, or the seconds the timing index spends between the two rows.
+auto speed_transition_between(const wormedit::chart_document_t& chart,
+                              const wormedit::timing_index_t* timing,
+                              const wormedit::speed_event_t& speed, std::uint64_t begin_row,
+                              std::uint64_t end_row) -> std::optional<wormedit::rational_t> {
+    using namespace wormedit;
+    if (end_row <= begin_row) return rational_t{0, 1};
+    if (!speed.transition_is_seconds) {
+        const auto numerator = (end_row - begin_row) * 4;
+        const auto divisor = std::gcd(numerator, chart.divisions_per_standard_measure);
+        if (divisor == 0) return std::nullopt;
+        return rational_t{numerator / divisor, chart.divisions_per_standard_measure / divisor};
+    }
+    if (!timing) return std::nullopt;
+    const auto begin = timing_at(*timing, begin_row);
+    const auto end = timing_at(*timing, end_row);
+    if (!begin.seconds || !end.seconds) return std::nullopt;
+    const auto left = static_cast<__int128>(end.seconds->numerator) * begin.seconds->denominator;
+    const auto right = static_cast<__int128>(begin.seconds->numerator) * end.seconds->denominator;
+    const auto denominator = static_cast<__int128>(end.seconds->denominator) * begin.seconds->denominator;
+    const auto difference = left - right;
+    if (difference < 0 || difference > UINT64_MAX || denominator > UINT64_MAX) return std::nullopt;
+    const auto divisor = std::gcd(static_cast<std::uint64_t>(difference),
+                                  static_cast<std::uint64_t>(denominator));
+    return rational_t{static_cast<std::uint64_t>(difference) / divisor,
+                      static_cast<std::uint64_t>(denominator) / divisor};
+}
+
+// A speed span's begin edge moves the event; its end edge sets the transition length. One undoable
+// command per release.
+auto edit_compose_speed_span(const WormUiComposeInputAction& input,
+                             compose_input_context_t& context,
+                             wormedit::editor_interaction_result_t& result,
+                             std::string_view& accepted) -> std::optional<std::string> {
+    using namespace wormedit;
+    const auto* chart = context.chart();
+    const auto view = compose_view_for_state(context.history, context.state);
+    if (!chart || !view || input.timing_chart_id != chart->id.value ||
+        input.timing_document_revision != context.history.document.revision)
+        return "Speed edit is stale or invalid.";
+    const auto measures = build_measure_index(*chart);
+    const auto* index = std::get_if<measure_index_t>(&measures);
+    const auto speed = std::ranges::find(chart->speeds, object_id_t{input.object_id}, &speed_event_t::id);
+    if (!index || speed == chart->speeds.end()) return "The Speed event no longer exists.";
+    const auto row = kiai_pointer_row(context, *chart, *view, *index, input.y_pixels);
+    const auto begin_row = absolute_row(*index, speed->position);
+    if (!row || !begin_row) return "Speed edit has no valid destination row.";
+    speed_span_edit_t edit;
+    if (input.span_edge == 0) {
+        edit.position = position_at_absolute_row(*index, *row);
+        if (!edit.position) return "Speed edit has no valid destination row.";
+    } else {
+        const auto* timing = context.scene_cache.marker_timing_index
+                                 ? &*context.scene_cache.marker_timing_index : nullptr;
+        edit.transition = speed_transition_between(*chart, timing, *speed, *begin_row, *row);
+        if (!edit.transition) return "The Speed transition length cannot be measured there.";
+    }
+    const auto edited = edit_speed_event_span(context.history, chart->id, speed->id, edit,
+                                              context.application_state.timing_locked);
+    result.accepted = edited.applied;
+    result.document_changed = edited.applied;
+    result.diagnostics = edited.diagnostics;
+    accepted = edited.applied ? "Speed span edited." : "Speed span unchanged.";
+    return std::nullopt;
+}
+
 // The recipe a recipe input names, if it still exists in the current chart.
 auto find_input_recipe(const wormedit::chart_document_t& chart, std::uint64_t id)
     -> const wormedit::sv_recipe_t* {
@@ -2678,6 +2746,10 @@ auto dispatch_timing_lane_area_input(const WormUiComposeInputAction& input,
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT:
         if (const auto error = edit_compose_kiai_span(input, context, result, accepted))
+            return *error;
+        return compose_input_family_result_t::continue_with_result();
+    case WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT:
+        if (const auto error = edit_compose_speed_span(input, context, result, accepted))
             return *error;
         return compose_input_family_result_t::continue_with_result();
     case WORM_UI_COMPOSE_INPUT_RECIPE_SELECT:

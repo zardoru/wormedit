@@ -1682,7 +1682,10 @@ static auto kiai_gesture_blocked(const ComposePointerEventContext& input) -> boo
            state.timing_marker_drag_active || compose_area_pointer_consumed();
 }
 
+static void begin_speed_drag(const ComposePointerEventContext& input);
+
 static void begin_kiai_drag(const ComposePointerEventContext& input) {
+    state.kiai_drag_speed = false;
     const auto& view = *input.view;
     const auto extent = compose_timing_lane_inner_extent(view, WORM_UI_TIMING_LANE_KIAI);
     const auto x = input.pointer_started_x;
@@ -1721,12 +1724,15 @@ static void begin_kiai_drag(const ComposePointerEventContext& input) {
 }
 
 static void commit_kiai_drag(const ComposePointerEventContext& input) {
-    append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT,
+    append_compose_input(input.action,
+                         state.kiai_drag_speed ? WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT
+                                               : WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT,
                          input.pointer_started_x, state.kiai_drag_current_y, 0, false,
                          WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.kiai_drag_head_id, 0,
-                         false, WORM_UI_TIMING_LANE_KIAI, input.timing_view->chart_id,
-                         input.timing_view->document_revision);
+                         false,
+                         state.kiai_drag_speed ? WORM_UI_TIMING_LANE_SPEED : WORM_UI_TIMING_LANE_KIAI,
+                         input.timing_view->chart_id, input.timing_view->document_revision);
     if (input.action->compose_input_count == 0) return;
     auto& queued = input.action->compose_inputs[input.action->compose_input_count - 1];
     queued.span_edge = state.kiai_drag_edge;
@@ -1755,8 +1761,10 @@ void update_kiai_span_drag(const ComposePointerEventContext& input) {
         return;
     }
     if (input.pointer_started_in_view && input.left_down && !input.left_released &&
-        !kiai_gesture_blocked(input))
+        !kiai_gesture_blocked(input)) {
         begin_kiai_drag(input);
+        if (!state.kiai_drag_active) begin_speed_drag(input);
+    }
 }
 
 // SV recipe areas share the Kiai gesture shape: a press on a begin or end edge resizes, a press
@@ -1799,6 +1807,36 @@ static auto recipe_press_at(const WormUiComposeView& view, double x, double y, d
             body = recipe_press_t{area.recipe_id, 2};
     }
     return body;
+}
+
+// A press on the begin or end edge of a Speed span grabs it: the begin edge moves the event, the
+// end edge sets how long it interpolates. Recipe areas sharing the lane keep priority, and the
+// drag reuses the Kiai drag state (kiai_drag_speed marks it).
+static void begin_speed_drag(const ComposePointerEventContext& input) {
+    const auto& view = *input.view;
+    const auto extent = compose_timing_lane_inner_extent(view, WORM_UI_TIMING_LANE_SPEED);
+    const auto x = input.pointer_started_x;
+    const auto y = input.pointer_started_y;
+    if (!extent || x < extent->first || x >= extent->second || state.recipe_drag_active ||
+        compose_timing_marker_at(view, x, y) != nullptr) return;
+    const auto tolerance = span_edge_tolerance_pixels * view.viewport_height_pixels / input.viewport.h;
+    if (recipe_press_at(view, x, y, tolerance)) return;
+    for (std::size_t index = 0; index < view.speed_span_count; ++index) {
+        const auto& span = view.speed_spans[index];
+        const auto begin_y = view.downscroll ? span.bounds.bottom : span.bounds.top;
+        const auto end_y = view.downscroll ? span.bounds.top : span.bounds.bottom;
+        // Of two coincident edges (an instant Speed) the end wins: it is the one that can grow.
+        const bool on_end = std::abs(y - end_y) <= tolerance;
+        if (!on_end && std::abs(y - begin_y) > tolerance) continue;
+        state.kiai_drag_edge = on_end ? 1 : 0;
+        state.kiai_drag_head_id = span.object_id;
+        state.kiai_drag_speed = true;
+        state.kiai_drag_active = true;
+        state.kiai_drag_moved = false;
+        state.kiai_drag_anchor_y = y;
+        state.kiai_drag_current_y = y;
+        return;
+    }
 }
 
 static void begin_recipe_drag(const ComposePointerEventContext& input) {

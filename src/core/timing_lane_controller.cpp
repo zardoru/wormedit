@@ -1005,6 +1005,34 @@ auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t c
     return result;
 }
 
+auto edit_speed_event_span(document_history_t& history, chart_id_t chart, object_id_t event,
+                           const speed_span_edit_t& edit, bool timing_locked)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision};
+    auto preview = begin_existing_timing_lane_pseudonote(history, chart, timing_lane_kind_t::speed,
+                                                         event, timing_locked);
+    if (preview.status != timing_lane_pseudonote_status_t::editing) {
+        result.diagnostics = preview.diagnostics.empty()
+            ? diagnostic_list_t{error(diagnostic_code_t::invalid_id, "the speed event is unavailable")}
+            : preview.diagnostics;
+        return result;
+    }
+    if (edit.position &&
+        !move_existing_timing_lane_pseudonote(history, preview, *edit.position, timing_locked)) {
+        result.diagnostics = preview.diagnostics;
+        return result;
+    }
+    if (edit.transition) {
+        auto value = std::get<timing_speed_value_t>(preview.value);
+        value.transition_beats = *edit.transition;
+        if (!update_timing_lane_pseudonote(history, preview, value, timing_locked)) {
+            result.diagnostics = preview.diagnostics;
+            return result;
+        }
+    }
+    return confirm_timing_lane_pseudonote(history, preview, timing_locked);
+}
+
 auto delete_timing_lane_event_group(document_history_t& history, chart_id_t chart_id,
                                     std::span<const timing_lane_event_ref_t> events,
                                     std::uint64_t expected_revision, bool timing_locked)

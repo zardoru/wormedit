@@ -1802,6 +1802,9 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_BGM_BAR_RESET,
     // Toolbar toggle: show or hide the whole bar row to win vertical space.
     WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE,
+    // Speed span edge drag: span_edge 0 moves the event to y_pixels, 1 sets its transition length
+    // from the event's row to y_pixels; object_id is the Speed event.
+    WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT,
 } WormUiComposeInputKind;
 
 typedef enum WormUiComposeNavigationAction {

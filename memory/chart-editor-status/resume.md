@@ -53,7 +53,7 @@ Work is executed as [task cards](../../docs/chart-editor-plan/tasks.md). Take th
 27. BGM columns UI (user: "pretty important", 2026-10-01): set the BMS BGM column count from the BGM pane — [T-311](../../docs/chart-editor-plan/tasks/bms-branches.md), ready.
 28. Compose layout (user request 2026-10-01): the note palette becomes a tall left toolbar — [T-312](../../docs/chart-editor-plan/tasks/panels-menus.md), done 2026-10-02.
 29. Compose cluster (2026-10-02, headless tests; SDL-side code uncompiled): 10K osu!mania-style lanes use `wbwbgybwbw` (T-269 note); T-270 green selection outline; T-308/T-309 bookmark commands; T-310 bookmark names; T-311 BGM column count. Each card's implementation notes say what remains to verify with a local build.
-30. Sounds tab (user request 2026-10-02, thread "Sounds tab"): [T-313–T-322](../../docs/chart-editor-plan/tasks/sounds-tab.md): sound kind and tags (T-313), bulk stem/sound import (T-314, T-315), shared zoomable waveform viewport (T-316), listbox/waveform/properties redesign (T-317–T-319), Woslicer-style slicer (T-320, T-321). T-316 is done (zoomable waveform viewport, headless tests); T-313 and T-320 are ready; T-322 (Compose razor on the shared viewport) is deferred. 
+30. Sounds tab (user request 2026-10-02, thread "Sounds tab"): [T-313–T-322](../../docs/chart-editor-plan/tasks/sounds-tab.md): sound kind and tags (T-313), bulk stem/sound import (T-314, T-315), shared zoomable waveform viewport (T-316), listbox/waveform/properties redesign (T-317–T-319), Woslicer-style slicer (T-320, T-321). T-313 (sound kind/tags) and T-316 (zoomable waveform viewport) are done in headless tests; T-314 and T-320 are ready; T-322 (Compose razor on the shared viewport) is deferred. 
 
 ## Handoff rule
 

@@ -307,8 +307,36 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(bga_event_t, id, position, resource, kind, pr
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(audio_stream_info_t, sample_rate, channels, frame_count,
                                    seekable)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(target_resource_identity_t, family, identifier, namespace_name)
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(resource_entry_t, id, name, asset, roles, target_identities,
-                                   missing, provenance)
+} // namespace wormedit
+
+namespace wormedit {
+// sound_kind and tags are written only when set, so projects that never use
+// them keep their previous bytes and older files load with the defaults.
+void to_json(nlohmann::json& value, const resource_entry_t& resource) {
+    value = nlohmann::json{{"id", resource.id},
+                           {"name", resource.name},
+                           {"asset", resource.asset},
+                           {"roles", resource.roles},
+                           {"target_identities", resource.target_identities},
+                           {"missing", resource.missing},
+                           {"provenance", resource.provenance}};
+    if (resource.sound_kind != sound_kind_t::unspecified) {
+        value["sound_kind"] = static_cast<std::uint8_t>(resource.sound_kind);
+    }
+    if (!resource.tags.empty()) value["tags"] = resource.tags;
+}
+
+void from_json(const nlohmann::json& value, resource_entry_t& resource) {
+    value.at("id").get_to(resource.id);
+    value.at("name").get_to(resource.name);
+    value.at("asset").get_to(resource.asset);
+    value.at("roles").get_to(resource.roles);
+    value.at("target_identities").get_to(resource.target_identities);
+    value.at("missing").get_to(resource.missing);
+    value.at("provenance").get_to(resource.provenance);
+    resource.sound_kind = static_cast<sound_kind_t>(value.value("sound_kind", std::uint8_t{0}));
+    resource.tags = value.value("tags", std::vector<std::string>{});
+}
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(audio_clip_t, id, source, begin_frame, end_frame)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(sound_channel_event_t, id, position, end, lane, continuation,
                                    playable, provenance)

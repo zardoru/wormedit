@@ -6,6 +6,7 @@
 #include <array>
 #include <cctype>
 #include <limits>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <string_view>
@@ -1119,6 +1120,83 @@ auto apply_resource_asset_relink(document_history_t& history, std::uint64_t expe
         proposed.visual_assets[index].source_path = path;
     }
     return commit_document_command(history, std::move(proposed), "Relink resource asset");
+}
+
+namespace {
+
+auto ascii_fold(std::string text) -> std::string {
+    for (auto& character : text) {
+        if (character >= 'A' && character <= 'Z') character = static_cast<char>(character + 32);
+    }
+    return text;
+}
+
+auto normalized_sound_tag(std::string_view tag) -> std::optional<std::string> {
+    const auto is_space = [](char c) { return c == ' ' || c == '\t'; };
+    while (!tag.empty() && is_space(tag.front())) tag.remove_prefix(1);
+    while (!tag.empty() && is_space(tag.back())) tag.remove_suffix(1);
+    if (tag.empty() || tag.size() > maximum_sound_tag_bytes ||
+        std::ranges::any_of(tag, [](char c) {
+            return static_cast<unsigned char>(c) < 0x20 || c == 0x7f;
+        })) {
+        return std::nullopt;
+    }
+    return std::string{tag};
+}
+
+// Returns nullopt when any tag is invalid or the list is over the limit.
+auto normalized_sound_tags(const std::vector<std::string>& tags)
+    -> std::optional<std::vector<std::string>> {
+    std::vector<std::string> result;
+    std::vector<std::string> folded;
+    for (const auto& tag : tags) {
+        auto normalized = normalized_sound_tag(tag);
+        if (!normalized) return std::nullopt;
+        auto key = ascii_fold(*normalized);
+        if (std::ranges::find(folded, key) != folded.end()) continue;
+        folded.push_back(std::move(key));
+        result.push_back(std::move(*normalized));
+    }
+    if (result.size() > maximum_sound_tags) return std::nullopt;
+    return result;
+}
+
+} // namespace
+
+auto apply_resource_sound_metadata(document_history_t& history, std::uint64_t expected_revision,
+                                   const set_resource_sound_metadata_action_t& action)
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    if (expected_revision != history.document.revision) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "resource sound metadata document revision is stale");
+        return result;
+    }
+    const auto resource = std::ranges::find(history.document.resources, action.resource,
+                                            &resource_entry_t::id);
+    if (!action.resource || resource == history.document.resources.end()) {
+        reject(result, diagnostic_code_t::invalid_id, "resource sound metadata needs a known resource");
+        return result;
+    }
+    if (static_cast<std::uint8_t>(action.kind) > static_cast<std::uint8_t>(sound_kind_t::sample)) {
+        reject(result, diagnostic_code_t::invalid_id, "resource sound kind is not recognized");
+        return result;
+    }
+    auto tags = normalized_sound_tags(action.tags);
+    if (!tags) {
+        reject(result, diagnostic_code_t::invalid_id,
+               "resource sound tags must be 1-64 bytes without control characters, at most 32");
+        return result;
+    }
+    if (resource->sound_kind == action.kind && resource->tags == *tags) {
+        return result;
+    }
+    auto proposed = history.document;
+    auto& target = proposed.resources[static_cast<std::size_t>(
+        resource - history.document.resources.begin())];
+    target.sound_kind = action.kind;
+    target.tags = std::move(*tags);
+    return commit_document_command(history, std::move(proposed), "Edit sound kind and tags");
 }
 
 auto validate_resource_assignment_selection(const song_document_t& document,

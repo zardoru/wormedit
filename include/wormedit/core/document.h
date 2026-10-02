@@ -591,6 +591,18 @@ struct target_resource_identity_t {
     std::string namespace_name;
 };
 
+// How the user classifies a sound in the Sounds tab. Unspecified keeps the
+// kind implied by the resource roles; it never affects exported files.
+enum class sound_kind_t : std::uint8_t {
+    unspecified,
+    stem,
+    keysound,
+    sample,
+};
+
+inline constexpr std::size_t maximum_sound_tags = 32;
+inline constexpr std::size_t maximum_sound_tag_bytes = 64;
+
 struct resource_entry_t {
     resource_id_t id;
     std::string name;
@@ -599,6 +611,9 @@ struct resource_entry_t {
     std::vector<target_resource_identity_t> target_identities;
     bool missing{false};
     source_provenance_t provenance;
+    sound_kind_t sound_kind{sound_kind_t::unspecified};
+    // Free-text user tags: trimmed, non-empty, unique ignoring ASCII case.
+    std::vector<std::string> tags;
 };
 
 struct audio_clip_t {

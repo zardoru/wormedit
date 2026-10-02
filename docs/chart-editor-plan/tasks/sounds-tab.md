@@ -21,7 +21,8 @@ later covering more bmhelper functions.
 
 ## T-313 Add sound kind and free tags to the resource catalog
 
-- **Status:** ready
+- **Status:** done
+- **Implementation notes (2026-10-02):** `sound_kind_t` and `tags` live on `resource_entry_t`; `apply_resource_sound_metadata` normalizes tags (trim, ASCII-case de-duplication, 32 tags of 64 bytes) and a no-op returns not-applied with no diagnostics, like the relink command. `native_project.cpp` writes `sound_kind`/`tags` only when set, so no schema bump was needed; older files load with the defaults. Core, format and full headless suites pass.
 - **Outcome:** a resource carries a `sound_kind` (`stem`, `keysound`, `sample`) and a bounded list of free-text tags; a revision-checked command sets both and undoes in one step; old native projects load with kind inferred from role and no tags.
 - **Stale-plan check:** grep `sound_kind` and `tags` in `include/wormedit/core/document.h`.
 - **Read first:** `include/wormedit/core/document.h` (resource struct), `include/wormedit/core/resource_assignment.h`, `src/formats/native_project_migrations.cpp` (the migration table is schema 1 only), `src/formats/native_project.cpp`.
@@ -37,7 +38,7 @@ later covering more bmhelper functions.
 
 ## T-314 Import many sounds in one history step
 
-- **Status:** blocked-on T-313
+- **Status:** ready
 - **Outcome:** `apply_bulk_sound_import` registers N probed audio files as assets and resources of a chosen kind in one command; stems also create a BMSON sound channel with a restart event at position 0 and its semantic BGM marker (via the `insert_bmson_bgm_marker` path), so they appear in Compose; undo removes all of it at once.
 - **Read first:** `include/wormedit/core/resource_assignment.h` (`apply_resource_asset_import`, `next_resource_asset_id`), `include/wormedit/core/bmson_sound_channel_editor.h`, `include/wormedit/core/resource_file_copy.h`, `src/sys/audio_project_import.cpp`.
 - **Files owned:** new `include/wormedit/core/sound_import.h`, new `src/core/sound_import.cpp`, new `tests/core/sound_import_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.

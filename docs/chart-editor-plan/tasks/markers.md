@@ -12,6 +12,7 @@ Bookmark editing already exists in the Markers panel
 ## T-308 Jump between bookmarks with Primary+Up/Down
 
 - **Status:** ready
+- **Implementation notes (2026-10-02):** `navigation.previous_bookmark` / `navigation.next_bookmark` (Primary+Up/Down) are registered; `navigate_beat_bookmark` in `src/sys/compose_bookmark_commands.cpp` is tested headless (cursor jump, bookmarks only, one seek while playing). Step 2 was not needed: the Compose key handler already returns early for Ctrl/Cmd chords, so only the registry shortcut fires. The dispatch wiring in `application_command_dispatch.cpp` and the enable state in `main.cpp` are syntax-checked only; verify Primary+Up/Down in a real window, including downscroll.
 - **Outcome:** in Compose, Primary+Up/Down (Ctrl, ⌘ on macOS) jumps to the previous or next beat bookmark in screen direction (downscroll flips them, like plain Up/Down); stopped or paused it moves the edit cursor and view to the bookmark row; while playing it seeks the playhead to the bookmark and playback continues.
 - **Request (user, 2026-10-01):** "a ctrl+uparrow/downarrow to jump bookmarks".
 - **Current behavior (2026-10-01):** Up/Down ignore modifiers (`compose_navigation_action_for_key`, `src/ui/nuklear/compose_input_panel.cpp`), so Primary+Up/Down moves the cursor one snap. Alt+Left/Right (`navigation.previous_marker` / `next_marker`) already jump to bookmarks *and* section boundaries.
@@ -31,6 +32,7 @@ Bookmark editing already exists in the Markers panel
 ## T-309 Add a bookmark at the cursor or playhead with Primary+B
 
 - **Status:** ready
+- **Implementation notes (2026-10-02):** `markers.add_bookmark` (Primary+B) is registered; `add_beat_bookmark_here` (cursor, or nearest snap row to the playhead while playing, duplicate row refused) is tested headless including undo. Whether playback survives the document edit (step 3) is unverified: needs a real run.
 - **Outcome:** in Compose, Primary+B adds an unnamed beat bookmark at the edit cursor; while playing it adds it at the active-snap row nearest the playhead and playback continues; the new bookmark can be named later in the Markers panel.
 - **Request (user, 2026-10-01):** "ctrl+b to place a bookmark".
 - **Stale-plan check:** grep `markers.add_bookmark` in `src/core/command_registry.cpp`.
@@ -49,6 +51,7 @@ Bookmark editing already exists in the Markers panel
 ## T-310 Show bookmark names on their lines in the Compose field
 
 - **Status:** ready
+- **Implementation notes (2026-10-02, drawing uncompiled here):** the pure layout helper `layout_bookmark_label` (`src/ui/nuklear/compose_bookmark_label.cpp`) and its five tests pass; `draw_compose_bookmark_label` in `compose_canvas.cpp` draws beat and audio bookmark names but has not been compiled or screenshotted. It allocates one short string per visible named bookmark per frame.
 - **Outcome:** every visible beat and audio-time bookmark line with a non-empty name shows that name as small text just above the line at the right edge of the playable field, in the line's color; long names end in "…"; empty names show nothing.
 - **Request (user, 2026-10-01):** "a little bit of text on the bookmark line to read whatever name one puts on it."
 - **Current behavior (2026-10-01):** `draw_compose_beat_bookmarks` and `draw_compose_audio_bookmarks` (`src/ui/nuklear/compose_canvas.cpp`) draw lines only, although `WormUiComposeBookmarkView::label` and `WormUiComposeAudioBookmarkView::label` already carry the names.

@@ -19,6 +19,7 @@ add_executable(wormedit_core_tests
     ../src/sys/tap_timing_runtime.cpp
     ../src/sys/transport_player_actions.cpp
     ../src/sys/compose_minimap_navigation.cpp
+    ../src/sys/compose_bookmark_commands.cpp
     ../src/sys/application_defaults.cpp
     ../src/sys/project_open.cpp
     ../src/sys/project_save_paths.cpp
@@ -35,6 +36,7 @@ add_executable(wormedit_core_tests
     core/compose_resource_presenter_tests.cpp
     core/command_registry_tests.cpp
     sys/application_commands_tests.cpp
+    sys/compose_bookmark_commands_tests.cpp
     sys/project_view_tests.cpp
     sys/tap_timing_runtime_tests.cpp
     sys/application_defaults_tests.cpp
@@ -68,6 +70,7 @@ add_executable(wormedit_core_tests
     core/quantize_tests.cpp
     core/rational_tests.cpp
     core/recovery_controller_tests.cpp
+    core/bgm_columns_tests.cpp
     core/resource_assignment_tests.cpp
     core/resource_file_copy_tests.cpp
     core/scroll_speed_editor_tests.cpp
@@ -293,12 +296,14 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     add_executable(wormedit_frontend_state_tests
         ui/nuklear_audio_state_tests.cpp
         ui/arrow_glyph_tests.cpp
+        ui/compose_bookmark_label_tests.cpp
         ui/nuklear_compose_state_tests.cpp
         ui/nuklear_metadata_state_tests.cpp
         ui/nuklear_setup_state_tests.cpp
         ui/nuklear_timing_state_tests.cpp
         ../src/ui/nuklear/audio_state.cpp
         ../src/ui/nuklear/arrow_glyph.cpp
+        ../src/ui/nuklear/compose_bookmark_label.cpp
         ../src/ui/nuklear/compose_state.cpp
         ../src/ui/nuklear/metadata_state.cpp
         ../src/ui/nuklear/setup_state.cpp

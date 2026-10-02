@@ -1813,6 +1813,9 @@ void refresh_application_command_states(
         compose_ready && has_beat_marker_navigation(*chart);
     set("navigation.previous_marker", beat_marker_navigation_available);
     set("navigation.next_marker", beat_marker_navigation_available);
+    set("navigation.previous_bookmark", compose_ready);
+    set("navigation.next_bookmark", compose_ready);
+    set("markers.add_bookmark", compose_ready);
     set("navigation.previous_snap", compose_ready);
     set("navigation.next_snap", compose_ready);
     set("transport.play_stop", play_stop_available(chart, application_state));

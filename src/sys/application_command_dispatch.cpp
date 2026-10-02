@@ -1,6 +1,8 @@
 #include "sys/application_command_dispatch.h"
 
+#include "sys/compose_bookmark_commands.h"
 #include "sys/compose_input.h"
+#include "sys/compose_scroll_geometry.h"
 #include "sys/external_player.h"
 #include "sys/transport_player_actions.h"
 #include "ui/frontend.h"
@@ -318,6 +320,41 @@ auto navigation_commands(command_context_t& context) -> std::optional<command_re
             : "Moved to the next bookmark or section boundary.");
 }
 
+// Primary+Up/Down jump bookmarks in screen direction; Primary+B adds one here.
+auto bookmark_commands(command_context_t& context) -> std::optional<command_result_t> {
+    using namespace wormedit;
+    const auto kind = context.command.kind;
+    const bool previous = kind == command_kind_t::navigation_previous_bookmark;
+    if (!previous && kind != command_kind_t::navigation_next_bookmark &&
+        kind != command_kind_t::markers_add_bookmark)
+        return std::nullopt;
+    auto* state = context.compose();
+    const auto* chart = selected_chart(context.history, context.workspace);
+    if (!state || !chart)
+        return reject_application_command(context.status,
+            "Bookmark commands require the active Compose chart.");
+    if (kind == command_kind_t::markers_add_bookmark && editor_interaction_has_pending_gesture(*state))
+        return reject_application_command(context.status,
+            "Finish or cancel the active Compose gesture before editing bookmarks.");
+    auto outcome = [&] {
+        if (kind == command_kind_t::markers_add_bookmark)
+            return add_beat_bookmark_here(context.history, *state, context.application_state);
+        const auto downscroll =
+            compose_field_downscroll(*chart, context.application_state.editor_preferences);
+        // The commands are bound to screen directions: Up is "previous" unless the field is flipped.
+        const auto direction = compose_visual_navigation_direction(downscroll, previous);
+        return navigate_beat_bookmark(context.history, *state, context.application_state,
+            direction == interaction_direction_t::backward
+                ? marker_navigation_direction_t::previous : marker_navigation_direction_t::next);
+    }();
+    context.status = outcome.status;
+    if (outcome.document_changed) {
+        const auto rebound = context.rebind();
+        if (!rebound.accepted) return rebound;
+    }
+    return command_result_t{.accepted = outcome.accepted, .diagnostics = outcome.diagnostics};
+}
+
 auto workspace_tab_command(command_context_t& context) -> std::optional<command_result_t> {
     using namespace wormedit;
     std::optional<workspace_tab_t> tab;
@@ -436,6 +473,7 @@ auto invoke_application_command(
     if (auto result = edit_commands(context)) return *result;
     if (auto result = selection_commands(context)) return *result;
     if (auto result = navigation_commands(context)) return *result;
+    if (auto result = bookmark_commands(context)) return *result;
     if (auto result = workspace_tab_command(context)) return *result;
     if (auto result = timing_lock_command(context)) return *result;
     if (kind == command_kind_t::semantic_layer_select_slot)

@@ -806,6 +806,15 @@ auto make_default_editor_command_registry(command_invoker_t invoker) -> command_
         command_category_t::navigation, command_focus_scope_t::tab,
         {chord(shortcut_key_t::right, static_cast<shortcut_modifiers_t>(shortcut_modifier_t::alt))},
         false, compose);
+    add_builtin(registry, invoker, "navigation.previous_bookmark", "Previous Bookmark",
+                command_category_t::navigation, command_focus_scope_t::tab,
+                {chord(shortcut_key_t::up, primary())}, false, compose);
+    add_builtin(registry, invoker, "navigation.next_bookmark", "Next Bookmark",
+                command_category_t::navigation, command_focus_scope_t::tab,
+                {chord(shortcut_key_t::down, primary())}, false, compose);
+    add_builtin(registry, invoker, "markers.add_bookmark", "Add Bookmark",
+                command_category_t::edit, command_focus_scope_t::tab,
+                {chord(shortcut_key_t::b, primary())}, true, compose);
     add_builtin(registry, invoker, "navigation.previous_snap", "Previous Snap",
                 command_category_t::navigation, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::left)}, false, compose);

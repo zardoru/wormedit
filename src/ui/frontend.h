@@ -692,6 +692,9 @@ typedef struct WormUiComposeView {
     bool scene_available;
     // Full chart index presence, independent of viewport and visibility filters.
     bool has_bgm_events;
+    // BMS charts only: the BGM source column count and whether the toolbar may change it.
+    uint32_t bgm_column_count;
+    bool bgm_column_count_editable;
     bool downscroll;
     bool bms_measure_labels;
     uint64_t compose_measure_count;
@@ -1528,6 +1531,7 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE,
     WORM_UI_COMPOSE_ACTION_AREA_DELETE,
     WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE,
+    WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT,
     WORM_UI_COMPOSE_ACTION_ZOOM_IN,
     WORM_UI_COMPOSE_ACTION_ZOOM_OUT,
     WORM_UI_COMPOSE_ACTION_SCROLL_UP,
@@ -1803,6 +1807,7 @@ typedef struct WormUiWorkspaceAction {
     bool compose_area_begin_edge;
     bool compose_area_clear_requested;
     uint64_t compose_measure_number;
+    uint32_t compose_bgm_column_count;
     int64_t compose_audio_offset_numerator;
     uint64_t compose_audio_offset_denominator;
     uint64_t compose_input_chart_id;

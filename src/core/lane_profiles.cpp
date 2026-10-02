@@ -834,6 +834,29 @@ constexpr std::array pms_button_colors{
     lane_key_color_t::pms_green, lane_key_color_t::pms_yellow, lane_key_color_t::pms_white,
 };
 
+// osu!mania's canonical 10K coloring: wbwbg ybwbw across the whole field.
+constexpr std::array osu_10k_colors{
+    lane_key_color_t::white,      lane_key_color_t::black,      lane_key_color_t::white,
+    lane_key_color_t::black,      lane_key_color_t::pms_green,  lane_key_color_t::pms_yellow,
+    lane_key_color_t::black,      lane_key_color_t::white,      lane_key_color_t::black,
+    lane_key_color_t::white,
+};
+
+auto is_osu_style_10k(std::string_view profile) -> bool {
+    return profile == "osu-mania-10k" || profile == "bms-10k-scratchless";
+}
+
+void color_osu_style_10k(lane_layout_t& layout) {
+    std::vector<lane_definition_t*> lanes;
+    for (auto& lane : layout.lanes) {
+        if (lane.role == lane_role_t::playable) lanes.push_back(&lane);
+    }
+    std::ranges::stable_sort(lanes, {}, &lane_definition_t::display_order);
+    if (lanes.size() != osu_10k_colors.size()) return;
+    for (std::size_t index = 0; index < lanes.size(); ++index)
+        lanes[index]->key_color = osu_10k_colors[index];
+}
+
 auto role_key_color(lane_role_t role) -> std::optional<lane_key_color_t> {
     switch (role) {
     case lane_role_t::scratch:
@@ -892,6 +915,10 @@ void color_stage(lane_layout_t& layout, stage_group_t stage, std::string_view pr
 void assign_lane_key_colors(lane_layout_t& layout) {
     for (auto& lane : layout.lanes) {
         lane.key_color = role_key_color(lane.role).value_or(lane_key_color_t::generic);
+    }
+    if (is_osu_style_10k(layout.profile_id)) {
+        color_osu_style_10k(layout);
+        return;
     }
     for (const auto stage : {stage_group_t::none, stage_group_t::left, stage_group_t::right}) {
         color_stage(layout, stage, layout.profile_id);

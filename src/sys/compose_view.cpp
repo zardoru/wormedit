@@ -2758,6 +2758,8 @@ bool compose_project_scene(const compose_final_projection_context_t& input,
     const auto downscroll = input.downscroll;
     flattened.compose.interaction_view = interaction_view;
     view.bms_measure_labels = chart.source_family == wormedit::format_family_t::bms;
+    view.bgm_column_count = static_cast<std::uint32_t>(chart.bgm_source_lanes.size());
+    view.bgm_column_count_editable = view.bms_measure_labels;
     view.compose_measure_count = chart.measures.size();
     view.selected_bms_measure_number_plus_one =
         interaction_view.selected_canvas_measure

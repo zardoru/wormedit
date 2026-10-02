@@ -151,6 +151,7 @@ struct flattened_workspace_t {
             frame_span<WormUiComposeWaveformOverviewRowView> overview_row;
             frame_span<WormUiComposeWaveformOverviewRowView> bar_row;
             frame_span<WormUiComposeBgmBarMarkView> bar_mark;
+            frame_span<WormUiComposeBgmBarBookmarkView> bar_bookmark;
         } waveform;
         std::vector<std::uint64_t> bmson_draft_playable_lane;
         std::vector<std::uint8_t> bmson_draft_restart;

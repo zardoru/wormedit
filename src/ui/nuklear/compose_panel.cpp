@@ -533,7 +533,11 @@ static bool compose_bgm_bar_valid(const WormUiComposeView* view) {
         (view->bgm_bar_row_count != 0 && !view->bgm_bar_rows) ||
         (view->bgm_bar_mark_count != 0 && !view->bgm_bar_marks))
         return false;
-    if (view->bgm_bar_row_count == 0) return view->bgm_bar_mark_count == 0;
+    if (view->bgm_bar_bookmark_count > WORM_UI_COMPOSE_BGM_BAR_BOOKMARK_CAPACITY ||
+        (view->bgm_bar_bookmark_count != 0 && !view->bgm_bar_bookmarks))
+        return false;
+    if (view->bgm_bar_row_count == 0)
+        return view->bgm_bar_mark_count == 0 && view->bgm_bar_bookmark_count == 0;
     if (!std::isfinite(view->bgm_bar_begin_fraction) || !std::isfinite(view->bgm_bar_end_fraction) ||
         view->bgm_bar_begin_fraction < 0.0 || view->bgm_bar_end_fraction > 1.0 ||
         view->bgm_bar_begin_fraction >= view->bgm_bar_end_fraction)
@@ -541,6 +545,11 @@ static bool compose_bgm_bar_valid(const WormUiComposeView* view) {
     return std::all_of(view->bgm_bar_marks, view->bgm_bar_marks + view->bgm_bar_mark_count,
                        [](const WormUiComposeBgmBarMarkView& mark) {
                            return std::isfinite(mark.audio_fraction);
+                       }) &&
+           std::all_of(view->bgm_bar_bookmarks,
+                       view->bgm_bar_bookmarks + view->bgm_bar_bookmark_count,
+                       [](const WormUiComposeBgmBarBookmarkView& bookmark) {
+                           return std::isfinite(bookmark.audio_fraction) && bookmark.label;
                        });
 }
 
@@ -761,6 +770,32 @@ void draw_bgm_bar_grid(struct nk_context* context, struct nk_command_buffer* can
     }
 }
 
+// Flag on the top edge for each bookmark, with its label to the right when the next
+// bookmark leaves room for it.
+void draw_bgm_bar_bookmarks(struct nk_context* context, struct nk_command_buffer* canvas,
+                            const WormUiComposeView& view, const BgmBarGeometry& geometry) {
+    const auto& bounds = geometry.bounds;
+    const auto* font = context->style.font;
+    for (size_t index = 0; index < view.bgm_bar_bookmark_count; ++index) {
+        const auto& bookmark = view.bgm_bar_bookmarks[index];
+        const auto x = geometry.x_of(bookmark.audio_fraction);
+        const auto color = bookmark.audio ? nk_rgb(124, 224, 168) : nk_rgb(255, 198, 92);
+        nk_stroke_line(canvas, x, bounds.y, x, bounds.y + bounds.h, 1.0f, nk_rgba(color.r, color.g, color.b, 150));
+        nk_fill_triangle(canvas, x, bounds.y + 7.0f, x + 7.0f, bounds.y, x, bounds.y, color);
+        if (!font || bookmark.label[0] == '\0') continue;
+        float limit = bounds.x + bounds.w;
+        for (size_t other = 0; other < view.bgm_bar_bookmark_count; ++other) {
+            const auto other_x = geometry.x_of(view.bgm_bar_bookmarks[other].audio_fraction);
+            if (other_x > x + 1.0f) limit = std::min(limit, other_x);
+        }
+        const auto length = static_cast<int>(std::strlen(bookmark.label));
+        const auto width = font->width(font->userdata, font->height, bookmark.label, length);
+        if (x + 10.0f + width > limit - 2.0f) continue;
+        nk_draw_text(canvas, nk_rect(x + 10.0f, bounds.y + bounds.h - font->height - 1.0f, width, font->height),
+                     bookmark.label, length, font, nk_rgba(0, 0, 0, 0), color);
+    }
+}
+
 void draw_bgm_bar_markers(struct nk_command_buffer* canvas, const WormUiComposeView& view,
                           const BgmBarGeometry& geometry) {
     const auto& bounds = geometry.bounds;
@@ -848,6 +883,7 @@ void worm_ui_nuklear_render_compose_bgm_bar(
                      wormedit::ui::theme::compose(wormedit::ui::theme::ComposeColor::overview));
         draw_bgm_bar_waveform(canvas, *view, geometry);
         draw_bgm_bar_grid(context, canvas, *view, geometry);
+        draw_bgm_bar_bookmarks(context, canvas, *view, geometry);
         draw_bgm_bar_markers(canvas, *view, geometry);
         if (window_focused && nk_input_is_mouse_hovering_rect(&context->input, bounds))
             nk_tooltip(context, "Wheel: zoom   Shift+wheel or middle-drag: pan   "

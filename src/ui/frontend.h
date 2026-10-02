@@ -41,6 +41,7 @@ typedef struct SDL_Window SDL_Window;
 // Window chrome taken by the BGM bar row under the transport seek bar (48 px row + 4 px spacing).
 #define WORM_UI_BGM_BAR_CHROME_HEIGHT 52.0f
 #define WORM_UI_COMPOSE_BGM_BAR_MARK_CAPACITY 1024
+#define WORM_UI_COMPOSE_BGM_BAR_BOOKMARK_CAPACITY 128
 #define WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY 32768
 #define WORM_UI_COMPOSE_LANE_KEY_BINDING_CAPACITY 128
 #define WORM_UI_COMPOSE_NOTE_LABEL_BYTES 4096
@@ -495,6 +496,13 @@ typedef struct WormUiComposeBgmBarMarkView {
     uint32_t measure;
 } WormUiComposeBgmBarMarkView;
 
+// A beat or audio bookmark placed on the BGM bar; the label is owned by the bookmark view.
+typedef struct WormUiComposeBgmBarBookmarkView {
+    double audio_fraction;
+    const char* label;
+    bool audio;
+} WormUiComposeBgmBarBookmarkView;
+
 typedef struct WormUiComposeBgmMovePreviewView {
     WormUiComposeRect bounds;
     bool valid;
@@ -872,6 +880,8 @@ typedef struct WormUiComposeView {
     double bgm_bar_end_fraction;
     const WormUiComposeBgmBarMarkView* bgm_bar_marks;
     size_t bgm_bar_mark_count;
+    const WormUiComposeBgmBarBookmarkView* bgm_bar_bookmarks;
+    size_t bgm_bar_bookmark_count;
     // The bar row exists only for songs with audio and while the toolbar toggle keeps it on:
     // available = the song has audio, reserved = the row is laid out (and takes vertical space).
     bool bgm_bar_available;
